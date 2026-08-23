@@ -18,10 +18,17 @@ struct ThemeCoreSliceTests {
 
     let themeJSON = outputRoot.appending(path: "theme.json")
     let kitty = outputRoot.appending(path: "generated/kitty.conf")
+    let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
     let writtenJSON = try Data(contentsOf: themeJSON)
     let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
+    let writtenWallpaper = try Data(contentsOf: wallpaper)
     #expect(writtenJSON == rendered.themeJSON)
     #expect(writtenKitty == rendered.kittyConfiguration)
+    #expect(writtenWallpaper == rendered.wallpaper)
+    #expect(
+      writtenWallpaper
+        == (try Data(contentsOf: packageURL.appending(path: package.wallpaper.path)))
+    )
 
     let decoded = try JSONDecoder().decode(NormalizedTheme.self, from: writtenJSON)
     #expect(decoded.themeID == package.id)
@@ -205,6 +212,60 @@ struct ThemeCoreSliceTests {
   }
 
   @Test
+  func wallpaperOverrideRejectsInvalidConfigurationAndSource() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let configuration = root.appending(path: "config.toml")
+    try """
+    schema_version = 1
+
+    [wallpaper_overrides]
+    catppuccin-mocha = "relative.png"
+    """.write(to: configuration, atomically: true, encoding: .utf8)
+    #expect(throws: MacarchyConfigurationError.self) {
+      _ = try MacarchyConfigurationStore(root: root).load()
+    }
+
+    try """
+    schema_version = 1
+    unexpected = true
+    """.write(to: configuration, atomically: true, encoding: .utf8)
+    #expect(throws: MacarchyConfigurationError.self) {
+      _ = try MacarchyConfigurationStore(root: root).load()
+    }
+
+    try "schema_version = 2\n".write(
+      to: configuration,
+      atomically: true,
+      encoding: .utf8
+    )
+    #expect(throws: MacarchyConfigurationError.self) {
+      _ = try MacarchyConfigurationStore(root: root).load()
+    }
+
+    let invalidPNG = root.appending(path: "invalid.png")
+    try Data("not png".utf8).write(to: invalidPNG)
+    try overrideConfiguration(in: configuration, wallpaper: invalidPNG)
+    #expect(throws: MacarchyConfigurationError.self) {
+      _ = try MacarchyConfigurationStore(root: root).load().wallpaperData(
+        themeID: "catppuccin-mocha"
+      )
+    }
+
+    let oversized = root.appending(path: "oversized.png")
+    FileManager.default.createFile(atPath: oversized.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: oversized)
+    try handle.truncate(atOffset: UInt64(WallpaperAsset.maximumSize + 1))
+    try handle.close()
+    try overrideConfiguration(in: configuration, wallpaper: oversized)
+    #expect(throws: MacarchyConfigurationError.self) {
+      _ = try MacarchyConfigurationStore(root: root).load().wallpaperData(
+        themeID: "catppuccin-mocha"
+      )
+    }
+  }
+
+  @Test
   func unknownSchemaKeyReportsItsSource() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -260,6 +321,15 @@ struct ThemeCoreSliceTests {
     let destination = root.appending(path: name, directoryHint: .isDirectory)
     try FileManager.default.copyItem(at: source, to: destination)
     return destination
+  }
+
+  private func overrideConfiguration(in configuration: URL, wallpaper: URL) throws {
+    try """
+    schema_version = 1
+
+    [wallpaper_overrides]
+    catppuccin-mocha = "\(wallpaper.path)"
+    """.write(to: configuration, atomically: true, encoding: .utf8)
   }
 
   private func themeDiagnostic(from operation: () throws -> Void) throws -> ThemeDiagnostic {

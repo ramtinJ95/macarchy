@@ -3,6 +3,8 @@ Macarchy doctor:
 - reconciliation [ok]: Status matches the active generation.
 - reconciliation.kitty [failure]: failed: reload denied
 - reconciliation.macos-appearance [ok]: applied
+- reconciliation.wallpaper [ok]: applied
 - macos-appearance.integration [ok]: Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required
 - kitty.integration [failure]: Kitty configuration is missing the stable include
+- wallpaper.integration [ok]: Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded
 No changes made.
