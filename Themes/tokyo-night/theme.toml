@@ -1,0 +1,37 @@
+schema_version = 1
+id = "tokyo-night"
+display_name = "Tokyo Night"
+appearance = "dark"
+
+[semantic]
+background = "#1a1b26"
+surface = "#24283b"
+overlay = "#414868"
+border = "#565f89"
+text = "#c0caf5"
+muted_text = "#a9b1d6"
+accent = "#7aa2f7"
+selection = "#33467c"
+info = "#7dcfff"
+success = "#9ece6a"
+warning = "#e0af68"
+error = "#f7768e"
+
+[terminal]
+foreground = "#c0caf5"
+background = "#1a1b26"
+cursor = "#c0caf5"
+selection_foreground = "#c0caf5"
+selection_background = "#33467c"
+ansi = [
+  "#15161e", "#f7768e", "#9ece6a", "#e0af68",
+  "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6",
+  "#414868", "#f7768e", "#9ece6a", "#e0af68",
+  "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5",
+]
+
+[wallpaper]
+path = "wallpapers/default.png"
+source = "Original Macarchy palette artwork"
+author = "Ramtin Jabbari"
+license = "MIT"
