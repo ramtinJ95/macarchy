@@ -1,5 +1,4 @@
 import CoreFoundation
-import CryptoKit
 import Darwin
 import Foundation
 import Synchronization
@@ -153,7 +152,7 @@ public struct ThemeActivator: Sendable {
       themeSchemaVersion: package.schemaVersion,
       inputDigest: inputDigest,
       rendererVersions: Self.rendererVersions,
-      artifacts: rendered.files.mapValues(digest)
+      artifacts: rendered.files.mapValues(sha256Digest)
     )
     let manifestData = try encode(manifest)
     try requireGeneratedFileSize(manifestData, path: "manifest.json")
@@ -295,69 +294,11 @@ public struct ThemeActivator: Sendable {
       "renderer versions do not match the current renderers"
     )
 
-    try requireReusable(
-      Set(manifest.artifacts.keys) == ThemeRenderer.outputPaths,
-      generationURL,
-      "artifact manifest does not contain exactly the required outputs"
-    )
-
-    _ = try validateReadOnlyItem(
-      generationURL, expectedType: .typeDirectory, generationURL: generationURL)
-    let generatedURL = generationURL.appending(path: "generated", directoryHint: .isDirectory)
-    _ = try validateReadOnlyItem(
-      generatedURL, expectedType: .typeDirectory, generationURL: generationURL)
-
-    for path in ThemeRenderer.outputPaths.sorted() {
-      let artifactURL = generationURL.appending(path: path)
-      let artifact: BoundedRegularFile
-      do {
-        artifact = try BoundedRegularFile.read(at: artifactURL)
-      } catch {
-        throw corruptGeneration(
-          generationURL,
-          reason: "cannot safely read \(path): \(String(describing: error))"
-        )
-      }
-      try requireReusable(
-        artifact.permissions & 0o222 == 0,
-        generationURL,
-        "\(path) is writable"
-      )
-      try requireReusable(
-        manifest.artifacts[path] == digest(artifact.data),
-        generationURL,
-        "artifact digest does not match \(path)"
-      )
-    }
-  }
-
-  @discardableResult
-  private func validateReadOnlyItem(
-    _ itemURL: URL,
-    expectedType: FileAttributeType,
-    generationURL: URL
-  ) throws -> [FileAttributeKey: Any] {
-    let attributes: [FileAttributeKey: Any]
     do {
-      attributes = try FileManager.default.attributesOfItem(atPath: itemURL.path)
-    } catch {
-      throw corruptGeneration(
-        generationURL,
-        reason: "cannot inspect \(itemURL.lastPathComponent): \(error.localizedDescription)"
-      )
+      try manifest.validateArtifacts(at: generationURL)
+    } catch let error as GenerationIntegrityError {
+      throw corruptGeneration(generationURL, reason: error.reason)
     }
-    try requireReusable(
-      attributes[.type] as? FileAttributeType == expectedType,
-      generationURL,
-      "\(itemURL.lastPathComponent) has an invalid filesystem type"
-    )
-    let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
-    try requireReusable(
-      permissions.map { $0 & 0o222 == 0 } == true,
-      generationURL,
-      "\(itemURL.lastPathComponent) is writable"
-    )
-    return attributes
   }
 
   private func requireReusable(
@@ -393,11 +334,11 @@ public struct ThemeActivator: Sendable {
       appearance: package.appearance,
       semantic: package.semantic,
       terminal: package.terminal,
-      wallpaperDigest: digest(try Data(contentsOf: wallpaperURL)),
+      wallpaperDigest: sha256Digest(try Data(contentsOf: wallpaperURL)),
       mappings: package.mappings,
       rendererVersions: Self.rendererVersions
     )
-    return digest(try encode(input))
+    return sha256Digest(try encode(input))
   }
 
   private func encode<Value: Encodable>(_ value: Value) throws -> Data {
@@ -406,10 +347,6 @@ public struct ThemeActivator: Sendable {
     var data = try encoder.encode(value)
     data.append(0x0a)
     return data
-  }
-
-  private func digest(_ data: Data) -> String {
-    "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 
   private func requireGeneratedFileSize(_ data: Data, path: String) throws {

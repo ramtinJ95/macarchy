@@ -62,6 +62,29 @@ struct KittyAdapter: Sendable {
     }
   }
 
+  func inspection() -> AdapterInspection {
+    do {
+      try preflight()
+      return AdapterInspection(
+        adapterID: Self.id,
+        requirement: .required
+      )
+    } catch {
+      let status: AdapterInspectionStatus
+      if case KittyAdapterError.missingInclude = error {
+        status = .drifted
+      } else {
+        status = .failed
+      }
+      return AdapterInspection(
+        adapterID: Self.id,
+        requirement: .required,
+        status: status,
+        message: String(describing: error)
+      )
+    }
+  }
+
   func reconciliation() -> AdapterReconciliation {
     AdapterReconciliation(id: Self.id, requirement: .required) {
       do {

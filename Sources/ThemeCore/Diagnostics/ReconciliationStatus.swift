@@ -218,17 +218,25 @@ public struct ReconciliationStatusStore: Sendable {
       )
       try requireDirectory(generationURL, role: "generation '\(generationID)'")
 
-      let data: Data
+      let manifestFile: BoundedRegularFile
       do {
-        data = try BoundedRegularFile.read(
+        manifestFile = try BoundedRegularFile.read(
           at: generationURL.appending(path: "manifest.json")
-        ).data
+        )
       } catch {
         throw ReconciliationStatusError.invalidActiveGeneration(
           "cannot read manifest.json: \(String(describing: error))"
         )
       }
-      let manifest = try decodeActiveManifest(data, generationID: generationID)
+      guard manifestFile.permissions & 0o222 == 0 else {
+        throw ReconciliationStatusError.invalidActiveGeneration("manifest.json is writable")
+      }
+      let manifest = try decodeActiveManifest(manifestFile.data, generationID: generationID)
+      do {
+        try manifest.validateArtifacts(at: generationURL)
+      } catch {
+        throw ReconciliationStatusError.invalidActiveGeneration(String(describing: error))
+      }
       if try activeGenerationID() == generationID {
         return manifest
       }

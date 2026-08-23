@@ -1,0 +1,6 @@
+Macarchy doctor:
+- canonical [ok]: Theme 'catppuccin-mocha' generation 'g-active-generation' is active.
+- reconciliation [ok]: Status matches the active generation.
+- reconciliation.kitty [failure]: failed: reload denied
+- kitty.integration [failure]: Kitty configuration is missing the stable include
+No changes made.
