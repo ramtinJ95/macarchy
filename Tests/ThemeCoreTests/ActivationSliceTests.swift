@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Dispatch
 import Foundation
 import Synchronization
@@ -7,6 +8,29 @@ import Testing
 @testable import ThemeCore
 
 struct ActivationSliceTests {
+  @Test
+  func activationCrashProbe() throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard
+      let rootPath = environment["MACARCHY_CRASH_ROOT"],
+      let checkpointName = environment["MACARCHY_CRASH_CHECKPOINT"]
+    else { return }
+    let checkpoint: ActivationCheckpoint
+    switch checkpointName {
+    case "generationWritten":
+      checkpoint = .generationWritten
+    case "currentReplaced":
+      checkpoint = .currentReplaced
+    default:
+      throw TestError.unknownCrashCheckpoint
+    }
+    let activator = ThemeActivator(root: URL(filePath: rootPath)) { reached in
+      if reached == checkpoint { Darwin._exit(86) }
+    }
+    _ = try activator.activate(package: tokyoNightPackage())
+    throw TestError.crashCheckpointNotReached
+  }
+
   @Test
   func activationCreatesCompleteGenerationAndReplacesCurrentWithRelativeSymlink() throws {
     let root = try temporaryDirectory()
@@ -127,7 +151,15 @@ struct ActivationSliceTests {
   @Test
   func everyPreReplacementFaultPreservesPreviousCanonicalGeneration() throws {
     let package = try catppuccinPackage()
-    for checkpoint in ActivationCheckpoint.allCases {
+    let checkpoints: [ActivationCheckpoint] = [
+      .inputDigested,
+      .outputsRendered,
+      .generationWritten,
+      .generationSealed,
+      .generationCommitted,
+      .currentPointerReady,
+    ]
+    for checkpoint in checkpoints {
       let root = try temporaryDirectory()
       defer {
         makeWritableForRemoval(root)
@@ -162,7 +194,273 @@ struct ActivationSliceTests {
       #expect(!generationChildren.contains { $0.lastPathComponent.hasPrefix(".staging-") })
       #expect(publicationCounts.withLock { $0.typed } == 0)
       #expect(publicationCounts.withLock { $0.darwin } == 0)
+
+      let recovered = try testActivator(root: root).activate(package: package)
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: current.path)
+          == "generations/\(recovered.generationID)"
+      )
     }
+  }
+
+  @Test
+  func everyPostcommitActivationFaultLeavesRecoverableCanonicalState() async throws {
+    let package = try tokyoNightPackage()
+    for checkpoint in [
+      ActivationCheckpoint.currentReplaced,
+      .generationsCleaned,
+      .changePublished,
+    ] {
+      let root = try temporaryDirectory()
+      defer {
+        makeWritableForRemoval(root)
+        try? FileManager.default.removeItem(at: root)
+      }
+      let previous = try testActivator(root: root).activate(package: catppuccinPackage())
+      let store = ReconciliationStatusStore(root: root)
+      _ = try store.persist(
+        manifest: previous,
+        results: [AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)]
+      )
+      let publications = Mutex((typed: 0, darwin: 0))
+      let activator = ThemeActivator(
+        root: root,
+        faultInjector: { reached in
+          if reached == checkpoint { throw InjectedFault.expected }
+        },
+        onThemeChanged: { _ in publications.withLock { $0.typed += 1 } },
+        postDarwinNotification: { _ in publications.withLock { $0.darwin += 1 } }
+      )
+
+      let committed: ThemeCommittedActivationError
+      do {
+        _ = try activator.activate(package: package)
+        throw TestError.expectedCommittedError
+      } catch let error as ThemeCommittedActivationError {
+        committed = error
+      }
+
+      #expect(try store.activeManifest().generationID == committed.manifest.generationID)
+      guard case .stale(let activeGenerationID, let stale) = try store.read() else {
+        throw TestError.expectedStaleStatus
+      }
+      #expect(activeGenerationID == committed.manifest.generationID)
+      #expect(stale.generationID == previous.generationID)
+      let expectedPublicationCount = checkpoint == .currentReplaced ? 0 : 1
+      #expect(publications.withLock { $0.typed } == expectedPublicationCount)
+      #expect(publications.withLock { $0.darwin } == expectedPublicationCount)
+      #expect(try transactionResidue(at: root).isEmpty)
+
+      let recovered = try await ThemeReconciler(statusStore: store).reconcile(
+        manifest: committed.manifest,
+        adapters: [
+          AdapterReconciliation(id: "kitty", requirement: .required) {
+            AdapterOutcome(status: .applied)
+          }
+        ]
+      )
+      #expect(try store.read() == .current(recovered))
+    }
+  }
+
+  @Test
+  func recoveryAndCleanupDoNotFollowPrefixMatchingSymlinks() throws {
+    let root = try temporaryDirectory()
+    let external = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+      makeWritableForRemoval(external)
+      try? FileManager.default.removeItem(at: external)
+    }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    try FileManager.default.setAttributes([.posixPermissions: 0o711], ofItemAtPath: external.path)
+    let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
+    let stagingLink = generationsRoot.appending(
+      path: ".staging-g-\(UUID().uuidString.lowercased())"
+    )
+    let generationLink = generationsRoot.appending(
+      path: "g-\(UUID().uuidString.lowercased())"
+    )
+    for link in [stagingLink, generationLink] {
+      try FileManager.default.createSymbolicLink(at: link, withDestinationURL: external)
+    }
+    let pointerLookalike = root.appending(
+      path: ".current-g-\(UUID().uuidString.lowercased())-\(UUID().uuidString.lowercased())"
+    )
+    try Data().write(to: pointerLookalike)
+
+    _ = try testActivator(root: root).activate(package: tokyoNightPackage())
+
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: stagingLink.path) == external.path
+    )
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: generationLink.path)
+        == external.path
+    )
+    #expect(FileManager.default.fileExists(atPath: pointerLookalike.path))
+    let permissions = try #require(
+      FileManager.default.attributesOfItem(atPath: external.path)[.posixPermissions] as? NSNumber
+    )
+    #expect(permissions.intValue == 0o711)
+  }
+
+  @Test
+  func processDeathBeforeAndAfterPointerReplacementLeavesRecoverableState() async throws {
+    let precommitRoot = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(precommitRoot)
+      try? FileManager.default.removeItem(at: precommitRoot)
+    }
+    let original = try testActivator(root: precommitRoot).activate(package: catppuccinPackage())
+
+    try runCrashProbe(root: precommitRoot, checkpoint: "generationWritten")
+
+    #expect(
+      try ReconciliationStatusStore(root: precommitRoot).activeManifest().generationID
+        == original.generationID)
+    #expect(try !transactionResidue(at: precommitRoot).isEmpty)
+    #expect(try externalProcessCanAcquireLock(at: precommitRoot))
+    let pointer = precommitRoot.appending(
+      path: ".current-g-\(UUID().uuidString.lowercased())-\(UUID().uuidString.lowercased())"
+    )
+    try FileManager.default.createSymbolicLink(
+      at: pointer,
+      withDestinationURL: precommitRoot.appending(path: "generations/missing")
+    )
+    let trash = precommitRoot.appending(
+      path:
+        "generations/.trash-g-\(UUID().uuidString.lowercased())-\(UUID().uuidString.lowercased())",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: false)
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: trash.path)
+    let recoveredActivation = try testActivator(root: precommitRoot).activate(
+      package: tokyoNightPackage()
+    )
+    #expect(try transactionResidue(at: precommitRoot).isEmpty)
+    #expect(
+      try ReconciliationStatusStore(root: precommitRoot).activeManifest().generationID
+        == recoveredActivation.generationID)
+
+    let postcommitRoot = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(postcommitRoot)
+      try? FileManager.default.removeItem(at: postcommitRoot)
+    }
+    let previous = try testActivator(root: postcommitRoot).activate(package: catppuccinPackage())
+    let store = ReconciliationStatusStore(root: postcommitRoot)
+    _ = try store.persist(
+      manifest: previous,
+      results: [AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)]
+    )
+
+    try runCrashProbe(root: postcommitRoot, checkpoint: "currentReplaced")
+
+    let committed = try store.activeManifest()
+    #expect(committed.themeID == "tokyo-night")
+    guard case .stale(let activeGenerationID, let stale) = try store.read() else {
+      throw TestError.expectedStaleStatus
+    }
+    #expect(activeGenerationID == committed.generationID)
+    #expect(stale.generationID == previous.generationID)
+    #expect(try externalProcessCanAcquireLock(at: postcommitRoot))
+
+    let recoveredStatus = try await ThemeReconciler(statusStore: store).reconcile(
+      manifest: committed,
+      adapters: [
+        AdapterReconciliation(id: "kitty", requirement: .required) {
+          AdapterOutcome(status: .applied)
+        }
+      ]
+    )
+    #expect(try store.read() == .current(recoveredStatus))
+    _ = try testActivator(root: postcommitRoot).activate(package: catppuccinPackage())
+  }
+
+  @Test
+  func generationCleanupRetainsOnlyCurrentAndPreviousReusableEvidence() throws {
+    let fixtureRoot = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(fixtureRoot)
+      try? FileManager.default.removeItem(at: fixtureRoot)
+    }
+    let packages = try distinctCatppuccinPackages(at: fixtureRoot)
+    let stateRoot = fixtureRoot.appending(path: "state", directoryHint: .isDirectory)
+    let first = try testActivator(root: stateRoot).activate(package: packages[0])
+    let second = try testActivator(root: stateRoot).activate(package: packages[1])
+    let third = try testActivator(root: stateRoot).activate(package: packages[2])
+
+    #expect(try generationIDs(at: stateRoot) == [second.generationID, third.generationID].sorted())
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: stateRoot.appending(path: "generations/\(first.generationID)").path
+      ))
+
+    let reuseOnly = ThemeActivator(root: stateRoot) { checkpoint in
+      if checkpoint == .outputsRendered { throw InjectedFault.expected }
+    }
+    let reused = try reuseOnly.activate(package: packages[1])
+    #expect(reused.generationID == second.generationID)
+    _ = try reuseOnly.activate(package: packages[1])
+    #expect(try generationIDs(at: stateRoot) == [second.generationID, third.generationID].sorted())
+    #expect(
+      try ReconciliationStatusStore(root: stateRoot).activeManifest().generationID
+        == second.generationID)
+  }
+
+  @Test
+  func cleanupFailureIsReportedAfterCommitAndPublication() throws {
+    let fixtureRoot = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(fixtureRoot)
+      try? FileManager.default.removeItem(at: fixtureRoot)
+    }
+    let packages = try distinctCatppuccinPackages(at: fixtureRoot)
+    let stateRoot = fixtureRoot.appending(path: "state", directoryHint: .isDirectory)
+    let first = try testActivator(root: stateRoot).activate(package: packages[0])
+    _ = try testActivator(root: stateRoot).activate(package: packages[1])
+    let protectedArtifact = stateRoot.appending(
+      path: "generations/\(first.generationID)/theme.json"
+    )
+    try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: protectedArtifact.path)
+    defer {
+      try? FileManager.default.setAttributes(
+        [.immutable: false],
+        ofItemAtPath: protectedArtifact.path
+      )
+      if let trash = try? FileManager.default.contentsOfDirectory(
+        at: stateRoot.appending(path: "generations"),
+        includingPropertiesForKeys: nil
+      ).first(where: { $0.lastPathComponent.hasPrefix(".trash-") }) {
+        try? FileManager.default.setAttributes(
+          [.immutable: false],
+          ofItemAtPath: trash.appending(path: "theme.json").path
+        )
+      }
+    }
+    let publications = Mutex((typed: 0, darwin: 0))
+    let activator = ThemeActivator(
+      root: stateRoot,
+      faultInjector: { _ in },
+      onThemeChanged: { _ in publications.withLock { $0.typed += 1 } },
+      postDarwinNotification: { _ in publications.withLock { $0.darwin += 1 } }
+    )
+
+    let error: ThemeCommittedActivationError
+    do {
+      _ = try activator.activate(package: packages[2])
+      throw TestError.expectedCommittedError
+    } catch let committed as ThemeCommittedActivationError {
+      error = committed
+    }
+    #expect(
+      try ReconciliationStatusStore(root: stateRoot).activeManifest().generationID
+        == error.manifest.generationID)
+    #expect(publications.withLock { $0.typed } == 1)
+    #expect(publications.withLock { $0.darwin } == 1)
+    #expect(try generationIDs(at: stateRoot).count == 2)
   }
 
   @Test
@@ -608,6 +906,40 @@ struct ActivationSliceTests {
     ).map(\.lastPathComponent).filter { $0.hasPrefix("g-") }.sorted()
   }
 
+  private func transactionResidue(at root: URL) throws -> [URL] {
+    let pointers = try FileManager.default.contentsOfDirectory(
+      at: root,
+      includingPropertiesForKeys: nil
+    ).filter { $0.lastPathComponent.hasPrefix(".current-g-") }
+    let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
+    let staging = try FileManager.default.contentsOfDirectory(
+      at: generationsRoot,
+      includingPropertiesForKeys: nil
+    ).filter {
+      $0.lastPathComponent.hasPrefix(".staging-g-")
+        || $0.lastPathComponent.hasPrefix(".trash-g-")
+    }
+    return pointers + staging
+  }
+
+  private func distinctCatppuccinPackages(at root: URL) throws -> [ThemePackage] {
+    let source = repositoryRoot.appending(
+      path: "Themes/catppuccin-mocha",
+      directoryHint: .isDirectory
+    )
+    return try (0..<3).map { index in
+      let destination = root.appending(path: "package-\(index)", directoryHint: .isDirectory)
+      try FileManager.default.copyItem(at: source, to: destination)
+      let mappingsURL = destination.appending(path: "mappings.toml")
+      let mappings = try String(contentsOf: mappingsURL, encoding: .utf8)
+      try mappings.replacingOccurrences(
+        of: "neovim = \"catppuccin-mocha\"",
+        with: "neovim = \"catppuccin-mocha-\(index)\""
+      ).write(to: mappingsURL, atomically: true, encoding: .utf8)
+      return try ThemePackageLoader().load(packageURL: destination)
+    }
+  }
+
   private func activationError(from operation: () throws -> Void) throws -> ThemeActivationError {
     do {
       try operation()
@@ -659,6 +991,58 @@ struct ActivationSliceTests {
     }
   }
 
+  private func runCrashProbe(root: URL, checkpoint: String) throws {
+    let testBundle = repositoryRoot.appending(
+      path: ".build/debug/MacarchyPackageTests.xctest",
+      directoryHint: .isDirectory
+    )
+    let testExecutable = testBundle.appending(path: "Contents/MacOS/MacarchyPackageTests")
+    let process = Process()
+    process.executableURL = try swiftTestingHelper()
+    process.arguments = [
+      "--test-bundle-path",
+      testExecutable.path,
+      "--filter",
+      "ThemeCoreTests.ActivationSliceTests/activationCrashProbe",
+      testExecutable.path,
+      "--testing-library",
+      "swift-testing",
+    ]
+    process.currentDirectoryURL = repositoryRoot
+    process.environment = ProcessInfo.processInfo.environment.merging(
+      [
+        "MACARCHY_CRASH_ROOT": root.path,
+        "MACARCHY_CRASH_CHECKPOINT": checkpoint,
+      ],
+      uniquingKeysWith: { _, injected in injected }
+    )
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 86)
+  }
+
+  private func swiftTestingHelper() throws -> URL {
+    let xcrun = Process()
+    let output = Pipe()
+    xcrun.executableURL = URL(filePath: "/usr/bin/xcrun")
+    xcrun.arguments = ["--find", "swift"]
+    xcrun.standardOutput = output
+    xcrun.standardError = FileHandle.nullDevice
+    try xcrun.run()
+    let data = output.fileHandleForReading.readDataToEndOfFile()
+    xcrun.waitUntilExit()
+    guard xcrun.terminationStatus == 0 else { throw TestError.cannotFindSwiftTestingHelper }
+    let swiftPath = String(decoding: data, as: UTF8.self).trimmingCharacters(
+      in: .whitespacesAndNewlines
+    )
+    return URL(filePath: swiftPath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appending(path: "libexec/swift/pm/swiftpm-testing-helper")
+  }
+
   private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appending(
@@ -689,11 +1073,16 @@ struct ActivationSliceTests {
   }
 
   private enum TestError: Error {
+    case cannotFindSwiftTestingHelper
+    case crashCheckpointNotReached
     case expectedActivationError
+    case expectedCommittedError
     case expectedCorruptGeneration
+    case expectedStaleStatus
     case lockHolderDidNotStart
     case lockProbeFailed(Int32)
     case timedOut
+    case unknownCrashCheckpoint
   }
 }
 

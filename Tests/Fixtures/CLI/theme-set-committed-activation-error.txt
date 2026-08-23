@@ -1,0 +1,3 @@
+Committed 'catppuccin-mocha' as generation 'g-test-generation'.
+Postcommit activation work could not complete: generation cleanup was denied
+The commit was not rolled back.

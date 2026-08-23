@@ -47,6 +47,19 @@ canonical-state validity, correlated reconciliation health, and Kitty's stable
 include seam without changing state. Both commands exit nonzero for required or
 diagnostic failures and support `--json`.
 
+Activation recovers Macarchy-owned staging and temporary-pointer residue left
+by an interrupted process. After a commit it retains the active generation and
+the immediately previous reusable generation; older immutable generations are
+atomically moved out of the live namespace while locked and removed after
+publication. Cleanup failure is reported as a postcommit failure and never
+described as a rollback.
+
+Spicetify's v0.1 policy is an awaited optional one-shot: `spicetify apply` must
+finish before reconciliation attempts to persist its result rather than
+becoming an orphaned background process. Persistence failure remains explicit.
+The adapter is not registered yet; M3 will enable it only after the scheme
+mapping and user-config seam are proven.
+
 Tests use temporary roots and never access `~/.config/macarchy`.
 
 The package input schema and versioned normalized palette contract are documented in

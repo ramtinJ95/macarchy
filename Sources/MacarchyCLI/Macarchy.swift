@@ -289,6 +289,8 @@ struct ThemeSetCommandRunner: Sendable {
       } catch let error as ThemeActivationError {
         if case .activeGenerationChanged = error { throw error }
         report = .precommitFailure(themeID: package.id, error: error)
+      } catch let error as ThemeCommittedActivationError {
+        report = .committedActivationError(manifest: error.manifest, cause: error.cause)
       } catch let error as ThemeCommittedWithReconciliationError {
         report = .committedError(manifest: error.manifest, cause: error.cause)
       } catch {
@@ -940,19 +942,22 @@ private enum ThemeSetReport {
     case success
     case precommitFailure = "precommit_failure"
     case requiredReconciliationFailure = "required_reconciliation_failure"
+    case committedActivationError = "committed_activation_error"
     case committedReconciliationError = "committed_reconciliation_error"
   }
 
   case dryRun(themeID: String)
   case precommitFailure(themeID: String, error: String)
   case committed(result: ThemeActivationResult, requiredFailure: Bool)
+  case committedActivationError(manifest: GenerationManifest, cause: String)
   case committedError(manifest: GenerationManifest, cause: String)
 
   var succeeded: Bool {
     switch self {
     case .dryRun, .committed(_, requiredFailure: false):
       true
-    case .precommitFailure, .committed(_, requiredFailure: true), .committedError:
+    case .precommitFailure, .committed(_, requiredFailure: true), .committedActivationError,
+      .committedError:
       false
     }
   }
@@ -995,6 +1000,12 @@ private enum ThemeSetReport {
         lines.append("Required reconciliation failed; the commit was not rolled back.")
       }
       return lines.joined(separator: "\n")
+    case .committedActivationError(let manifest, let cause):
+      return [
+        "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
+        "Postcommit activation work could not complete: \(cause)",
+        "The commit was not rolled back.",
+      ].joined(separator: "\n")
     case .committedError(let manifest, let cause):
       return [
         "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
@@ -1027,6 +1038,14 @@ private enum ThemeSetReport {
         generationID: result.manifest.generationID,
         reconciliation: result.reconciliation.results,
         error: requiredFailure ? "Required reconciliation did not complete successfully" : nil
+      )
+    case .committedActivationError(let manifest, let cause):
+      ThemeSetJSONReport(
+        themeID: manifest.themeID,
+        outcome: .committedActivationError,
+        committed: true,
+        generationID: manifest.generationID,
+        error: cause
       )
     case .committedError(let manifest, let cause):
       ThemeSetJSONReport(
