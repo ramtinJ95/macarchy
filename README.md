@@ -5,8 +5,7 @@ building one canonical palette and command surface for the existing desktop;
 native shell surfaces follow only after that theme system is proven.
 
 Macarchy is independently authored and inspired by the broader
-[Omarchy](https://omarchy.org/) project. It is not an official port and does
-not copy Omacosy source or assets.
+[Omarchy](https://omarchy.org/) project. It is not an official port.
 
 ## Development
 
