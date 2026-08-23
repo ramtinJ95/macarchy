@@ -1,0 +1,56 @@
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode user and build state
+DerivedData/
+*.xcresult
+*.dSYM/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# Swift coverage and profiling
+.coverage/
+*.profraw
+*.profdata
+
+# Local caches, scratch files, and logs
+.cache/
+.tmp/
+tmp/
+logs/
+*.log
+.lavish/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.p12
+*.mobileprovision
+*.provisionprofile
+
+# Editor-local state
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local release artifacts
+dist/
+artifacts/
+
+# Internal plans, ADRs, handoffs, and other agent documentation are local-only.
+docs/
+
+# `Package.resolved` is intentionally tracked.
