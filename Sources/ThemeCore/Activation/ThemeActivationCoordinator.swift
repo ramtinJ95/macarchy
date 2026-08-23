@@ -61,11 +61,17 @@ package struct ThemeActivationCoordinator: Sendable {
     )
   }
 
-  package func activate(package: ThemePackage) async throws -> ThemeActivationResult {
+  package func activate(
+    package: ThemePackage,
+    expectedActiveGenerationID: String? = nil
+  ) async throws -> ThemeActivationResult {
     try Task.checkCancellation()
     try kitty.preflight()
     try Task.checkCancellation()
-    let manifest = try activator.activate(package: package)
+    let manifest = try activator.activate(
+      package: package,
+      expectedActiveGenerationID: expectedActiveGenerationID
+    )
 
     do {
       let reconciliation = try await reconciler.reconcile(
