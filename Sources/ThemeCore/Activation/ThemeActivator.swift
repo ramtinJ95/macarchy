@@ -4,11 +4,17 @@ import Foundation
 
 enum ThemeActivationError: Error, CustomStringConvertible, Sendable {
   case cannotReplaceCurrent(Int32)
+  case corruptGeneration(id: String, reason: String)
+  case generatedFileTooLarge(path: String, size: Int)
 
   var description: String {
     switch self {
     case .cannotReplaceCurrent(let code):
       "Cannot atomically replace current theme pointer (errno \(code)): \(String(cString: strerror(code)))"
+    case .corruptGeneration(let id, let reason):
+      "Generation '\(id)' matches the requested theme inputs but is corrupt: \(reason)"
+    case .generatedFileTooLarge(let path, let size):
+      "Generated file '\(path)' is \(size) bytes; limit is 1 MiB"
     }
   }
 }
@@ -23,6 +29,7 @@ enum ActivationCheckpoint: CaseIterable, Sendable {
 }
 
 public struct ThemeActivator: Sendable {
+  private static let maximumGenerationFileSize = 1_048_576
   private static let rendererVersions = ["kitty": 1, "normalized_theme": 1]
 
   private let root: URL
@@ -41,12 +48,20 @@ public struct ThemeActivator: Sendable {
   }
 
   public func activate(package: ThemePackage) throws -> GenerationManifest {
-    let generationID = "g-\(UUID().uuidString.lowercased())"
     let inputDigest = try generationInputDigest(package: package)
     try faultInjector(.inputDigested)
 
+    if let reusable = try reusableGeneration(inputDigest: inputDigest, package: package) {
+      try replaceCurrent(with: reusable.generationID)
+      return reusable
+    }
+
+    let generationID = "g-\(UUID().uuidString.lowercased())"
     let rendered = try ThemeRenderer().render(package: package, generationID: generationID)
     try faultInjector(.outputsRendered)
+    for (path, data) in rendered.files {
+      try requireGeneratedFileSize(data, path: path)
+    }
 
     let manifest = GenerationManifest(
       generationID: generationID,
@@ -54,11 +69,10 @@ public struct ThemeActivator: Sendable {
       themeSchemaVersion: package.schemaVersion,
       inputDigest: inputDigest,
       rendererVersions: Self.rendererVersions,
-      artifacts: [
-        "generated/kitty.conf": digest(Data(rendered.kittyConfiguration.utf8)),
-        "theme.json": digest(rendered.themeJSON),
-      ]
+      artifacts: rendered.files.mapValues(digest)
     )
+    let manifestData = try encode(manifest)
+    try requireGeneratedFileSize(manifestData, path: "manifest.json")
 
     let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: generationsRoot, withIntermediateDirectories: true)
@@ -77,8 +91,7 @@ public struct ThemeActivator: Sendable {
     }
 
     try ThemeRenderer().write(rendered, to: stagingURL)
-    try encode(manifest).write(
-      to: stagingURL.appending(path: "manifest.json"), options: [.atomic])
+    try manifestData.write(to: stagingURL.appending(path: "manifest.json"), options: [.atomic])
     try faultInjector(.generationWritten)
 
     try makeReadOnly(stagingURL)
@@ -87,7 +100,238 @@ public struct ThemeActivator: Sendable {
     shouldRemoveStaging = false
     try faultInjector(.generationCommitted)
 
-    let temporaryPointer = root.appending(path: ".current-\(generationID)")
+    try replaceCurrent(with: generationID)
+
+    return manifest
+  }
+
+  private func reusableGeneration(
+    inputDigest: String,
+    package: ThemePackage
+  ) throws -> GenerationManifest? {
+    let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
+    guard FileManager.default.fileExists(atPath: generationsRoot.path) else { return nil }
+
+    let generationURLs = try FileManager.default.contentsOfDirectory(
+      at: generationsRoot,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ).sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+
+    var reusable: GenerationManifest?
+    for generationURL in generationURLs {
+      guard
+        (try? generationURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+      else { continue }
+
+      let manifestURL = generationURL.appending(path: "manifest.json")
+      guard
+        let manifestFile = safelyReadManifest(at: manifestURL),
+        let object = manifestObject(in: manifestFile.data),
+        object["input_digest"] as? String == inputDigest
+      else { continue }
+
+      try requireReusable(
+        Set(object.keys) == GenerationManifest.encodedKeys,
+        generationURL,
+        "manifest.json contains unknown or missing fields"
+      )
+      try requireReusable(
+        manifestFile.permissions & 0o222 == 0,
+        generationURL,
+        "manifest.json is writable"
+      )
+
+      let manifest: GenerationManifest
+      do {
+        manifest = try JSONDecoder().decode(GenerationManifest.self, from: manifestFile.data)
+      } catch {
+        throw corruptGeneration(
+          generationURL,
+          reason: "manifest.json cannot be decoded: \(String(describing: error))"
+        )
+      }
+      try validateReusableGeneration(
+        manifest, at: generationURL, inputDigest: inputDigest, package: package)
+      reusable = reusable ?? manifest
+    }
+    return reusable
+  }
+
+  private func safelyReadManifest(at url: URL) -> BoundedFile? {
+    try? readBoundedRegularFile(at: url)
+  }
+
+  private func manifestObject(in data: Data) -> [String: Any]? {
+    try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+  }
+
+  private func readBoundedRegularFile(at url: URL) throws -> BoundedFile {
+    let descriptor = url.path.withCString {
+      Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+    }
+    guard descriptor >= 0 else {
+      throw BoundedFileError.system(operation: "open", code: errno)
+    }
+    defer { Darwin.close(descriptor) }
+
+    var metadata = stat()
+    guard fstat(descriptor, &metadata) == 0 else {
+      throw BoundedFileError.system(operation: "fstat", code: errno)
+    }
+    guard metadata.st_mode & S_IFMT == S_IFREG else {
+      throw BoundedFileError.notRegular
+    }
+    guard metadata.st_size >= 0, metadata.st_size <= Self.maximumGenerationFileSize else {
+      throw BoundedFileError.tooLarge
+    }
+
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    while data.count <= Self.maximumGenerationFileSize {
+      let remaining = min(
+        buffer.count, Self.maximumGenerationFileSize + 1 - data.count)
+      let count = buffer.withUnsafeMutableBytes {
+        Darwin.read(descriptor, $0.baseAddress, remaining)
+      }
+      if count == 0 { break }
+      if count < 0 {
+        if errno == EINTR { continue }
+        throw BoundedFileError.system(operation: "read", code: errno)
+      }
+      data.append(contentsOf: buffer.prefix(count))
+    }
+    guard data.count <= Self.maximumGenerationFileSize else {
+      throw BoundedFileError.tooLarge
+    }
+    return BoundedFile(data: data, permissions: Int(metadata.st_mode & 0o777))
+  }
+
+  private func validateReusableGeneration(
+    _ manifest: GenerationManifest,
+    at generationURL: URL,
+    inputDigest: String,
+    package: ThemePackage
+  ) throws {
+    let generationID = generationURL.lastPathComponent
+    try requireReusable(
+      manifest.manifestSchemaVersion == GenerationManifest.currentSchemaVersion,
+      generationURL,
+      "unsupported manifest schema version \(manifest.manifestSchemaVersion)"
+    )
+    try requireReusable(
+      manifest.generationID == generationID,
+      generationURL,
+      "manifest generation_id '\(manifest.generationID)' does not match its directory"
+    )
+    try requireReusable(
+      generationID.hasPrefix("g-")
+        && generationID == generationID.lowercased()
+        && UUID(uuidString: String(generationID.dropFirst(2))) != nil,
+      generationURL,
+      "generation identifier is not in g-<uuid> form"
+    )
+    try requireReusable(
+      manifest.themeID == package.id,
+      generationURL,
+      "manifest theme_id '\(manifest.themeID)' does not match '\(package.id)'"
+    )
+    try requireReusable(
+      manifest.inputDigest == inputDigest,
+      generationURL,
+      "decoded input digest does not match the requested inputs"
+    )
+    try requireReusable(
+      manifest.themeSchemaVersion == package.schemaVersion,
+      generationURL,
+      "manifest theme schema version does not match the package"
+    )
+    try requireReusable(
+      manifest.rendererVersions == Self.rendererVersions,
+      generationURL,
+      "renderer versions do not match the current renderers"
+    )
+
+    try requireReusable(
+      Set(manifest.artifacts.keys) == ThemeRenderer.outputPaths,
+      generationURL,
+      "artifact manifest does not contain exactly the required outputs"
+    )
+
+    _ = try validateReadOnlyItem(
+      generationURL, expectedType: .typeDirectory, generationURL: generationURL)
+    let generatedURL = generationURL.appending(path: "generated", directoryHint: .isDirectory)
+    _ = try validateReadOnlyItem(
+      generatedURL, expectedType: .typeDirectory, generationURL: generationURL)
+
+    for path in ThemeRenderer.outputPaths.sorted() {
+      let artifactURL = generationURL.appending(path: path)
+      let artifact: BoundedFile
+      do {
+        artifact = try readBoundedRegularFile(at: artifactURL)
+      } catch {
+        throw corruptGeneration(
+          generationURL,
+          reason: "cannot safely read \(path): \(String(describing: error))"
+        )
+      }
+      try requireReusable(
+        artifact.permissions & 0o222 == 0,
+        generationURL,
+        "\(path) is writable"
+      )
+      try requireReusable(
+        manifest.artifacts[path] == digest(artifact.data),
+        generationURL,
+        "artifact digest does not match \(path)"
+      )
+    }
+  }
+
+  @discardableResult
+  private func validateReadOnlyItem(
+    _ itemURL: URL,
+    expectedType: FileAttributeType,
+    generationURL: URL
+  ) throws -> [FileAttributeKey: Any] {
+    let attributes: [FileAttributeKey: Any]
+    do {
+      attributes = try FileManager.default.attributesOfItem(atPath: itemURL.path)
+    } catch {
+      throw corruptGeneration(
+        generationURL,
+        reason: "cannot inspect \(itemURL.lastPathComponent): \(error.localizedDescription)"
+      )
+    }
+    try requireReusable(
+      attributes[.type] as? FileAttributeType == expectedType,
+      generationURL,
+      "\(itemURL.lastPathComponent) has an invalid filesystem type"
+    )
+    let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue
+    try requireReusable(
+      permissions.map { $0 & 0o222 == 0 } == true,
+      generationURL,
+      "\(itemURL.lastPathComponent) is writable"
+    )
+    return attributes
+  }
+
+  private func requireReusable(
+    _ condition: @autoclosure () -> Bool,
+    _ generationURL: URL,
+    _ reason: String
+  ) throws {
+    guard condition() else { throw corruptGeneration(generationURL, reason: reason) }
+  }
+
+  private func corruptGeneration(_ generationURL: URL, reason: String) -> ThemeActivationError {
+    .corruptGeneration(id: generationURL.lastPathComponent, reason: reason)
+  }
+
+  private func replaceCurrent(with generationID: String) throws {
+    let temporaryPointer = root.appending(
+      path: ".current-\(generationID)-\(UUID().uuidString.lowercased())")
     defer { try? FileManager.default.removeItem(at: temporaryPointer) }
     try FileManager.default.createSymbolicLink(
       atPath: temporaryPointer.path,
@@ -95,8 +339,6 @@ public struct ThemeActivator: Sendable {
     )
     try faultInjector(.currentPointerReady)
     try atomicallyReplaceCurrent(with: temporaryPointer)
-
-    return manifest
   }
 
   private func generationInputDigest(package: ThemePackage) throws -> String {
@@ -127,13 +369,18 @@ public struct ThemeActivator: Sendable {
     "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 
+  private func requireGeneratedFileSize(_ data: Data, path: String) throws {
+    guard data.count <= Self.maximumGenerationFileSize else {
+      throw ThemeActivationError.generatedFileTooLarge(path: path, size: data.count)
+    }
+  }
+
   private func makeReadOnly(_ generationURL: URL) throws {
     let generated = generationURL.appending(path: "generated", directoryHint: .isDirectory)
-    for file in [
-      generationURL.appending(path: "manifest.json"),
-      generationURL.appending(path: "theme.json"),
-      generated.appending(path: "kitty.conf"),
-    ] {
+    let files =
+      [generationURL.appending(path: "manifest.json")]
+      + ThemeRenderer.outputPaths.map { generationURL.appending(path: $0) }
+    for file in files {
       try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: file.path)
     }
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: generated.path)
@@ -157,6 +404,28 @@ public struct ThemeActivator: Sendable {
     }
     guard result == 0 else {
       throw ThemeActivationError.cannotReplaceCurrent(errno)
+    }
+  }
+}
+
+private struct BoundedFile {
+  let data: Data
+  let permissions: Int
+}
+
+private enum BoundedFileError: Error, CustomStringConvertible, Sendable {
+  case notRegular
+  case system(operation: String, code: Int32)
+  case tooLarge
+
+  var description: String {
+    switch self {
+    case .notRegular:
+      "not a regular file"
+    case .system(let operation, let code):
+      "\(operation) failed (errno \(code)): \(String(cString: strerror(code)))"
+    case .tooLarge:
+      "exceeds the 1 MiB generation file limit"
     }
   }
 }

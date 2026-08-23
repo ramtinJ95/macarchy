@@ -119,16 +119,141 @@ struct ActivationSliceTests {
       of: "neovim = \"catppuccin-mocha\"", with: "neovim = \"catppuccin-mocha-updated\""
     ).write(to: changedMappings, atomically: true, encoding: .utf8)
 
-    let originalManifest = try activate(try catppuccinPackage())
-    let equivalentManifest = try activate(
-      ThemePackageLoader().load(packageURL: equivalentURL)
-    )
-    let changedManifest = try activate(
-      ThemePackageLoader().load(packageURL: changedURL)
-    )
+    let stateRoot = fixtureRoot.appending(path: "state", directoryHint: .isDirectory)
+    let originalManifest = try ThemeActivator(root: stateRoot).activate(
+      package: catppuccinPackage())
+    let reuseOnly = ThemeActivator(root: stateRoot) { checkpoint in
+      if checkpoint == .outputsRendered { throw InjectedFault.expected }
+    }
+    let equivalentManifest = try reuseOnly.activate(
+      package: ThemePackageLoader().load(packageURL: equivalentURL))
+    let changedManifest = try ThemeActivator(root: stateRoot).activate(
+      package: ThemePackageLoader().load(packageURL: changedURL))
 
     #expect(originalManifest.inputDigest == equivalentManifest.inputDigest)
+    #expect(originalManifest.generationID == equivalentManifest.generationID)
     #expect(originalManifest.inputDigest != changedManifest.inputDigest)
+    #expect(originalManifest.generationID != changedManifest.generationID)
+  }
+
+  @Test
+  func repeatedActivationAndRoundTripsReuseWithoutRendering() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let catppuccin = try catppuccinPackage()
+    let tokyoNight = try tokyoNightPackage()
+
+    let firstCatppuccin = try ThemeActivator(root: root).activate(package: catppuccin)
+    let stalePointer = root.appending(path: ".current-\(firstCatppuccin.generationID)")
+    try FileManager.default.createSymbolicLink(
+      atPath: stalePointer.path,
+      withDestinationPath: "generations/\(firstCatppuccin.generationID)"
+    )
+    let reuseOnly = ThemeActivator(root: root) { checkpoint in
+      if checkpoint == .outputsRendered { throw InjectedFault.expected }
+    }
+    let repeatedCatppuccin = try reuseOnly.activate(package: catppuccin)
+    #expect(repeatedCatppuccin.generationID == firstCatppuccin.generationID)
+    #expect(FileManager.default.fileExists(atPath: stalePointer.path))
+
+    let tokyo = try ThemeActivator(root: root).activate(package: tokyoNight)
+    #expect(tokyo.generationID != firstCatppuccin.generationID)
+
+    let failBeforePointer = ThemeActivator(root: root) { checkpoint in
+      if checkpoint == .currentPointerReady { throw InjectedFault.expected }
+    }
+    #expect(throws: InjectedFault.self) {
+      _ = try failBeforePointer.activate(package: catppuccin)
+    }
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: root.appending(path: "current").path
+      ) == "generations/\(tokyo.generationID)"
+    )
+
+    let roundTripCatppuccin = try reuseOnly.activate(package: catppuccin)
+    #expect(roundTripCatppuccin.generationID == firstCatppuccin.generationID)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: root.appending(path: "current").path
+      ) == "generations/\(firstCatppuccin.generationID)"
+    )
+    #expect(try generationIDs(at: root).count == 2)
+  }
+
+  @Test
+  func corruptMatchingGenerationFailsWithoutChangingCurrent() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let catppuccin = try catppuccinPackage()
+    let catppuccinGeneration = try ThemeActivator(root: root).activate(package: catppuccin)
+    let tokyoGeneration = try ThemeActivator(root: root).activate(package: tokyoNightPackage())
+
+    let corruptedTheme = root.appending(
+      path: "generations/\(catppuccinGeneration.generationID)/theme.json")
+    try overwriteReadOnlyFile(corruptedTheme, with: Data("corrupt\n".utf8))
+
+    let error = try activationError {
+      _ = try ThemeActivator(root: root).activate(package: catppuccin)
+    }
+    guard case .corruptGeneration(let id, let reason) = error else {
+      throw TestError.expectedCorruptGeneration
+    }
+    #expect(id == catppuccinGeneration.generationID)
+    #expect(reason == "artifact digest does not match theme.json")
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: root.appending(path: "current").path
+      ) == "generations/\(tokyoGeneration.generationID)"
+    )
+    #expect(try generationIDs(at: root).count == 2)
+  }
+
+  @Test
+  func unknownMatchingManifestFieldFailsWithoutRendering() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let catppuccin = try catppuccinPackage()
+    let catppuccinGeneration = try ThemeActivator(root: root).activate(package: catppuccin)
+    let tokyoGeneration = try ThemeActivator(root: root).activate(package: tokyoNightPackage())
+
+    let manifestURL = root.appending(
+      path: "generations/\(catppuccinGeneration.generationID)/manifest.json")
+    let manifestData = try Data(contentsOf: manifestURL)
+    var manifestObject = try #require(
+      JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+    manifestObject["unexpected"] = true
+    var invalidManifest = try JSONSerialization.data(
+      withJSONObject: manifestObject, options: [.prettyPrinted, .sortedKeys])
+    invalidManifest.append(0x0a)
+    try overwriteReadOnlyFile(manifestURL, with: invalidManifest)
+
+    let noRender = ThemeActivator(root: root) { checkpoint in
+      if checkpoint == .outputsRendered { throw InjectedFault.expected }
+    }
+    let error = try activationError {
+      _ = try noRender.activate(package: catppuccin)
+    }
+    guard case .corruptGeneration(let id, let reason) = error else {
+      throw TestError.expectedCorruptGeneration
+    }
+    #expect(id == catppuccinGeneration.generationID)
+    #expect(reason == "manifest.json contains unknown or missing fields")
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: root.appending(path: "current").path
+      ) == "generations/\(tokyoGeneration.generationID)"
+    )
+    #expect(try generationIDs(at: root).count == 2)
   }
 
   private var repositoryRoot: URL {
@@ -144,13 +269,10 @@ struct ActivationSliceTests {
         path: "Themes/catppuccin-mocha", directoryHint: .isDirectory))
   }
 
-  private func activate(_ package: ThemePackage) throws -> GenerationManifest {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    return try ThemeActivator(root: root).activate(package: package)
+  private func tokyoNightPackage() throws -> ThemePackage {
+    try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(
+        path: "Themes/tokyo-night", directoryHint: .isDirectory))
   }
 
   private func installPreviousGeneration(at root: URL) throws -> URL {
@@ -163,6 +285,31 @@ struct ActivationSliceTests {
       withDestinationPath: "generations/previous"
     )
     return marker
+  }
+
+  private func generationIDs(at root: URL) throws -> [String] {
+    try FileManager.default.contentsOfDirectory(
+      at: root.appending(path: "generations"), includingPropertiesForKeys: nil,
+      options: [.skipsHiddenFiles]
+    ).map(\.lastPathComponent).filter { $0.hasPrefix("g-") }.sorted()
+  }
+
+  private func activationError(from operation: () throws -> Void) throws -> ThemeActivationError {
+    do {
+      try operation()
+    } catch let error as ThemeActivationError {
+      return error
+    }
+    throw TestError.expectedActivationError
+  }
+
+  private func overwriteReadOnlyFile(_ url: URL, with data: Data) throws {
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+    let handle = try FileHandle(forWritingTo: url)
+    try handle.truncate(atOffset: 0)
+    try handle.write(contentsOf: data)
+    try handle.close()
+    try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: url.path)
   }
 
   private func sha256(_ data: Data) -> String {
@@ -196,5 +343,10 @@ struct ActivationSliceTests {
 
   private enum InjectedFault: Error {
     case expected
+  }
+
+  private enum TestError: Error {
+    case expectedActivationError
+    case expectedCorruptGeneration
   }
 }

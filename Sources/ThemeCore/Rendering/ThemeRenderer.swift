@@ -3,9 +3,20 @@ import Foundation
 public struct RenderedTheme: Sendable {
   public let themeJSON: Data
   public let kittyConfiguration: String
+
+  var files: [String: Data] {
+    [
+      ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
+      ThemeRenderer.themeOutputPath: themeJSON,
+    ]
+  }
 }
 
 public struct ThemeRenderer: Sendable {
+  static let kittyOutputPath = "generated/kitty.conf"
+  static let themeOutputPath = "theme.json"
+  static let outputPaths = Set([kittyOutputPath, themeOutputPath])
+
   public init() {}
 
   public func render(package: ThemePackage, generationID: String) throws -> RenderedTheme {
@@ -32,10 +43,11 @@ public struct ThemeRenderer: Sendable {
   }
 
   public func write(_ rendered: RenderedTheme, to outputRoot: URL) throws {
-    let generated = outputRoot.appending(path: "generated", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: generated, withIntermediateDirectories: true)
-    try rendered.themeJSON.write(to: outputRoot.appending(path: "theme.json"), options: .atomic)
-    try Data(rendered.kittyConfiguration.utf8).write(
-      to: generated.appending(path: "kitty.conf"), options: .atomic)
+    for (path, data) in rendered.files {
+      let output = outputRoot.appending(path: path)
+      try FileManager.default.createDirectory(
+        at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try data.write(to: output, options: .atomic)
+    }
   }
 }
