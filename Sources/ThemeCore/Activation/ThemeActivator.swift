@@ -37,7 +37,10 @@ public struct ThemeActivator: Sendable {
   private static let maximumGenerationFileSize = 1_048_576
   // lockf is process-scoped, so sibling threads also need a mutex.
   private static let processActivationMutex = Mutex<Void>(())
-  private static let rendererVersions = ["kitty": 1, "normalized_theme": 1]
+  private static let rendererVersions = [
+    KittyAdapter.id: KittyAdapter.rendererVersion,
+    "normalized_theme": 1,
+  ]
 
   private let root: URL
   private let faultInjector: @Sendable (ActivationCheckpoint) throws -> Void
