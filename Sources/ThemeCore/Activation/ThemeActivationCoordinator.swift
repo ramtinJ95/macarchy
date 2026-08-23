@@ -1,25 +1,25 @@
 import Foundation
 
-struct ThemeActivationResult: Sendable {
-  let manifest: GenerationManifest
-  let reconciliation: ReconciliationRecord
+package struct ThemeActivationResult: Sendable {
+  package let manifest: GenerationManifest
+  package let reconciliation: ReconciliationRecord
 }
 
-struct ThemeCommittedWithReconciliationError: Error, CustomStringConvertible, Sendable {
-  let manifest: GenerationManifest
-  let cause: String
+package struct ThemeCommittedWithReconciliationError: Error, CustomStringConvertible, Sendable {
+  package let manifest: GenerationManifest
+  package let cause: String
 
-  var description: String {
+  package var description: String {
     "Theme '\(manifest.themeID)' committed as generation '\(manifest.generationID)', but reconciliation failed: \(cause)"
   }
 }
 
-struct ThemeActivationCoordinator: Sendable {
+package struct ThemeActivationCoordinator: Sendable {
   private let activator: ThemeActivator
   private let kitty: KittyAdapter
   private let reconciler: ThemeReconciler
 
-  init(root: URL, kittyConfigurationURL: URL) {
+  package init(root: URL, kittyConfigurationURL: URL) {
     let root = root.standardizedFileURL
     activator = ThemeActivator(root: root)
     kitty = KittyAdapter(
@@ -53,7 +53,15 @@ struct ThemeActivationCoordinator: Sendable {
     reconciler = ThemeReconciler(statusStore: ReconciliationStatusStore(root: root))
   }
 
-  func activate(package: ThemePackage) async throws -> ThemeActivationResult {
+  package func preflight(package: ThemePackage) throws {
+    try kitty.preflight()
+    _ = try ThemeRenderer().render(
+      package: package,
+      generationID: "dry-run-\(package.id)"
+    )
+  }
+
+  package func activate(package: ThemePackage) async throws -> ThemeActivationResult {
     try Task.checkCancellation()
     try kitty.preflight()
     try Task.checkCancellation()

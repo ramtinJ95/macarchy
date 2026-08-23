@@ -1,0 +1,26 @@
+{
+  "committed" : true,
+  "generation_id" : "g-test-generation",
+  "operation" : "theme_set",
+  "outcome" : "success",
+  "reconciliation" : [
+    {
+      "adapter_id" : "btop",
+      "requirement" : "required",
+      "status" : "restart_required"
+    },
+    {
+      "adapter_id" : "kitty",
+      "requirement" : "required",
+      "status" : "applied"
+    },
+    {
+      "adapter_id" : "spicetify",
+      "message" : "apply failed",
+      "requirement" : "optional",
+      "status" : "failed"
+    }
+  ],
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

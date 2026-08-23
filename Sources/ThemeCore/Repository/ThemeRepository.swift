@@ -20,6 +20,13 @@ public struct ThemeRepository: Sendable {
           options: [.skipsHiddenFiles]
         )
       } catch {
+        let cocoaError = error as NSError
+        if root == userRoot,
+          cocoaError.domain == NSCocoaErrorDomain,
+          [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(cocoaError.code)
+        {
+          continue
+        }
         throw ThemeDiagnostic(
           location: .init(file: root),
           message: "Cannot discover theme packages: \(error.localizedDescription)")

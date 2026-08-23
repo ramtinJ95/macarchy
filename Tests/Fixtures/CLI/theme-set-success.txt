@@ -1,0 +1,5 @@
+Activated 'catppuccin-mocha' as generation 'g-test-generation'.
+Reconciliation:
+- btop [required]: restart_required
+- kitty [required]: applied
+- spicetify [optional]: failed: apply failed

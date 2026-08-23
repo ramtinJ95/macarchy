@@ -1,0 +1,9 @@
+{
+  "committed" : true,
+  "error" : "active generation changed before status persistence",
+  "generation_id" : "g-test-generation",
+  "operation" : "theme_set",
+  "outcome" : "committed_reconciliation_error",
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

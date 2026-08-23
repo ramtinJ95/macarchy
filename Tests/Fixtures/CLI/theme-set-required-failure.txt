@@ -1,0 +1,4 @@
+Activated 'catppuccin-mocha' as generation 'g-test-generation'.
+Reconciliation:
+- kitty [required]: failed: reload denied
+Required reconciliation failed; the commit was not rolled back.
