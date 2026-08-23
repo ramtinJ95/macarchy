@@ -1,0 +1,8 @@
+{
+  "committed" : false,
+  "error" : "Kitty configuration is missing the stable include",
+  "operation" : "theme_set",
+  "outcome" : "precommit_failure",
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

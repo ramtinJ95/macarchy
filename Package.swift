@@ -57,5 +57,16 @@ let package = Package(
       path: "Tests/ThemeCoreTests",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
+    .testTarget(
+      name: "MacarchyCLITests",
+      dependencies: [
+        "MacarchyCLI",
+        "ThemeCore",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Testing", package: "swift-testing"),
+      ],
+      path: "Tests/MacarchyCLITests",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
   ]
 )
