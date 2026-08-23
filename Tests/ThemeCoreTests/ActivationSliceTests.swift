@@ -7,6 +7,7 @@ import Testing
 
 @testable import ThemeCore
 
+@Suite(.serialized)
 struct ActivationSliceTests {
   @Test
   func activationCrashProbe() throws {
@@ -58,10 +59,16 @@ struct ActivationSliceTests {
     #expect(manifest.themeID == package.id)
     #expect(manifest.themeSchemaVersion == package.schemaVersion)
     #expect(manifest.inputDigest == activation.inputDigest)
-    #expect(manifest.rendererVersions == ["kitty": 1, "normalized_theme": 1])
+    #expect(
+      manifest.rendererVersions
+        == ["kitty": 1, "normalized_theme": 1, "wallpaper": 1]
+    )
     #expect(manifest.inputDigest.hasPrefix("sha256:"))
     #expect(manifest.inputDigest.count == 71)
-    #expect(Set(manifest.artifacts.keys) == ["theme.json", "generated/kitty.conf"])
+    #expect(
+      Set(manifest.artifacts.keys)
+        == ["theme.json", "generated/kitty.conf", "generated/wallpaper.png"]
+    )
 
     for (path, expectedDigest) in manifest.artifacts {
       #expect(expectedDigest == sha256(try Data(contentsOf: generationURL.appending(path: path))))
@@ -72,7 +79,9 @@ struct ActivationSliceTests {
     #expect(normalized.themeID == package.id)
     #expect(normalized.generationID == manifest.generationID)
 
-    for path in ["manifest.json", "theme.json", "generated/kitty.conf"] {
+    for path in [
+      "manifest.json", "theme.json", "generated/kitty.conf", "generated/wallpaper.png",
+    ] {
       let attributes = try FileManager.default.attributesOfItem(
         atPath: generationURL.appending(path: path).path)
       let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
@@ -546,7 +555,8 @@ struct ActivationSliceTests {
       makeWritableForRemoval(root)
       try? FileManager.default.removeItem(at: root)
     }
-    let original = try testActivator(root: root).activate(package: catppuccinPackage())
+    let requested = try catppuccinPackage()
+    let original = try testActivator(root: root).activate(package: requested)
     let active = try testActivator(root: root).activate(package: tokyoNightPackage())
     let conditional = ThemeActivator(
       root: root,
@@ -562,8 +572,9 @@ struct ActivationSliceTests {
       )
     ) {
       _ = try conditional.activate(
-        package: catppuccinPackage(),
-        expectedActiveGenerationID: original.generationID
+        package: requested,
+        expectedActiveGenerationID: original.generationID,
+        wallpaperData: requested.wallpaperData
       )
     }
     #expect(
@@ -719,11 +730,29 @@ struct ActivationSliceTests {
       package: ThemePackageLoader().load(packageURL: equivalentURL))
     let changedManifest = try testActivator(root: stateRoot).activate(
       package: ThemePackageLoader().load(packageURL: changedURL))
+    let overrideManifest = try testActivator(root: stateRoot).activate(
+      package: catppuccinPackage(),
+      expectedActiveGenerationID: nil,
+      wallpaperData: tokyoNightPackage().wallpaperData
+    )
 
     #expect(originalManifest.inputDigest == equivalentManifest.inputDigest)
     #expect(originalManifest.generationID == equivalentManifest.generationID)
     #expect(originalManifest.inputDigest != changedManifest.inputDigest)
     #expect(originalManifest.generationID != changedManifest.generationID)
+    #expect(originalManifest.inputDigest != overrideManifest.inputDigest)
+    #expect(
+      try Data(
+        contentsOf: stateRoot.appending(
+          path: "generations/\(overrideManifest.generationID)/generated/wallpaper.png"
+        )
+      )
+        == Data(
+          contentsOf: repositoryRoot.appending(
+            path: "Themes/tokyo-night/wallpapers/default.png"
+          )
+        )
+    )
   }
 
   @Test

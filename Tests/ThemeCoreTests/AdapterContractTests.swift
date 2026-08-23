@@ -4,6 +4,7 @@ import Testing
 
 @testable import ThemeCore
 
+@Suite(.serialized)
 struct AdapterContractTests {
   @Test
   func activationPublishesBeforeAdapterProcessesAndPersistsTheirResults() async throws {
@@ -49,6 +50,8 @@ struct AdapterContractTests {
       root: root,
       kittyConfigurationURL: configurationURL,
       processRunner: runner,
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
       currentAppearance: { state.withLock { $0.appearance } },
       onThemeChanged: { _ in state.withLock { $0.typedPublished = true } },
       postDarwinNotification: { _ in state.withLock { $0.darwinPublished = true } }
@@ -87,6 +90,11 @@ struct AdapterContractTests {
           ),
           AdapterResult(
             adapterID: "macos-appearance",
+            requirement: .required,
+            status: .applied
+          ),
+          AdapterResult(
+            adapterID: "wallpaper",
             requirement: .required,
             status: .applied
           ),
@@ -203,6 +211,197 @@ struct AdapterContractTests {
   }
 
   @Test
+  func wallpaperAppliesEveryDriftedDisplayAndVerifiesTheResult() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let desired = root.appending(path: "desired.png")
+    let displays = Mutex([
+      WallpaperDisplay(id: 1, name: "Built-in", wallpaperURL: desired),
+      WallpaperDisplay(id: 2, name: "External", wallpaperURL: root.appending(path: "old.png")),
+    ])
+    let applied = Mutex([UInt32]())
+    let pending = Mutex<URL?>(nil)
+    let adapter = WallpaperAdapter(
+      root: root,
+      control: WallpaperControl(
+        inspect: { displays.withLock { $0 } },
+        set: { wallpaperURL, displayID in
+          applied.withLock { $0.append(displayID) }
+          pending.withLock { $0 = wallpaperURL }
+        }
+      ),
+      waitForSettle: {
+        guard
+          let wallpaperURL = pending.withLock({ value in
+            defer { value = nil }
+            return value
+          })
+        else { return }
+        displays.withLock { displays in
+          guard let index = displays.firstIndex(where: { $0.id == 2 }) else { return }
+          displays[index] = WallpaperDisplay(
+            id: displays[index].id,
+            name: displays[index].name,
+            wallpaperURL: wallpaperURL
+          )
+        }
+      }
+    )
+
+    #expect(adapter.inspection(desiredWallpaperURL: desired).status == .drifted)
+    #expect(
+      try await adapter.reconciliation(desiredWallpaperURL: { desired }).run().status == .applied
+    )
+    #expect(
+      try await adapter.reconciliation(desiredWallpaperURL: { desired }).run().status == .applied
+    )
+    #expect(applied.withLock { $0 } == [2])
+    #expect(adapter.inspection(desiredWallpaperURL: desired).status == .ready)
+  }
+
+  @Test
+  func wallpaperReportsPartialFailureAndPostApplyDrift() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let desired = root.appending(path: "desired.png")
+    let existing = root.appending(path: "old.png")
+    let display = WallpaperDisplay(id: 7, name: "External", wallpaperURL: existing)
+
+    let failed = WallpaperAdapter(
+      root: root,
+      control: WallpaperControl(
+        inspect: { [display] },
+        set: { _, _ in throw CocoaError(.fileWriteNoPermission) }
+      )
+    )
+    let failure = try await failed.reconciliation(desiredWallpaperURL: { desired }).run()
+    #expect(failure.status == .failed)
+    #expect(failure.message?.contains("External") == true)
+
+    let drifted = WallpaperAdapter(
+      root: root,
+      control: WallpaperControl(
+        inspect: { [display] },
+        set: { _, _ in }
+      ),
+      waitForSettle: {}
+    )
+    let drift = try await drifted.reconciliation(desiredWallpaperURL: { desired }).run()
+    #expect(drift.status == .drifted)
+    #expect(drift.message?.contains("External") == true)
+    #expect(
+      WallpaperAdapter(
+        root: root,
+        control: WallpaperControl(inspect: { [] }, set: { _, _ in })
+      ).inspection(desiredWallpaperURL: desired).status == .failed
+    )
+  }
+
+  @Test
+  func yabaiWallpaperSignalRequiresTheStableExecutableAndExactDirective() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let executable = root.appending(path: "macarchy")
+    try "#!/bin/sh\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755],
+      ofItemAtPath: executable.path
+    )
+    let configuration = root.appending(path: "yabairc")
+    let signal = YabaiWallpaperSignal(
+      configurationURL: configuration,
+      macarchyExecutableURL: executable,
+      yabaiExecutableURL: executable
+    )
+    try "\(signal.directive)\n".write(
+      to: configuration,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    try signal.preflight()
+    let runtime = try JSONSerialization.data(withJSONObject: [
+      [
+        "label": "macarchy-wallpaper",
+        "event": "space_changed",
+        "action": "\(executable.path) reconcile wallpaper",
+      ]
+    ])
+    let requests = Mutex([ProcessRequest]())
+    try signal.runtimePreflight(
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        return ProcessResult(
+          terminationStatus: 0,
+          output: String(decoding: runtime, as: UTF8.self)
+        )
+      }
+    )
+    #expect(
+      requests.withLock { $0 }
+        == [
+          ProcessRequest(
+            executableURL: executable,
+            arguments: ["-m", "signal", "--list"],
+            timeout: 2
+          )
+        ]
+    )
+    #expect(throws: YabaiWallpaperSignalError.runtimeSignalMissing) {
+      try signal.runtimePreflight(
+        processRunner: ProcessRunner { _ in
+          ProcessResult(terminationStatus: 0, output: "[]")
+        }
+      )
+    }
+
+    try "yabai -m config layout bsp\n".write(
+      to: configuration,
+      atomically: true,
+      encoding: .utf8
+    )
+    #expect(throws: YabaiWallpaperSignalError.self) {
+      try signal.preflight()
+    }
+
+    try FileManager.default.removeItem(at: executable)
+    #expect(throws: YabaiWallpaperSignalError.self) {
+      try signal.preflight()
+    }
+  }
+
+  @Test
+  func wallpaperInspectionDoesNotHideDisplayFailureBehindSignalDrift() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let kittyConfiguration = root.appending(path: "kitty.conf")
+    try "include other.conf\n".write(
+      to: kittyConfiguration,
+      atomically: true,
+      encoding: .utf8
+    )
+    let signal = try Self.wallpaperSignal(root: root)
+    try "yabai -m config layout bsp\n".write(
+      to: signal.configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: kittyConfiguration,
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+      wallpaperControl: WallpaperControl(inspect: { [] }, set: { _, _ in }),
+      wallpaperSignal: signal
+    )
+
+    let inspection = try #require(coordinator.inspectAdapters(["wallpaper"]).first)
+
+    #expect(inspection.status == .failed)
+    #expect(inspection.message?.contains("did not return any current displays") == true)
+    #expect(inspection.message?.contains("must contain") == true)
+  }
+
+  @Test
   func processRunnerTerminatesTimedOutCommands() throws {
     let executable = URL(filePath: "/bin/sleep")
     do {
@@ -237,6 +436,8 @@ struct AdapterContractTests {
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
       },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
       appearanceControlIsAvailable: { false }
     )
 
@@ -250,6 +451,97 @@ struct AdapterContractTests {
         atPath: root.appending(path: "current").path
       ) == "generations/\(previous.generationID)"
     )
+  }
+
+  @Test
+  func wallpaperPreflightFailurePreservesThePreviousGeneration() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let processCalls = Mutex(0)
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: ProcessRunner { _ in
+        processCalls.withLock { $0 += 1 }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      wallpaperControl: WallpaperControl(inspect: { [] }, set: { _, _ in }),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
+    )
+
+    await #expect(throws: WallpaperAdapterError.noDisplays) {
+      _ = try await coordinator.activate(package: catppuccinPackage())
+    }
+    #expect(processCalls.withLock { $0 } == 0)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: root.appending(path: "current").path
+      ) == "generations/\(previous.generationID)"
+    )
+  }
+
+  @Test
+  func configuredWallpaperBytesFlowThroughActivationIntoTheGeneration() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let package = try catppuccinPackage()
+    var override = package.wallpaperData
+    override.append(Data(repeating: 0, count: BoundedRegularFile.maximumSize))
+    let overrideURL = root.appending(path: "personal.png")
+    try override.write(to: overrideURL)
+
+    let behaviorRoot = root.appending(path: "behavior", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: behaviorRoot, withIntermediateDirectories: true)
+    let behaviorConfiguration = behaviorRoot.appending(path: "config.toml")
+    try """
+    schema_version = 1
+
+    [wallpaper_overrides]
+    catppuccin-mocha = "\(overrideURL.path)"
+    """.write(to: behaviorConfiguration, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: root.appending(path: "config.toml"),
+      withDestinationURL: behaviorConfiguration
+    )
+
+    let kittyConfiguration = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: kittyConfiguration,
+      atomically: true,
+      encoding: .utf8
+    )
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: kittyConfiguration,
+      processRunner: ProcessRunner { _ in
+        ProcessResult(terminationStatus: 1, output: "no matching process")
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
+    )
+
+    let result = try await coordinator.activate(package: package)
+    let generated = try Data(
+      contentsOf: root.appending(
+        path: "generations/\(result.manifest.generationID)/generated/wallpaper.png"
+      )
+    )
+
+    #expect(generated == override)
+    #expect(generated.count > BoundedRegularFile.maximumSize)
   }
 
   @Test
@@ -288,6 +580,8 @@ struct AdapterContractTests {
         state.withLock { $0 = .dark }
         return ProcessResult(terminationStatus: 0, output: "")
       },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
       currentAppearance: { state.withLock { $0 } }
     )
 
@@ -359,12 +653,16 @@ struct AdapterContractTests {
       root: root,
       kittyConfigurationURL: configurationURL,
       processRunner: runner,
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
       currentAppearance: { state.withLock { $0.appearance } }
     )
     let darkCoordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
       processRunner: runner,
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
       currentAppearance: {
         state.withLock { state in
           state.darkPreflightEntered = true
@@ -434,6 +732,8 @@ struct AdapterContractTests {
         calls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
       },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
       onThemeChanged: { _ in calls.withLock { $0 += 1 } }
     )
 
@@ -465,7 +765,9 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
     let activation = Task {
@@ -502,7 +804,9 @@ struct AdapterContractTests {
         )
         supersedingManifest.withLock { $0 = manifest }
         return ProcessResult(terminationStatus: 0, output: "")
-      }
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
     let error: ThemeCommittedWithReconciliationError
@@ -739,11 +1043,13 @@ struct AdapterContractTests {
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
-      }
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
-    await #expect(throws: AdapterSelectionError.unknown("wallpaper")) {
-      _ = try await coordinator.reconcile(adapterIDs: ["wallpaper"])
+    await #expect(throws: AdapterSelectionError.unknown("sketchybar")) {
+      _ = try await coordinator.reconcile(adapterIDs: ["sketchybar"])
     }
     await #expect(throws: AdapterSelectionError.duplicate("kitty")) {
       _ = try await coordinator.reconcile(adapterIDs: ["kitty", "kitty"])
@@ -774,14 +1080,18 @@ struct AdapterContractTests {
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
-      }
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
     let preview = try coordinator.previewReconciliation([])
 
     #expect(preview.manifest.generationID == manifest.generationID)
     #expect(preview.manifest.themeID == manifest.themeID)
-    #expect(preview.inspections.map(\.adapterID) == ["macos-appearance", "kitty"])
+    #expect(
+      preview.inspections.map(\.adapterID) == ["macos-appearance", "kitty", "wallpaper"]
+    )
     let appearanceInspection = try #require(preview.inspections.first)
     let kittyInspection = try #require(preview.inspections.dropFirst().first)
     #expect(appearanceInspection.status == .ready)
@@ -804,8 +1114,13 @@ struct AdapterContractTests {
     let appearanceFailure = try #require(
       invalidCanonical.first { $0.adapterID == "macos-appearance" }
     )
+    let wallpaperFailure = try #require(
+      invalidCanonical.first { $0.adapterID == "wallpaper" }
+    )
     #expect(appearanceFailure.status == .failed)
     #expect(appearanceFailure.message?.contains("active theme appearance") == true)
+    #expect(wallpaperFailure.status == .failed)
+    #expect(wallpaperFailure.message?.contains("active theme wallpaper") == true)
   }
 
   @Test
@@ -842,7 +1157,9 @@ struct AdapterContractTests {
       processRunner: ProcessRunner { request in
         requests.withLock { $0.append(request) }
         return ProcessResult(terminationStatus: 1, output: "no matching process")
-      }
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
     let first = try await coordinator.reconcile(adapterIDs: ["kitty"])
@@ -892,7 +1209,9 @@ struct AdapterContractTests {
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
-      }
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
     await #expect(throws: ReconciliationStatusError.self) {
@@ -1141,6 +1460,7 @@ struct AdapterContractTests {
       semantic: base.semantic,
       terminal: base.terminal,
       wallpaper: base.wallpaper,
+      wallpaperData: base.wallpaperData,
       mappings: base.mappings
     )
   }
@@ -1197,6 +1517,50 @@ struct AdapterContractTests {
       arguments: ["-e", appearanceScript(dark: dark)],
       timeout: 2
     )
+  }
+
+  private static func wallpaperControl(
+    initialURL: URL = URL(filePath: "/tmp/existing-wallpaper.png")
+  ) -> WallpaperControl {
+    let displays = Mutex([
+      WallpaperDisplay(id: 1, name: "Test Display", wallpaperURL: initialURL)
+    ])
+    return WallpaperControl(
+      inspect: { displays.withLock { $0 } },
+      set: { wallpaperURL, displayID in
+        try displays.withLock { displays in
+          guard let index = displays.firstIndex(where: { $0.id == displayID }) else {
+            throw WallpaperAdapterError.unavailableDisplay(displayID)
+          }
+          displays[index] = WallpaperDisplay(
+            id: displays[index].id,
+            name: displays[index].name,
+            wallpaperURL: wallpaperURL
+          )
+        }
+      }
+    )
+  }
+
+  private static func wallpaperSignal(root: URL) throws -> YabaiWallpaperSignal {
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let executable = root.appending(path: "test-yabai")
+    try "#!/bin/sh\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755],
+      ofItemAtPath: executable.path
+    )
+    let signal = YabaiWallpaperSignal(
+      configurationURL: root.appending(path: "test-yabairc"),
+      macarchyExecutableURL: executable,
+      yabaiExecutableURL: executable
+    )
+    try "\(signal.directive)\n".write(
+      to: signal.configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    return signal
   }
 
   private func waitUntil(_ condition: @Sendable () -> Bool) async throws {

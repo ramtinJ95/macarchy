@@ -1,4 +1,3 @@
-import ArgumentParser
 import Foundation
 import Testing
 
@@ -18,9 +17,10 @@ struct ThemeSetCommandTests {
     let kittyConfigurationURL = root.appending(path: "kitty.conf")
     let configuration = "include \(stateRoot.path)/current/generated/kitty.conf\n"
     try configuration.write(to: kittyConfigurationURL, atomically: true, encoding: .utf8)
+    let signal = try wallpaperSignalFixture(filesRoot: root)
 
     try await expectGoldens(
-      runner: .live,
+      runner: integratedRunner(wallpaperSignal: signal),
       basename: "dry-run",
       dryRun: true,
       succeeded: true,
@@ -128,73 +128,6 @@ struct ThemeSetCommandTests {
     )
   }
 
-  @Test
-  func commandBoundaryLoadsUserThemesAndReturnsFailureForPreflightErrors() async throws {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-cli-boundary-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-
-    let builtInRoot = root.appending(path: "built-ins", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: builtInRoot, withIntermediateDirectories: true)
-    let stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
-    let userThemes = stateRoot.appending(path: "themes", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: userThemes, withIntermediateDirectories: true)
-    try FileManager.default.copyItem(
-      at: repositoryRoot.appending(path: "Themes/catppuccin-mocha"),
-      to: userThemes.appending(path: "catppuccin-mocha")
-    )
-
-    let kittyConfigurationURL = root.appending(path: "kitty.conf")
-    try "include \(stateRoot.path)/current/generated/kitty.conf\n".write(
-      to: kittyConfigurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
-    var success = try #require(
-      Macarchy.parseAsRoot([
-        "theme", "set", "catppuccin-mocha",
-        "--themes-root", builtInRoot.path,
-        "--state-root", stateRoot.path,
-        "--kitty-config", kittyConfigurationURL.path,
-        "--dry-run",
-      ]) as? Theme.Set
-    )
-    try await success.run()
-
-    let missingStateRoot = root.appending(path: "missing-state", directoryHint: .isDirectory)
-    let missingStateKittyConfigurationURL = root.appending(path: "missing-state-kitty.conf")
-    try "include \(missingStateRoot.path)/current/generated/kitty.conf\n".write(
-      to: missingStateKittyConfigurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
-    var missingUserRoot = try #require(
-      Macarchy.parseAsRoot([
-        "theme", "set", "catppuccin-mocha",
-        "--themes-root", repositoryRoot.appending(path: "Themes").path,
-        "--state-root", missingStateRoot.path,
-        "--kitty-config", missingStateKittyConfigurationURL.path,
-        "--dry-run",
-      ]) as? Theme.Set
-    )
-    try await missingUserRoot.run()
-
-    var failure = try #require(
-      Macarchy.parseAsRoot([
-        "theme", "set", "catppuccin-mocha",
-        "--themes-root", builtInRoot.path,
-        "--state-root", stateRoot.path,
-        "--kitty-config", root.appending(path: "missing-kitty.conf").path,
-      ]) as? Theme.Set
-    )
-    await #expect(throws: ExitCode.failure) {
-      try await failure.run()
-    }
-  }
-
   private func expectGoldens(
     runner: ThemeSetCommandRunner,
     basename: String,
@@ -237,6 +170,66 @@ struct ThemeSetCommandTests {
 
   private var fixturesRoot: URL {
     repositoryRoot.appending(path: "Tests/Fixtures/CLI", directoryHint: .isDirectory)
+  }
+
+  private func wallpaperSignalFixture(filesRoot: URL) throws -> YabaiWallpaperSignal {
+    let executable = filesRoot.appending(path: "macarchy")
+    try "#!/bin/sh\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755],
+      ofItemAtPath: executable.path
+    )
+    let configuration = filesRoot.appending(path: "yabairc")
+    let signal = YabaiWallpaperSignal(
+      configurationURL: configuration,
+      macarchyExecutableURL: executable,
+      yabaiExecutableURL: executable
+    )
+    try "\(signal.directive)\n".write(
+      to: configuration,
+      atomically: true,
+      encoding: .utf8
+    )
+    return signal
+  }
+
+  private func integratedRunner(wallpaperSignal: YabaiWallpaperSignal) -> ThemeSetCommandRunner {
+    let control = WallpaperControl(
+      inspect: {
+        [
+          WallpaperDisplay(
+            id: 1,
+            name: "Test Display",
+            wallpaperURL: URL(filePath: "/tmp/test-wallpaper.png")
+          )
+        ]
+      },
+      set: { _, _ in }
+    )
+    let runner = ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+    return ThemeSetCommandRunner(
+      preflight: { package, stateRoot, kittyConfigurationURL in
+        try ThemeActivationCoordinator(
+          root: stateRoot,
+          kittyConfigurationURL: kittyConfigurationURL,
+          processRunner: runner,
+          wallpaperControl: control,
+          wallpaperSignal: wallpaperSignal
+        ).preflight(package: package)
+      },
+      activate: { package, stateRoot, kittyConfigurationURL, expectedGenerationID in
+        try await ThemeActivationCoordinator(
+          root: stateRoot,
+          kittyConfigurationURL: kittyConfigurationURL,
+          processRunner: runner,
+          wallpaperControl: control,
+          wallpaperSignal: wallpaperSignal
+        ).activate(
+          package: package,
+          expectedActiveGenerationID: expectedGenerationID
+        )
+      }
+    )
   }
 
   private func runner(

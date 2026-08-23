@@ -21,6 +21,11 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.wallpaper",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
       "id" : "macos-appearance.integration",
       "message" : "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required",
       "status" : "ok"
@@ -29,6 +34,11 @@
       "id" : "kitty.integration",
       "message" : "Kitty configuration is missing the stable include",
       "status" : "failure"
+    },
+    {
+      "id" : "wallpaper.integration",
+      "message" : "Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded",
+      "status" : "ok"
     }
   ],
   "mutated" : false,

@@ -111,6 +111,7 @@ struct ReconcileDoctorCommandTests {
           requirement: .required,
           status: .applied
         ),
+        AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
       ]
     )
     let doctor = DoctorCommandRunner(
@@ -180,6 +181,7 @@ struct ReconcileDoctorCommandTests {
           requirement: .required,
           status: .applied
         ),
+        AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
       ]
     )
     let healthy = DoctorCommandRunner(
@@ -193,6 +195,12 @@ struct ReconcileDoctorCommandTests {
               "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
           ),
           AdapterInspection(adapterID: "kitty", requirement: .required),
+          AdapterInspection(
+            adapterID: "wallpaper",
+            requirement: .required,
+            message:
+              "Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded"
+          ),
         ]
       }
     )
@@ -212,6 +220,7 @@ struct ReconcileDoctorCommandTests {
           requirement: .required,
           status: .applied
         ),
+        AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
       ]
     )
     let unhealthy = DoctorCommandRunner(
@@ -229,6 +238,12 @@ struct ReconcileDoctorCommandTests {
             requirement: .required,
             status: .drifted,
             message: "Kitty configuration is missing the stable include"
+          ),
+          AdapterInspection(
+            adapterID: "wallpaper",
+            requirement: .required,
+            message:
+              "Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded"
           ),
         ]
       }
