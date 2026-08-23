@@ -1,14 +1,18 @@
 import CryptoKit
 import Darwin
 import Foundation
+import Synchronization
 
 enum ThemeActivationError: Error, CustomStringConvertible, Sendable {
+  case activationLock(operation: String, code: Int32)
   case cannotReplaceCurrent(Int32)
   case corruptGeneration(id: String, reason: String)
   case generatedFileTooLarge(path: String, size: Int)
 
   var description: String {
     switch self {
+    case .activationLock(let operation, let code):
+      "Cannot \(operation) activation lock (errno \(code)): \(String(cString: strerror(code)))"
     case .cannotReplaceCurrent(let code):
       "Cannot atomically replace current theme pointer (errno \(code)): \(String(cString: strerror(code)))"
     case .corruptGeneration(let id, let reason):
@@ -30,6 +34,8 @@ enum ActivationCheckpoint: CaseIterable, Sendable {
 
 public struct ThemeActivator: Sendable {
   private static let maximumGenerationFileSize = 1_048_576
+  // lockf is process-scoped, so sibling threads also need a mutex.
+  private static let processActivationMutex = Mutex<Void>(())
   private static let rendererVersions = ["kitty": 1, "normalized_theme": 1]
 
   private let root: URL
@@ -48,6 +54,32 @@ public struct ThemeActivator: Sendable {
   }
 
   public func activate(package: ThemePackage) throws -> GenerationManifest {
+    try Self.processActivationMutex.withLock { _ in
+      let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(
+        at: runDirectory,
+        withIntermediateDirectories: true
+      )
+
+      let lockURL = runDirectory.appending(path: "activation.lock")
+      let descriptor = lockURL.path.withCString {
+        Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
+      }
+      guard descriptor >= 0 else {
+        throw ThemeActivationError.activationLock(operation: "open", code: errno)
+      }
+      defer { Darwin.close(descriptor) }
+
+      while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
+        if errno == EINTR { continue }
+        throw ThemeActivationError.activationLock(operation: "acquire", code: errno)
+      }
+
+      return try activateLocked(package: package)
+    }
+  }
+
+  private func activateLocked(package: ThemePackage) throws -> GenerationManifest {
     let inputDigest = try generationInputDigest(package: package)
     try faultInjector(.inputDigested)
 
