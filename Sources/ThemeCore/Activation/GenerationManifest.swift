@@ -28,7 +28,9 @@ public struct GenerationManifest: Codable, Sendable {
     self.artifacts = artifacts
   }
 
-  enum CodingKeys: String, CodingKey {
+  static let encodedKeys = Set(CodingKeys.allCases.map(\.stringValue))
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
     case manifestSchemaVersion = "manifest_schema_version"
     case generationID = "generation_id"
     case themeID = "theme_id"
