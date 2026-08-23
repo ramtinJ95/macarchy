@@ -26,13 +26,25 @@ package enum ThemeActivationError: Error, CustomStringConvertible, Equatable, Se
   }
 }
 
-enum ActivationCheckpoint: CaseIterable, Sendable {
+package struct ThemeCommittedActivationError: Error, CustomStringConvertible, Sendable {
+  package let manifest: GenerationManifest
+  package let cause: String
+
+  package var description: String {
+    "Theme '\(manifest.themeID)' committed as generation '\(manifest.generationID)', but postcommit activation work failed: \(cause)"
+  }
+}
+
+enum ActivationCheckpoint: Sendable {
   case inputDigested
   case outputsRendered
   case generationWritten
   case generationSealed
   case generationCommitted
   case currentPointerReady
+  case currentReplaced
+  case generationsCleaned
+  case changePublished
 }
 
 public struct ThemeActivator: Sendable {
@@ -80,7 +92,7 @@ public struct ThemeActivator: Sendable {
     package: ThemePackage,
     expectedActiveGenerationID: String?
   ) throws -> GenerationManifest {
-    let manifest = try Self.processActivationMutex.withLock { _ in
+    let result = try Self.processActivationMutex.withLock { _ in
       let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
       try FileManager.default.createDirectory(
         at: runDirectory,
@@ -111,12 +123,36 @@ public struct ThemeActivator: Sendable {
         }
       }
 
-      return try activateLocked(package: package)
+      let interruptedTrash = try recoverInterruptedActivation()
+      return try activateLocked(package: package, interruptedTrash: interruptedTrash)
     }
 
-    onThemeChanged(ThemeChanged(manifest: manifest))
+    onThemeChanged(ThemeChanged(manifest: result.manifest))
     postDarwinNotification(ThemeChanged.darwinNotificationName)
-    return manifest
+    do {
+      try faultInjector(.changePublished)
+    } catch {
+      throw committedError(result.manifest, String(describing: error))
+    }
+
+    var cleanupError = result.cleanupError
+    for trashURL in result.trashURLs where cleanupError == nil {
+      do {
+        makeWritableForRemoval(trashURL)
+        try FileManager.default.removeItem(at: trashURL)
+      } catch {
+        cleanupError = String(describing: error)
+      }
+    }
+    do {
+      try faultInjector(.generationsCleaned)
+    } catch {
+      throw committedError(result.manifest, String(describing: error))
+    }
+    if let cleanupError {
+      throw committedError(result.manifest, cleanupError)
+    }
+    return result.manifest
   }
 
   private static func postDarwinNotification(named name: String) {
@@ -130,13 +166,21 @@ public struct ThemeActivator: Sendable {
     )
   }
 
-  private func activateLocked(package: ThemePackage) throws -> GenerationManifest {
+  private func activateLocked(
+    package: ThemePackage,
+    interruptedTrash: [URL]
+  ) throws -> LockedActivationResult {
+    let previousGenerationID = currentGenerationID()
     let inputDigest = try generationInputDigest(package: package)
     try faultInjector(.inputDigested)
 
     if let reusable = try reusableGeneration(inputDigest: inputDigest, package: package) {
       try replaceCurrent(with: reusable.generationID)
-      return reusable
+      return try finishCommit(
+        reusable,
+        previousGenerationID: previousGenerationID,
+        interruptedTrash: interruptedTrash
+      )
     }
 
     let generationID = "g-\(UUID().uuidString.lowercased())"
@@ -184,8 +228,187 @@ public struct ThemeActivator: Sendable {
     try faultInjector(.generationCommitted)
 
     try replaceCurrent(with: generationID)
+    return try finishCommit(
+      manifest,
+      previousGenerationID: previousGenerationID,
+      interruptedTrash: interruptedTrash
+    )
+  }
 
-    return manifest
+  private func finishCommit(
+    _ manifest: GenerationManifest,
+    previousGenerationID: String?,
+    interruptedTrash: [URL]
+  ) throws -> LockedActivationResult {
+    do {
+      try faultInjector(.currentReplaced)
+    } catch {
+      throw committedError(manifest, String(describing: error))
+    }
+
+    let collection = collectGenerations(
+      currentGenerationID: manifest.generationID,
+      previousGenerationID: previousGenerationID
+    )
+    return LockedActivationResult(
+      manifest: manifest,
+      trashURLs: interruptedTrash + collection.trashURLs,
+      cleanupError: collection.error
+    )
+  }
+
+  private func recoverInterruptedActivation() throws -> [URL] {
+    let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
+    var trashURLs = [URL]()
+    if FileManager.default.fileExists(atPath: generationsRoot.path) {
+      for item in try FileManager.default.contentsOfDirectory(
+        at: generationsRoot,
+        includingPropertiesForKeys: nil
+      ) {
+        if isStagingName(item.lastPathComponent), isRealDirectory(item) {
+          makeWritableForRemoval(item)
+          try FileManager.default.removeItem(at: item)
+        } else if isTrashName(item.lastPathComponent), isRealDirectory(item) {
+          trashURLs.append(item)
+        }
+      }
+    }
+
+    for item in try FileManager.default.contentsOfDirectory(
+      at: root,
+      includingPropertiesForKeys: nil
+    ) where isTemporaryPointerName(item.lastPathComponent) && isSymbolicLink(item) {
+      try FileManager.default.removeItem(at: item)
+    }
+    return trashURLs
+  }
+
+  private func collectGenerations(
+    currentGenerationID: String,
+    previousGenerationID: String?
+  ) -> (trashURLs: [URL], error: String?) {
+    let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
+    let generations: [(url: URL, modified: Date)]
+    do {
+      generations = try FileManager.default.contentsOfDirectory(
+        at: generationsRoot,
+        includingPropertiesForKeys: nil,
+        options: [.skipsHiddenFiles]
+      ).compactMap(validGenerationForCleanup)
+    } catch {
+      return ([], String(describing: error))
+    }
+
+    var retained = Set([currentGenerationID])
+    // The old pointer is diagnostic and reuse evidence; a no-op activation keeps its newest peer.
+    if let previousGenerationID, previousGenerationID != currentGenerationID,
+      generations.contains(where: { $0.url.lastPathComponent == previousGenerationID })
+    {
+      retained.insert(previousGenerationID)
+    } else if let prior =
+      generations
+      .filter({ $0.url.lastPathComponent != currentGenerationID })
+      .sorted(by: {
+        $0.modified == $1.modified
+          ? $0.url.lastPathComponent < $1.url.lastPathComponent
+          : $0.modified > $1.modified
+      }).first
+    {
+      retained.insert(prior.url.lastPathComponent)
+    }
+
+    var trashURLs = [URL]()
+    for generation in generations where !retained.contains(generation.url.lastPathComponent) {
+      let trashURL = generationsRoot.appending(
+        path: ".trash-\(generation.url.lastPathComponent)-\(UUID().uuidString.lowercased())",
+        directoryHint: .isDirectory
+      )
+      do {
+        try FileManager.default.moveItem(at: generation.url, to: trashURL)
+        trashURLs.append(trashURL)
+      } catch {
+        return (trashURLs, String(describing: error))
+      }
+    }
+    return (trashURLs, nil)
+  }
+
+  private func validGenerationForCleanup(_ url: URL) -> (url: URL, modified: Date)? {
+    guard isGenerationID(url.lastPathComponent) else { return nil }
+    var metadata = stat()
+    guard lstat(url.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFDIR else {
+      return nil
+    }
+    guard
+      let manifestFile = safelyReadManifest(at: url.appending(path: "manifest.json")),
+      manifestFile.permissions & 0o222 == 0,
+      let object = manifestObject(in: manifestFile.data),
+      Set(object.keys) == GenerationManifest.encodedKeys,
+      let manifest = try? JSONDecoder().decode(GenerationManifest.self, from: manifestFile.data),
+      manifest.manifestSchemaVersion == GenerationManifest.currentSchemaVersion,
+      manifest.generationID == url.lastPathComponent,
+      (try? manifest.validateArtifacts(at: url)) != nil
+    else { return nil }
+    let modified = Date(
+      timeIntervalSince1970: TimeInterval(metadata.st_mtimespec.tv_sec)
+        + TimeInterval(metadata.st_mtimespec.tv_nsec) / 1_000_000_000
+    )
+    return (url, modified)
+  }
+
+  private func isStagingName(_ name: String) -> Bool {
+    name.hasPrefix(".staging-") && isGenerationID(String(name.dropFirst(9)))
+  }
+
+  private func isTrashName(_ name: String) -> Bool {
+    isTemporaryName(name, prefix: ".trash-")
+  }
+
+  private func isTemporaryPointerName(_ name: String) -> Bool {
+    isTemporaryName(name, prefix: ".current-")
+  }
+
+  private func isTemporaryName(_ name: String, prefix: String) -> Bool {
+    guard name.hasPrefix(prefix) else { return false }
+    let value = name.dropFirst(prefix.count)
+    guard value.count == 75 else { return false }
+    let separator = value.index(value.startIndex, offsetBy: 38)
+    guard value[separator] == "-" else { return false }
+    let generationID = String(value[..<separator])
+    let nonce = String(value[value.index(after: separator)...])
+    return isGenerationID(generationID)
+      && nonce == nonce.lowercased()
+      && UUID(uuidString: nonce) != nil
+  }
+
+  private func isRealDirectory(_ url: URL) -> Bool {
+    var metadata = stat()
+    return lstat(url.path, &metadata) == 0 && metadata.st_mode & S_IFMT == S_IFDIR
+  }
+
+  private func isSymbolicLink(_ url: URL) -> Bool {
+    var metadata = stat()
+    return lstat(url.path, &metadata) == 0 && metadata.st_mode & S_IFMT == S_IFLNK
+  }
+
+  private func currentGenerationID() -> String? {
+    let currentURL = root.appending(path: "current")
+    guard
+      let destination = try? FileManager.default.destinationOfSymbolicLink(
+        atPath: currentURL.path
+      )
+    else { return nil }
+    let components = destination.split(separator: "/", omittingEmptySubsequences: false)
+    guard components.count == 2, components[0] == "generations" else { return nil }
+    let generationID = String(components[1])
+    return isGenerationID(generationID) ? generationID : nil
+  }
+
+  private func committedError(
+    _ manifest: GenerationManifest,
+    _ cause: String
+  ) -> ThemeCommittedActivationError {
+    ThemeCommittedActivationError(manifest: manifest, cause: cause)
   }
 
   private func reusableGeneration(
@@ -370,9 +593,14 @@ public struct ThemeActivator: Sendable {
 
   private func makeWritableForRemoval(_ generationURL: URL) {
     let generated = generationURL.appending(path: "generated", directoryHint: .isDirectory)
-    try? FileManager.default.setAttributes(
-      [.posixPermissions: 0o700], ofItemAtPath: generationURL.path)
-    try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: generated.path)
+    for directory in [generationURL, generated] {
+      let descriptor = directory.path.withCString {
+        Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+      }
+      guard descriptor >= 0 else { continue }
+      _ = Darwin.fchmod(descriptor, 0o700)
+      Darwin.close(descriptor)
+    }
   }
 
   private func atomicallyReplaceCurrent(with temporaryPointer: URL) throws {
@@ -386,6 +614,12 @@ public struct ThemeActivator: Sendable {
       throw ThemeActivationError.cannotReplaceCurrent(errno)
     }
   }
+}
+
+private struct LockedActivationResult {
+  let manifest: GenerationManifest
+  let trashURLs: [URL]
+  let cleanupError: String?
 }
 
 private struct GenerationInput: Encodable {

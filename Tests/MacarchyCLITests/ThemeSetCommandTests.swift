@@ -112,6 +112,23 @@ struct ThemeSetCommandTests {
   }
 
   @Test
+  func postcommitActivationFailureDoesNotClaimTheCommitWasRolledBack() async throws {
+    let manifest = manifest()
+    let runner = runner { _, _, _ in
+      throw ThemeCommittedActivationError(
+        manifest: manifest,
+        cause: "generation cleanup was denied"
+      )
+    }
+
+    try await expectGoldens(
+      runner: runner,
+      basename: "committed-activation-error",
+      succeeded: false
+    )
+  }
+
+  @Test
   func commandBoundaryLoadsUserThemesAndReturnsFailureForPreflightErrors() async throws {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-cli-boundary-tests-\(UUID().uuidString)",

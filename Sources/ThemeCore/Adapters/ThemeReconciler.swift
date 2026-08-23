@@ -35,6 +35,19 @@ package struct ReconciliationPersistenceError: Error, CustomStringConvertible, S
   }
 }
 
+package struct ReconciliationInterruptedError: Error, CustomStringConvertible, Sendable {
+  package let manifest: GenerationManifest
+  package let results: [AdapterResult]
+  package let statusPersisted: Bool
+  package let cause: String
+
+  package var description: String {
+    let status = statusPersisted ? "was persisted" : "was not persisted"
+    return
+      "Adapters ran for generation '\(manifest.generationID)' and status \(status), but reconciliation was interrupted: \(cause)"
+  }
+}
+
 struct AdapterOutcome: Sendable {
   let status: AdapterStatus
   let message: String?
@@ -51,8 +64,14 @@ struct AdapterReconciliation: Sendable {
   let run: @Sendable () async throws -> AdapterOutcome
 }
 
+enum ReconciliationCheckpoint: Sendable {
+  case adaptersCompleted
+  case statusPersisted
+}
+
 struct ThemeReconciler: Sendable {
   let statusStore: ReconciliationStatusStore
+  var faultInjector: @Sendable (ReconciliationCheckpoint) throws -> Void = { _ in }
 
   func reconcile(
     manifest: GenerationManifest,
@@ -96,13 +115,39 @@ struct ThemeReconciler: Sendable {
     }
     let selectedIDs = Set(adapters.map(\.id))
     let combinedResults = preservedResults.filter { !selectedIDs.contains($0.adapterID) } + results
+    let sortedResults = combinedResults.sorted { $0.adapterID < $1.adapterID }
     do {
       try Task.checkCancellation()
-      return try statusStore.persist(manifest: manifest, results: combinedResults)
+      try faultInjector(.adaptersCompleted)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      throw ReconciliationInterruptedError(
+        manifest: manifest,
+        results: sortedResults,
+        statusPersisted: false,
+        cause: String(describing: error)
+      )
+    }
+
+    let record: ReconciliationRecord
+    do {
+      record = try statusStore.persist(manifest: manifest, results: combinedResults)
     } catch {
       throw ReconciliationPersistenceError(
         manifest: manifest,
-        results: combinedResults.sorted { $0.adapterID < $1.adapterID },
+        results: sortedResults,
+        cause: String(describing: error)
+      )
+    }
+    do {
+      try faultInjector(.statusPersisted)
+      return record
+    } catch {
+      throw ReconciliationInterruptedError(
+        manifest: manifest,
+        results: sortedResults,
+        statusPersisted: true,
         cause: String(describing: error)
       )
     }

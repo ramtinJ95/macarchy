@@ -98,3 +98,9 @@ extension GenerationManifest {
 func sha256Digest(_ data: Data) -> String {
   "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
+
+func isGenerationID(_ value: String) -> Bool {
+  value.hasPrefix("g-")
+    && value == value.lowercased()
+    && UUID(uuidString: String(value.dropFirst(2))) != nil
+}

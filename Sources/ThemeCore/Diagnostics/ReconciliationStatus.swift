@@ -216,29 +216,23 @@ public struct ReconciliationStatusStore: Sendable {
         path: "generations/\(generationID)",
         directoryHint: .isDirectory
       )
-      try requireDirectory(generationURL, role: "generation '\(generationID)'")
-
-      let manifestFile: BoundedRegularFile
       do {
-        manifestFile = try BoundedRegularFile.read(
+        try requireDirectory(generationURL, role: "generation '\(generationID)'")
+        let manifestFile = try BoundedRegularFile.read(
           at: generationURL.appending(path: "manifest.json")
         )
-      } catch {
-        throw ReconciliationStatusError.invalidActiveGeneration(
-          "cannot read manifest.json: \(String(describing: error))"
-        )
-      }
-      guard manifestFile.permissions & 0o222 == 0 else {
-        throw ReconciliationStatusError.invalidActiveGeneration("manifest.json is writable")
-      }
-      let manifest = try decodeActiveManifest(manifestFile.data, generationID: generationID)
-      do {
+        guard manifestFile.permissions & 0o222 == 0 else {
+          throw ReconciliationStatusError.invalidActiveGeneration("manifest.json is writable")
+        }
+        let manifest = try decodeActiveManifest(manifestFile.data, generationID: generationID)
         try manifest.validateArtifacts(at: generationURL)
+        if try activeGenerationID() == generationID {
+          return manifest
+        }
       } catch {
+        if (try? activeGenerationID()) != generationID { continue }
+        if let error = error as? ReconciliationStatusError { throw error }
         throw ReconciliationStatusError.invalidActiveGeneration(String(describing: error))
-      }
-      if try activeGenerationID() == generationID {
-        return manifest
       }
     }
     throw ReconciliationStatusError.invalidActiveGeneration(
@@ -326,9 +320,4 @@ public struct ReconciliationStatusStore: Sendable {
     }
   }
 
-  private func isGenerationID(_ value: String) -> Bool {
-    value.hasPrefix("g-")
-      && value == value.lowercased()
-      && UUID(uuidString: String(value.dropFirst(2))) != nil
-  }
 }

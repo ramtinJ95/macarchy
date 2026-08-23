@@ -1,0 +1,9 @@
+{
+  "committed" : true,
+  "error" : "generation cleanup was denied",
+  "generation_id" : "g-test-generation",
+  "operation" : "theme_set",
+  "outcome" : "committed_activation_error",
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

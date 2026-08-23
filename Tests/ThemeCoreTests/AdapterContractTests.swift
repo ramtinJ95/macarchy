@@ -272,6 +272,133 @@ struct AdapterContractTests {
   }
 
   @Test
+  func reconciliationFaultsExposeWhetherCompletedResultsWerePersisted() async throws {
+    for checkpoint in [
+      ReconciliationCheckpoint.adaptersCompleted,
+      .statusPersisted,
+    ] {
+      let root = try temporaryDirectory()
+      defer {
+        makeWritableForRemoval(root)
+        try? FileManager.default.removeItem(at: root)
+      }
+      let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+      let store = ReconciliationStatusStore(root: root)
+      let calls = Mutex(0)
+      let adapter = AdapterReconciliation(id: "kitty", requirement: .required) {
+        calls.withLock { $0 += 1 }
+        return AdapterOutcome(status: .applied)
+      }
+      let reconciler = ThemeReconciler(
+        statusStore: store,
+        faultInjector: { reached in
+          if reached == checkpoint { throw ReconciliationTestError.expectedFailure }
+        }
+      )
+
+      let interruption: ReconciliationInterruptedError
+      do {
+        _ = try await reconciler.reconcile(manifest: manifest, adapters: [adapter])
+        throw ReconciliationTestError.expectedInterruption
+      } catch let error as ReconciliationInterruptedError {
+        interruption = error
+      }
+
+      #expect(interruption.statusPersisted == (checkpoint == .statusPersisted))
+      #expect(
+        interruption.results
+          == [AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)]
+      )
+      if checkpoint == .adaptersCompleted {
+        #expect(try store.read() == .missing(activeGenerationID: manifest.generationID))
+      } else {
+        guard case .current(let record) = try store.read() else {
+          throw ReconciliationTestError.expectedCurrentStatus
+        }
+        #expect(record.results == interruption.results)
+      }
+
+      let recovered = try await ThemeReconciler(statusStore: store).reconcile(
+        manifest: manifest,
+        adapters: [adapter]
+      )
+      #expect(try store.read() == .current(recovered))
+      #expect(calls.withLock { $0 } == 2)
+    }
+
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let cancelled = ThemeReconciler(
+      statusStore: ReconciliationStatusStore(root: root),
+      faultInjector: { _ in throw CancellationError() }
+    )
+    await #expect(throws: CancellationError.self) {
+      _ = try await cancelled.reconcile(
+        manifest: manifest,
+        adapters: [
+          AdapterReconciliation(id: "kitty", requirement: .required) {
+            AdapterOutcome(status: .applied)
+          }
+        ]
+      )
+    }
+  }
+
+  @Test
+  func spicetifyOneShotIsAwaitedAndItsOptionalFailureIsPersisted() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let store = ReconciliationStatusStore(root: root)
+    let state = Mutex((requests: [ProcessRequest](), finished: false))
+    let executable = URL(filePath: "/opt/homebrew/bin/spicetify")
+    let adapter = SpicetifyAdapter(
+      executableURL: executable,
+      processRunner: ProcessRunner { request in
+        state.withLock { $0.requests.append(request) }
+        try await Task.sleep(for: .milliseconds(100))
+        state.withLock { $0.finished = true }
+        return ProcessResult(terminationStatus: 1, output: "apply failed")
+      }
+    )
+
+    let reconciliation = Task {
+      try await ThemeReconciler(statusStore: store).reconcile(
+        manifest: manifest,
+        adapters: [adapter.reconciliation()]
+      )
+    }
+    try await waitUntil { state.withLock { !$0.requests.isEmpty } }
+    #expect(!state.withLock { $0.finished })
+    #expect(try store.read() == .missing(activeGenerationID: manifest.generationID))
+
+    let record = try await reconciliation.value
+    #expect(
+      state.withLock { $0.requests }
+        == [ProcessRequest(executableURL: executable, arguments: ["apply"])]
+    )
+    #expect(
+      record.results
+        == [
+          AdapterResult(
+            adapterID: "spicetify",
+            requirement: .optional,
+            status: .failed,
+            message: "apply failed"
+          )
+        ]
+    )
+    #expect(try store.read() == .current(record))
+  }
+
+  @Test
   func selectedReconciliationRejectsInvalidIDsBeforeProcessesOrStatusWrites() async throws {
     let root = try temporaryDirectory()
     defer {
@@ -708,6 +835,14 @@ struct AdapterContractTests {
     throw ReconciliationTestError.timedOut
   }
 
+  private func waitUntil(_ condition: @Sendable () -> Bool) async throws {
+    for _ in 0..<100 {
+      if condition() { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    throw ReconciliationTestError.timedOut
+  }
+
   private func expectInvalidActiveGeneration(
     _ operation: () throws -> GenerationManifest
   ) throws {
@@ -722,6 +857,8 @@ struct AdapterContractTests {
 
 private enum ReconciliationTestError: Error {
   case expectedCommittedError
+  case expectedCurrentStatus
   case expectedFailure
+  case expectedInterruption
   case timedOut
 }
