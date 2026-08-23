@@ -16,6 +16,16 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.macos-appearance",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
+      "id" : "macos-appearance.integration",
+      "message" : "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required",
+      "status" : "ok"
+    },
+    {
       "id" : "kitty.integration",
       "message" : "Integration preflight passed.",
       "status" : "ok"

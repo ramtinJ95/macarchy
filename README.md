@@ -23,15 +23,16 @@ swift run macarchy doctor --json
 
 `theme set` and `theme next` read built-in packages from `./Themes` and user
 packages from `<state-root>/themes`. The state root defaults to
-`~/.config/macarchy`. Before
-activation, Kitty's configuration must contain an `include` for the expanded
-absolute path `<state-root>/current/generated/kitty.conf`; Macarchy does not
-edit Kitty's behavioral configuration. Use `--state-root` and `--kitty-config`
-to inject development paths. `--dry-run` validates rendering and this include
-without writing state or running a reload command. `theme next` follows the
-validated package order and wraps at the end. `theme status` reads the
-canonical generation manifest first and reports current, missing, stale, or
-unreadable reconciliation state without treating it as active-theme truth.
+`~/.config/macarchy`. Before activation, Macarchy verifies that current
+appearance is readable and `/usr/bin/osascript` is executable. Kitty's
+configuration must contain an `include` for the expanded absolute path
+`<state-root>/current/generated/kitty.conf`; Macarchy does not edit Kitty's
+behavioral configuration. Use `--state-root` and `--kitty-config` to inject
+development paths. `--dry-run` validates rendering and required adapter
+preflight without writing state or running a command. `theme next` follows the
+validated package order and wraps at the end. `theme status` reads the canonical
+generation manifest first and reports current, missing, stale, or unreadable
+reconciliation state without treating it as active-theme truth.
 Status exits nonzero when canonical state is absent or unreadable, status is
 missing or stale, or a required adapter is not accepted; optional adapter
 failure remains visible without making status unhealthy.
@@ -42,10 +43,18 @@ status. A selected run preserves unselected results from a current correlated
 record; without that baseline it reruns all known adapters. Unknown or duplicate
 adapter identifiers and corrupt active artifacts fail before processes run.
 `reconcile --dry-run` checks the active generation and adapter integration seams
-without running processes or writing status. `doctor` independently reports
-canonical-state validity, correlated reconciliation health, and Kitty's stable
-include seam without changing state. Both commands exit nonzero for required or
-diagnostic failures and support `--json`.
+without running processes or writing status. The `macos-appearance` adapter
+reads the public global appearance preference without mutation and, when needed,
+uses System Events' documented Appearance Suite to apply dark or light mode
+live. A successful command is followed by another preference read; disagreement
+is reported as drift. Appearance reconciliation briefly reacquires the
+activation lock and rereads canonical `current`, preventing an older activation
+from overwriting newer appearance state. The System Events command has a
+two-second timeout. `doctor` independently reports canonical-state validity,
+correlated reconciliation health, the non-mutating appearance preflight, and
+Kitty's stable include without changing state. Apple Events authorization is
+proved only when reconciliation actually needs to change appearance. Both
+commands exit nonzero for required or diagnostic failures and support `--json`.
 
 Activation recovers Macarchy-owned staging and temporary-pointer residue left
 by an interrupted process. After a commit it retains the active generation and

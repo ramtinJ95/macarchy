@@ -1,4 +1,4 @@
 Theme 'catppuccin-mocha' is valid.
-Kitty preflight passed.
+Required adapter preflight passed.
 Canonical state: unchanged (dry run).
 No files written; no processes run.

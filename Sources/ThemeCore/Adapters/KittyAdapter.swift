@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum KittyAdapterError: Error, CustomStringConvertible, Sendable {
@@ -93,7 +94,7 @@ struct KittyAdapter: Sendable {
         return AdapterOutcome(status: .drifted, message: String(describing: error))
       }
 
-      let reload = try await processRunner.run(
+      let reload = try processRunner.run(
         ProcessRequest(
           executableURL: Self.killallURL,
           arguments: ["-USR1", "kitty"]
@@ -103,7 +104,7 @@ struct KittyAdapter: Sendable {
         return AdapterOutcome(status: .applied)
       }
 
-      let stillRunning = try await processRunner.run(
+      let stillRunning = try processRunner.run(
         ProcessRequest(
           executableURL: Self.killallURL,
           arguments: ["-0", "kitty"]
@@ -140,6 +141,17 @@ struct KittyAdapter: Sendable {
 struct ProcessRequest: Equatable, Sendable {
   let executableURL: URL
   let arguments: [String]
+  let timeout: TimeInterval?
+
+  init(
+    executableURL: URL,
+    arguments: [String],
+    timeout: TimeInterval? = nil
+  ) {
+    self.executableURL = executableURL
+    self.arguments = arguments
+    self.timeout = timeout
+  }
 }
 
 struct ProcessResult: Equatable, Sendable {
@@ -148,7 +160,7 @@ struct ProcessResult: Equatable, Sendable {
 }
 
 struct ProcessRunner: Sendable {
-  let run: @Sendable (ProcessRequest) async throws -> ProcessResult
+  let run: @Sendable (ProcessRequest) throws -> ProcessResult
 
   static let live = ProcessRunner { request in
     try Task.checkCancellation()
@@ -158,14 +170,43 @@ struct ProcessRunner: Sendable {
     process.arguments = request.arguments
     process.standardOutput = output
     process.standardError = output
+    let completion = request.timeout.map { _ in DispatchSemaphore(value: 0) }
+    if let completion {
+      process.terminationHandler = { _ in completion.signal() }
+    }
     try process.run()
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
+    let data: Data
+    if let timeout = request.timeout, let completion {
+      if completion.wait(timeout: .now() + timeout) == .timedOut {
+        process.terminate()
+        if completion.wait(timeout: .now() + 1) == .timedOut {
+          Darwin.kill(process.processIdentifier, SIGKILL)
+          process.waitUntilExit()
+        }
+        _ = output.fileHandleForReading.readDataToEndOfFile()
+        throw ProcessRunnerError.timedOut(request.executableURL, timeout)
+      }
+      data = output.fileHandleForReading.readDataToEndOfFile()
+    } else {
+      data = output.fileHandleForReading.readDataToEndOfFile()
+      process.waitUntilExit()
+    }
     try Task.checkCancellation()
     return ProcessResult(
       terminationStatus: process.terminationStatus,
       output: String(decoding: data, as: UTF8.self).trimmingCharacters(
         in: .whitespacesAndNewlines)
     )
+  }
+}
+
+enum ProcessRunnerError: Error, CustomStringConvertible, Equatable, Sendable {
+  case timedOut(URL, TimeInterval)
+
+  var description: String {
+    switch self {
+    case .timedOut(let executableURL, let timeout):
+      "Process \(executableURL.path) exceeded its \(timeout)-second timeout"
+    }
   }
 }
