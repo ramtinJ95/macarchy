@@ -3,11 +3,13 @@ import Foundation
 public struct RenderedTheme: Sendable {
   public let themeJSON: Data
   public let kittyConfiguration: String
+  public let wallpaper: Data
 
   var files: [String: Data] {
     [
       ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
       ThemeRenderer.themeOutputPath: themeJSON,
+      ThemeRenderer.wallpaperOutputPath: wallpaper,
     ]
   }
 }
@@ -15,11 +17,24 @@ public struct RenderedTheme: Sendable {
 public struct ThemeRenderer: Sendable {
   static let kittyOutputPath = KittyAdapter.outputPath
   static let themeOutputPath = "theme.json"
-  static let outputPaths = Set([kittyOutputPath, themeOutputPath])
+  static let wallpaperOutputPath = WallpaperAdapter.outputPath
+  static let outputPaths = Set([kittyOutputPath, themeOutputPath, wallpaperOutputPath])
 
   public init() {}
 
   public func render(package: ThemePackage, generationID: String) throws -> RenderedTheme {
+    try render(
+      package: package,
+      generationID: generationID,
+      wallpaperData: package.wallpaperData
+    )
+  }
+
+  func render(
+    package: ThemePackage,
+    generationID: String,
+    wallpaperData: Data
+  ) throws -> RenderedTheme {
     let normalized = NormalizedTheme(package: package, generationID: generationID)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -28,8 +43,14 @@ public struct ThemeRenderer: Sendable {
 
     return RenderedTheme(
       themeJSON: json,
-      kittyConfiguration: KittyAdapter.render(package: package)
+      kittyConfiguration: KittyAdapter.render(package: package),
+      wallpaper: wallpaperData
     )
+  }
+
+  static func maximumOutputSize(for path: String) -> Int {
+    path == WallpaperAdapter.outputPath
+      ? WallpaperAsset.maximumSize : BoundedRegularFile.maximumSize
   }
 
   public func write(_ rendered: RenderedTheme, to outputRoot: URL) throws {

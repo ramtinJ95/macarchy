@@ -68,6 +68,15 @@ enum ThemeSchema {
     }
   }
 
+  static func isThemeID(_ value: String) -> Bool {
+    guard !value.isEmpty, value.first?.isLetter == true, value == value.lowercased() else {
+      return false
+    }
+    return value.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") }
+      && !value.hasSuffix("-")
+      && !value.contains("--")
+  }
+
   private static func validateKnownTables(
     index: TOMLSourceIndex,
     allowed: Set<String>,

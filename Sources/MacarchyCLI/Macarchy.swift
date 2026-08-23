@@ -457,7 +457,7 @@ struct DoctorCommandRunner: Sendable {
       try ThemeActivationCoordinator(
         root: stateRoot,
         kittyConfigurationURL: kittyConfigurationURL
-      ).inspectAdapters([])
+      ).inspectAdapters([], includeRuntimeChecks: true)
     }
   )
 

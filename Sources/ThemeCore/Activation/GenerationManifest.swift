@@ -64,7 +64,10 @@ extension GenerationManifest {
     for path in ThemeRenderer.outputPaths.sorted() {
       let artifact: BoundedRegularFile
       do {
-        artifact = try BoundedRegularFile.read(at: generationURL.appending(path: path))
+        artifact = try BoundedRegularFile.read(
+          at: generationURL.appending(path: path),
+          maximumSize: ThemeRenderer.maximumOutputSize(for: path)
+        )
       } catch {
         throw GenerationIntegrityError(
           reason: "cannot safely read \(path): \(String(describing: error))"

@@ -33,14 +33,19 @@ package struct ThemeActivationCoordinator: Sendable {
   package static let adapterRequirements = [
     KittyAdapter.id: AdapterRequirement.required,
     MacOSAppearanceAdapter.id: AdapterRequirement.required,
+    WallpaperAdapter.id: AdapterRequirement.required,
   ]
 
   private let root: URL
   private let activator: ThemeActivator
   private let appearance: MacOSAppearanceAdapter
+  private let configurationStore: MacarchyConfigurationStore
   private let kitty: KittyAdapter
+  private let processRunner: ProcessRunner
   private let reconciler: ThemeReconciler
   private let statusStore: ReconciliationStatusStore
+  private let wallpaper: WallpaperAdapter
+  private let wallpaperSignal: YabaiWallpaperSignal
 
   package init(root: URL, kittyConfigurationURL: URL) {
     let root = root.standardizedFileURL
@@ -48,19 +53,25 @@ package struct ThemeActivationCoordinator: Sendable {
     self.root = root
     activator = ThemeActivator(root: root)
     appearance = .live(root: root)
+    configurationStore = MacarchyConfigurationStore(root: root)
     kitty = KittyAdapter(
       configurationURL: kittyConfigurationURL,
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: .live
     )
+    processRunner = .live
     reconciler = ThemeReconciler(statusStore: statusStore)
     self.statusStore = statusStore
+    wallpaper = WallpaperAdapter(root: root, control: .live)
+    wallpaperSignal = .personal()
   }
 
   init(
     root: URL,
     kittyConfigurationURL: URL,
     processRunner: ProcessRunner,
+    wallpaperControl: WallpaperControl,
+    wallpaperSignal: YabaiWallpaperSignal,
     currentAppearance: @escaping @Sendable () throws -> ThemeAppearance = { .dark },
     appearanceControlIsAvailable: @escaping @Sendable () -> Bool = { true },
     faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void = { _ in },
@@ -82,21 +93,25 @@ package struct ThemeActivationCoordinator: Sendable {
       currentAppearance: currentAppearance,
       processRunner: processRunner
     )
+    configurationStore = MacarchyConfigurationStore(root: root)
     kitty = KittyAdapter(
       configurationURL: kittyConfigurationURL,
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: processRunner
     )
+    self.processRunner = processRunner
     reconciler = ThemeReconciler(statusStore: statusStore)
     self.statusStore = statusStore
+    wallpaper = WallpaperAdapter(root: root, control: wallpaperControl)
+    self.wallpaperSignal = wallpaperSignal
   }
 
   package func preflight(package: ThemePackage) throws {
-    _ = try appearance.preflight()
-    try kitty.preflight()
+    let wallpaperData = try prepare(package: package)
     _ = try ThemeRenderer().render(
       package: package,
-      generationID: "dry-run-\(package.id)"
+      generationID: "dry-run-\(package.id)",
+      wallpaperData: wallpaperData
     )
   }
 
@@ -105,18 +120,21 @@ package struct ThemeActivationCoordinator: Sendable {
     expectedActiveGenerationID: String? = nil
   ) async throws -> ThemeActivationResult {
     try Task.checkCancellation()
-    _ = try appearance.preflight()
-    try kitty.preflight()
+    let wallpaperData = try prepare(package: package)
     try Task.checkCancellation()
     let manifest = try activator.activate(
       package: package,
-      expectedActiveGenerationID: expectedActiveGenerationID
+      expectedActiveGenerationID: expectedActiveGenerationID,
+      wallpaperData: wallpaperData
     )
 
     do {
       let reconciliation = try await reconciler.reconcile(
         manifest: manifest,
-        adapters: configuredAdapters(desiredAppearance: package.appearance).map {
+        adapters: configuredAdapters(
+          desiredAppearance: package.appearance,
+          desiredWallpaperURL: nil
+        ).map {
           $0.reconciliation()
         }
       )
@@ -135,7 +153,8 @@ package struct ThemeActivationCoordinator: Sendable {
     try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
     let adapters = configuredAdapters(
-      desiredAppearance: try activeAppearance(manifest: manifest)
+      desiredAppearance: try activeAppearance(manifest: manifest),
+      desiredWallpaperURL: activeWallpaperURL(manifest: manifest)
     )
     let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
@@ -150,16 +169,37 @@ package struct ThemeActivationCoordinator: Sendable {
     )
   }
 
-  package func inspectAdapters(_ adapterIDs: [String]) throws -> [AdapterInspection] {
+  package func inspectAdapters(
+    _ adapterIDs: [String],
+    includeRuntimeChecks: Bool = false
+  ) throws -> [AdapterInspection] {
     try validateSelection(adapterIDs)
     let appearanceInspection: AdapterInspection
+    let wallpaperInspection: AdapterInspection
     do {
       let manifest = try statusStore.activeManifest()
-      appearanceInspection = appearance.inspection(
-        desiredAppearance: try activeAppearance(manifest: manifest)
+      do {
+        appearanceInspection = appearance.inspection(
+          desiredAppearance: try activeAppearance(manifest: manifest)
+        )
+      } catch {
+        appearanceInspection = AdapterInspection(
+          adapterID: MacOSAppearanceAdapter.id,
+          requirement: .required,
+          status: .failed,
+          message: "Cannot inspect active theme appearance: \(error)"
+        )
+      }
+      wallpaperInspection = inspectWallpaper(
+        desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+        includeRuntimeChecks: includeRuntimeChecks
       )
     } catch ReconciliationStatusError.noActiveGeneration {
       appearanceInspection = appearance.inspection(desiredAppearance: nil)
+      wallpaperInspection = inspectWallpaper(
+        desiredWallpaperURL: nil,
+        includeRuntimeChecks: includeRuntimeChecks
+      )
     } catch {
       appearanceInspection = AdapterInspection(
         adapterID: MacOSAppearanceAdapter.id,
@@ -167,11 +207,18 @@ package struct ThemeActivationCoordinator: Sendable {
         status: .failed,
         message: "Cannot inspect active theme appearance: \(error)"
       )
+      wallpaperInspection = AdapterInspection(
+        adapterID: WallpaperAdapter.id,
+        requirement: .required,
+        status: .failed,
+        message: "Cannot inspect active theme wallpaper: \(error)"
+      )
     }
     let selectedIDs = Set(adapterIDs)
     return [
       appearanceInspection,
       kitty.inspection(),
+      wallpaperInspection,
     ].filter {
       adapterIDs.isEmpty || selectedIDs.contains($0.adapterID)
     }
@@ -182,7 +229,7 @@ package struct ThemeActivationCoordinator: Sendable {
   ) async throws -> (manifest: GenerationManifest, record: ReconciliationRecord) {
     try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
-    let adapters = configuredAdapters(desiredAppearance: nil)
+    let adapters = configuredAdapters(desiredAppearance: nil, desiredWallpaperURL: nil)
     let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
       selected: selected,
@@ -235,7 +282,8 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   private func configuredAdapters(
-    desiredAppearance: ThemeAppearance?
+    desiredAppearance: ThemeAppearance?,
+    desiredWallpaperURL: URL?
   ) -> [ConfiguredAdapter] {
     [
       ConfiguredAdapter(
@@ -252,6 +300,21 @@ package struct ThemeActivationCoordinator: Sendable {
         id: KittyAdapter.id,
         inspection: kitty.inspection,
         reconciliation: kitty.reconciliation
+      ),
+      ConfiguredAdapter(
+        id: WallpaperAdapter.id,
+        inspection: {
+          inspectWallpaper(
+            desiredWallpaperURL: desiredWallpaperURL,
+            includeRuntimeChecks: false
+          )
+        },
+        reconciliation: {
+          wallpaper.reconciliation {
+            let manifest = try statusStore.activeManifest()
+            return activeWallpaperURL(manifest: manifest)
+          }
+        }
       ),
     ]
   }
@@ -274,6 +337,75 @@ package struct ThemeActivationCoordinator: Sendable {
       )
     }
     return normalized.appearance
+  }
+
+  private func prepare(package: ThemePackage) throws -> Data {
+    let configuration = try configurationStore.load()
+    let wallpaperData =
+      try configuration.wallpaperData(themeID: package.id)
+      ?? package.wallpaperData
+    _ = try appearance.preflight()
+    try kitty.preflight()
+    _ = try wallpaper.preflight()
+    try wallpaperSignal.preflight()
+    return wallpaperData
+  }
+
+  private func activeWallpaperURL(manifest: GenerationManifest) -> URL {
+    root.appending(
+      path: "generations/\(manifest.generationID)/\(WallpaperAdapter.outputPath)"
+    )
+  }
+
+  private func inspectWallpaper(
+    desiredWallpaperURL: URL?,
+    includeRuntimeChecks: Bool
+  ) -> AdapterInspection {
+    let wallpaperInspection = wallpaper.inspection(
+      desiredWallpaperURL: desiredWallpaperURL
+    )
+    do {
+      try wallpaperSignal.preflight()
+      if includeRuntimeChecks {
+        try wallpaperSignal.runtimePreflight(processRunner: processRunner)
+      }
+      var messages = [wallpaperInspection.message, wallpaperSignal.readyMessage].compactMap { $0 }
+      if includeRuntimeChecks {
+        messages.append("the yabai signal is loaded")
+      }
+      return AdapterInspection(
+        adapterID: WallpaperAdapter.id,
+        requirement: .required,
+        status: wallpaperInspection.status,
+        message: messages.joined(separator: "; ")
+      )
+    } catch {
+      let signalStatus: AdapterInspectionStatus
+      if case YabaiWallpaperSignalError.missingDirective = error {
+        signalStatus = .drifted
+      } else if case YabaiWallpaperSignalError.runtimeSignalMissing = error {
+        signalStatus = .drifted
+      } else {
+        signalStatus = .failed
+      }
+      return AdapterInspection(
+        adapterID: WallpaperAdapter.id,
+        requirement: .required,
+        status: Self.mostSevere(wallpaperInspection.status, signalStatus),
+        message: [wallpaperInspection.message, String(describing: error)]
+          .compactMap { $0 }
+          .joined(separator: "; ")
+      )
+    }
+  }
+
+  private static func mostSevere(
+    _ first: AdapterInspectionStatus,
+    _ second: AdapterInspectionStatus
+  ) -> AdapterInspectionStatus {
+    if first == .failed || second == .failed { return .failed }
+    if first == .drifted || second == .drifted { return .drifted }
+    return .ready
   }
 
   private static func kittyIncludeDirective(root: URL) -> String {
