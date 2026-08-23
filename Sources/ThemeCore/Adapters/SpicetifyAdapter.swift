@@ -8,7 +8,7 @@ struct SpicetifyAdapter: Sendable {
 
   func reconciliation() -> AdapterReconciliation {
     AdapterReconciliation(id: Self.id, requirement: .optional) {
-      let result = try await processRunner.run(
+      let result = try processRunner.run(
         ProcessRequest(executableURL: executableURL, arguments: ["apply"])
       )
       guard result.terminationStatus == 0 else {

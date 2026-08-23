@@ -980,7 +980,7 @@ private enum ThemeSetReport {
     case .dryRun(let themeID):
       return [
         "Theme '\(themeID)' is valid.",
-        "Kitty preflight passed.",
+        "Required adapter preflight passed.",
         "Canonical state: unchanged (dry run).",
         "No files written; no processes run.",
       ].joined(separator: "\n")

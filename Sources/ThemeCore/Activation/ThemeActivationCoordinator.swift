@@ -30,9 +30,14 @@ package enum AdapterSelectionError: Error, CustomStringConvertible, Equatable, S
 }
 
 package struct ThemeActivationCoordinator: Sendable {
-  package static let adapterRequirements = [KittyAdapter.id: AdapterRequirement.required]
+  package static let adapterRequirements = [
+    KittyAdapter.id: AdapterRequirement.required,
+    MacOSAppearanceAdapter.id: AdapterRequirement.required,
+  ]
 
+  private let root: URL
   private let activator: ThemeActivator
+  private let appearance: MacOSAppearanceAdapter
   private let kitty: KittyAdapter
   private let reconciler: ThemeReconciler
   private let statusStore: ReconciliationStatusStore
@@ -40,7 +45,9 @@ package struct ThemeActivationCoordinator: Sendable {
   package init(root: URL, kittyConfigurationURL: URL) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
+    self.root = root
     activator = ThemeActivator(root: root)
+    appearance = .live(root: root)
     kitty = KittyAdapter(
       configurationURL: kittyConfigurationURL,
       includeDirective: Self.kittyIncludeDirective(root: root),
@@ -54,17 +61,26 @@ package struct ThemeActivationCoordinator: Sendable {
     root: URL,
     kittyConfigurationURL: URL,
     processRunner: ProcessRunner,
+    currentAppearance: @escaping @Sendable () throws -> ThemeAppearance = { .dark },
+    appearanceControlIsAvailable: @escaping @Sendable () -> Bool = { true },
     faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void = { _ in },
     onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
     postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in }
   ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
+    self.root = root
     activator = ThemeActivator(
       root: root,
       faultInjector: faultInjector,
       onThemeChanged: onThemeChanged,
       postDarwinNotification: postDarwinNotification
+    )
+    appearance = MacOSAppearanceAdapter(
+      root: root,
+      controlIsAvailable: appearanceControlIsAvailable,
+      currentAppearance: currentAppearance,
+      processRunner: processRunner
     )
     kitty = KittyAdapter(
       configurationURL: kittyConfigurationURL,
@@ -76,6 +92,7 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   package func preflight(package: ThemePackage) throws {
+    _ = try appearance.preflight()
     try kitty.preflight()
     _ = try ThemeRenderer().render(
       package: package,
@@ -88,6 +105,7 @@ package struct ThemeActivationCoordinator: Sendable {
     expectedActiveGenerationID: String? = nil
   ) async throws -> ThemeActivationResult {
     try Task.checkCancellation()
+    _ = try appearance.preflight()
     try kitty.preflight()
     try Task.checkCancellation()
     let manifest = try activator.activate(
@@ -98,7 +116,9 @@ package struct ThemeActivationCoordinator: Sendable {
     do {
       let reconciliation = try await reconciler.reconcile(
         manifest: manifest,
-        adapters: [kitty.reconciliation()]
+        adapters: configuredAdapters(desiredAppearance: package.appearance).map {
+          $0.reconciliation()
+        }
       )
       return ThemeActivationResult(manifest: manifest, reconciliation: reconciliation)
     } catch {
@@ -112,10 +132,15 @@ package struct ThemeActivationCoordinator: Sendable {
   package func previewReconciliation(
     _ adapterIDs: [String]
   ) throws -> (manifest: GenerationManifest, inspections: [AdapterInspection]) {
-    let selected = try selectedAdapters(adapterIDs)
+    try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
+    let adapters = configuredAdapters(
+      desiredAppearance: try activeAppearance(manifest: manifest)
+    )
+    let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
       selected: selected,
+      all: adapters,
       requestedAll: adapterIDs.isEmpty,
       manifest: manifest
     )
@@ -126,16 +151,42 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   package func inspectAdapters(_ adapterIDs: [String]) throws -> [AdapterInspection] {
-    try selectedAdapters(adapterIDs).map { $0.inspection() }
+    try validateSelection(adapterIDs)
+    let appearanceInspection: AdapterInspection
+    do {
+      let manifest = try statusStore.activeManifest()
+      appearanceInspection = appearance.inspection(
+        desiredAppearance: try activeAppearance(manifest: manifest)
+      )
+    } catch ReconciliationStatusError.noActiveGeneration {
+      appearanceInspection = appearance.inspection(desiredAppearance: nil)
+    } catch {
+      appearanceInspection = AdapterInspection(
+        adapterID: MacOSAppearanceAdapter.id,
+        requirement: .required,
+        status: .failed,
+        message: "Cannot inspect active theme appearance: \(error)"
+      )
+    }
+    let selectedIDs = Set(adapterIDs)
+    return [
+      appearanceInspection,
+      kitty.inspection(),
+    ].filter {
+      adapterIDs.isEmpty || selectedIDs.contains($0.adapterID)
+    }
   }
 
   package func reconcile(
     adapterIDs: [String]
   ) async throws -> (manifest: GenerationManifest, record: ReconciliationRecord) {
-    let selected = try selectedAdapters(adapterIDs)
+    try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
+    let adapters = configuredAdapters(desiredAppearance: nil)
+    let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
       selected: selected,
+      all: adapters,
       requestedAll: adapterIDs.isEmpty,
       manifest: manifest
     )
@@ -147,7 +198,16 @@ package struct ThemeActivationCoordinator: Sendable {
     return (manifest, record)
   }
 
-  private func selectedAdapters(_ adapterIDs: [String]) throws -> [KittyAdapter] {
+  private func selectedAdapters(
+    _ adapterIDs: [String],
+    from adapters: [ConfiguredAdapter]
+  ) -> [ConfiguredAdapter] {
+    guard !adapterIDs.isEmpty else { return adapters }
+    let selectedIDs = Set(adapterIDs)
+    return adapters.filter { selectedIDs.contains($0.id) }
+  }
+
+  private func validateSelection(_ adapterIDs: [String]) throws {
     var seen = Set<String>()
     for adapterID in adapterIDs {
       guard seen.insert(adapterID).inserted else {
@@ -157,24 +217,72 @@ package struct ThemeActivationCoordinator: Sendable {
         throw AdapterSelectionError.unknown(adapterID)
       }
     }
-    return [kitty]
   }
 
   private func reconciliationPlan(
-    selected: [KittyAdapter],
+    selected: [ConfiguredAdapter],
+    all adapters: [ConfiguredAdapter],
     requestedAll: Bool,
     manifest: GenerationManifest
-  ) throws -> (adapters: [KittyAdapter], preservedResults: [AdapterResult]) {
+  ) throws -> (adapters: [ConfiguredAdapter], preservedResults: [AdapterResult]) {
     guard !requestedAll else { return (selected, []) }
     switch try statusStore.reconciliationState(for: manifest) {
     case .current(let record):
       return (selected, record.results)
     case .missing, .stale:
-      return ([kitty], [])
+      return (adapters, [])
     }
+  }
+
+  private func configuredAdapters(
+    desiredAppearance: ThemeAppearance?
+  ) -> [ConfiguredAdapter] {
+    [
+      ConfiguredAdapter(
+        id: MacOSAppearanceAdapter.id,
+        inspection: { appearance.inspection(desiredAppearance: desiredAppearance) },
+        reconciliation: {
+          appearance.reconciliation {
+            let manifest = try statusStore.activeManifest()
+            return try activeAppearance(manifest: manifest)
+          }
+        }
+      ),
+      ConfiguredAdapter(
+        id: KittyAdapter.id,
+        inspection: kitty.inspection,
+        reconciliation: kitty.reconciliation
+      ),
+    ]
+  }
+
+  private func activeAppearance(manifest: GenerationManifest) throws -> ThemeAppearance {
+    let themeURL = root.appending(
+      path: "generations/\(manifest.generationID)/\(ThemeRenderer.themeOutputPath)"
+    )
+    let normalized = try JSONDecoder().decode(
+      NormalizedTheme.self,
+      from: BoundedRegularFile.read(at: themeURL).data
+    )
+    guard
+      normalized.generationID == manifest.generationID,
+      normalized.themeID == manifest.themeID,
+      normalized.schemaVersion == manifest.themeSchemaVersion
+    else {
+      throw ReconciliationStatusError.invalidActiveGeneration(
+        "theme.json does not match the active manifest"
+      )
+    }
+    return normalized.appearance
   }
 
   private static func kittyIncludeDirective(root: URL) -> String {
     "include \(root.appending(path: "current/\(KittyAdapter.outputPath)").path)"
   }
+}
+
+private struct ConfiguredAdapter: Sendable {
+  let id: String
+  let inspection: @Sendable () -> AdapterInspection
+  let reconciliation: @Sendable () -> AdapterReconciliation
 }

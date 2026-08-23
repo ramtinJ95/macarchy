@@ -105,7 +105,12 @@ struct ReconcileDoctorCommandTests {
     let record = try ReconciliationRecord(
       manifest: manifest,
       results: [
-        AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)
+        AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
+        AdapterResult(
+          adapterID: "macos-appearance",
+          requirement: .required,
+          status: .applied
+        ),
       ]
     )
     let doctor = DoctorCommandRunner(
@@ -169,13 +174,26 @@ struct ReconcileDoctorCommandTests {
     let healthyRecord = try ReconciliationRecord(
       manifest: manifest,
       results: [
-        AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)
+        AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
+        AdapterResult(
+          adapterID: "macos-appearance",
+          requirement: .required,
+          status: .applied
+        ),
       ]
     )
     let healthy = DoctorCommandRunner(
       read: { _ in .state(manifest: manifest, reconciliation: .current(healthyRecord)) },
       inspect: { _, _ in
-        [AdapterInspection(adapterID: "kitty", requirement: .required)]
+        [
+          AdapterInspection(
+            adapterID: "macos-appearance",
+            requirement: .required,
+            message:
+              "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
+          ),
+          AdapterInspection(adapterID: "kitty", requirement: .required),
+        ]
       }
     )
     try expectDoctorGoldens(runner: healthy, basename: "healthy", succeeded: true)
@@ -188,7 +206,12 @@ struct ReconcileDoctorCommandTests {
           requirement: .required,
           status: .failed,
           message: "reload denied"
-        )
+        ),
+        AdapterResult(
+          adapterID: "macos-appearance",
+          requirement: .required,
+          status: .applied
+        ),
       ]
     )
     let unhealthy = DoctorCommandRunner(
@@ -196,11 +219,17 @@ struct ReconcileDoctorCommandTests {
       inspect: { _, _ in
         [
           AdapterInspection(
+            adapterID: "macos-appearance",
+            requirement: .required,
+            message:
+              "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
+          ),
+          AdapterInspection(
             adapterID: "kitty",
             requirement: .required,
             status: .drifted,
             message: "Kitty configuration is missing the stable include"
-          )
+          ),
         ]
       }
     )

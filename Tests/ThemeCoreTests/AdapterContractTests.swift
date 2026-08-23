@@ -6,7 +6,7 @@ import Testing
 
 struct AdapterContractTests {
   @Test
-  func activationPublishesBeforeKittyReloadFailureIsPersisted() async throws {
+  func activationPublishesBeforeAdapterProcessesAndPersistsTheirResults() async throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -19,13 +19,26 @@ struct AdapterContractTests {
       atomically: true,
       encoding: .utf8
     )
-    let state = Mutex((published: false, requests: [ProcessRequest]()))
+    let state = Mutex(
+      (
+        typedPublished: false,
+        darwinPublished: false,
+        appearance: ThemeAppearance.light,
+        requests: [ProcessRequest]()
+      )
+    )
     let runner = ProcessRunner { request in
       let published = state.withLock { state in
         state.requests.append(request)
-        return state.published
+        if request.executableURL == URL(filePath: "/usr/bin/osascript") {
+          state.appearance = .dark
+        }
+        return state.typedPublished && state.darwinPublished
       }
       #expect(published)
+      if request.executableURL == URL(filePath: "/usr/bin/osascript") {
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
       if request.arguments == ["-0", "kitty"] {
         return ProcessResult(terminationStatus: 0, output: "")
       }
@@ -36,13 +49,16 @@ struct AdapterContractTests {
       root: root,
       kittyConfigurationURL: configurationURL,
       processRunner: runner,
-      onThemeChanged: { _ in state.withLock { $0.published = true } }
+      currentAppearance: { state.withLock { $0.appearance } },
+      onThemeChanged: { _ in state.withLock { $0.typedPublished = true } },
+      postDarwinNotification: { _ in state.withLock { $0.darwinPublished = true } }
     )
 
     let activation = try await coordinator.activate(package: catppuccinPackage())
 
+    let requests = state.withLock { $0.requests }
     #expect(
-      state.withLock { $0.requests }
+      requests.filter { $0.executableURL == URL(filePath: "/usr/bin/killall") }
         == [
           ProcessRequest(
             executableURL: URL(filePath: "/usr/bin/killall"),
@@ -55,6 +71,12 @@ struct AdapterContractTests {
         ]
     )
     #expect(
+      requests.filter { $0.executableURL == URL(filePath: "/usr/bin/osascript") }
+        == [
+          Self.appearanceRequest(dark: true)
+        ]
+    )
+    #expect(
       activation.reconciliation.results
         == [
           AdapterResult(
@@ -62,7 +84,12 @@ struct AdapterContractTests {
             requirement: .required,
             status: .failed,
             message: "reload denied"
-          )
+          ),
+          AdapterResult(
+            adapterID: "macos-appearance",
+            requirement: .required,
+            status: .applied
+          ),
         ]
     )
     #expect(try store.read() == .current(activation.reconciliation))
@@ -89,6 +116,300 @@ struct AdapterContractTests {
         == [["-USR1", "kitty"], ["-0", "kitty"]]
     )
     #expect(try store.read() == .current(recovered))
+  }
+
+  @Test
+  func macOSAppearanceAppliesDarkAndLightLiveAndVerifiesObservedState() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let state = Mutex(ThemeAppearance.light)
+    let requests = Mutex([ProcessRequest]())
+    let adapter = MacOSAppearanceAdapter(
+      root: root,
+      controlIsAvailable: { true },
+      currentAppearance: { state.withLock { $0 } },
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        if request.arguments.last?.hasSuffix("true") == true {
+          state.withLock { $0 = .dark }
+        } else if request.arguments.last?.hasSuffix("false") == true {
+          state.withLock { $0 = .light }
+        }
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+
+    #expect(adapter.inspection(desiredAppearance: .dark).status == .drifted)
+    #expect(
+      try await adapter.reconciliation(desiredAppearance: { .dark }).run().status == .applied
+    )
+    #expect(
+      try await adapter.reconciliation(desiredAppearance: { .dark }).run().status == .applied
+    )
+    #expect(
+      try await adapter.reconciliation(desiredAppearance: { .light }).run().status == .applied
+    )
+
+    #expect(
+      requests.withLock { $0 }
+        == [
+          Self.appearanceRequest(dark: true),
+          Self.appearanceRequest(dark: false),
+        ]
+    )
+    #expect(adapter.inspection(desiredAppearance: .light).status == .ready)
+  }
+
+  @Test
+  func macOSAppearanceReportsCommandFailurePostApplyDriftAndUnavailableControl() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let state = Mutex(ThemeAppearance.light)
+    let failed = MacOSAppearanceAdapter(
+      root: root,
+      controlIsAvailable: { true },
+      currentAppearance: { state.withLock { $0 } },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(terminationStatus: 1, output: "Not authorized to send Apple events")
+      }
+    )
+    let failure = try await failed.reconciliation(desiredAppearance: { .dark }).run()
+    #expect(failure.status == .failed)
+    #expect(failure.message == "Not authorized to send Apple events")
+
+    let drifted = MacOSAppearanceAdapter(
+      root: root,
+      controlIsAvailable: { true },
+      currentAppearance: { state.withLock { $0 } },
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+    )
+    let drift = try await drifted.reconciliation(desiredAppearance: { .dark }).run()
+    #expect(drift.status == .drifted)
+    #expect(drift.message?.contains("remains light; expected dark") == true)
+
+    let unavailable = MacOSAppearanceAdapter(
+      root: root,
+      controlIsAvailable: { false },
+      currentAppearance: { .dark },
+      processRunner: ProcessRunner { _ in
+        Issue.record("Unavailable control must fail before process execution")
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+    #expect(unavailable.inspection(desiredAppearance: .dark).status == .failed)
+    #expect(
+      try await unavailable.reconciliation(desiredAppearance: { .dark }).run().status == .failed
+    )
+  }
+
+  @Test
+  func processRunnerTerminatesTimedOutCommands() throws {
+    let executable = URL(filePath: "/bin/sleep")
+    do {
+      _ = try ProcessRunner.live.run(
+        ProcessRequest(executableURL: executable, arguments: ["10"], timeout: 0.05)
+      )
+      Issue.record("Expected the process to time out")
+    } catch let error as ProcessRunnerError {
+      #expect(error == .timedOut(executable, 0.05))
+    }
+  }
+
+  @Test
+  func macOSAppearancePreflightFailurePreservesThePreviousGeneration() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let processCalls = Mutex(0)
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: ProcessRunner { _ in
+        processCalls.withLock { $0 += 1 }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      appearanceControlIsAvailable: { false }
+    )
+
+    await #expect(throws: MacOSAppearanceAdapterError.self) {
+      _ = try await coordinator.activate(package: catppuccinPackage())
+    }
+
+    #expect(processCalls.withLock { $0 } == 0)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: root.appending(path: "current").path
+      ) == "generations/\(previous.generationID)"
+    )
+  }
+
+  @Test
+  func selectedMacOSAppearanceReconciliationPreservesKittyEvidence() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let store = ReconciliationStatusStore(root: root)
+    _ = try store.persist(
+      manifest: manifest,
+      results: [
+        AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
+        AdapterResult(
+          adapterID: "macos-appearance",
+          requirement: .required,
+          status: .drifted
+        ),
+      ]
+    )
+    let state = Mutex(ThemeAppearance.light)
+    let requests = Mutex([ProcessRequest]())
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        state.withLock { $0 = .dark }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      currentAppearance: { state.withLock { $0 } }
+    )
+
+    let result = try await coordinator.reconcile(adapterIDs: ["macos-appearance"])
+
+    #expect(
+      requests.withLock { $0 }
+        == [
+          Self.appearanceRequest(dark: true)
+        ]
+    )
+    #expect(
+      result.record.results
+        == [
+          AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
+          AdapterResult(
+            adapterID: "macos-appearance",
+            requirement: .required,
+            status: .applied
+          ),
+        ]
+    )
+    #expect(try store.read() == .current(result.record))
+  }
+
+  @Test
+  func overlappingActivationsLeaveAppearanceMatchingCanonicalState() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let state = Mutex(
+      (
+        appearance: ThemeAppearance.dark,
+        lightCommandEntered: false,
+        darkPreflightEntered: false,
+        releaseLightCommand: false,
+        appearanceRequests: [ProcessRequest]()
+      )
+    )
+    let runner = ProcessRunner { request in
+      guard request.executableURL == URL(filePath: "/usr/bin/osascript") else {
+        return ProcessResult(terminationStatus: 1, output: "no matching process")
+      }
+      state.withLock { state in
+        state.appearanceRequests.append(request)
+        if request.arguments.last?.hasSuffix("false") == true {
+          state.lightCommandEntered = true
+        }
+      }
+      if request.arguments.last?.hasSuffix("false") == true {
+        while !state.withLock({ $0.releaseLightCommand }) {
+          Thread.sleep(forTimeInterval: 0.001)
+        }
+        state.withLock { $0.appearance = .light }
+      } else {
+        state.withLock { $0.appearance = .dark }
+      }
+      return ProcessResult(terminationStatus: 0, output: "")
+    }
+    let lightCoordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: runner,
+      currentAppearance: { state.withLock { $0.appearance } }
+    )
+    let darkCoordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: runner,
+      currentAppearance: {
+        state.withLock { state in
+          state.darkPreflightEntered = true
+          return state.appearance
+        }
+      }
+    )
+    let basePackage = try catppuccinPackage()
+    let lightPackage = package(basePackage, appearance: .light)
+
+    let lightActivation = Task {
+      try await lightCoordinator.activate(package: lightPackage)
+    }
+    try await waitUntil { state.withLock { $0.lightCommandEntered } }
+
+    let darkActivation = Task {
+      try await darkCoordinator.activate(package: basePackage)
+    }
+    try await waitUntil { state.withLock { $0.darkPreflightEntered } }
+    let committedBeforeRelease = try JSONDecoder().decode(
+      NormalizedTheme.self,
+      from: Data(contentsOf: root.appending(path: "current/theme.json"))
+    )
+    #expect(committedBeforeRelease.appearance == .light)
+    state.withLock { $0.releaseLightCommand = true }
+
+    if case .failure(let error) = await lightActivation.result {
+      #expect(error is ThemeCommittedWithReconciliationError)
+    }
+    let dark = try await darkActivation.value
+    let normalized = try JSONDecoder().decode(
+      NormalizedTheme.self,
+      from: Data(contentsOf: root.appending(path: "current/theme.json"))
+    )
+
+    #expect(normalized.appearance == .dark)
+    #expect(state.withLock { $0.appearance } == .dark)
+    #expect(
+      state.withLock { $0.appearanceRequests }
+        == [
+          Self.appearanceRequest(dark: false),
+          Self.appearanceRequest(dark: true),
+        ]
+    )
+    #expect(try ReconciliationStatusStore(root: root).read() == .current(dark.reconciliation))
   }
 
   @Test
@@ -363,7 +684,7 @@ struct AdapterContractTests {
       executableURL: executable,
       processRunner: ProcessRunner { request in
         state.withLock { $0.requests.append(request) }
-        try await Task.sleep(for: .milliseconds(100))
+        Thread.sleep(forTimeInterval: 0.1)
         state.withLock { $0.finished = true }
         return ProcessResult(terminationStatus: 1, output: "apply failed")
       }
@@ -405,7 +726,6 @@ struct AdapterContractTests {
       makeWritableForRemoval(root)
       try? FileManager.default.removeItem(at: root)
     }
-    _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
     try "include \(root.path)/current/generated/kitty.conf\n".write(
       to: configurationURL,
@@ -461,16 +781,31 @@ struct AdapterContractTests {
 
     #expect(preview.manifest.generationID == manifest.generationID)
     #expect(preview.manifest.themeID == manifest.themeID)
-    #expect(preview.inspections.count == 1)
-    #expect(preview.inspections[0].adapterID == "kitty")
-    #expect(preview.inspections[0].status == .drifted)
-    #expect(preview.inspections[0].message?.contains("must contain") == true)
+    #expect(preview.inspections.map(\.adapterID) == ["macos-appearance", "kitty"])
+    let appearanceInspection = try #require(preview.inspections.first)
+    let kittyInspection = try #require(preview.inspections.dropFirst().first)
+    #expect(appearanceInspection.status == .ready)
+    #expect(kittyInspection.status == .drifted)
+    #expect(kittyInspection.message?.contains("must contain") == true)
     #expect(processCalls.withLock { $0 } == 0)
     #expect(!FileManager.default.fileExists(atPath: root.appending(path: "state").path))
 
     try FileManager.default.removeItem(at: configurationURL)
     let unreadable = try coordinator.inspectAdapters([])
-    #expect(unreadable[0].status == .failed)
+    #expect(unreadable.first { $0.adapterID == "kitty" }?.status == .failed)
+
+    try FileManager.default.removeItem(at: root.appending(path: "current"))
+    try "invalid\n".write(
+      to: root.appending(path: "current"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let invalidCanonical = try coordinator.inspectAdapters([])
+    let appearanceFailure = try #require(
+      invalidCanonical.first { $0.adapterID == "macos-appearance" }
+    )
+    #expect(appearanceFailure.status == .failed)
+    #expect(appearanceFailure.message?.contains("active theme appearance") == true)
   }
 
   @Test
@@ -793,6 +1128,23 @@ struct AdapterContractTests {
     )
   }
 
+  private func package(
+    _ base: ThemePackage,
+    appearance: ThemeAppearance
+  ) -> ThemePackage {
+    ThemePackage(
+      packageURL: base.packageURL,
+      schemaVersion: base.schemaVersion,
+      id: base.id,
+      displayName: base.displayName,
+      appearance: appearance,
+      semantic: base.semantic,
+      terminal: base.terminal,
+      wallpaper: base.wallpaper,
+      mappings: base.mappings
+    )
+  }
+
   private func testActivator(root: URL) -> ThemeActivator {
     ThemeActivator(root: root, faultInjector: { _ in })
   }
@@ -833,6 +1185,18 @@ struct AdapterContractTests {
       try await Task.sleep(for: .milliseconds(10))
     }
     throw ReconciliationTestError.timedOut
+  }
+
+  private static func appearanceScript(dark: Bool) -> String {
+    "tell application \"System Events\" to tell appearance preferences to set dark mode to \(dark)"
+  }
+
+  private static func appearanceRequest(dark: Bool) -> ProcessRequest {
+    ProcessRequest(
+      executableURL: URL(filePath: "/usr/bin/osascript"),
+      arguments: ["-e", appearanceScript(dark: dark)],
+      timeout: 2
+    )
   }
 
   private func waitUntil(_ condition: @Sendable () -> Bool) async throws {

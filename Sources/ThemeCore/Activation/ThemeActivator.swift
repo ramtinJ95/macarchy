@@ -35,6 +35,42 @@ package struct ThemeCommittedActivationError: Error, CustomStringConvertible, Se
   }
 }
 
+struct ActivationLock: Sendable {
+  // lockf is process-scoped, so sibling threads also need a mutex.
+  private static let processMutex = Mutex<Void>(())
+
+  private let root: URL
+
+  init(root: URL) {
+    self.root = root.standardizedFileURL
+  }
+
+  func withLock<Value>(_ operation: () throws -> Value) throws -> Value {
+    try Self.processMutex.withLock { _ in
+      let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(
+        at: runDirectory,
+        withIntermediateDirectories: true
+      )
+
+      let lockURL = runDirectory.appending(path: "activation.lock")
+      let descriptor = lockURL.path.withCString {
+        Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
+      }
+      guard descriptor >= 0 else {
+        throw ThemeActivationError.activationLock(operation: "open", code: errno)
+      }
+      defer { Darwin.close(descriptor) }
+
+      while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
+        if errno == EINTR { continue }
+        throw ThemeActivationError.activationLock(operation: "acquire", code: errno)
+      }
+      return try operation()
+    }
+  }
+}
+
 enum ActivationCheckpoint: Sendable {
   case inputDigested
   case outputsRendered
@@ -48,14 +84,13 @@ enum ActivationCheckpoint: Sendable {
 }
 
 public struct ThemeActivator: Sendable {
-  // lockf is process-scoped, so sibling threads also need a mutex.
-  private static let processActivationMutex = Mutex<Void>(())
   private static let rendererVersions = [
     KittyAdapter.id: KittyAdapter.rendererVersion,
     "normalized_theme": 1,
   ]
 
   private let root: URL
+  private let activationLock: ActivationLock
   private let faultInjector: @Sendable (ActivationCheckpoint) throws -> Void
   private let onThemeChanged: @Sendable (ThemeChanged) -> Void
   private let postDarwinNotification: @Sendable (String) -> Void
@@ -79,6 +114,7 @@ public struct ThemeActivator: Sendable {
     postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in }
   ) {
     self.root = root.standardizedFileURL
+    activationLock = ActivationLock(root: root)
     self.faultInjector = faultInjector
     self.onThemeChanged = onThemeChanged
     self.postDarwinNotification = postDarwinNotification
@@ -92,27 +128,7 @@ public struct ThemeActivator: Sendable {
     package: ThemePackage,
     expectedActiveGenerationID: String?
   ) throws -> GenerationManifest {
-    let result = try Self.processActivationMutex.withLock { _ in
-      let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
-      try FileManager.default.createDirectory(
-        at: runDirectory,
-        withIntermediateDirectories: true
-      )
-
-      let lockURL = runDirectory.appending(path: "activation.lock")
-      let descriptor = lockURL.path.withCString {
-        Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-      }
-      guard descriptor >= 0 else {
-        throw ThemeActivationError.activationLock(operation: "open", code: errno)
-      }
-      defer { Darwin.close(descriptor) }
-
-      while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
-        if errno == EINTR { continue }
-        throw ThemeActivationError.activationLock(operation: "acquire", code: errno)
-      }
-
+    let result = try activationLock.withLock {
       if let expectedActiveGenerationID {
         let active = try ReconciliationStatusStore(root: root).activeManifest().generationID
         guard active == expectedActiveGenerationID else {
