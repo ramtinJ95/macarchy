@@ -1,5 +1,7 @@
 import CryptoKit
+import Dispatch
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ThemeCore
@@ -91,6 +93,192 @@ struct ActivationSliceTests {
         at: root.appending(path: "generations"), includingPropertiesForKeys: nil)
       #expect(!generationChildren.contains { $0.lastPathComponent.hasPrefix(".staging-") })
     }
+  }
+
+  @Test
+  func concurrentEquivalentActivationsRenderOneGeneration() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let package = try catppuccinPackage()
+    let firstActivationEntered = DispatchSemaphore(value: 0)
+    let secondActivationEntered = DispatchSemaphore(value: 0)
+    let releaseFirstActivation = DispatchSemaphore(value: 0)
+    defer { releaseFirstActivation.signal() }
+    let state = Mutex(ConcurrentActivationState())
+    let activator = ThemeActivator(root: root) { checkpoint in
+      switch checkpoint {
+      case .inputDigested:
+        let shouldWait = state.withLock { state in
+          state.inputDigestCount += 1
+          return state.inputDigestCount == 1
+        }
+        if shouldWait {
+          firstActivationEntered.signal()
+          releaseFirstActivation.wait()
+        } else {
+          secondActivationEntered.signal()
+        }
+      case .outputsRendered:
+        state.withLock { $0.renderCount += 1 }
+      default:
+        break
+      }
+    }
+
+    let group = DispatchGroup()
+    let callersReady = DispatchSemaphore(value: 0)
+    let startCallers = [DispatchSemaphore(value: 0), DispatchSemaphore(value: 0)]
+    for start in startCallers {
+      group.enter()
+      DispatchQueue.global().async {
+        defer { group.leave() }
+        callersReady.signal()
+        start.wait()
+        do {
+          let manifest = try activator.activate(package: package)
+          state.withLock { $0.generationIDs.append(manifest.generationID) }
+        } catch {
+          state.withLock { $0.errors.append(String(describing: error)) }
+        }
+      }
+    }
+
+    guard callersReady.wait(timeout: .now() + .seconds(2)) == .success,
+      callersReady.wait(timeout: .now() + .seconds(2)) == .success
+    else { throw TestError.timedOut }
+    startCallers[0].signal()
+    guard firstActivationEntered.wait(timeout: .now() + .seconds(2)) == .success else {
+      throw TestError.timedOut
+    }
+    startCallers[1].signal()
+    #expect(secondActivationEntered.wait(timeout: .now() + .milliseconds(100)) == .timedOut)
+    releaseFirstActivation.signal()
+    guard secondActivationEntered.wait(timeout: .now() + .seconds(2)) == .success else {
+      throw TestError.timedOut
+    }
+    guard group.wait(timeout: .now() + .seconds(2)) == .success else {
+      throw TestError.timedOut
+    }
+
+    let result = state.withLock { $0 }
+    #expect(result.errors.isEmpty)
+    #expect(result.inputDigestCount == 2)
+    #expect(result.renderCount == 1)
+    #expect(Set(result.generationIDs).count == 1)
+    #expect(try generationIDs(at: root).count == 1)
+  }
+
+  @Test
+  func crossProcessLockIsHeldAcrossActivationAndReleasedAfterFailure() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let activationEntered = DispatchSemaphore(value: 0)
+    let releaseActivation = DispatchSemaphore(value: 0)
+    defer { releaseActivation.signal() }
+    let completion = DispatchSemaphore(value: 0)
+    let outcome = Mutex<String?>(nil)
+    let package = try catppuccinPackage()
+    let activator = ThemeActivator(root: root) { checkpoint in
+      if checkpoint == .inputDigested {
+        activationEntered.signal()
+        releaseActivation.wait()
+      }
+    }
+    DispatchQueue.global().async {
+      defer { completion.signal() }
+      do {
+        _ = try activator.activate(package: package)
+      } catch {
+        outcome.withLock { $0 = String(describing: error) }
+      }
+    }
+
+    guard activationEntered.wait(timeout: .now() + .seconds(2)) == .success else {
+      throw TestError.timedOut
+    }
+    #expect(try !externalProcessCanAcquireLock(at: root))
+    releaseActivation.signal()
+    guard completion.wait(timeout: .now() + .seconds(2)) == .success else {
+      throw TestError.timedOut
+    }
+    #expect(outcome.withLock { $0 } == nil)
+    #expect(try externalProcessCanAcquireLock(at: root))
+
+    let failingActivator = ThemeActivator(root: root) { checkpoint in
+      if checkpoint == .inputDigested { throw InjectedFault.expected }
+    }
+    #expect(throws: InjectedFault.self) {
+      _ = try failingActivator.activate(package: package)
+    }
+    #expect(try externalProcessCanAcquireLock(at: root))
+  }
+
+  @Test
+  func activationContinuesAfterLockHolderIsTerminated() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
+    let lockPath = runDirectory.appending(path: "activation.lock").path
+    FileManager.default.createFile(atPath: lockPath, contents: nil)
+
+    let lockHolder = Process()
+    let output = Pipe()
+    lockHolder.executableURL = URL(filePath: "/usr/bin/python3")
+    lockHolder.arguments = [
+      "-c",
+      "import fcntl, os, sys, time; f = open(sys.argv[1], 'r+'); fcntl.lockf(f, fcntl.LOCK_EX); os.write(1, b'1'); time.sleep(60)",
+      lockPath,
+    ]
+    lockHolder.standardOutput = output
+    lockHolder.standardError = output
+    try lockHolder.run()
+    defer {
+      if lockHolder.isRunning {
+        lockHolder.terminate()
+        lockHolder.waitUntilExit()
+      }
+    }
+    guard try output.fileHandleForReading.read(upToCount: 1) == Data("1".utf8) else {
+      throw TestError.lockHolderDidNotStart
+    }
+    #expect(try !externalProcessCanAcquireLock(at: root))
+
+    let activationAttempted = DispatchSemaphore(value: 0)
+    let activationCompleted = DispatchSemaphore(value: 0)
+    let outcome = Mutex<String?>(nil)
+    let package = try catppuccinPackage()
+    DispatchQueue.global().async {
+      activationAttempted.signal()
+      defer { activationCompleted.signal() }
+      do {
+        _ = try ThemeActivator(root: root).activate(package: package)
+      } catch {
+        outcome.withLock { $0 = String(describing: error) }
+      }
+    }
+    guard activationAttempted.wait(timeout: .now() + .seconds(2)) == .success else {
+      throw TestError.timedOut
+    }
+    #expect(activationCompleted.wait(timeout: .now() + .milliseconds(100)) == .timedOut)
+
+    lockHolder.terminate()
+    lockHolder.waitUntilExit()
+
+    guard activationCompleted.wait(timeout: .now() + .seconds(2)) == .success else {
+      throw TestError.timedOut
+    }
+    #expect(outcome.withLock { $0 } == nil)
+    #expect(try generationIDs(at: root).count == 1)
   }
 
   @Test
@@ -316,6 +504,35 @@ struct ActivationSliceTests {
     "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 
+  private func externalProcessCanAcquireLock(at root: URL) throws -> Bool {
+    let probe = Process()
+    probe.executableURL = URL(filePath: "/usr/bin/python3")
+    probe.arguments = [
+      "-c",
+      """
+      import fcntl, sys
+      lock = open(sys.argv[1], 'r+')
+      try:
+          fcntl.lockf(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+      except BlockingIOError:
+          sys.exit(75)
+      """,
+      root.appending(path: "run/activation.lock").path,
+    ]
+    probe.standardOutput = FileHandle.nullDevice
+    probe.standardError = FileHandle.nullDevice
+    try probe.run()
+    probe.waitUntilExit()
+    switch probe.terminationStatus {
+    case 0:
+      return true
+    case 75:
+      return false
+    default:
+      throw TestError.lockProbeFailed(probe.terminationStatus)
+    }
+  }
+
   private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appending(
@@ -348,5 +565,15 @@ struct ActivationSliceTests {
   private enum TestError: Error {
     case expectedActivationError
     case expectedCorruptGeneration
+    case lockHolderDidNotStart
+    case lockProbeFailed(Int32)
+    case timedOut
   }
+}
+
+private struct ConcurrentActivationState: Sendable {
+  var inputDigestCount = 0
+  var renderCount = 0
+  var generationIDs: [String] = []
+  var errors: [String] = []
 }
