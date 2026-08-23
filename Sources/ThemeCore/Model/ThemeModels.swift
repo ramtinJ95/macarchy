@@ -85,8 +85,8 @@ public struct ThemePackage: Sendable {
   public let semantic: SemanticColors
   public let terminal: TerminalColors
   public let wallpaper: ThemeWallpaper
+  let wallpaperData: Data
   public let mappings: [String: String]
-
 }
 
 public struct NormalizedTheme: Codable, Sendable {

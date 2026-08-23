@@ -7,7 +7,7 @@ struct BoundedRegularFile {
   let data: Data
   let permissions: Int
 
-  static func read(at url: URL) throws -> Self {
+  static func read(at url: URL, maximumSize: Int = maximumSize) throws -> Self {
     let descriptor = url.path.withCString {
       Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
     }
@@ -24,7 +24,7 @@ struct BoundedRegularFile {
       throw BoundedRegularFileError.notRegular
     }
     guard metadata.st_size >= 0, metadata.st_size <= maximumSize else {
-      throw BoundedRegularFileError.tooLarge
+      throw BoundedRegularFileError.tooLarge(maximumSize)
     }
 
     var data = Data()
@@ -42,7 +42,7 @@ struct BoundedRegularFile {
       data.append(contentsOf: buffer.prefix(count))
     }
     guard data.count <= maximumSize else {
-      throw BoundedRegularFileError.tooLarge
+      throw BoundedRegularFileError.tooLarge(maximumSize)
     }
     return Self(data: data, permissions: Int(metadata.st_mode & 0o777))
   }
@@ -51,7 +51,7 @@ struct BoundedRegularFile {
 enum BoundedRegularFileError: Error, CustomStringConvertible, Equatable, Sendable {
   case notRegular
   case system(operation: String, code: Int32)
-  case tooLarge
+  case tooLarge(Int)
 
   var description: String {
     switch self {
@@ -59,8 +59,8 @@ enum BoundedRegularFileError: Error, CustomStringConvertible, Equatable, Sendabl
       "not a regular file"
     case .system(let operation, let code):
       "\(operation) failed (errno \(code)): \(String(cString: strerror(code)))"
-    case .tooLarge:
-      "exceeds the 1 MiB file limit"
+    case .tooLarge(let maximumSize):
+      "exceeds the \(maximumSize / 1_048_576) MiB file limit"
     }
   }
 }

@@ -2,6 +2,26 @@ import Foundation
 import ImageIO
 import TOMLDecoder
 
+enum WallpaperAssetError: Error, CustomStringConvertible, Sendable {
+  case invalidPNG
+
+  var description: String { "file cannot be decoded as PNG" }
+}
+
+struct WallpaperAsset {
+  static let maximumSize = 32 * 1_048_576
+
+  static func load(at url: URL) throws -> Data {
+    let data = try BoundedRegularFile.read(at: url, maximumSize: maximumSize).data
+    let source = CGImageSourceCreateWithData(data as CFData, nil)
+    let imageType = source.flatMap(CGImageSourceGetType) as String?
+    guard source.map(CGImageSourceGetCount) ?? 0 > 0, imageType == "public.png" else {
+      throw WallpaperAssetError.invalidPNG
+    }
+    return data
+  }
+}
+
 public struct ThemePackageLoader: Sendable {
   public init() {}
 
@@ -22,7 +42,8 @@ public struct ThemePackageLoader: Sendable {
 
     let validated = try validate(theme: theme, themeIndex: themeIndex, themeFile: themeFile)
     try validate(mappings: mappings, index: mappingsIndex, file: mappingsFile)
-    try validateAssets(theme: theme, packageURL: packageURL, index: themeIndex, file: themeFile)
+    let wallpaperData = try validateAssets(
+      theme: theme, packageURL: packageURL, index: themeIndex, file: themeFile)
 
     return ThemePackage(
       packageURL: packageURL,
@@ -33,6 +54,7 @@ public struct ThemePackageLoader: Sendable {
       semantic: validated.semantic,
       terminal: validated.terminal,
       wallpaper: theme.wallpaper,
+      wallpaperData: wallpaperData,
       mappings: mappings.mappings
     )
   }
@@ -81,7 +103,8 @@ public struct ThemePackageLoader: Sendable {
       message: "Unsupported schema version \(theme.schemaVersion); expected \(ThemeSchema.version)",
       index: themeIndex, file: themeFile)
     try require(
-      isThemeID(theme.id), path: "id", message: "Theme ID must match [a-z][a-z0-9]*(?:-[a-z0-9]+)*",
+      ThemeSchema.isThemeID(theme.id), path: "id",
+      message: "Theme ID must match [a-z][a-z0-9]*(?:-[a-z0-9]+)*",
       index: themeIndex, file: themeFile)
     try require(
       !theme.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -173,7 +196,7 @@ public struct ThemePackageLoader: Sendable {
 
     for (consumer, value) in mappings.mappings.sorted(by: { $0.key < $1.key }) {
       try require(
-        isThemeID(consumer), path: "mappings.\(consumer)",
+        ThemeSchema.isThemeID(consumer), path: "mappings.\(consumer)",
         message: "Mapping key must match [a-z][a-z0-9]*(?:-[a-z0-9]+)*", index: index,
         file: file)
       try require(
@@ -188,7 +211,7 @@ public struct ThemePackageLoader: Sendable {
     packageURL: URL,
     index: TOMLSourceIndex,
     file: URL
-  ) throws {
+  ) throws -> Data {
     let path = theme.wallpaper.path
     try require(
       path == "wallpapers/default.png", path: "wallpaper.path",
@@ -205,20 +228,22 @@ public struct ThemePackageLoader: Sendable {
       file: file
     )
 
-    guard FileManager.default.fileExists(atPath: wallpaperURL.path) else {
+    let wallpaperData: Data
+    do {
+      wallpaperData = try WallpaperAsset.load(at: resolvedWallpaper)
+    } catch WallpaperAssetError.invalidPNG {
       throw ThemeDiagnostic(
-        location: index.location(for: "wallpaper.path", file: file), field: "wallpaper.path",
-        message: "Cannot read wallpaper asset at \(path)")
+        location: index.location(for: "wallpaper.path", file: file),
+        field: "wallpaper.path",
+        message: "Wallpaper asset cannot be decoded as PNG"
+      )
+    } catch {
+      throw ThemeDiagnostic(
+        location: index.location(for: "wallpaper.path", file: file),
+        field: "wallpaper.path",
+        message: "Cannot read wallpaper asset at \(path): \(error)"
+      )
     }
-    let imageSource = CGImageSourceCreateWithURL(wallpaperURL as CFURL, nil)
-    let imageType = imageSource.flatMap(CGImageSourceGetType) as String?
-    try require(
-      imageSource.map(CGImageSourceGetCount) ?? 0 > 0 && imageType == "public.png",
-      path: "wallpaper.path",
-      message: "Wallpaper asset cannot be decoded as PNG",
-      index: index,
-      file: file
-    )
 
     let provenance = packageURL.appending(path: "LICENSES/wallpaper.md")
     try require(
@@ -233,6 +258,7 @@ public struct ThemePackageLoader: Sendable {
         !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, path: path,
         message: "Wallpaper provenance value must not be empty", index: index, file: file)
     }
+    return wallpaperData
   }
 
   private func require(
@@ -248,12 +274,4 @@ public struct ThemePackageLoader: Sendable {
     }
   }
 
-  private func isThemeID(_ value: String) -> Bool {
-    guard !value.isEmpty, value.first?.isLetter == true, value == value.lowercased() else {
-      return false
-    }
-    return value.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") }
-      && !value.hasSuffix("-")
-      && !value.contains("--")
-  }
 }

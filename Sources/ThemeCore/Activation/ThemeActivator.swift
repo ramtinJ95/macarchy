@@ -8,7 +8,7 @@ package enum ThemeActivationError: Error, CustomStringConvertible, Equatable, Se
   case activationLock(operation: String, code: Int32)
   case cannotReplaceCurrent(Int32)
   case corruptGeneration(id: String, reason: String)
-  case generatedFileTooLarge(path: String, size: Int)
+  case generatedFileTooLarge(path: String, size: Int, maximumSize: Int)
 
   package var description: String {
     switch self {
@@ -20,8 +20,8 @@ package enum ThemeActivationError: Error, CustomStringConvertible, Equatable, Se
       "Cannot atomically replace current theme pointer (errno \(code)): \(String(cString: strerror(code)))"
     case .corruptGeneration(let id, let reason):
       "Generation '\(id)' matches the requested theme inputs but is corrupt: \(reason)"
-    case .generatedFileTooLarge(let path, let size):
-      "Generated file '\(path)' is \(size) bytes; limit is 1 MiB"
+    case .generatedFileTooLarge(let path, let size, let maximumSize):
+      "Generated file '\(path)' is \(size) bytes; limit is \(maximumSize / 1_048_576) MiB"
     }
   }
 }
@@ -86,6 +86,7 @@ enum ActivationCheckpoint: Sendable {
 public struct ThemeActivator: Sendable {
   private static let rendererVersions = [
     KittyAdapter.id: KittyAdapter.rendererVersion,
+    WallpaperAdapter.id: WallpaperAdapter.rendererVersion,
     "normalized_theme": 1,
   ]
 
@@ -121,12 +122,17 @@ public struct ThemeActivator: Sendable {
   }
 
   public func activate(package: ThemePackage) throws -> GenerationManifest {
-    try activate(package: package, expectedActiveGenerationID: nil)
+    try activate(
+      package: package,
+      expectedActiveGenerationID: nil,
+      wallpaperData: package.wallpaperData
+    )
   }
 
   package func activate(
     package: ThemePackage,
-    expectedActiveGenerationID: String?
+    expectedActiveGenerationID: String?,
+    wallpaperData: Data
   ) throws -> GenerationManifest {
     let result = try activationLock.withLock {
       if let expectedActiveGenerationID {
@@ -140,7 +146,11 @@ public struct ThemeActivator: Sendable {
       }
 
       let interruptedTrash = try recoverInterruptedActivation()
-      return try activateLocked(package: package, interruptedTrash: interruptedTrash)
+      return try activateLocked(
+        package: package,
+        wallpaperData: wallpaperData,
+        interruptedTrash: interruptedTrash
+      )
     }
 
     onThemeChanged(ThemeChanged(manifest: result.manifest))
@@ -184,10 +194,11 @@ public struct ThemeActivator: Sendable {
 
   private func activateLocked(
     package: ThemePackage,
+    wallpaperData: Data,
     interruptedTrash: [URL]
   ) throws -> LockedActivationResult {
     let previousGenerationID = currentGenerationID()
-    let inputDigest = try generationInputDigest(package: package)
+    let inputDigest = try generationInputDigest(package: package, wallpaperData: wallpaperData)
     try faultInjector(.inputDigested)
 
     if let reusable = try reusableGeneration(inputDigest: inputDigest, package: package) {
@@ -200,7 +211,11 @@ public struct ThemeActivator: Sendable {
     }
 
     let generationID = "g-\(UUID().uuidString.lowercased())"
-    let rendered = try ThemeRenderer().render(package: package, generationID: generationID)
+    let rendered = try ThemeRenderer().render(
+      package: package,
+      generationID: generationID,
+      wallpaperData: wallpaperData
+    )
     try faultInjector(.outputsRendered)
     for (path, data) in rendered.files {
       try requireGeneratedFileSize(data, path: path)
@@ -564,8 +579,7 @@ public struct ThemeActivator: Sendable {
     try atomicallyReplaceCurrent(with: temporaryPointer)
   }
 
-  private func generationInputDigest(package: ThemePackage) throws -> String {
-    let wallpaperURL = package.packageURL.appending(path: package.wallpaper.path)
+  private func generationInputDigest(package: ThemePackage, wallpaperData: Data) throws -> String {
     let input = GenerationInput(
       manifestSchemaVersion: GenerationManifest.currentSchemaVersion,
       themeSchemaVersion: package.schemaVersion,
@@ -573,7 +587,7 @@ public struct ThemeActivator: Sendable {
       appearance: package.appearance,
       semantic: package.semantic,
       terminal: package.terminal,
-      wallpaperDigest: sha256Digest(try Data(contentsOf: wallpaperURL)),
+      wallpaperDigest: sha256Digest(wallpaperData),
       mappings: package.mappings,
       rendererVersions: Self.rendererVersions
     )
@@ -589,8 +603,13 @@ public struct ThemeActivator: Sendable {
   }
 
   private func requireGeneratedFileSize(_ data: Data, path: String) throws {
-    guard data.count <= BoundedRegularFile.maximumSize else {
-      throw ThemeActivationError.generatedFileTooLarge(path: path, size: data.count)
+    let maximumSize = ThemeRenderer.maximumOutputSize(for: path)
+    guard data.count <= maximumSize else {
+      throw ThemeActivationError.generatedFileTooLarge(
+        path: path,
+        size: data.count,
+        maximumSize: maximumSize
+      )
     }
   }
 

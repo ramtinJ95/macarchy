@@ -50,6 +50,35 @@ meanings to the shared desktop vocabulary.
 Package-only source swatches, named application mappings, wallpapers, paths,
 and adapter/reconciliation state are deliberately excluded.
 
+## Personal wallpaper overrides
+
+An unbundled personal image can replace a package wallpaper without changing or
+redistributing the package. Configure it in the canonical
+`~/.config/macarchy/config.toml`:
+
+```toml
+schema_version = 1
+
+[wallpaper_overrides]
+catppuccin-mocha = "/absolute/path/to/personal.png"
+```
+
+`config.toml` may be a symlink to a behavior file owned by the personal dotfiles
+repository. Override keys are theme identifiers and values are absolute paths to
+decodable PNG files no larger than 32 MiB. Macarchy copies the selected bytes
+into the immutable generation as `generated/wallpaper.png`; consumers never
+depend on the external path after commit. The wallpaper bytes participate in
+the generation input digest, while the personal source path does not.
+
+An absent configuration or absent entry uses the package's licensed default.
+Unknown configuration tables/keys, relative paths, missing files, malformed
+PNGs, and oversized overrides fail before canonical activation.
+
+The personal lazy Space-change integration is deliberately fixed to
+`~/.config/yabai/yabairc`, `~/.local/bin/macarchy`, and
+`/opt/homebrew/bin/yabai`. Supporting a different provider layout is future
+scope rather than another schema-v1 configuration surface.
+
 ## Theme package input
 
 A schema-v1 package is one directory containing:
