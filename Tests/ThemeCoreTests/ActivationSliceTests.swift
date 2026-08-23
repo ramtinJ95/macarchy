@@ -242,6 +242,40 @@ struct ActivationSliceTests {
   }
 
   @Test
+  func conditionalActivationRejectsASupersededGenerationBeforeWork() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let original = try testActivator(root: root).activate(package: catppuccinPackage())
+    let active = try testActivator(root: root).activate(package: tokyoNightPackage())
+    let conditional = ThemeActivator(
+      root: root,
+      faultInjector: { _ in
+        Issue.record("A failed generation condition must stop before activation work")
+      }
+    )
+
+    #expect(
+      throws: ThemeActivationError.activeGenerationChanged(
+        expected: original.generationID,
+        active: active.generationID
+      )
+    ) {
+      _ = try conditional.activate(
+        package: catppuccinPackage(),
+        expectedActiveGenerationID: original.generationID
+      )
+    }
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: root.appending(path: "current").path
+      ) == "generations/\(active.generationID)"
+    )
+  }
+
+  @Test
   func crossProcessLockIsHeldAcrossActivationAndReleasedAfterFailure() throws {
     let root = try temporaryDirectory()
     defer {

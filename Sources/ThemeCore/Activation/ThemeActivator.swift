@@ -4,14 +4,17 @@ import Darwin
 import Foundation
 import Synchronization
 
-enum ThemeActivationError: Error, CustomStringConvertible, Sendable {
+package enum ThemeActivationError: Error, CustomStringConvertible, Equatable, Sendable {
+  case activeGenerationChanged(expected: String, active: String)
   case activationLock(operation: String, code: Int32)
   case cannotReplaceCurrent(Int32)
   case corruptGeneration(id: String, reason: String)
   case generatedFileTooLarge(path: String, size: Int)
 
-  var description: String {
+  package var description: String {
     switch self {
+    case .activeGenerationChanged(let expected, let active):
+      "Expected active generation '\(expected)', but '\(active)' is now active"
     case .activationLock(let operation, let code):
       "Cannot \(operation) activation lock (errno \(code)): \(String(cString: strerror(code)))"
     case .cannotReplaceCurrent(let code):
@@ -34,7 +37,6 @@ enum ActivationCheckpoint: CaseIterable, Sendable {
 }
 
 public struct ThemeActivator: Sendable {
-  private static let maximumGenerationFileSize = 1_048_576
   // lockf is process-scoped, so sibling threads also need a mutex.
   private static let processActivationMutex = Mutex<Void>(())
   private static let rendererVersions = [
@@ -72,6 +74,13 @@ public struct ThemeActivator: Sendable {
   }
 
   public func activate(package: ThemePackage) throws -> GenerationManifest {
+    try activate(package: package, expectedActiveGenerationID: nil)
+  }
+
+  package func activate(
+    package: ThemePackage,
+    expectedActiveGenerationID: String?
+  ) throws -> GenerationManifest {
     let manifest = try Self.processActivationMutex.withLock { _ in
       let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
       try FileManager.default.createDirectory(
@@ -91,6 +100,16 @@ public struct ThemeActivator: Sendable {
       while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
         if errno == EINTR { continue }
         throw ThemeActivationError.activationLock(operation: "acquire", code: errno)
+      }
+
+      if let expectedActiveGenerationID {
+        let active = try ReconciliationStatusStore(root: root).activeManifest().generationID
+        guard active == expectedActiveGenerationID else {
+          throw ThemeActivationError.activeGenerationChanged(
+            expected: expectedActiveGenerationID,
+            active: active
+          )
+        }
       }
 
       return try activateLocked(package: package)
@@ -223,53 +242,12 @@ public struct ThemeActivator: Sendable {
     return reusable
   }
 
-  private func safelyReadManifest(at url: URL) -> BoundedFile? {
-    try? readBoundedRegularFile(at: url)
+  private func safelyReadManifest(at url: URL) -> BoundedRegularFile? {
+    try? BoundedRegularFile.read(at: url)
   }
 
   private func manifestObject(in data: Data) -> [String: Any]? {
     try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-  }
-
-  private func readBoundedRegularFile(at url: URL) throws -> BoundedFile {
-    let descriptor = url.path.withCString {
-      Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
-    }
-    guard descriptor >= 0 else {
-      throw BoundedFileError.system(operation: "open", code: errno)
-    }
-    defer { Darwin.close(descriptor) }
-
-    var metadata = stat()
-    guard fstat(descriptor, &metadata) == 0 else {
-      throw BoundedFileError.system(operation: "fstat", code: errno)
-    }
-    guard metadata.st_mode & S_IFMT == S_IFREG else {
-      throw BoundedFileError.notRegular
-    }
-    guard metadata.st_size >= 0, metadata.st_size <= Self.maximumGenerationFileSize else {
-      throw BoundedFileError.tooLarge
-    }
-
-    var data = Data()
-    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-    while data.count <= Self.maximumGenerationFileSize {
-      let remaining = min(
-        buffer.count, Self.maximumGenerationFileSize + 1 - data.count)
-      let count = buffer.withUnsafeMutableBytes {
-        Darwin.read(descriptor, $0.baseAddress, remaining)
-      }
-      if count == 0 { break }
-      if count < 0 {
-        if errno == EINTR { continue }
-        throw BoundedFileError.system(operation: "read", code: errno)
-      }
-      data.append(contentsOf: buffer.prefix(count))
-    }
-    guard data.count <= Self.maximumGenerationFileSize else {
-      throw BoundedFileError.tooLarge
-    }
-    return BoundedFile(data: data, permissions: Int(metadata.st_mode & 0o777))
   }
 
   private func validateReusableGeneration(
@@ -331,9 +309,9 @@ public struct ThemeActivator: Sendable {
 
     for path in ThemeRenderer.outputPaths.sorted() {
       let artifactURL = generationURL.appending(path: path)
-      let artifact: BoundedFile
+      let artifact: BoundedRegularFile
       do {
-        artifact = try readBoundedRegularFile(at: artifactURL)
+        artifact = try BoundedRegularFile.read(at: artifactURL)
       } catch {
         throw corruptGeneration(
           generationURL,
@@ -435,7 +413,7 @@ public struct ThemeActivator: Sendable {
   }
 
   private func requireGeneratedFileSize(_ data: Data, path: String) throws {
-    guard data.count <= Self.maximumGenerationFileSize else {
+    guard data.count <= BoundedRegularFile.maximumSize else {
       throw ThemeActivationError.generatedFileTooLarge(path: path, size: data.count)
     }
   }
@@ -469,28 +447,6 @@ public struct ThemeActivator: Sendable {
     }
     guard result == 0 else {
       throw ThemeActivationError.cannotReplaceCurrent(errno)
-    }
-  }
-}
-
-private struct BoundedFile {
-  let data: Data
-  let permissions: Int
-}
-
-private enum BoundedFileError: Error, CustomStringConvertible, Sendable {
-  case notRegular
-  case system(operation: String, code: Int32)
-  case tooLarge
-
-  var description: String {
-    switch self {
-    case .notRegular:
-      "not a regular file"
-    case .system(let operation, let code):
-      "\(operation) failed (errno \(code)): \(String(cString: strerror(code)))"
-    case .tooLarge:
-      "exceeds the 1 MiB generation file limit"
     }
   }
 }

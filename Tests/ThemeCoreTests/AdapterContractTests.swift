@@ -350,6 +350,35 @@ struct AdapterContractTests {
     let store = ReconciliationStatusStore(root: root)
 
     #expect(try store.read() == .missing(activeGenerationID: manifest.generationID))
+    let statusURL = root.appending(path: "state/reconciliation.json")
+    try FileManager.default.createDirectory(
+      at: statusURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let redirectedStatus = root.appending(path: "redirected-status.json")
+    try "{}".write(to: redirectedStatus, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      atPath: statusURL.path,
+      withDestinationPath: redirectedStatus.path
+    )
+    #expect(throws: ReconciliationStatusError.self) {
+      _ = try store.read()
+    }
+    try FileManager.default.removeItem(at: statusURL)
+
+    #expect(throws: ReconciliationStatusError.self) {
+      _ = try store.persist(
+        manifest: manifest,
+        results: [
+          AdapterResult(
+            adapterID: "oversized",
+            requirement: .required,
+            status: .failed,
+            message: String(repeating: "x", count: BoundedRegularFile.maximumSize)
+          )
+        ]
+      )
+    }
     #expect(throws: ReconciliationStatusError.duplicateAdapterID) {
       _ = try store.persist(
         manifest: manifest,
@@ -367,7 +396,6 @@ struct AdapterContractTests {
         AdapterResult(adapterID: "b", requirement: .required, status: .applied),
       ]
     )
-    let statusURL = root.appending(path: "state/reconciliation.json")
     var object = try #require(
       JSONSerialization.jsonObject(with: Data(contentsOf: statusURL)) as? [String: Any]
     )
@@ -376,6 +404,42 @@ struct AdapterContractTests {
     #expect(throws: ReconciliationStatusError.nondeterministicResultOrder) {
       _ = try store.read()
     }
+  }
+
+  @Test
+  func activeManifestRejectsBrokenPointerAndManifestIdentity() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let store = ReconciliationStatusStore(root: root)
+    let missingGenerationID = "g-00000000-0000-0000-0000-000000000000"
+    try FileManager.default.createSymbolicLink(
+      atPath: root.appending(path: "current").path,
+      withDestinationPath: "generations/\(missingGenerationID)"
+    )
+    try expectInvalidActiveGeneration { try store.activeManifest() }
+
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let manifestURL = root.appending(path: "generations/\(manifest.generationID)/manifest.json")
+    let original = try Data(contentsOf: manifestURL)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o644],
+      ofItemAtPath: manifestURL.path
+    )
+
+    var object = try #require(
+      JSONSerialization.jsonObject(with: original) as? [String: Any]
+    )
+    object["manifest_schema_version"] = GenerationManifest.currentSchemaVersion + 1
+    try JSONSerialization.data(withJSONObject: object).write(to: manifestURL)
+    try expectInvalidActiveGeneration { try store.activeManifest() }
+
+    object["manifest_schema_version"] = GenerationManifest.currentSchemaVersion
+    object["generation_id"] = missingGenerationID
+    try JSONSerialization.data(withJSONObject: object).write(to: manifestURL)
+    try expectInvalidActiveGeneration { try store.activeManifest() }
   }
 
   private var repositoryRoot: URL {
@@ -443,6 +507,17 @@ struct AdapterContractTests {
       try await Task.sleep(for: .milliseconds(10))
     }
     throw ReconciliationTestError.timedOut
+  }
+
+  private func expectInvalidActiveGeneration(
+    _ operation: () throws -> GenerationManifest
+  ) throws {
+    do {
+      _ = try operation()
+      Issue.record("Expected invalid active generation")
+    } catch ReconciliationStatusError.invalidActiveGeneration {
+      return
+    }
   }
 }
 
