@@ -1,0 +1,45 @@
+{
+  "appearance" : "dark",
+  "generation_id" : "golden-catppuccin-mocha",
+  "schema_version" : 1,
+  "semantic" : {
+    "accent" : "#cba6f7",
+    "background" : "#1e1e2e",
+    "border" : "#585b70",
+    "error" : "#f38ba8",
+    "info" : "#74c7ec",
+    "muted_text" : "#a6adc8",
+    "overlay" : "#45475a",
+    "selection" : "#45475a",
+    "success" : "#a6e3a1",
+    "surface" : "#313244",
+    "text" : "#cdd6f4",
+    "warning" : "#f9e2af"
+  },
+  "terminal" : {
+    "ansi" : [
+      "#45475a",
+      "#f38ba8",
+      "#a6e3a1",
+      "#f9e2af",
+      "#89b4fa",
+      "#f5c2e7",
+      "#94e2d5",
+      "#bac2de",
+      "#585b70",
+      "#f38ba8",
+      "#a6e3a1",
+      "#f9e2af",
+      "#89b4fa",
+      "#f5c2e7",
+      "#94e2d5",
+      "#a6adc8"
+    ],
+    "background" : "#1e1e2e",
+    "cursor" : "#f5e0dc",
+    "foreground" : "#cdd6f4",
+    "selection_background" : "#f5e0dc",
+    "selection_foreground" : "#1e1e2e"
+  },
+  "theme_id" : "catppuccin-mocha"
+}
