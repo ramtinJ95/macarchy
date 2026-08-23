@@ -2,7 +2,7 @@
 
 - Source: original Macarchy palette artwork generated from geometric shapes
   and colors declared by this package
-- Author: Ramtin Jabbari
+- Author: Ramtin Javanmardi
 - License: MIT; see the repository root `LICENSE`
 - External source material: none
 
