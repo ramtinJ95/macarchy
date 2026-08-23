@@ -17,7 +17,7 @@ struct ActivationSliceTests {
     let previousMarker = try installPreviousGeneration(at: root)
     let package = try catppuccinPackage()
 
-    let activation = try ThemeActivator(root: root).activate(package: package)
+    let activation = try testActivator(root: root).activate(package: package)
 
     let current = root.appending(path: "current")
     let destination = try FileManager.default.destinationOfSymbolicLink(atPath: current.path)
@@ -63,6 +63,68 @@ struct ActivationSliceTests {
   }
 
   @Test
+  func committedThemeIsPublishedAfterUnlockAndCanBeReopened() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let publication = Mutex<Result<ThemePublication, PublicationTestError>?>(nil)
+    let darwinHint = Mutex<Result<DarwinHint, PublicationTestError>?>(nil)
+    let activator = ThemeActivator(
+      root: root,
+      faultInjector: { _ in },
+      onThemeChanged: { event in
+        do {
+          let data = try Data(contentsOf: root.appending(path: "current/theme.json"))
+          let theme = try JSONDecoder().decode(NormalizedTheme.self, from: data)
+          let activationLockWasAvailable = try externalProcessCanAcquireLock(at: root)
+          publication.withLock {
+            $0 = .success(
+              ThemePublication(
+                event: event,
+                reopenedGenerationID: theme.generationID,
+                reopenedThemeID: theme.themeID,
+                activationLockWasAvailable: activationLockWasAvailable
+              )
+            )
+          }
+        } catch {
+          publication.withLock { $0 = .failure(.failed(String(describing: error))) }
+        }
+      },
+      postDarwinNotification: { name in
+        do {
+          try darwinHint.withLock {
+            $0 = .success(
+              DarwinHint(
+                name: name,
+                activationLockWasAvailable: try externalProcessCanAcquireLock(at: root),
+                currentExists: FileManager.default.fileExists(
+                  atPath: root.appending(path: "current/theme.json").path)
+              )
+            )
+          }
+        } catch {
+          darwinHint.withLock { $0 = .failure(.failed(String(describing: error))) }
+        }
+      }
+    )
+
+    let manifest = try activator.activate(package: catppuccinPackage())
+    let observed = try #require(publication.withLock { $0 }).get()
+    #expect(observed.event.generationID == manifest.generationID)
+    #expect(observed.event.themeID == manifest.themeID)
+    #expect(observed.reopenedGenerationID == manifest.generationID)
+    #expect(observed.reopenedThemeID == manifest.themeID)
+    #expect(observed.activationLockWasAvailable)
+    let hint = try #require(darwinHint.withLock { $0 }).get()
+    #expect(hint.name == ThemeChanged.darwinNotificationName)
+    #expect(hint.activationLockWasAvailable)
+    #expect(hint.currentExists)
+  }
+
+  @Test
   func everyPreReplacementFaultPreservesPreviousCanonicalGeneration() throws {
     let package = try catppuccinPackage()
     for checkpoint in ActivationCheckpoint.allCases {
@@ -72,9 +134,15 @@ struct ActivationSliceTests {
         try? FileManager.default.removeItem(at: root)
       }
       let previousMarker = try installPreviousGeneration(at: root)
-      let activator = ThemeActivator(root: root) { reached in
-        if reached == checkpoint { throw InjectedFault.expected }
-      }
+      let publicationCounts = Mutex((typed: 0, darwin: 0))
+      let activator = ThemeActivator(
+        root: root,
+        faultInjector: { reached in
+          if reached == checkpoint { throw InjectedFault.expected }
+        },
+        onThemeChanged: { _ in publicationCounts.withLock { $0.typed += 1 } },
+        postDarwinNotification: { _ in publicationCounts.withLock { $0.darwin += 1 } }
+      )
 
       #expect(throws: InjectedFault.self) {
         _ = try activator.activate(package: package)
@@ -92,6 +160,8 @@ struct ActivationSliceTests {
       let generationChildren = try FileManager.default.contentsOfDirectory(
         at: root.appending(path: "generations"), includingPropertiesForKeys: nil)
       #expect(!generationChildren.contains { $0.lastPathComponent.hasPrefix(".staging-") })
+      #expect(publicationCounts.withLock { $0.typed } == 0)
+      #expect(publicationCounts.withLock { $0.darwin } == 0)
     }
   }
 
@@ -261,7 +331,7 @@ struct ActivationSliceTests {
       activationAttempted.signal()
       defer { activationCompleted.signal() }
       do {
-        _ = try ThemeActivator(root: root).activate(package: package)
+        _ = try testActivator(root: root).activate(package: package)
       } catch {
         outcome.withLock { $0 = String(describing: error) }
       }
@@ -308,14 +378,14 @@ struct ActivationSliceTests {
     ).write(to: changedMappings, atomically: true, encoding: .utf8)
 
     let stateRoot = fixtureRoot.appending(path: "state", directoryHint: .isDirectory)
-    let originalManifest = try ThemeActivator(root: stateRoot).activate(
+    let originalManifest = try testActivator(root: stateRoot).activate(
       package: catppuccinPackage())
     let reuseOnly = ThemeActivator(root: stateRoot) { checkpoint in
       if checkpoint == .outputsRendered { throw InjectedFault.expected }
     }
     let equivalentManifest = try reuseOnly.activate(
       package: ThemePackageLoader().load(packageURL: equivalentURL))
-    let changedManifest = try ThemeActivator(root: stateRoot).activate(
+    let changedManifest = try testActivator(root: stateRoot).activate(
       package: ThemePackageLoader().load(packageURL: changedURL))
 
     #expect(originalManifest.inputDigest == equivalentManifest.inputDigest)
@@ -334,20 +404,30 @@ struct ActivationSliceTests {
     let catppuccin = try catppuccinPackage()
     let tokyoNight = try tokyoNightPackage()
 
-    let firstCatppuccin = try ThemeActivator(root: root).activate(package: catppuccin)
+    let firstCatppuccin = try testActivator(root: root).activate(package: catppuccin)
     let stalePointer = root.appending(path: ".current-\(firstCatppuccin.generationID)")
     try FileManager.default.createSymbolicLink(
       atPath: stalePointer.path,
       withDestinationPath: "generations/\(firstCatppuccin.generationID)"
     )
-    let reuseOnly = ThemeActivator(root: root) { checkpoint in
-      if checkpoint == .outputsRendered { throw InjectedFault.expected }
-    }
+    let publications = Mutex((generationIDs: [String](), darwinNames: [String]()))
+    let reuseOnly = ThemeActivator(
+      root: root,
+      faultInjector: { checkpoint in
+        if checkpoint == .outputsRendered { throw InjectedFault.expected }
+      },
+      onThemeChanged: { event in
+        publications.withLock { $0.generationIDs.append(event.generationID) }
+      },
+      postDarwinNotification: { name in
+        publications.withLock { $0.darwinNames.append(name) }
+      }
+    )
     let repeatedCatppuccin = try reuseOnly.activate(package: catppuccin)
     #expect(repeatedCatppuccin.generationID == firstCatppuccin.generationID)
     #expect(FileManager.default.fileExists(atPath: stalePointer.path))
 
-    let tokyo = try ThemeActivator(root: root).activate(package: tokyoNight)
+    let tokyo = try testActivator(root: root).activate(package: tokyoNight)
     #expect(tokyo.generationID != firstCatppuccin.generationID)
 
     let failBeforePointer = ThemeActivator(root: root) { checkpoint in
@@ -370,6 +450,14 @@ struct ActivationSliceTests {
       ) == "generations/\(firstCatppuccin.generationID)"
     )
     #expect(try generationIDs(at: root).count == 2)
+    #expect(
+      publications.withLock { $0.generationIDs }
+        == [firstCatppuccin.generationID, firstCatppuccin.generationID]
+    )
+    #expect(
+      publications.withLock { $0.darwinNames }
+        == [ThemeChanged.darwinNotificationName, ThemeChanged.darwinNotificationName]
+    )
   }
 
   @Test
@@ -380,15 +468,15 @@ struct ActivationSliceTests {
       try? FileManager.default.removeItem(at: root)
     }
     let catppuccin = try catppuccinPackage()
-    let catppuccinGeneration = try ThemeActivator(root: root).activate(package: catppuccin)
-    let tokyoGeneration = try ThemeActivator(root: root).activate(package: tokyoNightPackage())
+    let catppuccinGeneration = try testActivator(root: root).activate(package: catppuccin)
+    let tokyoGeneration = try testActivator(root: root).activate(package: tokyoNightPackage())
 
     let corruptedTheme = root.appending(
       path: "generations/\(catppuccinGeneration.generationID)/theme.json")
     try overwriteReadOnlyFile(corruptedTheme, with: Data("corrupt\n".utf8))
 
     let error = try activationError {
-      _ = try ThemeActivator(root: root).activate(package: catppuccin)
+      _ = try testActivator(root: root).activate(package: catppuccin)
     }
     guard case .corruptGeneration(let id, let reason) = error else {
       throw TestError.expectedCorruptGeneration
@@ -411,8 +499,8 @@ struct ActivationSliceTests {
       try? FileManager.default.removeItem(at: root)
     }
     let catppuccin = try catppuccinPackage()
-    let catppuccinGeneration = try ThemeActivator(root: root).activate(package: catppuccin)
-    let tokyoGeneration = try ThemeActivator(root: root).activate(package: tokyoNightPackage())
+    let catppuccinGeneration = try testActivator(root: root).activate(package: catppuccin)
+    let tokyoGeneration = try testActivator(root: root).activate(package: tokyoNightPackage())
 
     let manifestURL = root.appending(
       path: "generations/\(catppuccinGeneration.generationID)/manifest.json")
@@ -461,6 +549,10 @@ struct ActivationSliceTests {
     try ThemePackageLoader().load(
       packageURL: repositoryRoot.appending(
         path: "Themes/tokyo-night", directoryHint: .isDirectory))
+  }
+
+  private func testActivator(root: URL) -> ThemeActivator {
+    ThemeActivator(root: root, faultInjector: { _ in })
   }
 
   private func installPreviousGeneration(at root: URL) throws -> URL {
@@ -576,4 +668,21 @@ private struct ConcurrentActivationState: Sendable {
   var renderCount = 0
   var generationIDs: [String] = []
   var errors: [String] = []
+}
+
+private struct ThemePublication: Sendable {
+  let event: ThemeChanged
+  let reopenedGenerationID: String
+  let reopenedThemeID: String
+  let activationLockWasAvailable: Bool
+}
+
+private struct DarwinHint: Sendable {
+  let name: String
+  let activationLockWasAvailable: Bool
+  let currentExists: Bool
+}
+
+private enum PublicationTestError: Error, Sendable {
+  case failed(String)
 }
