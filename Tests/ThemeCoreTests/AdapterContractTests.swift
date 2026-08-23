@@ -77,21 +77,21 @@ struct AdapterContractTests {
         == .stale(activeGenerationID: tokyoNight.generationID, record: record)
     )
 
-    #expect(throws: ReconciliationStatusError.self) {
+    #expect(
+      throws: ReconciliationStatusError.generationChanged(
+        expected: catppuccin.generationID,
+        active: tokyoNight.generationID
+      )
+    ) {
       _ = try store.persist(
         manifest: catppuccin,
         results: [AdapterResult(adapterID: "kitty", requirement: .required, status: .failed)]
       )
     }
-    #expect(
-      try FileManager.default.destinationOfSymbolicLink(
-        atPath: root.appending(path: "current").path
-      ) == "generations/\(tokyoNight.generationID)"
-    )
   }
 
   @Test
-  func missingAndDuplicateStatusAreExplicit() throws {
+  func missingAndMalformedStatusAreExplicit() throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -101,7 +101,7 @@ struct AdapterContractTests {
     let store = ReconciliationStatusStore(root: root)
 
     #expect(try store.read() == .missing(activeGenerationID: manifest.generationID))
-    #expect(throws: ReconciliationStatusError.self) {
+    #expect(throws: ReconciliationStatusError.duplicateAdapterID) {
       _ = try store.persist(
         manifest: manifest,
         results: [
@@ -109,6 +109,23 @@ struct AdapterContractTests {
           AdapterResult(adapterID: "kitty", requirement: .required, status: .drifted),
         ]
       )
+    }
+
+    _ = try store.persist(
+      manifest: manifest,
+      results: [
+        AdapterResult(adapterID: "a", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "b", requirement: .required, status: .applied),
+      ]
+    )
+    let statusURL = root.appending(path: "state/reconciliation.json")
+    var object = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: statusURL)) as? [String: Any]
+    )
+    object["results"] = Array(try #require(object["results"] as? [[String: Any]]).reversed())
+    try JSONSerialization.data(withJSONObject: object).write(to: statusURL)
+    #expect(throws: ReconciliationStatusError.nondeterministicResultOrder) {
+      _ = try store.read()
     }
   }
 

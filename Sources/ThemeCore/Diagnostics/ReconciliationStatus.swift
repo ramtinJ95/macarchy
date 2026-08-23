@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-public enum AdapterStatus: String, Codable, CaseIterable, Sendable {
+public enum AdapterStatus: String, Codable, Sendable {
   case applied
   case pending
   case restartRequired = "restart_required"
@@ -59,6 +59,16 @@ public struct ReconciliationRecord: Codable, Equatable, Sendable {
     self.results = sorted
   }
 
+  func validated() throws -> Self {
+    guard Set(results.map(\.adapterID)).count == results.count else {
+      throw ReconciliationStatusError.duplicateAdapterID
+    }
+    guard results == results.sorted(by: { $0.adapterID < $1.adapterID }) else {
+      throw ReconciliationStatusError.nondeterministicResultOrder
+    }
+    return self
+  }
+
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case generationID = "generation_id"
@@ -73,11 +83,12 @@ public enum ReconciliationState: Equatable, Sendable {
   case stale(activeGenerationID: String, record: ReconciliationRecord)
 }
 
-public enum ReconciliationStatusError: Error, CustomStringConvertible, Sendable {
+public enum ReconciliationStatusError: Error, CustomStringConvertible, Equatable, Sendable {
   case cannotReplace(Int32)
   case duplicateAdapterID
   case generationChanged(expected: String, active: String)
   case noActiveGeneration
+  case nondeterministicResultOrder
   case unsupportedSchemaVersion(Int)
 
   public var description: String {
@@ -89,7 +100,9 @@ public enum ReconciliationStatusError: Error, CustomStringConvertible, Sendable 
     case .generationChanged(let expected, let active):
       "Cannot persist reconciliation for generation '\(expected)' because '\(active)' is active"
     case .noActiveGeneration:
-      "Cannot read reconciliation status without an active generation"
+      "Reconciliation status requires an active generation"
+    case .nondeterministicResultOrder:
+      "Reconciliation results are not ordered by adapter identifier"
     case .unsupportedSchemaVersion(let version):
       "Unsupported reconciliation status schema version \(version)"
     }
@@ -124,7 +137,7 @@ public struct ReconciliationStatusStore: Sendable {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     var data = try encoder.encode(record)
     data.append(0x0a)
-    try data.write(to: temporaryURL, options: [.atomic])
+    try data.write(to: temporaryURL)
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o600],
       ofItemAtPath: temporaryURL.path
@@ -149,13 +162,14 @@ public struct ReconciliationStatusStore: Sendable {
       return .missing(activeGenerationID: active.generationID)
     }
 
-    let record = try JSONDecoder().decode(
+    let decoded = try JSONDecoder().decode(
       ReconciliationRecord.self,
       from: Data(contentsOf: statusURL)
     )
-    guard record.schemaVersion == ReconciliationRecord.currentSchemaVersion else {
-      throw ReconciliationStatusError.unsupportedSchemaVersion(record.schemaVersion)
+    guard decoded.schemaVersion == ReconciliationRecord.currentSchemaVersion else {
+      throw ReconciliationStatusError.unsupportedSchemaVersion(decoded.schemaVersion)
     }
+    let record = try decoded.validated()
     guard
       record.generationID == active.generationID,
       record.themeID == active.themeID
