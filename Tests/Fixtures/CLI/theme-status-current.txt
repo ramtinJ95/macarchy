@@ -1,0 +1,3 @@
+Active theme: 'catppuccin-mocha' (generation 'g-active-generation').
+Reconciliation: current.
+- kitty [required]: applied

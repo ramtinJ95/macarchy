@@ -1,0 +1,9 @@
+{
+  "active" : true,
+  "error" : "Cannot decode reconciliation status",
+  "generation_id" : "g-active-generation",
+  "operation" : "theme_status",
+  "outcome" : "failure",
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

@@ -1,0 +1,3 @@
+Active theme: 'catppuccin-mocha' (generation 'g-active-generation').
+Reconciliation: stale record for theme 'tokyo-night' (generation 'g-previous-generation').
+- kitty [required]: failed: reload denied

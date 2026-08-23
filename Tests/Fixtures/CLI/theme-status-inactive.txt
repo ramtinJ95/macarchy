@@ -1,0 +1,2 @@
+No active theme.
+Canonical state: absent.

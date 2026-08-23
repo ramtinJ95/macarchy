@@ -1,0 +1,2 @@
+Active theme: 'catppuccin-mocha' (generation 'g-active-generation').
+Reconciliation: missing for the active generation.
