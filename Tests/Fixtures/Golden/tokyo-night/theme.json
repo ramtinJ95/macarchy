@@ -1,0 +1,45 @@
+{
+  "appearance" : "dark",
+  "generation_id" : "golden-tokyo-night",
+  "schema_version" : 1,
+  "semantic" : {
+    "accent" : "#7aa2f7",
+    "background" : "#1a1b26",
+    "border" : "#565f89",
+    "error" : "#f7768e",
+    "info" : "#7dcfff",
+    "muted_text" : "#a9b1d6",
+    "overlay" : "#414868",
+    "selection" : "#33467c",
+    "success" : "#9ece6a",
+    "surface" : "#24283b",
+    "text" : "#c0caf5",
+    "warning" : "#e0af68"
+  },
+  "terminal" : {
+    "ansi" : [
+      "#15161e",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#7aa2f7",
+      "#bb9af7",
+      "#7dcfff",
+      "#a9b1d6",
+      "#414868",
+      "#f7768e",
+      "#9ece6a",
+      "#e0af68",
+      "#7aa2f7",
+      "#bb9af7",
+      "#7dcfff",
+      "#c0caf5"
+    ],
+    "background" : "#1a1b26",
+    "cursor" : "#c0caf5",
+    "foreground" : "#c0caf5",
+    "selection_background" : "#33467c",
+    "selection_foreground" : "#c0caf5"
+  },
+  "theme_id" : "tokyo-night"
+}
