@@ -1,0 +1,37 @@
+schema_version = 1
+id = "catppuccin-mocha"
+display_name = "Catppuccin Mocha"
+appearance = "dark"
+
+[semantic]
+background = "#1e1e2e"
+surface = "#313244"
+overlay = "#45475a"
+border = "#585b70"
+text = "#cdd6f4"
+muted_text = "#a6adc8"
+accent = "#cba6f7"
+selection = "#45475a"
+info = "#74c7ec"
+success = "#a6e3a1"
+warning = "#f9e2af"
+error = "#f38ba8"
+
+[terminal]
+foreground = "#cdd6f4"
+background = "#1e1e2e"
+cursor = "#f5e0dc"
+selection_foreground = "#1e1e2e"
+selection_background = "#f5e0dc"
+ansi = [
+  "#45475a", "#f38ba8", "#a6e3a1", "#f9e2af",
+  "#89b4fa", "#f5c2e7", "#94e2d5", "#bac2de",
+  "#585b70", "#f38ba8", "#a6e3a1", "#f9e2af",
+  "#89b4fa", "#f5c2e7", "#94e2d5", "#a6adc8",
+]
+
+[wallpaper]
+path = "wallpapers/default.png"
+source = "Original Macarchy palette artwork"
+author = "Ramtin Jabbari"
+license = "MIT"
