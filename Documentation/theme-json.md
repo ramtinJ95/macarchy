@@ -85,8 +85,10 @@ strings are not accepted even when they are otherwise valid TOML.
 
 Read `current/theme.json` on launch. Watch the parent directory of `current`,
 not the old symlink target, then reopen `current/theme.json` after every event.
-Also reread on wake and whenever a watcher is reattached. The later Darwin
-notification is only a latency hint and never carries canonical colors.
+Also reread on wake and whenever a watcher is reattached. Macarchy posts the
+Darwin notification `io.github.ramtinj95.macarchy.theme-changed` as a
+payload-free latency hint. A notification never replaces the filesystem
+contract: reopen `current/theme.json` after every hint.
 
 Minimal macOS example:
 

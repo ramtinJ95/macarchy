@@ -1,3 +1,4 @@
+import CoreFoundation
 import CryptoKit
 import Darwin
 import Foundation
@@ -40,21 +41,35 @@ public struct ThemeActivator: Sendable {
 
   private let root: URL
   private let faultInjector: @Sendable (ActivationCheckpoint) throws -> Void
+  private let onThemeChanged: @Sendable (ThemeChanged) -> Void
+  private let postDarwinNotification: @Sendable (String) -> Void
 
-  public init(root: URL) {
-    self.init(root: root, faultInjector: { _ in })
+  public init(
+    root: URL,
+    onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in }
+  ) {
+    self.init(
+      root: root,
+      faultInjector: { _ in },
+      onThemeChanged: onThemeChanged,
+      postDarwinNotification: Self.postDarwinNotification
+    )
   }
 
   init(
     root: URL,
-    faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void
+    faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void,
+    onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
+    postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in }
   ) {
     self.root = root.standardizedFileURL
     self.faultInjector = faultInjector
+    self.onThemeChanged = onThemeChanged
+    self.postDarwinNotification = postDarwinNotification
   }
 
   public func activate(package: ThemePackage) throws -> GenerationManifest {
-    try Self.processActivationMutex.withLock { _ in
+    let manifest = try Self.processActivationMutex.withLock { _ in
       let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
       try FileManager.default.createDirectory(
         at: runDirectory,
@@ -77,6 +92,21 @@ public struct ThemeActivator: Sendable {
 
       return try activateLocked(package: package)
     }
+
+    onThemeChanged(ThemeChanged(manifest: manifest))
+    postDarwinNotification(ThemeChanged.darwinNotificationName)
+    return manifest
+  }
+
+  private static func postDarwinNotification(named name: String) {
+    // The filesystem remains authoritative; the Darwin notification carries no payload.
+    CFNotificationCenterPostNotification(
+      CFNotificationCenterGetDarwinNotifyCenter(),
+      CFNotificationName(name as CFString),
+      nil,
+      nil,
+      true
+    )
   }
 
   private func activateLocked(package: ThemePackage) throws -> GenerationManifest {
