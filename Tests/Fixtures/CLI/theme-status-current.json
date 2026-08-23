@@ -1,0 +1,20 @@
+{
+  "active" : true,
+  "generation_id" : "g-active-generation",
+  "operation" : "theme_status",
+  "outcome" : "current",
+  "reconciliation" : {
+    "generation_id" : "g-active-generation",
+    "results" : [
+      {
+        "adapter_id" : "kitty",
+        "requirement" : "required",
+        "status" : "applied"
+      }
+    ],
+    "schema_version" : 1,
+    "theme_id" : "catppuccin-mocha"
+  },
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

@@ -1,0 +1,21 @@
+{
+  "active" : true,
+  "generation_id" : "g-active-generation",
+  "operation" : "theme_status",
+  "outcome" : "reconciliation_stale",
+  "reconciliation" : {
+    "generation_id" : "g-previous-generation",
+    "results" : [
+      {
+        "adapter_id" : "kitty",
+        "message" : "reload denied",
+        "requirement" : "required",
+        "status" : "failed"
+      }
+    ],
+    "schema_version" : 1,
+    "theme_id" : "tokyo-night"
+  },
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

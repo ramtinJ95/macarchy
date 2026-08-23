@@ -225,7 +225,12 @@ struct ThemeSetCommandTests {
   private func runner(
     activate: @escaping @Sendable (ThemePackage, URL, URL) async throws -> ThemeActivationResult
   ) -> ThemeSetCommandRunner {
-    ThemeSetCommandRunner(preflight: { _, _, _ in }, activate: activate)
+    ThemeSetCommandRunner(
+      preflight: { _, _, _ in },
+      activate: { package, stateRoot, kittyConfigurationURL, _ in
+        try await activate(package, stateRoot, kittyConfigurationURL)
+      }
+    )
   }
 }
 
