@@ -1,0 +1,5 @@
+Reconciliation dry run for 'catppuccin-mocha' (generation 'g-active-generation').
+Inspection:
+- kitty [required]: ready
+Canonical state and reconciliation status: unchanged (dry run).
+No files written; no processes run.

@@ -1,0 +1,28 @@
+{
+  "findings" : [
+    {
+      "id" : "canonical",
+      "message" : "Theme 'catppuccin-mocha' generation 'g-active-generation' is active.",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation",
+      "message" : "Status matches the active generation.",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation.kitty",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
+      "id" : "kitty.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    }
+  ],
+  "mutated" : false,
+  "operation" : "doctor",
+  "outcome" : "healthy",
+  "schema_version" : 1
+}

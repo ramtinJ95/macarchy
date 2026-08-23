@@ -1,5 +1,40 @@
 import Foundation
 
+package enum AdapterInspectionStatus: String, Sendable {
+  case ready
+  case drifted
+  case failed
+}
+
+package struct AdapterInspection: Sendable {
+  package let adapterID: String
+  package let requirement: AdapterRequirement
+  package let status: AdapterInspectionStatus
+  package let message: String?
+
+  package init(
+    adapterID: String,
+    requirement: AdapterRequirement,
+    status: AdapterInspectionStatus = .ready,
+    message: String? = nil
+  ) {
+    self.adapterID = adapterID
+    self.requirement = requirement
+    self.status = status
+    self.message = message
+  }
+}
+
+package struct ReconciliationPersistenceError: Error, CustomStringConvertible, Sendable {
+  package let manifest: GenerationManifest
+  package let results: [AdapterResult]
+  package let cause: String
+
+  package var description: String {
+    "Adapters ran for generation '\(manifest.generationID)', but reconciliation status could not be persisted: \(cause)"
+  }
+}
+
 struct AdapterOutcome: Sendable {
   let status: AdapterStatus
   let message: String?
@@ -21,7 +56,8 @@ struct ThemeReconciler: Sendable {
 
   func reconcile(
     manifest: GenerationManifest,
-    adapters: [AdapterReconciliation]
+    adapters: [AdapterReconciliation],
+    preserving preservedResults: [AdapterResult] = []
   ) async throws -> ReconciliationRecord {
     guard Set(adapters.map(\.id)).count == adapters.count else {
       throw ReconciliationStatusError.duplicateAdapterID
@@ -58,7 +94,17 @@ struct ThemeReconciler: Sendable {
       }
       return results
     }
-    try Task.checkCancellation()
-    return try statusStore.persist(manifest: manifest, results: results)
+    let selectedIDs = Set(adapters.map(\.id))
+    let combinedResults = preservedResults.filter { !selectedIDs.contains($0.adapterID) } + results
+    do {
+      try Task.checkCancellation()
+      return try statusStore.persist(manifest: manifest, results: combinedResults)
+    } catch {
+      throw ReconciliationPersistenceError(
+        manifest: manifest,
+        results: combinedResults.sorted { $0.adapterID < $1.adapterID },
+        cause: String(describing: error)
+      )
+    }
   }
 }

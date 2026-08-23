@@ -1,0 +1,4 @@
+Reconciled 'catppuccin-mocha' generation 'g-active-generation'.
+Reconciliation:
+- kitty [required]: failed: reload denied
+Required reconciliation failed; canonical state was not changed.

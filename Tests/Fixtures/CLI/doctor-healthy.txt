@@ -1,0 +1,6 @@
+Macarchy doctor:
+- canonical [ok]: Theme 'catppuccin-mocha' generation 'g-active-generation' is active.
+- reconciliation [ok]: Status matches the active generation.
+- reconciliation.kitty [ok]: applied
+- kitty.integration [ok]: Integration preflight passed.
+No changes made.

@@ -1,0 +1,18 @@
+{
+  "canonical_changed" : false,
+  "dry_run" : false,
+  "error" : "Required reconciliation did not complete successfully",
+  "generation_id" : "g-active-generation",
+  "operation" : "reconcile",
+  "outcome" : "required_reconciliation_failure",
+  "reconciliation" : [
+    {
+      "adapter_id" : "kitty",
+      "message" : "reload denied",
+      "requirement" : "required",
+      "status" : "failed"
+    }
+  ],
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

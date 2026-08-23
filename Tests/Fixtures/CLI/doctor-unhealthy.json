@@ -1,0 +1,28 @@
+{
+  "findings" : [
+    {
+      "id" : "canonical",
+      "message" : "Theme 'catppuccin-mocha' generation 'g-active-generation' is active.",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation",
+      "message" : "Status matches the active generation.",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation.kitty",
+      "message" : "failed: reload denied",
+      "status" : "failure"
+    },
+    {
+      "id" : "kitty.integration",
+      "message" : "Kitty configuration is missing the stable include",
+      "status" : "failure"
+    }
+  ],
+  "mutated" : false,
+  "operation" : "doctor",
+  "outcome" : "unhealthy",
+  "schema_version" : 1
+}

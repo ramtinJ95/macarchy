@@ -1,3 +1,5 @@
+import CryptoKit
+import Darwin
 import Foundation
 
 public struct GenerationManifest: Codable, Sendable {
@@ -39,4 +41,60 @@ public struct GenerationManifest: Codable, Sendable {
     case rendererVersions = "renderer_versions"
     case artifacts
   }
+}
+
+struct GenerationIntegrityError: Error, CustomStringConvertible, Sendable {
+  let reason: String
+
+  var description: String { reason }
+}
+
+extension GenerationManifest {
+  func validateArtifacts(at generationURL: URL) throws {
+    try requireIntegrity(
+      Set(artifacts.keys) == ThemeRenderer.outputPaths,
+      "artifact manifest does not contain exactly the required outputs"
+    )
+    try requireReadOnlyDirectory(generationURL, name: generationURL.lastPathComponent)
+    try requireReadOnlyDirectory(
+      generationURL.appending(path: "generated", directoryHint: .isDirectory),
+      name: "generated"
+    )
+
+    for path in ThemeRenderer.outputPaths.sorted() {
+      let artifact: BoundedRegularFile
+      do {
+        artifact = try BoundedRegularFile.read(at: generationURL.appending(path: path))
+      } catch {
+        throw GenerationIntegrityError(
+          reason: "cannot safely read \(path): \(String(describing: error))"
+        )
+      }
+      try requireIntegrity(artifact.permissions & 0o222 == 0, "\(path) is writable")
+      try requireIntegrity(
+        artifacts[path] == sha256Digest(artifact.data),
+        "artifact digest does not match \(path)"
+      )
+    }
+  }
+
+  private func requireReadOnlyDirectory(_ url: URL, name: String) throws {
+    var metadata = stat()
+    guard lstat(url.path, &metadata) == 0 else {
+      let code = errno
+      throw GenerationIntegrityError(
+        reason: "cannot inspect \(name) (errno \(code)): \(String(cString: strerror(code)))"
+      )
+    }
+    try requireIntegrity(metadata.st_mode & S_IFMT == S_IFDIR, "\(name) is not a directory")
+    try requireIntegrity(metadata.st_mode & 0o222 == 0, "\(name) is writable")
+  }
+
+  private func requireIntegrity(_ condition: @autoclosure () -> Bool, _ reason: String) throws {
+    guard condition() else { throw GenerationIntegrityError(reason: reason) }
+  }
+}
+
+func sha256Digest(_ data: Data) -> String {
+  "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }

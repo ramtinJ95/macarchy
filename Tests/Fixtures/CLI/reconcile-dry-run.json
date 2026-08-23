@@ -1,0 +1,16 @@
+{
+  "canonical_changed" : false,
+  "dry_run" : true,
+  "generation_id" : "g-active-generation",
+  "inspections" : [
+    {
+      "adapter_id" : "kitty",
+      "requirement" : "required",
+      "status" : "ready"
+    }
+  ],
+  "operation" : "reconcile",
+  "outcome" : "dry_run",
+  "schema_version" : 1,
+  "theme_id" : "catppuccin-mocha"
+}

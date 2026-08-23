@@ -251,6 +251,192 @@ struct AdapterContractTests {
       )
     }
     #expect(duplicateCalls.withLock { $0 } == 0)
+
+    let supersedingPackage = try tokyoNightPackage()
+    let supersedingActivator = testActivator(root: root)
+    let superseding = AdapterReconciliation(id: "kitty", requirement: .required) {
+      _ = try supersedingActivator.activate(package: supersedingPackage)
+      return AdapterOutcome(status: .applied)
+    }
+    do {
+      _ = try await reconciler.reconcile(manifest: manifest, adapters: [superseding])
+      Issue.record("Expected reconciliation persistence failure")
+    } catch let error as ReconciliationPersistenceError {
+      #expect(error.manifest.generationID == manifest.generationID)
+      #expect(
+        error.results == [
+          AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)
+        ])
+      #expect(error.cause.contains("Cannot persist reconciliation"))
+    }
+  }
+
+  @Test
+  func selectedReconciliationRejectsInvalidIDsBeforeProcessesOrStatusWrites() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let processCalls = Mutex(0)
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: ProcessRunner { _ in
+        processCalls.withLock { $0 += 1 }
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+
+    await #expect(throws: AdapterSelectionError.unknown("wallpaper")) {
+      _ = try await coordinator.reconcile(adapterIDs: ["wallpaper"])
+    }
+    await #expect(throws: AdapterSelectionError.duplicate("kitty")) {
+      _ = try await coordinator.reconcile(adapterIDs: ["kitty", "kitty"])
+    }
+
+    #expect(processCalls.withLock { $0 } == 0)
+    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "state").path))
+  }
+
+  @Test
+  func reconcileDryRunInspectsWithoutProcessesOrStatusWrites() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include other.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let processCalls = Mutex(0)
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: ProcessRunner { _ in
+        processCalls.withLock { $0 += 1 }
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+
+    let preview = try coordinator.previewReconciliation([])
+
+    #expect(preview.manifest.generationID == manifest.generationID)
+    #expect(preview.manifest.themeID == manifest.themeID)
+    #expect(preview.inspections.count == 1)
+    #expect(preview.inspections[0].adapterID == "kitty")
+    #expect(preview.inspections[0].status == .drifted)
+    #expect(preview.inspections[0].message?.contains("must contain") == true)
+    #expect(processCalls.withLock { $0 } == 0)
+    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "state").path))
+
+    try FileManager.default.removeItem(at: configurationURL)
+    let unreadable = try coordinator.inspectAdapters([])
+    #expect(unreadable[0].status == .failed)
+  }
+
+  @Test
+  func repeatedSelectedReconciliationPreservesOtherResultsAndIsIdempotent() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let statusStore = ReconciliationStatusStore(root: root)
+    _ = try statusStore.persist(
+      manifest: manifest,
+      results: [
+        AdapterResult(adapterID: "kitty", requirement: .required, status: .failed),
+        AdapterResult(
+          adapterID: "wallpaper",
+          requirement: .required,
+          status: .failed,
+          message: "apply failed"
+        ),
+      ]
+    )
+    let requests = Mutex([ProcessRequest]())
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        return ProcessResult(terminationStatus: 1, output: "no matching process")
+      }
+    )
+
+    let first = try await coordinator.reconcile(adapterIDs: ["kitty"])
+    let statusURL = root.appending(path: "state/reconciliation.json")
+    let firstData = try Data(contentsOf: statusURL)
+    let second = try await coordinator.reconcile(adapterIDs: ["kitty"])
+
+    #expect(first.record == second.record)
+    #expect(first.record.results.map(\.adapterID) == ["kitty", "wallpaper"])
+    #expect(first.record.results[1].message == "apply failed")
+    #expect(try Data(contentsOf: statusURL) == firstData)
+    #expect(
+      requests.withLock { $0 }.map(\.arguments)
+        == [
+          ["-USR1", "kitty"], ["-0", "kitty"],
+          ["-USR1", "kitty"], ["-0", "kitty"],
+        ]
+    )
+  }
+
+  @Test
+  func reconciliationRejectsCorruptActiveArtifactsBeforeProcessesRun() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/current/generated/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let artifactURL = root.appending(
+      path: "generations/\(manifest.generationID)/generated/kitty.conf"
+    )
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o644], ofItemAtPath: artifactURL.path)
+    try "corrupt\n".write(to: artifactURL, atomically: false, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o444], ofItemAtPath: artifactURL.path)
+    let processCalls = Mutex(0)
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      kittyConfigurationURL: configurationURL,
+      processRunner: ProcessRunner { _ in
+        processCalls.withLock { $0 += 1 }
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+
+    await #expect(throws: ReconciliationStatusError.self) {
+      _ = try await coordinator.reconcile(adapterIDs: [])
+    }
+    #expect(processCalls.withLock { $0 } == 0)
   }
 
   @Test
@@ -428,17 +614,30 @@ struct AdapterContractTests {
       [.posixPermissions: 0o644],
       ofItemAtPath: manifestURL.path
     )
+    try expectInvalidActiveGeneration { try store.activeManifest() }
 
     var object = try #require(
       JSONSerialization.jsonObject(with: original) as? [String: Any]
     )
     object["manifest_schema_version"] = GenerationManifest.currentSchemaVersion + 1
     try JSONSerialization.data(withJSONObject: object).write(to: manifestURL)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o444],
+      ofItemAtPath: manifestURL.path
+    )
     try expectInvalidActiveGeneration { try store.activeManifest() }
 
     object["manifest_schema_version"] = GenerationManifest.currentSchemaVersion
     object["generation_id"] = missingGenerationID
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o644],
+      ofItemAtPath: manifestURL.path
+    )
     try JSONSerialization.data(withJSONObject: object).write(to: manifestURL)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o444],
+      ofItemAtPath: manifestURL.path
+    )
     try expectInvalidActiveGeneration { try store.activeManifest() }
   }
 
