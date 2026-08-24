@@ -85,6 +85,8 @@ enum ActivationCheckpoint: Sendable {
 
 public struct ThemeActivator: Sendable {
   private static let rendererVersions = [
+    BatAdapter.id: BatAdapter.rendererVersion,
+    EzaAdapter.id: EzaAdapter.rendererVersion,
     KittyAdapter.id: KittyAdapter.rendererVersion,
     SketchyBarAdapter.id: SketchyBarAdapter.rendererVersion,
     WallpaperAdapter.id: WallpaperAdapter.rendererVersion,

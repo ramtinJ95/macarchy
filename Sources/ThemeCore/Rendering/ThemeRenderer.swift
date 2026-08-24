@@ -1,6 +1,8 @@
 import Foundation
 
 public struct RenderedTheme: Sendable {
+  public let batTheme: String
+  public let ezaTheme: String
   public let themeJSON: Data
   public let kittyConfiguration: String
   public let sketchyBarPalette: String
@@ -8,6 +10,8 @@ public struct RenderedTheme: Sendable {
 
   var files: [String: Data] {
     [
+      ThemeRenderer.batOutputPath: Data(batTheme.utf8),
+      ThemeRenderer.ezaOutputPath: Data(ezaTheme.utf8),
       ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
       ThemeRenderer.sketchyBarOutputPath: Data(sketchyBarPalette.utf8),
       ThemeRenderer.themeOutputPath: themeJSON,
@@ -17,12 +21,15 @@ public struct RenderedTheme: Sendable {
 }
 
 public struct ThemeRenderer: Sendable {
+  static let batOutputPath = BatAdapter.outputPath
+  static let ezaOutputPath = EzaAdapter.outputPath
   static let kittyOutputPath = KittyAdapter.outputPath
   static let sketchyBarOutputPath = SketchyBarAdapter.outputPath
   static let themeOutputPath = "theme.json"
   static let wallpaperOutputPath = WallpaperAdapter.outputPath
   static let outputPaths = Set([
-    kittyOutputPath, sketchyBarOutputPath, themeOutputPath, wallpaperOutputPath,
+    batOutputPath, ezaOutputPath, kittyOutputPath, sketchyBarOutputPath, themeOutputPath,
+    wallpaperOutputPath,
   ])
 
   public init() {}
@@ -47,6 +54,8 @@ public struct ThemeRenderer: Sendable {
     json.append(0x0a)
 
     return RenderedTheme(
+      batTheme: BatAdapter.render(package: package),
+      ezaTheme: EzaAdapter.render(package: package),
       themeJSON: json,
       kittyConfiguration: KittyAdapter.render(package: package),
       sketchyBarPalette: SketchyBarAdapter.render(package: package),

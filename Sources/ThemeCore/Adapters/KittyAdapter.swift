@@ -232,15 +232,18 @@ struct ProcessRequest: Equatable, Sendable {
   let executableURL: URL
   let arguments: [String]
   let timeout: TimeInterval?
+  let environmentOverrides: [String: String]
 
   init(
     executableURL: URL,
     arguments: [String],
-    timeout: TimeInterval? = nil
+    timeout: TimeInterval? = nil,
+    environmentOverrides: [String: String] = [:]
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
     self.timeout = timeout
+    self.environmentOverrides = environmentOverrides
   }
 }
 
@@ -258,6 +261,12 @@ struct ProcessRunner: Sendable {
     let output = Pipe()
     process.executableURL = request.executableURL
     process.arguments = request.arguments
+    if !request.environmentOverrides.isEmpty {
+      process.environment = ProcessInfo.processInfo.environment.merging(
+        request.environmentOverrides,
+        uniquingKeysWith: { _, override in override }
+      )
+    }
     process.standardOutput = output
     process.standardError = output
     let completion = request.timeout.map { _ in DispatchSemaphore(value: 0) }
