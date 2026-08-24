@@ -61,7 +61,7 @@ struct ActivationSliceTests {
     #expect(manifest.inputDigest == activation.inputDigest)
     #expect(
       manifest.rendererVersions
-        == ["kitty": 1, "normalized_theme": 1, "wallpaper": 1]
+        == ["kitty": 2, "normalized_theme": 1, "wallpaper": 1]
     )
     #expect(manifest.inputDigest.hasPrefix("sha256:"))
     #expect(manifest.inputDigest.count == 71)

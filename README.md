@@ -26,13 +26,15 @@ packages from `<state-root>/themes`. The state root defaults to
 `~/.config/macarchy`. Before activation, Macarchy verifies that current
 appearance is readable and `/usr/bin/osascript` is executable. Kitty's
 configuration must contain an `include` for the expanded absolute path
-`<state-root>/current/generated/kitty.conf`; Macarchy does not edit Kitty's
-behavioral configuration. Use `--state-root` and `--kitty-config` to inject
-development paths. `--dry-run` validates rendering and required adapter
-preflight without writing state or running a command. `theme next` follows the
-validated package order and wraps at the end. `theme status` reads the canonical
-generation manifest first and reports current, missing, stale, or unreadable
-reconciliation state without treating it as active-theme truth.
+`<state-root>/state/adapters/kitty.conf`. After canonical commit, Macarchy
+atomically rebuilds that ordinary bridge from `current/generated/kitty.conf`
+before requesting Kitty reload; it does not edit Kitty's behavioral
+configuration. Use `--state-root` and `--kitty-config` to inject development
+paths. `--dry-run` validates rendering and required adapter preflight without
+writing state or running a command. `theme next` follows the validated package
+order and wraps at the end. `theme status` reads the canonical generation
+manifest first and reports current, missing, stale, or unreadable reconciliation
+state without treating it as active-theme truth.
 Status exits nonzero when canonical state is absent or unreadable, status is
 missing or stale, or a required adapter is not accepted; optional adapter
 failure remains visible without making status unhealthy.
