@@ -41,9 +41,19 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.neovim",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
       "id" : "reconciliation.sketchybar",
       "message" : "drifted: SketchyBar colors module is missing the generated palette import",
       "status" : "failure"
+    },
+    {
+      "id" : "reconciliation.starship",
+      "message" : "applied",
+      "status" : "ok"
     },
     {
       "id" : "reconciliation.wallpaper",
@@ -86,9 +96,19 @@
       "status" : "failure"
     },
     {
+      "id" : "neovim.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
       "id" : "sketchybar.integration",
       "message" : "SketchyBar colors module is missing the generated palette import",
       "status" : "failure"
+    },
+    {
+      "id" : "starship.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
     },
     {
       "id" : "wallpaper.integration",

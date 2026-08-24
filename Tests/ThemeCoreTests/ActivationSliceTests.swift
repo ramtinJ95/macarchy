@@ -63,7 +63,8 @@ struct ActivationSliceTests {
       manifest.rendererVersions
         == [
           "atuin": 1, "bat": 1, "btop": 1, "eza": 1, "kitty": 2,
-          "normalized_theme": 1, "sketchybar": 1, "wallpaper": 1, "yazi": 1,
+          "neovim": 2, "normalized_theme": 1, "sketchybar": 1, "starship": 1,
+          "wallpaper": 1, "yazi": 1,
         ]
     )
     #expect(manifest.inputDigest.hasPrefix("sha256:"))
@@ -72,8 +73,9 @@ struct ActivationSliceTests {
       Set(manifest.artifacts.keys)
         == [
           "generated/atuin.toml", "generated/bat.tmTheme", "generated/btop.theme",
-          "generated/eza.yml", "generated/kitty.conf", "generated/sketchybar.lua",
-          "generated/wallpaper.png", "generated/yazi-flavor.toml",
+          "generated/eza.yml", "generated/kitty.conf", "generated/neovim.lua",
+          "generated/sketchybar.lua", "generated/starship.toml", "generated/wallpaper.png",
+          "generated/yazi-flavor.toml",
           "generated/yazi.tmTheme", "theme.json",
         ]
     )

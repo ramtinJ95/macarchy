@@ -7,7 +7,9 @@ public struct RenderedTheme: Sendable {
   public let ezaTheme: String
   public let themeJSON: Data
   public let kittyConfiguration: String
+  public let neovimTheme: String
   public let sketchyBarPalette: String
+  public let starshipPalette: String
   public let wallpaper: Data
   public let yaziFlavor: String
 
@@ -18,7 +20,9 @@ public struct RenderedTheme: Sendable {
       ThemeRenderer.btopOutputPath: Data(btopTheme.utf8),
       ThemeRenderer.ezaOutputPath: Data(ezaTheme.utf8),
       ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
+      ThemeRenderer.neovimOutputPath: Data(neovimTheme.utf8),
       ThemeRenderer.sketchyBarOutputPath: Data(sketchyBarPalette.utf8),
+      ThemeRenderer.starshipOutputPath: Data(starshipPalette.utf8),
       ThemeRenderer.themeOutputPath: themeJSON,
       ThemeRenderer.wallpaperOutputPath: wallpaper,
       ThemeRenderer.yaziFlavorOutputPath: Data(yaziFlavor.utf8),
@@ -33,15 +37,17 @@ public struct ThemeRenderer: Sendable {
   static let btopOutputPath = BtopAdapter.outputPath
   static let ezaOutputPath = EzaAdapter.outputPath
   static let kittyOutputPath = KittyAdapter.outputPath
+  static let neovimOutputPath = NeovimAdapter.outputPath
   static let sketchyBarOutputPath = SketchyBarAdapter.outputPath
+  static let starshipOutputPath = StarshipAdapter.outputPath
   static let themeOutputPath = "theme.json"
   static let wallpaperOutputPath = WallpaperAdapter.outputPath
   static let yaziFlavorOutputPath = YaziAdapter.flavorOutputPath
   static let yaziSyntaxOutputPath = YaziAdapter.syntaxOutputPath
   static let outputPaths = Set([
     atuinOutputPath, batOutputPath, btopOutputPath, ezaOutputPath, kittyOutputPath,
-    sketchyBarOutputPath, themeOutputPath, wallpaperOutputPath, yaziFlavorOutputPath,
-    yaziSyntaxOutputPath,
+    neovimOutputPath, sketchyBarOutputPath, starshipOutputPath, themeOutputPath,
+    wallpaperOutputPath, yaziFlavorOutputPath, yaziSyntaxOutputPath,
   ])
 
   public init() {}
@@ -72,7 +78,9 @@ public struct ThemeRenderer: Sendable {
       ezaTheme: EzaAdapter.render(package: package),
       themeJSON: json,
       kittyConfiguration: KittyAdapter.render(package: package),
+      neovimTheme: try NeovimAdapter.render(package: package, generationID: generationID),
       sketchyBarPalette: SketchyBarAdapter.render(package: package),
+      starshipPalette: StarshipAdapter.render(package: package),
       wallpaper: wallpaperData,
       yaziFlavor: YaziAdapter.renderFlavor(package: package)
     )

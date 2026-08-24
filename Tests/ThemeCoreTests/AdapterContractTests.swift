@@ -48,6 +48,19 @@ struct AdapterContractTests {
       if request.executableURL == AtuinAdapter.liveExecutableURL {
         return ProcessResult(terminationStatus: 0, output: AtuinAdapter.themeName)
       }
+      if request.executableURL == NeovimAdapter.liveExecutableURL {
+        let active = try ReconciliationStatusStore(root: root).activeManifest()
+        return ProcessResult(
+          terminationStatus: 0,
+          output: "MACARCHY_THEME=\(active.generationID):\(active.themeID)"
+        )
+      }
+      if request.executableURL == StarshipAdapter.liveExecutableURL {
+        return ProcessResult(
+          terminationStatus: 0,
+          output: "palette = \"\(StarshipAdapter.paletteName)\""
+        )
+      }
       if request.arguments == ["-0", "kitty"] {
         return ProcessResult(terminationStatus: 0, output: "")
       }
@@ -135,10 +148,23 @@ struct AdapterContractTests {
             status: .applied
           ),
           AdapterResult(
+            adapterID: "neovim",
+            requirement: .required,
+            status: .applied,
+            message:
+              "Neovim validated the active colorscheme; running sessions repaint through the pointer watcher"
+          ),
+          AdapterResult(
             adapterID: "sketchybar",
             requirement: .required,
             status: .failed,
             message: "reload denied"
+          ),
+          AdapterResult(
+            adapterID: "starship",
+            requirement: .required,
+            status: .applied,
+            message: "Starship prompts use the active palette"
           ),
           AdapterResult(
             adapterID: "wallpaper",
@@ -761,6 +787,138 @@ struct AdapterContractTests {
     #expect(btopExit.message == "btop will use the active palette on next launch")
     #expect(yaziExit.status == .applied)
     #expect(yaziExit.message == "Yazi will use the active palette on next launch")
+  }
+
+  @Test
+  func namedApplicationAdaptersPreserveBehaviorAndUpdateAtTheirBoundaries() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
+    let neovimPlugins = neovimDirectory.appending(
+      path: "lua/plugins", directoryHint: .isDirectory)
+    let neovimMacarchy = neovimDirectory.appending(
+      path: "lua/macarchy", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
+    try
+      "local macarchy = require(\"config.macarchy-theme\")\n\(NeovimAdapter.integrationDirective)\n"
+      .write(
+        to: neovimPlugins.appending(path: "colorscheme.lua"),
+        atomically: true,
+        encoding: .utf8
+      )
+    try FileManager.default.createSymbolicLink(
+      at: neovimMacarchy.appending(path: "current.lua"),
+      withDestinationURL: root.appending(path: "current/\(NeovimAdapter.outputPath)")
+    )
+
+    let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: starshipDirectory, withIntermediateDirectories: true)
+    let behaviorURL = starshipDirectory.appending(path: "behavior.toml")
+    let behavior = "format = \"$directory$character\"\n\n[directory]\nstyle = \"blue\"\n"
+    try behavior.write(to: behaviorURL, atomically: true, encoding: .utf8)
+    let starshipConfigurationURL = root.appending(path: "starship.toml")
+    let starshipStowSource = root.appending(path: "dotfiles/starship.toml")
+    try FileManager.default.createDirectory(
+      at: starshipStowSource.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createSymbolicLink(
+      at: starshipStowSource,
+      withDestinationURL: root.appending(path: StarshipAdapter.bridgePath)
+    )
+    try FileManager.default.createSymbolicLink(
+      at: starshipConfigurationURL,
+      withDestinationURL: starshipStowSource
+    )
+
+    let validatedStarshipConfigs = Mutex([String]())
+    let runner = ProcessRunner { request in
+      if request.executableURL == NeovimAdapter.liveExecutableURL {
+        return ProcessResult(
+          terminationStatus: 0,
+          output: "MACARCHY_THEME=\(manifest.generationID):\(manifest.themeID)"
+        )
+      }
+      validatedStarshipConfigs.withLock {
+        $0.append(request.environmentOverrides["STARSHIP_CONFIG"] ?? "")
+      }
+      return ProcessResult(
+        terminationStatus: 0,
+        output: "palette = \"\(StarshipAdapter.paletteName)\""
+      )
+    }
+    let neovim = NeovimAdapter(
+      root: root,
+      configurationDirectoryURL: neovimDirectory,
+      executableURL: NeovimAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: runner
+    )
+    let starship = StarshipAdapter(
+      root: root,
+      configurationURL: starshipConfigurationURL,
+      behaviorURL: behaviorURL,
+      executableURL: StarshipAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: runner
+    )
+
+    #expect(neovim.inspection().status == .ready)
+    #expect(starship.inspection().status == .drifted)
+    #expect(try await neovim.reconciliation().run().status == .applied)
+    #expect(try await starship.reconciliation().run().status == .applied)
+    #expect(starship.inspection().status == .ready)
+
+    let bridge = try String(
+      contentsOf: root.appending(path: StarshipAdapter.bridgePath),
+      encoding: .utf8
+    )
+    #expect(bridge.contains("palette = \"\(StarshipAdapter.paletteName)\""))
+    #expect(bridge.contains(behavior.trimmingCharacters(in: .whitespacesAndNewlines)))
+    #expect(bridge.contains("[palettes.\(StarshipAdapter.paletteName)]"))
+    #expect(
+      validatedStarshipConfigs.withLock { $0 }
+        == [root.appending(path: StarshipAdapter.bridgePath).path]
+    )
+
+    try "palette = \"user-owned\"\n".write(
+      to: behaviorURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    #expect(starship.inspection().status == .drifted)
+    try "return {}\n".write(
+      to: neovimPlugins.appending(path: "colorscheme.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    #expect(neovim.inspection().status == .drifted)
+  }
+
+  @Test
+  func neovimGeneratedMappingCannotInjectLua() throws {
+    let base = try catppuccinPackage()
+    let unsafe = ThemePackage(
+      packageURL: base.packageURL,
+      schemaVersion: base.schemaVersion,
+      id: base.id,
+      displayName: base.displayName,
+      appearance: base.appearance,
+      semantic: base.semantic,
+      terminal: base.terminal,
+      wallpaper: base.wallpaper,
+      wallpaperData: base.wallpaperData,
+      mappings: ["neovim": "theme\"; os.execute('unsafe')"]
+    )
+    #expect(throws: NeovimAdapterError.self) {
+      _ = try NeovimAdapter.render(package: unsafe, generationID: "g-test")
+    }
   }
 
   @Test
@@ -1808,8 +1966,8 @@ struct AdapterContractTests {
     #expect(
       preview.inspections.map(\.adapterID)
         == [
-          "macos-appearance", "atuin", "bat", "btop", "eza", "kitty", "sketchybar",
-          "wallpaper", "yazi",
+          "macos-appearance", "atuin", "bat", "btop", "eza", "kitty", "neovim",
+          "sketchybar", "starship", "wallpaper", "yazi",
         ]
     )
     let appearanceInspection = try #require(preview.inspections.first)
@@ -2325,6 +2483,12 @@ struct AdapterContractTests {
     let btopDirectory = root.appending(path: "btop", directoryHint: .isDirectory)
     let yaziDirectory = root.appending(path: "yazi", directoryHint: .isDirectory)
     let atuinDirectory = root.appending(path: "atuin", directoryHint: .isDirectory)
+    let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
+    let neovimPlugins = neovimDirectory.appending(
+      path: "lua/plugins", directoryHint: .isDirectory)
+    let neovimMacarchy = neovimDirectory.appending(
+      path: "lua/macarchy", directoryHint: .isDirectory)
+    let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
     let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let yaziFlavor = yaziDirectory.appending(
@@ -2335,6 +2499,10 @@ struct AdapterContractTests {
     try FileManager.default.createDirectory(at: btopThemes, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: yaziFlavor, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: starshipDirectory, withIntermediateDirectories: true)
 
     let ezaTheme = ezaDirectory.appending(path: "theme.yml")
     try FileManager.default.createSymbolicLink(
@@ -2362,6 +2530,14 @@ struct AdapterContractTests {
       at: atuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
       withDestinationURL: root.appending(path: "current/\(AtuinAdapter.outputPath)")
     )
+    try FileManager.default.createSymbolicLink(
+      at: neovimMacarchy.appending(path: "current.lua"),
+      withDestinationURL: root.appending(path: "current/\(NeovimAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: root.appending(path: "starship.toml"),
+      withDestinationURL: root.appending(path: StarshipAdapter.bridgePath)
+    )
 
     let shellConfiguration = root.appending(path: ".zshrc")
     try "export EZA_CONFIG_DIR=\"\(ezaDirectory.path)\"\n".write(
@@ -2380,6 +2556,13 @@ struct AdapterContractTests {
       to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
     try "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".write(
       to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try "\(NeovimAdapter.integrationDirective)\n".write(
+      to: neovimPlugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
+    try "format = \"$character\"\n".write(
+      to: starshipDirectory.appending(path: "behavior.toml"),
+      atomically: true,
+      encoding: .utf8
+    )
 
     return ThemeConsumerPaths(
       kittyConfigurationURL: kittyConfigurationURL,
@@ -2390,7 +2573,10 @@ struct AdapterContractTests {
       batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory),
       btopConfigurationDirectoryURL: btopDirectory,
       yaziConfigurationDirectoryURL: yaziDirectory,
-      atuinConfigurationDirectoryURL: atuinDirectory
+      atuinConfigurationDirectoryURL: atuinDirectory,
+      neovimConfigurationDirectoryURL: neovimDirectory,
+      starshipConfigurationURL: root.appending(path: "starship.toml"),
+      starshipBehaviorURL: starshipDirectory.appending(path: "behavior.toml")
     )
   }
 
