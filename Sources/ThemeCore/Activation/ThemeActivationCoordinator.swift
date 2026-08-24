@@ -37,7 +37,9 @@ package struct ThemeActivationCoordinator: Sendable {
     EzaAdapter.id: AdapterRequirement.required,
     KittyAdapter.id: AdapterRequirement.required,
     MacOSAppearanceAdapter.id: AdapterRequirement.required,
+    NeovimAdapter.id: AdapterRequirement.required,
     SketchyBarAdapter.id: AdapterRequirement.required,
+    StarshipAdapter.id: AdapterRequirement.required,
     WallpaperAdapter.id: AdapterRequirement.required,
     YaziAdapter.id: AdapterRequirement.required,
   ]
@@ -51,9 +53,11 @@ package struct ThemeActivationCoordinator: Sendable {
   private let configurationStore: MacarchyConfigurationStore
   private let eza: EzaAdapter
   private let kitty: KittyAdapter
+  private let neovim: NeovimAdapter
   private let processRunner: ProcessRunner
   private let reconciler: ThemeReconciler
   private let sketchyBar: SketchyBarAdapter
+  private let starship: StarshipAdapter
   private let statusStore: ReconciliationStatusStore
   private let wallpaper: WallpaperAdapter
   private let wallpaperSignal: YabaiWallpaperSignal
@@ -113,6 +117,15 @@ package struct ThemeActivationCoordinator: Sendable {
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: .live
     )
+    neovim = NeovimAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
+      executableURL: NeovimAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: NeovimAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
     processRunner = .live
     reconciler = ThemeReconciler(statusStore: statusStore)
     sketchyBar = SketchyBarAdapter(
@@ -121,6 +134,16 @@ package struct ThemeActivationCoordinator: Sendable {
       executableURL: SketchyBarAdapter.liveExecutableURL,
       controlIsAvailable: {
         FileManager.default.isExecutableFile(atPath: SketchyBarAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
+    starship = StarshipAdapter(
+      root: root,
+      configurationURL: consumerPaths.starshipConfigurationURL,
+      behaviorURL: consumerPaths.starshipBehaviorURL,
+      executableURL: StarshipAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: StarshipAdapter.liveExecutableURL.path)
       },
       processRunner: .live
     )
@@ -205,6 +228,13 @@ package struct ThemeActivationCoordinator: Sendable {
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: processRunner
     )
+    neovim = NeovimAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
+      executableURL: NeovimAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: processRunner
+    )
     self.processRunner = processRunner
     reconciler = ThemeReconciler(statusStore: statusStore)
     sketchyBar = SketchyBarAdapter(
@@ -212,6 +242,14 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationURL: consumerPaths.sketchyBarConfigurationURL,
       executableURL: SketchyBarAdapter.liveExecutableURL,
       controlIsAvailable: sketchyBarControlIsAvailable,
+      processRunner: processRunner
+    )
+    starship = StarshipAdapter(
+      root: root,
+      configurationURL: consumerPaths.starshipConfigurationURL,
+      behaviorURL: consumerPaths.starshipBehaviorURL,
+      executableURL: StarshipAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
       processRunner: processRunner
     )
     self.statusStore = statusStore
@@ -343,7 +381,9 @@ package struct ThemeActivationCoordinator: Sendable {
       btop.inspection(),
       eza.inspection(),
       kitty.inspection(),
+      neovim.inspection(),
       sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
+      starship.inspection(),
       wallpaperInspection,
       yazi.inspection(),
     ].filter {
@@ -449,9 +489,19 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: kitty.reconciliation
       ),
       ConfiguredAdapter(
+        id: NeovimAdapter.id,
+        inspection: neovim.inspection,
+        reconciliation: neovim.reconciliation
+      ),
+      ConfiguredAdapter(
         id: SketchyBarAdapter.id,
         inspection: { sketchyBar.inspection() },
         reconciliation: sketchyBar.reconciliation
+      ),
+      ConfiguredAdapter(
+        id: StarshipAdapter.id,
+        inspection: starship.inspection,
+        reconciliation: starship.reconciliation
       ),
       ConfiguredAdapter(
         id: WallpaperAdapter.id,
@@ -507,7 +557,9 @@ package struct ThemeActivationCoordinator: Sendable {
     try btop.preflight()
     try eza.preflight()
     try kitty.preflight()
+    try neovim.preflight()
     try sketchyBar.preflight()
+    try starship.preflight()
     _ = try wallpaper.preflight()
     try wallpaperSignal.preflight()
     try yazi.preflight()

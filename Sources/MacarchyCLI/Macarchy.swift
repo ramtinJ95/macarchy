@@ -52,6 +52,18 @@ struct Macarchy: AsyncParsableCommand {
     var atuinConfigDir = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/atuin", directoryHint: .isDirectory).path
 
+    @Option(help: "Neovim configuration directory.")
+    var neovimConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/nvim", directoryHint: .isDirectory).path
+
+    @Option(help: "Starship configuration file.")
+    var starshipConfig = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/starship.toml").path
+
+    @Option(help: "Starship behavior source file.")
+    var starshipBehavior = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/starship/behavior.toml").path
+
     var stateRootURL: URL {
       URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
     }
@@ -69,7 +81,11 @@ struct Macarchy: AsyncParsableCommand {
         yaziConfigurationDirectoryURL: URL(
           filePath: yaziConfigDir, directoryHint: .isDirectory),
         atuinConfigurationDirectoryURL: URL(
-          filePath: atuinConfigDir, directoryHint: .isDirectory)
+          filePath: atuinConfigDir, directoryHint: .isDirectory),
+        neovimConfigurationDirectoryURL: URL(
+          filePath: neovimConfigDir, directoryHint: .isDirectory),
+        starshipConfigurationURL: URL(filePath: starshipConfig),
+        starshipBehaviorURL: URL(filePath: starshipBehavior)
       )
     }
   }

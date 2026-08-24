@@ -22,7 +22,9 @@ struct ThemeCoreSliceTests {
     let btop = outputRoot.appending(path: "generated/btop.theme")
     let eza = outputRoot.appending(path: "generated/eza.yml")
     let kitty = outputRoot.appending(path: "generated/kitty.conf")
+    let neovim = outputRoot.appending(path: "generated/neovim.lua")
     let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
+    let starship = outputRoot.appending(path: "generated/starship.toml")
     let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
     let yaziFlavor = outputRoot.appending(path: "generated/yazi-flavor.toml")
     let yaziSyntax = outputRoot.appending(path: "generated/yazi.tmTheme")
@@ -32,7 +34,9 @@ struct ThemeCoreSliceTests {
     let writtenBtop = try String(contentsOf: btop, encoding: .utf8)
     let writtenEza = try String(contentsOf: eza, encoding: .utf8)
     let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
+    let writtenNeovim = try String(contentsOf: neovim, encoding: .utf8)
     let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
+    let writtenStarship = try String(contentsOf: starship, encoding: .utf8)
     let writtenWallpaper = try Data(contentsOf: wallpaper)
     let writtenYaziFlavor = try String(contentsOf: yaziFlavor, encoding: .utf8)
     let writtenYaziSyntax = try String(contentsOf: yaziSyntax, encoding: .utf8)
@@ -42,7 +46,9 @@ struct ThemeCoreSliceTests {
     #expect(writtenBtop == rendered.btopTheme)
     #expect(writtenEza == rendered.ezaTheme)
     #expect(writtenKitty == rendered.kittyConfiguration)
+    #expect(writtenNeovim == rendered.neovimTheme)
     #expect(writtenSketchyBar == rendered.sketchyBarPalette)
+    #expect(writtenStarship == rendered.starshipPalette)
     #expect(writtenWallpaper == rendered.wallpaper)
     #expect(writtenYaziFlavor == rendered.yaziFlavor)
     #expect(writtenYaziSyntax == rendered.batTheme)
@@ -114,9 +120,15 @@ struct ThemeCoreSliceTests {
         rendered.kittyConfiguration
           == (try String(contentsOf: goldenRoot.appending(path: "kitty.conf"), encoding: .utf8)))
       #expect(
+        rendered.neovimTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "neovim.lua"), encoding: .utf8)))
+      #expect(
         rendered.sketchyBarPalette
           == (try String(
             contentsOf: goldenRoot.appending(path: "sketchybar.lua"), encoding: .utf8)))
+      let starshipGolden = try String(
+        contentsOf: goldenRoot.appending(path: "starship.toml"), encoding: .utf8)
+      #expect(rendered.starshipPalette == starshipGolden)
       #expect(
         rendered.yaziFlavor
           == (try String(

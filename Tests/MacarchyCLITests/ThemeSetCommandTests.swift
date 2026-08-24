@@ -285,6 +285,12 @@ struct ThemeSetCommandTests {
     let btopDirectory = root.appending(path: "btop", directoryHint: .isDirectory)
     let yaziDirectory = root.appending(path: "yazi", directoryHint: .isDirectory)
     let atuinDirectory = root.appending(path: "atuin", directoryHint: .isDirectory)
+    let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
+    let neovimPlugins = neovimDirectory.appending(
+      path: "lua/plugins", directoryHint: .isDirectory)
+    let neovimMacarchy = neovimDirectory.appending(
+      path: "lua/macarchy", directoryHint: .isDirectory)
+    let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
     let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let yaziFlavor = yaziDirectory.appending(
@@ -295,6 +301,10 @@ struct ThemeSetCommandTests {
     try FileManager.default.createDirectory(at: btopThemes, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: yaziFlavor, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(
+      at: starshipDirectory, withIntermediateDirectories: true)
 
     try FileManager.default.createSymbolicLink(
       at: ezaDirectory.appending(path: "theme.yml"),
@@ -320,6 +330,14 @@ struct ThemeSetCommandTests {
       at: atuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
       withDestinationURL: stateRoot.appending(path: "current/\(AtuinAdapter.outputPath)")
     )
+    try FileManager.default.createSymbolicLink(
+      at: neovimMacarchy.appending(path: "current.lua"),
+      withDestinationURL: stateRoot.appending(path: "current/\(NeovimAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: root.appending(path: "starship.toml"),
+      withDestinationURL: stateRoot.appending(path: StarshipAdapter.bridgePath)
+    )
 
     let shellConfiguration = root.appending(path: ".zshrc")
     try "export EZA_CONFIG_DIR=\"\(ezaDirectory.path)\"\n".write(
@@ -338,6 +356,13 @@ struct ThemeSetCommandTests {
       to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
     try "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".write(
       to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try "\(NeovimAdapter.integrationDirective)\n".write(
+      to: neovimPlugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
+    try "format = \"$character\"\n".write(
+      to: starshipDirectory.appending(path: "behavior.toml"),
+      atomically: true,
+      encoding: .utf8
+    )
 
     return ThemeConsumerPaths(
       kittyConfigurationURL: kittyConfigurationURL,
@@ -348,7 +373,10 @@ struct ThemeSetCommandTests {
       batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory),
       btopConfigurationDirectoryURL: btopDirectory,
       yaziConfigurationDirectoryURL: yaziDirectory,
-      atuinConfigurationDirectoryURL: atuinDirectory
+      atuinConfigurationDirectoryURL: atuinDirectory,
+      neovimConfigurationDirectoryURL: neovimDirectory,
+      starshipConfigurationURL: root.appending(path: "starship.toml"),
+      starshipBehaviorURL: starshipDirectory.appending(path: "behavior.toml")
     )
   }
 }

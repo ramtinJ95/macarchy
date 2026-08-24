@@ -115,7 +115,9 @@ struct ReconcileDoctorCommandTests {
           requirement: .required,
           status: .applied
         ),
+        AdapterResult(adapterID: "neovim", requirement: .required, status: .applied),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
         AdapterResult(adapterID: "yazi", requirement: .required, status: .applied),
       ]
@@ -191,7 +193,9 @@ struct ReconcileDoctorCommandTests {
           requirement: .required,
           status: .applied
         ),
+        AdapterResult(adapterID: "neovim", requirement: .required, status: .applied),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
         AdapterResult(adapterID: "yazi", requirement: .required, status: .applied),
       ]
@@ -211,7 +215,9 @@ struct ReconcileDoctorCommandTests {
           AdapterInspection(adapterID: "btop", requirement: .required),
           AdapterInspection(adapterID: "eza", requirement: .required),
           AdapterInspection(adapterID: "kitty", requirement: .required),
+          AdapterInspection(adapterID: "neovim", requirement: .required),
           AdapterInspection(adapterID: "sketchybar", requirement: .required),
+          AdapterInspection(adapterID: "starship", requirement: .required),
           AdapterInspection(
             adapterID: "wallpaper",
             requirement: .required,
@@ -242,12 +248,14 @@ struct ReconcileDoctorCommandTests {
           requirement: .required,
           status: .applied
         ),
+        AdapterResult(adapterID: "neovim", requirement: .required, status: .applied),
         AdapterResult(
           adapterID: "sketchybar",
           requirement: .required,
           status: .drifted,
           message: "SketchyBar colors module is missing the generated palette import"
         ),
+        AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
         AdapterResult(adapterID: "yazi", requirement: .required, status: .applied),
       ]
@@ -272,12 +280,14 @@ struct ReconcileDoctorCommandTests {
             status: .drifted,
             message: "Kitty configuration is missing the stable include"
           ),
+          AdapterInspection(adapterID: "neovim", requirement: .required),
           AdapterInspection(
             adapterID: "sketchybar",
             requirement: .required,
             status: .drifted,
             message: "SketchyBar colors module is missing the generated palette import"
           ),
+          AdapterInspection(adapterID: "starship", requirement: .required),
           AdapterInspection(
             adapterID: "wallpaper",
             requirement: .required,
