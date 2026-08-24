@@ -7,6 +7,9 @@ package struct ThemeConsumerPaths: Sendable {
   package let ezaConfigurationDirectoryURL: URL
   package let batConfigurationDirectoryURL: URL
   package let batCacheDirectoryURL: URL
+  package let btopConfigurationDirectoryURL: URL
+  package let yaziConfigurationDirectoryURL: URL
+  package let atuinConfigurationDirectoryURL: URL
 
   package init(
     kittyConfigurationURL: URL,
@@ -14,7 +17,10 @@ package struct ThemeConsumerPaths: Sendable {
     shellConfigurationURL: URL,
     ezaConfigurationDirectoryURL: URL,
     batConfigurationDirectoryURL: URL,
-    batCacheDirectoryURL: URL
+    batCacheDirectoryURL: URL,
+    btopConfigurationDirectoryURL: URL,
+    yaziConfigurationDirectoryURL: URL,
+    atuinConfigurationDirectoryURL: URL
   ) {
     self.kittyConfigurationURL = kittyConfigurationURL.standardizedFileURL
     self.sketchyBarConfigurationURL = sketchyBarConfigurationURL.standardizedFileURL
@@ -22,5 +28,8 @@ package struct ThemeConsumerPaths: Sendable {
     self.ezaConfigurationDirectoryURL = ezaConfigurationDirectoryURL.standardizedFileURL
     self.batConfigurationDirectoryURL = batConfigurationDirectoryURL.standardizedFileURL
     self.batCacheDirectoryURL = batCacheDirectoryURL.standardizedFileURL
+    self.btopConfigurationDirectoryURL = btopConfigurationDirectoryURL.standardizedFileURL
+    self.yaziConfigurationDirectoryURL = yaziConfigurationDirectoryURL.standardizedFileURL
+    self.atuinConfigurationDirectoryURL = atuinConfigurationDirectoryURL.standardizedFileURL
   }
 }

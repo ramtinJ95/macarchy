@@ -45,6 +45,9 @@ struct AdapterContractTests {
       {
         return ProcessResult(terminationStatus: 0, output: "")
       }
+      if request.executableURL == AtuinAdapter.liveExecutableURL {
+        return ProcessResult(terminationStatus: 0, output: AtuinAdapter.themeName)
+      }
       if request.arguments == ["-0", "kitty"] {
         return ProcessResult(terminationStatus: 0, output: "")
       }
@@ -75,19 +78,6 @@ struct AdapterContractTests {
 
     let requests = state.withLock { $0.requests }
     #expect(
-      requests.filter { $0.executableURL == URL(filePath: "/usr/bin/killall") }
-        == [
-          ProcessRequest(
-            executableURL: URL(filePath: "/usr/bin/killall"),
-            arguments: ["-USR1", "kitty"]
-          ),
-          ProcessRequest(
-            executableURL: URL(filePath: "/usr/bin/killall"),
-            arguments: ["-0", "kitty"]
-          ),
-        ]
-    )
-    #expect(
       requests.filter { $0.executableURL == URL(filePath: "/usr/bin/osascript") }
         == [
           Self.appearanceRequest(dark: true)
@@ -110,10 +100,22 @@ struct AdapterContractTests {
       activation.reconciliation.results
         == [
           AdapterResult(
+            adapterID: "atuin",
+            requirement: .required,
+            status: .applied,
+            message: "Fresh Atuin search interfaces use the active palette"
+          ),
+          AdapterResult(
             adapterID: "bat",
             requirement: .required,
             status: .applied,
             message: "bat rebuilt its cache for the active palette"
+          ),
+          AdapterResult(
+            adapterID: "btop",
+            requirement: .required,
+            status: .applied,
+            message: "btop will use the active palette on next launch"
           ),
           AdapterResult(
             adapterID: "eza",
@@ -142,6 +144,12 @@ struct AdapterContractTests {
             adapterID: "wallpaper",
             requirement: .required,
             status: .applied
+          ),
+          AdapterResult(
+            adapterID: "yazi",
+            requirement: .required,
+            status: .applied,
+            message: "Yazi will use the active palette on next launch"
           ),
         ]
     )
@@ -547,6 +555,212 @@ struct AdapterContractTests {
     let outcome = try await rejected.reconciliation().run()
     #expect(outcome.status == .failed)
     #expect(outcome.message == "invalid tmTheme")
+  }
+
+  @Test
+  func tuiAdaptersUseCanonicalThemesAndTheirHighestAvailableUpdateBoundaries() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = try Self.consumerPaths(
+      root: root,
+      kittyConfigurationURL: root.appending(path: "unused-kitty.conf"),
+      sketchyBarConfigurationURL: root.appending(path: "unused-sketchybarrc")
+    )
+    let btopDirectory = paths.btopConfigurationDirectoryURL
+    let yaziDirectory = paths.yaziConfigurationDirectoryURL
+    let atuinDirectory = paths.atuinConfigurationDirectoryURL
+    let btopLink = btopDirectory.appending(
+      path: "themes/\(BtopAdapter.themeName).theme")
+
+    let calls = Mutex([ProcessRequest]())
+    let runner = ProcessRunner { request in
+      calls.withLock { $0.append(request) }
+      if request.executableURL == URL(filePath: "/test/atuin") {
+        return ProcessResult(terminationStatus: 0, output: AtuinAdapter.themeName)
+      }
+      return ProcessResult(terminationStatus: 0, output: "")
+    }
+    let btop = BtopAdapter(
+      root: root,
+      configurationDirectoryURL: btopDirectory,
+      executableURL: URL(filePath: "/test/btop"),
+      controlIsAvailable: { true },
+      processRunner: runner
+    )
+    let yazi = YaziAdapter(
+      root: root,
+      configurationDirectoryURL: yaziDirectory,
+      executableURL: URL(filePath: "/test/yazi"),
+      controlURL: URL(filePath: "/test/ya"),
+      controlsAreAvailable: { true },
+      processRunner: runner
+    )
+    let atuin = AtuinAdapter(
+      root: root,
+      configurationDirectoryURL: atuinDirectory,
+      executableURL: URL(filePath: "/test/atuin"),
+      controlIsAvailable: { true },
+      processRunner: runner
+    )
+
+    #expect(try await btop.reconciliation().run().status == .applied)
+    #expect(try await yazi.reconciliation().run().status == .applied)
+    #expect(try await atuin.reconciliation().run().status == .applied)
+    #expect(
+      calls.withLock { $0 }
+        == [
+          ProcessRequest(
+            executableURL: URL(filePath: "/usr/bin/killall"),
+            arguments: ["-USR2", "btop"]
+          ),
+          ProcessRequest(
+            executableURL: URL(filePath: "/usr/bin/killall"),
+            arguments: ["-0", "yazi"]
+          ),
+          ProcessRequest(
+            executableURL: URL(filePath: "/test/ya"),
+            arguments: ["emit-to", "0", "theme"],
+            timeout: 1
+          ),
+          ProcessRequest(
+            executableURL: URL(filePath: "/test/atuin"),
+            arguments: ["config", "get", "theme.name"],
+            timeout: 1,
+            environmentOverrides: ["ATUIN_CONFIG_DIR": atuinDirectory.path]
+          ),
+        ]
+    )
+
+    try FileManager.default.removeItem(at: btopLink)
+    try FileManager.default.createSymbolicLink(
+      at: btopLink, withDestinationURL: root.appending(path: "wrong/btop.theme"))
+    #expect(btop.inspection().status == .drifted)
+    try FileManager.default.removeItem(at: btopLink)
+    try FileManager.default.createSymbolicLink(
+      at: btopLink,
+      withDestinationURL: root.appending(path: "current/\(BtopAdapter.outputPath)"))
+    try "color_theme = \"\"\(BtopAdapter.themeName)\"\"\n".write(
+      to: btopDirectory.appending(path: "btop.conf"), atomically: true, encoding: .utf8)
+    #expect(btop.inspection().status == .drifted)
+    try "[flavor]\ndark = \"other\"\n".write(
+      to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
+    #expect(yazi.inspection().status == .drifted)
+    try "[theme]\nname = \"other\"\n".write(
+      to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    #expect(atuin.inspection().status == .drifted)
+
+    #expect(
+      BtopAdapter(
+        root: root,
+        configurationDirectoryURL: btopDirectory,
+        executableURL: URL(filePath: "/test/btop"),
+        controlIsAvailable: { false },
+        processRunner: runner
+      ).inspection().status == .failed
+    )
+    #expect(
+      YaziAdapter(
+        root: root,
+        configurationDirectoryURL: yaziDirectory,
+        executableURL: URL(filePath: "/test/yazi"),
+        controlURL: URL(filePath: "/test/ya"),
+        controlsAreAvailable: { false },
+        processRunner: runner
+      ).inspection().status == .failed
+    )
+    #expect(
+      AtuinAdapter(
+        root: root,
+        configurationDirectoryURL: atuinDirectory,
+        executableURL: URL(filePath: "/test/atuin"),
+        controlIsAvailable: { false },
+        processRunner: runner
+      ).inspection().status == .failed
+    )
+  }
+
+  @Test
+  func tuiAdaptersExposeReloadRejectionAndProcessExit() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = try Self.consumerPaths(
+      root: root,
+      kittyConfigurationURL: root.appending(path: "unused-kitty.conf"),
+      sketchyBarConfigurationURL: root.appending(path: "unused-sketchybarrc")
+    )
+    let denied = ProcessRunner { request in
+      if request.executableURL == URL(filePath: "/usr/bin/killall"),
+        request.arguments.first == "-0"
+      {
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+      return ProcessResult(terminationStatus: 1, output: "reload denied")
+    }
+    let deniedBtop = BtopAdapter(
+      root: root,
+      configurationDirectoryURL: paths.btopConfigurationDirectoryURL,
+      executableURL: URL(filePath: "/test/btop"),
+      controlIsAvailable: { true },
+      processRunner: denied
+    )
+    let deniedYazi = YaziAdapter(
+      root: root,
+      configurationDirectoryURL: paths.yaziConfigurationDirectoryURL,
+      executableURL: URL(filePath: "/test/yazi"),
+      controlURL: URL(filePath: "/test/ya"),
+      controlsAreAvailable: { true },
+      processRunner: denied
+    )
+    let deniedAtuin = AtuinAdapter(
+      root: root,
+      configurationDirectoryURL: paths.atuinConfigurationDirectoryURL,
+      executableURL: URL(filePath: "/test/atuin"),
+      controlIsAvailable: { true },
+      processRunner: denied
+    )
+
+    let btopFailure = try await deniedBtop.reconciliation().run()
+    let yaziFailure = try await deniedYazi.reconciliation().run()
+    let atuinFailure = try await deniedAtuin.reconciliation().run()
+    #expect(btopFailure.status == .failed)
+    #expect(btopFailure.message == "reload denied")
+    #expect(yaziFailure.status == .failed)
+    #expect(yaziFailure.message == "reload denied")
+    #expect(atuinFailure.status == .failed)
+    #expect(atuinFailure.message == "reload denied")
+
+    let yaziProbes = Mutex(0)
+    let exited = ProcessRunner { request in
+      if request.arguments == ["-0", "yazi"] {
+        return yaziProbes.withLock { count in
+          count += 1
+          return ProcessResult(terminationStatus: count == 1 ? 0 : 1, output: "")
+        }
+      }
+      return ProcessResult(terminationStatus: 1, output: "no matching process")
+    }
+    let exitedBtop = BtopAdapter(
+      root: root,
+      configurationDirectoryURL: paths.btopConfigurationDirectoryURL,
+      executableURL: URL(filePath: "/test/btop"),
+      controlIsAvailable: { true },
+      processRunner: exited
+    )
+    let exitedYazi = YaziAdapter(
+      root: root,
+      configurationDirectoryURL: paths.yaziConfigurationDirectoryURL,
+      executableURL: URL(filePath: "/test/yazi"),
+      controlURL: URL(filePath: "/test/ya"),
+      controlsAreAvailable: { true },
+      processRunner: exited
+    )
+
+    let btopExit = try await exitedBtop.reconciliation().run()
+    let yaziExit = try await exitedYazi.reconciliation().run()
+    #expect(btopExit.status == .applied)
+    #expect(btopExit.message == "btop will use the active palette on next launch")
+    #expect(yaziExit.status == .applied)
+    #expect(yaziExit.message == "Yazi will use the active palette on next launch")
   }
 
   @Test
@@ -1593,7 +1807,10 @@ struct AdapterContractTests {
     #expect(preview.manifest.themeID == manifest.themeID)
     #expect(
       preview.inspections.map(\.adapterID)
-        == ["macos-appearance", "bat", "eza", "kitty", "sketchybar", "wallpaper"]
+        == [
+          "macos-appearance", "atuin", "bat", "btop", "eza", "kitty", "sketchybar",
+          "wallpaper", "yazi",
+        ]
     )
     let appearanceInspection = try #require(preview.inspections.first)
     let kittyInspection = try #require(
@@ -2105,9 +2322,19 @@ struct AdapterContractTests {
   ) throws -> ThemeConsumerPaths {
     let ezaDirectory = root.appending(path: "eza", directoryHint: .isDirectory)
     let batDirectory = root.appending(path: "bat", directoryHint: .isDirectory)
+    let btopDirectory = root.appending(path: "btop", directoryHint: .isDirectory)
+    let yaziDirectory = root.appending(path: "yazi", directoryHint: .isDirectory)
+    let atuinDirectory = root.appending(path: "atuin", directoryHint: .isDirectory)
     let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
+    let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
+    let yaziFlavor = yaziDirectory.appending(
+      path: "flavors/\(YaziAdapter.flavorName).yazi", directoryHint: .isDirectory)
+    let atuinThemes = atuinDirectory.appending(path: "themes", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: ezaDirectory, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: batThemes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: btopThemes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: yaziFlavor, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
 
     let ezaTheme = ezaDirectory.appending(path: "theme.yml")
     try FileManager.default.createSymbolicLink(
@@ -2118,6 +2345,22 @@ struct AdapterContractTests {
     try FileManager.default.createSymbolicLink(
       at: batTheme,
       withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: btopThemes.appending(path: "\(BtopAdapter.themeName).theme"),
+      withDestinationURL: root.appending(path: "current/\(BtopAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziFlavor.appending(path: "flavor.toml"),
+      withDestinationURL: root.appending(path: "current/\(YaziAdapter.flavorOutputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziFlavor.appending(path: "tmtheme.xml"),
+      withDestinationURL: root.appending(path: "current/\(YaziAdapter.syntaxOutputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: atuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
+      withDestinationURL: root.appending(path: "current/\(AtuinAdapter.outputPath)")
     )
 
     let shellConfiguration = root.appending(path: ".zshrc")
@@ -2131,6 +2374,12 @@ struct AdapterContractTests {
       atomically: true,
       encoding: .utf8
     )
+    try "color_theme = \"\(BtopAdapter.themeName)\"\n".write(
+      to: btopDirectory.appending(path: "btop.conf"), atomically: true, encoding: .utf8)
+    try "[flavor]\ndark = \"\(YaziAdapter.flavorName)\"\n".write(
+      to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
+    try "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".write(
+      to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
 
     return ThemeConsumerPaths(
       kittyConfigurationURL: kittyConfigurationURL,
@@ -2138,7 +2387,10 @@ struct AdapterContractTests {
       shellConfigurationURL: shellConfiguration,
       ezaConfigurationDirectoryURL: ezaDirectory,
       batConfigurationDirectoryURL: batDirectory,
-      batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory)
+      batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory),
+      btopConfigurationDirectoryURL: btopDirectory,
+      yaziConfigurationDirectoryURL: yaziDirectory,
+      atuinConfigurationDirectoryURL: atuinDirectory
     )
   }
 

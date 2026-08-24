@@ -1,16 +1,22 @@
 Macarchy doctor:
 - canonical [ok]: Theme 'catppuccin-mocha' generation 'g-active-generation' is active.
 - reconciliation [ok]: Status matches the active generation.
+- reconciliation.atuin [ok]: applied
 - reconciliation.bat [ok]: applied
+- reconciliation.btop [ok]: applied
 - reconciliation.eza [ok]: applied
 - reconciliation.kitty [ok]: applied
 - reconciliation.macos-appearance [ok]: applied
 - reconciliation.sketchybar [ok]: applied
 - reconciliation.wallpaper [ok]: applied
+- reconciliation.yazi [ok]: applied
 - macos-appearance.integration [ok]: Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required
+- atuin.integration [ok]: Integration preflight passed.
 - bat.integration [ok]: Integration preflight passed.
+- btop.integration [ok]: Integration preflight passed.
 - eza.integration [ok]: Integration preflight passed.
 - kitty.integration [ok]: Integration preflight passed.
 - sketchybar.integration [ok]: Integration preflight passed.
 - wallpaper.integration [ok]: Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded
+- yazi.integration [ok]: Integration preflight passed.
 No changes made.

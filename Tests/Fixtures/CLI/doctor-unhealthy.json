@@ -11,7 +11,17 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.atuin",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
       "id" : "reconciliation.bat",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation.btop",
       "message" : "applied",
       "status" : "ok"
     },
@@ -41,12 +51,27 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.yazi",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
       "id" : "macos-appearance.integration",
       "message" : "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required",
       "status" : "ok"
     },
     {
+      "id" : "atuin.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
       "id" : "bat.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
+      "id" : "btop.integration",
       "message" : "Integration preflight passed.",
       "status" : "ok"
     },
@@ -68,6 +93,11 @@
     {
       "id" : "wallpaper.integration",
       "message" : "Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded",
+      "status" : "ok"
+    },
+    {
+      "id" : "yazi.integration",
+      "message" : "Integration preflight passed.",
       "status" : "ok"
     }
   ],

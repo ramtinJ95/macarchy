@@ -9,6 +9,9 @@ func testConsumerPaths() -> ThemeConsumerPaths {
     shellConfigurationURL: root.appending(path: ".zshrc"),
     ezaConfigurationDirectoryURL: root.appending(path: "eza", directoryHint: .isDirectory),
     batConfigurationDirectoryURL: root.appending(path: "bat", directoryHint: .isDirectory),
-    batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory)
+    batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory),
+    btopConfigurationDirectoryURL: root.appending(path: "btop", directoryHint: .isDirectory),
+    yaziConfigurationDirectoryURL: root.appending(path: "yazi", directoryHint: .isDirectory),
+    atuinConfigurationDirectoryURL: root.appending(path: "atuin", directoryHint: .isDirectory)
   )
 }

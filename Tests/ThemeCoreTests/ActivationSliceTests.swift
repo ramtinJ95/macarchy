@@ -62,8 +62,8 @@ struct ActivationSliceTests {
     #expect(
       manifest.rendererVersions
         == [
-          "bat": 1, "eza": 1, "kitty": 2, "normalized_theme": 1,
-          "sketchybar": 1, "wallpaper": 1,
+          "atuin": 1, "bat": 1, "btop": 1, "eza": 1, "kitty": 2,
+          "normalized_theme": 1, "sketchybar": 1, "wallpaper": 1, "yazi": 1,
         ]
     )
     #expect(manifest.inputDigest.hasPrefix("sha256:"))
@@ -71,8 +71,10 @@ struct ActivationSliceTests {
     #expect(
       Set(manifest.artifacts.keys)
         == [
-          "generated/bat.tmTheme", "generated/eza.yml", "generated/kitty.conf",
-          "generated/sketchybar.lua", "generated/wallpaper.png", "theme.json",
+          "generated/atuin.toml", "generated/bat.tmTheme", "generated/btop.theme",
+          "generated/eza.yml", "generated/kitty.conf", "generated/sketchybar.lua",
+          "generated/wallpaper.png", "generated/yazi-flavor.toml",
+          "generated/yazi.tmTheme", "theme.json",
         ]
     )
 
@@ -85,10 +87,7 @@ struct ActivationSliceTests {
     #expect(normalized.themeID == package.id)
     #expect(normalized.generationID == manifest.generationID)
 
-    for path in [
-      "manifest.json", "theme.json", "generated/kitty.conf", "generated/sketchybar.lua",
-      "generated/wallpaper.png",
-    ] {
+    for path in ["manifest.json"] + manifest.artifacts.keys.sorted() {
       let attributes = try FileManager.default.attributesOfItem(
         atPath: generationURL.appending(path: path).path)
       let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
