@@ -9,13 +9,13 @@ struct ReconcileDoctorCommandTests {
   func reconcileDryRunAndRequiredFailureMatchOutputContracts() async throws {
     let manifest = testManifest()
     let dryRun = ReconcileCommandRunner(
-      preview: { _, _, _, _ in
+      preview: { _, _, _ in
         (
           manifest,
           [AdapterInspection(adapterID: "kitty", requirement: .required)]
         )
       },
-      reconcile: { _, _, _, _ in throw TestFailure.unexpectedOperation }
+      reconcile: { _, _, _ in throw TestFailure.unexpectedOperation }
     )
     try await expectReconcileGoldens(
       runner: dryRun,
@@ -36,8 +36,8 @@ struct ReconcileDoctorCommandTests {
       ]
     )
     let requiredFailure = ReconcileCommandRunner(
-      preview: { _, _, _, _ in throw TestFailure.unexpectedOperation },
-      reconcile: { _, _, _, _ in (manifest, failedRecord) }
+      preview: { _, _, _ in throw TestFailure.unexpectedOperation },
+      reconcile: { _, _, _ in (manifest, failedRecord) }
     )
     try await expectReconcileGoldens(
       runner: requiredFailure,
@@ -50,7 +50,7 @@ struct ReconcileDoctorCommandTests {
   @Test
   func reconcileInspectionFailureIsNonzeroWithoutRunningReconciliation() async throws {
     let runner = ReconcileCommandRunner(
-      preview: { _, _, _, _ in
+      preview: { _, _, _ in
         (
           testManifest(),
           [
@@ -63,14 +63,13 @@ struct ReconcileDoctorCommandTests {
           ]
         )
       },
-      reconcile: { _, _, _, _ in throw TestFailure.unexpectedOperation }
+      reconcile: { _, _, _ in throw TestFailure.unexpectedOperation }
     )
 
     let execution = try await runner.execute(
       adapterIDs: [],
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       dryRun: true,
       json: false
     )
@@ -90,14 +89,13 @@ struct ReconcileDoctorCommandTests {
       message: "executable is unavailable"
     )
     let reconcile = ReconcileCommandRunner(
-      preview: { _, _, _, _ in (manifest, [inspection]) },
-      reconcile: { _, _, _, _ in throw TestFailure.unexpectedOperation }
+      preview: { _, _, _ in (manifest, [inspection]) },
+      reconcile: { _, _, _ in throw TestFailure.unexpectedOperation }
     )
     let reconciliation = try await reconcile.execute(
       adapterIDs: [],
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       dryRun: true,
       json: false
     )
@@ -107,6 +105,8 @@ struct ReconcileDoctorCommandTests {
     let record = try ReconciliationRecord(
       manifest: manifest,
       results: [
+        AdapterResult(adapterID: "bat", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "eza", requirement: .required, status: .applied),
         AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
         AdapterResult(
           adapterID: "macos-appearance",
@@ -119,12 +119,11 @@ struct ReconcileDoctorCommandTests {
     )
     let doctor = DoctorCommandRunner(
       read: { _ in .state(manifest: manifest, reconciliation: .current(record)) },
-      inspect: { _, _, _ in [inspection] }
+      inspect: { _, _ in [inspection] }
     )
     let diagnosis = try doctor.execute(
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       json: false
     )
     #expect(diagnosis.succeeded)
@@ -138,8 +137,8 @@ struct ReconcileDoctorCommandTests {
       AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)
     ]
     let runner = ReconcileCommandRunner(
-      preview: { _, _, _, _ in throw TestFailure.unexpectedOperation },
-      reconcile: { _, _, _, _ in
+      preview: { _, _, _ in throw TestFailure.unexpectedOperation },
+      reconcile: { _, _, _ in
         throw ReconciliationPersistenceError(
           manifest: manifest,
           results: results,
@@ -151,8 +150,7 @@ struct ReconcileDoctorCommandTests {
     let human = try await runner.execute(
       adapterIDs: [],
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       dryRun: false,
       json: false
     )
@@ -163,8 +161,7 @@ struct ReconcileDoctorCommandTests {
     let json = try await runner.execute(
       adapterIDs: [],
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       dryRun: false,
       json: true
     )
@@ -181,6 +178,8 @@ struct ReconcileDoctorCommandTests {
     let healthyRecord = try ReconciliationRecord(
       manifest: manifest,
       results: [
+        AdapterResult(adapterID: "bat", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "eza", requirement: .required, status: .applied),
         AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
         AdapterResult(
           adapterID: "macos-appearance",
@@ -193,7 +192,7 @@ struct ReconcileDoctorCommandTests {
     )
     let healthy = DoctorCommandRunner(
       read: { _ in .state(manifest: manifest, reconciliation: .current(healthyRecord)) },
-      inspect: { _, _, _ in
+      inspect: { _, _ in
         [
           AdapterInspection(
             adapterID: "macos-appearance",
@@ -201,6 +200,8 @@ struct ReconcileDoctorCommandTests {
             message:
               "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
           ),
+          AdapterInspection(adapterID: "bat", requirement: .required),
+          AdapterInspection(adapterID: "eza", requirement: .required),
           AdapterInspection(adapterID: "kitty", requirement: .required),
           AdapterInspection(adapterID: "sketchybar", requirement: .required),
           AdapterInspection(
@@ -217,6 +218,8 @@ struct ReconcileDoctorCommandTests {
     let failedRecord = try ReconciliationRecord(
       manifest: manifest,
       results: [
+        AdapterResult(adapterID: "bat", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "eza", requirement: .required, status: .applied),
         AdapterResult(
           adapterID: "kitty",
           requirement: .required,
@@ -239,7 +242,7 @@ struct ReconcileDoctorCommandTests {
     )
     let unhealthy = DoctorCommandRunner(
       read: { _ in .state(manifest: manifest, reconciliation: .current(failedRecord)) },
-      inspect: { _, _, _ in
+      inspect: { _, _ in
         [
           AdapterInspection(
             adapterID: "macos-appearance",
@@ -247,6 +250,8 @@ struct ReconcileDoctorCommandTests {
             message:
               "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
           ),
+          AdapterInspection(adapterID: "bat", requirement: .required),
+          AdapterInspection(adapterID: "eza", requirement: .required),
           AdapterInspection(
             adapterID: "kitty",
             requirement: .required,
@@ -277,15 +282,14 @@ struct ReconcileDoctorCommandTests {
       read: { _ in
         throw ReconciliationStatusError.invalidActiveGeneration("current is not a symlink")
       },
-      inspect: { _, _, _ in
+      inspect: { _, _ in
         [AdapterInspection(adapterID: "kitty", requirement: .required)]
       }
     )
 
     let execution = try runner.execute(
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       json: false
     )
 
@@ -305,15 +309,14 @@ struct ReconcileDoctorCommandTests {
     )
     let runner = DoctorCommandRunner(
       read: { _ in .state(manifest: manifest, reconciliation: .current(record)) },
-      inspect: { _, _, _ in
+      inspect: { _, _ in
         [AdapterInspection(adapterID: "kitty", requirement: .required)]
       }
     )
 
     let execution = try runner.execute(
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       json: false
     )
     #expect(!execution.succeeded)
@@ -330,8 +333,7 @@ struct ReconcileDoctorCommandTests {
       let execution = try await runner.execute(
         adapterIDs: [],
         stateRoot: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL,
-        sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+        consumerPaths: consumerPaths,
         dryRun: dryRun,
         json: json
       )
@@ -348,8 +350,7 @@ struct ReconcileDoctorCommandTests {
     for json in [false, true] {
       let execution = try runner.execute(
         stateRoot: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL,
-        sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+        consumerPaths: consumerPaths,
         json: json
       )
       #expect(execution.succeeded == succeeded)
@@ -370,12 +371,8 @@ struct ReconcileDoctorCommandTests {
     URL(filePath: "/test/state", directoryHint: .isDirectory)
   }
 
-  private var kittyConfigurationURL: URL {
-    URL(filePath: "/test/kitty.conf")
-  }
-
-  private var sketchyBarConfigurationURL: URL {
-    URL(filePath: "/test/sketchybarrc")
+  private var consumerPaths: ThemeConsumerPaths {
+    testConsumerPaths()
   }
 
   private var fixturesRoot: URL {

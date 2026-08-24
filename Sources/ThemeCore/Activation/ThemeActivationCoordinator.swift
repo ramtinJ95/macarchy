@@ -31,6 +31,8 @@ package enum AdapterSelectionError: Error, CustomStringConvertible, Equatable, S
 
 package struct ThemeActivationCoordinator: Sendable {
   package static let adapterRequirements = [
+    BatAdapter.id: AdapterRequirement.required,
+    EzaAdapter.id: AdapterRequirement.required,
     KittyAdapter.id: AdapterRequirement.required,
     MacOSAppearanceAdapter.id: AdapterRequirement.required,
     SketchyBarAdapter.id: AdapterRequirement.required,
@@ -40,7 +42,9 @@ package struct ThemeActivationCoordinator: Sendable {
   private let root: URL
   private let activator: ThemeActivator
   private let appearance: MacOSAppearanceAdapter
+  private let bat: BatAdapter
   private let configurationStore: MacarchyConfigurationStore
+  private let eza: EzaAdapter
   private let kitty: KittyAdapter
   private let processRunner: ProcessRunner
   private let reconciler: ThemeReconciler
@@ -51,18 +55,37 @@ package struct ThemeActivationCoordinator: Sendable {
 
   package init(
     root: URL,
-    kittyConfigurationURL: URL,
-    sketchyBarConfigurationURL: URL
+    consumerPaths: ThemeConsumerPaths
   ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
     self.root = root
     activator = ThemeActivator(root: root)
     appearance = .live(root: root)
+    bat = BatAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
+      cacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
+      executableURL: BatAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: BatAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
     configurationStore = MacarchyConfigurationStore(root: root)
+    eza = EzaAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
+      shellConfigurationURL: consumerPaths.shellConfigurationURL,
+      executableURL: EzaAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: EzaAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
     kitty = KittyAdapter(
       root: root,
-      configurationURL: kittyConfigurationURL,
+      configurationURL: consumerPaths.kittyConfigurationURL,
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: .live
     )
@@ -70,7 +93,7 @@ package struct ThemeActivationCoordinator: Sendable {
     reconciler = ThemeReconciler(statusStore: statusStore)
     sketchyBar = SketchyBarAdapter(
       root: root,
-      configurationURL: sketchyBarConfigurationURL,
+      configurationURL: consumerPaths.sketchyBarConfigurationURL,
       executableURL: SketchyBarAdapter.liveExecutableURL,
       controlIsAvailable: {
         FileManager.default.isExecutableFile(atPath: SketchyBarAdapter.liveExecutableURL.path)
@@ -84,8 +107,7 @@ package struct ThemeActivationCoordinator: Sendable {
 
   init(
     root: URL,
-    kittyConfigurationURL: URL,
-    sketchyBarConfigurationURL: URL,
+    consumerPaths: ThemeConsumerPaths,
     processRunner: ProcessRunner,
     wallpaperControl: WallpaperControl,
     wallpaperSignal: YabaiWallpaperSignal,
@@ -111,10 +133,26 @@ package struct ThemeActivationCoordinator: Sendable {
       currentAppearance: currentAppearance,
       processRunner: processRunner
     )
+    bat = BatAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
+      cacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
+      executableURL: BatAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: processRunner
+    )
     configurationStore = MacarchyConfigurationStore(root: root)
+    eza = EzaAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
+      shellConfigurationURL: consumerPaths.shellConfigurationURL,
+      executableURL: EzaAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: processRunner
+    )
     kitty = KittyAdapter(
       root: root,
-      configurationURL: kittyConfigurationURL,
+      configurationURL: consumerPaths.kittyConfigurationURL,
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: processRunner
     )
@@ -122,7 +160,7 @@ package struct ThemeActivationCoordinator: Sendable {
     reconciler = ThemeReconciler(statusStore: statusStore)
     sketchyBar = SketchyBarAdapter(
       root: root,
-      configurationURL: sketchyBarConfigurationURL,
+      configurationURL: consumerPaths.sketchyBarConfigurationURL,
       executableURL: SketchyBarAdapter.liveExecutableURL,
       controlIsAvailable: sketchyBarControlIsAvailable,
       processRunner: processRunner
@@ -243,6 +281,8 @@ package struct ThemeActivationCoordinator: Sendable {
     let selectedIDs = Set(adapterIDs)
     return [
       appearanceInspection,
+      bat.inspection(),
+      eza.inspection(),
       kitty.inspection(),
       sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
       wallpaperInspection,
@@ -324,6 +364,16 @@ package struct ThemeActivationCoordinator: Sendable {
         }
       ),
       ConfiguredAdapter(
+        id: BatAdapter.id,
+        inspection: bat.inspection,
+        reconciliation: bat.reconciliation
+      ),
+      ConfiguredAdapter(
+        id: EzaAdapter.id,
+        inspection: eza.inspection,
+        reconciliation: eza.reconciliation
+      ),
+      ConfiguredAdapter(
         id: KittyAdapter.id,
         inspection: kitty.inspection,
         reconciliation: kitty.reconciliation
@@ -377,6 +427,8 @@ package struct ThemeActivationCoordinator: Sendable {
       try configuration.wallpaperData(themeID: package.id)
       ?? package.wallpaperData
     _ = try appearance.preflight()
+    try bat.preflight()
+    try eza.preflight()
     try kitty.preflight()
     try sketchyBar.preflight()
     _ = try wallpaper.preflight()

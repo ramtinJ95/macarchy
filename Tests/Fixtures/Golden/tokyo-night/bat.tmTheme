@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>name</key>
+  <string>Macarchy Current</string>
+  <key>semanticClass</key>
+  <string>theme.dark.macarchy-current</string>
+  <key>uuid</key>
+  <string>7f833cb6-f61d-4da1-902c-018674a54d53</string>
+  <key>settings</key>
+  <array>
+    <dict>
+      <key>settings</key>
+      <dict>
+        <key>background</key><string>#1a1b26</string>
+        <key>foreground</key><string>#c0caf5</string>
+        <key>caret</key><string>#c0caf5</string>
+        <key>selection</key><string>#33467c80</string>
+        <key>lineHighlight</key><string>#24283b</string>
+        <key>invisibles</key><string>#414868</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Comments</string>
+      <key>scope</key><string>comment</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#a9b1d6</string>
+        <key>fontStyle</key><string>italic</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Strings</string>
+      <key>scope</key><string>string</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#9ece6a</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Numbers and constants</string>
+      <key>scope</key><string>constant.numeric, constant.language</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#7dcfff</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Keywords</string>
+      <key>scope</key><string>keyword, storage.type, storage.modifier</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#7aa2f7</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Functions</string>
+      <key>scope</key><string>entity.name.function, support.function</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#7aa2f7</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Types</string>
+      <key>scope</key><string>entity.name.type, entity.name.class, support.type</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#7dcfff</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Variables</string>
+      <key>scope</key><string>variable, variable.other</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#c0caf5</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Parameters</string>
+      <key>scope</key><string>variable.parameter</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#e0af68</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Tags</string>
+      <key>scope</key><string>entity.name.tag</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#f7768e</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Attributes</string>
+      <key>scope</key><string>entity.other.attribute-name</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#e0af68</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>name</key><string>Invalid</string>
+      <key>scope</key><string>invalid, invalid.illegal</string>
+      <key>settings</key>
+      <dict>
+        <key>foreground</key><string>#f7768e</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

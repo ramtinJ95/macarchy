@@ -11,6 +11,16 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.bat",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation.eza",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
       "id" : "reconciliation.kitty",
       "message" : "failed: reload denied",
       "status" : "failure"
@@ -33,6 +43,16 @@
     {
       "id" : "macos-appearance.integration",
       "message" : "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required",
+      "status" : "ok"
+    },
+    {
+      "id" : "bat.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
+      "id" : "eza.integration",
+      "message" : "Integration preflight passed.",
       "status" : "ok"
     },
     {

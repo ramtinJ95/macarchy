@@ -61,15 +61,18 @@ struct ActivationSliceTests {
     #expect(manifest.inputDigest == activation.inputDigest)
     #expect(
       manifest.rendererVersions
-        == ["kitty": 2, "normalized_theme": 1, "sketchybar": 1, "wallpaper": 1]
+        == [
+          "bat": 1, "eza": 1, "kitty": 2, "normalized_theme": 1,
+          "sketchybar": 1, "wallpaper": 1,
+        ]
     )
     #expect(manifest.inputDigest.hasPrefix("sha256:"))
     #expect(manifest.inputDigest.count == 71)
     #expect(
       Set(manifest.artifacts.keys)
         == [
-          "theme.json", "generated/kitty.conf", "generated/sketchybar.lua",
-          "generated/wallpaper.png",
+          "generated/bat.tmTheme", "generated/eza.yml", "generated/kitty.conf",
+          "generated/sketchybar.lua", "generated/wallpaper.png", "theme.json",
         ]
     )
 

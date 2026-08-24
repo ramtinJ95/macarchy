@@ -17,14 +17,20 @@ struct ThemeCoreSliceTests {
     try ThemeRenderer().write(rendered, to: outputRoot)
 
     let themeJSON = outputRoot.appending(path: "theme.json")
+    let bat = outputRoot.appending(path: "generated/bat.tmTheme")
+    let eza = outputRoot.appending(path: "generated/eza.yml")
     let kitty = outputRoot.appending(path: "generated/kitty.conf")
     let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
     let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
     let writtenJSON = try Data(contentsOf: themeJSON)
+    let writtenBat = try String(contentsOf: bat, encoding: .utf8)
+    let writtenEza = try String(contentsOf: eza, encoding: .utf8)
     let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
     let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
     let writtenWallpaper = try Data(contentsOf: wallpaper)
     #expect(writtenJSON == rendered.themeJSON)
+    #expect(writtenBat == rendered.batTheme)
+    #expect(writtenEza == rendered.ezaTheme)
     #expect(writtenKitty == rendered.kittyConfiguration)
     #expect(writtenSketchyBar == rendered.sketchyBarPalette)
     #expect(writtenWallpaper == rendered.wallpaper)
@@ -78,6 +84,12 @@ struct ThemeCoreSliceTests {
       let goldenRoot =
         repositoryRoot
         .appending(path: "Tests/Fixtures/Golden/\(package.id)", directoryHint: .isDirectory)
+      #expect(
+        rendered.batTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "bat.tmTheme"), encoding: .utf8)))
+      #expect(
+        rendered.ezaTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "eza.yml"), encoding: .utf8)))
       #expect(
         rendered.themeJSON == (try Data(contentsOf: goldenRoot.appending(path: "theme.json"))))
       #expect(

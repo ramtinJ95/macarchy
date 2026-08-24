@@ -15,8 +15,8 @@ struct ThemeNextStatusCommandTests {
     ] {
       let selected = Mutex<String?>(nil)
       let activation = ThemeSetCommandRunner(
-        preflight: { package, _, _, _ in selected.withLock { $0 = package.id } },
-        activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
+        preflight: { package, _, _ in selected.withLock { $0 = package.id } },
+        activate: { _, _, _, _ in throw TestError.unexpectedActivation }
       )
       let runner = ThemeNextCommandRunner(
         activeManifest: { _ in testManifest(themeID: active) },
@@ -26,8 +26,7 @@ struct ThemeNextStatusCommandTests {
       let execution = try await runner.execute(
         repository: repository,
         stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory),
-        kittyConfigurationURL: URL(filePath: "/test/kitty.conf"),
-        sketchyBarConfigurationURL: URL(filePath: "/test/sketchybarrc"),
+        consumerPaths: testConsumerPaths(),
         dryRun: true
       )
 
@@ -42,8 +41,8 @@ struct ThemeNextStatusCommandTests {
     let runner = ThemeNextCommandRunner(
       activeManifest: { _ in testManifest(themeID: "removed-theme") },
       activation: ThemeSetCommandRunner(
-        preflight: { _, _, _, _ in },
-        activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
+        preflight: { _, _, _ in },
+        activate: { _, _, _, _ in throw TestError.unexpectedActivation }
       )
     )
 
@@ -51,8 +50,7 @@ struct ThemeNextStatusCommandTests {
       _ = try await runner.execute(
         repository: repository,
         stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory),
-        kittyConfigurationURL: URL(filePath: "/test/kitty.conf"),
-        sketchyBarConfigurationURL: URL(filePath: "/test/sketchybarrc"),
+        consumerPaths: testConsumerPaths(),
         dryRun: true
       )
     }
@@ -65,8 +63,7 @@ struct ThemeNextStatusCommandTests {
       _ = try await inactive.execute(
         repository: repository,
         stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory),
-        kittyConfigurationURL: URL(filePath: "/test/kitty.conf"),
-        sketchyBarConfigurationURL: URL(filePath: "/test/sketchybarrc"),
+        consumerPaths: testConsumerPaths(),
         dryRun: true
       )
     }
@@ -78,8 +75,8 @@ struct ThemeNextStatusCommandTests {
     let attempts = Mutex([String]())
     let barrier = FirstTwoAttemptsBarrier()
     let activation = ThemeSetCommandRunner(
-      preflight: { _, _, _, _ in },
-      activate: { package, _, _, _, expectedGenerationID in
+      preflight: { _, _, _ in },
+      activate: { package, _, _, expectedGenerationID in
         attempts.withLock { $0.append(package.id) }
         await barrier.wait()
         let manifest = testManifest(
@@ -106,21 +103,18 @@ struct ThemeNextStatusCommandTests {
       activation: activation
     )
     let stateRoot = URL(filePath: "/test/state", directoryHint: .isDirectory)
-    let kittyConfigurationURL = URL(filePath: "/test/kitty.conf")
-    let sketchyBarConfigurationURL = URL(filePath: "/test/sketchybarrc")
+    let consumerPaths = testConsumerPaths()
 
     async let first = runner.execute(
       repository: repository,
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       dryRun: false
     )
     async let second = runner.execute(
       repository: repository,
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      consumerPaths: consumerPaths,
       dryRun: false
     )
     let (firstResult, secondResult) = try await (first, second)

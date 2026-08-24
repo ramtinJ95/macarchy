@@ -19,6 +19,12 @@ struct ThemeSetCommandTests {
     let configuration = "include \(stateRoot.path)/state/adapters/kitty.conf\n"
     try configuration.write(to: kittyConfigurationURL, atomically: true, encoding: .utf8)
     let signal = try wallpaperSignalFixture(filesRoot: root)
+    let consumerPaths = try consumerPaths(
+      root: root,
+      stateRoot: stateRoot,
+      kittyConfigurationURL: kittyConfigurationURL,
+      sketchyBarConfigurationURL: sketchyBarConfigurationURL
+    )
 
     try await expectGoldens(
       runner: integratedRunner(wallpaperSignal: signal),
@@ -26,8 +32,7 @@ struct ThemeSetCommandTests {
       dryRun: true,
       succeeded: true,
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL,
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL
+      consumerPaths: consumerPaths
     )
     #expect(!FileManager.default.fileExists(atPath: stateRoot.path))
     #expect(try String(contentsOf: kittyConfigurationURL, encoding: .utf8) == configuration)
@@ -35,7 +40,7 @@ struct ThemeSetCommandTests {
 
   @Test
   func precommitFailureReportsThatCanonicalStateIsUnchanged() async throws {
-    let runner = runner { _, _, _ in
+    let runner = runner {
       throw TestFailure.precommit
     }
 
@@ -48,7 +53,7 @@ struct ThemeSetCommandTests {
 
   @Test
   func successfulCommitAcceptsRestartRequiredAndOptionalFailure() async throws {
-    let runner = runner { _, _, _ in
+    let runner = runner {
       try activation(
         results: [
           AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
@@ -76,7 +81,7 @@ struct ThemeSetCommandTests {
 
   @Test
   func requiredFailureReturnsFailureWithoutUndoingTheCommit() async throws {
-    let runner = runner { _, _, _ in
+    let runner = runner {
       try activation(
         results: [
           AdapterResult(
@@ -99,7 +104,7 @@ struct ThemeSetCommandTests {
   @Test
   func postcommitInfrastructureFailureStillReportsTheCommittedGeneration() async throws {
     let manifest = manifest()
-    let runner = runner { _, _, _ in
+    let runner = runner {
       throw ThemeCommittedWithReconciliationError(
         manifest: manifest,
         cause: "active generation changed before status persistence"
@@ -116,7 +121,7 @@ struct ThemeSetCommandTests {
   @Test
   func postcommitActivationFailureDoesNotClaimTheCommitWasRolledBack() async throws {
     let manifest = manifest()
-    let runner = runner { _, _, _ in
+    let runner = runner {
       throw ThemeCommittedActivationError(
         manifest: manifest,
         cause: "generation cleanup was denied"
@@ -136,16 +141,14 @@ struct ThemeSetCommandTests {
     dryRun: Bool = false,
     succeeded: Bool,
     stateRoot: URL = URL(filePath: "/test/state", directoryHint: .isDirectory),
-    kittyConfigurationURL: URL = URL(filePath: "/test/kitty.conf"),
-    sketchyBarConfigurationURL: URL = URL(filePath: "/test/sketchybarrc")
+    consumerPaths: ThemeConsumerPaths = testConsumerPaths()
   ) async throws {
     for json in [false, true] {
       let execution = try await runner.execute(
         repository: repository,
         themeID: "catppuccin-mocha",
         stateRoot: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL,
-        sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+        consumerPaths: consumerPaths,
         dryRun: dryRun,
         json: json
       )
@@ -212,23 +215,19 @@ struct ThemeSetCommandTests {
     )
     let runner = ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
     return ThemeSetCommandRunner(
-      preflight: { package, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL in
+      preflight: { package, stateRoot, consumerPaths in
         try ThemeActivationCoordinator(
           root: stateRoot,
-          kittyConfigurationURL: kittyConfigurationURL,
-          sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+          consumerPaths: consumerPaths,
           processRunner: runner,
           wallpaperControl: control,
           wallpaperSignal: wallpaperSignal
         ).preflight(package: package)
       },
-      activate: {
-        package, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL,
-        expectedGenerationID in
+      activate: { package, stateRoot, consumerPaths, expectedGenerationID in
         try await ThemeActivationCoordinator(
           root: stateRoot,
-          kittyConfigurationURL: kittyConfigurationURL,
-          sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+          consumerPaths: consumerPaths,
           processRunner: runner,
           wallpaperControl: control,
           wallpaperSignal: wallpaperSignal
@@ -241,13 +240,11 @@ struct ThemeSetCommandTests {
   }
 
   private func runner(
-    activate: @escaping @Sendable (ThemePackage, URL, URL) async throws -> ThemeActivationResult
+    activate: @escaping @Sendable () async throws -> ThemeActivationResult
   ) -> ThemeSetCommandRunner {
     ThemeSetCommandRunner(
-      preflight: { _, _, _, _ in },
-      activate: { package, stateRoot, kittyConfigurationURL, _, _ in
-        try await activate(package, stateRoot, kittyConfigurationURL)
-      }
+      preflight: { _, _, _ in },
+      activate: { _, _, _, _ in try await activate() }
     )
   }
 
@@ -275,6 +272,49 @@ struct ThemeSetCommandTests {
       encoding: .utf8
     )
     return configuration
+  }
+
+  private func consumerPaths(
+    root: URL,
+    stateRoot: URL,
+    kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL
+  ) throws -> ThemeConsumerPaths {
+    let ezaDirectory = root.appending(path: "eza", directoryHint: .isDirectory)
+    let batDirectory = root.appending(path: "bat", directoryHint: .isDirectory)
+    let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: ezaDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: batThemes, withIntermediateDirectories: true)
+
+    try FileManager.default.createSymbolicLink(
+      at: ezaDirectory.appending(path: "theme.yml"),
+      withDestinationURL: stateRoot.appending(path: "current/\(EzaAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: batThemes.appending(path: "\(BatAdapter.themeName).tmTheme"),
+      withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+    )
+
+    let shellConfiguration = root.appending(path: ".zshrc")
+    try "export EZA_CONFIG_DIR=\"\(ezaDirectory.path)\"\n".write(
+      to: shellConfiguration,
+      atomically: true,
+      encoding: .utf8
+    )
+    try "--theme=\"\(BatAdapter.themeName)\"\n".write(
+      to: batDirectory.appending(path: "config"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    return ThemeConsumerPaths(
+      kittyConfigurationURL: kittyConfigurationURL,
+      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
+      shellConfigurationURL: shellConfiguration,
+      ezaConfigurationDirectoryURL: ezaDirectory,
+      batConfigurationDirectoryURL: batDirectory,
+      batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory)
+    )
   }
 }
 
