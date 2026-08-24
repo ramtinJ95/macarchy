@@ -61,13 +61,16 @@ struct ActivationSliceTests {
     #expect(manifest.inputDigest == activation.inputDigest)
     #expect(
       manifest.rendererVersions
-        == ["kitty": 2, "normalized_theme": 1, "wallpaper": 1]
+        == ["kitty": 2, "normalized_theme": 1, "sketchybar": 1, "wallpaper": 1]
     )
     #expect(manifest.inputDigest.hasPrefix("sha256:"))
     #expect(manifest.inputDigest.count == 71)
     #expect(
       Set(manifest.artifacts.keys)
-        == ["theme.json", "generated/kitty.conf", "generated/wallpaper.png"]
+        == [
+          "theme.json", "generated/kitty.conf", "generated/sketchybar.lua",
+          "generated/wallpaper.png",
+        ]
     )
 
     for (path, expectedDigest) in manifest.artifacts {
@@ -80,7 +83,8 @@ struct ActivationSliceTests {
     #expect(normalized.generationID == manifest.generationID)
 
     for path in [
-      "manifest.json", "theme.json", "generated/kitty.conf", "generated/wallpaper.png",
+      "manifest.json", "theme.json", "generated/kitty.conf", "generated/sketchybar.lua",
+      "generated/wallpaper.png",
     ] {
       let attributes = try FileManager.default.attributesOfItem(
         atPath: generationURL.appending(path: path).path)

@@ -15,6 +15,7 @@ struct ThemeSetCommandTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
     let kittyConfigurationURL = root.appending(path: "kitty.conf")
+    let sketchyBarConfigurationURL = try sketchyBarConfiguration(root: root, stateRoot: stateRoot)
     let configuration = "include \(stateRoot.path)/state/adapters/kitty.conf\n"
     try configuration.write(to: kittyConfigurationURL, atomically: true, encoding: .utf8)
     let signal = try wallpaperSignalFixture(filesRoot: root)
@@ -25,7 +26,8 @@ struct ThemeSetCommandTests {
       dryRun: true,
       succeeded: true,
       stateRoot: stateRoot,
-      kittyConfigurationURL: kittyConfigurationURL
+      kittyConfigurationURL: kittyConfigurationURL,
+      sketchyBarConfigurationURL: sketchyBarConfigurationURL
     )
     #expect(!FileManager.default.fileExists(atPath: stateRoot.path))
     #expect(try String(contentsOf: kittyConfigurationURL, encoding: .utf8) == configuration)
@@ -134,7 +136,8 @@ struct ThemeSetCommandTests {
     dryRun: Bool = false,
     succeeded: Bool,
     stateRoot: URL = URL(filePath: "/test/state", directoryHint: .isDirectory),
-    kittyConfigurationURL: URL = URL(filePath: "/test/kitty.conf")
+    kittyConfigurationURL: URL = URL(filePath: "/test/kitty.conf"),
+    sketchyBarConfigurationURL: URL = URL(filePath: "/test/sketchybarrc")
   ) async throws {
     for json in [false, true] {
       let execution = try await runner.execute(
@@ -142,6 +145,7 @@ struct ThemeSetCommandTests {
         themeID: "catppuccin-mocha",
         stateRoot: stateRoot,
         kittyConfigurationURL: kittyConfigurationURL,
+        sketchyBarConfigurationURL: sketchyBarConfigurationURL,
         dryRun: dryRun,
         json: json
       )
@@ -208,19 +212,23 @@ struct ThemeSetCommandTests {
     )
     let runner = ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
     return ThemeSetCommandRunner(
-      preflight: { package, stateRoot, kittyConfigurationURL in
+      preflight: { package, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL in
         try ThemeActivationCoordinator(
           root: stateRoot,
           kittyConfigurationURL: kittyConfigurationURL,
+          sketchyBarConfigurationURL: sketchyBarConfigurationURL,
           processRunner: runner,
           wallpaperControl: control,
           wallpaperSignal: wallpaperSignal
         ).preflight(package: package)
       },
-      activate: { package, stateRoot, kittyConfigurationURL, expectedGenerationID in
+      activate: {
+        package, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL,
+        expectedGenerationID in
         try await ThemeActivationCoordinator(
           root: stateRoot,
           kittyConfigurationURL: kittyConfigurationURL,
+          sketchyBarConfigurationURL: sketchyBarConfigurationURL,
           processRunner: runner,
           wallpaperControl: control,
           wallpaperSignal: wallpaperSignal
@@ -236,11 +244,37 @@ struct ThemeSetCommandTests {
     activate: @escaping @Sendable (ThemePackage, URL, URL) async throws -> ThemeActivationResult
   ) -> ThemeSetCommandRunner {
     ThemeSetCommandRunner(
-      preflight: { _, _, _ in },
-      activate: { package, stateRoot, kittyConfigurationURL, _ in
+      preflight: { _, _, _, _ in },
+      activate: { package, stateRoot, kittyConfigurationURL, _, _ in
         try await activate(package, stateRoot, kittyConfigurationURL)
       }
     )
+  }
+
+  private func sketchyBarConfiguration(root: URL, stateRoot: URL) throws -> URL {
+    let configurationRoot = root.appending(path: "sketchybar", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: configurationRoot,
+      withIntermediateDirectories: true
+    )
+    let configuration = configurationRoot.appending(path: "sketchybarrc")
+    try "\(SketchyBarAdapter.initImport)\n".write(
+      to: configuration,
+      atomically: true,
+      encoding: .utf8
+    )
+    try "\(SketchyBarAdapter.readyMarkerDeclaration)\n".write(
+      to: configurationRoot.appending(path: "init.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let colors = configurationRoot.appending(path: "colors.lua")
+    try "\(SketchyBarAdapter.paletteImport(root: stateRoot))\nreturn colors\n".write(
+      to: colors,
+      atomically: true,
+      encoding: .utf8
+    )
+    return configuration
   }
 }
 
