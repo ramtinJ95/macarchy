@@ -40,6 +40,18 @@ struct Macarchy: AsyncParsableCommand {
     var batCacheDir = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".cache/bat", directoryHint: .isDirectory).path
 
+    @Option(help: "btop configuration directory.")
+    var btopConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/btop", directoryHint: .isDirectory).path
+
+    @Option(help: "Yazi configuration directory.")
+    var yaziConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/yazi", directoryHint: .isDirectory).path
+
+    @Option(help: "Atuin configuration directory.")
+    var atuinConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/atuin", directoryHint: .isDirectory).path
+
     var stateRootURL: URL {
       URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
     }
@@ -51,7 +63,13 @@ struct Macarchy: AsyncParsableCommand {
         shellConfigurationURL: URL(filePath: shellConfig).resolvingSymlinksInPath(),
         ezaConfigurationDirectoryURL: URL(filePath: ezaConfigDir, directoryHint: .isDirectory),
         batConfigurationDirectoryURL: URL(filePath: batConfigDir, directoryHint: .isDirectory),
-        batCacheDirectoryURL: URL(filePath: batCacheDir, directoryHint: .isDirectory)
+        batCacheDirectoryURL: URL(filePath: batCacheDir, directoryHint: .isDirectory),
+        btopConfigurationDirectoryURL: URL(
+          filePath: btopConfigDir, directoryHint: .isDirectory),
+        yaziConfigurationDirectoryURL: URL(
+          filePath: yaziConfigDir, directoryHint: .isDirectory),
+        atuinConfigurationDirectoryURL: URL(
+          filePath: atuinConfigDir, directoryHint: .isDirectory)
       )
     }
   }

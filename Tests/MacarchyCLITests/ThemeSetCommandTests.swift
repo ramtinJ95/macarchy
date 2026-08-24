@@ -282,9 +282,19 @@ struct ThemeSetCommandTests {
   ) throws -> ThemeConsumerPaths {
     let ezaDirectory = root.appending(path: "eza", directoryHint: .isDirectory)
     let batDirectory = root.appending(path: "bat", directoryHint: .isDirectory)
+    let btopDirectory = root.appending(path: "btop", directoryHint: .isDirectory)
+    let yaziDirectory = root.appending(path: "yazi", directoryHint: .isDirectory)
+    let atuinDirectory = root.appending(path: "atuin", directoryHint: .isDirectory)
     let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
+    let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
+    let yaziFlavor = yaziDirectory.appending(
+      path: "flavors/\(YaziAdapter.flavorName).yazi", directoryHint: .isDirectory)
+    let atuinThemes = atuinDirectory.appending(path: "themes", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: ezaDirectory, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: batThemes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: btopThemes, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: yaziFlavor, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
 
     try FileManager.default.createSymbolicLink(
       at: ezaDirectory.appending(path: "theme.yml"),
@@ -293,6 +303,22 @@ struct ThemeSetCommandTests {
     try FileManager.default.createSymbolicLink(
       at: batThemes.appending(path: "\(BatAdapter.themeName).tmTheme"),
       withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: btopThemes.appending(path: "\(BtopAdapter.themeName).theme"),
+      withDestinationURL: stateRoot.appending(path: "current/\(BtopAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziFlavor.appending(path: "flavor.toml"),
+      withDestinationURL: stateRoot.appending(path: "current/\(YaziAdapter.flavorOutputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziFlavor.appending(path: "tmtheme.xml"),
+      withDestinationURL: stateRoot.appending(path: "current/\(YaziAdapter.syntaxOutputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: atuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
+      withDestinationURL: stateRoot.appending(path: "current/\(AtuinAdapter.outputPath)")
     )
 
     let shellConfiguration = root.appending(path: ".zshrc")
@@ -306,6 +332,12 @@ struct ThemeSetCommandTests {
       atomically: true,
       encoding: .utf8
     )
+    try "color_theme = \"\(BtopAdapter.themeName)\"\n".write(
+      to: btopDirectory.appending(path: "btop.conf"), atomically: true, encoding: .utf8)
+    try "[flavor]\ndark = \"\(YaziAdapter.flavorName)\"\n".write(
+      to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
+    try "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".write(
+      to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
 
     return ThemeConsumerPaths(
       kittyConfigurationURL: kittyConfigurationURL,
@@ -313,7 +345,10 @@ struct ThemeSetCommandTests {
       shellConfigurationURL: shellConfiguration,
       ezaConfigurationDirectoryURL: ezaDirectory,
       batConfigurationDirectoryURL: batDirectory,
-      batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory)
+      batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory),
+      btopConfigurationDirectoryURL: btopDirectory,
+      yaziConfigurationDirectoryURL: yaziDirectory,
+      atuinConfigurationDirectoryURL: atuinDirectory
     )
   }
 }

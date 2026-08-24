@@ -31,18 +31,23 @@ package enum AdapterSelectionError: Error, CustomStringConvertible, Equatable, S
 
 package struct ThemeActivationCoordinator: Sendable {
   package static let adapterRequirements = [
+    AtuinAdapter.id: AdapterRequirement.required,
     BatAdapter.id: AdapterRequirement.required,
+    BtopAdapter.id: AdapterRequirement.required,
     EzaAdapter.id: AdapterRequirement.required,
     KittyAdapter.id: AdapterRequirement.required,
     MacOSAppearanceAdapter.id: AdapterRequirement.required,
     SketchyBarAdapter.id: AdapterRequirement.required,
     WallpaperAdapter.id: AdapterRequirement.required,
+    YaziAdapter.id: AdapterRequirement.required,
   ]
 
   private let root: URL
   private let activator: ThemeActivator
   private let appearance: MacOSAppearanceAdapter
+  private let atuin: AtuinAdapter
   private let bat: BatAdapter
+  private let btop: BtopAdapter
   private let configurationStore: MacarchyConfigurationStore
   private let eza: EzaAdapter
   private let kitty: KittyAdapter
@@ -52,6 +57,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let statusStore: ReconciliationStatusStore
   private let wallpaper: WallpaperAdapter
   private let wallpaperSignal: YabaiWallpaperSignal
+  private let yazi: YaziAdapter
 
   package init(
     root: URL,
@@ -62,6 +68,15 @@ package struct ThemeActivationCoordinator: Sendable {
     self.root = root
     activator = ThemeActivator(root: root)
     appearance = .live(root: root)
+    atuin = AtuinAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
+      executableURL: AtuinAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: AtuinAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
     bat = BatAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
@@ -69,6 +84,15 @@ package struct ThemeActivationCoordinator: Sendable {
       executableURL: BatAdapter.liveExecutableURL,
       controlIsAvailable: {
         FileManager.default.isExecutableFile(atPath: BatAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
+    btop = BtopAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.btopConfigurationDirectoryURL,
+      executableURL: BtopAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: BtopAdapter.liveExecutableURL.path)
       },
       processRunner: .live
     )
@@ -103,6 +127,17 @@ package struct ThemeActivationCoordinator: Sendable {
     self.statusStore = statusStore
     wallpaper = WallpaperAdapter(root: root, control: .live)
     wallpaperSignal = .personal()
+    yazi = YaziAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.yaziConfigurationDirectoryURL,
+      executableURL: YaziAdapter.liveExecutableURL,
+      controlURL: YaziAdapter.liveControlURL,
+      controlsAreAvailable: {
+        FileManager.default.isExecutableFile(atPath: YaziAdapter.liveExecutableURL.path)
+          && FileManager.default.isExecutableFile(atPath: YaziAdapter.liveControlURL.path)
+      },
+      processRunner: .live
+    )
   }
 
   init(
@@ -133,11 +168,25 @@ package struct ThemeActivationCoordinator: Sendable {
       currentAppearance: currentAppearance,
       processRunner: processRunner
     )
+    atuin = AtuinAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
+      executableURL: AtuinAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: processRunner
+    )
     bat = BatAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
       cacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
       executableURL: BatAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: processRunner
+    )
+    btop = BtopAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.btopConfigurationDirectoryURL,
+      executableURL: BtopAdapter.liveExecutableURL,
       controlIsAvailable: { true },
       processRunner: processRunner
     )
@@ -168,6 +217,14 @@ package struct ThemeActivationCoordinator: Sendable {
     self.statusStore = statusStore
     wallpaper = WallpaperAdapter(root: root, control: wallpaperControl)
     self.wallpaperSignal = wallpaperSignal
+    yazi = YaziAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.yaziConfigurationDirectoryURL,
+      executableURL: YaziAdapter.liveExecutableURL,
+      controlURL: YaziAdapter.liveControlURL,
+      controlsAreAvailable: { true },
+      processRunner: processRunner
+    )
   }
 
   package func preflight(package: ThemePackage) throws {
@@ -281,11 +338,14 @@ package struct ThemeActivationCoordinator: Sendable {
     let selectedIDs = Set(adapterIDs)
     return [
       appearanceInspection,
+      atuin.inspection(),
       bat.inspection(),
+      btop.inspection(),
       eza.inspection(),
       kitty.inspection(),
       sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
       wallpaperInspection,
+      yazi.inspection(),
     ].filter {
       adapterIDs.isEmpty || selectedIDs.contains($0.adapterID)
     }
@@ -364,9 +424,19 @@ package struct ThemeActivationCoordinator: Sendable {
         }
       ),
       ConfiguredAdapter(
+        id: AtuinAdapter.id,
+        inspection: atuin.inspection,
+        reconciliation: atuin.reconciliation
+      ),
+      ConfiguredAdapter(
         id: BatAdapter.id,
         inspection: bat.inspection,
         reconciliation: bat.reconciliation
+      ),
+      ConfiguredAdapter(
+        id: BtopAdapter.id,
+        inspection: btop.inspection,
+        reconciliation: btop.reconciliation
       ),
       ConfiguredAdapter(
         id: EzaAdapter.id,
@@ -398,6 +468,11 @@ package struct ThemeActivationCoordinator: Sendable {
           }
         }
       ),
+      ConfiguredAdapter(
+        id: YaziAdapter.id,
+        inspection: yazi.inspection,
+        reconciliation: yazi.reconciliation
+      ),
     ]
   }
 
@@ -427,12 +502,15 @@ package struct ThemeActivationCoordinator: Sendable {
       try configuration.wallpaperData(themeID: package.id)
       ?? package.wallpaperData
     _ = try appearance.preflight()
+    try atuin.preflight()
     try bat.preflight()
+    try btop.preflight()
     try eza.preflight()
     try kitty.preflight()
     try sketchyBar.preflight()
     _ = try wallpaper.preflight()
     try wallpaperSignal.preflight()
+    try yazi.preflight()
     return wallpaperData
   }
 

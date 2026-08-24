@@ -105,7 +105,9 @@ struct ReconcileDoctorCommandTests {
     let record = try ReconciliationRecord(
       manifest: manifest,
       results: [
+        AdapterResult(adapterID: "atuin", requirement: .required, status: .applied),
         AdapterResult(adapterID: "bat", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "btop", requirement: .required, status: .applied),
         AdapterResult(adapterID: "eza", requirement: .required, status: .applied),
         AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
         AdapterResult(
@@ -115,6 +117,7 @@ struct ReconcileDoctorCommandTests {
         ),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "yazi", requirement: .required, status: .applied),
       ]
     )
     let doctor = DoctorCommandRunner(
@@ -178,7 +181,9 @@ struct ReconcileDoctorCommandTests {
     let healthyRecord = try ReconciliationRecord(
       manifest: manifest,
       results: [
+        AdapterResult(adapterID: "atuin", requirement: .required, status: .applied),
         AdapterResult(adapterID: "bat", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "btop", requirement: .required, status: .applied),
         AdapterResult(adapterID: "eza", requirement: .required, status: .applied),
         AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
         AdapterResult(
@@ -188,6 +193,7 @@ struct ReconcileDoctorCommandTests {
         ),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "yazi", requirement: .required, status: .applied),
       ]
     )
     let healthy = DoctorCommandRunner(
@@ -200,7 +206,9 @@ struct ReconcileDoctorCommandTests {
             message:
               "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
           ),
+          AdapterInspection(adapterID: "atuin", requirement: .required),
           AdapterInspection(adapterID: "bat", requirement: .required),
+          AdapterInspection(adapterID: "btop", requirement: .required),
           AdapterInspection(adapterID: "eza", requirement: .required),
           AdapterInspection(adapterID: "kitty", requirement: .required),
           AdapterInspection(adapterID: "sketchybar", requirement: .required),
@@ -210,6 +218,7 @@ struct ReconcileDoctorCommandTests {
             message:
               "Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded"
           ),
+          AdapterInspection(adapterID: "yazi", requirement: .required),
         ]
       }
     )
@@ -218,7 +227,9 @@ struct ReconcileDoctorCommandTests {
     let failedRecord = try ReconciliationRecord(
       manifest: manifest,
       results: [
+        AdapterResult(adapterID: "atuin", requirement: .required, status: .applied),
         AdapterResult(adapterID: "bat", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "btop", requirement: .required, status: .applied),
         AdapterResult(adapterID: "eza", requirement: .required, status: .applied),
         AdapterResult(
           adapterID: "kitty",
@@ -238,6 +249,7 @@ struct ReconcileDoctorCommandTests {
           message: "SketchyBar colors module is missing the generated palette import"
         ),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "yazi", requirement: .required, status: .applied),
       ]
     )
     let unhealthy = DoctorCommandRunner(
@@ -250,7 +262,9 @@ struct ReconcileDoctorCommandTests {
             message:
               "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
           ),
+          AdapterInspection(adapterID: "atuin", requirement: .required),
           AdapterInspection(adapterID: "bat", requirement: .required),
+          AdapterInspection(adapterID: "btop", requirement: .required),
           AdapterInspection(adapterID: "eza", requirement: .required),
           AdapterInspection(
             adapterID: "kitty",
@@ -270,6 +284,7 @@ struct ReconcileDoctorCommandTests {
             message:
               "Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded"
           ),
+          AdapterInspection(adapterID: "yazi", requirement: .required),
         ]
       }
     )

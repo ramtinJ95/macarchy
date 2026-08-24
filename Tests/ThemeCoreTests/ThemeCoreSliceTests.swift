@@ -17,23 +17,35 @@ struct ThemeCoreSliceTests {
     try ThemeRenderer().write(rendered, to: outputRoot)
 
     let themeJSON = outputRoot.appending(path: "theme.json")
+    let atuin = outputRoot.appending(path: "generated/atuin.toml")
     let bat = outputRoot.appending(path: "generated/bat.tmTheme")
+    let btop = outputRoot.appending(path: "generated/btop.theme")
     let eza = outputRoot.appending(path: "generated/eza.yml")
     let kitty = outputRoot.appending(path: "generated/kitty.conf")
     let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
     let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
+    let yaziFlavor = outputRoot.appending(path: "generated/yazi-flavor.toml")
+    let yaziSyntax = outputRoot.appending(path: "generated/yazi.tmTheme")
     let writtenJSON = try Data(contentsOf: themeJSON)
+    let writtenAtuin = try String(contentsOf: atuin, encoding: .utf8)
     let writtenBat = try String(contentsOf: bat, encoding: .utf8)
+    let writtenBtop = try String(contentsOf: btop, encoding: .utf8)
     let writtenEza = try String(contentsOf: eza, encoding: .utf8)
     let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
     let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
     let writtenWallpaper = try Data(contentsOf: wallpaper)
+    let writtenYaziFlavor = try String(contentsOf: yaziFlavor, encoding: .utf8)
+    let writtenYaziSyntax = try String(contentsOf: yaziSyntax, encoding: .utf8)
     #expect(writtenJSON == rendered.themeJSON)
+    #expect(writtenAtuin == rendered.atuinTheme)
     #expect(writtenBat == rendered.batTheme)
+    #expect(writtenBtop == rendered.btopTheme)
     #expect(writtenEza == rendered.ezaTheme)
     #expect(writtenKitty == rendered.kittyConfiguration)
     #expect(writtenSketchyBar == rendered.sketchyBarPalette)
     #expect(writtenWallpaper == rendered.wallpaper)
+    #expect(writtenYaziFlavor == rendered.yaziFlavor)
+    #expect(writtenYaziSyntax == rendered.batTheme)
     #expect(
       writtenWallpaper
         == (try Data(contentsOf: packageURL.appending(path: package.wallpaper.path)))
@@ -85,8 +97,14 @@ struct ThemeCoreSliceTests {
         repositoryRoot
         .appending(path: "Tests/Fixtures/Golden/\(package.id)", directoryHint: .isDirectory)
       #expect(
+        rendered.atuinTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "atuin.toml"), encoding: .utf8)))
+      #expect(
         rendered.batTheme
           == (try String(contentsOf: goldenRoot.appending(path: "bat.tmTheme"), encoding: .utf8)))
+      #expect(
+        rendered.btopTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "btop.theme"), encoding: .utf8)))
       #expect(
         rendered.ezaTheme
           == (try String(contentsOf: goldenRoot.appending(path: "eza.yml"), encoding: .utf8)))
@@ -99,6 +117,10 @@ struct ThemeCoreSliceTests {
         rendered.sketchyBarPalette
           == (try String(
             contentsOf: goldenRoot.appending(path: "sketchybar.lua"), encoding: .utf8)))
+      #expect(
+        rendered.yaziFlavor
+          == (try String(
+            contentsOf: goldenRoot.appending(path: "yazi-flavor.toml"), encoding: .utf8)))
     }
   }
 
