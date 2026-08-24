@@ -13,7 +13,7 @@ struct AdapterContractTests {
       makeWritableForRemoval(root)
       try? FileManager.default.removeItem(at: root)
     }
-    let includeDirective = "include \(root.path)/current/generated/kitty.conf"
+    let includeDirective = "include \(root.path)/state/adapters/kitty.conf"
     let configurationURL = root.appending(path: "kitty.conf")
     try "\(includeDirective)\n".write(
       to: configurationURL,
@@ -58,6 +58,13 @@ struct AdapterContractTests {
     )
 
     let activation = try await coordinator.activate(package: catppuccinPackage())
+    let generatedKitty = try Data(
+      contentsOf: root.appending(
+        path: "generations/\(activation.manifest.generationID)/generated/kitty.conf"
+      )
+    )
+    let kittyBridge = root.appending(path: KittyAdapter.bridgePath)
+    #expect(try Data(contentsOf: kittyBridge) == generatedKitty)
 
     let requests = state.withLock { $0.requests }
     #expect(
@@ -104,6 +111,7 @@ struct AdapterContractTests {
 
     let retryRequests = Mutex([ProcessRequest]())
     let retryKitty = KittyAdapter(
+      root: root,
       configurationURL: configurationURL,
       includeDirective: includeDirective,
       processRunner: ProcessRunner { request in
@@ -111,6 +119,8 @@ struct AdapterContractTests {
         return ProcessResult(terminationStatus: 1, output: "no matching process")
       }
     )
+    try Data("stale bridge\n".utf8).write(to: kittyBridge, options: .atomic)
+    #expect(retryKitty.inspection().status == .drifted)
     let recovered = try await ThemeReconciler(statusStore: store).reconcile(
       manifest: activation.manifest,
       adapters: [retryKitty.reconciliation()]
@@ -123,7 +133,60 @@ struct AdapterContractTests {
       retryRequests.withLock { $0 }.map(\.arguments)
         == [["-USR1", "kitty"], ["-0", "kitty"]]
     )
+    #expect(retryKitty.inspection().status == .ready)
     #expect(try store.read() == .current(recovered))
+  }
+
+  @Test
+  func kittyRejectsInvalidBridgeFilesAndRebuildsSymlinks() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+    let includeDirective = "include \(root.path)/state/adapters/kitty.conf"
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "\(includeDirective)\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let bridgeURL = root.appending(path: KittyAdapter.bridgePath)
+    try FileManager.default.createDirectory(
+      at: bridgeURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let generatedURL = root.appending(
+      path: "generations/\(manifest.generationID)/generated/kitty.conf"
+    )
+    try FileManager.default.createSymbolicLink(
+      at: bridgeURL,
+      withDestinationURL: generatedURL
+    )
+    let adapter = KittyAdapter(
+      root: root,
+      configurationURL: configurationURL,
+      includeDirective: includeDirective,
+      processRunner: ProcessRunner { _ in
+        ProcessResult(terminationStatus: 1, output: "no matching process")
+      }
+    )
+
+    #expect(adapter.inspection().status == .failed)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    let values = try bridgeURL.resourceValues(
+      forKeys: [.isRegularFileKey, .isSymbolicLinkKey]
+    )
+    #expect(values.isRegularFile == true)
+    #expect(values.isSymbolicLink != true)
+    #expect(adapter.inspection().status == .ready)
+
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o000],
+      ofItemAtPath: bridgeURL.path
+    )
+    #expect(adapter.inspection().status == .failed)
   }
 
   @Test
@@ -423,7 +486,7 @@ struct AdapterContractTests {
     }
     let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -462,7 +525,7 @@ struct AdapterContractTests {
     }
     let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -518,7 +581,7 @@ struct AdapterContractTests {
     )
 
     let kittyConfiguration = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: kittyConfiguration,
       atomically: true,
       encoding: .utf8
@@ -553,7 +616,7 @@ struct AdapterContractTests {
     }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -615,7 +678,7 @@ struct AdapterContractTests {
       try? FileManager.default.removeItem(at: root)
     }
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -757,7 +820,7 @@ struct AdapterContractTests {
       try? FileManager.default.removeItem(at: root)
     }
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -788,7 +851,7 @@ struct AdapterContractTests {
       try? FileManager.default.removeItem(at: root)
     }
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -1031,7 +1094,7 @@ struct AdapterContractTests {
       try? FileManager.default.removeItem(at: root)
     }
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -1132,7 +1195,7 @@ struct AdapterContractTests {
     }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8
@@ -1189,7 +1252,7 @@ struct AdapterContractTests {
     }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/current/generated/kitty.conf\n".write(
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
       atomically: true,
       encoding: .utf8

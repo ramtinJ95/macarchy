@@ -15,7 +15,7 @@ struct ThemeSetCommandTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
     let kittyConfigurationURL = root.appending(path: "kitty.conf")
-    let configuration = "include \(stateRoot.path)/current/generated/kitty.conf\n"
+    let configuration = "include \(stateRoot.path)/state/adapters/kitty.conf\n"
     try configuration.write(to: kittyConfigurationURL, atomically: true, encoding: .utf8)
     let signal = try wallpaperSignalFixture(filesRoot: root)
 

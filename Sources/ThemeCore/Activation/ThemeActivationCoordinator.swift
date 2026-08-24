@@ -55,6 +55,7 @@ package struct ThemeActivationCoordinator: Sendable {
     appearance = .live(root: root)
     configurationStore = MacarchyConfigurationStore(root: root)
     kitty = KittyAdapter(
+      root: root,
       configurationURL: kittyConfigurationURL,
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: .live
@@ -95,6 +96,7 @@ package struct ThemeActivationCoordinator: Sendable {
     )
     configurationStore = MacarchyConfigurationStore(root: root)
     kitty = KittyAdapter(
+      root: root,
       configurationURL: kittyConfigurationURL,
       includeDirective: Self.kittyIncludeDirective(root: root),
       processRunner: processRunner
@@ -409,7 +411,7 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   private static func kittyIncludeDirective(root: URL) -> String {
-    "include \(root.appending(path: "current/\(KittyAdapter.outputPath)").path)"
+    "include \(root.appending(path: KittyAdapter.bridgePath).path)"
   }
 }
 

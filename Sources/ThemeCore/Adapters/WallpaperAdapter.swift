@@ -150,7 +150,7 @@ struct WallpaperAdapter: Sendable {
     desiredWallpaperURL: @escaping @Sendable () throws -> URL
   ) -> AdapterReconciliation {
     AdapterReconciliation(id: Self.id, requirement: .required) {
-      try activationLock.withLock {
+      let preparation: (URL, [WallpaperDisplay], AdapterOutcome?) = try activationLock.withLock {
         let desiredWallpaperURL = try desiredWallpaperURL()
         let before = try preflight()
         for display in before
@@ -158,35 +158,43 @@ struct WallpaperAdapter: Sendable {
           do {
             try control.set(desiredWallpaperURL, display.id)
           } catch {
-            return AdapterOutcome(
-              status: .failed,
-              message: "Cannot set wallpaper for display '\(display.name)': \(error)"
+            return (
+              desiredWallpaperURL,
+              before,
+              AdapterOutcome(
+                status: .failed,
+                message: "Cannot set wallpaper for display '\(display.name)': \(error)"
+              )
             )
           }
         }
-
-        var drifted = [WallpaperDisplay]()
-        for attempt in 0..<9 {
-          let after = try preflight()
-          guard Set(after.map(\.id)) == Set(before.map(\.id)) else {
-            return AdapterOutcome(
-              status: .drifted,
-              message: "The current display inventory changed while wallpaper was applied"
-            )
-          }
-          drifted = after.filter { !Self.sameFile($0.wallpaperURL, desiredWallpaperURL) }
-          if drifted.isEmpty {
-            return AdapterOutcome(status: .applied)
-          }
-          if attempt < 8 { waitForSettle() }
-        }
-        return AdapterOutcome(
-          status: .drifted,
-          message:
-            "NSWorkspace did not settle on the requested wallpaper for: "
-            + drifted.map(\.name).joined(separator: ", ")
-        )
+        return (desiredWallpaperURL, before, nil)
       }
+      let (desiredWallpaperURL, before, failure) = preparation
+      if let failure { return failure }
+
+      // Settling only observes state; release the lock so it cannot delay other live adapters.
+      var drifted = [WallpaperDisplay]()
+      for attempt in 0..<9 {
+        let after = try preflight()
+        guard Set(after.map(\.id)) == Set(before.map(\.id)) else {
+          return AdapterOutcome(
+            status: .drifted,
+            message: "The current display inventory changed while wallpaper was applied"
+          )
+        }
+        drifted = after.filter { !Self.sameFile($0.wallpaperURL, desiredWallpaperURL) }
+        if drifted.isEmpty {
+          return AdapterOutcome(status: .applied)
+        }
+        if attempt < 8 { waitForSettle() }
+      }
+      return AdapterOutcome(
+        status: .drifted,
+        message:
+          "NSWorkspace did not settle on the requested wallpaper for: "
+          + drifted.map(\.name).joined(separator: ", ")
+      )
     }
   }
 
