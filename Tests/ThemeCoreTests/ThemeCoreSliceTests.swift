@@ -63,10 +63,10 @@ struct ThemeCoreSliceTests {
   }
 
   @Test
-  func bothBuiltInPackagesMatchRenderedGoldens() throws {
+  func allBuiltInPackagesMatchRenderedGoldens() throws {
     let themesRoot = repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
     let packages = try ThemeRepository(builtInRoot: themesRoot).packages()
-    #expect(packages.map(\.id) == ["catppuccin-mocha", "tokyo-night"])
+    #expect(packages.map(\.id) == ["catppuccin-mocha", "kanagawa-wave", "tokyo-night"])
 
     for package in packages {
       let generationID = "golden-\(package.id)"

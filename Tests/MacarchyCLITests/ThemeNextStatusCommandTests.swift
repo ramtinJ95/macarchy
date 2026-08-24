@@ -9,7 +9,8 @@ struct ThemeNextStatusCommandTests {
   @Test
   func nextUsesRepositoryOrderAndWraps() async throws {
     for (active, expected) in [
-      ("catppuccin-mocha", "tokyo-night"),
+      ("catppuccin-mocha", "kanagawa-wave"),
+      ("kanagawa-wave", "tokyo-night"),
       ("tokyo-night", "catppuccin-mocha"),
     ] {
       let selected = Mutex<String?>(nil)
@@ -119,10 +120,10 @@ struct ThemeNextStatusCommandTests {
     let (firstResult, secondResult) = try await (first, second)
     let outputs = [firstResult.output, secondResult.output]
 
-    #expect(attempts.withLock { $0 } == ["tokyo-night", "tokyo-night", "catppuccin-mocha"])
-    #expect(canonical.withLock { $0.themeID } == "catppuccin-mocha")
+    #expect(attempts.withLock { $0 } == ["kanagawa-wave", "kanagawa-wave", "tokyo-night"])
+    #expect(canonical.withLock { $0.themeID } == "tokyo-night")
+    #expect(outputs.contains { $0.hasPrefix("Activated 'kanagawa-wave'") })
     #expect(outputs.contains { $0.hasPrefix("Activated 'tokyo-night'") })
-    #expect(outputs.contains { $0.hasPrefix("Activated 'catppuccin-mocha'") })
   }
 
   @Test
