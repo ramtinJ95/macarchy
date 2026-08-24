@@ -1,0 +1,37 @@
+schema_version = 1
+id = "kanagawa-wave"
+display_name = "Kanagawa Wave"
+appearance = "dark"
+
+[semantic]
+background = "#1f1f28"
+surface = "#2a2a37"
+overlay = "#363646"
+border = "#54546d"
+text = "#dcd7ba"
+muted_text = "#727169"
+accent = "#7e9cd8"
+selection = "#2d4f67"
+info = "#7fb4ca"
+success = "#98bb6c"
+warning = "#e6c384"
+error = "#e82424"
+
+[terminal]
+foreground = "#dcd7ba"
+background = "#1f1f28"
+cursor = "#c8c093"
+selection_foreground = "#c8c093"
+selection_background = "#2d4f67"
+ansi = [
+  "#16161d", "#c34043", "#76946a", "#c0a36e",
+  "#7e9cd8", "#957fb8", "#6a9589", "#c8c093",
+  "#727169", "#e82424", "#98bb6c", "#e6c384",
+  "#7fb4ca", "#938aa9", "#7aa89f", "#dcd7ba",
+]
+
+[wallpaper]
+path = "wallpapers/default.png"
+source = "Original Macarchy palette artwork"
+author = "Ramtin Javanmardi"
+license = "MIT"
