@@ -49,6 +49,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
@@ -87,6 +88,19 @@ struct AdapterContractTests {
         ]
     )
     #expect(
+      requests.filter { $0.executableURL == SketchyBarAdapter.liveExecutableURL }
+        == [
+          ProcessRequest(
+            executableURL: SketchyBarAdapter.liveExecutableURL,
+            arguments: [
+              "--reload",
+              root.appending(path: "sketchybar/sketchybarrc").path,
+            ],
+            timeout: 2
+          )
+        ]
+    )
+    #expect(
       activation.reconciliation.results
         == [
           AdapterResult(
@@ -99,6 +113,12 @@ struct AdapterContractTests {
             adapterID: "macos-appearance",
             requirement: .required,
             status: .applied
+          ),
+          AdapterResult(
+            adapterID: "sketchybar",
+            requirement: .required,
+            status: .failed,
+            message: "reload denied"
           ),
           AdapterResult(
             adapterID: "wallpaper",
@@ -187,6 +207,214 @@ struct AdapterContractTests {
       ofItemAtPath: bridgeURL.path
     )
     #expect(adapter.inspection().status == .failed)
+  }
+
+  @Test
+  func sketchyBarReloadsTheExactEntryConfigAndDetectsABrokenPaletteSeam() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let configuration = try Self.sketchyBarConfiguration(root: root)
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let requests = Mutex([ProcessRequest]())
+    let queryCount = Mutex(0)
+    let settleCount = Mutex(0)
+    let presentationCount = Mutex(0)
+    let adapter = SketchyBarAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        if request.arguments == ["--query", "bar"] {
+          let count = queryCount.withLock { count in
+            count += 1
+            return count
+          }
+          return ProcessResult(
+            terminationStatus: 0,
+            output: count < 2
+              ? #"{"drawing":"off","color":"0x44000000","items":[]}"#
+              : #"{"drawing":"on","color":"0xf01e1e2e","items":["macarchy.theme.ready"]}"#
+          )
+        }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      waitForSettle: { settleCount.withLock { $0 += 1 } },
+      waitForPresentation: { presentationCount.withLock { $0 += 1 } }
+    )
+
+    #expect(adapter.inspection().status == .ready)
+    #expect(requests.withLock { $0 }.isEmpty)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    #expect(settleCount.withLock { $0 } == 1)
+    #expect(presentationCount.withLock { $0 } == 1)
+    #expect(
+      requests.withLock { $0 }
+        == [
+          ProcessRequest(
+            executableURL: SketchyBarAdapter.liveExecutableURL,
+            arguments: ["--reload", configuration.path],
+            timeout: 2
+          ),
+          ProcessRequest(
+            executableURL: SketchyBarAdapter.liveExecutableURL,
+            arguments: ["--query", "bar"],
+            timeout: 0.1
+          ),
+          ProcessRequest(
+            executableURL: SketchyBarAdapter.liveExecutableURL,
+            arguments: ["--query", "bar"],
+            timeout: 0.1
+          ),
+        ]
+    )
+
+    try "return {}\n".write(
+      to: configuration.deletingLastPathComponent().appending(path: "colors.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    #expect(adapter.inspection().status == .drifted)
+    #expect(try await adapter.reconciliation().run().status == .drifted)
+    #expect(requests.withLock { $0 }.count == 3)
+
+    try "\(SketchyBarAdapter.paletteImport(root: root))\nreturn colors\n".write(
+      to: configuration.deletingLastPathComponent().appending(path: "colors.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "-- missing ready marker\n".write(
+      to: configuration.deletingLastPathComponent().appending(path: "init.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    #expect(adapter.inspection().status == .drifted)
+    #expect(try await adapter.reconciliation().run().status == .drifted)
+    #expect(requests.withLock { $0 }.count == 3)
+  }
+
+  @Test
+  func sketchyBarRuntimeInspectionIsExplicitAndNonMutating() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let configuration = try Self.sketchyBarConfiguration(root: root)
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let requests = Mutex([ProcessRequest]())
+    let adapter = SketchyBarAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        return ProcessResult(
+          terminationStatus: 0,
+          output: #"{"drawing":"off","color":"0x44000000","items":[]}"#
+        )
+      }
+    )
+
+    #expect(adapter.inspection().status == .ready)
+    #expect(requests.withLock { $0 }.isEmpty)
+    #expect(adapter.inspection(includeRuntimeChecks: true).status == .drifted)
+    #expect(
+      requests.withLock { $0 }
+        == [
+          ProcessRequest(
+            executableURL: SketchyBarAdapter.liveExecutableURL,
+            arguments: ["--query", "bar"],
+            timeout: 0.2
+          )
+        ]
+    )
+  }
+
+  @Test
+  func sketchyBarReportsUnavailableControlAndReloadFailure() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let configuration = try Self.sketchyBarConfiguration(root: root)
+
+    let unavailable = SketchyBarAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: { false },
+      processRunner: ProcessRunner { _ in
+        Issue.record("Unavailable SketchyBar control must not run")
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+    #expect(unavailable.inspection().status == .failed)
+    #expect(try await unavailable.reconciliation().run().status == .failed)
+
+    let rejected = SketchyBarAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(terminationStatus: 1, output: "reload denied")
+      }
+    )
+    let outcome = try await rejected.reconciliation().run()
+    #expect(outcome.status == .failed)
+    #expect(outcome.message == "reload denied")
+  }
+
+  @Test
+  func sketchyBarStopsPollingWhenTheSettleWindowIsExhausted() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let configuration = try Self.sketchyBarConfiguration(root: root)
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let queryCount = Mutex(0)
+    let settleCount = Mutex(0)
+    let adapter = SketchyBarAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        if request.arguments == ["--query", "bar"] {
+          queryCount.withLock { $0 += 1 }
+          return ProcessResult(
+            terminationStatus: 0,
+            output: #"{"drawing":"off","color":"0x44000000","items":[]}"#
+          )
+        }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      waitForSettle: { settleCount.withLock { $0 += 1 } },
+      waitForPresentation: {
+        Issue.record("Presentation wait must not run for drift")
+      }
+    )
+
+    let outcome = try await adapter.reconciliation().run()
+
+    #expect(outcome.status == .drifted)
+    #expect(queryCount.withLock { $0 } == 11)
+    #expect(settleCount.withLock { $0 } == 10)
+  }
+
+  @Test
+  func sketchyBarEscapesCustomStateRootsInLuaImports() {
+    let root = URL(filePath: "/tmp/quote\"back\\slash\nline")
+    #expect(
+      SketchyBarAdapter.paletteImport(root: root)
+        == #"local colors = dofile("/tmp/quote\"back\\slash\nline/current/generated/sketchybar.lua")"#
+    )
   }
 
   @Test
@@ -452,6 +680,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: kittyConfiguration,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
       wallpaperControl: WallpaperControl(inspect: { [] }, set: { _, _ in }),
       wallpaperSignal: signal
@@ -495,6 +724,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
@@ -534,6 +764,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
@@ -589,6 +820,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: kittyConfiguration,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in
         ProcessResult(terminationStatus: 1, output: "no matching process")
       },
@@ -638,6 +870,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { request in
         requests.withLock { $0.append(request) }
         state.withLock { $0 = .dark }
@@ -715,6 +948,7 @@ struct AdapterContractTests {
     let lightCoordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
@@ -723,6 +957,7 @@ struct AdapterContractTests {
     let darkCoordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
@@ -774,42 +1009,64 @@ struct AdapterContractTests {
   }
 
   @Test
-  func kittyPreflightFailurePreservesThePreviousGeneration() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include bindings.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
-    let calls = Mutex(0)
-    let coordinator = ThemeActivationCoordinator(
-      root: root,
-      kittyConfigurationURL: configurationURL,
-      processRunner: ProcessRunner { _ in
-        calls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
-      wallpaperControl: Self.wallpaperControl(),
-      wallpaperSignal: try Self.wallpaperSignal(root: root),
-      onThemeChanged: { _ in calls.withLock { $0 += 1 } }
-    )
+  func requiredAdapterPreflightFailuresPreserveThePreviousGeneration() async throws {
+    for adapterID in ["kitty", "sketchybar"] {
+      let root = try temporaryDirectory()
+      defer {
+        makeWritableForRemoval(root)
+        try? FileManager.default.removeItem(at: root)
+      }
+      let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+      let kittyConfiguration = root.appending(path: "kitty.conf")
+      try "include \(root.path)/state/adapters/kitty.conf\n".write(
+        to: kittyConfiguration,
+        atomically: true,
+        encoding: .utf8
+      )
+      let sketchyBarConfiguration = try Self.sketchyBarConfiguration(root: root)
+      if adapterID == "kitty" {
+        try "include bindings.conf\n".write(
+          to: kittyConfiguration,
+          atomically: true,
+          encoding: .utf8
+        )
+      } else {
+        try "-- missing init import\n".write(
+          to: sketchyBarConfiguration,
+          atomically: true,
+          encoding: .utf8
+        )
+      }
+      let calls = Mutex(0)
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        kittyConfigurationURL: kittyConfiguration,
+        sketchyBarConfigurationURL: sketchyBarConfiguration,
+        processRunner: ProcessRunner { _ in
+          calls.withLock { $0 += 1 }
+          return ProcessResult(terminationStatus: 0, output: "")
+        },
+        wallpaperControl: Self.wallpaperControl(),
+        wallpaperSignal: try Self.wallpaperSignal(root: root),
+        onThemeChanged: { _ in calls.withLock { $0 += 1 } }
+      )
 
-    await #expect(throws: KittyAdapterError.self) {
-      _ = try await coordinator.activate(package: catppuccinPackage())
-    }
+      do {
+        _ = try await coordinator.activate(package: catppuccinPackage())
+        Issue.record("Expected \(adapterID) preflight to fail")
+      } catch is KittyAdapterError {
+        #expect(adapterID == "kitty")
+      } catch is SketchyBarAdapterError {
+        #expect(adapterID == "sketchybar")
+      }
 
-    #expect(calls.withLock { $0 } == 0)
-    #expect(
-      try FileManager.default.destinationOfSymbolicLink(
-        atPath: root.appending(path: "current").path
-      ) == "generations/\(previous.generationID)"
-    )
+      #expect(calls.withLock { $0 } == 0)
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path
+        ) == "generations/\(previous.generationID)"
+      )
+    }
   }
 
   @Test
@@ -828,6 +1085,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root)
@@ -861,6 +1119,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in
         let manifest = try ThemeActivator(root: root, faultInjector: { _ in }).activate(
           package: tokyoNight
@@ -1103,6 +1362,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
@@ -1111,8 +1371,8 @@ struct AdapterContractTests {
       wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
-    await #expect(throws: AdapterSelectionError.unknown("sketchybar")) {
-      _ = try await coordinator.reconcile(adapterIDs: ["sketchybar"])
+    await #expect(throws: AdapterSelectionError.unknown("tmux")) {
+      _ = try await coordinator.reconcile(adapterIDs: ["tmux"])
     }
     await #expect(throws: AdapterSelectionError.duplicate("kitty")) {
       _ = try await coordinator.reconcile(adapterIDs: ["kitty", "kitty"])
@@ -1140,6 +1400,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
@@ -1153,7 +1414,8 @@ struct AdapterContractTests {
     #expect(preview.manifest.generationID == manifest.generationID)
     #expect(preview.manifest.themeID == manifest.themeID)
     #expect(
-      preview.inspections.map(\.adapterID) == ["macos-appearance", "kitty", "wallpaper"]
+      preview.inspections.map(\.adapterID)
+        == ["macos-appearance", "kitty", "sketchybar", "wallpaper"]
     )
     let appearanceInspection = try #require(preview.inspections.first)
     let kittyInspection = try #require(preview.inspections.dropFirst().first)
@@ -1217,6 +1479,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { request in
         requests.withLock { $0.append(request) }
         return ProcessResult(terminationStatus: 1, output: "no matching process")
@@ -1269,6 +1532,7 @@ struct AdapterContractTests {
     let coordinator = ThemeActivationCoordinator(
       root: root,
       kittyConfigurationURL: configurationURL,
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root),
       processRunner: ProcessRunner { _ in
         processCalls.withLock { $0 += 1 }
         return ProcessResult(terminationStatus: 0, output: "")
@@ -1624,6 +1888,32 @@ struct AdapterContractTests {
       encoding: .utf8
     )
     return signal
+  }
+
+  private static func sketchyBarConfiguration(root: URL) throws -> URL {
+    let configurationRoot = root.appending(path: "sketchybar", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: configurationRoot,
+      withIntermediateDirectories: true
+    )
+    let configuration = configurationRoot.appending(path: "sketchybarrc")
+    try "\(SketchyBarAdapter.initImport)\n".write(
+      to: configuration,
+      atomically: true,
+      encoding: .utf8
+    )
+    try "\(SketchyBarAdapter.readyMarkerDeclaration)\n".write(
+      to: configurationRoot.appending(path: "init.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let colors = configurationRoot.appending(path: "colors.lua")
+    try "\(SketchyBarAdapter.paletteImport(root: root))\nreturn colors\n".write(
+      to: colors,
+      atomically: true,
+      encoding: .utf8
+    )
+    return configuration
   }
 
   private func waitUntil(_ condition: @Sendable () -> Bool) async throws {

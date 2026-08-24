@@ -33,6 +33,7 @@ package struct ThemeActivationCoordinator: Sendable {
   package static let adapterRequirements = [
     KittyAdapter.id: AdapterRequirement.required,
     MacOSAppearanceAdapter.id: AdapterRequirement.required,
+    SketchyBarAdapter.id: AdapterRequirement.required,
     WallpaperAdapter.id: AdapterRequirement.required,
   ]
 
@@ -43,11 +44,16 @@ package struct ThemeActivationCoordinator: Sendable {
   private let kitty: KittyAdapter
   private let processRunner: ProcessRunner
   private let reconciler: ThemeReconciler
+  private let sketchyBar: SketchyBarAdapter
   private let statusStore: ReconciliationStatusStore
   private let wallpaper: WallpaperAdapter
   private let wallpaperSignal: YabaiWallpaperSignal
 
-  package init(root: URL, kittyConfigurationURL: URL) {
+  package init(
+    root: URL,
+    kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL
+  ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
     self.root = root
@@ -62,6 +68,15 @@ package struct ThemeActivationCoordinator: Sendable {
     )
     processRunner = .live
     reconciler = ThemeReconciler(statusStore: statusStore)
+    sketchyBar = SketchyBarAdapter(
+      root: root,
+      configurationURL: sketchyBarConfigurationURL,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: SketchyBarAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
     self.statusStore = statusStore
     wallpaper = WallpaperAdapter(root: root, control: .live)
     wallpaperSignal = .personal()
@@ -70,11 +85,13 @@ package struct ThemeActivationCoordinator: Sendable {
   init(
     root: URL,
     kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL,
     processRunner: ProcessRunner,
     wallpaperControl: WallpaperControl,
     wallpaperSignal: YabaiWallpaperSignal,
     currentAppearance: @escaping @Sendable () throws -> ThemeAppearance = { .dark },
     appearanceControlIsAvailable: @escaping @Sendable () -> Bool = { true },
+    sketchyBarControlIsAvailable: @escaping @Sendable () -> Bool = { true },
     faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void = { _ in },
     onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
     postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in }
@@ -103,6 +120,13 @@ package struct ThemeActivationCoordinator: Sendable {
     )
     self.processRunner = processRunner
     reconciler = ThemeReconciler(statusStore: statusStore)
+    sketchyBar = SketchyBarAdapter(
+      root: root,
+      configurationURL: sketchyBarConfigurationURL,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: sketchyBarControlIsAvailable,
+      processRunner: processRunner
+    )
     self.statusStore = statusStore
     wallpaper = WallpaperAdapter(root: root, control: wallpaperControl)
     self.wallpaperSignal = wallpaperSignal
@@ -220,6 +244,7 @@ package struct ThemeActivationCoordinator: Sendable {
     return [
       appearanceInspection,
       kitty.inspection(),
+      sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
       wallpaperInspection,
     ].filter {
       adapterIDs.isEmpty || selectedIDs.contains($0.adapterID)
@@ -304,6 +329,11 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: kitty.reconciliation
       ),
       ConfiguredAdapter(
+        id: SketchyBarAdapter.id,
+        inspection: { sketchyBar.inspection() },
+        reconciliation: sketchyBar.reconciliation
+      ),
+      ConfiguredAdapter(
         id: WallpaperAdapter.id,
         inspection: {
           inspectWallpaper(
@@ -348,6 +378,7 @@ package struct ThemeActivationCoordinator: Sendable {
       ?? package.wallpaperData
     _ = try appearance.preflight()
     try kitty.preflight()
+    try sketchyBar.preflight()
     _ = try wallpaper.preflight()
     try wallpaperSignal.preflight()
     return wallpaperData

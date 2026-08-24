@@ -21,6 +21,11 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.sketchybar",
+      "message" : "drifted: SketchyBar colors module is missing the generated palette import",
+      "status" : "failure"
+    },
+    {
       "id" : "reconciliation.wallpaper",
       "message" : "applied",
       "status" : "ok"
@@ -33,6 +38,11 @@
     {
       "id" : "kitty.integration",
       "message" : "Kitty configuration is missing the stable include",
+      "status" : "failure"
+    },
+    {
+      "id" : "sketchybar.integration",
+      "message" : "SketchyBar colors module is missing the generated palette import",
       "status" : "failure"
     },
     {

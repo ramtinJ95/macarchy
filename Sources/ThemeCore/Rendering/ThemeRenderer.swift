@@ -3,11 +3,13 @@ import Foundation
 public struct RenderedTheme: Sendable {
   public let themeJSON: Data
   public let kittyConfiguration: String
+  public let sketchyBarPalette: String
   public let wallpaper: Data
 
   var files: [String: Data] {
     [
       ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
+      ThemeRenderer.sketchyBarOutputPath: Data(sketchyBarPalette.utf8),
       ThemeRenderer.themeOutputPath: themeJSON,
       ThemeRenderer.wallpaperOutputPath: wallpaper,
     ]
@@ -16,9 +18,12 @@ public struct RenderedTheme: Sendable {
 
 public struct ThemeRenderer: Sendable {
   static let kittyOutputPath = KittyAdapter.outputPath
+  static let sketchyBarOutputPath = SketchyBarAdapter.outputPath
   static let themeOutputPath = "theme.json"
   static let wallpaperOutputPath = WallpaperAdapter.outputPath
-  static let outputPaths = Set([kittyOutputPath, themeOutputPath, wallpaperOutputPath])
+  static let outputPaths = Set([
+    kittyOutputPath, sketchyBarOutputPath, themeOutputPath, wallpaperOutputPath,
+  ])
 
   public init() {}
 
@@ -44,6 +49,7 @@ public struct ThemeRenderer: Sendable {
     return RenderedTheme(
       themeJSON: json,
       kittyConfiguration: KittyAdapter.render(package: package),
+      sketchyBarPalette: SketchyBarAdapter.render(package: package),
       wallpaper: wallpaperData
     )
   }

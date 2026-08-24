@@ -20,12 +20,20 @@ struct Macarchy: AsyncParsableCommand {
     var kittyConfig = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/kitty/kitty.conf").path
 
+    @Option(help: "SketchyBar entry configuration file.")
+    var sketchyBarConfig = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/sketchybar/sketchybarrc").path
+
     var stateRootURL: URL {
       URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
     }
 
     var kittyConfigurationURL: URL {
       URL(filePath: kittyConfig).standardizedFileURL
+    }
+
+    var sketchyBarConfigurationURL: URL {
+      URL(filePath: sketchyBarConfig).standardizedFileURL
     }
   }
 
@@ -50,6 +58,7 @@ struct Macarchy: AsyncParsableCommand {
         adapterIDs: adapters,
         stateRoot: state.stateRootURL,
         kittyConfigurationURL: state.kittyConfigurationURL,
+        sketchyBarConfigurationURL: state.sketchyBarConfigurationURL,
         dryRun: dryRun,
         json: json
       )
@@ -74,6 +83,7 @@ struct Macarchy: AsyncParsableCommand {
       let execution = try DoctorCommandRunner.live.execute(
         stateRoot: state.stateRootURL,
         kittyConfigurationURL: state.kittyConfigurationURL,
+        sketchyBarConfigurationURL: state.sketchyBarConfigurationURL,
         json: json
       )
       print(execution.output)
@@ -132,6 +142,10 @@ extension Theme {
       state.kittyConfigurationURL
     }
 
+    var sketchyBarConfigurationURL: URL {
+      state.sketchyBarConfigurationURL
+    }
+
     var repository: ThemeRepository {
       roots.repository(
         userRoot: stateRootURL.appending(path: "themes", directoryHint: .isDirectory)
@@ -158,6 +172,7 @@ extension Theme {
         themeID: themeID,
         stateRoot: options.stateRootURL,
         kittyConfigurationURL: options.kittyConfigurationURL,
+        sketchyBarConfigurationURL: options.sketchyBarConfigurationURL,
         dryRun: options.dryRun,
         json: json
       )
@@ -180,6 +195,7 @@ extension Theme {
         repository: options.repository,
         stateRoot: options.stateRootURL,
         kittyConfigurationURL: options.kittyConfigurationURL,
+        sketchyBarConfigurationURL: options.sketchyBarConfigurationURL,
         dryRun: options.dryRun
       )
       print(execution.output)
@@ -215,20 +231,25 @@ extension Theme {
 }
 
 struct ThemeSetCommandRunner: Sendable {
-  let preflight: @Sendable (ThemePackage, URL, URL) throws -> Void
-  let activate: @Sendable (ThemePackage, URL, URL, String?) async throws -> ThemeActivationResult
+  let preflight: @Sendable (ThemePackage, URL, URL, URL) throws -> Void
+  let activate:
+    @Sendable (ThemePackage, URL, URL, URL, String?) async throws -> ThemeActivationResult
 
   static let live = ThemeSetCommandRunner(
-    preflight: { package, stateRoot, kittyConfigurationURL in
+    preflight: { package, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL in
       try ThemeActivationCoordinator(
         root: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL
+        kittyConfigurationURL: kittyConfigurationURL,
+        sketchyBarConfigurationURL: sketchyBarConfigurationURL
       ).preflight(package: package)
     },
-    activate: { package, stateRoot, kittyConfigurationURL, expectedActiveGenerationID in
+    activate: {
+      package, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL,
+      expectedActiveGenerationID in
       try await ThemeActivationCoordinator(
         root: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL
+        kittyConfigurationURL: kittyConfigurationURL,
+        sketchyBarConfigurationURL: sketchyBarConfigurationURL
       ).activate(
         package: package,
         expectedActiveGenerationID: expectedActiveGenerationID
@@ -241,6 +262,7 @@ struct ThemeSetCommandRunner: Sendable {
     themeID: String,
     stateRoot: URL,
     kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL,
     dryRun: Bool,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
@@ -250,6 +272,7 @@ struct ThemeSetCommandRunner: Sendable {
         package: package,
         stateRoot: stateRoot,
         kittyConfigurationURL: kittyConfigurationURL,
+        sketchyBarConfigurationURL: sketchyBarConfigurationURL,
         dryRun: dryRun,
         expectedActiveGenerationID: nil,
         json: json
@@ -264,6 +287,7 @@ struct ThemeSetCommandRunner: Sendable {
     package: ThemePackage,
     stateRoot: URL,
     kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL,
     dryRun: Bool,
     expectedActiveGenerationID: String?,
     json: Bool
@@ -271,7 +295,7 @@ struct ThemeSetCommandRunner: Sendable {
     let report: ThemeSetReport
     if dryRun {
       do {
-        try preflight(package, stateRoot, kittyConfigurationURL)
+        try preflight(package, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL)
         report = .dryRun(themeID: package.id)
       } catch {
         report = .precommitFailure(themeID: package.id, error: error)
@@ -283,6 +307,7 @@ struct ThemeSetCommandRunner: Sendable {
             package,
             stateRoot,
             kittyConfigurationURL,
+            sketchyBarConfigurationURL,
             expectedActiveGenerationID
           )
         )
@@ -330,6 +355,7 @@ struct ThemeNextCommandRunner: Sendable {
     repository: ThemeRepository,
     stateRoot: URL,
     kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL,
     dryRun: Bool
   ) async throws -> (output: String, succeeded: Bool) {
     let packages = try repository.packages()
@@ -349,6 +375,7 @@ struct ThemeNextCommandRunner: Sendable {
           package: package,
           stateRoot: stateRoot,
           kittyConfigurationURL: kittyConfigurationURL,
+          sketchyBarConfigurationURL: sketchyBarConfigurationURL,
           dryRun: dryRun,
           expectedActiveGenerationID: dryRun ? nil : active.generationID,
           json: false
@@ -396,25 +423,27 @@ enum ThemeStatusSnapshot: Sendable {
 
 struct ReconcileCommandRunner: Sendable {
   let preview:
-    @Sendable ([String], URL, URL) throws -> (
+    @Sendable ([String], URL, URL, URL) throws -> (
       manifest: GenerationManifest, inspections: [AdapterInspection]
     )
   let reconcile:
-    @Sendable ([String], URL, URL) async throws -> (
+    @Sendable ([String], URL, URL, URL) async throws -> (
       manifest: GenerationManifest, record: ReconciliationRecord
     )
 
   static let live = ReconcileCommandRunner(
-    preview: { adapterIDs, stateRoot, kittyConfigurationURL in
+    preview: { adapterIDs, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL in
       try ThemeActivationCoordinator(
         root: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL
+        kittyConfigurationURL: kittyConfigurationURL,
+        sketchyBarConfigurationURL: sketchyBarConfigurationURL
       ).previewReconciliation(adapterIDs)
     },
-    reconcile: { adapterIDs, stateRoot, kittyConfigurationURL in
+    reconcile: { adapterIDs, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL in
       try await ThemeActivationCoordinator(
         root: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL
+        kittyConfigurationURL: kittyConfigurationURL,
+        sketchyBarConfigurationURL: sketchyBarConfigurationURL
       ).reconcile(adapterIDs: adapterIDs)
     }
   )
@@ -423,19 +452,22 @@ struct ReconcileCommandRunner: Sendable {
     adapterIDs: [String],
     stateRoot: URL,
     kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL,
     dryRun: Bool,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
     let report: ReconcileReport
     do {
       if dryRun {
-        let preview = try preview(adapterIDs, stateRoot, kittyConfigurationURL)
+        let preview = try preview(
+          adapterIDs, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL)
         report = .preview(
           manifest: preview.manifest,
           inspections: preview.inspections
         )
       } else {
-        let result = try await reconcile(adapterIDs, stateRoot, kittyConfigurationURL)
+        let result = try await reconcile(
+          adapterIDs, stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL)
         report = .completed(manifest: result.manifest, record: result.record)
       }
     } catch let error as ReconciliationPersistenceError {
@@ -449,14 +481,15 @@ struct ReconcileCommandRunner: Sendable {
 
 struct DoctorCommandRunner: Sendable {
   let read: @Sendable (URL) throws -> ThemeStatusSnapshot
-  let inspect: @Sendable (URL, URL) throws -> [AdapterInspection]
+  let inspect: @Sendable (URL, URL, URL) throws -> [AdapterInspection]
 
   static let live = DoctorCommandRunner(
     read: readThemeStatusSnapshot,
-    inspect: { stateRoot, kittyConfigurationURL in
+    inspect: { stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL in
       try ThemeActivationCoordinator(
         root: stateRoot,
-        kittyConfigurationURL: kittyConfigurationURL
+        kittyConfigurationURL: kittyConfigurationURL,
+        sketchyBarConfigurationURL: sketchyBarConfigurationURL
       ).inspectAdapters([], includeRuntimeChecks: true)
     }
   )
@@ -464,12 +497,15 @@ struct DoctorCommandRunner: Sendable {
   func execute(
     stateRoot: URL,
     kittyConfigurationURL: URL,
+    sketchyBarConfigurationURL: URL,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     var findings = canonicalFindings(stateRoot: stateRoot)
     do {
       findings.append(
-        contentsOf: try inspect(stateRoot, kittyConfigurationURL).map { inspection in
+        contentsOf: try inspect(
+          stateRoot, kittyConfigurationURL, sketchyBarConfigurationURL
+        ).map { inspection in
           DoctorFinding(
             id: "\(inspection.adapterID).integration",
             status: inspectionFindingStatus(inspection),

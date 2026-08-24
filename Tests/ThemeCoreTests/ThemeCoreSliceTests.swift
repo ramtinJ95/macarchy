@@ -18,12 +18,15 @@ struct ThemeCoreSliceTests {
 
     let themeJSON = outputRoot.appending(path: "theme.json")
     let kitty = outputRoot.appending(path: "generated/kitty.conf")
+    let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
     let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
     let writtenJSON = try Data(contentsOf: themeJSON)
     let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
+    let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
     let writtenWallpaper = try Data(contentsOf: wallpaper)
     #expect(writtenJSON == rendered.themeJSON)
     #expect(writtenKitty == rendered.kittyConfiguration)
+    #expect(writtenSketchyBar == rendered.sketchyBarPalette)
     #expect(writtenWallpaper == rendered.wallpaper)
     #expect(
       writtenWallpaper
@@ -80,6 +83,10 @@ struct ThemeCoreSliceTests {
       #expect(
         rendered.kittyConfiguration
           == (try String(contentsOf: goldenRoot.appending(path: "kitty.conf"), encoding: .utf8)))
+      #expect(
+        rendered.sketchyBarPalette
+          == (try String(
+            contentsOf: goldenRoot.appending(path: "sketchybar.lua"), encoding: .utf8)))
     }
   }
 

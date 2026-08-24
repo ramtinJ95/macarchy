@@ -86,6 +86,7 @@ enum ActivationCheckpoint: Sendable {
 public struct ThemeActivator: Sendable {
   private static let rendererVersions = [
     KittyAdapter.id: KittyAdapter.rendererVersion,
+    SketchyBarAdapter.id: SketchyBarAdapter.rendererVersion,
     WallpaperAdapter.id: WallpaperAdapter.rendererVersion,
     "normalized_theme": 1,
   ]

@@ -21,6 +21,11 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.sketchybar",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
       "id" : "reconciliation.wallpaper",
       "message" : "applied",
       "status" : "ok"
@@ -32,6 +37,11 @@
     },
     {
       "id" : "kitty.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
+      "id" : "sketchybar.integration",
       "message" : "Integration preflight passed.",
       "status" : "ok"
     },
