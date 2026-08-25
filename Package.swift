@@ -9,6 +9,10 @@ let package = Package(
     .library(name: "ThemeCore", targets: ["ThemeCore"]),
     .executable(name: "macarchy", targets: ["MacarchyCLI"]),
     .executable(
+      name: "theme-activation-crash-probe",
+      targets: ["ThemeActivationCrashProbe"]
+    ),
+    .executable(
       name: "theme-contract-consumer",
       targets: ["ThemeContractFixtureConsumer"]
     ),
@@ -41,6 +45,12 @@ let package = Package(
         "ThemeCore",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
       ],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .executableTarget(
+      name: "ThemeActivationCrashProbe",
+      dependencies: ["ThemeCore"],
+      path: "Tests/Fixtures/ThemeActivationCrashProbe",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .executableTarget(

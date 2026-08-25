@@ -10,29 +10,6 @@ import Testing
 @Suite(.serialized)
 struct ActivationSliceTests {
   @Test
-  func activationCrashProbe() throws {
-    let environment = ProcessInfo.processInfo.environment
-    guard
-      let rootPath = environment["MACARCHY_CRASH_ROOT"],
-      let checkpointName = environment["MACARCHY_CRASH_CHECKPOINT"]
-    else { return }
-    let checkpoint: ActivationCheckpoint
-    switch checkpointName {
-    case "generationWritten":
-      checkpoint = .generationWritten
-    case "currentReplaced":
-      checkpoint = .currentReplaced
-    default:
-      throw TestError.unknownCrashCheckpoint
-    }
-    let activator = ThemeActivator(root: URL(filePath: rootPath)) { reached in
-      if reached == checkpoint { Darwin._exit(86) }
-    }
-    _ = try activator.activate(package: tokyoNightPackage())
-    throw TestError.crashCheckpointNotReached
-  }
-
-  @Test
   func activationCreatesCompleteGenerationAndReplacesCurrentWithRelativeSymlink() throws {
     let root = try temporaryDirectory()
     defer {
@@ -1030,55 +1007,21 @@ struct ActivationSliceTests {
   }
 
   private func runCrashProbe(root: URL, checkpoint: String) throws {
-    let testBundle = repositoryRoot.appending(
-      path: ".build/debug/MacarchyPackageTests.xctest",
-      directoryHint: .isDirectory
-    )
-    let testExecutable = testBundle.appending(path: "Contents/MacOS/MacarchyPackageTests")
     let process = Process()
-    process.executableURL = try swiftTestingHelper()
+    process.executableURL = repositoryRoot.appending(
+      path: ".build/debug/theme-activation-crash-probe"
+    )
     process.arguments = [
-      "--test-bundle-path",
-      testExecutable.path,
-      "--filter",
-      "ThemeCoreTests.ActivationSliceTests/activationCrashProbe",
-      testExecutable.path,
-      "--testing-library",
-      "swift-testing",
+      root.path,
+      checkpoint,
+      repositoryRoot.appending(path: "Themes/tokyo-night").path,
     ]
     process.currentDirectoryURL = repositoryRoot
-    process.environment = ProcessInfo.processInfo.environment.merging(
-      [
-        "MACARCHY_CRASH_ROOT": root.path,
-        "MACARCHY_CRASH_CHECKPOINT": checkpoint,
-      ],
-      uniquingKeysWith: { _, injected in injected }
-    )
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
     try process.run()
     process.waitUntilExit()
     #expect(process.terminationStatus == 86)
-  }
-
-  private func swiftTestingHelper() throws -> URL {
-    let xcrun = Process()
-    let output = Pipe()
-    xcrun.executableURL = URL(filePath: "/usr/bin/xcrun")
-    xcrun.arguments = ["--find", "swift"]
-    xcrun.standardOutput = output
-    xcrun.standardError = FileHandle.nullDevice
-    try xcrun.run()
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    xcrun.waitUntilExit()
-    guard xcrun.terminationStatus == 0 else { throw TestError.cannotFindSwiftTestingHelper }
-    let swiftPath = String(decoding: data, as: UTF8.self).trimmingCharacters(
-      in: .whitespacesAndNewlines
-    )
-    return URL(filePath: swiftPath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "libexec/swift/pm/swiftpm-testing-helper")
   }
 
   private func temporaryDirectory() throws -> URL {
@@ -1111,8 +1054,6 @@ struct ActivationSliceTests {
   }
 
   private enum TestError: Error {
-    case cannotFindSwiftTestingHelper
-    case crashCheckpointNotReached
     case expectedActivationError
     case expectedCommittedError
     case expectedCorruptGeneration
@@ -1120,7 +1061,6 @@ struct ActivationSliceTests {
     case lockHolderDidNotStart
     case lockProbeFailed(Int32)
     case timedOut
-    case unknownCrashCheckpoint
   }
 }
 

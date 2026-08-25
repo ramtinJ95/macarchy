@@ -71,7 +71,7 @@ struct ActivationLock: Sendable {
   }
 }
 
-enum ActivationCheckpoint: Sendable {
+package enum ActivationCheckpoint: Sendable {
   case inputDigested
   case outputsRendered
   case generationWritten
@@ -120,7 +120,7 @@ public struct ThemeActivator: Sendable {
     )
   }
 
-  init(
+  package init(
     root: URL,
     faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void,
     onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
