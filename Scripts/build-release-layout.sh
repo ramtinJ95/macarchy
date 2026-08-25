@@ -12,7 +12,7 @@ destination=${2:A}
 revision=$3
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
-version_file="$repository_root/VERSION"
+version_file="$repository_root/VERSION.txt"
 destination_parent=${destination:h}
 
 if [[ ! -x "$binary" ]]; then
@@ -20,7 +20,7 @@ if [[ ! -x "$binary" ]]; then
   exit 66
 fi
 if ! IFS= read -r version < "$version_file"; then
-  print -u2 "VERSION must contain one newline-terminated semantic version"
+  print -u2 "VERSION.txt must contain one newline-terminated semantic version"
   exit 65
 fi
 version_bytes=$(wc -c < "$version_file" | tr -d ' ')
@@ -28,7 +28,7 @@ expected_version_bytes=$((${#version} + 1))
 if [[ "$version_bytes" -ne "$expected_version_bytes" ]] \
   || ! print -r -- "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
 then
-  print -u2 "VERSION must contain a stable semantic version"
+  print -u2 "VERSION.txt must contain a stable semantic version"
   exit 65
 fi
 if ! print -r -- "$revision" | grep -Eq '^[0-9a-f]{40}$'; then
