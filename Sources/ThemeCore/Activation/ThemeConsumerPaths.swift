@@ -17,6 +17,7 @@ package struct ThemeConsumerPaths: Sendable {
   package let herdrConfigurationURL: URL
   package let tuicrConfigurationDirectoryURL: URL
   package let codexConfigurationDirectoryURL: URL
+  package let spicetifyConfigurationDirectoryURL: URL
 
   package init(
     kittyConfigurationURL: URL,
@@ -34,7 +35,8 @@ package struct ThemeConsumerPaths: Sendable {
     piConfigurationDirectoryURL: URL,
     herdrConfigurationURL: URL,
     tuicrConfigurationDirectoryURL: URL,
-    codexConfigurationDirectoryURL: URL
+    codexConfigurationDirectoryURL: URL,
+    spicetifyConfigurationDirectoryURL: URL
   ) {
     self.kittyConfigurationURL = kittyConfigurationURL.standardizedFileURL
     self.sketchyBarConfigurationURL = sketchyBarConfigurationURL.standardizedFileURL
@@ -52,5 +54,7 @@ package struct ThemeConsumerPaths: Sendable {
     self.herdrConfigurationURL = herdrConfigurationURL.standardizedFileURL
     self.tuicrConfigurationDirectoryURL = tuicrConfigurationDirectoryURL.standardizedFileURL
     self.codexConfigurationDirectoryURL = codexConfigurationDirectoryURL.standardizedFileURL
+    self.spicetifyConfigurationDirectoryURL =
+      spicetifyConfigurationDirectoryURL.standardizedFileURL
   }
 }

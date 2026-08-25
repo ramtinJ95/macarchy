@@ -80,6 +80,10 @@ struct Macarchy: AsyncParsableCommand {
     var codexConfigDir = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".codex", directoryHint: .isDirectory).path
 
+    @Option(help: "Spicetify configuration directory.")
+    var spicetifyConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/spicetify", directoryHint: .isDirectory).path
+
     var stateRootURL: URL {
       URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
     }
@@ -108,7 +112,9 @@ struct Macarchy: AsyncParsableCommand {
         tuicrConfigurationDirectoryURL: URL(
           filePath: tuicrConfigDir, directoryHint: .isDirectory),
         codexConfigurationDirectoryURL: URL(
-          filePath: codexConfigDir, directoryHint: .isDirectory)
+          filePath: codexConfigDir, directoryHint: .isDirectory),
+        spicetifyConfigurationDirectoryURL: URL(
+          filePath: spicetifyConfigDir, directoryHint: .isDirectory)
       )
     }
   }

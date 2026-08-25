@@ -42,6 +42,7 @@ package struct ThemeActivationCoordinator: Sendable {
     NeovimAdapter.id: AdapterRequirement.required,
     PiAdapter.id: AdapterRequirement.required,
     SketchyBarAdapter.id: AdapterRequirement.required,
+    SpicetifyAdapter.id: AdapterRequirement.optional,
     StarshipAdapter.id: AdapterRequirement.required,
     TuicrAdapter.id: AdapterRequirement.required,
     WallpaperAdapter.id: AdapterRequirement.required,
@@ -64,6 +65,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let processRunner: ProcessRunner
   private let reconciler: ThemeReconciler
   private let sketchyBar: SketchyBarAdapter
+  private let spicetify: SpicetifyAdapter
   private let starship: StarshipAdapter
   private let statusStore: ReconciliationStatusStore
   private let wallpaper: WallpaperAdapter
@@ -167,6 +169,15 @@ package struct ThemeActivationCoordinator: Sendable {
       executableURL: SketchyBarAdapter.liveExecutableURL,
       controlIsAvailable: {
         FileManager.default.isExecutableFile(atPath: SketchyBarAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
+    spicetify = SpicetifyAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL,
+      executableURL: SpicetifyAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: SpicetifyAdapter.liveExecutableURL.path)
       },
       processRunner: .live
     )
@@ -302,6 +313,13 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationURL: consumerPaths.sketchyBarConfigurationURL,
       executableURL: SketchyBarAdapter.liveExecutableURL,
       controlIsAvailable: sketchyBarControlIsAvailable,
+      processRunner: processRunner
+    )
+    spicetify = SpicetifyAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL,
+      executableURL: SpicetifyAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
       processRunner: processRunner
     )
     starship = StarshipAdapter(
@@ -452,6 +470,7 @@ package struct ThemeActivationCoordinator: Sendable {
       neovim.inspection(),
       pi.inspection(),
       sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
+      spicetify.inspection(),
       starship.inspection(),
       tuicr.inspection(),
       wallpaperInspection,
@@ -582,6 +601,11 @@ package struct ThemeActivationCoordinator: Sendable {
         id: SketchyBarAdapter.id,
         inspection: { sketchyBar.inspection() },
         reconciliation: sketchyBar.reconciliation
+      ),
+      ConfiguredAdapter(
+        id: SpicetifyAdapter.id,
+        inspection: spicetify.inspection,
+        reconciliation: spicetify.reconciliation
       ),
       ConfiguredAdapter(
         id: StarshipAdapter.id,

@@ -19,6 +19,8 @@ func testConsumerPaths() -> ThemeConsumerPaths {
     piConfigurationDirectoryURL: root.appending(path: "pi", directoryHint: .isDirectory),
     herdrConfigurationURL: root.appending(path: "herdr/config.toml"),
     tuicrConfigurationDirectoryURL: root.appending(path: "tuicr", directoryHint: .isDirectory),
-    codexConfigurationDirectoryURL: root.appending(path: "codex", directoryHint: .isDirectory)
+    codexConfigurationDirectoryURL: root.appending(path: "codex", directoryHint: .isDirectory),
+    spicetifyConfigurationDirectoryURL: root.appending(
+      path: "spicetify", directoryHint: .isDirectory)
   )
 }

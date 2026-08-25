@@ -295,6 +295,9 @@ struct ThemeSetCommandTests {
     let herdrConfiguration = root.appending(path: "herdr/config.toml")
     let tuicrDirectory = root.appending(path: "tuicr", directoryHint: .isDirectory)
     let codexDirectory = root.appending(path: "codex", directoryHint: .isDirectory)
+    let spicetifyDirectory = root.appending(path: "spicetify", directoryHint: .isDirectory)
+    let spicetifyTheme = spicetifyDirectory.appending(
+      path: "Themes/\(SpicetifyAdapter.themeName)", directoryHint: .isDirectory)
     let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let yaziFlavor = yaziDirectory.appending(
@@ -314,6 +317,7 @@ struct ThemeSetCommandTests {
       herdrConfiguration.deletingLastPathComponent(),
       tuicrDirectory.appending(path: "themes", directoryHint: .isDirectory),
       codexDirectory.appending(path: "themes", directoryHint: .isDirectory),
+      spicetifyTheme,
     ] {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
@@ -366,6 +370,10 @@ struct ThemeSetCommandTests {
       at: codexDirectory.appending(path: "themes/\(CodexAdapter.themeName).tmTheme"),
       withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
     )
+    try FileManager.default.createSymbolicLink(
+      at: spicetifyTheme.appending(path: "color.ini"),
+      withDestinationURL: stateRoot.appending(path: "current/\(SpicetifyAdapter.outputPath)")
+    )
 
     let shellConfiguration = root.appending(path: ".zshrc")
     try "export EZA_CONFIG_DIR=\"\(ezaDirectory.path)\"\n".write(
@@ -399,6 +407,13 @@ struct ThemeSetCommandTests {
       to: tuicrDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
     try "[tui]\ntheme = \"\(CodexAdapter.themeName)\"\n".write(
       to: codexDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try
+      "[Setting]\ncurrent_theme = \(SpicetifyAdapter.themeName)\ncolor_scheme = \(SpicetifyAdapter.colorSchemeName)\n"
+      .write(
+        to: spicetifyDirectory.appending(path: "config-xpui.ini"),
+        atomically: true,
+        encoding: .utf8
+      )
 
     return ThemeConsumerPaths(
       kittyConfigurationURL: kittyConfigurationURL,
@@ -416,7 +431,8 @@ struct ThemeSetCommandTests {
       piConfigurationDirectoryURL: piDirectory,
       herdrConfigurationURL: herdrConfiguration,
       tuicrConfigurationDirectoryURL: tuicrDirectory,
-      codexConfigurationDirectoryURL: codexDirectory
+      codexConfigurationDirectoryURL: codexDirectory,
+      spicetifyConfigurationDirectoryURL: spicetifyDirectory
     )
   }
 }

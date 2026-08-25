@@ -94,6 +94,7 @@ public struct ThemeActivator: Sendable {
     NeovimAdapter.id: NeovimAdapter.rendererVersion,
     PiAdapter.id: PiAdapter.rendererVersion,
     SketchyBarAdapter.id: SketchyBarAdapter.rendererVersion,
+    SpicetifyAdapter.id: SpicetifyAdapter.rendererVersion,
     StarshipAdapter.id: StarshipAdapter.rendererVersion,
     TuicrAdapter.id: TuicrAdapter.rendererVersion,
     WallpaperAdapter.id: WallpaperAdapter.rendererVersion,
