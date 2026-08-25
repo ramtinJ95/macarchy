@@ -120,6 +120,7 @@ struct ReconcileDoctorCommandTests {
         AdapterResult(adapterID: "neovim", requirement: .required, status: .applied),
         AdapterResult(adapterID: "pi", requirement: .required, status: .applied),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "spicetify", requirement: .optional, status: .failed),
         AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "tuicr", requirement: .required, status: .restartRequired),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
@@ -202,6 +203,7 @@ struct ReconcileDoctorCommandTests {
         AdapterResult(adapterID: "neovim", requirement: .required, status: .applied),
         AdapterResult(adapterID: "pi", requirement: .required, status: .applied),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "spicetify", requirement: .optional, status: .applied),
         AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "tuicr", requirement: .required, status: .restartRequired),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
@@ -228,6 +230,7 @@ struct ReconcileDoctorCommandTests {
           AdapterInspection(adapterID: "neovim", requirement: .required),
           AdapterInspection(adapterID: "pi", requirement: .required),
           AdapterInspection(adapterID: "sketchybar", requirement: .required),
+          AdapterInspection(adapterID: "spicetify", requirement: .optional),
           AdapterInspection(adapterID: "starship", requirement: .required),
           AdapterInspection(adapterID: "tuicr", requirement: .required),
           AdapterInspection(
@@ -270,6 +273,7 @@ struct ReconcileDoctorCommandTests {
           status: .drifted,
           message: "SketchyBar colors module is missing the generated palette import"
         ),
+        AdapterResult(adapterID: "spicetify", requirement: .optional, status: .failed),
         AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "tuicr", requirement: .required, status: .restartRequired),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
@@ -310,6 +314,12 @@ struct ReconcileDoctorCommandTests {
             requirement: .required,
             status: .drifted,
             message: "SketchyBar colors module is missing the generated palette import"
+          ),
+          AdapterInspection(
+            adapterID: "spicetify",
+            requirement: .optional,
+            status: .failed,
+            message: "Spicetify is unavailable"
           ),
           AdapterInspection(adapterID: "starship", requirement: .required),
           AdapterInspection(adapterID: "tuicr", requirement: .required),

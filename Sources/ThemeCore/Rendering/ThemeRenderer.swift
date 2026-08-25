@@ -11,6 +11,7 @@ public struct RenderedTheme: Sendable {
   public let neovimTheme: String
   public let piTheme: String
   public let sketchyBarPalette: String
+  public let spicetifyTheme: String
   public let starshipPalette: String
   public let tuicrTheme: String
   public let wallpaper: Data
@@ -27,6 +28,7 @@ public struct RenderedTheme: Sendable {
       ThemeRenderer.neovimOutputPath: Data(neovimTheme.utf8),
       ThemeRenderer.piOutputPath: Data(piTheme.utf8),
       ThemeRenderer.sketchyBarOutputPath: Data(sketchyBarPalette.utf8),
+      ThemeRenderer.spicetifyOutputPath: Data(spicetifyTheme.utf8),
       ThemeRenderer.starshipOutputPath: Data(starshipPalette.utf8),
       ThemeRenderer.themeOutputPath: themeJSON,
       ThemeRenderer.tuicrOutputPath: Data(tuicrTheme.utf8),
@@ -47,6 +49,7 @@ public struct ThemeRenderer: Sendable {
   static let neovimOutputPath = NeovimAdapter.outputPath
   static let piOutputPath = PiAdapter.outputPath
   static let sketchyBarOutputPath = SketchyBarAdapter.outputPath
+  static let spicetifyOutputPath = SpicetifyAdapter.outputPath
   static let starshipOutputPath = StarshipAdapter.outputPath
   static let themeOutputPath = "theme.json"
   static let tuicrOutputPath = TuicrAdapter.outputPath
@@ -56,7 +59,7 @@ public struct ThemeRenderer: Sendable {
   static let outputPaths = Set([
     atuinOutputPath, batOutputPath, btopOutputPath, ezaOutputPath, herdrOutputPath,
     kittyOutputPath, neovimOutputPath, piOutputPath, sketchyBarOutputPath,
-    starshipOutputPath, themeOutputPath, tuicrOutputPath, wallpaperOutputPath,
+    spicetifyOutputPath, starshipOutputPath, themeOutputPath, tuicrOutputPath, wallpaperOutputPath,
     yaziFlavorOutputPath, yaziSyntaxOutputPath,
   ])
 
@@ -92,6 +95,7 @@ public struct ThemeRenderer: Sendable {
       neovimTheme: try NeovimAdapter.render(package: package, generationID: generationID),
       piTheme: try PiAdapter.render(package: package),
       sketchyBarPalette: SketchyBarAdapter.render(package: package),
+      spicetifyTheme: SpicetifyAdapter.render(package: package),
       starshipPalette: StarshipAdapter.render(package: package),
       tuicrTheme: TuicrAdapter.render(package: package),
       wallpaper: wallpaperData,

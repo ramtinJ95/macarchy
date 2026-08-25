@@ -26,6 +26,7 @@ struct ThemeCoreSliceTests {
     let neovim = outputRoot.appending(path: "generated/neovim.lua")
     let pi = outputRoot.appending(path: "generated/pi.json")
     let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
+    let spicetify = outputRoot.appending(path: "generated/spicetify.ini")
     let starship = outputRoot.appending(path: "generated/starship.toml")
     let tuicr = outputRoot.appending(path: "generated/tuicr.toml")
     let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
@@ -41,6 +42,7 @@ struct ThemeCoreSliceTests {
     let writtenNeovim = try String(contentsOf: neovim, encoding: .utf8)
     let writtenPi = try String(contentsOf: pi, encoding: .utf8)
     let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
+    let writtenSpicetify = try String(contentsOf: spicetify, encoding: .utf8)
     let writtenStarship = try String(contentsOf: starship, encoding: .utf8)
     let writtenTuicr = try String(contentsOf: tuicr, encoding: .utf8)
     let writtenWallpaper = try Data(contentsOf: wallpaper)
@@ -56,6 +58,7 @@ struct ThemeCoreSliceTests {
     #expect(writtenNeovim == rendered.neovimTheme)
     #expect(writtenPi == rendered.piTheme)
     #expect(writtenSketchyBar == rendered.sketchyBarPalette)
+    #expect(writtenSpicetify == rendered.spicetifyTheme)
     #expect(writtenStarship == rendered.starshipPalette)
     #expect(writtenTuicr == rendered.tuicrTheme)
     #expect(writtenWallpaper == rendered.wallpaper)
@@ -144,6 +147,9 @@ struct ThemeCoreSliceTests {
         rendered.sketchyBarPalette
           == (try String(
             contentsOf: goldenRoot.appending(path: "sketchybar.lua"), encoding: .utf8)))
+      #expect(
+        rendered.spicetifyTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "spicetify.ini"), encoding: .utf8)))
       let starshipGolden = try String(
         contentsOf: goldenRoot.appending(path: "starship.toml"), encoding: .utf8)
       #expect(rendered.starshipPalette == starshipGolden)

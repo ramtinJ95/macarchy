@@ -66,6 +66,11 @@
       "status" : "failure"
     },
     {
+      "id" : "reconciliation.spicetify",
+      "message" : "failed",
+      "status" : "warning"
+    },
+    {
       "id" : "reconciliation.starship",
       "message" : "applied",
       "status" : "ok"
@@ -139,6 +144,11 @@
       "id" : "sketchybar.integration",
       "message" : "SketchyBar colors module is missing the generated palette import",
       "status" : "failure"
+    },
+    {
+      "id" : "spicetify.integration",
+      "message" : "Spicetify is unavailable",
+      "status" : "warning"
     },
     {
       "id" : "starship.integration",

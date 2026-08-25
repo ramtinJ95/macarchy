@@ -12,6 +12,7 @@ Macarchy doctor:
 - reconciliation.neovim [ok]: applied
 - reconciliation.pi [ok]: applied
 - reconciliation.sketchybar [ok]: applied
+- reconciliation.spicetify [ok]: applied
 - reconciliation.starship [ok]: applied
 - reconciliation.tuicr [ok]: restart_required
 - reconciliation.wallpaper [ok]: applied
@@ -27,6 +28,7 @@ Macarchy doctor:
 - neovim.integration [ok]: Integration preflight passed.
 - pi.integration [ok]: Integration preflight passed.
 - sketchybar.integration [ok]: Integration preflight passed.
+- spicetify.integration [ok]: Integration preflight passed.
 - starship.integration [ok]: Integration preflight passed.
 - tuicr.integration [ok]: Integration preflight passed.
 - wallpaper.integration [ok]: Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded

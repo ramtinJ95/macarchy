@@ -65,11 +65,12 @@ atomically moved out of the live namespace while locked and removed after
 publication. Cleanup failure is reported as a postcommit failure and never
 described as a rollback.
 
-Spicetify's v0.1 policy is an awaited optional one-shot: `spicetify apply` must
-finish before reconciliation attempts to persist its result rather than
-becoming an orphaned background process. Persistence failure remains explicit.
-The adapter is not registered yet; M3 will enable it only after the scheme
-mapping and user-config seam are proven.
+Spicetify is an awaited optional adapter. Macarchy generates the selected color
+scheme, runs a tracked `spicetify --no-restart refresh`, and restarts Spotify
+only when it was already running. If Spicetify's macOS restart race leaves the
+client closed, Macarchy relaunches it through Launch Services and verifies the
+new process. A closed client remains closed. Failures are persisted and visible
+but do not fail core theme activation.
 
 Tests use temporary roots and never access `~/.config/macarchy`.
 
