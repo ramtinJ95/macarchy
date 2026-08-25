@@ -6,10 +6,30 @@ import ThemeCore
 struct Macarchy: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "macarchy",
-    abstract: "A native, theme-driven macOS desktop shell.",
-    version: "0.1.0-dev",
-    subcommands: [Theme.self, Reconcile.self, Doctor.self]
+    abstract: "A cohesive, theme-driven macOS environment.",
+    subcommands: [Theme.self, Reconcile.self, Doctor.self, Version.self]
   )
+
+  @Flag(name: .customLong("version"), help: "Show version and exit.")
+  var showVersion = false
+
+  mutating func run() async throws {
+    guard showVersion else { throw CleanExit.helpRequest(self) }
+    print(try VersionCommandRunner.live.executeConcise())
+  }
+
+  struct Version: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Show version and installation information."
+    )
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    mutating func run() throws {
+      print(try VersionCommandRunner.live.execute(json: json))
+    }
+  }
 
   struct StateOptions: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
@@ -184,12 +204,18 @@ struct Theme: AsyncParsableCommand {
 extension Theme {
   struct ThemeRootOptions: ParsableArguments {
     @Option(help: "Built-in theme package directory.")
-    var themesRoot = "Themes"
+    var themesRoot: String?
 
-    func repository(userRoot: URL? = nil) -> ThemeRepository {
-      ThemeRepository(
-        builtInRoot: URL(filePath: themesRoot, directoryHint: .isDirectory)
-          .standardizedFileURL,
+    func repository(
+      userRoot: URL? = nil,
+      runtime: RuntimeEnvironment = .live
+    ) -> ThemeRepository {
+      let builtInRoot =
+        themesRoot.map {
+          URL(filePath: $0, directoryHint: .isDirectory).standardizedFileURL
+        } ?? runtime.builtInThemesURL
+      return ThemeRepository(
+        builtInRoot: builtInRoot,
         userRoot: userRoot
       )
     }
@@ -302,6 +328,42 @@ extension Theme {
       }
     }
   }
+}
+
+struct VersionCommandRunner: Sendable {
+  let buildInformation: @Sendable () throws -> MacarchyBuildInformation
+
+  static let live = VersionCommandRunner(
+    buildInformation: { try RuntimeEnvironment.live.buildInformation() }
+  )
+
+  func executeConcise() throws -> String {
+    try buildInformation().version
+  }
+
+  func execute(json: Bool) throws -> String {
+    let information = try buildInformation()
+    if json {
+      return try renderJSON(
+        VersionJSONReport(
+          version: information.version,
+          revision: information.revision,
+          platform: information.platform,
+          installation: information.installation
+        )
+      )
+    }
+    return "Macarchy \(information.version) (\(information.revision), "
+      + "\(information.platform), \(information.installation.rawValue))"
+  }
+}
+
+private struct VersionJSONReport: Encodable {
+  let schemaVersion = 1
+  let version: String
+  let revision: String
+  let platform: String
+  let installation: InstallationOwnership
 }
 
 struct ThemeSetCommandRunner: Sendable {
