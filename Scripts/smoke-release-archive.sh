@@ -12,19 +12,19 @@ checksum=${2:A}
 revision=$3
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
-version_file="$repository_root/VERSION"
+version_file="$repository_root/VERSION.txt"
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/macarchy-archive-smoke.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
 
 if ! IFS= read -r version < "$version_file"; then
-  print -u2 "VERSION must contain one newline-terminated semantic version"
+  print -u2 "VERSION.txt must contain one newline-terminated semantic version"
   exit 65
 fi
 version_bytes=$(wc -c < "$version_file" | tr -d ' ')
 if [[ "$version_bytes" -ne $((${#version} + 1)) ]] \
   || ! print -r -- "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
 then
-  print -u2 "VERSION must contain a stable semantic version"
+  print -u2 "VERSION.txt must contain a stable semantic version"
   exit 65
 fi
 if ! print -r -- "$revision" | grep -Eq '^[0-9a-f]{40}$'; then

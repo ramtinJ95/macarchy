@@ -130,7 +130,7 @@ Stable publication dispatches the `Stable release` workflow at an existing
 gh workflow run release.yml --ref v0.1.0
 ```
 
-The tag must match `VERSION`, resolve to a commit on `main`, and pass the
+The tag must match `VERSION.txt`, resolve to a commit on `main`, and pass the
 complete CI path before GitHub receives the archive, checksum, and
 build-provenance attestations. Before merging the release workflow, enable
 immutable releases, protect stable tags from update or deletion, and configure

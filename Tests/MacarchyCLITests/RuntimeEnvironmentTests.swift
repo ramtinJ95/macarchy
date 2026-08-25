@@ -8,7 +8,7 @@ struct RuntimeEnvironmentTests {
   @Test
   func sourceVersionMatchesReleaseVersionFile() throws {
     let version = try String(
-      contentsOf: repositoryRoot.appending(path: "VERSION"),
+      contentsOf: repositoryRoot.appending(path: "VERSION.txt"),
       encoding: .utf8
     ).trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(version == RuntimeEnvironment.sourceVersion)
