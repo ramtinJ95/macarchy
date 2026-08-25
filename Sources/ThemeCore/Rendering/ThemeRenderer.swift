@@ -5,11 +5,14 @@ public struct RenderedTheme: Sendable {
   public let batTheme: String
   public let btopTheme: String
   public let ezaTheme: String
+  public let herdrTheme: String
   public let themeJSON: Data
   public let kittyConfiguration: String
   public let neovimTheme: String
+  public let piTheme: String
   public let sketchyBarPalette: String
   public let starshipPalette: String
+  public let tuicrTheme: String
   public let wallpaper: Data
   public let yaziFlavor: String
 
@@ -19,11 +22,14 @@ public struct RenderedTheme: Sendable {
       ThemeRenderer.batOutputPath: Data(batTheme.utf8),
       ThemeRenderer.btopOutputPath: Data(btopTheme.utf8),
       ThemeRenderer.ezaOutputPath: Data(ezaTheme.utf8),
+      ThemeRenderer.herdrOutputPath: Data(herdrTheme.utf8),
       ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
       ThemeRenderer.neovimOutputPath: Data(neovimTheme.utf8),
+      ThemeRenderer.piOutputPath: Data(piTheme.utf8),
       ThemeRenderer.sketchyBarOutputPath: Data(sketchyBarPalette.utf8),
       ThemeRenderer.starshipOutputPath: Data(starshipPalette.utf8),
       ThemeRenderer.themeOutputPath: themeJSON,
+      ThemeRenderer.tuicrOutputPath: Data(tuicrTheme.utf8),
       ThemeRenderer.wallpaperOutputPath: wallpaper,
       ThemeRenderer.yaziFlavorOutputPath: Data(yaziFlavor.utf8),
       ThemeRenderer.yaziSyntaxOutputPath: Data(batTheme.utf8),
@@ -36,18 +42,22 @@ public struct ThemeRenderer: Sendable {
   static let batOutputPath = BatAdapter.outputPath
   static let btopOutputPath = BtopAdapter.outputPath
   static let ezaOutputPath = EzaAdapter.outputPath
+  static let herdrOutputPath = HerdrAdapter.outputPath
   static let kittyOutputPath = KittyAdapter.outputPath
   static let neovimOutputPath = NeovimAdapter.outputPath
+  static let piOutputPath = PiAdapter.outputPath
   static let sketchyBarOutputPath = SketchyBarAdapter.outputPath
   static let starshipOutputPath = StarshipAdapter.outputPath
   static let themeOutputPath = "theme.json"
+  static let tuicrOutputPath = TuicrAdapter.outputPath
   static let wallpaperOutputPath = WallpaperAdapter.outputPath
   static let yaziFlavorOutputPath = YaziAdapter.flavorOutputPath
   static let yaziSyntaxOutputPath = YaziAdapter.syntaxOutputPath
   static let outputPaths = Set([
-    atuinOutputPath, batOutputPath, btopOutputPath, ezaOutputPath, kittyOutputPath,
-    neovimOutputPath, sketchyBarOutputPath, starshipOutputPath, themeOutputPath,
-    wallpaperOutputPath, yaziFlavorOutputPath, yaziSyntaxOutputPath,
+    atuinOutputPath, batOutputPath, btopOutputPath, ezaOutputPath, herdrOutputPath,
+    kittyOutputPath, neovimOutputPath, piOutputPath, sketchyBarOutputPath,
+    starshipOutputPath, themeOutputPath, tuicrOutputPath, wallpaperOutputPath,
+    yaziFlavorOutputPath, yaziSyntaxOutputPath,
   ])
 
   public init() {}
@@ -76,11 +86,14 @@ public struct ThemeRenderer: Sendable {
       batTheme: BatAdapter.render(package: package),
       btopTheme: BtopAdapter.render(package: package),
       ezaTheme: EzaAdapter.render(package: package),
+      herdrTheme: try HerdrAdapter.render(package: package),
       themeJSON: json,
       kittyConfiguration: KittyAdapter.render(package: package),
       neovimTheme: try NeovimAdapter.render(package: package, generationID: generationID),
+      piTheme: try PiAdapter.render(package: package),
       sketchyBarPalette: SketchyBarAdapter.render(package: package),
       starshipPalette: StarshipAdapter.render(package: package),
+      tuicrTheme: TuicrAdapter.render(package: package),
       wallpaper: wallpaperData,
       yaziFlavor: YaziAdapter.renderFlavor(package: package)
     )

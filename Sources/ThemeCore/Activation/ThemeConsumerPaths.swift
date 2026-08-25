@@ -13,6 +13,10 @@ package struct ThemeConsumerPaths: Sendable {
   package let neovimConfigurationDirectoryURL: URL
   package let starshipConfigurationURL: URL
   package let starshipBehaviorURL: URL
+  package let piConfigurationDirectoryURL: URL
+  package let herdrConfigurationURL: URL
+  package let tuicrConfigurationDirectoryURL: URL
+  package let codexConfigurationDirectoryURL: URL
 
   package init(
     kittyConfigurationURL: URL,
@@ -26,7 +30,11 @@ package struct ThemeConsumerPaths: Sendable {
     atuinConfigurationDirectoryURL: URL,
     neovimConfigurationDirectoryURL: URL,
     starshipConfigurationURL: URL,
-    starshipBehaviorURL: URL
+    starshipBehaviorURL: URL,
+    piConfigurationDirectoryURL: URL,
+    herdrConfigurationURL: URL,
+    tuicrConfigurationDirectoryURL: URL,
+    codexConfigurationDirectoryURL: URL
   ) {
     self.kittyConfigurationURL = kittyConfigurationURL.standardizedFileURL
     self.sketchyBarConfigurationURL = sketchyBarConfigurationURL.standardizedFileURL
@@ -40,5 +48,9 @@ package struct ThemeConsumerPaths: Sendable {
     self.neovimConfigurationDirectoryURL = neovimConfigurationDirectoryURL.standardizedFileURL
     self.starshipConfigurationURL = starshipConfigurationURL.standardizedFileURL
     self.starshipBehaviorURL = starshipBehaviorURL.standardizedFileURL
+    self.piConfigurationDirectoryURL = piConfigurationDirectoryURL.standardizedFileURL
+    self.herdrConfigurationURL = herdrConfigurationURL.standardizedFileURL
+    self.tuicrConfigurationDirectoryURL = tuicrConfigurationDirectoryURL.standardizedFileURL
+    self.codexConfigurationDirectoryURL = codexConfigurationDirectoryURL.standardizedFileURL
   }
 }

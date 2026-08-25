@@ -1,4 +1,5 @@
 schema_version = 1
 
 [mappings]
+herdr = "kanagawa"
 neovim = "kanagawa-wave"

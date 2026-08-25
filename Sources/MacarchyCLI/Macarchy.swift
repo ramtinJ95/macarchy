@@ -64,6 +64,22 @@ struct Macarchy: AsyncParsableCommand {
     var starshipBehavior = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/starship/behavior.toml").path
 
+    @Option(help: "Pi configuration directory.")
+    var piConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".pi/agent", directoryHint: .isDirectory).path
+
+    @Option(help: "Herdr configuration file.")
+    var herdrConfig = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/herdr/config.toml").path
+
+    @Option(help: "tuicr configuration directory.")
+    var tuicrConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/tuicr", directoryHint: .isDirectory).path
+
+    @Option(help: "Codex configuration directory.")
+    var codexConfigDir = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".codex", directoryHint: .isDirectory).path
+
     var stateRootURL: URL {
       URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
     }
@@ -85,7 +101,14 @@ struct Macarchy: AsyncParsableCommand {
         neovimConfigurationDirectoryURL: URL(
           filePath: neovimConfigDir, directoryHint: .isDirectory),
         starshipConfigurationURL: URL(filePath: starshipConfig),
-        starshipBehaviorURL: URL(filePath: starshipBehavior)
+        starshipBehaviorURL: URL(filePath: starshipBehavior),
+        piConfigurationDirectoryURL: URL(
+          filePath: piConfigDir, directoryHint: .isDirectory),
+        herdrConfigurationURL: URL(filePath: herdrConfig),
+        tuicrConfigurationDirectoryURL: URL(
+          filePath: tuicrConfigDir, directoryHint: .isDirectory),
+        codexConfigurationDirectoryURL: URL(
+          filePath: codexConfigDir, directoryHint: .isDirectory)
       )
     }
   }
