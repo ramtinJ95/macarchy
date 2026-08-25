@@ -291,6 +291,10 @@ struct ThemeSetCommandTests {
     let neovimMacarchy = neovimDirectory.appending(
       path: "lua/macarchy", directoryHint: .isDirectory)
     let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
+    let piDirectory = root.appending(path: "pi", directoryHint: .isDirectory)
+    let herdrConfiguration = root.appending(path: "herdr/config.toml")
+    let tuicrDirectory = root.appending(path: "tuicr", directoryHint: .isDirectory)
+    let codexDirectory = root.appending(path: "codex", directoryHint: .isDirectory)
     let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let yaziFlavor = yaziDirectory.appending(
@@ -305,6 +309,14 @@ struct ThemeSetCommandTests {
     try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
       at: starshipDirectory, withIntermediateDirectories: true)
+    for directory in [
+      piDirectory.appending(path: "themes", directoryHint: .isDirectory),
+      herdrConfiguration.deletingLastPathComponent(),
+      tuicrDirectory.appending(path: "themes", directoryHint: .isDirectory),
+      codexDirectory.appending(path: "themes", directoryHint: .isDirectory),
+    ] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
 
     try FileManager.default.createSymbolicLink(
       at: ezaDirectory.appending(path: "theme.yml"),
@@ -338,6 +350,22 @@ struct ThemeSetCommandTests {
       at: root.appending(path: "starship.toml"),
       withDestinationURL: stateRoot.appending(path: StarshipAdapter.bridgePath)
     )
+    try FileManager.default.createSymbolicLink(
+      at: piDirectory.appending(path: "themes/\(PiAdapter.themeName).json"),
+      withDestinationURL: stateRoot.appending(path: "current/\(PiAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: tuicrDirectory.appending(path: "themes/\(TuicrAdapter.themeName).toml"),
+      withDestinationURL: stateRoot.appending(path: "current/\(TuicrAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: tuicrDirectory.appending(path: "themes/\(TuicrAdapter.themeName).tmTheme"),
+      withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: codexDirectory.appending(path: "themes/\(CodexAdapter.themeName).tmTheme"),
+      withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+    )
 
     let shellConfiguration = root.appending(path: ".zshrc")
     try "export EZA_CONFIG_DIR=\"\(ezaDirectory.path)\"\n".write(
@@ -363,6 +391,14 @@ struct ThemeSetCommandTests {
       atomically: true,
       encoding: .utf8
     )
+    try "{\"theme\":\"\(PiAdapter.themeName)\"}\n".write(
+      to: piDirectory.appending(path: "settings.json"), atomically: true, encoding: .utf8)
+    try "[theme]\nname = \"catppuccin\"\n".write(
+      to: herdrConfiguration, atomically: true, encoding: .utf8)
+    try "theme = \"\(TuicrAdapter.themeName)\"\n".write(
+      to: tuicrDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try "[tui]\ntheme = \"\(CodexAdapter.themeName)\"\n".write(
+      to: codexDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
 
     return ThemeConsumerPaths(
       kittyConfigurationURL: kittyConfigurationURL,
@@ -376,7 +412,11 @@ struct ThemeSetCommandTests {
       atuinConfigurationDirectoryURL: atuinDirectory,
       neovimConfigurationDirectoryURL: neovimDirectory,
       starshipConfigurationURL: root.appending(path: "starship.toml"),
-      starshipBehaviorURL: starshipDirectory.appending(path: "behavior.toml")
+      starshipBehaviorURL: starshipDirectory.appending(path: "behavior.toml"),
+      piConfigurationDirectoryURL: piDirectory,
+      herdrConfigurationURL: herdrConfiguration,
+      tuicrConfigurationDirectoryURL: tuicrDirectory,
+      codexConfigurationDirectoryURL: codexDirectory
     )
   }
 }
