@@ -61,6 +61,9 @@ struct AdapterContractTests {
           output: "palette = \"\(StarshipAdapter.paletteName)\""
         )
       }
+      if request.executableURL == HerdrAdapter.liveExecutableURL {
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
       if request.arguments == ["-0", "kitty"] {
         return ProcessResult(terminationStatus: 0, output: "")
       }
@@ -131,10 +134,22 @@ struct AdapterContractTests {
             message: "btop will use the active palette on next launch"
           ),
           AdapterResult(
+            adapterID: "codex",
+            requirement: .required,
+            status: .restartRequired,
+            message: "Restart Codex TUI sessions to use the active syntax palette"
+          ),
+          AdapterResult(
             adapterID: "eza",
             requirement: .required,
             status: .applied,
             message: "Fresh eza invocations use the active palette"
+          ),
+          AdapterResult(
+            adapterID: "herdr",
+            requirement: .required,
+            status: .applied,
+            message: "Herdr reloaded the active theme"
           ),
           AdapterResult(
             adapterID: "kitty",
@@ -155,6 +170,12 @@ struct AdapterContractTests {
               "Neovim validated the active colorscheme; running sessions repaint through the pointer watcher"
           ),
           AdapterResult(
+            adapterID: "pi",
+            requirement: .required,
+            status: .applied,
+            message: "Running Pi sessions reloaded the active palette"
+          ),
+          AdapterResult(
             adapterID: "sketchybar",
             requirement: .required,
             status: .failed,
@@ -165,6 +186,12 @@ struct AdapterContractTests {
             requirement: .required,
             status: .applied,
             message: "Starship prompts use the active palette"
+          ),
+          AdapterResult(
+            adapterID: "tuicr",
+            requirement: .required,
+            status: .restartRequired,
+            message: "Restart tuicr to use the active palette"
           ),
           AdapterResult(
             adapterID: "wallpaper",
@@ -1966,8 +1993,9 @@ struct AdapterContractTests {
     #expect(
       preview.inspections.map(\.adapterID)
         == [
-          "macos-appearance", "atuin", "bat", "btop", "eza", "kitty", "neovim",
-          "sketchybar", "starship", "wallpaper", "yazi",
+          "macos-appearance", "atuin", "bat", "btop", "codex", "eza", "herdr",
+          "kitty", "neovim", "pi", "sketchybar", "starship", "tuicr", "wallpaper",
+          "yazi",
         ]
     )
     let appearanceInspection = try #require(preview.inspections.first)
@@ -2313,6 +2341,283 @@ struct AdapterContractTests {
       .deletingLastPathComponent()
   }
 
+  @Test
+  func piPublishesAValidCustomThemeThroughItsWatchedCanonicalLink() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+
+    let configuration = root.appending(path: "pi", directoryHint: .isDirectory)
+    let themes = configuration.appending(path: "themes", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: themes, withIntermediateDirectories: true)
+    try "{\"theme\":\"\(PiAdapter.themeName)\"}\n".write(
+      to: configuration.appending(path: "settings.json"), atomically: true, encoding: .utf8)
+    let link = themes.appending(path: "\(PiAdapter.themeName).json")
+    let destination = root.appending(path: "current/\(PiAdapter.outputPath)")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: destination)
+
+    let adapter = PiAdapter(
+      root: root,
+      configurationDirectoryURL: configuration,
+      executableURL: PiAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
+    )
+    let outcome = try await adapter.reconciliation().run()
+    #expect(outcome.status == .applied)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == destination.path)
+
+    let document = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: destination)) as? [String: Any]
+    )
+    #expect(document["name"] as? String == PiAdapter.themeName)
+    let colors = try #require(document["colors"] as? [String: String])
+    #expect(colors["accent"] == "accent")
+    #expect(colors["thinkingMax"] == "error")
+    let export = try #require(document["export"] as? [String: String])
+    #expect(export == ["pageBg": "background", "cardBg": "surface", "infoBg": "selection"])
+
+    try "{\"theme\":\"dark\"}\n".write(
+      to: configuration.appending(path: "settings.json"), atomically: true, encoding: .utf8)
+    #expect(adapter.inspection().status == .drifted)
+  }
+
+  @Test
+  func agentTUIAdaptersPreserveBehaviorAndExposeTheirRealUpdateBoundaries() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: tokyoNightPackage())
+
+    let herdrConfiguration = root.appending(path: "herdr/config.toml")
+    try FileManager.default.createDirectory(
+      at: herdrConfiguration.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let originalHerdr = """
+      onboarding = false
+      [theme]
+      name = "catppuccin" # preserve this note
+      [terminal]
+      shell_mode = "auto"
+
+      """
+    try originalHerdr.write(to: herdrConfiguration, atomically: true, encoding: .utf8)
+    let requests = Mutex([ProcessRequest]())
+    let herdr = HerdrAdapter(
+      root: root,
+      configurationURL: herdrConfiguration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+    let herdrOutcome = try await herdr.reconciliation().run()
+    #expect(herdrOutcome.status == .applied)
+    let updatedHerdr = try String(contentsOf: herdrConfiguration, encoding: .utf8)
+    #expect(updatedHerdr.contains("name = \"tokyo-night\" # preserve this note"))
+    #expect(updatedHerdr.contains("shell_mode = \"auto\""))
+    #expect(
+      try String(
+        contentsOf: root.appending(path: "state/adapters/herdr-config.toml.backup"),
+        encoding: .utf8) == originalHerdr
+    )
+    #expect(
+      requests.withLock { $0 }
+        == [
+          ProcessRequest(
+            executableURL: HerdrAdapter.liveExecutableURL,
+            arguments: ["server", "reload-config"],
+            timeout: 2
+          )
+        ]
+    )
+
+    let tuicr = root.appending(path: "tuicr", directoryHint: .isDirectory)
+    let codex = root.appending(path: "codex", directoryHint: .isDirectory)
+    for directory in [tuicr, codex] {
+      try FileManager.default.createDirectory(
+        at: directory.appending(path: "themes", directoryHint: .isDirectory),
+        withIntermediateDirectories: true
+      )
+    }
+    try "theme = \"\(TuicrAdapter.themeName)\"\nwrap = true\n".write(
+      to: tuicr.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try "[tui]\ntheme = \"\(CodexAdapter.themeName)\"\nstatus_line_use_colors = true\n".write(
+      to: codex.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: tuicr.appending(path: "themes/\(TuicrAdapter.themeName).toml"),
+      withDestinationURL: root.appending(path: "current/\(TuicrAdapter.outputPath)")
+    )
+    for link in [
+      tuicr.appending(path: "themes/\(TuicrAdapter.themeName).tmTheme"),
+      codex.appending(path: "themes/\(CodexAdapter.themeName).tmTheme"),
+    ] {
+      try FileManager.default.createSymbolicLink(
+        at: link,
+        withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+      )
+    }
+
+    let tuicrOutcome = try await TuicrAdapter(
+      root: root,
+      configurationDirectoryURL: tuicr,
+      executableURL: TuicrAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
+    ).reconciliation().run()
+    let codexOutcome = try await CodexAdapter(
+      root: root,
+      configurationDirectoryURL: codex,
+      executableURL: CodexAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
+    ).reconciliation().run()
+    #expect(tuicrOutcome.status == .restartRequired)
+    #expect(codexOutcome.status == .restartRequired)
+  }
+
+  @Test
+  func herdrRetriesFailedReloadsAndRecognizesOnlyAConfirmedStoppedServer() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: tokyoNightPackage())
+    let configuration = root.appending(path: "herdr/config.toml")
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "[theme]\nname = \"catppuccin\"\n".write(
+      to: configuration, atomically: true, encoding: .utf8)
+
+    let reloadAttempts = Mutex(0)
+    let adapter = HerdrAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        if request.arguments == ["server", "reload-config"] {
+          let attempt = reloadAttempts.withLock {
+            $0 += 1
+            return $0
+          }
+          return ProcessResult(
+            terminationStatus: attempt == 1 ? 1 : 0,
+            output: attempt == 1 ? "reload denied" : ""
+          )
+        }
+        return ProcessResult(terminationStatus: 0, output: "status: running")
+      }
+    )
+
+    #expect(try await adapter.reconciliation().run().status == .failed)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    #expect(reloadAttempts.withLock { $0 } == 2)
+
+    let stopped = HerdrAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        request.arguments == ["status", "server"]
+          ? ProcessResult(terminationStatus: 0, output: "status: stopped")
+          : ProcessResult(terminationStatus: 1, output: "server unavailable")
+      }
+    )
+    let stoppedOutcome = try await stopped.reconciliation().run()
+    #expect(stoppedOutcome.status == .applied)
+    #expect(stoppedOutcome.message == "Herdr will use the active theme on next launch")
+  }
+
+  @Test
+  func agentTUIAdaptersRejectMalformedDocumentsConflictingModesAndWrongLinks() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+
+    let tuicr = root.appending(path: "tuicr", directoryHint: .isDirectory)
+    let codex = root.appending(path: "codex", directoryHint: .isDirectory)
+    for directory in [tuicr, codex] {
+      try FileManager.default.createDirectory(
+        at: directory.appending(path: "themes", directoryHint: .isDirectory),
+        withIntermediateDirectories: true
+      )
+    }
+    try "theme = \"\(TuicrAdapter.themeName)\"\n[broken\n".write(
+      to: tuicr.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: tuicr.appending(path: "themes/\(TuicrAdapter.themeName).toml"),
+      withDestinationURL: root.appending(path: "current/\(TuicrAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: tuicr.appending(path: "themes/\(TuicrAdapter.themeName).tmTheme"),
+      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+    )
+    let tuicrAdapter = TuicrAdapter(
+      root: root,
+      configurationDirectoryURL: tuicr,
+      executableURL: TuicrAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
+    )
+    #expect(tuicrAdapter.inspection().status == .failed)
+
+    try "[tui]\ntheme = \"\(CodexAdapter.themeName)\"\n[tui]\n".write(
+      to: codex.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    let codexTheme = codex.appending(path: "themes/\(CodexAdapter.themeName).tmTheme")
+    try FileManager.default.createSymbolicLink(
+      at: codexTheme,
+      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+    )
+    let codexAdapter = CodexAdapter(
+      root: root,
+      configurationDirectoryURL: codex,
+      executableURL: CodexAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
+    )
+    #expect(codexAdapter.inspection().status == .failed)
+
+    try "[tui]\ntheme = \"\(CodexAdapter.themeName)\"\n".write(
+      to: codex.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try FileManager.default.removeItem(at: codexTheme)
+    try FileManager.default.createSymbolicLink(
+      at: codexTheme,
+      withDestinationURL: root.appending(path: "current/generated/other.tmTheme")
+    )
+    #expect(codexAdapter.inspection().status == .drifted)
+
+    let herdrConfiguration = root.appending(path: "herdr/config.toml")
+    try FileManager.default.createDirectory(
+      at: herdrConfiguration.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "[theme]\nname = \"catppuccin\"\nauto_switch = true\n".write(
+      to: herdrConfiguration, atomically: true, encoding: .utf8)
+    let herdr = HerdrAdapter(
+      root: root,
+      configurationURL: herdrConfiguration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: .live
+    )
+    #expect(herdr.inspection().status == .drifted)
+    try "[theme]\nname = 42\n".write(
+      to: herdrConfiguration, atomically: true, encoding: .utf8)
+    #expect(herdr.inspection().status == .failed)
+    try "[theme]\n\"name\" = \"catppuccin\"\n".write(
+      to: herdrConfiguration, atomically: true, encoding: .utf8)
+    #expect(herdr.inspection().status == .failed)
+    try "[theme]\nname = \"\"\"\ncatppuccin\n\"\"\"\n".write(
+      to: herdrConfiguration, atomically: true, encoding: .utf8)
+    #expect(herdr.inspection().status == .failed)
+  }
+
   private func catppuccinPackage() throws -> ThemePackage {
     try ThemePackageLoader().load(
       packageURL: repositoryRoot.appending(
@@ -2489,6 +2794,13 @@ struct AdapterContractTests {
     let neovimMacarchy = neovimDirectory.appending(
       path: "lua/macarchy", directoryHint: .isDirectory)
     let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
+    let piDirectory = root.appending(path: "pi", directoryHint: .isDirectory)
+    let piThemes = piDirectory.appending(path: "themes", directoryHint: .isDirectory)
+    let herdrConfiguration = root.appending(path: "herdr/config.toml")
+    let tuicrDirectory = root.appending(path: "tuicr", directoryHint: .isDirectory)
+    let tuicrThemes = tuicrDirectory.appending(path: "themes", directoryHint: .isDirectory)
+    let codexDirectory = root.appending(path: "codex", directoryHint: .isDirectory)
+    let codexThemes = codexDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
     let yaziFlavor = yaziDirectory.appending(
@@ -2503,6 +2815,11 @@ struct AdapterContractTests {
     try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
       at: starshipDirectory, withIntermediateDirectories: true)
+    for directory in [
+      piThemes, herdrConfiguration.deletingLastPathComponent(), tuicrThemes, codexThemes,
+    ] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
 
     let ezaTheme = ezaDirectory.appending(path: "theme.yml")
     try FileManager.default.createSymbolicLink(
@@ -2538,6 +2855,22 @@ struct AdapterContractTests {
       at: root.appending(path: "starship.toml"),
       withDestinationURL: root.appending(path: StarshipAdapter.bridgePath)
     )
+    try FileManager.default.createSymbolicLink(
+      at: piThemes.appending(path: "\(PiAdapter.themeName).json"),
+      withDestinationURL: root.appending(path: "current/\(PiAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: tuicrThemes.appending(path: "\(TuicrAdapter.themeName).toml"),
+      withDestinationURL: root.appending(path: "current/\(TuicrAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: tuicrThemes.appending(path: "\(TuicrAdapter.themeName).tmTheme"),
+      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: codexThemes.appending(path: "\(CodexAdapter.themeName).tmTheme"),
+      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+    )
 
     let shellConfiguration = root.appending(path: ".zshrc")
     try "export EZA_CONFIG_DIR=\"\(ezaDirectory.path)\"\n".write(
@@ -2563,6 +2896,14 @@ struct AdapterContractTests {
       atomically: true,
       encoding: .utf8
     )
+    try "{\"theme\":\"\(PiAdapter.themeName)\"}\n".write(
+      to: piDirectory.appending(path: "settings.json"), atomically: true, encoding: .utf8)
+    try "[theme]\nname = \"catppuccin\"\n".write(
+      to: herdrConfiguration, atomically: true, encoding: .utf8)
+    try "theme = \"\(TuicrAdapter.themeName)\"\n".write(
+      to: tuicrDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    try "[tui]\ntheme = \"\(CodexAdapter.themeName)\"\n".write(
+      to: codexDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
 
     return ThemeConsumerPaths(
       kittyConfigurationURL: kittyConfigurationURL,
@@ -2576,7 +2917,11 @@ struct AdapterContractTests {
       atuinConfigurationDirectoryURL: atuinDirectory,
       neovimConfigurationDirectoryURL: neovimDirectory,
       starshipConfigurationURL: root.appending(path: "starship.toml"),
-      starshipBehaviorURL: starshipDirectory.appending(path: "behavior.toml")
+      starshipBehaviorURL: starshipDirectory.appending(path: "behavior.toml"),
+      piConfigurationDirectoryURL: piDirectory,
+      herdrConfigurationURL: herdrConfiguration,
+      tuicrConfigurationDirectoryURL: tuicrDirectory,
+      codexConfigurationDirectoryURL: codexDirectory
     )
   }
 

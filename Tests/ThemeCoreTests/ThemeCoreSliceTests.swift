@@ -21,10 +21,13 @@ struct ThemeCoreSliceTests {
     let bat = outputRoot.appending(path: "generated/bat.tmTheme")
     let btop = outputRoot.appending(path: "generated/btop.theme")
     let eza = outputRoot.appending(path: "generated/eza.yml")
+    let herdr = outputRoot.appending(path: "generated/herdr.txt")
     let kitty = outputRoot.appending(path: "generated/kitty.conf")
     let neovim = outputRoot.appending(path: "generated/neovim.lua")
+    let pi = outputRoot.appending(path: "generated/pi.json")
     let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
     let starship = outputRoot.appending(path: "generated/starship.toml")
+    let tuicr = outputRoot.appending(path: "generated/tuicr.toml")
     let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
     let yaziFlavor = outputRoot.appending(path: "generated/yazi-flavor.toml")
     let yaziSyntax = outputRoot.appending(path: "generated/yazi.tmTheme")
@@ -33,10 +36,13 @@ struct ThemeCoreSliceTests {
     let writtenBat = try String(contentsOf: bat, encoding: .utf8)
     let writtenBtop = try String(contentsOf: btop, encoding: .utf8)
     let writtenEza = try String(contentsOf: eza, encoding: .utf8)
+    let writtenHerdr = try String(contentsOf: herdr, encoding: .utf8)
     let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
     let writtenNeovim = try String(contentsOf: neovim, encoding: .utf8)
+    let writtenPi = try String(contentsOf: pi, encoding: .utf8)
     let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
     let writtenStarship = try String(contentsOf: starship, encoding: .utf8)
+    let writtenTuicr = try String(contentsOf: tuicr, encoding: .utf8)
     let writtenWallpaper = try Data(contentsOf: wallpaper)
     let writtenYaziFlavor = try String(contentsOf: yaziFlavor, encoding: .utf8)
     let writtenYaziSyntax = try String(contentsOf: yaziSyntax, encoding: .utf8)
@@ -45,10 +51,13 @@ struct ThemeCoreSliceTests {
     #expect(writtenBat == rendered.batTheme)
     #expect(writtenBtop == rendered.btopTheme)
     #expect(writtenEza == rendered.ezaTheme)
+    #expect(writtenHerdr == rendered.herdrTheme)
     #expect(writtenKitty == rendered.kittyConfiguration)
     #expect(writtenNeovim == rendered.neovimTheme)
+    #expect(writtenPi == rendered.piTheme)
     #expect(writtenSketchyBar == rendered.sketchyBarPalette)
     #expect(writtenStarship == rendered.starshipPalette)
+    #expect(writtenTuicr == rendered.tuicrTheme)
     #expect(writtenWallpaper == rendered.wallpaper)
     #expect(writtenYaziFlavor == rendered.yaziFlavor)
     #expect(writtenYaziSyntax == rendered.batTheme)
@@ -94,6 +103,11 @@ struct ThemeCoreSliceTests {
     let themesRoot = repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
     let packages = try ThemeRepository(builtInRoot: themesRoot).packages()
     #expect(packages.map(\.id) == ["catppuccin-mocha", "kanagawa-wave", "tokyo-night"])
+    let herdrThemes = [
+      "catppuccin-mocha": "catppuccin\n",
+      "kanagawa-wave": "kanagawa\n",
+      "tokyo-night": "tokyo-night\n",
+    ]
 
     for package in packages {
       let generationID = "golden-\(package.id)"
@@ -114,6 +128,7 @@ struct ThemeCoreSliceTests {
       #expect(
         rendered.ezaTheme
           == (try String(contentsOf: goldenRoot.appending(path: "eza.yml"), encoding: .utf8)))
+      #expect(rendered.herdrTheme == herdrThemes[package.id])
       #expect(
         rendered.themeJSON == (try Data(contentsOf: goldenRoot.appending(path: "theme.json"))))
       #expect(
@@ -123,12 +138,18 @@ struct ThemeCoreSliceTests {
         rendered.neovimTheme
           == (try String(contentsOf: goldenRoot.appending(path: "neovim.lua"), encoding: .utf8)))
       #expect(
+        rendered.piTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "pi.json"), encoding: .utf8)))
+      #expect(
         rendered.sketchyBarPalette
           == (try String(
             contentsOf: goldenRoot.appending(path: "sketchybar.lua"), encoding: .utf8)))
       let starshipGolden = try String(
         contentsOf: goldenRoot.appending(path: "starship.toml"), encoding: .utf8)
       #expect(rendered.starshipPalette == starshipGolden)
+      #expect(
+        rendered.tuicrTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "tuicr.toml"), encoding: .utf8)))
       #expect(
         rendered.yaziFlavor
           == (try String(

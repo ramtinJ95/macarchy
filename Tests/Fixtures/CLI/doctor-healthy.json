@@ -26,7 +26,17 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.codex",
+      "message" : "restart_required",
+      "status" : "ok"
+    },
+    {
       "id" : "reconciliation.eza",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation.herdr",
       "message" : "applied",
       "status" : "ok"
     },
@@ -46,6 +56,11 @@
       "status" : "ok"
     },
     {
+      "id" : "reconciliation.pi",
+      "message" : "applied",
+      "status" : "ok"
+    },
+    {
       "id" : "reconciliation.sketchybar",
       "message" : "applied",
       "status" : "ok"
@@ -53,6 +68,11 @@
     {
       "id" : "reconciliation.starship",
       "message" : "applied",
+      "status" : "ok"
+    },
+    {
+      "id" : "reconciliation.tuicr",
+      "message" : "restart_required",
       "status" : "ok"
     },
     {
@@ -86,7 +106,17 @@
       "status" : "ok"
     },
     {
+      "id" : "codex.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
       "id" : "eza.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
+      "id" : "herdr.integration",
       "message" : "Integration preflight passed.",
       "status" : "ok"
     },
@@ -101,12 +131,22 @@
       "status" : "ok"
     },
     {
+      "id" : "pi.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
       "id" : "sketchybar.integration",
       "message" : "Integration preflight passed.",
       "status" : "ok"
     },
     {
       "id" : "starship.integration",
+      "message" : "Integration preflight passed.",
+      "status" : "ok"
+    },
+    {
+      "id" : "tuicr.integration",
       "message" : "Integration preflight passed.",
       "status" : "ok"
     },

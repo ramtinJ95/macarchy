@@ -15,6 +15,10 @@ func testConsumerPaths() -> ThemeConsumerPaths {
     atuinConfigurationDirectoryURL: root.appending(path: "atuin", directoryHint: .isDirectory),
     neovimConfigurationDirectoryURL: root.appending(path: "nvim", directoryHint: .isDirectory),
     starshipConfigurationURL: root.appending(path: "starship.toml"),
-    starshipBehaviorURL: root.appending(path: "starship/behavior.toml")
+    starshipBehaviorURL: root.appending(path: "starship/behavior.toml"),
+    piConfigurationDirectoryURL: root.appending(path: "pi", directoryHint: .isDirectory),
+    herdrConfigurationURL: root.appending(path: "herdr/config.toml"),
+    tuicrConfigurationDirectoryURL: root.appending(path: "tuicr", directoryHint: .isDirectory),
+    codexConfigurationDirectoryURL: root.appending(path: "codex", directoryHint: .isDirectory)
   )
 }
