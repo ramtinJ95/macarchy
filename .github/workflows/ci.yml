@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: macOS 26 arm64
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Library/Developer/CommandLineTools
+    defaults:
+      run:
+        shell: zsh -euo pipefail {0}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Verify supported runner
+        run: |
+          [[ "$(uname -m)" == "arm64" ]]
+          [[ "$(sw_vers -productVersion)" == 26.* ]]
+
+      - name: Lint Swift formatting
+        run: swift format lint --strict --recursive Package.swift Sources Tests
+
+      - name: Build tests
+        timeout-minutes: 10
+        run: swift build --build-tests
+
+      - name: List tests
+        timeout-minutes: 2
+        run: swift test --skip-build --disable-xctest list
+
+      - name: Test
+        timeout-minutes: 5
+        run: swift test --skip-build --disable-xctest
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Build and validate release archive
+        run: |
+          revision=$(git rev-parse HEAD)
+          destination="$RUNNER_TEMP/macarchy-dist"
+          Scripts/build-release-archive.sh \
+            .build/release/macarchy "$destination" "$revision"
+          Scripts/test-release-archive-validation.sh \
+            "$destination"/*.tar.gz \
+            "$destination"/*.tar.gz.sha256 \
+            "$revision"
