@@ -34,12 +34,16 @@ package struct ThemeActivationCoordinator: Sendable {
     AtuinAdapter.id: AdapterRequirement.required,
     BatAdapter.id: AdapterRequirement.required,
     BtopAdapter.id: AdapterRequirement.required,
+    CodexAdapter.id: AdapterRequirement.required,
     EzaAdapter.id: AdapterRequirement.required,
+    HerdrAdapter.id: AdapterRequirement.required,
     KittyAdapter.id: AdapterRequirement.required,
     MacOSAppearanceAdapter.id: AdapterRequirement.required,
     NeovimAdapter.id: AdapterRequirement.required,
+    PiAdapter.id: AdapterRequirement.required,
     SketchyBarAdapter.id: AdapterRequirement.required,
     StarshipAdapter.id: AdapterRequirement.required,
+    TuicrAdapter.id: AdapterRequirement.required,
     WallpaperAdapter.id: AdapterRequirement.required,
     YaziAdapter.id: AdapterRequirement.required,
   ]
@@ -50,10 +54,13 @@ package struct ThemeActivationCoordinator: Sendable {
   private let atuin: AtuinAdapter
   private let bat: BatAdapter
   private let btop: BtopAdapter
+  private let codex: CodexAdapter
   private let configurationStore: MacarchyConfigurationStore
   private let eza: EzaAdapter
+  private let herdr: HerdrAdapter
   private let kitty: KittyAdapter
   private let neovim: NeovimAdapter
+  private let pi: PiAdapter
   private let processRunner: ProcessRunner
   private let reconciler: ThemeReconciler
   private let sketchyBar: SketchyBarAdapter
@@ -62,6 +69,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let wallpaper: WallpaperAdapter
   private let wallpaperSignal: YabaiWallpaperSignal
   private let yazi: YaziAdapter
+  private let tuicr: TuicrAdapter
 
   package init(
     root: URL,
@@ -100,6 +108,14 @@ package struct ThemeActivationCoordinator: Sendable {
       },
       processRunner: .live
     )
+    codex = CodexAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
+      executableURL: CodexAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: CodexAdapter.liveExecutableURL.path)
+      }
+    )
     configurationStore = MacarchyConfigurationStore(root: root)
     eza = EzaAdapter(
       root: root,
@@ -108,6 +124,15 @@ package struct ThemeActivationCoordinator: Sendable {
       executableURL: EzaAdapter.liveExecutableURL,
       controlIsAvailable: {
         FileManager.default.isExecutableFile(atPath: EzaAdapter.liveExecutableURL.path)
+      },
+      processRunner: .live
+    )
+    herdr = HerdrAdapter(
+      root: root,
+      configurationURL: consumerPaths.herdrConfigurationURL,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: HerdrAdapter.liveExecutableURL.path)
       },
       processRunner: .live
     )
@@ -125,6 +150,14 @@ package struct ThemeActivationCoordinator: Sendable {
         FileManager.default.isExecutableFile(atPath: NeovimAdapter.liveExecutableURL.path)
       },
       processRunner: .live
+    )
+    pi = PiAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
+      executableURL: PiAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: PiAdapter.liveExecutableURL.path)
+      }
     )
     processRunner = .live
     reconciler = ThemeReconciler(statusStore: statusStore)
@@ -148,6 +181,14 @@ package struct ThemeActivationCoordinator: Sendable {
       processRunner: .live
     )
     self.statusStore = statusStore
+    tuicr = TuicrAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
+      executableURL: TuicrAdapter.liveExecutableURL,
+      controlIsAvailable: {
+        FileManager.default.isExecutableFile(atPath: TuicrAdapter.liveExecutableURL.path)
+      }
+    )
     wallpaper = WallpaperAdapter(root: root, control: .live)
     wallpaperSignal = .personal()
     yazi = YaziAdapter(
@@ -213,12 +254,25 @@ package struct ThemeActivationCoordinator: Sendable {
       controlIsAvailable: { true },
       processRunner: processRunner
     )
+    codex = CodexAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
+      executableURL: CodexAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
+    )
     configurationStore = MacarchyConfigurationStore(root: root)
     eza = EzaAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
       shellConfigurationURL: consumerPaths.shellConfigurationURL,
       executableURL: EzaAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: processRunner
+    )
+    herdr = HerdrAdapter(
+      root: root,
+      configurationURL: consumerPaths.herdrConfigurationURL,
+      executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
       processRunner: processRunner
     )
@@ -234,6 +288,12 @@ package struct ThemeActivationCoordinator: Sendable {
       executableURL: NeovimAdapter.liveExecutableURL,
       controlIsAvailable: { true },
       processRunner: processRunner
+    )
+    pi = PiAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
+      executableURL: PiAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
     )
     self.processRunner = processRunner
     reconciler = ThemeReconciler(statusStore: statusStore)
@@ -253,6 +313,12 @@ package struct ThemeActivationCoordinator: Sendable {
       processRunner: processRunner
     )
     self.statusStore = statusStore
+    tuicr = TuicrAdapter(
+      root: root,
+      configurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
+      executableURL: TuicrAdapter.liveExecutableURL,
+      controlIsAvailable: { true }
+    )
     wallpaper = WallpaperAdapter(root: root, control: wallpaperControl)
     self.wallpaperSignal = wallpaperSignal
     yazi = YaziAdapter(
@@ -379,11 +445,15 @@ package struct ThemeActivationCoordinator: Sendable {
       atuin.inspection(),
       bat.inspection(),
       btop.inspection(),
+      codex.inspection(),
       eza.inspection(),
+      herdr.inspection(),
       kitty.inspection(),
       neovim.inspection(),
+      pi.inspection(),
       sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
       starship.inspection(),
+      tuicr.inspection(),
       wallpaperInspection,
       yazi.inspection(),
     ].filter {
@@ -479,9 +549,19 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: btop.reconciliation
       ),
       ConfiguredAdapter(
+        id: CodexAdapter.id,
+        inspection: codex.inspection,
+        reconciliation: codex.reconciliation
+      ),
+      ConfiguredAdapter(
         id: EzaAdapter.id,
         inspection: eza.inspection,
         reconciliation: eza.reconciliation
+      ),
+      ConfiguredAdapter(
+        id: HerdrAdapter.id,
+        inspection: herdr.inspection,
+        reconciliation: herdr.reconciliation
       ),
       ConfiguredAdapter(
         id: KittyAdapter.id,
@@ -494,6 +574,11 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: neovim.reconciliation
       ),
       ConfiguredAdapter(
+        id: PiAdapter.id,
+        inspection: pi.inspection,
+        reconciliation: pi.reconciliation
+      ),
+      ConfiguredAdapter(
         id: SketchyBarAdapter.id,
         inspection: { sketchyBar.inspection() },
         reconciliation: sketchyBar.reconciliation
@@ -502,6 +587,11 @@ package struct ThemeActivationCoordinator: Sendable {
         id: StarshipAdapter.id,
         inspection: starship.inspection,
         reconciliation: starship.reconciliation
+      ),
+      ConfiguredAdapter(
+        id: TuicrAdapter.id,
+        inspection: tuicr.inspection,
+        reconciliation: tuicr.reconciliation
       ),
       ConfiguredAdapter(
         id: WallpaperAdapter.id,
@@ -555,11 +645,15 @@ package struct ThemeActivationCoordinator: Sendable {
     try atuin.preflight()
     try bat.preflight()
     try btop.preflight()
+    try codex.preflight()
     try eza.preflight()
+    try herdr.preflight(package: package)
     try kitty.preflight()
     try neovim.preflight()
+    try pi.preflight()
     try sketchyBar.preflight()
     try starship.preflight()
+    try tuicr.preflight()
     _ = try wallpaper.preflight()
     try wallpaperSignal.preflight()
     try yazi.preflight()

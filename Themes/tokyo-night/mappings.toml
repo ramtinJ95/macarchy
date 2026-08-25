@@ -1,4 +1,5 @@
 schema_version = 1
 
 [mappings]
+herdr = "tokyo-night"
 neovim = "tokyonight-night"
