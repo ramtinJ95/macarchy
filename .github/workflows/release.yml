@@ -1,0 +1,112 @@
+name: Stable release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish immutable stable release
+    runs-on: macos-26
+    timeout-minutes: 30
+    environment: stable-release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    defaults:
+      run:
+        shell: zsh -euo pipefail {0}
+    env:
+      DEVELOPER_DIR: /Library/Developer/CommandLineTools
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check out approved tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify supported runner
+        run: |
+          [[ "$(uname -m)" == "arm64" ]]
+          [[ "$(sw_vers -productVersion)" == 26.* ]]
+
+      - name: Verify tag and source version
+        run: |
+          [[ "$GITHUB_REF" == "refs/tags/$TAG" ]]
+          [[ "$TAG" =~ '^v[0-9]+\.[0-9]+\.[0-9]+$' ]]
+          version=$(<VERSION)
+          [[ "$TAG" == "v$version" ]]
+          revision=$(git rev-parse "refs/tags/$TAG^{commit}")
+          [[ "$revision" == "$(git rev-parse HEAD)" ]]
+          [[ "$revision" == "$GITHUB_SHA" ]]
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$revision" refs/remotes/origin/main
+          [[ -z "$(git status --porcelain)" ]]
+          print -r -- "VERSION=$version" >> "$GITHUB_ENV"
+          print -r -- "REVISION=$revision" >> "$GITHUB_ENV"
+          print -r -- \
+            "ARCHIVE_NAME=macarchy-${version}-arm64-apple-darwin.tar.gz" \
+            >> "$GITHUB_ENV"
+
+      - name: Lint Swift formatting
+        run: swift format lint --strict --recursive Package.swift Sources Tests
+
+      - name: Test
+        run: swift test --disable-xctest
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Build and validate release archive
+        run: |
+          Scripts/build-release-archive.sh \
+            .build/release/macarchy dist "$REVISION"
+          Scripts/test-release-archive-validation.sh \
+            "dist/$ARCHIVE_NAME" \
+            "dist/$ARCHIVE_NAME.sha256" \
+            "$REVISION"
+
+      - name: Require a new release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            print -u2 "release already exists for $TAG"
+            exit 1
+          fi
+
+      - name: Attest release archive
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*.tar.gz
+
+      - name: Attest release checksum
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*.tar.gz.sha256
+
+      - name: Publish stable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --force --no-tags origin \
+            "refs/tags/$TAG:refs/remotes/origin/release-tag"
+          remote_revision=$(git rev-parse \
+            "refs/remotes/origin/release-tag^{commit}")
+          [[ "$remote_revision" == "$REVISION" ]]
+          gh release create "$TAG" \
+            "dist/$ARCHIVE_NAME" \
+            "dist/$ARCHIVE_NAME.sha256" \
+            --generate-notes \
+            --latest \
+            --title "$TAG" \
+            --verify-tag

@@ -107,6 +107,36 @@ invalid revisions, or an existing destination. Release executables require
 neither Developer ID signing nor notarization. Macarchy currently supports only
 Apple Silicon macOS 26 and direct distribution outside the Mac App Store.
 
+Pull requests and `main` run formatting, tests, a release build, and complete
+archive validation on GitHub's standard arm64 `macos-26` runner. Build the same
+versioned archive and checksum locally with:
+
+```sh
+swift build -c release
+Scripts/build-release-archive.sh \
+  .build/release/macarchy dist "$(git rev-parse HEAD)"
+```
+
+The archive is named
+`macarchy-<version>-arm64-apple-darwin.tar.gz`, contains that directory as its
+single top-level prefix, and has a sibling `.sha256` file. Validation rejects
+checksum drift, unsafe paths, links, unexpected inventory, and metadata that
+does not match the source version and revision.
+
+Stable publication dispatches the `Stable release` workflow at an existing
+`vMAJOR.MINOR.PATCH` tag so provenance identifies the tagged source:
+
+```sh
+gh workflow run release.yml --ref v0.1.0
+```
+
+The tag must match `VERSION`, resolve to a commit on `main`, and pass the
+complete CI path before GitHub receives the archive, checksum, and
+build-provenance attestations. Before merging the release workflow, enable
+immutable releases, protect stable tags from update or deletion, and configure
+the `stable-release` environment with required reviewers and deployment
+restricted to protected stable tags. Prerelease tags are not accepted.
+
 The package input schema and versioned normalized palette contract are documented in
 [`Documentation/theme-json.md`](Documentation/theme-json.md).
 
