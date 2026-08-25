@@ -21,7 +21,7 @@ mkdir -p "$temporary_directory/home" "$temporary_directory/work"
 [[ -d "$layout/share/macarchy/themes" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
-[[ -z "$(find -P "$layout" -type l -print)" ]]
+[[ -z "$(find -P "$layout" ! -type f ! -type d -print)" ]]
 /usr/bin/codesign --verify --strict "$binary"
 signature=$(/usr/bin/codesign -dv --verbose=2 "$binary" 2>&1)
 print -r -- "$signature" | grep -q '^Signature=adhoc$'
