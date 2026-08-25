@@ -8,22 +8,27 @@ At the start of every implementation session:
 
 1. Read `docs/project-plan.md` for approved product scope, architecture,
    milestone order, and acceptance gates.
-2. Read `docs/adr.md` for durable implementation discoveries and decisions that
-   extend the plan.
-3. Read `docs/handoff.md` for the current milestone's execution state.
-4. Inspect the working tree and verify handoff claims against code, tests, and
+2. Read `docs/adr/README.md` for the ADR index and selective-reading policy.
+3. Read `docs/handoff.md` for the current milestone's execution state and ADRs
+   known to be relevant to the active slice.
+4. Read individual files under `docs/adr/` when the handoff names them, their
+   indexed milestone/topics match the work, touched code crosses their boundary,
+   or a relevant ADR's supersession chain points to them. Do not load every ADR
+   by default.
+5. Inspect the working tree and verify handoff claims against code, tests, and
    the environment before acting.
 
 The documents have different jobs:
 
 - `docs/project-plan.md` is the durable source of approved product intent.
-- `docs/adr.md` is the durable internal decision and discovery record.
+- `docs/adr/README.md` is the canonical ADR index; individual files in
+  `docs/adr/` are the durable internal decision and discovery records.
 - `docs/handoff.md` is the only short-term, phase-scoped memory document.
 - Code, tests, and observed runtime behavior are the source of implementation
   facts; do not preserve a contradicted handoff claim as if it were true.
 
-Do not create competing plans, ADR logs, handoff files, session diaries, or
-status documents.
+Do not create competing plans, ADR indexes/logs, handoff files, session diaries,
+or status documents.
 
 The entire `docs/` tree is local-only and gitignored. Never force-add the
 project plan, ADR, handoff, or other internal agent documentation. These files
@@ -45,8 +50,8 @@ does travel with the repository.
 
 ## Internal ADR and discovery log
 
-Use `docs/adr.md` for durable findings that were not already captured by the
-plan and that affect later implementation, including:
+Use one file per decision under `docs/adr/` for durable findings that were not
+already captured by the plan and that affect later implementation, including:
 
 - an unexpected platform, framework, provider, or application constraint;
 - a choice between meaningful implementation alternatives;
@@ -59,7 +64,9 @@ Do not add ADR entries for routine progress, obvious code-local choices,
 temporary debugging notes, command transcripts, or information already stated
 in the project plan.
 
-Each ADR entry must use the next sequential `ADR-NNNN` identifier and include:
+Before adding or changing an ADR, read `docs/adr/README.md` and every relevant
+supersession chain. The index owns the next sequential `ADR-NNNN` identifier.
+Each ADR file must include:
 
 - status (`Accepted`, `Superseded`, or `Reversed`);
 - date and milestone;
@@ -68,9 +75,13 @@ Each ADR entry must use the next sequential `ADR-NNNN` identifier and include:
 - consequences and constraints; and
 - superseding entry, when applicable.
 
-Append new entries. Do not rewrite historical context to make a later outcome
-look inevitable. When a decision changes, mark the old entry and add a new one.
-Keep secrets and irrelevant personal data out of the ADR.
+Create new entries as `docs/adr/ADR-NNNN-short-title.md` using the index
+template. In the same change, add the index row with concise milestone/topics
+that make selective discovery practical and advance the index's next
+identifier. Do not rewrite historical context to make a later outcome look
+inevitable. When a decision changes, mark the old file, add its `Superseded by`
+field, create the new ADR, and update both index rows. Never create another
+aggregate ADR file. Keep secrets and irrelevant personal data out of ADRs.
 
 ## Canonical handoff
 
@@ -85,6 +96,7 @@ session or approaching a context limit. It must state:
 - completed work relevant to the active milestone;
 - work in progress and exact next actions;
 - blockers and decisions awaiting user input;
+- ADRs relevant to the current slice and why;
 - tests/checks run and their results;
 - touched areas and important working-tree state; and
 - temporary facts needed to resume safely.
@@ -96,7 +108,8 @@ rediscovered from the repository. Never store secrets.
 Treat a milestone as complete only after its acceptance evidence is verified
 and explicitly accepted. At that boundary:
 
-1. Promote durable decisions/discoveries into `docs/adr.md`.
+1. Promote durable decisions/discoveries into individual `docs/adr/` files and
+   update `docs/adr/README.md`.
 2. Update the project plan or permanent documentation only where an approved
    durable change requires it.
 3. Encode repeatable facts in tests, fixtures, or code comments where they are
