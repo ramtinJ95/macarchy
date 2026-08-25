@@ -1,8 +1,8 @@
 # Macarchy
 
-Macarchy is a native, theme-driven macOS desktop shell. The first release is
-building one canonical palette and command surface for the existing desktop;
-native shell surfaces follow only after that theme system is proven.
+Macarchy is a cohesive, theme-driven macOS environment. It owns one canonical
+palette and command surface while integrating with the existing desktop through
+explicit consumer boundaries.
 
 Macarchy is independently authored and inspired by the broader
 [Omarchy](https://omarchy.org/) project. It is not an official port.
@@ -13,6 +13,8 @@ Requirements: Apple Silicon macOS 26 and Swift 6.
 
 ```sh
 swift test
+swift run macarchy --version
+swift run macarchy version --json
 swift run macarchy theme list
 swift run macarchy theme set catppuccin-mocha --dry-run
 swift run macarchy theme next --dry-run
@@ -21,8 +23,11 @@ swift run macarchy reconcile --dry-run
 swift run macarchy doctor --json
 ```
 
-`theme set` and `theme next` read built-in packages from `./Themes` and user
-packages from `<state-root>/themes`. The state root defaults to
+Development builds discover built-in packages from the checkout containing
+their `.build` directory. Installed builds discover them relative to the
+executable at `../share/macarchy/themes`, independent of the caller's working
+directory. `--themes-root` remains an explicit development/test override. User
+packages come from `<state-root>/themes`, and the state root defaults to
 `~/.config/macarchy`. Before activation, Macarchy verifies that current
 appearance is readable and `/usr/bin/osascript` is executable. Kitty's
 configuration must contain an `include` for the expanded absolute path
@@ -73,6 +78,34 @@ new process. A closed client remains closed. Failures are persisted and visible
 but do not fail core theme activation.
 
 Tests use temporary roots and never access `~/.config/macarchy`.
+
+## Release layout
+
+The supported release layout is:
+
+```text
+bin/macarchy
+share/macarchy/build-info.json
+share/macarchy/themes/<theme-id>/...
+share/doc/macarchy/theme-json.md
+share/doc/macarchy/LICENSE
+```
+
+Build a local layout from an arm64 release binary and its caller-supplied Git
+revision, then smoke-test it from an unrelated working directory and temporary
+`HOME`:
+
+```sh
+swift build -c release
+Scripts/build-release-layout.sh \
+  .build/release/macarchy .build/macarchy-release "$(git rev-parse HEAD)"
+Scripts/smoke-release-layout.sh .build/macarchy-release
+```
+
+The layout script applies an ad-hoc signature and rejects non-arm64 binaries,
+invalid revisions, or an existing destination. Release executables require
+neither Developer ID signing nor notarization. Macarchy currently supports only
+Apple Silicon macOS 26 and direct distribution outside the Mac App Store.
 
 The package input schema and versioned normalized palette contract are documented in
 [`Documentation/theme-json.md`](Documentation/theme-json.md).
