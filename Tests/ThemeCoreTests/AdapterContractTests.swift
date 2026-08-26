@@ -667,6 +667,13 @@ struct AdapterContractTests {
       controlIsAvailable: { true },
       processRunner: runner
     )
+    try "color_theme = \"\(BtopAdapter.themeName)\"\r\n".write(
+      to: btopDirectory.appending(path: "btop.conf"), atomically: true, encoding: .utf8)
+    try "[flavor]\r\nlayout = [\r\n  [\"name\"]\r\n]\r\ndark = \"\(YaziAdapter.flavorName)\"\r\n"
+      .write(
+        to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
+    try "[theme]\r\nname = \"\(AtuinAdapter.themeName)\"\r\n".write(
+      to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
 
     #expect(try await btop.reconciliation().run().status == .applied)
     #expect(try await yazi.reconciliation().run().status == .applied)
