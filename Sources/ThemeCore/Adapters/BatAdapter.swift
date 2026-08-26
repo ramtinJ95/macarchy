@@ -20,11 +20,13 @@ enum BatAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct BatAdapter: Sendable {
+package struct BatAdapter: Sendable {
   static let id = "bat"
-  static let outputPath = "generated/bat.tmTheme"
+  package static let outputPath = "generated/bat.tmTheme"
   static let rendererVersion = 1
-  static let themeName = "Macarchy Current"
+  package static let themeName = "Macarchy Current"
+  package static let themeDirective = "--theme=\"\(themeName)\""
+  package static let themeFileName = "\(themeName).tmTheme"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/bat")
 
   let root: URL
@@ -38,13 +40,9 @@ struct BatAdapter: Sendable {
     configurationDirectoryURL.appending(path: "config")
   }
 
-  private var themeDirective: String {
-    "--theme=\"\(Self.themeName)\""
-  }
-
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
-      url: configurationDirectoryURL.appending(path: "themes/\(Self.themeName).tmTheme"),
+      url: configurationDirectoryURL.appending(path: "themes/\(Self.themeFileName)"),
       destination: root.appending(path: "current/\(Self.outputPath)")
     )
   }
@@ -56,8 +54,8 @@ struct BatAdapter: Sendable {
     try themeLink.validate()
 
     let configuration = try readConfiguration()
-    guard Self.containsLine(themeDirective, in: configuration) else {
-      throw BatAdapterError.missingThemeDirective(themeDirective)
+    guard Self.containsLine(Self.themeDirective, in: configuration) else {
+      throw BatAdapterError.missingThemeDirective(Self.themeDirective)
     }
   }
 

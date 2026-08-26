@@ -20,11 +20,16 @@ enum EzaAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct EzaAdapter: Sendable {
+package struct EzaAdapter: Sendable {
   static let id = "eza"
-  static let outputPath = "generated/eza.yml"
+  package static let outputPath = "generated/eza.yml"
   static let rendererVersion = 1
+  package static let themeFileName = "theme.yml"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/eza")
+
+  package static func environmentDirective(configurationDirectoryURL: URL) -> String {
+    "export EZA_CONFIG_DIR=\"\(configurationDirectoryURL.path)\""
+  }
 
   let root: URL
   let configurationDirectoryURL: URL
@@ -35,13 +40,9 @@ struct EzaAdapter: Sendable {
 
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
-      url: configurationDirectoryURL.appending(path: "theme.yml"),
+      url: configurationDirectoryURL.appending(path: Self.themeFileName),
       destination: root.appending(path: "current/\(Self.outputPath)")
     )
-  }
-
-  private var environmentDirective: String {
-    "export EZA_CONFIG_DIR=\"\(configurationDirectoryURL.path)\""
   }
 
   func preflight() throws {
@@ -51,8 +52,9 @@ struct EzaAdapter: Sendable {
     try themeLink.validate()
 
     let shell = try readShellConfiguration()
-    guard Self.containsLine(environmentDirective, in: shell) else {
-      throw EzaAdapterError.missingEnvironmentDirective(environmentDirective)
+    let directive = Self.environmentDirective(configurationDirectoryURL: configurationDirectoryURL)
+    guard Self.containsLine(directive, in: shell) else {
+      throw EzaAdapterError.missingEnvironmentDirective(directive)
     }
   }
 
