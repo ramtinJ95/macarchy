@@ -368,12 +368,14 @@ package struct ThemeActivationCoordinator: Sendable {
   ) async throws -> ThemeActivationResult {
     try await withTaskExecutorPreference(Self.activationExecutor) {
       try Task.checkCancellation()
-      let wallpaperData = try prepare(package: package)
-      try Task.checkCancellation()
       let manifest = try activator.activate(
         package: package,
         expectedActiveGenerationID: expectedActiveGenerationID,
-        wallpaperData: wallpaperData
+        prepareWallpaperData: {
+          let wallpaperData = try prepare(package: package)
+          try Task.checkCancellation()
+          return wallpaperData
+        }
       )
 
       do {
@@ -747,7 +749,7 @@ package struct ThemeActivationCoordinator: Sendable {
     return .ready
   }
 
-  private static func kittyIncludeDirective(root: URL) -> String {
+  package static func kittyIncludeDirective(root: URL) -> String {
     "include \(root.appending(path: KittyAdapter.bridgePath).path)"
   }
 }

@@ -7,7 +7,7 @@ struct Macarchy: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "macarchy",
     abstract: "A cohesive, theme-driven macOS environment.",
-    subcommands: [Theme.self, Reconcile.self, Doctor.self, Setup.self, Version.self]
+    subcommands: [Theme.self, Reconcile.self, Doctor.self, Setup.self, Teardown.self, Version.self]
   )
 
   @Flag(name: .customLong("version"), help: "Show version and exit.")
@@ -195,7 +195,7 @@ struct Macarchy: AsyncParsableCommand {
 
   struct Setup: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Inspect the selected dependency profile."
+      abstract: "Prepare dependencies and supported integration seams."
     )
 
     @Option(help: "Dependency profile to inspect.")
@@ -215,6 +215,30 @@ struct Macarchy: AsyncParsableCommand {
         profileName: profile,
         homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
         installDependencies: installDependencies,
+        dryRun: dryRun,
+        json: json
+      )
+      print(execution.output)
+      if !execution.succeeded {
+        throw ExitCode.failure
+      }
+    }
+  }
+
+  struct Teardown: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Reverse only integrations recorded as Macarchy-owned."
+    )
+
+    @Flag(help: "Describe teardown without making changes.")
+    var dryRun = false
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    mutating func run() throws {
+      let execution = try TeardownCommandRunner.live.execute(
+        homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
         dryRun: dryRun,
         json: json
       )

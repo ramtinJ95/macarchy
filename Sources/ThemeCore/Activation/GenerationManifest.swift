@@ -98,7 +98,7 @@ extension GenerationManifest {
   }
 }
 
-func sha256Digest(_ data: Data) -> String {
+package func sha256Digest(_ data: Data) -> String {
   "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
 

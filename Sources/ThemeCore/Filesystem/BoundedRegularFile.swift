@@ -1,13 +1,13 @@
 import Darwin
 import Foundation
 
-struct BoundedRegularFile {
-  static let maximumSize = 1_048_576
+package struct BoundedRegularFile {
+  package static let maximumSize = 1_048_576
 
-  let data: Data
-  let permissions: Int
+  package let data: Data
+  package let permissions: Int
 
-  static func read(at url: URL, maximumSize: Int = maximumSize) throws -> Self {
+  package static func read(at url: URL, maximumSize: Int = maximumSize) throws -> Self {
     let descriptor = url.path.withCString {
       Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
     }
@@ -16,6 +16,10 @@ struct BoundedRegularFile {
     }
     defer { Darwin.close(descriptor) }
 
+    return try read(descriptor: descriptor, maximumSize: maximumSize)
+  }
+
+  package static func read(descriptor: Int32, maximumSize: Int = maximumSize) throws -> Self {
     var metadata = stat()
     guard fstat(descriptor, &metadata) == 0 else {
       throw BoundedRegularFileError.system(operation: "fstat", code: errno)
@@ -48,12 +52,12 @@ struct BoundedRegularFile {
   }
 }
 
-enum BoundedRegularFileError: Error, CustomStringConvertible, Equatable, Sendable {
+package enum BoundedRegularFileError: Error, CustomStringConvertible, Equatable, Sendable {
   case notRegular
   case system(operation: String, code: Int32)
   case tooLarge(Int)
 
-  var description: String {
+  package var description: String {
     switch self {
     case .notRegular:
       "not a regular file"
