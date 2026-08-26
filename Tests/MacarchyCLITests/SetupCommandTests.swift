@@ -44,7 +44,8 @@ struct SetupCommandTests {
         ["atuin", "herdr"].contains(capability.id) ? capability.isAvailable() : true
       },
       processRunner: unexpectedProcessRunner(),
-      writePreMutationPlan: unexpectedPlanWriter()
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegration: externalIntegration()
     )
     let execution = try runner.execute(
       profileName: "personal",
@@ -127,7 +128,8 @@ struct SetupCommandTests {
       resolveProfile: DependencyProfile.named,
       capabilityIsAvailable: { _ in false },
       processRunner: unexpectedProcessRunner(),
-      writePreMutationPlan: unexpectedPlanWriter()
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegration: externalIntegration()
     )
 
     let execution = try runner.execute(
@@ -188,7 +190,8 @@ struct SetupCommandTests {
       },
       writePreMutationPlan: { output in
         events.withLock { $0.append(.plan(output)) }
-      }
+      },
+      setupIntegration: externalIntegration()
     )
 
     let execution = try runner.execute(
@@ -238,7 +241,8 @@ struct SetupCommandTests {
       resolveProfile: DependencyProfile.named,
       capabilityIsAvailable: { !["homebrew", "bat"].contains($0.id) },
       processRunner: unexpectedProcessRunner(),
-      writePreMutationPlan: unexpectedPlanWriter()
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegration: externalIntegration()
     )
 
     let execution = try runner.execute(
@@ -263,7 +267,8 @@ struct SetupCommandTests {
       resolveProfile: DependencyProfile.named,
       capabilityIsAvailable: { $0.id != "bat" },
       processRunner: ProcessRunner { _ in throw SetupTestError.launchFailed },
-      writePreMutationPlan: { _ in }
+      writePreMutationPlan: { _ in },
+      setupIntegration: externalIntegration()
     )
 
     let execution = try runner.execute(
@@ -293,7 +298,8 @@ struct SetupCommandTests {
       processRunner: ProcessRunner { _ in
         ProcessResult(terminationStatus: 0, output: "")
       },
-      writePreMutationPlan: { _ in }
+      writePreMutationPlan: { _ in },
+      setupIntegration: externalIntegration()
     )
 
     let execution = try runner.execute(
@@ -316,7 +322,8 @@ struct SetupCommandTests {
       resolveProfile: DependencyProfile.named,
       capabilityIsAvailable: { !missing.contains($0.id) },
       processRunner: unexpectedProcessRunner(),
-      writePreMutationPlan: unexpectedPlanWriter()
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegration: externalIntegration()
     )
   }
 
@@ -329,6 +336,20 @@ struct SetupCommandTests {
 
   private func unexpectedPlanWriter() -> @Sendable (String) throws -> Void {
     { _ in Issue.record("A pre-mutation plan must not be emitted") }
+  }
+
+  private func externalIntegration()
+    -> @Sendable (URL, Bool) throws -> SetupIntegrationResult
+  {
+    { homeDirectory, _ in
+      SetupIntegrationResult(
+        id: SetupOwnershipManager.integrationID,
+        status: .external,
+        target: homeDirectory.appending(path: ".config/kitty/kitty.conf").path,
+        message: "Fixture integration is externally owned",
+        mutationAttempted: false
+      )
+    }
   }
 
   private func ids(

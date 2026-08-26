@@ -1482,6 +1482,7 @@ struct AdapterContractTests {
       (
         appearance: ThemeAppearance.dark,
         lightCommandEntered: false,
+        darkActivationStarted: false,
         darkPreflightEntered: false,
         appearanceRequests: [ProcessRequest]()
       )
@@ -1540,15 +1541,18 @@ struct AdapterContractTests {
     try await waitUntil { state.withLock { $0.lightCommandEntered } }
 
     let darkActivation = Task.detached {
-      try await darkCoordinator.activate(package: basePackage)
+      state.withLock { $0.darkActivationStarted = true }
+      return try await darkCoordinator.activate(package: basePackage)
     }
-    try await waitUntil { state.withLock { $0.darkPreflightEntered } }
+    try await waitUntil { state.withLock { $0.darkActivationStarted } }
     let committedBeforeRelease = try JSONDecoder().decode(
       NormalizedTheme.self,
       from: Data(contentsOf: root.appending(path: "current/theme.json"))
     )
     #expect(committedBeforeRelease.appearance == .light)
+    #expect(!state.withLock { $0.darkPreflightEntered })
     releaseLightCommand.signal()
+    try await waitUntil { state.withLock { $0.darkPreflightEntered } }
 
     if case .failure(let error) = await lightActivation.result {
       #expect(error is ThemeCommittedWithReconciliationError)

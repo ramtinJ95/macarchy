@@ -24,6 +24,7 @@ swift run macarchy doctor --json
 swift run macarchy setup --dry-run
 swift run macarchy setup --json
 swift run macarchy setup --install-dependencies --dry-run
+swift run macarchy teardown --dry-run
 ```
 
 Development builds discover built-in packages from the checkout containing
@@ -70,16 +71,23 @@ commands exit nonzero for required or diagnostic failures and support `--json`.
 supported platform and hard runtime, retained desktop substrate, required
 enabled adapters, and optional adapters. Missing required capabilities produce
 a nonzero exit; missing optional capabilities remain visible but non-fatal.
-Inspection is the default. `--install-dependencies` installs only missing
-Homebrew formulae and casks after reporting their exact names; combine it with
-`--dry-run` to inspect that plan without mutation. Existing executable
-capabilities remain externally owned. Pi has no Homebrew package and receives
-an explicit npm remediation instead of implicit npm mutation. Homebrew 6 trust
-for the third-party SketchyBar, skhd, and yabai formulae is also an explicit
-external remediation; setup does not write Homebrew's user trust file. Before
-Homebrew mutation, the exact plan is written directly to stderr (as JSON when
-`--json` is active); stdout remains one final machine-readable report.
-Integration-seam mutation remains outside this slice.
+Setup also verifies Kitty's exact bridge include. A correct pre-existing include
+remains external and unclaimed. If the include is missing from an ordinary
+local Kitty configuration, setup backs up the file, records schema-versioned
+ownership under Macarchy state, and adds the directive atomically. It does not
+write through a Stow- or otherwise
+symlink-owned configuration. `teardown` restores only that recorded change and
+refuses to overwrite later drift; generated theme state is preserved.
+
+`--dry-run` keeps dependency and integration inspection non-mutating.
+`--install-dependencies` installs only missing Homebrew formulae and casks after
+reporting their exact names. Existing executable capabilities remain externally
+owned. Pi has no Homebrew package and receives an explicit npm remediation
+instead of implicit npm mutation. Homebrew 6 trust for the third-party
+SketchyBar, skhd, and yabai formulae is also an explicit external remediation;
+setup does not write Homebrew's user trust file. Before Homebrew mutation, the
+exact plan is written directly to stderr (as JSON when `--json` is active);
+stdout remains one final machine-readable report.
 
 Activation recovers Macarchy-owned staging and temporary-pointer residue left
 by an interrupted process. After a commit it retains the active generation and

@@ -35,17 +35,17 @@ package struct ThemeCommittedActivationError: Error, CustomStringConvertible, Se
   }
 }
 
-struct ActivationLock: Sendable {
+package struct ActivationLock: Sendable {
   // lockf is process-scoped, so sibling threads also need a mutex.
   private static let processMutex = Mutex<Void>(())
 
   private let root: URL
 
-  init(root: URL) {
+  package init(root: URL) {
     self.root = root.standardizedFileURL
   }
 
-  func withLock<Value>(_ operation: () throws -> Value) throws -> Value {
+  package func withLock<Value>(_ operation: () throws -> Value) throws -> Value {
     try Self.processMutex.withLock { _ in
       let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
       try FileManager.default.createDirectory(
@@ -146,7 +146,20 @@ public struct ThemeActivator: Sendable {
     expectedActiveGenerationID: String?,
     wallpaperData: Data
   ) throws -> GenerationManifest {
+    try activate(
+      package: package,
+      expectedActiveGenerationID: expectedActiveGenerationID,
+      prepareWallpaperData: { wallpaperData }
+    )
+  }
+
+  package func activate(
+    package: ThemePackage,
+    expectedActiveGenerationID: String?,
+    prepareWallpaperData: () throws -> Data
+  ) throws -> GenerationManifest {
     let result = try activationLock.withLock {
+      let wallpaperData = try prepareWallpaperData()
       if let expectedActiveGenerationID {
         let active = try ReconciliationStatusStore(root: root).activeManifest().generationID
         guard active == expectedActiveGenerationID else {

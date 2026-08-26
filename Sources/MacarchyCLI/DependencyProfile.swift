@@ -300,6 +300,7 @@ struct SetupCommandRunner: Sendable {
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let processRunner: ProcessRunner
   let writePreMutationPlan: @Sendable (String) throws -> Void
+  let setupIntegration: @Sendable (URL, Bool) throws -> SetupIntegrationResult
 
   static let live = SetupCommandRunner(
     resolveProfile: DependencyProfile.named,
@@ -307,6 +308,9 @@ struct SetupCommandRunner: Sendable {
     processRunner: .live,
     writePreMutationPlan: { output in
       try FileHandle.standardError.write(contentsOf: Data("\(output)\n".utf8))
+    },
+    setupIntegration: { homeDirectory, dryRun in
+      try SetupOwnershipManager().setup(homeDirectory: homeDirectory, dryRun: dryRun)
     }
   )
 
@@ -329,6 +333,7 @@ struct SetupCommandRunner: Sendable {
     return try apply(
       SetupPreparation(
         profile: profile,
+        homeDirectory: homeDirectory,
         installDependencies: installDependencies,
         dryRun: dryRun,
         capabilities: inspect(profile)
@@ -390,6 +395,21 @@ struct SetupCommandRunner: Sendable {
       }
     }
 
+    let integration: SetupIntegrationResult
+    do {
+      integration = try setupIntegration(preparation.homeDirectory, preparation.dryRun)
+    } catch {
+      let mutationAttempted = error is SetupOwnershipTransactionError
+      integration = SetupIntegrationResult(
+        id: SetupOwnershipManager.integrationID,
+        status: .failed,
+        target: preparation.homeDirectory.appending(path: ".config/kitty/kitty.conf").path,
+        message: String(describing: error),
+        mutationAttempted: mutationAttempted
+      )
+    }
+    mutationAttempted = mutationAttempted || integration.mutationAttempted
+
     let report = SetupReport.profile(
       preparation.profile.name,
       installDependencies: preparation.installDependencies,
@@ -398,7 +418,8 @@ struct SetupCommandRunner: Sendable {
       installPlan: installPlan,
       commandResults: commandResults,
       mutationAttempted: mutationAttempted,
-      installationFailure: failure
+      installationFailure: failure,
+      integration: integration
     )
     return (try report.render(json: json), report.succeeded)
   }
@@ -419,6 +440,7 @@ struct SetupCommandRunner: Sendable {
 
 private struct SetupPreparation {
   let profile: DependencyProfile
+  let homeDirectory: URL
   let installDependencies: Bool
   let dryRun: Bool
   let capabilities: [SetupCapability]
@@ -634,6 +656,7 @@ private enum SetupReport {
     case dependencyInstallationFailed = "dependency_installation_failed"
     case dependencyInstallationVerificationFailed =
       "dependency_installation_verification_failed"
+    case integrationFailed = "integration_failed"
     case missingRequiredCapabilities = "missing_required_capabilities"
     case ready
     case unknownProfile = "unknown_profile"
@@ -647,17 +670,19 @@ private enum SetupReport {
     installPlan: HomebrewInstallPlan,
     commandResults: [HomebrewCommandResult],
     mutationAttempted: Bool,
-    installationFailure: SetupInstallationFailure?
+    installationFailure: SetupInstallationFailure?,
+    integration: SetupIntegrationResult
   )
   case unknownProfile(String, installDependencies: Bool, dryRun: Bool)
 
   var succeeded: Bool {
     switch self {
     case .profile(
-      _, _, _, let capabilities, _, _, _, let installationFailure
+      _, _, _, let capabilities, _, _, _, let installationFailure, let integration
     ):
       return installationFailure == nil
         && !capabilities.contains { $0.required && $0.status == .missing }
+        && integration.succeeded
     case .unknownProfile:
       return false
     }
@@ -677,7 +702,8 @@ private enum SetupReport {
       let installPlan,
       let commandResults,
       let mutationAttempted,
-      let installationFailure
+      let installationFailure,
+      let integration
     ):
       var lines = ["Macarchy setup profile '\(name)'\(dryRun ? " (dry run)" : ""):"]
       for category in DependencyCapabilityCategory.allCases {
@@ -711,12 +737,17 @@ private enum SetupReport {
         lines.append("Homebrew installation commands completed and were verified.")
       }
 
+      lines.append("Integration:")
+      lines.append(
+        "- \(integration.id) [\(integration.status.rawValue)]: \(integration.message)"
+      )
+
       let summary = SetupSummary(capabilities: capabilities)
       lines.append(
         "Summary: \(summary.presentCount) present, \(summary.missingRequiredCount) missing "
           + "required, \(summary.missingOptionalCount) missing optional."
       )
-      lines.append(mutationAttempted ? "Homebrew mutation attempted." : "No changes made.")
+      lines.append(mutationAttempted ? "Setup mutation attempted." : "No changes made.")
       return lines.joined(separator: "\n")
     case .unknownProfile(let name, _, _):
       return [
@@ -737,12 +768,14 @@ private enum SetupReport {
       let installPlan,
       let commandResults,
       let mutationAttempted,
-      let installationFailure
+      let installationFailure,
+      let integration
     ):
       return SetupJSONReport(
         outcome: outcome(
           capabilities: capabilities,
-          installationFailure: installationFailure
+          installationFailure: installationFailure,
+          integration: integration
         ),
         profile: name,
         dryRun: dryRun,
@@ -754,7 +787,8 @@ private enum SetupReport {
           plan: installPlan,
           commands: commandResults,
           failure: installationFailure
-        )
+        ),
+        integration: integration
       )
     case .unknownProfile(let name, let installDependencies, let dryRun):
       return SetupJSONReport(
@@ -776,7 +810,8 @@ private enum SetupReport {
 
   private func outcome(
     capabilities: [SetupCapability],
-    installationFailure: SetupInstallationFailure?
+    installationFailure: SetupInstallationFailure?,
+    integration: SetupIntegrationResult
   ) -> Outcome {
     switch installationFailure?.kind {
     case .blockedPrerequisites:
@@ -786,8 +821,10 @@ private enum SetupReport {
     case .verificationFailed:
       return .dependencyInstallationVerificationFailed
     case nil:
-      return capabilities.contains { $0.required && $0.status == .missing }
-        ? .missingRequiredCapabilities : .ready
+      if capabilities.contains(where: { $0.required && $0.status == .missing }) {
+        return .missingRequiredCapabilities
+      }
+      return integration.succeeded ? .ready : .integrationFailed
     }
   }
 }
@@ -822,6 +859,7 @@ private struct SetupJSONReport: Encodable {
   var summary: SetupSummary? = nil
   var availableProfiles: [String]? = nil
   var dependencyInstallation: SetupInstallationReport
+  var integration: SetupIntegrationResult? = nil
   var error: String? = nil
 }
 
