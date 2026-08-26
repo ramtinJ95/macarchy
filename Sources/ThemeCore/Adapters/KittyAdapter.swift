@@ -228,13 +228,13 @@ struct KittyAdapter: Sendable {
   }
 }
 
-struct ProcessRequest: Equatable, Sendable {
-  let executableURL: URL
-  let arguments: [String]
-  let timeout: TimeInterval?
-  let environmentOverrides: [String: String]
+package struct ProcessRequest: Equatable, Sendable {
+  package let executableURL: URL
+  package let arguments: [String]
+  package let timeout: TimeInterval?
+  package let environmentOverrides: [String: String]
 
-  init(
+  package init(
     executableURL: URL,
     arguments: [String],
     timeout: TimeInterval? = nil,
@@ -247,15 +247,24 @@ struct ProcessRequest: Equatable, Sendable {
   }
 }
 
-struct ProcessResult: Equatable, Sendable {
-  let terminationStatus: Int32
-  let output: String
+package struct ProcessResult: Equatable, Sendable {
+  package let terminationStatus: Int32
+  package let output: String
+
+  package init(terminationStatus: Int32, output: String) {
+    self.terminationStatus = terminationStatus
+    self.output = output
+  }
 }
 
-struct ProcessRunner: Sendable {
-  let run: @Sendable (ProcessRequest) throws -> ProcessResult
+package struct ProcessRunner: Sendable {
+  package let run: @Sendable (ProcessRequest) throws -> ProcessResult
 
-  static let live = ProcessRunner { request in
+  package init(run: @escaping @Sendable (ProcessRequest) throws -> ProcessResult) {
+    self.run = run
+  }
+
+  package static let live = ProcessRunner { request in
     try Task.checkCancellation()
     let process = Process()
     let output = Pipe()

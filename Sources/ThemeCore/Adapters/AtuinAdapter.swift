@@ -25,8 +25,13 @@ struct AtuinAdapter: Sendable {
   static let outputPath = "generated/atuin.toml"
   static let rendererVersion = 1
   static let themeName = "macarchy-current"
-  static let liveExecutableURL = FileManager.default.homeDirectoryForCurrentUser
-    .appending(path: ".atuin/bin/atuin")
+  static var liveExecutableURL: URL {
+    preferredExternalOrHomebrewExecutableURL(
+      homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+      externalRelativePath: ".atuin/bin/atuin",
+      homebrewExecutableName: "atuin"
+    )
+  }
 
   let root: URL
   let configurationDirectoryURL: URL
