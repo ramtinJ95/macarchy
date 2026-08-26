@@ -269,29 +269,38 @@ struct SetupOwnershipTests {
     let home = fixture.home
     let preflightEntered = Mutex(false)
     let releasePreflight = DispatchSemaphore(value: 0)
-    let activation = Task.detached {
-      try ThemeActivator(root: stateRoot).activate(
-        package: package,
-        expectedActiveGenerationID: nil,
-        prepareWallpaperData: {
-          preflightEntered.withLock { $0 = true }
-          releasePreflight.wait()
-          return package.wallpaperData
-        }
-      )
+    let activationCompleted = Mutex(false)
+    let activationResult = Mutex<Result<GenerationManifest, any Error>?>(nil)
+    DispatchQueue.global().async {
+      let result = Result {
+        try ThemeActivator(root: stateRoot).activate(
+          package: package,
+          expectedActiveGenerationID: nil,
+          prepareWallpaperData: {
+            preflightEntered.withLock { $0 = true }
+            releasePreflight.wait()
+            return package.wallpaperData
+          }
+        )
+      }
+      activationResult.withLock { $0 = result }
+      activationCompleted.withLock { $0 = true }
     }
     for _ in 0..<100 where !preflightEntered.withLock({ $0 }) {
       try await Task.sleep(for: .milliseconds(5))
     }
     try #require(preflightEntered.withLock { $0 })
     let setupCompleted = Mutex(false)
-    let setup = Task.detached {
-      let result = try SetupOwnershipManager().setup(
-        homeDirectory: home,
-        dryRun: false
-      )
+    let setupResult = Mutex<Result<SetupIntegrationResult, any Error>?>(nil)
+    DispatchQueue.global().async {
+      let result = Result {
+        try SetupOwnershipManager().setup(
+          homeDirectory: home,
+          dryRun: false
+        )
+      }
+      setupResult.withLock { $0 = result }
       setupCompleted.withLock { $0 = true }
-      return result
     }
 
     try await Task.sleep(for: .milliseconds(25))
@@ -299,8 +308,12 @@ struct SetupOwnershipTests {
     #expect(try fixture.configuration() == "font_size 13\n")
     releasePreflight.signal()
 
-    _ = try await activation.value
-    #expect(try await setup.value.status == .owned)
+    for _ in 0..<1000
+    where !activationCompleted.withLock({ $0 }) || !setupCompleted.withLock({ $0 }) {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    _ = try #require(activationResult.withLock { $0 }).get()
+    #expect(try #require(setupResult.withLock { $0 }).get().status == .owned)
     #expect(try fixture.configuration().contains(fixture.includeDirective))
   }
 
