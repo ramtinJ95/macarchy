@@ -28,15 +28,428 @@ struct SetupOwnershipTests {
       withDestinationURL: externalKitty
     )
 
-    let result = try SetupOwnershipManager().setup(
+    let results = try SetupOwnershipManager().setup(
       homeDirectory: fixture.home,
       dryRun: false
     )
 
-    #expect(result.status == .external)
-    #expect(!result.mutationAttempted)
+    #expect(results.map(\.status) == Array(repeating: .external, count: 5))
+    #expect(!results.contains { $0.mutationAttempted })
     #expect(try fixture.configuration() == original)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+  }
+
+  @Test
+  func exactStowOwnedBatAndEzaSeamsRemainExternalAndUnclaimed() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    let dotfiles = fixture.root.appending(path: "dotfiles")
+    let bat = dotfiles.appending(path: "bat")
+    let batThemes = bat.appending(path: "themes")
+    try FileManager.default.createDirectory(at: batThemes, withIntermediateDirectories: true)
+    try Data("\(fixture.batDirective)\n".utf8).write(to: bat.appending(path: "config"))
+    try FileManager.default.createSymbolicLink(
+      at: batThemes.appending(path: BatAdapter.themeFileName),
+      withDestinationURL: fixture.batThemeDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: fixture.home.appending(path: ".config/bat"),
+      withDestinationURL: bat
+    )
+
+    let zsh = dotfiles.appending(path: "zshrc")
+    try Data("\(fixture.ezaDirective)\n".utf8).write(to: zsh)
+    try FileManager.default.createSymbolicLink(
+      at: fixture.shellConfiguration, withDestinationURL: zsh)
+    let eza = dotfiles.appending(path: "eza")
+    try FileManager.default.createDirectory(at: eza, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: eza.appending(path: "theme.yml"),
+      withDestinationURL: fixture.ezaThemeDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: fixture.home.appending(path: ".config/eza"),
+      withDestinationURL: eza
+    )
+
+    let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+
+    #expect(results.map(\.status) == Array(repeating: .external, count: 5))
+    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+    #expect(try fixture.batConfigurationText() == "\(fixture.batDirective)\n")
+    #expect(try fixture.shellConfigurationText() == "\(fixture.ezaDirective)\n")
+  }
+
+  @Test
+  func missingSelectorInStowOwnedBatConfigurationReportsTheExactSeam() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    let externalBat = fixture.root.appending(path: "dotfiles/bat")
+    try FileManager.default.createDirectory(at: externalBat, withIntermediateDirectories: true)
+    try Data("--italic-text=always\n".utf8).write(to: externalBat.appending(path: "config"))
+    try FileManager.default.createSymbolicLink(
+      at: fixture.home.appending(path: ".config/bat"),
+      withDestinationURL: externalBat
+    )
+
+    let execution = try setupRunner(ownershipManager: SetupOwnershipManager()).execute(
+      profileName: "personal",
+      homeDirectory: fixture.home,
+      installDependencies: false,
+      dryRun: false,
+      json: true
+    )
+    let report = try decode(SetupReport.self, execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report.outcome == "integration_failed")
+    #expect(report.integrations.map(\.id) == ["bat.selector"])
+    #expect(report.integrations.map(\.status) == ["failed"])
+    #expect(report.integrations.first?.target == fixture.batConfiguration.path)
+    #expect(report.integrations.first?.mutationAttempted == false)
+    #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
+    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+  }
+
+  @Test
+  func setupReportsEarlierMutationWhenALaterThemeLinkConflicts() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "--italic-text=always\n",
+      shell: "\(fixture.ezaDirective)\n"
+    )
+    try Data("user-owned theme\n".utf8).write(to: fixture.batThemeLink)
+
+    let execution = try setupRunner(ownershipManager: SetupOwnershipManager()).execute(
+      profileName: "personal",
+      homeDirectory: fixture.home,
+      installDependencies: false,
+      dryRun: false,
+      json: true
+    )
+    let report = try decode(SetupReport.self, execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report.outcome == "integration_failed")
+    #expect(report.mutationAttempted)
+    #expect(
+      report.integrations.map(\.id)
+        == ["kitty.include", "bat.selector", "bat.theme-link"]
+    )
+    #expect(report.integrations.map(\.status) == ["external", "owned", "failed"])
+    #expect(report.integrations.map(\.mutationAttempted) == [false, true, false])
+    #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
+    #expect(try String(contentsOf: fixture.batThemeLink, encoding: .utf8) == "user-owned theme\n")
+    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
+  }
+
+  @Test
+  func batAndEzaOwnedSeamsRoundTripTogether() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "--italic-text=always\n",
+      shell: "export EDITOR=nvim\n"
+    )
+    let cacheSentinel = fixture.home.appending(path: ".cache/bat/preserve")
+    try FileManager.default.createDirectory(
+      at: cacheSentinel.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data("cache".utf8).write(to: cacheSentinel)
+
+    let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
+    #expect(preview.map(\.status) == [.external, .planned, .planned, .planned, .planned])
+    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+
+    let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    let manifest = try decode(
+      OwnershipManifest.self,
+      String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
+    )
+
+    #expect(setup.map(\.status) == [.external, .owned, .owned, .owned, .owned])
+    #expect(manifest.schemaVersion == 1)
+    #expect(
+      manifest.records.map(\.id)
+        == ["bat.selector", "bat.theme-link", "eza.environment", "eza.theme-link"]
+    )
+    #expect(manifest.records.allSatisfy { $0.phase == "applied" })
+    #expect(
+      try fixture.batConfigurationText()
+        == "--italic-text=always\n\(fixture.batDirective)\n"
+    )
+    #expect(
+      try fixture.shellConfigurationText()
+        == "export EDITOR=nvim\n\(fixture.ezaDirective)\n"
+    )
+    #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
+    #expect(try fixture.linkDestination(fixture.ezaThemeLink) == fixture.ezaThemeDestination.path)
+    #expect(try fixture.permissions(at: fixture.batSelectorBackup) == 0o600)
+    #expect(try fixture.permissions(at: fixture.ezaEnvironmentBackup) == 0o600)
+
+    let teardown = try SetupOwnershipManager().teardown(
+      homeDirectory: fixture.home,
+      dryRun: false
+    )
+
+    #expect(teardown.map(\.status) == [.none, .removed, .removed, .removed, .removed])
+    #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
+    #expect(try fixture.shellConfigurationText() == "export EDITOR=nvim\n")
+    #expect(!FileManager.default.fileExists(atPath: fixture.batThemeLink.path))
+    #expect(!FileManager.default.fileExists(atPath: fixture.ezaThemeLink.path))
+    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+    #expect(!FileManager.default.fileExists(atPath: fixture.batSelectorBackup.path))
+    #expect(!FileManager.default.fileExists(atPath: fixture.ezaEnvironmentBackup.path))
+    #expect(try String(contentsOf: cacheSentinel, encoding: .utf8) == "cache")
+  }
+
+  @Test
+  func batAndEzaTransactionsResumeFileAndLinkBoundaries() throws {
+    for checkpoint in [
+      SetupOwnershipCheckpoint.manifestPrepared,
+      .backupWritten,
+      .replacementSwapped,
+      .targetWritten,
+    ] {
+      let fixture = try Fixture(configuration: "", externalBatEza: false)
+      defer { fixture.remove() }
+      try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+      try fixture.createLocalBatEzaConfigurations(
+        bat: "--italic-text=always\n",
+        shell: "\(fixture.ezaDirective)\n"
+      )
+      let interrupted = SetupOwnershipManager { observed in
+        if observed == checkpoint { throw FixtureError.interrupted }
+      }
+
+      #expect(throws: SetupOwnershipTransactionError.self) {
+        _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
+      }
+      let resumed = try SetupOwnershipManager().setup(
+        homeDirectory: fixture.home,
+        dryRun: false
+      )
+      #expect(resumed.map(\.status) == [.external, .owned, .owned, .external, .owned])
+      #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
+      #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
+      #expect(try fixture.linkDestination(fixture.ezaThemeLink) == fixture.ezaThemeDestination.path)
+    }
+
+    for checkpoint in [SetupOwnershipCheckpoint.manifestPrepared, .targetWritten] {
+      let fixture = try Fixture(configuration: "", externalBatEza: false)
+      defer { fixture.remove() }
+      try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+      try fixture.createLocalBatEzaConfigurations(
+        bat: "\(fixture.batDirective)\n",
+        shell: "\(fixture.ezaDirective)\n"
+      )
+      let interrupted = SetupOwnershipManager { observed in
+        if observed == checkpoint { throw FixtureError.interrupted }
+      }
+
+      #expect(throws: SetupOwnershipTransactionError.self) {
+        _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
+      }
+      let resumed = try SetupOwnershipManager().setup(
+        homeDirectory: fixture.home,
+        dryRun: false
+      )
+      #expect(resumed.map(\.status) == [.external, .external, .owned, .external, .owned])
+      #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
+    }
+
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "\(fixture.batDirective)\n",
+      shell: "\(fixture.ezaDirective)\n"
+    )
+    try FileManager.default.createSymbolicLink(
+      at: fixture.ezaThemeLink,
+      withDestinationURL: fixture.ezaThemeDestination
+    )
+    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
+
+    let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    #expect(resumed.map(\.status) == [.external, .external, .owned, .external, .external])
+    #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
+    #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
+
+    try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
+    let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
+    #expect(teardown.map(\.status) == [.none, .none, .removed, .none, .none])
+    #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
+  }
+
+  @Test
+  func themeLinkCreationNeverOverwritesAConcurrentPathClaim() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "\(fixture.batDirective)\n",
+      shell: "\(fixture.ezaDirective)\n"
+    )
+    let batThemeLink = fixture.batThemeLink
+    let manager = SetupOwnershipManager { checkpoint in
+      if checkpoint == .manifestPrepared {
+        try Data("concurrent owner\n".utf8).write(to: batThemeLink)
+      }
+    }
+
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      _ = try manager.setup(homeDirectory: fixture.home, dryRun: false)
+    }
+    #expect(
+      try String(contentsOf: fixture.batThemeLink, encoding: .utf8)
+        == "concurrent owner\n"
+    )
+    expectOwnershipError(.ownershipDrift(fixture.batThemeLink)) {
+      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    }
+    #expect(
+      try String(contentsOf: fixture.batThemeLink, encoding: .utf8)
+        == "concurrent owner\n"
+    )
+  }
+
+  @Test
+  func themeLinkTeardownNeverDeletesAConcurrentPathClaim() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "\(fixture.batDirective)\n",
+      shell: "\(fixture.ezaDirective)\n"
+    )
+    try FileManager.default.createSymbolicLink(
+      at: fixture.ezaThemeLink,
+      withDestinationURL: fixture.ezaThemeDestination
+    )
+    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    let batThemeLink = fixture.batThemeLink
+    let manager = SetupOwnershipManager { checkpoint in
+      if checkpoint == .teardownReady {
+        try FileManager.default.removeItem(at: batThemeLink)
+        try Data("concurrent owner\n".utf8).write(to: batThemeLink)
+      }
+    }
+
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      _ = try manager.teardown(homeDirectory: fixture.home, dryRun: false)
+    }
+    #expect(
+      try String(contentsOf: fixture.batThemeLink, encoding: .utf8)
+        == "concurrent owner\n"
+    )
+    #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
+    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
+  }
+
+  @Test
+  func teardownPreflightsEveryOwnedSeamBeforeChangingAnyOfThem() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "--italic-text=always\n",
+      shell: "export EDITOR=nvim\n"
+    )
+    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try Data("user edit\n\(fixture.batDirective)\n".utf8).write(
+      to: fixture.batConfiguration,
+      options: .atomic
+    )
+    let ezaBefore = try fixture.shellConfigurationText()
+
+    expectOwnershipError(.ownershipDrift(fixture.batConfiguration)) {
+      _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
+    }
+
+    #expect(try fixture.batConfigurationText() == "user edit\n\(fixture.batDirective)\n")
+    #expect(try fixture.shellConfigurationText() == ezaBefore)
+    #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
+    #expect(try fixture.linkDestination(fixture.ezaThemeLink) == fixture.ezaThemeDestination.path)
+    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
+  }
+
+  @Test
+  func teardownReportsAnEarlierRemovalWhenALaterMutationRaces() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "--italic-text=always\n",
+      shell: "export EDITOR=nvim\n"
+    )
+    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    let checkpoints = Mutex(0)
+    let shellConfiguration = fixture.shellConfiguration
+    let manager = SetupOwnershipManager { checkpoint in
+      guard checkpoint == .teardownReady else { return }
+      let shouldEdit = checkpoints.withLock { count in
+        count += 1
+        return count == 2
+      }
+      if shouldEdit {
+        try Data("concurrent shell edit\n".utf8).write(
+          to: shellConfiguration,
+          options: .atomic
+        )
+      }
+    }
+
+    let execution = try TeardownCommandRunner(ownershipManager: manager).execute(
+      homeDirectory: fixture.home,
+      dryRun: false,
+      json: true
+    )
+    let report = try decode(TeardownReport.self, execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report.integrations.map(\.id) == ["eza.environment", "eza.theme-link"])
+    #expect(report.integrations.map(\.status) == ["failed", "removed"])
+    #expect(report.integrations.allSatisfy { $0.mutationAttempted })
+    #expect(!FileManager.default.fileExists(atPath: fixture.ezaThemeLink.path))
+    #expect(try fixture.shellConfigurationText() == "concurrent shell edit\n")
+    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
+  }
+
+  @Test
+  func teardownRejectsAnOwnedThemeLinkBelowASwappedParentBeforeMutation() throws {
+    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    defer { fixture.remove() }
+    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
+    try fixture.createLocalBatEzaConfigurations(
+      bat: "--italic-text=always\n",
+      shell: "export EDITOR=nvim\n"
+    )
+    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    let ezaDirectory = fixture.ezaThemeLink.deletingLastPathComponent()
+    let movedEzaDirectory = fixture.root.appending(path: "eza-original")
+    try FileManager.default.moveItem(at: ezaDirectory, to: movedEzaDirectory)
+    try FileManager.default.createSymbolicLink(
+      at: ezaDirectory,
+      withDestinationURL: movedEzaDirectory
+    )
+    let batBefore = try fixture.batConfigurationText()
+
+    expectOwnershipError(.ownershipDrift(fixture.ezaThemeLink)) {
+      _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
+    }
+
+    #expect(try fixture.batConfigurationText() == batBefore)
+    #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
+    #expect(try fixture.linkDestination(fixture.ezaThemeLink) == fixture.ezaThemeDestination.path)
+    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
   @Test
@@ -55,10 +468,11 @@ struct SetupOwnershipTests {
     )
     try Data("preserve".utf8).write(to: sentinel)
 
-    let dryRun = try SetupOwnershipManager().setup(
-      homeDirectory: fixture.home,
-      dryRun: true
-    )
+    let dryRun = try #require(
+      SetupOwnershipManager().setup(
+        homeDirectory: fixture.home,
+        dryRun: true
+      ).first)
     #expect(dryRun.status == .planned)
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -71,15 +485,23 @@ struct SetupOwnershipTests {
       json: true
     )
     let setupReport = try decode(SetupReport.self, setup.output)
+    let setupJSON = try #require(
+      JSONSerialization.jsonObject(with: Data(setup.output.utf8)) as? [String: Any]
+    )
     let manifest = try decode(
       OwnershipManifest.self,
       String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
     )
 
     #expect(setup.succeeded)
+    #expect(setupJSON["integration"] == nil)
+    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 5)
     #expect(setupReport.outcome == "ready")
     #expect(setupReport.mutationAttempted)
-    #expect(setupReport.integration.status == "owned")
+    #expect(
+      setupReport.integrations.map(\.status)
+        == ["owned", "external", "external", "external", "external"]
+    )
     #expect(manifest.schemaVersion == 1)
     #expect(manifest.records.map(\.phase) == ["applied"])
     #expect(try fixture.configuration() == "font_size 13\n\(fixture.includeDirective)\n")
@@ -87,10 +509,11 @@ struct SetupOwnershipTests {
     #expect(try fixture.extendedAttribute(name: "io.github.macarchy.test") == "preserve")
     #expect(try fixture.permissions(at: fixture.backup) == 0o600)
 
-    let repeated = try SetupOwnershipManager().setup(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
+    let repeated = try #require(
+      SetupOwnershipManager().setup(
+        homeDirectory: fixture.home,
+        dryRun: false
+      ).first)
     #expect(repeated.status == .owned)
     #expect(!repeated.mutationAttempted)
 
@@ -98,16 +521,27 @@ struct SetupOwnershipTests {
       ownershipManager: SetupOwnershipManager()
     ).execute(homeDirectory: fixture.home, dryRun: true, json: true)
     let teardownPreview = try decode(TeardownReport.self, teardownDryRun.output)
-    #expect(teardownPreview.integration.status == "planned")
+    #expect(
+      teardownPreview.integrations.map(\.status)
+        == ["planned", "none", "none", "none", "none"]
+    )
     #expect(try fixture.configuration().contains(fixture.includeDirective))
 
     let teardown = try TeardownCommandRunner(
       ownershipManager: SetupOwnershipManager()
     ).execute(homeDirectory: fixture.home, dryRun: false, json: true)
     let teardownReport = try decode(TeardownReport.self, teardown.output)
+    let teardownJSON = try #require(
+      JSONSerialization.jsonObject(with: Data(teardown.output.utf8)) as? [String: Any]
+    )
 
     #expect(teardown.succeeded)
-    #expect(teardownReport.integration.status == "removed")
+    #expect(teardownJSON["integration"] == nil)
+    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 5)
+    #expect(
+      teardownReport.integrations.map(\.status)
+        == ["removed", "none", "none", "none", "none"]
+    )
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(try fixture.permissions() == 0o600)
     #expect(try fixture.extendedAttribute(name: "io.github.macarchy.test") == "preserve")
@@ -115,10 +549,11 @@ struct SetupOwnershipTests {
     #expect(!FileManager.default.fileExists(atPath: fixture.backup.path))
     #expect(try String(contentsOf: sentinel, encoding: .utf8) == "preserve")
 
-    let repeatedTeardown = try SetupOwnershipManager().teardown(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
+    let repeatedTeardown = try #require(
+      SetupOwnershipManager().teardown(
+        homeDirectory: fixture.home,
+        dryRun: false
+      ).first)
     #expect(repeatedTeardown.status == .none)
   }
 
@@ -146,10 +581,11 @@ struct SetupOwnershipTests {
       )
       #expect(prepared.records.map(\.phase) == ["prepared"])
 
-      let resumed = try SetupOwnershipManager().setup(
-        homeDirectory: fixture.home,
-        dryRun: false
-      )
+      let resumed = try #require(
+        SetupOwnershipManager().setup(
+          homeDirectory: fixture.home,
+          dryRun: false
+        ).first)
       let applied = try decode(
         OwnershipManifest.self,
         String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
@@ -161,11 +597,34 @@ struct SetupOwnershipTests {
       #expect(try fixture.configuration().contains(fixture.includeDirective))
       #expect(FileManager.default.fileExists(atPath: fixture.backup.path))
       #expect(
-        try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false).status
+        try #require(
+          SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false).first
+        ).status
           == .removed
       )
       #expect(try fixture.configuration() == "font_size 13\n")
     }
+  }
+
+  @Test
+  func setupPreservesReplacementResidueUntilTheBackupIsValidated() throws {
+    let fixture = try Fixture(configuration: "font_size 13\n")
+    defer { fixture.remove() }
+    let interrupted = SetupOwnershipManager { checkpoint in
+      if checkpoint == .replacementSwapped { throw FixtureError.interrupted }
+    }
+
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
+    }
+    let residue = try Data(contentsOf: fixture.replacement)
+    try FileManager.default.removeItem(at: fixture.backup)
+
+    expectOwnershipError(.corruptBackup(fixture.backup)) {
+      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    }
+    #expect(try Data(contentsOf: fixture.replacement) == residue)
+    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
   @Test
@@ -199,6 +658,29 @@ struct SetupOwnershipTests {
     }
     #expect(try boundaryFixture.configuration() == "font_size 15\n")
     #expect(!FileManager.default.fileExists(atPath: boundaryFixture.replacement.path))
+
+    let metadataFixture = try Fixture(configuration: "font_size 13\n")
+    defer { metadataFixture.remove() }
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: metadataFixture.kittyConfiguration.path
+    )
+    let metadataTarget = metadataFixture.kittyConfiguration
+    let metadataSetup = SetupOwnershipManager { checkpoint in
+      if checkpoint == .replacementReady {
+        try Data("font_size 13\n".utf8).write(to: metadataTarget, options: .atomic)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: 0o644],
+          ofItemAtPath: metadataTarget.path
+        )
+      }
+    }
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      _ = try metadataSetup.setup(homeDirectory: metadataFixture.home, dryRun: false)
+    }
+    #expect(try metadataFixture.configuration() == "font_size 13\n")
+    #expect(try metadataFixture.permissions() == 0o644)
+    #expect(!FileManager.default.fileExists(atPath: metadataFixture.replacement.path))
 
     let teardownFixture = try Fixture(configuration: "font_size 13\n")
     defer { teardownFixture.remove() }
@@ -291,7 +773,7 @@ struct SetupOwnershipTests {
     }
     try #require(preflightEntered.withLock { $0 })
     let setupCompleted = Mutex(false)
-    let setupResult = Mutex<Result<SetupIntegrationResult, any Error>?>(nil)
+    let setupResult = Mutex<Result<[SetupIntegrationResult], any Error>?>(nil)
     DispatchQueue.global().async {
       let result = Result {
         try SetupOwnershipManager().setup(
@@ -313,7 +795,7 @@ struct SetupOwnershipTests {
       try await Task.sleep(for: .milliseconds(5))
     }
     _ = try #require(activationResult.withLock { $0 }).get()
-    #expect(try #require(setupResult.withLock { $0 }).get().status == .owned)
+    #expect(try #require(setupResult.withLock { $0 }).get().first?.status == .owned)
     #expect(try fixture.configuration().contains(fixture.includeDirective))
   }
 
@@ -339,9 +821,9 @@ struct SetupOwnershipTests {
     ).execute(homeDirectory: fixture.home, dryRun: false, json: true)
     let report = try decode(TeardownReport.self, execution.output)
     #expect(!execution.succeeded)
-    #expect(report.integration.status == "failed")
-    #expect(report.integration.message == expected.description)
-    #expect(!report.integration.mutationAttempted)
+    #expect(report.integrations.map(\.status) == ["failed"])
+    #expect(report.integrations.first?.message == expected.description)
+    #expect(report.integrations.first?.mutationAttempted == false)
     #expect(try fixture.configuration() == "font_size 14\n\(fixture.includeDirective)\n")
     #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(FileManager.default.fileExists(atPath: fixture.backup.path))
@@ -374,6 +856,60 @@ struct SetupOwnershipTests {
   }
 
   @Test
+  func ownershipRejectsAnUnsupportedSchemaVersion() throws {
+    let fixture = try Fixture(configuration: "")
+    defer { fixture.remove() }
+    try FileManager.default.createDirectory(
+      at: fixture.manifest.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data(#"{"schema_version":99,"records":[]}"#.utf8).write(to: fixture.manifest)
+
+    expectOwnershipError(.invalidManifest("unsupported schema version 99")) {
+      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
+    }
+  }
+
+  @Test
+  func ownershipRejectsOutOfContractSchemaOneShapes() throws {
+    let fixture = try Fixture(configuration: "")
+    defer { fixture.remove() }
+    try FileManager.default.createDirectory(
+      at: fixture.manifest.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let prereleaseRecord = """
+      {
+        "schema_version": 1,
+        "records": [{
+          "id": "kitty.include",
+          "phase": "applied",
+          "target_path": "\(fixture.kittyConfiguration.path)",
+          "backup_path": "state/setup/backups/kitty.conf",
+          "original_digest": "original",
+          "installed_digest": "installed"
+        }]
+      }
+      """
+    let documents = [
+      #"{"schema_version":1,"records":[],"integration":{}}"#,
+      #"{"schema_version":1,"records":[{"id":"bat.theme-link","phase":"applied","kind":"symbolic_link","target_path":"target","installed_digest":"digest","link_destination":"destination","unknown_field":true}]}"#,
+      prereleaseRecord,
+    ]
+
+    for document in documents {
+      try Data(document.utf8).write(to: fixture.manifest, options: .atomic)
+      do {
+        _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
+        Issue.record("Expected strict schema-v1 rejection")
+      } catch SetupOwnershipError.invalidManifest {
+      } catch {
+        Issue.record("Expected invalid manifest, got \(error)")
+      }
+    }
+  }
+
+  @Test
   func teardownDryRunRejectsASymlinkedBackupBeforePromisingRestoration() throws {
     let fixture = try Fixture(configuration: "font_size 13\n")
     defer { fixture.remove() }
@@ -395,9 +931,9 @@ struct SetupOwnershipTests {
     ).execute(homeDirectory: fixture.home, dryRun: true, json: true)
     let report = try decode(TeardownReport.self, execution.output)
     #expect(!execution.succeeded)
-    #expect(report.integration.status == "failed")
-    #expect(report.integration.message == expected.description)
-    #expect(!report.integration.mutationAttempted)
+    #expect(report.integrations.map(\.status) == ["failed"])
+    #expect(report.integrations.first?.message == expected.description)
+    #expect(report.integrations.first?.mutationAttempted == false)
     #expect(try fixture.configuration().contains(fixture.includeDirective))
     #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
@@ -496,9 +1032,9 @@ struct SetupOwnershipTests {
     let report = try decode(SetupReport.self, execution.output)
     #expect(!execution.succeeded)
     #expect(report.outcome == "integration_failed")
-    #expect(report.integration.status == "failed")
-    #expect(report.integration.message == expected.description)
-    #expect(!report.integration.mutationAttempted)
+    #expect(report.integrations.map(\.status) == ["failed"])
+    #expect(report.integrations.first?.message == expected.description)
+    #expect(report.integrations.first?.mutationAttempted == false)
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
@@ -527,7 +1063,7 @@ struct SetupOwnershipTests {
         return ProcessResult(terminationStatus: 1, output: "unexpected")
       },
       writePreMutationPlan: { _ in Issue.record("No Homebrew plan is expected") },
-      setupIntegration: { homeDirectory, dryRun in
+      setupIntegrations: { homeDirectory, dryRun in
         try ownershipManager.setup(homeDirectory: homeDirectory, dryRun: dryRun)
       }
     )
@@ -562,7 +1098,7 @@ private final class Fixture {
   let root: URL
   let home: URL
 
-  init(configuration: String? = nil) throws {
+  init(configuration: String? = nil, externalBatEza: Bool = true) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-ownership-\(UUID().uuidString)",
       directoryHint: .isDirectory
@@ -574,6 +1110,9 @@ private final class Fixture {
         withIntermediateDirectories: true
       )
       try Data(configuration.utf8).write(to: kittyConfiguration)
+    }
+    if externalBatEza {
+      try createExternalBatEzaSeams()
     }
   }
 
@@ -597,9 +1136,112 @@ private final class Fixture {
     stateRoot.appending(path: "state/setup/backups/kitty.conf")
   }
 
+  var batSelectorBackup: URL {
+    stateRoot.appending(path: "state/setup/backups/bat-config")
+  }
+
+  var ezaEnvironmentBackup: URL {
+    stateRoot.appending(path: "state/setup/backups/zshrc")
+  }
+
   var replacement: URL {
     kittyConfiguration.deletingLastPathComponent()
       .appending(path: ".macarchy-kitty-transaction")
+  }
+
+  var batConfiguration: URL {
+    home.appending(path: ".config/bat/config")
+  }
+
+  var batThemeLink: URL {
+    home.appending(path: ".config/bat/themes/\(BatAdapter.themeFileName)")
+  }
+
+  var batThemeDestination: URL {
+    stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+  }
+
+  var batThemeRemoval: URL {
+    batThemeLink.deletingLastPathComponent()
+      .appending(path: ".macarchy-bat-theme-link-removal")
+  }
+
+  var shellConfiguration: URL {
+    home.appending(path: ".zshrc")
+  }
+
+  var ezaThemeLink: URL {
+    home.appending(path: ".config/eza/theme.yml")
+  }
+
+  var ezaThemeDestination: URL {
+    stateRoot.appending(path: "current/\(EzaAdapter.outputPath)")
+  }
+
+  var batDirective: String {
+    BatAdapter.themeDirective
+  }
+
+  var ezaDirective: String {
+    EzaAdapter.environmentDirective(
+      configurationDirectoryURL: ezaThemeLink.deletingLastPathComponent()
+    )
+  }
+
+  func writeKittyConfiguration(_ configuration: String) throws {
+    try FileManager.default.createDirectory(
+      at: kittyConfiguration.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data(configuration.utf8).write(to: kittyConfiguration, options: .atomic)
+  }
+
+  func createLocalBatEzaConfigurations(bat: String, shell: String) throws {
+    try FileManager.default.createDirectory(
+      at: batThemeLink.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data(bat.utf8).write(to: batConfiguration)
+    try Data(shell.utf8).write(to: shellConfiguration)
+    try FileManager.default.createDirectory(
+      at: ezaThemeLink.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+  }
+
+  func batConfigurationText() throws -> String {
+    try String(contentsOf: batConfiguration, encoding: .utf8)
+  }
+
+  func shellConfigurationText() throws -> String {
+    try String(contentsOf: shellConfiguration, encoding: .utf8)
+  }
+
+  func linkDestination(_ url: URL) throws -> String {
+    try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
+  }
+
+  private func createExternalBatEzaSeams() throws {
+    let batDirectory = home.appending(path: ".config/bat")
+    let batThemes = batDirectory.appending(path: "themes")
+    try FileManager.default.createDirectory(at: batThemes, withIntermediateDirectories: true)
+    try Data("\(batDirective)\n".utf8).write(
+      to: batDirectory.appending(path: "config")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: batThemes.appending(path: BatAdapter.themeFileName),
+      withDestinationURL: batThemeDestination
+    )
+
+    try Data("\(ezaDirective)\n".utf8).write(
+      to: home.appending(path: ".zshrc")
+    )
+    let ezaDirectory = home.appending(path: ".config/eza")
+    try FileManager.default.createDirectory(at: ezaDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: ezaDirectory.appending(path: "theme.yml"),
+      withDestinationURL: ezaThemeDestination
+    )
   }
 
   func configuration() throws -> String {
@@ -656,15 +1298,17 @@ private final class Fixture {
 private struct SetupReport: Decodable {
   let outcome: String
   let mutationAttempted: Bool
-  let integration: IntegrationReport
+  let integrations: [IntegrationReport]
 }
 
 private struct TeardownReport: Decodable {
-  let integration: IntegrationReport
+  let integrations: [IntegrationReport]
 }
 
 private struct IntegrationReport: Decodable {
+  let id: String
   let status: String
+  let target: String
   let message: String
   let mutationAttempted: Bool
 }
@@ -675,5 +1319,6 @@ private struct OwnershipManifest: Decodable {
 }
 
 private struct OwnershipRecord: Decodable {
+  let id: String
   let phase: String
 }
