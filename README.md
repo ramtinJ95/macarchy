@@ -71,13 +71,17 @@ commands exit nonzero for required or diagnostic failures and support `--json`.
 supported platform and hard runtime, retained desktop substrate, required
 enabled adapters, and optional adapters. Missing required capabilities produce
 a nonzero exit; missing optional capabilities remain visible but non-fatal.
-Setup also verifies Kitty's exact bridge include. A correct pre-existing include
-remains external and unclaimed. If the include is missing from an ordinary
-local Kitty configuration, setup backs up the file, records schema-versioned
-ownership under Macarchy state, and adds the directive atomically. It does not
-write through a Stow- or otherwise
-symlink-owned configuration. `teardown` restores only that recorded change and
-refuses to overwrite later drift; generated theme state is preserved.
+Setup also verifies Kitty's exact bridge include and the invocation-bound bat
+and eza seams. Correct pre-existing directives and canonical links remain
+external and unclaimed. For eligible ordinary local files, setup backs up the
+configuration before atomically adding bat's selector or eza's environment
+directive; missing theme links are created only below pinned non-symlink
+directories. Every owned change is recorded in one schema-v1 manifest. Setup
+does not write through a Stow- or otherwise symlink-owned configuration.
+`teardown` preflights every record, then reverses only owned changes in safe
+reverse order. It refuses later drift and preserves generated theme and bat
+cache state. JSON setup and teardown reports expose these seams through the
+`integrations` array.
 
 `--dry-run` keeps dependency and integration inspection non-mutating.
 `--install-dependencies` installs only missing Homebrew formulae and casks after
