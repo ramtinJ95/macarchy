@@ -7,7 +7,7 @@ struct Macarchy: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "macarchy",
     abstract: "A cohesive, theme-driven macOS environment.",
-    subcommands: [Theme.self, Reconcile.self, Doctor.self, Version.self]
+    subcommands: [Theme.self, Reconcile.self, Doctor.self, Setup.self, Version.self]
   )
 
   @Flag(name: .customLong("version"), help: "Show version and exit.")
@@ -184,6 +184,38 @@ struct Macarchy: AsyncParsableCommand {
       let execution = try DoctorCommandRunner.live.execute(
         stateRoot: state.stateRootURL,
         consumerPaths: state.consumerPaths,
+        json: json
+      )
+      print(execution.output)
+      if !execution.succeeded {
+        throw ExitCode.failure
+      }
+    }
+  }
+
+  struct Setup: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Inspect the selected dependency profile."
+    )
+
+    @Option(help: "Dependency profile to inspect.")
+    var profile = "personal"
+
+    @Flag(help: "Install missing Homebrew dependencies for the selected profile.")
+    var installDependencies = false
+
+    @Flag(help: "Describe setup readiness without making changes.")
+    var dryRun = false
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    mutating func run() throws {
+      let execution = try SetupCommandRunner.live.execute(
+        profileName: profile,
+        homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+        installDependencies: installDependencies,
+        dryRun: dryRun,
         json: json
       )
       print(execution.output)
@@ -1250,7 +1282,7 @@ private func inspectionFindingStatus(_ inspection: AdapterInspection) -> DoctorF
   return inspection.requirement == .required ? .failure : .warning
 }
 
-private func renderJSON<Value: Encodable>(_ value: Value) throws -> String {
+func renderJSON<Value: Encodable>(_ value: Value) throws -> String {
   let encoder = JSONEncoder()
   encoder.keyEncodingStrategy = .convertToSnakeCase
   encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

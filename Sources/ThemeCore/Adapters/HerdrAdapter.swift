@@ -34,8 +34,13 @@ struct HerdrAdapter: Sendable {
   static let id = "herdr"
   static let outputPath = "generated/herdr.txt"
   static let rendererVersion = 1
-  static let liveExecutableURL = FileManager.default.homeDirectoryForCurrentUser
-    .appending(path: ".local/bin/herdr")
+  static var liveExecutableURL: URL {
+    preferredExternalOrHomebrewExecutableURL(
+      homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+      externalRelativePath: ".local/bin/herdr",
+      homebrewExecutableName: "herdr"
+    )
+  }
 
   private static let supportedThemes = Set([
     "catppuccin", "tokyo-night", "kanagawa",
