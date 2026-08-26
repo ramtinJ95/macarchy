@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 
 package enum AdapterInspectionStatus: String, Sendable {
@@ -64,12 +65,37 @@ struct AdapterReconciliation: Sendable {
   let run: @Sendable () async throws -> AdapterOutcome
 }
 
+final class BlockingTaskExecutor: TaskExecutor {
+  private let queue: DispatchQueue
+
+  init(label: String) {
+    queue = DispatchQueue(
+      label: label,
+      qos: .utility,
+      attributes: .concurrent
+    )
+  }
+
+  func enqueue(_ job: consuming ExecutorJob) {
+    let job = UnownedJob(job)
+    let executor = asUnownedTaskExecutor()
+    queue.async {
+      job.runSynchronously(on: executor)
+    }
+  }
+}
+
 enum ReconciliationCheckpoint: Sendable {
   case adaptersCompleted
   case statusPersisted
 }
 
 struct ThemeReconciler: Sendable {
+  // Adapters call synchronous process and framework APIs; do not block Swift's cooperative pool.
+  private static let adapterExecutor = BlockingTaskExecutor(
+    label: "io.github.ramtinj95.macarchy.reconciliation"
+  )
+
   let statusStore: ReconciliationStatusStore
   var faultInjector: @Sendable (ReconciliationCheckpoint) throws -> Void = { _ in }
 
@@ -83,7 +109,7 @@ struct ThemeReconciler: Sendable {
     }
     let results = try await withThrowingTaskGroup(of: AdapterResult.self) { group in
       for adapter in adapters {
-        group.addTask {
+        group.addTask(executorPreference: Self.adapterExecutor) {
           do {
             try Task.checkCancellation()
             let outcome = try await adapter.run()

@@ -30,6 +30,10 @@ package enum AdapterSelectionError: Error, CustomStringConvertible, Equatable, S
 }
 
 package struct ThemeActivationCoordinator: Sendable {
+  private static let activationExecutor = BlockingTaskExecutor(
+    label: "io.github.ramtinj95.macarchy.activation"
+  )
+
   package static let adapterRequirements = [
     AtuinAdapter.id: AdapterRequirement.required,
     BatAdapter.id: AdapterRequirement.required,
@@ -362,31 +366,33 @@ package struct ThemeActivationCoordinator: Sendable {
     package: ThemePackage,
     expectedActiveGenerationID: String? = nil
   ) async throws -> ThemeActivationResult {
-    try Task.checkCancellation()
-    let wallpaperData = try prepare(package: package)
-    try Task.checkCancellation()
-    let manifest = try activator.activate(
-      package: package,
-      expectedActiveGenerationID: expectedActiveGenerationID,
-      wallpaperData: wallpaperData
-    )
+    try await withTaskExecutorPreference(Self.activationExecutor) {
+      try Task.checkCancellation()
+      let wallpaperData = try prepare(package: package)
+      try Task.checkCancellation()
+      let manifest = try activator.activate(
+        package: package,
+        expectedActiveGenerationID: expectedActiveGenerationID,
+        wallpaperData: wallpaperData
+      )
 
-    do {
-      let reconciliation = try await reconciler.reconcile(
-        manifest: manifest,
-        adapters: configuredAdapters(
-          desiredAppearance: package.appearance,
-          desiredWallpaperURL: nil
-        ).map {
-          $0.reconciliation()
-        }
-      )
-      return ThemeActivationResult(manifest: manifest, reconciliation: reconciliation)
-    } catch {
-      throw ThemeCommittedWithReconciliationError(
-        manifest: manifest,
-        cause: String(describing: error)
-      )
+      do {
+        let reconciliation = try await reconciler.reconcile(
+          manifest: manifest,
+          adapters: configuredAdapters(
+            desiredAppearance: package.appearance,
+            desiredWallpaperURL: nil
+          ).map {
+            $0.reconciliation()
+          }
+        )
+        return ThemeActivationResult(manifest: manifest, reconciliation: reconciliation)
+      } catch {
+        throw ThemeCommittedWithReconciliationError(
+          manifest: manifest,
+          cause: String(describing: error)
+        )
+      }
     }
   }
 
