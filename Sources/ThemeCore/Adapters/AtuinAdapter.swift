@@ -20,11 +20,13 @@ enum AtuinAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct AtuinAdapter: Sendable {
+package struct AtuinAdapter: Sendable {
   static let id = "atuin"
-  static let outputPath = "generated/atuin.toml"
+  package static let outputPath = "generated/atuin.toml"
   static let rendererVersion = 1
-  static let themeName = "macarchy-current"
+  package static let themeName = "macarchy-current"
+  package static let selectionTable = "theme"
+  package static let selectionKey = "name"
   static var liveExecutableURL: URL {
     preferredExternalOrHomebrewExecutableURL(
       homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
@@ -157,24 +159,12 @@ struct AtuinAdapter: Sendable {
   }
 
   private static func selectsTheme(in configuration: String) -> Bool {
-    var inTheme = false
-    var selections = [String]()
-    for rawLine in configuration.split(separator: "\n") {
-      let line =
-        rawLine.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
-          in: .whitespaces) ?? ""
-      if line.hasPrefix("[") {
-        inTheme = line == "[theme]"
-      } else if inTheme {
-        let parts = line.split(separator: "=", maxSplits: 1).map {
-          $0.trimmingCharacters(in: .whitespaces)
-        }
-        if parts.first == "name" {
-          selections.append(parts.count == 2 ? parts[1] : "")
-        }
-      }
-    }
-    return selections == ["\"\(themeName)\""]
+    let selection = CanonicalTOMLSelector(
+      configuration: configuration,
+      table: selectionTable,
+      key: selectionKey
+    )
+    return selection.tableHeaderCount == 1 && selection.values == ["\"\(themeName)\""]
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

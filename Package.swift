@@ -44,6 +44,7 @@ let package = Package(
       dependencies: [
         "ThemeCore",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "TOMLDecoder", package: "TOMLDecoder"),
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),

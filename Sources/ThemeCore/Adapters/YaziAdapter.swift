@@ -20,12 +20,14 @@ enum YaziAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct YaziAdapter: Sendable {
+package struct YaziAdapter: Sendable {
   static let id = "yazi"
-  static let flavorOutputPath = "generated/yazi-flavor.toml"
-  static let syntaxOutputPath = "generated/yazi.tmTheme"
+  package static let flavorOutputPath = "generated/yazi-flavor.toml"
+  package static let syntaxOutputPath = "generated/yazi.tmTheme"
   static let rendererVersion = 1
-  static let flavorName = "macarchy-current"
+  package static let flavorName = "macarchy-current"
+  package static let selectionTable = "flavor"
+  package static let selectionKey = "dark"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/yazi")
   static let liveControlURL = URL(filePath: "/opt/homebrew/bin/ya")
 
@@ -258,24 +260,12 @@ struct YaziAdapter: Sendable {
   }
 
   private static func selectsFlavor(in configuration: String) -> Bool {
-    var inFlavor = false
-    var selections = [String]()
-    for rawLine in configuration.split(separator: "\n") {
-      let line =
-        rawLine.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
-          in: .whitespaces) ?? ""
-      if line.hasPrefix("[") {
-        inFlavor = line == "[flavor]"
-      } else if inFlavor {
-        let parts = line.split(separator: "=", maxSplits: 1).map {
-          $0.trimmingCharacters(in: .whitespaces)
-        }
-        if parts.first == "dark" {
-          selections.append(parts.count == 2 ? parts[1] : "")
-        }
-      }
-    }
-    return selections == ["\"\(flavorName)\""]
+    let selection = CanonicalTOMLSelector(
+      configuration: configuration,
+      table: selectionTable,
+      key: selectionKey
+    )
+    return selection.tableHeaderCount == 1 && selection.values == ["\"\(flavorName)\""]
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

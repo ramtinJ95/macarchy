@@ -20,11 +20,13 @@ enum BtopAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct BtopAdapter: Sendable {
+package struct BtopAdapter: Sendable {
   static let id = "btop"
-  static let outputPath = "generated/btop.theme"
+  package static let outputPath = "generated/btop.theme"
   static let rendererVersion = 1
-  static let themeName = "macarchy-current"
+  package static let themeName = "macarchy-current"
+  package static let themeDirective = "color_theme = \"\(themeName)\""
+  package static let themeFileName = "\(themeName).theme"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/btop")
 
   private static let killallURL = URL(filePath: "/usr/bin/killall")
@@ -41,7 +43,7 @@ struct BtopAdapter: Sendable {
 
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
-      url: configurationDirectoryURL.appending(path: "themes/\(Self.themeName).theme"),
+      url: configurationDirectoryURL.appending(path: "themes/\(Self.themeFileName)"),
       destination: root.appending(path: "current/\(Self.outputPath)")
     )
   }
@@ -52,10 +54,10 @@ struct BtopAdapter: Sendable {
     }
     try themeLink.validate()
 
-    let lines = try readConfiguration().split(separator: "\n")
+    let lines = try readConfiguration().split(whereSeparator: \.isNewline)
     let selections = lines.compactMap { line -> String? in
       let content = line.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
-        in: .whitespaces)
+        in: .whitespacesAndNewlines)
       guard let content else { return nil }
       let parts = content.split(separator: "=", maxSplits: 1).map {
         $0.trimmingCharacters(in: .whitespaces)

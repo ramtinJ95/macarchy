@@ -33,7 +33,7 @@ struct SetupOwnershipTests {
       dryRun: false
     )
 
-    #expect(results.map(\.status) == Array(repeating: .external, count: 5))
+    #expect(results.map(\.status) == Array(repeating: .external, count: 12))
     #expect(!results.contains { $0.mutationAttempted })
     #expect(try fixture.configuration() == original)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -75,7 +75,7 @@ struct SetupOwnershipTests {
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(results.map(\.status) == Array(repeating: .external, count: 5))
+    #expect(results.map(\.status) == Array(repeating: .external, count: 12))
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(try fixture.batConfigurationText() == "\(fixture.batDirective)\n")
     #expect(try fixture.shellConfigurationText() == "\(fixture.ezaDirective)\n")
@@ -164,7 +164,11 @@ struct SetupOwnershipTests {
     try Data("cache".utf8).write(to: cacheSentinel)
 
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
-    #expect(preview.map(\.status) == [.external, .planned, .planned, .planned, .planned])
+    #expect(
+      preview.map(\.status)
+        == [.external, .planned, .planned, .planned, .planned]
+        + Array(repeating: .external, count: 7)
+    )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
@@ -173,7 +177,11 @@ struct SetupOwnershipTests {
       String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
     )
 
-    #expect(setup.map(\.status) == [.external, .owned, .owned, .owned, .owned])
+    #expect(
+      setup.map(\.status)
+        == [.external, .owned, .owned, .owned, .owned]
+        + Array(repeating: .external, count: 7)
+    )
     #expect(manifest.schemaVersion == 1)
     #expect(
       manifest.records.map(\.id)
@@ -198,7 +206,11 @@ struct SetupOwnershipTests {
       dryRun: false
     )
 
-    #expect(teardown.map(\.status) == [.none, .removed, .removed, .removed, .removed])
+    #expect(
+      teardown.map(\.status)
+        == [.none, .removed, .removed, .removed, .removed]
+        + Array(repeating: .none, count: 7)
+    )
     #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
     #expect(try fixture.shellConfigurationText() == "export EDITOR=nvim\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeLink.path))
@@ -235,7 +247,11 @@ struct SetupOwnershipTests {
         homeDirectory: fixture.home,
         dryRun: false
       )
-      #expect(resumed.map(\.status) == [.external, .owned, .owned, .external, .owned])
+      #expect(
+        resumed.map(\.status)
+          == [.external, .owned, .owned, .external, .owned]
+          + Array(repeating: .external, count: 7)
+      )
       #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
       #expect(try fixture.linkDestination(fixture.ezaThemeLink) == fixture.ezaThemeDestination.path)
@@ -260,7 +276,11 @@ struct SetupOwnershipTests {
         homeDirectory: fixture.home,
         dryRun: false
       )
-      #expect(resumed.map(\.status) == [.external, .external, .owned, .external, .owned])
+      #expect(
+        resumed.map(\.status)
+          == [.external, .external, .owned, .external, .owned]
+          + Array(repeating: .external, count: 7)
+      )
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     }
 
@@ -279,13 +299,20 @@ struct SetupOwnershipTests {
     try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
 
     let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    #expect(resumed.map(\.status) == [.external, .external, .owned, .external, .external])
+    #expect(
+      resumed.map(\.status)
+        == [.external, .external, .owned, .external, .external]
+        + Array(repeating: .external, count: 7)
+    )
     #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
 
     try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
     let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
-    #expect(teardown.map(\.status) == [.none, .none, .removed, .none, .none])
+    #expect(
+      teardown.map(\.status)
+        == [.none, .none, .removed, .none, .none] + Array(repeating: .none, count: 7)
+    )
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
   }
 
@@ -415,9 +442,28 @@ struct SetupOwnershipTests {
     let report = try decode(TeardownReport.self, execution.output)
 
     #expect(!execution.succeeded)
-    #expect(report.integrations.map(\.id) == ["eza.environment", "eza.theme-link"])
-    #expect(report.integrations.map(\.status) == ["failed", "removed"])
-    #expect(report.integrations.allSatisfy { $0.mutationAttempted })
+    #expect(
+      report.integrations.map(\.id)
+        == [
+          "eza.environment",
+          "eza.theme-link",
+          "btop.selector",
+          "btop.theme-link",
+          "yazi.selector",
+          "yazi.flavor-link",
+          "yazi.syntax-link",
+          "atuin.selector",
+          "atuin.theme-link",
+        ]
+    )
+    #expect(
+      report.integrations.map(\.status)
+        == ["failed", "removed"] + Array(repeating: "none", count: 7)
+    )
+    #expect(
+      report.integrations.map(\.mutationAttempted)
+        == [true, true] + Array(repeating: false, count: 7)
+    )
     #expect(!FileManager.default.fileExists(atPath: fixture.ezaThemeLink.path))
     #expect(try fixture.shellConfigurationText() == "concurrent shell edit\n")
     #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -495,12 +541,12 @@ struct SetupOwnershipTests {
 
     #expect(setup.succeeded)
     #expect(setupJSON["integration"] == nil)
-    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 5)
+    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 12)
     #expect(setupReport.outcome == "ready")
     #expect(setupReport.mutationAttempted)
     #expect(
       setupReport.integrations.map(\.status)
-        == ["owned", "external", "external", "external", "external"]
+        == ["owned"] + Array(repeating: "external", count: 11)
     )
     #expect(manifest.schemaVersion == 1)
     #expect(manifest.records.map(\.phase) == ["applied"])
@@ -523,7 +569,7 @@ struct SetupOwnershipTests {
     let teardownPreview = try decode(TeardownReport.self, teardownDryRun.output)
     #expect(
       teardownPreview.integrations.map(\.status)
-        == ["planned", "none", "none", "none", "none"]
+        == ["planned"] + Array(repeating: "none", count: 11)
     )
     #expect(try fixture.configuration().contains(fixture.includeDirective))
 
@@ -537,10 +583,10 @@ struct SetupOwnershipTests {
 
     #expect(teardown.succeeded)
     #expect(teardownJSON["integration"] == nil)
-    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 5)
+    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 12)
     #expect(
       teardownReport.integrations.map(\.status)
-        == ["removed", "none", "none", "none", "none"]
+        == ["removed"] + Array(repeating: "none", count: 11)
     )
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(try fixture.permissions() == 0o600)
@@ -1090,15 +1136,19 @@ struct SetupOwnershipTests {
   }
 }
 
-private enum FixtureError: Error {
+enum FixtureError: Error {
   case interrupted
 }
 
-private final class Fixture {
+final class Fixture {
   let root: URL
   let home: URL
 
-  init(configuration: String? = nil, externalBatEza: Bool = true) throws {
+  init(
+    configuration: String? = nil,
+    externalBatEza: Bool = true,
+    externalBtopYaziAtuin: Bool = true
+  ) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-ownership-\(UUID().uuidString)",
       directoryHint: .isDirectory
@@ -1113,6 +1163,9 @@ private final class Fixture {
     }
     if externalBatEza {
       try createExternalBatEzaSeams()
+    }
+    if externalBtopYaziAtuin {
+      try createExternalBtopYaziAtuinSeams()
     }
   }
 
@@ -1188,6 +1241,60 @@ private final class Fixture {
     )
   }
 
+  var btopConfiguration: URL {
+    home.appending(path: ".config/btop/btop.conf")
+  }
+
+  var btopThemeLink: URL {
+    home.appending(path: ".config/btop/themes/\(BtopAdapter.themeFileName)")
+  }
+
+  var btopThemeDestination: URL {
+    stateRoot.appending(path: "current/\(BtopAdapter.outputPath)")
+  }
+
+  var yaziConfiguration: URL {
+    home.appending(path: ".config/yazi/theme.toml")
+  }
+
+  var yaziFlavorLink: URL {
+    home.appending(
+      path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/flavor.toml")
+  }
+
+  var yaziFlavorDestination: URL {
+    stateRoot.appending(path: "current/\(YaziAdapter.flavorOutputPath)")
+  }
+
+  var yaziSyntaxLink: URL {
+    home.appending(
+      path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/tmtheme.xml")
+  }
+
+  var yaziSyntaxDestination: URL {
+    stateRoot.appending(path: "current/\(YaziAdapter.syntaxOutputPath)")
+  }
+
+  var atuinConfiguration: URL {
+    home.appending(path: ".config/atuin/config.toml")
+  }
+
+  var atuinThemeLink: URL {
+    home.appending(path: ".config/atuin/themes/\(AtuinAdapter.themeName).toml")
+  }
+
+  var atuinThemeDestination: URL {
+    stateRoot.appending(path: "current/\(AtuinAdapter.outputPath)")
+  }
+
+  var yaziSelectorBackup: URL {
+    stateRoot.appending(path: "state/setup/backups/yazi-theme.toml")
+  }
+
+  var atuinSelectorBackup: URL {
+    stateRoot.appending(path: "state/setup/backups/atuin-config.toml")
+  }
+
   func writeKittyConfiguration(_ configuration: String) throws {
     try FileManager.default.createDirectory(
       at: kittyConfiguration.deletingLastPathComponent(),
@@ -1206,6 +1313,47 @@ private final class Fixture {
     try FileManager.default.createDirectory(
       at: ezaThemeLink.deletingLastPathComponent(),
       withIntermediateDirectories: true
+    )
+  }
+
+  func createLocalBtopYaziAtuinConfigurations(
+    btop: String,
+    yazi: String,
+    atuin: String
+  ) throws {
+    try FileManager.default.createDirectory(
+      at: btopThemeLink.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data(btop.utf8).write(to: btopConfiguration)
+    try FileManager.default.createDirectory(
+      at: yaziFlavorLink.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data(yazi.utf8).write(to: yaziConfiguration)
+    try FileManager.default.createDirectory(
+      at: atuinThemeLink.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data(atuin.utf8).write(to: atuinConfiguration)
+  }
+
+  func createBtopYaziAtuinThemeLinks() throws {
+    try FileManager.default.createSymbolicLink(
+      at: btopThemeLink,
+      withDestinationURL: btopThemeDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziFlavorLink,
+      withDestinationURL: yaziFlavorDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziSyntaxLink,
+      withDestinationURL: yaziSyntaxDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: atuinThemeLink,
+      withDestinationURL: atuinThemeDestination
     )
   }
 
@@ -1241,6 +1389,78 @@ private final class Fixture {
     try FileManager.default.createSymbolicLink(
       at: ezaDirectory.appending(path: "theme.yml"),
       withDestinationURL: ezaThemeDestination
+    )
+  }
+
+  private func createExternalBtopYaziAtuinSeams() throws {
+    let dotfiles = root.appending(path: "dotfiles")
+    let configurationRoot = home.appending(path: ".config")
+    try FileManager.default.createDirectory(
+      at: configurationRoot,
+      withIntermediateDirectories: true
+    )
+
+    let btop = dotfiles.appending(path: "btop")
+    let btopThemes = btop.appending(path: "themes")
+    try FileManager.default.createDirectory(at: btopThemes, withIntermediateDirectories: true)
+    try Data("\(BtopAdapter.themeDirective)\n".utf8).write(
+      to: btop.appending(path: "btop.conf")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: btopThemes.appending(path: BtopAdapter.themeFileName),
+      withDestinationURL: btopThemeDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: configurationRoot.appending(path: "btop"),
+      withDestinationURL: btop
+    )
+
+    let yazi = dotfiles.appending(path: "yazi")
+    let yaziFlavorDirectory = yazi.appending(
+      path: "flavors/\(YaziAdapter.flavorName).yazi")
+    try FileManager.default.createDirectory(
+      at: yaziFlavorDirectory,
+      withIntermediateDirectories: true
+    )
+    try Data("[flavor]\ndark = \"\(YaziAdapter.flavorName)\"\n".utf8).write(
+      to: yazi.appending(path: "theme.toml")
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziFlavorDirectory.appending(path: "flavor.toml"),
+      withDestinationURL: yaziFlavorDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: yaziFlavorDirectory.appending(path: "tmtheme.xml"),
+      withDestinationURL: yaziSyntaxDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: configurationRoot.appending(path: "yazi"),
+      withDestinationURL: yazi
+    )
+
+    let atuin = configurationRoot.appending(path: "atuin")
+    try FileManager.default.createDirectory(at: atuin, withIntermediateDirectories: true)
+    let externalAtuin = dotfiles.appending(path: "atuin")
+    let externalAtuinThemes = externalAtuin.appending(path: "themes")
+    try FileManager.default.createDirectory(
+      at: externalAtuinThemes,
+      withIntermediateDirectories: true
+    )
+    let externalAtuinConfiguration = externalAtuin.appending(path: "config.toml")
+    try Data("[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".utf8).write(
+      to: externalAtuinConfiguration
+    )
+    try FileManager.default.createSymbolicLink(
+      at: externalAtuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
+      withDestinationURL: atuinThemeDestination
+    )
+    try FileManager.default.createSymbolicLink(
+      at: atuin.appending(path: "config.toml"),
+      withDestinationURL: externalAtuinConfiguration
+    )
+    try FileManager.default.createSymbolicLink(
+      at: atuin.appending(path: "themes"),
+      withDestinationURL: externalAtuinThemes
     )
   }
 
