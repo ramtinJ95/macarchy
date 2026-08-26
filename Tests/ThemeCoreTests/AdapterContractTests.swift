@@ -1483,10 +1483,10 @@ struct AdapterContractTests {
         appearance: ThemeAppearance.dark,
         lightCommandEntered: false,
         darkPreflightEntered: false,
-        releaseLightCommand: false,
         appearanceRequests: [ProcessRequest]()
       )
     )
+    let releaseLightCommand = DispatchSemaphore(value: 0)
     let runner = ProcessRunner { request in
       guard request.executableURL == URL(filePath: "/usr/bin/osascript") else {
         return ProcessResult(terminationStatus: 1, output: "no matching process")
@@ -1498,9 +1498,7 @@ struct AdapterContractTests {
         }
       }
       if request.arguments.last?.hasSuffix("false") == true {
-        while !state.withLock({ $0.releaseLightCommand }) {
-          Thread.sleep(forTimeInterval: 0.001)
-        }
+        releaseLightCommand.wait()
         state.withLock { $0.appearance = .light }
       } else {
         state.withLock { $0.appearance = .dark }
@@ -1536,12 +1534,12 @@ struct AdapterContractTests {
     let basePackage = try catppuccinPackage()
     let lightPackage = package(basePackage, appearance: .light)
 
-    let lightActivation = Task {
+    let lightActivation = Task.detached {
       try await lightCoordinator.activate(package: lightPackage)
     }
     try await waitUntil { state.withLock { $0.lightCommandEntered } }
 
-    let darkActivation = Task {
+    let darkActivation = Task.detached {
       try await darkCoordinator.activate(package: basePackage)
     }
     try await waitUntil { state.withLock { $0.darkPreflightEntered } }
@@ -1550,7 +1548,7 @@ struct AdapterContractTests {
       from: Data(contentsOf: root.appending(path: "current/theme.json"))
     )
     #expect(committedBeforeRelease.appearance == .light)
-    state.withLock { $0.releaseLightCommand = true }
+    releaseLightCommand.signal()
 
     if case .failure(let error) = await lightActivation.result {
       #expect(error is ThemeCommittedWithReconciliationError)
