@@ -3,6 +3,7 @@ import Foundation
 
 package enum AdapterInspectionStatus: String, Sendable {
   case ready
+  case unsupported
   case drifted
   case failed
 }

@@ -167,15 +167,28 @@ struct SketchyBarAdapter: Sendable {
       }
 
       let expectedColor = try activeBarColor()
+      var lastTimeout: ProcessRunnerError?
+      var observedState = false
       for attempt in 0..<11 {
         try Task.checkCancellation()
-        let state = try queryState(timeout: 0.1)
-        if matchesActivePalette(state, expectedColor: expectedColor) {
-          // SketchyBar publishes query state before the compositor presents the completed batch.
-          try await waitForPresentation()
-          return AdapterOutcome(status: .applied)
+        do {
+          let state = try queryState(timeout: 0.1)
+          observedState = true
+          if matchesActivePalette(state, expectedColor: expectedColor) {
+            // SketchyBar publishes query state before the compositor presents the completed batch.
+            try await waitForPresentation()
+            return AdapterOutcome(status: .applied)
+          }
+        } catch let error as ProcessRunnerError {
+          lastTimeout = error
         }
         if attempt < 10 { try await waitForSettle() }
+      }
+      if !observedState, let lastTimeout {
+        return AdapterOutcome(
+          status: .failed,
+          message: "SketchyBar queries timed out through the bounded settle window: \(lastTimeout)"
+        )
       }
       return AdapterOutcome(
         status: .drifted,

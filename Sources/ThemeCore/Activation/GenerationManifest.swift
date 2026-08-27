@@ -52,8 +52,9 @@ struct GenerationIntegrityError: Error, CustomStringConvertible, Sendable {
 extension GenerationManifest {
   func validateArtifacts(at generationURL: URL) throws {
     try requireIntegrity(
-      Set(artifacts.keys) == ThemeRenderer.outputPaths,
-      "artifact manifest does not contain exactly the required outputs"
+      Set(artifacts.keys).isSubset(of: ThemeRenderer.outputPaths)
+        && Set(artifacts.keys).isSuperset(of: ThemeRenderer.requiredOutputPaths),
+      "artifact manifest is missing a required output or contains an unknown output"
     )
     try requireReadOnlyDirectory(generationURL, name: generationURL.lastPathComponent)
     try requireReadOnlyDirectory(
@@ -61,7 +62,7 @@ extension GenerationManifest {
       name: "generated"
     )
 
-    for path in ThemeRenderer.outputPaths.sorted() {
+    for path in artifacts.keys.sorted() {
       let artifact: BoundedRegularFile
       do {
         artifact = try BoundedRegularFile.read(

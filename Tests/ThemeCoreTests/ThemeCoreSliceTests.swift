@@ -20,6 +20,7 @@ struct ThemeCoreSliceTests {
     let atuin = outputRoot.appending(path: "generated/atuin.toml")
     let bat = outputRoot.appending(path: "generated/bat.tmTheme")
     let btop = outputRoot.appending(path: "generated/btop.theme")
+    let capabilities = outputRoot.appending(path: "generated/capabilities.json")
     let eza = outputRoot.appending(path: "generated/eza.yml")
     let herdr = outputRoot.appending(path: "generated/herdr.txt")
     let kitty = outputRoot.appending(path: "generated/kitty.conf")
@@ -36,6 +37,7 @@ struct ThemeCoreSliceTests {
     let writtenAtuin = try String(contentsOf: atuin, encoding: .utf8)
     let writtenBat = try String(contentsOf: bat, encoding: .utf8)
     let writtenBtop = try String(contentsOf: btop, encoding: .utf8)
+    let writtenCapabilities = try Data(contentsOf: capabilities)
     let writtenEza = try String(contentsOf: eza, encoding: .utf8)
     let writtenHerdr = try String(contentsOf: herdr, encoding: .utf8)
     let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
@@ -52,6 +54,7 @@ struct ThemeCoreSliceTests {
     #expect(writtenAtuin == rendered.atuinTheme)
     #expect(writtenBat == rendered.batTheme)
     #expect(writtenBtop == rendered.btopTheme)
+    #expect(writtenCapabilities == rendered.capabilities)
     #expect(writtenEza == rendered.ezaTheme)
     #expect(writtenHerdr == rendered.herdrTheme)
     #expect(writtenKitty == rendered.kittyConfiguration)
@@ -72,6 +75,10 @@ struct ThemeCoreSliceTests {
     let decoded = try JSONDecoder().decode(NormalizedTheme.self, from: writtenJSON)
     #expect(decoded.themeID == package.id)
     #expect(decoded.generationID == "test-generation")
+    #expect(
+      try JSONDecoder().decode(GeneratedThemeCapabilities.self, from: writtenCapabilities)
+        .validated().unsupportedAdapters.isEmpty
+    )
   }
 
   @Test
@@ -115,6 +122,10 @@ struct ThemeCoreSliceTests {
     for package in packages {
       let generationID = "golden-\(package.id)"
       let rendered = try ThemeRenderer().render(package: package, generationID: generationID)
+      #expect(
+        try JSONDecoder().decode(GeneratedThemeCapabilities.self, from: rendered.capabilities)
+          .validated().unsupportedAdapters.isEmpty
+      )
 
       let goldenRoot =
         repositoryRoot

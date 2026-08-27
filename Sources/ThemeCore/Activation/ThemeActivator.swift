@@ -99,6 +99,7 @@ public struct ThemeActivator: Sendable {
     TuicrAdapter.id: TuicrAdapter.rendererVersion,
     WallpaperAdapter.id: WallpaperAdapter.rendererVersion,
     YaziAdapter.id: YaziAdapter.rendererVersion,
+    "capabilities": 1,
     "normalized_theme": 1,
   ]
 
@@ -223,7 +224,12 @@ public struct ThemeActivator: Sendable {
     interruptedTrash: [URL]
   ) throws -> LockedActivationResult {
     let previousGenerationID = currentGenerationID()
-    let inputDigest = try generationInputDigest(package: package, wallpaperData: wallpaperData)
+    let namedThemeFallbacks = try namedThemeFallbacks(package: package)
+    let inputDigest = try generationInputDigest(
+      package: package,
+      wallpaperData: wallpaperData,
+      namedThemeFallbacks: namedThemeFallbacks
+    )
     try faultInjector(.inputDigested)
 
     if let reusable = try reusableGeneration(inputDigest: inputDigest, package: package) {
@@ -239,7 +245,8 @@ public struct ThemeActivator: Sendable {
     let rendered = try ThemeRenderer().render(
       package: package,
       generationID: generationID,
-      wallpaperData: wallpaperData
+      wallpaperData: wallpaperData,
+      namedThemeFallbacks: namedThemeFallbacks
     )
     try faultInjector(.outputsRendered)
     for (path, data) in rendered.files {
@@ -277,7 +284,7 @@ public struct ThemeActivator: Sendable {
     try manifestData.write(to: stagingURL.appending(path: "manifest.json"), options: [.atomic])
     try faultInjector(.generationWritten)
 
-    try makeReadOnly(stagingURL)
+    try makeReadOnly(stagingURL, artifactPaths: rendered.files.keys)
     try faultInjector(.generationSealed)
     try FileManager.default.moveItem(at: stagingURL, to: generationURL)
     shouldRemoveStaging = false
@@ -604,7 +611,11 @@ public struct ThemeActivator: Sendable {
     try atomicallyReplaceCurrent(with: temporaryPointer)
   }
 
-  private func generationInputDigest(package: ThemePackage, wallpaperData: Data) throws -> String {
+  private func generationInputDigest(
+    package: ThemePackage,
+    wallpaperData: Data,
+    namedThemeFallbacks: [String: String]
+  ) throws -> String {
     let input = GenerationInput(
       manifestSchemaVersion: GenerationManifest.currentSchemaVersion,
       themeSchemaVersion: package.schemaVersion,
@@ -614,9 +625,47 @@ public struct ThemeActivator: Sendable {
       terminal: package.terminal,
       wallpaperDigest: sha256Digest(wallpaperData),
       mappings: package.mappings,
+      namedThemeFallbackDigests: namedThemeFallbacks.mapValues {
+        sha256Digest(Data($0.utf8))
+      },
       rendererVersions: Self.rendererVersions
     )
     return sha256Digest(try encode(input))
+  }
+
+  private func namedThemeFallbacks(package: ThemePackage) throws -> [String: String] {
+    let missing = GeneratedThemeCapabilities.namedThemeAdapterIDs.filter {
+      package.mappings[$0] == nil
+    }
+    guard !missing.isEmpty, currentGenerationID() != nil else { return [:] }
+
+    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let generationURL = root.appending(
+      path: "generations/\(manifest.generationID)",
+      directoryHint: .isDirectory
+    )
+    var fallbacks = [String: String]()
+    for adapterID in missing {
+      let outputPath: String
+      switch adapterID {
+      case HerdrAdapter.id:
+        outputPath = HerdrAdapter.outputPath
+      case NeovimAdapter.id:
+        outputPath = NeovimAdapter.outputPath
+      default:
+        continue
+      }
+      guard manifest.artifacts[outputPath] != nil else { continue }
+      let data = try BoundedRegularFile.read(at: generationURL.appending(path: outputPath)).data
+      guard let fallback = String(data: data, encoding: .utf8) else {
+        throw ThemeActivationError.corruptGeneration(
+          id: manifest.generationID,
+          reason: "\(outputPath) is not UTF-8"
+        )
+      }
+      fallbacks[adapterID] = fallback
+    }
+    return fallbacks
   }
 
   private func encode<Value: Encodable>(_ value: Value) throws -> Data {
@@ -638,11 +687,14 @@ public struct ThemeActivator: Sendable {
     }
   }
 
-  private func makeReadOnly(_ generationURL: URL) throws {
+  private func makeReadOnly(
+    _ generationURL: URL,
+    artifactPaths: Dictionary<String, Data>.Keys
+  ) throws {
     let generated = generationURL.appending(path: "generated", directoryHint: .isDirectory)
     let files =
       [generationURL.appending(path: "manifest.json")]
-      + ThemeRenderer.outputPaths.map { generationURL.appending(path: $0) }
+      + artifactPaths.map { generationURL.appending(path: $0) }
     for file in files {
       try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: file.path)
     }
@@ -691,6 +743,7 @@ private struct GenerationInput: Encodable {
   let terminal: TerminalColors
   let wallpaperDigest: String
   let mappings: [String: String]
+  let namedThemeFallbackDigests: [String: String]
   let rendererVersions: [String: Int]
 
   enum CodingKeys: String, CodingKey {
@@ -698,6 +751,7 @@ private struct GenerationInput: Encodable {
     case themeSchemaVersion = "theme_schema_version"
     case themeID = "theme_id"
     case appearance, semantic, terminal, mappings
+    case namedThemeFallbackDigests = "named_theme_fallback_digests"
     case wallpaperDigest = "wallpaper_digest"
     case rendererVersions = "renderer_versions"
   }
