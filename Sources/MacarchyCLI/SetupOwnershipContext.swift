@@ -43,6 +43,9 @@ extension SetupOwnershipManager {
     let codexConfiguration: URL
     let codexThemeLink: URL
     let codexThemeDestination: URL
+    let spicetifyConfiguration: URL
+    let spicetifyColorLink: URL
+    let spicetifyColorDestination: URL
     let includeDirective: String
     let manifestURL: URL
     let backupRelativePath = "state/setup/backups/kitty.conf"
@@ -52,6 +55,8 @@ extension SetupOwnershipManager {
     let atuinSelectorBackupRelativePath = "state/setup/backups/atuin-config.toml"
     let tuicrSelectorBackupRelativePath = "state/setup/backups/tuicr-config.toml"
     let codexSelectorBackupRelativePath = "state/setup/backups/codex-config.toml"
+    let spicetifySelectorsBackupRelativePath =
+      "state/setup/backups/spicetify-config-xpui.ini"
 
     init(homeDirectory: URL) {
       let homeDirectory = homeDirectory.standardizedFileURL
@@ -110,6 +115,13 @@ extension SetupOwnershipManager {
       codexThemeLink = homeDirectory.appending(
         path: ".codex/themes/\(CodexAdapter.themeName).tmTheme")
       codexThemeDestination = stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      let spicetifyDirectory = homeDirectory.appending(
+        path: ".config/spicetify", directoryHint: .isDirectory)
+      spicetifyConfiguration = spicetifyDirectory.appending(path: "config-xpui.ini")
+      spicetifyColorLink = spicetifyDirectory.appending(
+        path: "Themes/\(SpicetifyAdapter.themeName)/color.ini")
+      spicetifyColorDestination = stateRoot.appending(
+        path: "current/\(SpicetifyAdapter.outputPath)")
       includeDirective = ThemeActivationCoordinator.kittyIncludeDirective(root: stateRoot)
       manifestURL = stateRoot.appending(path: "state/setup/ownership.json")
     }
@@ -142,6 +154,10 @@ extension SetupOwnershipManager {
       stateRoot.appending(path: codexSelectorBackupRelativePath)
     }
 
+    var spicetifySelectorsBackup: URL {
+      stateRoot.appending(path: spicetifySelectorsBackupRelativePath)
+    }
+
     var bridgeURL: URL {
       stateRoot.appending(path: "state/adapters/kitty.conf")
     }
@@ -154,6 +170,8 @@ extension SetupOwnershipManager {
     let piSelectorReplacementName = ".macarchy-pi-settings-transaction"
     let tuicrSelectorReplacementName = ".macarchy-tuicr-config-transaction"
     let codexSelectorReplacementName = ".macarchy-codex-config-transaction"
+    let spicetifySelectorsReplacementName =
+      ".macarchy-spicetify-config-transaction"
 
     var replacementURL: URL {
       kittyConfiguration.deletingLastPathComponent().appending(path: replacementName)

@@ -33,7 +33,10 @@ struct SetupOwnershipTests {
       dryRun: false
     )
 
-    #expect(results.map(\.status) == Array(repeating: .external, count: 24))
+    #expect(
+      results.map(\.status)
+        == Array(repeating: .external, count: 24) + Array(repeating: .disabled, count: 2)
+    )
     #expect(!results.contains { $0.mutationAttempted })
     #expect(try fixture.configuration() == original)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -75,7 +78,10 @@ struct SetupOwnershipTests {
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(results.map(\.status) == Array(repeating: .external, count: 24))
+    #expect(
+      results.map(\.status)
+        == Array(repeating: .external, count: 24) + Array(repeating: .disabled, count: 2)
+    )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(try fixture.batConfigurationText() == "\(fixture.batDirective)\n")
     #expect(try fixture.shellConfigurationText() == "\(fixture.ezaDirective)\n")
@@ -168,6 +174,7 @@ struct SetupOwnershipTests {
       preview.map(\.status)
         == [.external, .planned, .planned, .planned, .planned]
         + Array(repeating: .external, count: 19)
+        + Array(repeating: .disabled, count: 2)
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
@@ -181,6 +188,7 @@ struct SetupOwnershipTests {
       setup.map(\.status)
         == [.external, .owned, .owned, .owned, .owned]
         + Array(repeating: .external, count: 19)
+        + Array(repeating: .disabled, count: 2)
     )
     #expect(manifest.schemaVersion == 1)
     #expect(
@@ -209,7 +217,7 @@ struct SetupOwnershipTests {
     #expect(
       teardown.map(\.status)
         == [.none, .removed, .removed, .removed, .removed]
-        + Array(repeating: .none, count: 19)
+        + Array(repeating: .none, count: 21)
     )
     #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
     #expect(try fixture.shellConfigurationText() == "export EDITOR=nvim\n")
@@ -251,6 +259,7 @@ struct SetupOwnershipTests {
         resumed.map(\.status)
           == [.external, .owned, .owned, .external, .owned]
           + Array(repeating: .external, count: 19)
+          + Array(repeating: .disabled, count: 2)
       )
       #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
@@ -280,6 +289,7 @@ struct SetupOwnershipTests {
         resumed.map(\.status)
           == [.external, .external, .owned, .external, .owned]
           + Array(repeating: .external, count: 19)
+          + Array(repeating: .disabled, count: 2)
       )
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     }
@@ -303,6 +313,7 @@ struct SetupOwnershipTests {
       resumed.map(\.status)
         == [.external, .external, .owned, .external, .external]
         + Array(repeating: .external, count: 19)
+        + Array(repeating: .disabled, count: 2)
     )
     #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
@@ -311,7 +322,7 @@ struct SetupOwnershipTests {
     let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     #expect(
       teardown.map(\.status)
-        == [.none, .none, .removed, .none, .none] + Array(repeating: .none, count: 19)
+        == [.none, .none, .removed, .none, .none] + Array(repeating: .none, count: 21)
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
   }
@@ -466,15 +477,17 @@ struct SetupOwnershipTests {
           "tuicr.syntax-link",
           "codex.selector",
           "codex.theme-link",
+          "spicetify.selectors",
+          "spicetify.color-link",
         ]
     )
     #expect(
       report.integrations.map(\.status)
-        == ["failed", "removed"] + Array(repeating: "none", count: 19)
+        == ["failed", "removed"] + Array(repeating: "none", count: 21)
     )
     #expect(
       report.integrations.map(\.mutationAttempted)
-        == [true, true] + Array(repeating: false, count: 19)
+        == [true, true] + Array(repeating: false, count: 21)
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.ezaThemeLink.path))
     #expect(try fixture.shellConfigurationText() == "concurrent shell edit\n")
@@ -553,12 +566,13 @@ struct SetupOwnershipTests {
 
     #expect(setup.succeeded)
     #expect(setupJSON["integration"] == nil)
-    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 24)
+    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 26)
     #expect(setupReport.outcome == "ready")
     #expect(setupReport.mutationAttempted)
     #expect(
       setupReport.integrations.map(\.status)
         == ["owned"] + Array(repeating: "external", count: 23)
+        + Array(repeating: "disabled", count: 2)
     )
     #expect(manifest.schemaVersion == 1)
     #expect(manifest.records.map(\.phase) == ["applied"])
@@ -581,7 +595,7 @@ struct SetupOwnershipTests {
     let teardownPreview = try decode(TeardownReport.self, teardownDryRun.output)
     #expect(
       teardownPreview.integrations.map(\.status)
-        == ["planned"] + Array(repeating: "none", count: 23)
+        == ["planned"] + Array(repeating: "none", count: 25)
     )
     #expect(try fixture.configuration().contains(fixture.includeDirective))
 
@@ -595,10 +609,10 @@ struct SetupOwnershipTests {
 
     #expect(teardown.succeeded)
     #expect(teardownJSON["integration"] == nil)
-    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 24)
+    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 26)
     #expect(
       teardownReport.integrations.map(\.status)
-        == ["removed"] + Array(repeating: "none", count: 23)
+        == ["removed"] + Array(repeating: "none", count: 25)
     )
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(try fixture.permissions() == 0o600)

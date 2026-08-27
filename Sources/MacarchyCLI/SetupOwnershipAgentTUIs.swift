@@ -565,6 +565,11 @@ extension SetupOwnershipManager {
     guard record.installedDigest == piSelectorContractDigest() else {
       throw SetupOwnershipError.invalidManifest("Pi selector contract digest is invalid")
     }
+    guard record.phase == .prepared || record.phase == .applied,
+      record.replacementDigest == nil
+    else {
+      throw SetupOwnershipError.invalidManifest("Pi selector has invalid transaction state")
+    }
   }
 
   func validatePiSelectorReplacementResidue(

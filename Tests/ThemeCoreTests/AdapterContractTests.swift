@@ -2112,6 +2112,12 @@ struct AdapterContractTests {
       with: "Other"
     ).write(to: configurationURL, atomically: true, encoding: .utf8)
     #expect(closed.inspection().status == .drifted)
+    try "[Setting]\ncurrent_theme = text ; suffix\ncolor_scheme = MacarchyCurrent\n"
+      .write(to: configurationURL, atomically: true, encoding: .utf8)
+    #expect(closed.inspection().status == .drifted)
+    try (validConfiguration + "[Backup]\nmalformed later section\n")
+      .write(to: configurationURL, atomically: true, encoding: .utf8)
+    #expect(closed.inspection().status == .failed)
     try "[Setting]\ncurrent_theme = text\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n"
       .write(
         to: configurationURL, atomically: true, encoding: .utf8)

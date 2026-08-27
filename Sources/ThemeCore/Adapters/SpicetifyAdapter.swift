@@ -1,5 +1,3 @@
-import Darwin
-import Dispatch
 import Foundation
 
 enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
@@ -7,7 +5,6 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
   case controlUnavailable(URL)
   case invalidConfiguration(URL)
   case processInspectionFailed(String)
-  case reconciliationLock(operation: String, code: Int32)
   case wrongColorScheme(String)
   case wrongTheme(String)
 
@@ -18,11 +15,9 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
     case .controlUnavailable(let url):
       "Spicetify is not executable at \(url.path)"
     case .invalidConfiguration(let url):
-      "Spicetify configuration at \(url.path) must contain one [Setting] table with one current_theme and color_scheme key"
+      "Spicetify configuration at \(url.path) must be valid provider INI with one [Setting] table and one current_theme and color_scheme key"
     case .processInspectionFailed(let output):
       output.isEmpty ? "Cannot determine whether Spotify is running" : output
-    case .reconciliationLock(let operation, let code):
-      "Cannot \(operation) Spicetify reconciliation lock (errno \(code)): \(String(cString: strerror(code)))"
     case .wrongColorScheme(let expected):
       "Spicetify color_scheme must be \"\(expected)\""
     case .wrongTheme(let expected):
@@ -31,17 +26,23 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct SpicetifyAdapter: Sendable {
+package struct SpicetifyAdapter: Sendable {
   static let id = "spicetify"
-  static let outputPath = "generated/spicetify.ini"
+  package static let outputPath = "generated/spicetify.ini"
   static let rendererVersion = 1
-  static let colorSchemeName = "MacarchyCurrent"
-  static let themeName = "text"
+  package static let colorSchemeName = "MacarchyCurrent"
+  package static let themeName = "text"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/spicetify")
+
+  package struct ConfigurationSelection: Equatable, Sendable {
+    package let theme: String?
+    package let colorScheme: String?
+    package let rawTheme: String?
+    package let rawColorScheme: String?
+  }
 
   private static let applicationLauncherURL = URL(filePath: "/usr/bin/open")
   private static let processLookupURL = URL(filePath: "/usr/bin/pgrep")
-  private static let reconciliationSemaphore = DispatchSemaphore(value: 1)
   private static let processCheckAttempts = 20
 
   let root: URL
@@ -115,7 +116,7 @@ struct SpicetifyAdapter: Sendable {
 
   func reconciliation() -> AdapterReconciliation {
     AdapterReconciliation(id: Self.id, requirement: .optional) {
-      try await withReconciliationLock {
+      try await SpicetifyLock(root: root).withLock {
         try await reconcile()
       }
     }
@@ -232,36 +233,6 @@ struct SpicetifyAdapter: Sendable {
     return false
   }
 
-  private func withReconciliationLock(
-    _ operation: () async throws -> AdapterOutcome
-  ) async throws -> AdapterOutcome {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global(qos: .utility).async {
-        Self.reconciliationSemaphore.wait()
-        continuation.resume()
-      }
-    }
-    defer { Self.reconciliationSemaphore.signal() }
-    try Task.checkCancellation()
-
-    let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
-    let lockURL = runDirectory.appending(path: "spicetify.lock")
-    let descriptor = lockURL.path.withCString {
-      Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-    }
-    guard descriptor >= 0 else {
-      throw SpicetifyAdapterError.reconciliationLock(operation: "open", code: errno)
-    }
-    defer { Darwin.close(descriptor) }
-
-    while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
-      if errno == EINTR { continue }
-      throw SpicetifyAdapterError.reconciliationLock(operation: "acquire", code: errno)
-    }
-    return try await operation()
-  }
-
   static func render(package: ThemePackage) -> String {
     let semantic = package.semantic
     return """
@@ -307,35 +278,108 @@ struct SpicetifyAdapter: Sendable {
       throw SpicetifyAdapterError.cannotReadConfiguration(configurationURL)
     }
 
+    let selection = try Self.configurationSelection(
+      in: configuration,
+      at: configurationURL
+    )
+    guard let theme = selection.theme, let colorScheme = selection.colorScheme else {
+      throw SpicetifyAdapterError.invalidConfiguration(configurationURL)
+    }
+    return (theme, colorScheme)
+  }
+
+  package static func configurationSelection(
+    in configuration: String,
+    at configurationURL: URL
+  ) throws -> ConfigurationSelection {
     var settingTables = 0
-    var inSettings = false
+    var sectionName = "DEFAULT"
     var themes = [String]()
     var colorSchemes = [String]()
-    for rawLine in configuration.components(separatedBy: "\n") {
-      let line = rawLine.trimmingCharacters(in: .whitespaces)
+    var rawThemes = [String]()
+    var rawColorSchemes = [String]()
+    for (index, rawLine) in configuration.components(separatedBy: "\n").enumerated() {
+      var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+      if index == 0, line.hasPrefix("\u{FEFF}") { line.removeFirst() }
       guard !line.isEmpty, !line.hasPrefix(";"), !line.hasPrefix("#") else { continue }
       if line.hasPrefix("[") {
-        inSettings = line == "[Setting]"
-        if inSettings { settingTables += 1 }
+        guard let closingBracket = line.lastIndex(of: "]") else {
+          throw SpicetifyAdapterError.invalidConfiguration(configurationURL)
+        }
+        sectionName = String(line[line.index(after: line.startIndex)..<closingBracket])
+        guard !sectionName.isEmpty else {
+          throw SpicetifyAdapterError.invalidConfiguration(configurationURL)
+        }
+        if sectionName == "Setting" { settingTables += 1 }
         continue
       }
-      guard inSettings else { continue }
-      let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map {
-        $0.trimmingCharacters(in: .whitespaces)
-      }
-      guard parts.count == 2 else {
+      guard let assignment = configurationAssignment(line) else {
         throw SpicetifyAdapterError.invalidConfiguration(configurationURL)
       }
-      switch parts[0] {
-      case "current_theme": themes.append(parts[1])
-      case "color_scheme": colorSchemes.append(parts[1])
+      guard sectionName == "Setting" else { continue }
+      switch assignment.key {
+      case "current_theme":
+        themes.append(assignment.value)
+        rawThemes.append(assignment.rawValue)
+      case "color_scheme":
+        colorSchemes.append(assignment.value)
+        rawColorSchemes.append(assignment.rawValue)
       default: continue
       }
     }
-    guard settingTables == 1, themes.count == 1, colorSchemes.count == 1 else {
+    guard settingTables == 1, themes.count <= 1, colorSchemes.count <= 1 else {
       throw SpicetifyAdapterError.invalidConfiguration(configurationURL)
     }
-    return (themes[0], colorSchemes[0])
+    return ConfigurationSelection(
+      theme: themes.first,
+      colorScheme: colorSchemes.first,
+      rawTheme: rawThemes.first,
+      rawColorScheme: rawColorSchemes.first
+    )
+  }
+
+  private static func configurationAssignment(
+    _ line: String
+  ) -> (key: String, value: String, rawValue: String)? {
+    let delimiter: String.Index
+    let key: String
+    if line.hasPrefix("\"\"\"") || line.hasPrefix("\"") || line.hasPrefix("`") {
+      let quote = line.hasPrefix("\"\"\"") ? "\"\"\"" : String(line.first!)
+      let contentStart = line.index(line.startIndex, offsetBy: quote.count)
+      guard let closingRange = line.range(of: quote, range: contentStart..<line.endIndex) else {
+        return nil
+      }
+      let remainder = line[closingRange.upperBound...]
+      guard let relativeDelimiter = remainder.firstIndex(where: { $0 == "=" || $0 == ":" })
+      else { return nil }
+      delimiter = relativeDelimiter
+      key = line[contentStart..<closingRange.lowerBound]
+        .trimmingCharacters(in: .whitespaces)
+    } else {
+      guard let firstDelimiter = line.firstIndex(where: { $0 == "=" || $0 == ":" }) else {
+        return nil
+      }
+      delimiter = firstDelimiter
+      key = line[..<delimiter].trimmingCharacters(in: .whitespaces)
+    }
+    guard !key.isEmpty else { return nil }
+    let rawValue = line[line.index(after: delimiter)...]
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let value = providerConfigurationValue(rawValue) else { return nil }
+    return (key, value, rawValue)
+  }
+
+  private static func providerConfigurationValue(_ rawValue: String) -> String? {
+    if rawValue.hasPrefix("\"\"\"") || rawValue.hasPrefix("`") {
+      let quote = rawValue.hasPrefix("\"\"\"") ? "\"\"\"" : "`"
+      guard rawValue.count >= quote.count * 2, rawValue.hasSuffix(quote) else { return nil }
+      return String(rawValue.dropFirst(quote.count).dropLast(quote.count))
+    }
+    for quote in ["'", "\""] where rawValue.hasPrefix(quote) && rawValue.hasSuffix(quote) {
+      let middle = rawValue.dropFirst().dropLast()
+      if !middle.contains(quote) { return String(middle) }
+    }
+    return rawValue
   }
 
   private func spotifyPIDs() throws -> Set<Int32>? {
