@@ -108,7 +108,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           git fetch --force --no-tags origin \
-            "refs/tags/$TAG:refs/remotes/origin/release-tag"
+            "refs/tags/${TAG}:refs/remotes/origin/release-tag"
           remote_revision=$(git rev-parse \
             "refs/remotes/origin/release-tag^{commit}")
           [[ "$remote_revision" == "$REVISION" ]]
