@@ -5,9 +5,17 @@ package struct CanonicalTOMLSelector {
   package let values: [String]
 
   package init(configuration: String, table: String, key: String) {
+    self.init(configuration: configuration, selectionTable: table, key: key)
+  }
+
+  package init(configuration: String, key: String) {
+    self.init(configuration: configuration, selectionTable: nil, key: key)
+  }
+
+  private init(configuration: String, selectionTable: String?, key: String) {
     var arrayDepth = 0
     var multilineQuote: MultilineQuote?
-    var inSelectionTable = false
+    var inSelectionTable = selectionTable == nil
     var tableHeaderCount = 0
     var values = [String]()
 
@@ -20,7 +28,7 @@ package struct CanonicalTOMLSelector {
       if startsAtTopLevel, trimmed.hasPrefix("[") {
         let header = trimmed.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
           in: .whitespacesAndNewlines)
-        inSelectionTable = header == "[\(table)]"
+        inSelectionTable = selectionTable.map { header == "[\($0)]" } ?? false
         if inSelectionTable { tableHeaderCount += 1 }
         continue
       }

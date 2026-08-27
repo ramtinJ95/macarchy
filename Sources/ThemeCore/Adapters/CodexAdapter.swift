@@ -21,9 +21,11 @@ enum CodexAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct CodexAdapter: Sendable {
+package struct CodexAdapter: Sendable {
   static let id = "codex"
-  static let themeName = "macarchy-current"
+  package static let themeName = "macarchy-current"
+  package static let selectionTable = "tui"
+  package static let selectionKey = "theme"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/codex")
 
   let root: URL

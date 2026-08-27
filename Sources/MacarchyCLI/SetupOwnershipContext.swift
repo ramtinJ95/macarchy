@@ -31,6 +31,18 @@ extension SetupOwnershipManager {
     let starshipConfigurationLink: URL
     let starshipStowConfigurationLink: URL
     let starshipBridgeDestination: URL
+    let piConfiguration: URL
+    let piThemeLink: URL
+    let piThemeDestination: URL
+    let herdrConfiguration: URL
+    let tuicrConfiguration: URL
+    let tuicrThemeLink: URL
+    let tuicrThemeDestination: URL
+    let tuicrSyntaxLink: URL
+    let tuicrSyntaxDestination: URL
+    let codexConfiguration: URL
+    let codexThemeLink: URL
+    let codexThemeDestination: URL
     let includeDirective: String
     let manifestURL: URL
     let backupRelativePath = "state/setup/backups/kitty.conf"
@@ -38,6 +50,8 @@ extension SetupOwnershipManager {
     let ezaEnvironmentBackupRelativePath = "state/setup/backups/zshrc"
     let yaziSelectorBackupRelativePath = "state/setup/backups/yazi-theme.toml"
     let atuinSelectorBackupRelativePath = "state/setup/backups/atuin-config.toml"
+    let tuicrSelectorBackupRelativePath = "state/setup/backups/tuicr-config.toml"
+    let codexSelectorBackupRelativePath = "state/setup/backups/codex-config.toml"
 
     init(homeDirectory: URL) {
       let homeDirectory = homeDirectory.standardizedFileURL
@@ -80,6 +94,22 @@ extension SetupOwnershipManager {
       starshipStowConfigurationLink = homeDirectory.appending(
         path: SetupOwnershipManager.starshipStowConfigurationRelativePath)
       starshipBridgeDestination = stateRoot.appending(path: StarshipAdapter.bridgePath)
+      piConfiguration = homeDirectory.appending(path: ".pi/agent/settings.json")
+      piThemeLink = homeDirectory.appending(
+        path: ".pi/agent/themes/\(PiAdapter.themeName).json")
+      piThemeDestination = stateRoot.appending(path: "current/\(PiAdapter.outputPath)")
+      herdrConfiguration = homeDirectory.appending(path: ".config/herdr/config.toml")
+      tuicrConfiguration = homeDirectory.appending(path: ".config/tuicr/config.toml")
+      tuicrThemeLink = homeDirectory.appending(
+        path: ".config/tuicr/themes/\(TuicrAdapter.themeName).toml")
+      tuicrThemeDestination = stateRoot.appending(path: "current/\(TuicrAdapter.outputPath)")
+      tuicrSyntaxLink = homeDirectory.appending(
+        path: ".config/tuicr/themes/\(TuicrAdapter.themeName).tmTheme")
+      tuicrSyntaxDestination = stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      codexConfiguration = homeDirectory.appending(path: ".codex/config.toml")
+      codexThemeLink = homeDirectory.appending(
+        path: ".codex/themes/\(CodexAdapter.themeName).tmTheme")
+      codexThemeDestination = stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
       includeDirective = ThemeActivationCoordinator.kittyIncludeDirective(root: stateRoot)
       manifestURL = stateRoot.appending(path: "state/setup/ownership.json")
     }
@@ -104,6 +134,14 @@ extension SetupOwnershipManager {
       stateRoot.appending(path: atuinSelectorBackupRelativePath)
     }
 
+    var tuicrSelectorBackup: URL {
+      stateRoot.appending(path: tuicrSelectorBackupRelativePath)
+    }
+
+    var codexSelectorBackup: URL {
+      stateRoot.appending(path: codexSelectorBackupRelativePath)
+    }
+
     var bridgeURL: URL {
       stateRoot.appending(path: "state/adapters/kitty.conf")
     }
@@ -113,6 +151,9 @@ extension SetupOwnershipManager {
     let ezaEnvironmentReplacementName = ".macarchy-zshrc-transaction"
     let yaziSelectorReplacementName = ".macarchy-yazi-theme-transaction"
     let atuinSelectorReplacementName = ".macarchy-atuin-config-transaction"
+    let piSelectorReplacementName = ".macarchy-pi-settings-transaction"
+    let tuicrSelectorReplacementName = ".macarchy-tuicr-config-transaction"
+    let codexSelectorReplacementName = ".macarchy-codex-config-transaction"
 
     var replacementURL: URL {
       kittyConfiguration.deletingLastPathComponent().appending(path: replacementName)

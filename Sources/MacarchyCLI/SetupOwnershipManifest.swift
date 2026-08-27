@@ -114,6 +114,46 @@ extension SetupOwnershipManager {
           target: context.starshipConfigurationLink,
           destination: context.starshipBridgeDestination
         )
+      case Self.piSelectorID:
+        try validatePiSelectorRecord(record, context: context)
+      case Self.piThemeLinkID:
+        try validateThemeLinkRecord(
+          record,
+          target: context.piThemeLink,
+          destination: context.piThemeDestination
+        )
+      case Self.tuicrSelectorID:
+        try validateRegularFileRecord(
+          record,
+          target: context.tuicrConfiguration,
+          backupURL: context.tuicrSelectorBackup,
+          context: context
+        )
+      case Self.tuicrThemeLinkID:
+        try validateThemeLinkRecord(
+          record,
+          target: context.tuicrThemeLink,
+          destination: context.tuicrThemeDestination
+        )
+      case Self.tuicrSyntaxLinkID:
+        try validateThemeLinkRecord(
+          record,
+          target: context.tuicrSyntaxLink,
+          destination: context.tuicrSyntaxDestination
+        )
+      case Self.codexSelectorID:
+        try validateRegularFileRecord(
+          record,
+          target: context.codexConfiguration,
+          backupURL: context.codexSelectorBackup,
+          context: context
+        )
+      case Self.codexThemeLinkID:
+        try validateThemeLinkRecord(
+          record,
+          target: context.codexThemeLink,
+          destination: context.codexThemeDestination
+        )
       default:
         throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
       }
@@ -204,6 +244,7 @@ struct SetupOwnershipManifest: Codable {
 
 struct SetupOwnershipRecord: Codable, Equatable {
   enum Kind: String, Codable, Equatable {
+    case jsonSelector = "json_selector"
     case regularFile = "regular_file"
     case symbolicLink = "symbolic_link"
   }

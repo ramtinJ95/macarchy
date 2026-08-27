@@ -180,6 +180,7 @@ extension SetupOwnershipManager {
       throw SetupOwnershipError.invalidConfiguration(id, target, String(describing: error))
     }
     var candidate: String
+    let newline = tomlNewline(in: original)
     if document.contains(key: table) {
       var lines = configuration.components(separatedBy: "\n")
       let expectedHeader = "[\(table)]"
@@ -190,13 +191,17 @@ extension SetupOwnershipManager {
       guard headerIndices.count == 1, let headerIndex = headerIndices.first else {
         throw SetupOwnershipError.conflictingDirective(id, target)
       }
-      let carriageReturn = lines[headerIndex].hasSuffix("\r") ? "\r" : ""
-      lines.insert("\(key) = \"\(value)\"\(carriageReturn)", at: headerIndex + 1)
-      candidate = lines.joined(separator: "\n")
+      if headerIndex == lines.index(before: lines.endIndex) {
+        candidate = configuration + newline + "\(key) = \"\(value)\"" + newline
+      } else {
+        let carriageReturn = newline == "\r\n" ? "\r" : ""
+        lines.insert("\(key) = \"\(value)\"\(carriageReturn)", at: headerIndex + 1)
+        candidate = lines.joined(separator: "\n")
+      }
     } else {
       candidate = configuration
-      if !candidate.isEmpty, !candidate.hasSuffix("\n") { candidate.append("\n") }
-      candidate.append("[\(table)]\n\(key) = \"\(value)\"\n")
+      if !candidate.isEmpty, original.last != UInt8(ascii: "\n") { candidate.append(newline) }
+      candidate.append("[\(table)]\(newline)\(key) = \"\(value)\"\(newline)")
     }
 
     let installed = Data(candidate.utf8)
@@ -213,6 +218,12 @@ extension SetupOwnershipManager {
       throw SetupOwnershipError.conflictingDirective(id, target)
     }
     return installed
+  }
+
+  func tomlNewline(in data: Data) -> String {
+    let bytes = Array(data)
+    guard let newline = bytes.firstIndex(of: UInt8(ascii: "\n")) else { return "\n" }
+    return newline > 0 && bytes[newline - 1] == UInt8(ascii: "\r") ? "\r\n" : "\n"
   }
 
   func addingLine(_ original: Data, _ line: String) -> Data {
