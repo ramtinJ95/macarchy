@@ -19,6 +19,7 @@ mkdir -p "$temporary_directory/home" "$temporary_directory/work"
 [[ -x "$binary" ]]
 [[ -f "$metadata" ]]
 [[ -d "$layout/share/macarchy/themes" ]]
+[[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
 [[ -z "$(find -P "$layout" ! -type f ! -type d -print)" ]]
@@ -29,6 +30,7 @@ print -r -- "$signature" | grep -q '^Signature=adhoc$'
 {
   print "bin/macarchy"
   print "share/macarchy/build-info.json"
+  print "share/doc/macarchy/CHANGELOG.md"
   print "share/doc/macarchy/theme-json.md"
   print "share/doc/macarchy/LICENSE"
   git -C "$repository_root" ls-files -- Themes \

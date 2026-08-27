@@ -424,6 +424,7 @@ struct HomebrewLifecycleTests {
     ).write(to: resourceRoot.appending(path: "build-info.json"))
     for file in [
       "INSTALL_RECEIPT.json",
+      "share/doc/macarchy/CHANGELOG.md",
       "share/doc/macarchy/LICENSE",
       "share/doc/macarchy/theme-json.md",
     ] {

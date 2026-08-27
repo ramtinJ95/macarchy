@@ -9,13 +9,16 @@ Macarchy is independently authored and inspired by
 [Omarchy](https://omarchy.org/). It is not an official port, a dotfile bundle,
 or a general application installer.
 
-The first stable release is
-[v0.1.0](https://github.com/ramtinJ95/macarchy/releases/tag/v0.1.0).
+The current stable release is
+[v0.2.0](https://github.com/ramtinJ95/macarchy/releases/tag/v0.2.0).
+See the [changelog](CHANGELOG.md) for release details.
 
 ## What it does
 
 - Keeps one authoritative active theme under `~/.config/macarchy`.
 - Ships Catppuccin Mocha, Tokyo Night, and Kanagawa Wave themes.
+- Safely installs compatible Omarchy themes from public GitHub repositories
+  without running repository-provided code.
 - Renders native configuration for the terminal, shell tools, TUIs, editor,
   status bar, wallpaper, and macOS appearance.
 - Reconciles supported applications without hiding failures or restart limits.
@@ -55,9 +58,9 @@ macarchy doctor
 ```
 
 The formula installs the immutable arm64 release archive and its bundled
-themes, normalized-theme contract, and license. Setup reports missing personal
-profile capabilities and establishes only the allowlisted integration seams it
-can own safely.
+themes, normalized-theme contract, changelog, and license. Setup reports
+missing personal profile capabilities and establishes only the allowlisted
+integration seams it can own safely.
 
 ## Try it from source
 
@@ -76,6 +79,7 @@ Useful commands:
 macarchy theme list
 macarchy theme set <theme-id> [--dry-run]
 macarchy theme next [--dry-run]
+macarchy theme install <github-url> [--dry-run] [--json]
 macarchy theme status [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
@@ -105,6 +109,37 @@ GitHub release with the refreshed tap, and upgrades only
 pending. Upgrade verification reopens the installed build metadata and bundled
 resources even when the installed version is current; Macarchy never downloads
 or replaces itself outside Homebrew.
+
+## Install an Omarchy theme
+
+Use a dry run to inspect conversion and capability evidence before changing
+canonical state:
+
+```sh
+macarchy theme install --dry-run https://github.com/owner/theme-repository
+macarchy theme install https://github.com/owner/theme-repository
+```
+
+The installer accepts only public HTTPS GitHub repository URLs. It shallowly
+fetches the default branch without tags or submodules, records the resolved
+commit, and imports only palette data, supported files directly under
+`backgrounds/`, and inert previews. Symlinks and invalid or oversized images
+fail validation. Scripts, hooks, executables, Lua, application overrides,
+templates, nested backgrounds, and unknown active configuration are ignored,
+named in the report, and never executed or installed.
+
+Reinstalling the same URL validates the replacement before atomically swapping
+the package and activating it. A failure before canonical commit restores the
+previous package and generation; a postcommit consumer failure remains visible
+without pretending the commit was rolled back.
+
+Imported palettes drive macOS appearance, wallpaper, Kitty, SketchyBar, shell
+tools, and every other generated-palette consumer. Macarchy does not invent a
+Neovim colorscheme or Herdr built-in mapping when the repository has no safe
+mapping. Those consumers report `unsupported` in install output, status, and
+doctor, and retain their prior named appearance. Missing wallpaper provenance
+is reported as a personal-use warning; imported assets are not release-eligible
+without verified rights.
 
 ## Setup without dotfile takeover
 
@@ -222,6 +257,7 @@ The supported installed layout is:
 bin/macarchy
 share/macarchy/build-info.json
 share/macarchy/themes/<theme-id>/...
+share/doc/macarchy/CHANGELOG.md
 share/doc/macarchy/theme-json.md
 share/doc/macarchy/LICENSE
 ```
