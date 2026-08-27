@@ -26,10 +26,10 @@ enum NeovimAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct NeovimAdapter: Sendable {
+package struct NeovimAdapter: Sendable {
   static let id = "neovim"
-  static let integrationDirective = "local current = macarchy.watch()"
-  static let outputPath = "generated/neovim.lua"
+  package static let integrationDirective = "local current = macarchy.watch()"
+  package static let outputPath = "generated/neovim.lua"
   static let rendererVersion = 2
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/nvim")
 
@@ -55,7 +55,7 @@ struct NeovimAdapter: Sendable {
       throw NeovimAdapterError.controlUnavailable(executableURL)
     }
     try themeLink.validate()
-    guard Self.containsLine(Self.integrationDirective, in: try readConfiguration()) else {
+    guard Self.containsIntegrationDirective(in: try readConfiguration()) else {
       throw NeovimAdapterError.missingIntegration(Self.integrationDirective)
     }
   }
@@ -155,9 +155,9 @@ struct NeovimAdapter: Sendable {
     return configuration
   }
 
-  private static func containsLine(_ expected: String, in text: String) -> Bool {
-    text.split(separator: "\n").contains {
-      $0.trimmingCharacters(in: .whitespaces) == expected
+  package static func containsIntegrationDirective(in text: String) -> Bool {
+    text.components(separatedBy: .newlines).contains {
+      $0.trimmingCharacters(in: .whitespaces) == integrationDirective
     }
   }
 

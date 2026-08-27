@@ -33,7 +33,7 @@ struct SetupOwnershipTests {
       dryRun: false
     )
 
-    #expect(results.map(\.status) == Array(repeating: .external, count: 12))
+    #expect(results.map(\.status) == Array(repeating: .external, count: 16))
     #expect(!results.contains { $0.mutationAttempted })
     #expect(try fixture.configuration() == original)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -75,7 +75,7 @@ struct SetupOwnershipTests {
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(results.map(\.status) == Array(repeating: .external, count: 12))
+    #expect(results.map(\.status) == Array(repeating: .external, count: 16))
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(try fixture.batConfigurationText() == "\(fixture.batDirective)\n")
     #expect(try fixture.shellConfigurationText() == "\(fixture.ezaDirective)\n")
@@ -167,7 +167,7 @@ struct SetupOwnershipTests {
     #expect(
       preview.map(\.status)
         == [.external, .planned, .planned, .planned, .planned]
-        + Array(repeating: .external, count: 7)
+        + Array(repeating: .external, count: 11)
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
@@ -180,7 +180,7 @@ struct SetupOwnershipTests {
     #expect(
       setup.map(\.status)
         == [.external, .owned, .owned, .owned, .owned]
-        + Array(repeating: .external, count: 7)
+        + Array(repeating: .external, count: 11)
     )
     #expect(manifest.schemaVersion == 1)
     #expect(
@@ -209,7 +209,7 @@ struct SetupOwnershipTests {
     #expect(
       teardown.map(\.status)
         == [.none, .removed, .removed, .removed, .removed]
-        + Array(repeating: .none, count: 7)
+        + Array(repeating: .none, count: 11)
     )
     #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
     #expect(try fixture.shellConfigurationText() == "export EDITOR=nvim\n")
@@ -250,7 +250,7 @@ struct SetupOwnershipTests {
       #expect(
         resumed.map(\.status)
           == [.external, .owned, .owned, .external, .owned]
-          + Array(repeating: .external, count: 7)
+          + Array(repeating: .external, count: 11)
       )
       #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
@@ -279,7 +279,7 @@ struct SetupOwnershipTests {
       #expect(
         resumed.map(\.status)
           == [.external, .external, .owned, .external, .owned]
-          + Array(repeating: .external, count: 7)
+          + Array(repeating: .external, count: 11)
       )
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     }
@@ -302,7 +302,7 @@ struct SetupOwnershipTests {
     #expect(
       resumed.map(\.status)
         == [.external, .external, .owned, .external, .external]
-        + Array(repeating: .external, count: 7)
+        + Array(repeating: .external, count: 11)
     )
     #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
@@ -311,7 +311,7 @@ struct SetupOwnershipTests {
     let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     #expect(
       teardown.map(\.status)
-        == [.none, .none, .removed, .none, .none] + Array(repeating: .none, count: 7)
+        == [.none, .none, .removed, .none, .none] + Array(repeating: .none, count: 11)
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
   }
@@ -454,15 +454,19 @@ struct SetupOwnershipTests {
           "yazi.syntax-link",
           "atuin.selector",
           "atuin.theme-link",
+          "neovim.watcher",
+          "neovim.theme-link",
+          "starship.behavior",
+          "starship.configuration-link",
         ]
     )
     #expect(
       report.integrations.map(\.status)
-        == ["failed", "removed"] + Array(repeating: "none", count: 7)
+        == ["failed", "removed"] + Array(repeating: "none", count: 11)
     )
     #expect(
       report.integrations.map(\.mutationAttempted)
-        == [true, true] + Array(repeating: false, count: 7)
+        == [true, true] + Array(repeating: false, count: 11)
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.ezaThemeLink.path))
     #expect(try fixture.shellConfigurationText() == "concurrent shell edit\n")
@@ -541,12 +545,12 @@ struct SetupOwnershipTests {
 
     #expect(setup.succeeded)
     #expect(setupJSON["integration"] == nil)
-    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 12)
+    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 16)
     #expect(setupReport.outcome == "ready")
     #expect(setupReport.mutationAttempted)
     #expect(
       setupReport.integrations.map(\.status)
-        == ["owned"] + Array(repeating: "external", count: 11)
+        == ["owned"] + Array(repeating: "external", count: 15)
     )
     #expect(manifest.schemaVersion == 1)
     #expect(manifest.records.map(\.phase) == ["applied"])
@@ -569,7 +573,7 @@ struct SetupOwnershipTests {
     let teardownPreview = try decode(TeardownReport.self, teardownDryRun.output)
     #expect(
       teardownPreview.integrations.map(\.status)
-        == ["planned"] + Array(repeating: "none", count: 11)
+        == ["planned"] + Array(repeating: "none", count: 15)
     )
     #expect(try fixture.configuration().contains(fixture.includeDirective))
 
@@ -583,10 +587,10 @@ struct SetupOwnershipTests {
 
     #expect(teardown.succeeded)
     #expect(teardownJSON["integration"] == nil)
-    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 12)
+    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 16)
     #expect(
       teardownReport.integrations.map(\.status)
-        == ["removed"] + Array(repeating: "none", count: 11)
+        == ["removed"] + Array(repeating: "none", count: 15)
     )
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(try fixture.permissions() == 0o600)
@@ -1147,7 +1151,8 @@ final class Fixture {
   init(
     configuration: String? = nil,
     externalBatEza: Bool = true,
-    externalBtopYaziAtuin: Bool = true
+    externalBtopYaziAtuin: Bool = true,
+    externalNeovimStarship: Bool = true
   ) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-ownership-\(UUID().uuidString)",
@@ -1166,6 +1171,9 @@ final class Fixture {
     }
     if externalBtopYaziAtuin {
       try createExternalBtopYaziAtuinSeams()
+    }
+    if externalNeovimStarship {
+      try createExternalNeovimStarshipSeams()
     }
   }
 

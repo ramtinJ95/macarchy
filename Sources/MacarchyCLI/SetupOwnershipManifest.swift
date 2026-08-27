@@ -102,6 +102,18 @@ extension SetupOwnershipManager {
           target: context.atuinThemeLink,
           destination: context.atuinThemeDestination
         )
+      case Self.neovimThemeLinkID:
+        try validateThemeLinkRecord(
+          record,
+          target: context.neovimThemeLink,
+          destination: context.neovimThemeDestination
+        )
+      case Self.starshipConfigurationLinkID:
+        try validateThemeLinkRecord(
+          record,
+          target: context.starshipConfigurationLink,
+          destination: context.starshipBridgeDestination
+        )
       default:
         throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
       }

@@ -32,6 +32,10 @@ struct BtopYaziAtuinSetupTests {
           "yazi.syntax-link",
           "atuin.selector",
           "atuin.theme-link",
+          "neovim.watcher",
+          "neovim.theme-link",
+          "starship.behavior",
+          "starship.configuration-link",
         ]
     )
     #expect(results.allSatisfy { $0.status == .external && !$0.mutationAttempted })
@@ -51,8 +55,9 @@ struct BtopYaziAtuinSetupTests {
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
     #expect(preview.prefix(5).allSatisfy { $0.status == .external })
     #expect(
-      preview.suffix(7).map(\.status)
+      preview.dropFirst(5).map(\.status)
         == [.external, .planned, .planned, .planned, .planned, .planned, .planned]
+        + Array(repeating: .external, count: 4)
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
@@ -60,8 +65,9 @@ struct BtopYaziAtuinSetupTests {
 
     #expect(setup.prefix(5).allSatisfy { $0.status == .external })
     #expect(
-      setup.suffix(7).map(\.status)
+      setup.dropFirst(5).map(\.status)
         == [.external, .owned, .owned, .owned, .owned, .owned, .owned]
+        + Array(repeating: .external, count: 4)
     )
     #expect(try String(contentsOf: fixture.btopConfiguration, encoding: .utf8) == btop)
     #expect(
@@ -86,8 +92,9 @@ struct BtopYaziAtuinSetupTests {
 
     #expect(teardown.prefix(5).allSatisfy { $0.status == .none })
     #expect(
-      teardown.suffix(7).map(\.status)
+      teardown.dropFirst(5).map(\.status)
         == [.none, .removed, .removed, .removed, .removed, .removed, .removed]
+        + Array(repeating: .none, count: 4)
     )
     #expect(try String(contentsOf: fixture.btopConfiguration, encoding: .utf8) == btop)
     #expect(try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8) == yazi)
@@ -258,8 +265,9 @@ struct BtopYaziAtuinSetupTests {
     let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
     #expect(
-      resumed.suffix(7).map(\.status)
+      resumed.dropFirst(5).map(\.status)
         == [.external, .external, .owned, .external, .external, .external, .external]
+        + Array(repeating: .external, count: 4)
     )
     #expect(
       try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
