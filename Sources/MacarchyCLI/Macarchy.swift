@@ -255,7 +255,7 @@ struct Macarchy: AsyncParsableCommand {
 struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect or select themes.",
-    subcommands: [List.self, Set.self, Next.self, Status.self]
+    subcommands: [List.self, Set.self, Install.self, Next.self, Status.self]
   )
 }
 
@@ -529,7 +529,7 @@ struct ThemeSetCommandRunner: Sendable {
     dryRun: Bool,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
-    do {
+    let run: @Sendable () async throws -> (output: String, succeeded: Bool) = {
       let package = try repository.package(id: themeID)
       return try await execute(
         package: package,
@@ -539,6 +539,10 @@ struct ThemeSetCommandRunner: Sendable {
         expectedActiveGenerationID: nil,
         json: json
       )
+    }
+    do {
+      if dryRun { return try await run() }
+      return try await ThemePackageLock(root: stateRoot).withLock(run)
     } catch {
       let report = ThemeSetReport.precommitFailure(themeID: themeID, error: error)
       return (try report.render(json: json), report.succeeded)
@@ -553,6 +557,23 @@ struct ThemeSetCommandRunner: Sendable {
     expectedActiveGenerationID: String?,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
+    let report = try await report(
+      package: package,
+      stateRoot: stateRoot,
+      consumerPaths: consumerPaths,
+      dryRun: dryRun,
+      expectedActiveGenerationID: expectedActiveGenerationID
+    )
+    return (try report.render(json: json), report.succeeded)
+  }
+
+  func report(
+    package: ThemePackage,
+    stateRoot: URL,
+    consumerPaths: ThemeConsumerPaths,
+    dryRun: Bool,
+    expectedActiveGenerationID: String?
+  ) async throws -> ThemeSetReport {
     let report: ThemeSetReport
     if dryRun {
       do {
@@ -582,7 +603,7 @@ struct ThemeSetCommandRunner: Sendable {
         report = .precommitFailure(themeID: package.id, error: error)
       }
     }
-    return (try report.render(json: json), report.succeeded)
+    return report
   }
 }
 
@@ -617,31 +638,35 @@ struct ThemeNextCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool
   ) async throws -> (output: String, succeeded: Bool) {
-    let packages = try repository.packages()
-    while true {
-      let active: GenerationManifest
-      do {
-        active = try activeManifest(stateRoot)
-      } catch ReconciliationStatusError.noActiveGeneration {
-        throw ThemeNextError.noActiveTheme
-      }
-      guard let activeIndex = packages.firstIndex(where: { $0.id == active.themeID }) else {
-        throw ThemeNextError.activeThemeUnavailable(active.themeID)
-      }
-      let package = packages[(activeIndex + 1) % packages.count]
-      do {
-        return try await activation.execute(
-          package: package,
-          stateRoot: stateRoot,
-          consumerPaths: consumerPaths,
-          dryRun: dryRun,
-          expectedActiveGenerationID: dryRun ? nil : active.generationID,
-          json: false
-        )
-      } catch ThemeActivationError.activeGenerationChanged {
-        continue
+    let run: @Sendable () async throws -> (output: String, succeeded: Bool) = {
+      let packages = try repository.packages()
+      while true {
+        let active: GenerationManifest
+        do {
+          active = try activeManifest(stateRoot)
+        } catch ReconciliationStatusError.noActiveGeneration {
+          throw ThemeNextError.noActiveTheme
+        }
+        guard let activeIndex = packages.firstIndex(where: { $0.id == active.themeID }) else {
+          throw ThemeNextError.activeThemeUnavailable(active.themeID)
+        }
+        let package = packages[(activeIndex + 1) % packages.count]
+        do {
+          return try await activation.execute(
+            package: package,
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths,
+            dryRun: dryRun,
+            expectedActiveGenerationID: dryRun ? nil : active.generationID,
+            json: false
+          )
+        } catch ThemeActivationError.activeGenerationChanged {
+          continue
+        }
       }
     }
+    if dryRun { return try await run() }
+    return try await ThemePackageLock(root: stateRoot).withLock(run)
   }
 }
 
@@ -1221,7 +1246,7 @@ private struct ThemeStatusJSONReport: Encodable {
   var error: String? = nil
 }
 
-private enum ThemeSetReport {
+enum ThemeSetReport {
   enum Outcome: String, Encodable {
     case dryRun = "dry_run"
     case success
@@ -1300,7 +1325,7 @@ private enum ThemeSetReport {
     }
   }
 
-  private var jsonReport: ThemeSetJSONReport {
+  var jsonReport: ThemeSetJSONReport {
     switch self {
     case .dryRun(let themeID):
       ThemeSetJSONReport(
@@ -1345,7 +1370,7 @@ private enum ThemeSetReport {
 
 }
 
-private struct ThemeSetJSONReport: Encodable {
+struct ThemeSetJSONReport: Encodable {
   let schemaVersion = 1
   let operation = "theme_set"
   let themeID: String

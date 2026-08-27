@@ -70,15 +70,25 @@ struct ThemeNextStatusCommandTests {
   }
 
   @Test
-  func concurrentNextRetriesAgainstTheGenerationThatWonActivation() async throws {
+  func nextRetriesWhenTheObservedGenerationIsSupersededDuringActivation() async throws {
     let canonical = Mutex(testManifest(generationID: "g-initial", themeID: "catppuccin-mocha"))
     let attempts = Mutex([String]())
-    let barrier = FirstTwoAttemptsBarrier()
     let activation = ThemeSetCommandRunner(
       preflight: { _, _, _ in },
       activate: { package, _, _, expectedGenerationID in
-        attempts.withLock { $0.append(package.id) }
-        await barrier.wait()
+        let attempt = attempts.withLock { attempts in
+          attempts.append(package.id)
+          return attempts.count
+        }
+        if attempt == 1 {
+          canonical.withLock {
+            $0 = testManifest(generationID: "g-superseding", themeID: "kanagawa-wave")
+          }
+          throw ThemeActivationError.activeGenerationChanged(
+            expected: expectedGenerationID ?? "none",
+            active: "g-superseding"
+          )
+        }
         let manifest = testManifest(
           generationID: "g-\(package.id)-\(UUID().uuidString)",
           themeID: package.id
@@ -102,28 +112,23 @@ struct ThemeNextStatusCommandTests {
       activeManifest: { _ in canonical.withLock { $0 } },
       activation: activation
     )
-    let stateRoot = URL(filePath: "/test/state", directoryHint: .isDirectory)
+    let stateRoot = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-theme-next-command-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: stateRoot) }
     let consumerPaths = testConsumerPaths()
 
-    async let first = runner.execute(
+    let execution = try await runner.execute(
       repository: repository,
       stateRoot: stateRoot,
       consumerPaths: consumerPaths,
       dryRun: false
     )
-    async let second = runner.execute(
-      repository: repository,
-      stateRoot: stateRoot,
-      consumerPaths: consumerPaths,
-      dryRun: false
-    )
-    let (firstResult, secondResult) = try await (first, second)
-    let outputs = [firstResult.output, secondResult.output]
 
-    #expect(attempts.withLock { $0 } == ["kanagawa-wave", "kanagawa-wave", "tokyo-night"])
+    #expect(attempts.withLock { $0 } == ["kanagawa-wave", "tokyo-night"])
     #expect(canonical.withLock { $0.themeID } == "tokyo-night")
-    #expect(outputs.contains { $0.hasPrefix("Activated 'kanagawa-wave'") })
-    #expect(outputs.contains { $0.hasPrefix("Activated 'tokyo-night'") })
+    #expect(execution.output.hasPrefix("Activated 'tokyo-night'"))
   }
 
   @Test
@@ -248,25 +253,6 @@ struct ThemeNextStatusCommandTests {
 
   private var fixturesRoot: URL {
     repositoryRoot.appending(path: "Tests/Fixtures/CLI", directoryHint: .isDirectory)
-  }
-}
-
-private actor FirstTwoAttemptsBarrier {
-  private var arrivals = 0
-  private var waiters: [CheckedContinuation<Void, Never>] = []
-
-  func wait() async {
-    guard arrivals < 2 else { return }
-    arrivals += 1
-    if arrivals == 2 {
-      let pending = waiters
-      waiters.removeAll()
-      for waiter in pending {
-        waiter.resume()
-      }
-      return
-    }
-    await withCheckedContinuation { waiters.append($0) }
   }
 }
 
