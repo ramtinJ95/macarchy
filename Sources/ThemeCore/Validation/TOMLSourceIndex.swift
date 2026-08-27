@@ -10,7 +10,7 @@ struct TOMLSourceIndex {
   let fields: [TOMLFieldLocation]
   let tables: [TOMLFieldLocation]
 
-  init(text: String, file: URL) throws {
+  init(text: String, file: URL, syntaxRole: String = "Theme manifest") throws {
     var currentTable = ""
     var fields: [TOMLFieldLocation] = []
     var tables: [TOMLFieldLocation] = []
@@ -29,7 +29,7 @@ struct TOMLSourceIndex {
           throw ThemeDiagnostic(
             location: .init(file: file, line: offset + 1, column: 1),
             field: table,
-            message: "Theme manifest tables must use bare names"
+            message: "\(syntaxRole) tables must use bare names"
           )
         }
         currentTable = table
@@ -46,7 +46,7 @@ struct TOMLSourceIndex {
         throw ThemeDiagnostic(
           location: .init(file: file, line: offset + 1, column: 1),
           field: rawKey,
-          message: "Theme manifest keys must use bare names"
+          message: "\(syntaxRole) keys must use bare names"
         )
       }
       let value = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
@@ -54,7 +54,7 @@ struct TOMLSourceIndex {
         throw ThemeDiagnostic(
           location: .init(file: file, line: offset + 1, column: 1),
           field: rawKey,
-          message: "Multiline TOML strings are not supported in theme manifests"
+          message: "Multiline TOML strings are not supported in \(syntaxRole.lowercased())"
         )
       }
       let key = rawKey

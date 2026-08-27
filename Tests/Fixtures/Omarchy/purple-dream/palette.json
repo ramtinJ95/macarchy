@@ -1,0 +1,75 @@
+{
+  "appearance" : "dark",
+  "compatibility" : {
+    "derived_fields" : [
+      "blue",
+      "bright_blue",
+      "bright_cyan",
+      "bright_foreground",
+      "bright_green",
+      "bright_magenta",
+      "bright_red",
+      "bright_yellow",
+      "cursor",
+      "cyan",
+      "dark_foreground",
+      "green",
+      "lighter_background",
+      "magenta",
+      "mode",
+      "muted",
+      "red",
+      "selection",
+      "yellow"
+    ],
+    "ignored_fields" : [
+
+    ],
+    "overridden_fields" : [
+      "color0",
+      "color7",
+      "cursor"
+    ],
+    "used_legacy_aliases" : false,
+    "used_legacy_ansi" : true
+  },
+  "semantic" : {
+    "accent" : "#8b9aff",
+    "background" : "#1a0d2e",
+    "border" : "#543a6e",
+    "error" : "#ff6ec7",
+    "info" : "#5ffbf1",
+    "muted_text" : "#543a6e",
+    "overlay" : "#d4a5ff",
+    "selection" : "#d4a5ff",
+    "success" : "#5ffbf1",
+    "surface" : "#1a0d2e",
+    "text" : "#d4a5ff",
+    "warning" : "#f9f871"
+  },
+  "terminal" : {
+    "ansi" : [
+      "#1a0d2e",
+      "#ff6ec7",
+      "#5ffbf1",
+      "#f9f871",
+      "#8b9aff",
+      "#f4a5ff",
+      "#5ffbf1",
+      "#d4a5ff",
+      "#543a6e",
+      "#ff9adc",
+      "#8ffef4",
+      "#fbf9a5",
+      "#b8c1ff",
+      "#ffc8ff",
+      "#8ffef4",
+      "#fef6ff"
+    ],
+    "background" : "#1a0d2e",
+    "cursor" : "#fef6ff",
+    "foreground" : "#d4a5ff",
+    "selection_background" : "#d4a5ff",
+    "selection_foreground" : "#1a0d2e"
+  }
+}
