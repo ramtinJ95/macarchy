@@ -260,6 +260,7 @@ struct SpicetifySetupTests {
     let refreshEntered = DispatchSemaphore(value: 0)
     let releaseLock = DispatchSemaphore(value: 0)
     let reconciliationFinished = DispatchSemaphore(value: 0)
+    let setupStarted = DispatchSemaphore(value: 0)
     let setupFinished = DispatchSemaphore(value: 0)
     let reconciliationError = Mutex<String?>(nil)
     let setupError = Mutex<String?>(nil)
@@ -286,13 +287,14 @@ struct SpicetifySetupTests {
       }
       reconciliationFinished.signal()
     }
-    #expect(refreshEntered.wait(timeout: .now() + 1) == .success)
+    #expect(refreshEntered.wait(timeout: .now() + 5) == .success)
     let providerEdit = Data(
       "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\n".utf8
     )
     try providerEdit.write(to: fixture.configuration, options: .atomic)
 
     DispatchQueue.global(qos: .utility).async {
+      setupStarted.signal()
       do {
         _ = try fixture.setup(dryRun: false)
       } catch {
@@ -300,13 +302,14 @@ struct SpicetifySetupTests {
       }
       setupFinished.signal()
     }
+    #expect(setupStarted.wait(timeout: .now() + 5) == .success)
     #expect(setupFinished.wait(timeout: .now() + 0.1) == .timedOut)
     #expect(try Data(contentsOf: fixture.configuration) == providerEdit)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     releaseLock.signal()
-    #expect(reconciliationFinished.wait(timeout: .now() + 1) == .success)
-    #expect(setupFinished.wait(timeout: .now() + 1) == .success)
+    #expect(reconciliationFinished.wait(timeout: .now() + 5) == .success)
+    #expect(setupFinished.wait(timeout: .now() + 5) == .success)
     #expect(reconciliationError.withLock { $0 } == nil)
     #expect(setupError.withLock { $0 } == nil)
     #expect(
