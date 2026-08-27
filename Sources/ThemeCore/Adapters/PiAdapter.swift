@@ -21,11 +21,12 @@ enum PiAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct PiAdapter: Sendable {
+package struct PiAdapter: Sendable {
   static let id = "pi"
-  static let outputPath = "generated/pi.json"
+  package static let outputPath = "generated/pi.json"
   static let rendererVersion = 2
-  static let themeName = "macarchy-current"
+  package static let themeName = "macarchy-current"
+  package static let selectionKey = "theme"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/pi")
 
   let root: URL

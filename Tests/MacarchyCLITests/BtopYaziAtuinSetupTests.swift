@@ -36,6 +36,14 @@ struct BtopYaziAtuinSetupTests {
           "neovim.theme-link",
           "starship.behavior",
           "starship.configuration-link",
+          "pi.selector",
+          "pi.theme-link",
+          "herdr.selector",
+          "tuicr.selector",
+          "tuicr.theme-link",
+          "tuicr.syntax-link",
+          "codex.selector",
+          "codex.theme-link",
         ]
     )
     #expect(results.allSatisfy { $0.status == .external && !$0.mutationAttempted })
@@ -55,20 +63,20 @@ struct BtopYaziAtuinSetupTests {
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
     #expect(preview.prefix(5).allSatisfy { $0.status == .external })
     #expect(
-      preview.dropFirst(5).map(\.status)
+      preview[5..<12].map(\.status)
         == [.external, .planned, .planned, .planned, .planned, .planned, .planned]
-        + Array(repeating: .external, count: 4)
     )
+    #expect(preview.dropFirst(12).allSatisfy { $0.status == .external })
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
     #expect(setup.prefix(5).allSatisfy { $0.status == .external })
     #expect(
-      setup.dropFirst(5).map(\.status)
+      setup[5..<12].map(\.status)
         == [.external, .owned, .owned, .owned, .owned, .owned, .owned]
-        + Array(repeating: .external, count: 4)
     )
+    #expect(setup.dropFirst(12).allSatisfy { $0.status == .external })
     #expect(try String(contentsOf: fixture.btopConfiguration, encoding: .utf8) == btop)
     #expect(
       try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
@@ -92,10 +100,10 @@ struct BtopYaziAtuinSetupTests {
 
     #expect(teardown.prefix(5).allSatisfy { $0.status == .none })
     #expect(
-      teardown.dropFirst(5).map(\.status)
+      teardown[5..<12].map(\.status)
         == [.none, .removed, .removed, .removed, .removed, .removed, .removed]
-        + Array(repeating: .none, count: 4)
     )
+    #expect(teardown.dropFirst(12).allSatisfy { $0.status == .none })
     #expect(try String(contentsOf: fixture.btopConfiguration, encoding: .utf8) == btop)
     #expect(try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8) == yazi)
     #expect(try String(contentsOf: fixture.atuinConfiguration, encoding: .utf8) == atuin)
@@ -265,10 +273,10 @@ struct BtopYaziAtuinSetupTests {
     let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
     #expect(
-      resumed.dropFirst(5).map(\.status)
+      resumed[5..<12].map(\.status)
         == [.external, .external, .owned, .external, .external, .external, .external]
-        + Array(repeating: .external, count: 4)
     )
+    #expect(resumed.dropFirst(12).allSatisfy { $0.status == .external })
     #expect(
       try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
         == "[flavor]\ndark = \"macarchy-current\"\nlight = \"default\"\n"

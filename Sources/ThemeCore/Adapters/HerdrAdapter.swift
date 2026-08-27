@@ -30,7 +30,7 @@ enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct HerdrAdapter: Sendable {
+package struct HerdrAdapter: Sendable {
   static let id = "herdr"
   static let outputPath = "generated/herdr.txt"
   static let rendererVersion = 1
@@ -64,7 +64,7 @@ struct HerdrAdapter: Sendable {
     guard controlIsAvailable() else {
       throw HerdrAdapterError.controlUnavailable(executableURL)
     }
-    _ = try Self.parseConfiguration(try readConfiguration())
+    try Self.validateConfiguration(try readConfiguration())
   }
 
   func preflight(package: ThemePackage) throws {
@@ -150,6 +150,10 @@ struct HerdrAdapter: Sendable {
 
   static func render(package: ThemePackage) throws -> String {
     try mapping(for: package) + "\n"
+  }
+
+  package static func validateConfiguration(_ configuration: String) throws {
+    _ = try parseConfiguration(configuration)
   }
 
   private static func mapping(for package: ThemePackage) throws -> String {

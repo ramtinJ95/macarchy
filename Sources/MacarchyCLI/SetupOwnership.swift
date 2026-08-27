@@ -155,6 +155,14 @@ struct SetupOwnershipManager: Sendable {
   static let neovimThemeLinkID = "neovim.theme-link"
   static let starshipBehaviorID = "starship.behavior"
   static let starshipConfigurationLinkID = "starship.configuration-link"
+  static let piSelectorID = "pi.selector"
+  static let piThemeLinkID = "pi.theme-link"
+  static let herdrSelectorID = "herdr.selector"
+  static let tuicrSelectorID = "tuicr.selector"
+  static let tuicrThemeLinkID = "tuicr.theme-link"
+  static let tuicrSyntaxLinkID = "tuicr.syntax-link"
+  static let codexSelectorID = "codex.selector"
+  static let codexThemeLinkID = "codex.theme-link"
   static let maximumConfigurationSize = 1_048_576
   private static let integrationOrder = [
     integrationID,
@@ -173,6 +181,14 @@ struct SetupOwnershipManager: Sendable {
     neovimThemeLinkID,
     starshipBehaviorID,
     starshipConfigurationLinkID,
+    piSelectorID,
+    piThemeLinkID,
+    herdrSelectorID,
+    tuicrSelectorID,
+    tuicrThemeLinkID,
+    tuicrSyntaxLinkID,
+    codexSelectorID,
+    codexThemeLinkID,
   ]
 
   let faultInjector: @Sendable (SetupOwnershipCheckpoint) throws -> Void
@@ -286,6 +302,28 @@ struct SetupOwnershipManager: Sendable {
       (starshipBehaviorID, url.path)
     case context.starshipConfigurationLink.path:
       (starshipConfigurationLinkID, url.path)
+    case context.piConfiguration.path,
+      context.piConfiguration.deletingLastPathComponent()
+      .appending(path: context.piSelectorReplacementName).path:
+      (piSelectorID, url.path)
+    case context.piThemeLink.path:
+      (piThemeLinkID, url.path)
+    case context.herdrConfiguration.path:
+      (herdrSelectorID, url.path)
+    case context.tuicrConfiguration.path, context.tuicrSelectorBackup.path,
+      context.tuicrConfiguration.deletingLastPathComponent()
+      .appending(path: context.tuicrSelectorReplacementName).path:
+      (tuicrSelectorID, url.path)
+    case context.tuicrThemeLink.path:
+      (tuicrThemeLinkID, url.path)
+    case context.tuicrSyntaxLink.path:
+      (tuicrSyntaxLinkID, url.path)
+    case context.codexConfiguration.path, context.codexSelectorBackup.path,
+      context.codexConfiguration.deletingLastPathComponent()
+      .appending(path: context.codexSelectorReplacementName).path:
+      (codexSelectorID, url.path)
+    case context.codexThemeLink.path:
+      (codexThemeLinkID, url.path)
     case context.kittyConfiguration.path, context.backupURL.path, context.replacementURL.path:
       (integrationID, url.path)
     default:
@@ -349,6 +387,18 @@ struct SetupOwnershipManager: Sendable {
           records: &records
         )
       )
+      results.append(
+        try setupPiThemeLink(context: context, dryRun: dryRun, records: &records))
+      results.append(try setupPiSelector(context: context, dryRun: dryRun, records: &records))
+      results.append(try setupHerdrSelector(context: context))
+      results.append(
+        try setupTuicrThemeLink(context: context, dryRun: dryRun, records: &records))
+      results.append(
+        try setupTuicrSyntaxLink(context: context, dryRun: dryRun, records: &records))
+      results.append(try setupTuicrSelector(context: context, dryRun: dryRun, records: &records))
+      results.append(
+        try setupCodexThemeLink(context: context, dryRun: dryRun, records: &records))
+      results.append(try setupCodexSelector(context: context, dryRun: dryRun, records: &records))
       return Self.orderedResults(results)
     } catch let error as SetupOwnershipTransactionError {
       throw SetupOwnershipTransactionError(wrapping: error, completedResults: results)
@@ -385,6 +435,28 @@ struct SetupOwnershipManager: Sendable {
   ) throws -> [SetupIntegrationResult] {
     var results = [SetupIntegrationResult]()
     do {
+      results.append(
+        try teardownCodexSelector(context: context, dryRun: dryRun, records: &records)
+      )
+      results.append(
+        try teardownCodexThemeLink(context: context, dryRun: dryRun, records: &records)
+      )
+      results.append(
+        try teardownTuicrSelector(context: context, dryRun: dryRun, records: &records)
+      )
+      results.append(
+        try teardownTuicrSyntaxLink(context: context, dryRun: dryRun, records: &records)
+      )
+      results.append(
+        try teardownTuicrThemeLink(context: context, dryRun: dryRun, records: &records)
+      )
+      results.append(teardownHerdrSelector(context: context))
+      results.append(
+        try teardownPiSelector(context: context, dryRun: dryRun, records: &records)
+      )
+      results.append(
+        try teardownPiThemeLink(context: context, dryRun: dryRun, records: &records)
+      )
       results.append(
         try teardownThemeLink(
           id: Self.starshipConfigurationLinkID,

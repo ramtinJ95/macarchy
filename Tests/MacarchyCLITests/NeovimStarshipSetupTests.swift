@@ -18,7 +18,7 @@ struct NeovimStarshipSetupTests {
     try Data("existing generated bridge\n".utf8).write(to: fixture.starshipBridge)
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    let group = Array(results.suffix(4))
+    let group = Array(results[12..<16])
 
     #expect(
       group.map(\.id)
@@ -58,7 +58,7 @@ struct NeovimStarshipSetupTests {
 
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
     #expect(
-      preview.suffix(4).map(\.status)
+      preview[12..<16].map(\.status)
         == [.external, .planned, .external, .planned]
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -70,7 +70,7 @@ struct NeovimStarshipSetupTests {
     )
 
     #expect(
-      setup.suffix(4).map(\.status)
+      setup[12..<16].map(\.status)
         == [.external, .owned, .external, .owned]
     )
     #expect(
@@ -94,7 +94,7 @@ struct NeovimStarshipSetupTests {
       dryRun: false
     )
 
-    #expect(teardown.suffix(4).map(\.status) == [.none, .removed, .none, .removed])
+    #expect(teardown[12..<16].map(\.status) == [.none, .removed, .none, .removed])
     #expect(!FileManager.default.fileExists(atPath: fixture.neovimThemeLink.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.starshipConfigurationLink.path))
     #expect(try Data(contentsOf: fixture.neovimWatcherConfiguration) == watcher)
@@ -138,7 +138,7 @@ struct NeovimStarshipSetupTests {
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
     #expect(NeovimAdapter.containsIntegrationDirective(in: watcher))
-    #expect(results.suffix(4).allSatisfy { $0.status == .external })
+    #expect(results[12..<16].allSatisfy { $0.status == .external })
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
@@ -304,7 +304,7 @@ struct NeovimStarshipSetupTests {
       dryRun: false
     )
     #expect(
-      resumedNeovim.suffix(4).map(\.status)
+      resumedNeovim[12..<16].map(\.status)
         == [.external, .owned, .external, .owned]
     )
 
@@ -325,7 +325,7 @@ struct NeovimStarshipSetupTests {
       dryRun: false
     )
     #expect(
-      resumedStarship.suffix(4).map(\.status)
+      resumedStarship[12..<16].map(\.status)
         == [.external, .external, .external, .owned]
     )
   }

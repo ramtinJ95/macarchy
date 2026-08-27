@@ -21,11 +21,12 @@ enum TuicrAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct TuicrAdapter: Sendable {
+package struct TuicrAdapter: Sendable {
   static let id = "tuicr"
-  static let outputPath = "generated/tuicr.toml"
+  package static let outputPath = "generated/tuicr.toml"
   static let rendererVersion = 1
-  static let themeName = "macarchy-current"
+  package static let themeName = "macarchy-current"
+  package static let selectionKey = "theme"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/tuicr")
 
   let root: URL
