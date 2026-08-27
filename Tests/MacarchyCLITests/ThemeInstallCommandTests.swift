@@ -103,6 +103,33 @@ struct ThemeInstallCommandTests {
     #expect(execution.succeeded)
     #expect(execution.output.contains("is valid"))
     #expect(execution.output.contains("would install"))
+    #expect(execution.output.contains("Imported backgrounds:\n- backgrounds/purple.png"))
+    #expect(execution.output.contains("Warnings: missing_asset_provenance"))
+    #expect(execution.output.contains("- herdr [required]: unsupported"))
+    #expect(execution.output.contains("- neovim [required]: unsupported"))
+    #expect(!FileManager.default.fileExists(atPath: fixture.stateRoot.path))
+
+    let jsonExecution = try await fixture.runner().execute(
+      source: fixture.source,
+      repository: fixture.repository,
+      userThemesRoot: fixture.userThemes,
+      stateRoot: fixture.stateRoot,
+      consumerPaths: testConsumerPaths(),
+      dryRun: true,
+      json: true
+    )
+    let report = try #require(
+      JSONSerialization.jsonObject(with: Data(jsonExecution.output.utf8)) as? [String: Any]
+    )
+    let conversion = try #require(report["conversion"] as? [String: Any])
+    let reconciliation = try #require(report["reconciliation"] as? [[String: Any]])
+    #expect(conversion["resolved_commit"] as? String == ThemeInstallFixture.newCommit)
+    #expect((conversion["warnings"] as? [String]) == ["missing_asset_provenance"])
+    #expect(reconciliation.count == ThemeActivationCoordinator.adapterRequirements.count)
+    #expect(
+      reconciliation.first { $0["adapter_id"] as? String == "herdr" }?["status"] as? String
+        == "unsupported"
+    )
     #expect(!FileManager.default.fileExists(atPath: fixture.stateRoot.path))
   }
 }

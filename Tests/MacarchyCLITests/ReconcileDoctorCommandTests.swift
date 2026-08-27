@@ -141,6 +141,70 @@ struct ReconcileDoctorCommandTests {
   }
 
   @Test
+  func namedThemeUnsupportedIsWarningWhileGeneratedConsumerUnsupportedFails() async throws {
+    let manifest = testManifest()
+    let namedRecord = try ReconciliationRecord(
+      manifest: manifest,
+      results: ThemeActivationCoordinator.adapterRequirements.map { adapterID, requirement in
+        AdapterResult(
+          adapterID: adapterID,
+          requirement: requirement,
+          status: adapterID == "herdr" || adapterID == "neovim" ? .unsupported : .applied
+        )
+      }
+    )
+    let named = DoctorCommandRunner(
+      read: { _ in .state(manifest: manifest, reconciliation: .current(namedRecord)) },
+      inspect: { _, _ in
+        [
+          AdapterInspection(
+            adapterID: "herdr",
+            requirement: .required,
+            status: .unsupported
+          ),
+          AdapterInspection(
+            adapterID: "neovim",
+            requirement: .required,
+            status: .unsupported
+          ),
+        ]
+      }
+    )
+
+    let namedDiagnosis = try named.execute(
+      stateRoot: stateRoot,
+      consumerPaths: consumerPaths,
+      json: false
+    )
+
+    #expect(namedDiagnosis.succeeded)
+    #expect(namedDiagnosis.output.contains("reconciliation.herdr [warning]: unsupported"))
+    #expect(namedDiagnosis.output.contains("neovim.integration [warning]"))
+
+    let generatedRecord = try ReconciliationRecord(
+      manifest: manifest,
+      results: ThemeActivationCoordinator.adapterRequirements.map { adapterID, requirement in
+        AdapterResult(
+          adapterID: adapterID,
+          requirement: requirement,
+          status: adapterID == "kitty" ? .unsupported : .applied
+        )
+      }
+    )
+    let generated = DoctorCommandRunner(
+      read: { _ in .state(manifest: manifest, reconciliation: .current(generatedRecord)) },
+      inspect: { _, _ in [] }
+    )
+    let generatedDiagnosis = try generated.execute(
+      stateRoot: stateRoot,
+      consumerPaths: consumerPaths,
+      json: false
+    )
+    #expect(!generatedDiagnosis.succeeded)
+    #expect(generatedDiagnosis.output.contains("reconciliation.kitty [failure]: unsupported"))
+  }
+
+  @Test
   func reconcileReportsAdapterOutcomesWhenStatusPersistenceFails() async throws {
     let manifest = testManifest()
     let results = [
