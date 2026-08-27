@@ -708,6 +708,10 @@ struct TeardownCommandRunner: Sendable {
 }
 
 private struct TeardownReport: Encodable {
+  static let softwareRemovalCommand =
+    "HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 "
+    + "brew uninstall --formula \(HomebrewTapVersionReader.formula)"
+
   let schemaVersion = 1
   let operation = "teardown"
   let dryRun: Bool
@@ -727,6 +731,17 @@ private struct TeardownReport: Encodable {
       }
     )
     lines.append(mutation)
+    lines.append("User state under ~/.config/macarchy is preserved.")
+    if integrations.allSatisfy(\.succeeded) {
+      lines.append(
+        dryRun
+          ? "After successful teardown, remove the Homebrew formula separately with:"
+          : "Remove the Homebrew formula separately with:"
+      )
+      lines.append("  \(Self.softwareRemovalCommand)")
+    } else {
+      lines.append("Resolve teardown failures before removing the Homebrew formula.")
+    }
     return lines.joined(separator: "\n")
   }
 }

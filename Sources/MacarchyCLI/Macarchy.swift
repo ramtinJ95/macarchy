@@ -261,9 +261,22 @@ struct Theme: AsyncParsableCommand {
 
 struct Update: ParsableCommand {
   static let configuration = CommandConfiguration(
-    abstract: "Inspect stable Macarchy updates.",
+    abstract: "Inspect or install stable Macarchy updates.",
+    usage: "macarchy update [<subcommand>]",
     subcommands: [Status.self, Check.self]
   )
+
+  mutating func run() throws {
+    let root = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    let execution = try HomebrewUpdateLock(root: root).withLock {
+      try HomebrewUpdateRunner.live.execute(stateRoot: root)
+    }
+    print(execution.output)
+    if !execution.succeeded {
+      throw ExitCode.failure
+    }
+  }
 
   struct Options: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")

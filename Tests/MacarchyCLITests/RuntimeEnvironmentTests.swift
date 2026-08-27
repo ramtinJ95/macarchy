@@ -46,8 +46,24 @@ struct RuntimeEnvironmentTests {
     #expect(packages.map(\.id) == ["catppuccin-mocha", "kanagawa-wave", "tokyo-night"])
     #expect(try runtime.buildInformation().installation == .unmanaged)
 
+    let receipt = root.appending(path: "INSTALL_RECEIPT.json")
+    try FileManager.default.createDirectory(
+      at: receipt,
+      withIntermediateDirectories: false
+    )
+    #expect(try runtime.buildInformation().installation == .unmanaged)
+    try FileManager.default.removeItem(at: receipt)
+    let receiptTarget = root.appending(path: "receipt-target.json")
+    try "{}\n".write(to: receiptTarget, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: receipt,
+      withDestinationURL: receiptTarget
+    )
+    #expect(try runtime.buildInformation().installation == .unmanaged)
+    try FileManager.default.removeItem(at: receipt)
+
     try "{}\n".write(
-      to: root.appending(path: "INSTALL_RECEIPT.json"),
+      to: receipt,
       atomically: true,
       encoding: .utf8
     )
@@ -94,6 +110,15 @@ struct RuntimeEnvironmentTests {
     }
     #expect(throws: InvalidBuildInformationError.self) {
       _ = try VersionCommandRunner(buildInformation: runtime.buildInformation).executeConcise()
+    }
+
+    let metadata = root.appending(path: "share/macarchy/build-info.json")
+    try FileManager.default.removeItem(at: metadata)
+    let target = root.appending(path: "build-info-target.json")
+    try packagedBuildInformation.write(to: target, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(at: metadata, withDestinationURL: target)
+    #expect(throws: InvalidBuildInformationError.self) {
+      _ = try runtime.buildInformation()
     }
   }
 
