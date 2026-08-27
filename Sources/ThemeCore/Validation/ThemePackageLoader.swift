@@ -190,10 +190,6 @@ public struct ThemePackageLoader: Sendable {
       message:
         "Unsupported mappings schema version \(mappings.schemaVersion); expected \(ThemeSchema.version)",
       index: index, file: file)
-    try require(
-      !mappings.mappings.isEmpty, path: "mappings",
-      message: "At least one named consumer mapping is required", index: index, file: file)
-
     for (consumer, value) in mappings.mappings.sorted(by: { $0.key < $1.key }) {
       try require(
         ThemeSchema.isThemeID(consumer), path: "mappings.\(consumer)",
