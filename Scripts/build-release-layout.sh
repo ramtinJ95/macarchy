@@ -58,6 +58,9 @@ install -m 0755 "$binary" "$destination/bin/macarchy"
 install -m 0644 \
   "$repository_root/Documentation/theme-json.md" \
   "$destination/share/doc/macarchy/theme-json.md"
+install -m 0644 \
+  "$repository_root/CHANGELOG.md" \
+  "$destination/share/doc/macarchy/CHANGELOG.md"
 install -m 0644 "$repository_root/LICENSE" "$destination/share/doc/macarchy/LICENSE"
 printf '{"schema_version":1,"version":"%s","revision":"%s"}\n' \
   "$version" "$revision" > "$destination/share/macarchy/build-info.json"
