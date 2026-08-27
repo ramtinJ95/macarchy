@@ -7,7 +7,9 @@ struct Macarchy: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "macarchy",
     abstract: "A cohesive, theme-driven macOS environment.",
-    subcommands: [Theme.self, Reconcile.self, Doctor.self, Setup.self, Teardown.self, Version.self]
+    subcommands: [
+      Theme.self, Reconcile.self, Doctor.self, Setup.self, Teardown.self, Update.self, Version.self,
+    ]
   )
 
   @Flag(name: .customLong("version"), help: "Show version and exit.")
@@ -257,6 +259,63 @@ struct Theme: AsyncParsableCommand {
   )
 }
 
+struct Update: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    abstract: "Inspect stable Macarchy updates.",
+    subcommands: [Status.self, Check.self]
+  )
+
+  struct Options: ParsableArguments {
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    var stateRootURL: URL {
+      URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+    }
+  }
+
+  struct Status: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Show installed, upstream, and locally known tap versions."
+    )
+
+    @OptionGroup var options: Options
+
+    mutating func run() throws {
+      let execution = try UpdateCommandRunner.live.execute(
+        stateRoot: options.stateRootURL,
+        refresh: false,
+        json: options.json
+      )
+      print(execution.output)
+    }
+  }
+
+  struct Check: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Refresh the stable GitHub release check."
+    )
+
+    @OptionGroup var options: Options
+
+    mutating func run() throws {
+      let execution = try UpdateCommandRunner.live.execute(
+        stateRoot: options.stateRootURL,
+        refresh: true,
+        json: options.json
+      )
+      print(execution.output)
+      if !execution.succeeded {
+        throw ExitCode.failure
+      }
+    }
+  }
+}
+
 extension Theme {
   struct ThemeRootOptions: ParsableArguments {
     @Option(help: "Built-in theme package directory.")
@@ -286,6 +345,10 @@ extension Theme {
       for package in try roots.repository().packages() {
         print("\(package.id)\t\(package.appearance.rawValue)\t\(package.displayName)")
       }
+      UpdateNoticeRunner.live.run(
+        stateRoot: FileManager.default.homeDirectoryForCurrentUser
+          .appending(path: ".config/macarchy", directoryHint: .isDirectory)
+      )
     }
   }
 
