@@ -9,7 +9,8 @@ Macarchy is independently authored and inspired by
 [Omarchy](https://omarchy.org/). It is not an official port, a dotfile bundle,
 or a general application installer.
 
-> Macarchy is pre-release software. There is no stable `v0.1.0` release yet.
+The first stable release is
+[v0.1.0](https://github.com/ramtinJ95/macarchy/releases/tag/v0.1.0).
 
 ## What it does
 
@@ -37,6 +38,26 @@ optional Spicetify support.
 
 Macarchy runs with normal SIP. It does not require yabai's scripting addition,
 Developer ID signing, notarization, an Apple Developer account, or telemetry.
+
+## Install
+
+Macarchy is distributed through the personal Homebrew tap. Homebrew 6 requires
+an explicit trust decision for third-party formulae:
+
+```sh
+brew tap ramtinj95/tap
+brew trust --formula ramtinj95/tap/macarchy
+HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
+  HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
+  brew install --formula --no-ask ramtinj95/tap/macarchy
+macarchy setup
+macarchy doctor
+```
+
+The formula installs the immutable arm64 release archive and its bundled
+themes, normalized-theme contract, and license. Setup reports missing personal
+profile capabilities and establishes only the allowlisted integration seams it
+can own safely.
 
 ## Try it from source
 
