@@ -129,6 +129,15 @@ public struct OmarchyThemeConverter: Sendable {
   }
 
   package func convert(
+    from source: String,
+    to destination: URL
+  ) throws -> ConvertedOmarchyTheme {
+    try stager.withStagedCheckout(from: source) { staged in
+      try convert(staged: staged, to: destination)
+    }
+  }
+
+  package func convert(
     staged: StagedOmarchyTheme,
     to destination: URL
   ) throws -> ConvertedOmarchyTheme {
