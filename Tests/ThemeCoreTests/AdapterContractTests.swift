@@ -325,11 +325,12 @@ struct AdapterContractTests {
             count += 1
             return count
           }
+          if count < 2 {
+            throw ProcessRunnerError.timedOut(SketchyBarAdapter.liveExecutableURL, 0.1)
+          }
           return ProcessResult(
             terminationStatus: 0,
-            output: count < 2
-              ? #"{"drawing":"off","color":"0x44000000","items":[]}"#
-              : #"{"drawing":"on","color":"0xf01e1e2e","items":["macarchy.theme.ready"]}"#
+            output: #"{"drawing":"on","color":"0xf01e1e2e","items":["macarchy.theme.ready"]}"#
           )
         }
         return ProcessResult(terminationStatus: 0, output: "")
@@ -495,6 +496,43 @@ struct AdapterContractTests {
     let outcome = try await adapter.reconciliation().run()
 
     #expect(outcome.status == .drifted)
+    #expect(queryCount.withLock { $0 } == 11)
+    #expect(settleCount.withLock { $0 } == 10)
+  }
+
+  @Test
+  func sketchyBarRetriesQueryTimeoutsButFailsWhenTheWholeWindowTimesOut() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let configuration = try Self.sketchyBarConfiguration(root: root)
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let queryCount = Mutex(0)
+    let settleCount = Mutex(0)
+    let adapter = SketchyBarAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        if request.arguments == ["--query", "bar"] {
+          queryCount.withLock { $0 += 1 }
+          throw ProcessRunnerError.timedOut(SketchyBarAdapter.liveExecutableURL, 0.1)
+        }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      waitForSettle: { settleCount.withLock { $0 += 1 } },
+      waitForPresentation: {
+        Issue.record("Presentation wait must not run without an observed state")
+      }
+    )
+
+    let outcome = try await adapter.reconciliation().run()
+
+    #expect(outcome.status == .failed)
+    #expect(outcome.message?.contains("timed out through the bounded settle window") == true)
     #expect(queryCount.withLock { $0 } == 11)
     #expect(settleCount.withLock { $0 } == 10)
   }
@@ -2217,6 +2255,72 @@ struct AdapterContractTests {
   }
 
   @Test
+  func missingNamedThemeMappingsRemainNonBlockingAndDoNotRunConsumers() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
+    let manifest = try testActivator(root: root).activate(package: package)
+    let store = ReconciliationStatusStore(root: root)
+    _ = try store.persist(
+      manifest: manifest,
+      results: [
+        AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)
+      ]
+    )
+    let configurationURL = root.appending(path: "kitty.conf")
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
+      to: configurationURL,
+      atomically: true,
+      encoding: .utf8
+    )
+    let processCalls = Mutex(0)
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      consumerPaths: try Self.consumerPaths(
+        root: root,
+        kittyConfigurationURL: configurationURL,
+        sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
+      ),
+      processRunner: ProcessRunner { _ in
+        processCalls.withLock { $0 += 1 }
+        return ProcessResult(terminationStatus: 1, output: "must not run")
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root)
+    )
+
+    try coordinator.preflight(package: package)
+    let inspections = try coordinator.inspectAdapters(["herdr", "neovim"])
+    let reconciliation = try await coordinator.reconcile(adapterIDs: ["herdr", "neovim"])
+
+    #expect(inspections.map(\.status) == [.unsupported, .unsupported])
+    #expect(
+      reconciliation.record.results
+        == [
+          AdapterResult(
+            adapterID: "herdr",
+            requirement: .required,
+            status: .unsupported,
+            message:
+              "The active theme has no safe herdr named-theme mapping; its prior appearance is retained"
+          ),
+          AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
+          AdapterResult(
+            adapterID: "neovim",
+            requirement: .required,
+            status: .unsupported,
+            message:
+              "The active theme has no safe neovim named-theme mapping; its prior appearance is retained"
+          ),
+        ]
+    )
+    #expect(processCalls.withLock { $0 } == 0)
+  }
+
+  @Test
   func reconcileDryRunInspectsWithoutProcessesOrStatusWrites() throws {
     let root = try temporaryDirectory()
     defer {
@@ -2891,6 +2995,21 @@ struct AdapterContractTests {
         path: "Themes/tokyo-night",
         directoryHint: .isDirectory
       )
+    )
+  }
+
+  private func packageWithoutNamedThemeMappings(_ base: ThemePackage) -> ThemePackage {
+    ThemePackage(
+      packageURL: base.packageURL,
+      schemaVersion: base.schemaVersion,
+      id: base.id,
+      displayName: base.displayName,
+      appearance: base.appearance,
+      semantic: base.semantic,
+      terminal: base.terminal,
+      wallpaper: base.wallpaper,
+      wallpaperData: base.wallpaperData,
+      mappings: [:]
     )
   }
 

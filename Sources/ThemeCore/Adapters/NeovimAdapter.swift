@@ -30,7 +30,7 @@ package struct NeovimAdapter: Sendable {
   static let id = "neovim"
   package static let integrationDirective = "local current = macarchy.watch()"
   package static let outputPath = "generated/neovim.lua"
-  static let rendererVersion = 2
+  static let rendererVersion = 3
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/nvim")
 
   let root: URL

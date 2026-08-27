@@ -383,7 +383,8 @@ package struct ThemeActivationCoordinator: Sendable {
           manifest: manifest,
           adapters: configuredAdapters(
             desiredAppearance: package.appearance,
-            desiredWallpaperURL: nil
+            desiredWallpaperURL: nil,
+            unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
           ).map {
             $0.reconciliation()
           }
@@ -405,7 +406,8 @@ package struct ThemeActivationCoordinator: Sendable {
     let manifest = try statusStore.activeManifest()
     let adapters = configuredAdapters(
       desiredAppearance: try activeAppearance(manifest: manifest),
-      desiredWallpaperURL: activeWallpaperURL(manifest: manifest)
+      desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+      unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
     )
     let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
@@ -427,8 +429,10 @@ package struct ThemeActivationCoordinator: Sendable {
     try validateSelection(adapterIDs)
     let appearanceInspection: AdapterInspection
     let wallpaperInspection: AdapterInspection
+    var unsupportedAdapterIDs = Set<String>()
     do {
       let manifest = try statusStore.activeManifest()
+      unsupportedAdapterIDs = try unsupportedNamedThemeAdapterIDs(manifest: manifest)
       do {
         appearanceInspection = appearance.inspection(
           desiredAppearance: try activeAppearance(manifest: manifest)
@@ -473,9 +477,17 @@ package struct ThemeActivationCoordinator: Sendable {
       btop.inspection(),
       codex.inspection(),
       eza.inspection(),
-      herdr.inspection(),
+      namedThemeInspection(
+        adapterID: HerdrAdapter.id,
+        unsupportedAdapterIDs: unsupportedAdapterIDs,
+        supportedInspection: herdr.inspection
+      ),
       kitty.inspection(),
-      neovim.inspection(),
+      namedThemeInspection(
+        adapterID: NeovimAdapter.id,
+        unsupportedAdapterIDs: unsupportedAdapterIDs,
+        supportedInspection: neovim.inspection
+      ),
       pi.inspection(),
       sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
       spicetify.inspection(),
@@ -493,7 +505,11 @@ package struct ThemeActivationCoordinator: Sendable {
   ) async throws -> (manifest: GenerationManifest, record: ReconciliationRecord) {
     try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
-    let adapters = configuredAdapters(desiredAppearance: nil, desiredWallpaperURL: nil)
+    let adapters = configuredAdapters(
+      desiredAppearance: nil,
+      desiredWallpaperURL: nil,
+      unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+    )
     let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
       selected: selected,
@@ -547,7 +563,8 @@ package struct ThemeActivationCoordinator: Sendable {
 
   private func configuredAdapters(
     desiredAppearance: ThemeAppearance?,
-    desiredWallpaperURL: URL?
+    desiredWallpaperURL: URL?,
+    unsupportedAdapterIDs: Set<String>
   ) -> [ConfiguredAdapter] {
     [
       ConfiguredAdapter(
@@ -585,8 +602,9 @@ package struct ThemeActivationCoordinator: Sendable {
         inspection: eza.inspection,
         reconciliation: eza.reconciliation
       ),
-      ConfiguredAdapter(
+      configuredNamedThemeAdapter(
         id: HerdrAdapter.id,
+        unsupportedAdapterIDs: unsupportedAdapterIDs,
         inspection: herdr.inspection,
         reconciliation: herdr.reconciliation
       ),
@@ -595,8 +613,9 @@ package struct ThemeActivationCoordinator: Sendable {
         inspection: kitty.inspection,
         reconciliation: kitty.reconciliation
       ),
-      ConfiguredAdapter(
+      configuredNamedThemeAdapter(
         id: NeovimAdapter.id,
+        unsupportedAdapterIDs: unsupportedAdapterIDs,
         inspection: neovim.inspection,
         reconciliation: neovim.reconciliation
       ),
@@ -679,9 +698,13 @@ package struct ThemeActivationCoordinator: Sendable {
     try btop.preflight()
     try codex.preflight()
     try eza.preflight()
-    try herdr.preflight(package: package)
+    if package.mappings[HerdrAdapter.id] != nil {
+      try herdr.preflight(package: package)
+    }
     try kitty.preflight()
-    try neovim.preflight()
+    if package.mappings[NeovimAdapter.id] != nil {
+      try neovim.preflight()
+    }
     try pi.preflight()
     try sketchyBar.preflight()
     try starship.preflight()
@@ -747,6 +770,79 @@ package struct ThemeActivationCoordinator: Sendable {
     if first == .failed || second == .failed { return .failed }
     if first == .drifted || second == .drifted { return .drifted }
     return .ready
+  }
+
+  private func unsupportedNamedThemeAdapterIDs(
+    manifest: GenerationManifest
+  ) throws -> Set<String> {
+    guard manifest.artifacts[ThemeRenderer.capabilitiesOutputPath] != nil else {
+      return []
+    }
+    let url = root.appending(
+      path:
+        "generations/\(manifest.generationID)/\(ThemeRenderer.capabilitiesOutputPath)"
+    )
+    do {
+      let capabilities = try JSONDecoder().decode(
+        GeneratedThemeCapabilities.self,
+        from: BoundedRegularFile.read(at: url).data
+      )
+      return Set(try capabilities.validated().unsupportedAdapters)
+    } catch {
+      throw ReconciliationStatusError.invalidActiveGeneration(
+        "generated capabilities are invalid: \(error)"
+      )
+    }
+  }
+
+  private func namedThemeInspection(
+    adapterID: String,
+    unsupportedAdapterIDs: Set<String>,
+    supportedInspection: () -> AdapterInspection
+  ) -> AdapterInspection {
+    guard unsupportedAdapterIDs.contains(adapterID) else {
+      return supportedInspection()
+    }
+    return AdapterInspection(
+      adapterID: adapterID,
+      requirement: .required,
+      status: .unsupported,
+      message: unsupportedNamedThemeMessage(adapterID: adapterID)
+    )
+  }
+
+  private func configuredNamedThemeAdapter(
+    id: String,
+    unsupportedAdapterIDs: Set<String>,
+    inspection: @escaping @Sendable () -> AdapterInspection,
+    reconciliation: @escaping @Sendable () -> AdapterReconciliation
+  ) -> ConfiguredAdapter {
+    guard unsupportedAdapterIDs.contains(id) else {
+      return ConfiguredAdapter(id: id, inspection: inspection, reconciliation: reconciliation)
+    }
+    return ConfiguredAdapter(
+      id: id,
+      inspection: {
+        AdapterInspection(
+          adapterID: id,
+          requirement: .required,
+          status: .unsupported,
+          message: unsupportedNamedThemeMessage(adapterID: id)
+        )
+      },
+      reconciliation: {
+        AdapterReconciliation(id: id, requirement: .required) {
+          AdapterOutcome(
+            status: .unsupported,
+            message: unsupportedNamedThemeMessage(adapterID: id)
+          )
+        }
+      }
+    )
+  }
+
+  private func unsupportedNamedThemeMessage(adapterID: String) -> String {
+    "The active theme has no safe \(adapterID) named-theme mapping; its prior appearance is retained"
   }
 
   package static func kittyIncludeDirective(root: URL) -> String {

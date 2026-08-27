@@ -33,7 +33,7 @@ enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
 package struct HerdrAdapter: Sendable {
   static let id = "herdr"
   static let outputPath = "generated/herdr.txt"
-  static let rendererVersion = 1
+  static let rendererVersion = 2
   static var liveExecutableURL: URL {
     preferredExternalOrHomebrewExecutableURL(
       homeDirectory: FileManager.default.homeDirectoryForCurrentUser,

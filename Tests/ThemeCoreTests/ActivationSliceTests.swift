@@ -39,8 +39,9 @@ struct ActivationSliceTests {
     #expect(
       manifest.rendererVersions
         == [
-          "atuin": 1, "bat": 1, "btop": 1, "eza": 1, "herdr": 1, "kitty": 2,
-          "neovim": 2, "normalized_theme": 1, "pi": 2, "sketchybar": 1,
+          "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 2,
+          "kitty": 2,
+          "neovim": 3, "normalized_theme": 1, "pi": 2, "sketchybar": 1,
           "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1, "yazi": 1,
         ]
     )
@@ -50,7 +51,8 @@ struct ActivationSliceTests {
       Set(manifest.artifacts.keys)
         == [
           "generated/atuin.toml", "generated/bat.tmTheme", "generated/btop.theme",
-          "generated/eza.yml", "generated/herdr.txt", "generated/kitty.conf",
+          "generated/capabilities.json", "generated/eza.yml", "generated/herdr.txt",
+          "generated/kitty.conf",
           "generated/neovim.lua", "generated/pi.json", "generated/sketchybar.lua",
           "generated/spicetify.ini", "generated/starship.toml", "generated/tuicr.toml",
           "generated/wallpaper.png", "generated/yazi-flavor.toml",
@@ -79,6 +81,42 @@ struct ActivationSliceTests {
       let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
       #expect(permissions.intValue & 0o222 == 0)
     }
+  }
+
+  @Test
+  func activationPreservesPriorNamedThemeArtifactsWhenMappingsAreUnavailable() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let previous = try testActivator(root: root).activate(package: catppuccinPackage())
+    let previousGeneration = root.appending(path: "generations/\(previous.generationID)")
+    let previousHerdr = try Data(
+      contentsOf: previousGeneration.appending(path: HerdrAdapter.outputPath)
+    )
+    let previousNeovim = try Data(
+      contentsOf: previousGeneration.appending(path: NeovimAdapter.outputPath)
+    )
+    let package = try packageWithoutNamedThemeMappings(at: root)
+
+    let manifest = try testActivator(root: root).activate(package: package)
+    let generation = root.appending(path: "generations/\(manifest.generationID)")
+    let capabilities = try JSONDecoder().decode(
+      GeneratedThemeCapabilities.self,
+      from: Data(contentsOf: generation.appending(path: ThemeRenderer.capabilitiesOutputPath))
+    )
+
+    #expect(try capabilities.validated().unsupportedAdapters == ["herdr", "neovim"])
+    #expect(
+      try Data(contentsOf: generation.appending(path: HerdrAdapter.outputPath)) == previousHerdr)
+    #expect(
+      try Data(contentsOf: generation.appending(path: NeovimAdapter.outputPath)) == previousNeovim
+    )
+    #expect(Set(manifest.artifacts.keys).isSuperset(of: ThemeRenderer.requiredOutputPaths))
+    #expect(
+      try ReconciliationStatusStore(root: root).activeManifest().generationID
+        == manifest.generationID)
   }
 
   @Test
@@ -953,6 +991,21 @@ struct ActivationSliceTests {
       ).write(to: mappingsURL, atomically: true, encoding: .utf8)
       return try ThemePackageLoader().load(packageURL: destination)
     }
+  }
+
+  private func packageWithoutNamedThemeMappings(at root: URL) throws -> ThemePackage {
+    let source = repositoryRoot.appending(
+      path: "Themes/catppuccin-mocha",
+      directoryHint: .isDirectory
+    )
+    let destination = root.appending(path: "imported-package", directoryHint: .isDirectory)
+    try FileManager.default.copyItem(at: source, to: destination)
+    try "schema_version = 1\n\n[mappings]\n".write(
+      to: destination.appending(path: "mappings.toml"),
+      atomically: true,
+      encoding: .utf8
+    )
+    return try ThemePackageLoader().load(packageURL: destination)
   }
 
   private func activationError(from operation: () throws -> Void) throws -> ThemeActivationError {
