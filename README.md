@@ -61,12 +61,20 @@ macarchy doctor [--json]
 macarchy setup [--dry-run] [--json]
 macarchy setup --install-dependencies [--dry-run]
 macarchy teardown [--dry-run] [--json]
+macarchy update status [--json]
+macarchy update check [--json]
 ```
 
 Development builds find bundled themes from the checkout containing `.build`.
 Installed builds resolve resources relative to the executable, so commands do
 not depend on the current working directory. `--themes-root`, `--state-root`,
 and consumer-specific path options are available for development and testing.
+
+`update status` reads cached GitHub release evidence and the locally installed
+Homebrew tap without refreshing either source. `update check` explicitly
+refreshes the GitHub evidence. Macarchy may perform that same conditional
+request at most once per 24 hours during an eligible interactive command; set
+`MACARCHY_DISABLE_UPDATE_CHECKS=1` to disable only automatic checks.
 
 ## Setup without dotfile takeover
 
