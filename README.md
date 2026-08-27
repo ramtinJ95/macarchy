@@ -63,6 +63,7 @@ macarchy setup --install-dependencies [--dry-run]
 macarchy teardown [--dry-run] [--json]
 macarchy update status [--json]
 macarchy update check [--json]
+macarchy update
 ```
 
 Development builds find bundled themes from the checkout containing `.build`.
@@ -75,6 +76,14 @@ Homebrew tap without refreshing either source. `update check` explicitly
 refreshes the GitHub evidence. Macarchy may perform that same conditional
 request at most once per 24 hours during an eligible interactive command; set
 `MACARCHY_DISABLE_UPDATE_CHECKS=1` to disable only automatic checks.
+
+`macarchy update` is available only to stable Homebrew-owned installations. It
+streams an explicit Homebrew metadata refresh, compares the latest stable
+GitHub release with the refreshed tap, and upgrades only
+`ramtinj95/tap/macarchy`. A release newer than the tap is reported as packaging
+pending. Upgrade verification reopens the installed build metadata and bundled
+resources even when the installed version is current; Macarchy never downloads
+or replaces itself outside Homebrew.
 
 ## Setup without dotfile takeover
 
@@ -105,6 +114,37 @@ or conflicting selectors, and support interruption-safe resume.
 `macarchy teardown` first checks every ownership record. It then restores only
 recorded file edits and removes only recorded links. User themes, generated
 palettes, generations, logs, and rebuildable application caches are preserved.
+Software removal is a separate Homebrew-owned step:
+
+```sh
+macarchy teardown
+HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
+  brew uninstall --formula ramtinj95/tap/macarchy
+```
+
+Reinstalling preserves the state under `~/.config/macarchy`:
+
+```sh
+HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
+  HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
+  brew install --formula --no-ask ramtinj95/tap/macarchy
+macarchy setup
+macarchy doctor
+```
+
+If Homebrew reports a successful upgrade but Macarchy's installed-layout
+verification fails, use the exact recovery path printed by `macarchy update`:
+
+```sh
+HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 \
+  HOMEBREW_NO_INSTALL_CLEANUP=1 \
+  HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
+  brew reinstall --formula --no-ask ramtinj95/tap/macarchy
+/opt/homebrew/bin/macarchy update
+```
+
+This is a reinstall, not an automatic rollback claim. Purging
+`~/.config/macarchy` is deliberately not part of teardown or uninstall.
 
 Dependency installation is separately authorized with
 `--install-dependencies`. Macarchy reports the exact Homebrew formulae and casks
