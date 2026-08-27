@@ -111,7 +111,8 @@ struct ThemeInstallCommandRunner: Sendable {
         try FileManager.default.removeItem(at: preparedRoot)
         let report = ThemeInstallReport.dryRun(
           conversion: converted.report,
-          replacing: replacing
+          replacing: replacing,
+          reconciliation: Self.dryRunReconciliation(package: converted.package)
         )
         return (try report.render(json: json), report.succeeded)
       }
@@ -220,6 +221,22 @@ struct ThemeInstallCommandRunner: Sendable {
     )
   }
 
+  private static func dryRunReconciliation(package: ThemePackage) -> [AdapterResult] {
+    ThemeActivationCoordinator.adapterRequirements.map { adapterID, requirement in
+      let unsupported =
+        GeneratedThemeCapabilities.namedThemeAdapterIDs.contains(adapterID)
+        && package.mappings[adapterID] == nil
+      return AdapterResult(
+        adapterID: adapterID,
+        requirement: requirement,
+        status: unsupported ? .unsupported : .pending,
+        message: unsupported
+          ? "No safe imported named-theme mapping; the prior appearance would be retained"
+          : "Would reconcile after canonical commit"
+      )
+    }.sorted { $0.adapterID < $1.adapterID }
+  }
+
   private func preparationFailure(error: any Error, preparedRoot: URL) -> String {
     let original = String(describing: error)
     guard FileManager.default.fileExists(atPath: preparedRoot.path) else {
@@ -238,7 +255,11 @@ struct ThemeInstallCommandRunner: Sendable {
 
 private enum ThemeInstallReport {
   case preparationFailure(themeID: String?, sourceURL: String, error: String)
-  case dryRun(conversion: OmarchyThemeConversionReport, replacing: Bool)
+  case dryRun(
+    conversion: OmarchyThemeConversionReport,
+    replacing: Bool,
+    reconciliation: [AdapterResult]
+  )
   case activation(
     conversion: OmarchyThemeConversionReport,
     replaced: Bool,
@@ -267,14 +288,17 @@ private enum ThemeInstallReport {
         "Canonical state: unchanged.",
         "Error: \(error)",
       ].joined(separator: "\n")
-    case .dryRun(let conversion, let replacing):
-      return [
-        "Omarchy theme '\(conversion.themeID)' at commit '\(conversion.resolvedCommit)' is valid.",
-        "Required adapter preflight passed.",
-        "Installed package: unchanged (would \(replacing ? "replace" : "install")).",
-        "Canonical state: unchanged (dry run).",
-        "No persistent Macarchy state written; no consumer processes run.",
-      ].joined(separator: "\n")
+    case .dryRun(let conversion, let replacing, let reconciliation):
+      return conversionSummary(conversion) + "\n"
+        + ([
+          "Omarchy theme '\(conversion.themeID)' at commit '\(conversion.resolvedCommit)' is valid.",
+          "Required supported-adapter preflight passed.",
+          "Installed package: unchanged (would \(replacing ? "replace" : "install")).",
+          "Canonical state: unchanged (dry run).",
+          "Consumer reconciliation preview:",
+        ] + reconciliation.map(renderInstallAdapterResult) + [
+          "No persistent Macarchy state written; no consumer processes run."
+        ]).joined(separator: "\n")
     case .activation(let conversion, let replaced, let activation, let transactionError):
       let activationJSON = activation.jsonReport
       let packageState: String
@@ -289,6 +313,7 @@ private enum ThemeInstallReport {
           : "Activation failed before commit; removed the uncommitted installed package"
       }
       var lines = [
+        conversionSummary(conversion),
         "\(packageState) '\(conversion.themeID)' from commit '\(conversion.resolvedCommit)'.",
         try activation.render(json: false),
       ]
@@ -310,7 +335,7 @@ private enum ThemeInstallReport {
         committed: false,
         error: error
       )
-    case .dryRun(let conversion, let replacing):
+    case .dryRun(let conversion, let replacing, let reconciliation):
       return ThemeInstallJSONReport(
         outcome: "dry_run",
         themeID: conversion.themeID,
@@ -318,7 +343,9 @@ private enum ThemeInstallReport {
         resolvedCommit: conversion.resolvedCommit,
         packageReplaced: replacing,
         installed: false,
-        committed: false
+        committed: false,
+        conversion: conversion,
+        reconciliation: reconciliation
       )
     case .activation(let conversion, let replaced, let activation, let transactionError):
       let activationJSON = activation.jsonReport
@@ -335,11 +362,63 @@ private enum ThemeInstallReport {
         installed: installed,
         committed: activationJSON.committed,
         generationID: activationJSON.generationID,
+        conversion: conversion,
         reconciliation: activationJSON.reconciliation,
         error: transactionError ?? activationJSON.error
       )
     }
   }
+}
+
+private func conversionSummary(_ conversion: OmarchyThemeConversionReport) -> String {
+  var lines = [
+    "Source: \(conversion.sourceURL) at \(conversion.resolvedCommit)",
+    "Imported palette: \(conversion.paletteFile)",
+  ]
+  if let appearanceMarker = conversion.appearanceMarker {
+    lines.append("Imported appearance marker: \(appearanceMarker)")
+  }
+  lines.append("Imported backgrounds:")
+  lines.append(
+    contentsOf: conversion.backgrounds.map {
+      "- \($0.sourcePath) -> \($0.packagePath)"
+    }
+  )
+  if !conversion.previews.isEmpty {
+    lines.append("Imported previews:")
+    lines.append(
+      contentsOf: conversion.previews.map {
+        "- \($0.sourcePath) -> \($0.packagePath)"
+      }
+    )
+  }
+  lines.append("Ignored files:")
+  lines.append(
+    contentsOf: conversion.ignoredFiles.isEmpty
+      ? ["- none"]
+      : conversion.ignoredFiles.map { "- \($0.path): \($0.reason.rawValue)" }
+  )
+  let compatibility = conversion.compatibility
+  lines.append(
+    "Compatibility: legacy_ansi=\(compatibility.usedLegacyANSI), "
+      + "legacy_aliases=\(compatibility.usedLegacyAliases), "
+      + "derived=\(compatibility.derivedFields.joined(separator: ",")), "
+      + "ignored=\(compatibility.ignoredFields.joined(separator: ",")), "
+      + "overridden=\(compatibility.overriddenFields.joined(separator: ","))"
+  )
+  lines.append(
+    "Warnings: "
+      + (conversion.warnings.isEmpty
+        ? "none" : conversion.warnings.map(\.rawValue).joined(separator: ", "))
+  )
+  return lines.joined(separator: "\n")
+}
+
+private func renderInstallAdapterResult(_ result: AdapterResult) -> String {
+  let message = result.message.map { ": \($0)" } ?? ""
+  return
+    "- \(result.adapterID) [\(result.requirement.rawValue)]: "
+    + "\(result.status.rawValue)\(message)"
 }
 
 private struct ThemeInstallJSONReport: Encodable {
@@ -353,6 +432,7 @@ private struct ThemeInstallJSONReport: Encodable {
   let installed: Bool?
   let committed: Bool
   var generationID: String? = nil
+  var conversion: OmarchyThemeConversionReport? = nil
   var reconciliation: [AdapterResult]? = nil
   var error: String? = nil
 
@@ -365,6 +445,6 @@ private struct ThemeInstallJSONReport: Encodable {
     case packageReplaced = "package_replaced"
     case installed, committed
     case generationID = "generation_id"
-    case reconciliation, error
+    case conversion, reconciliation, error
   }
 }

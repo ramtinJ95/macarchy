@@ -908,9 +908,12 @@ struct DoctorCommandRunner: Sendable {
   }
 
   private func reconciliationFinding(_ result: AdapterResult) -> DoctorFinding {
-    let accepted = result.status == .applied || result.status == .restartRequired
     let status: DoctorFinding.Status =
-      accepted ? .ok : (result.requirement == .required ? .failure : .warning)
+      if isAcceptedReconciliationResult(result) {
+        result.status == .unsupported ? .warning : .ok
+      } else {
+        result.requirement == .required ? .failure : .warning
+      }
     let message =
       result.message.map { "\(result.status.rawValue): \($0)" }
       ?? result.status.rawValue
@@ -1390,21 +1393,35 @@ private func renderAdapterResult(_ result: AdapterResult) -> String {
 
 private func hasRequiredReconciliationFailure(_ results: [AdapterResult]) -> Bool {
   results.contains { result in
-    result.requirement == .required
-      && result.status != .applied
-      && result.status != .restartRequired
+    result.requirement == .required && !isAcceptedReconciliationResult(result)
   }
 }
 
 private func hasRequiredInspectionFailure(_ inspections: [AdapterInspection]) -> Bool {
   inspections.contains { inspection in
-    inspection.requirement == .required && inspection.status != .ready
+    inspection.requirement == .required
+      && inspection.status != .ready
+      && !(inspection.status == .unsupported
+        && namedThemeOnlyAdapterIDs.contains(inspection.adapterID))
   }
 }
 
 private func inspectionFindingStatus(_ inspection: AdapterInspection) -> DoctorFinding.Status {
-  guard inspection.status != .ready else { return .ok }
+  if inspection.status == .ready { return .ok }
+  if inspection.status == .unsupported,
+    namedThemeOnlyAdapterIDs.contains(inspection.adapterID)
+  {
+    return .warning
+  }
   return inspection.requirement == .required ? .failure : .warning
+}
+
+private let namedThemeOnlyAdapterIDs = GeneratedThemeCapabilities.namedThemeAdapterIDs
+
+private func isAcceptedReconciliationResult(_ result: AdapterResult) -> Bool {
+  result.status == .applied
+    || result.status == .restartRequired
+    || (result.status == .unsupported && namedThemeOnlyAdapterIDs.contains(result.adapterID))
 }
 
 func renderJSON<Value: Encodable>(_ value: Value) throws -> String {

@@ -193,6 +193,29 @@ struct ThemeNextStatusCommandTests {
       )
       #expect(execution.succeeded == succeeded)
     }
+
+    let namedUnsupported = try ReconciliationRecord(
+      manifest: active,
+      results: [
+        AdapterResult(adapterID: "herdr", requirement: .required, status: .unsupported),
+        AdapterResult(adapterID: "neovim", requirement: .required, status: .unsupported),
+      ]
+    )
+    let generatedUnsupported = try ReconciliationRecord(
+      manifest: active,
+      results: [
+        AdapterResult(adapterID: "kitty", requirement: .required, status: .unsupported)
+      ]
+    )
+    for (record, succeeded) in [(namedUnsupported, true), (generatedUnsupported, false)] {
+      let execution = try ThemeStatusCommandRunner(read: { _ in
+        .state(manifest: active, reconciliation: .current(record))
+      }).execute(
+        stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory),
+        json: false
+      )
+      #expect(execution.succeeded == succeeded)
+    }
   }
 
   @Test
