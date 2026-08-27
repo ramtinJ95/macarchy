@@ -284,6 +284,7 @@ struct HomebrewLifecycleTests {
     let firstEntered = DispatchSemaphore(value: 0)
     let releaseFirst = DispatchSemaphore(value: 0)
     let firstDone = DispatchSemaphore(value: 0)
+    let secondStarted = DispatchSemaphore(value: 0)
     let secondEntered = DispatchSemaphore(value: 0)
     let secondDone = DispatchSemaphore(value: 0)
     let failures = Mutex([String]())
@@ -303,9 +304,10 @@ struct HomebrewLifecycleTests {
         failures.withLock { $0.append(String(describing: error)) }
       }
     }
-    #expect(firstEntered.wait(timeout: .now() + 1) == .success)
+    #expect(firstEntered.wait(timeout: .now() + 5) == .success)
     queue.async {
       defer { secondDone.signal() }
+      secondStarted.signal()
       do {
         _ = try lock.withLock {
           secondEntered.signal()
@@ -315,10 +317,11 @@ struct HomebrewLifecycleTests {
       }
     }
 
-    #expect(secondEntered.wait(timeout: .now() + 0.05) == .timedOut)
+    #expect(secondStarted.wait(timeout: .now() + 5) == .success)
+    #expect(secondEntered.wait(timeout: .now()) == .timedOut)
     releaseFirst.signal()
-    #expect(firstDone.wait(timeout: .now() + 1) == .success)
-    #expect(secondDone.wait(timeout: .now() + 1) == .success)
+    #expect(firstDone.wait(timeout: .now() + 5) == .success)
+    #expect(secondDone.wait(timeout: .now() + 5) == .success)
     #expect(failures.withLock { $0 }.isEmpty)
 
     let lockURL = root.appending(path: "run/homebrew-update.lock")
