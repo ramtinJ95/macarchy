@@ -143,11 +143,26 @@ struct ThemeSetCommandTests {
     stateRoot: URL = URL(filePath: "/test/state", directoryHint: .isDirectory),
     consumerPaths: ThemeConsumerPaths = testConsumerPaths()
   ) async throws {
+    let defaultStateRoot = URL(filePath: "/test/state", directoryHint: .isDirectory)
+    let effectiveStateRoot: URL
+    if stateRoot == defaultStateRoot {
+      effectiveStateRoot = FileManager.default.temporaryDirectory.appending(
+        path: "macarchy-theme-set-command-\(UUID().uuidString)",
+        directoryHint: .isDirectory
+      )
+    } else {
+      effectiveStateRoot = stateRoot
+    }
+    defer {
+      if effectiveStateRoot != stateRoot {
+        try? FileManager.default.removeItem(at: effectiveStateRoot)
+      }
+    }
     for json in [false, true] {
       let execution = try await runner.execute(
         repository: repository,
         themeID: "catppuccin-mocha",
-        stateRoot: stateRoot,
+        stateRoot: effectiveStateRoot,
         consumerPaths: consumerPaths,
         dryRun: dryRun,
         json: json
