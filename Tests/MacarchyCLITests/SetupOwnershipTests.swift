@@ -896,6 +896,10 @@ struct SetupOwnershipTests {
     #expect(report.integrations.map(\.status) == ["failed"])
     #expect(report.integrations.first?.message == expected.description)
     #expect(report.integrations.first?.mutationAttempted == false)
+    let human = try TeardownCommandRunner(
+      ownershipManager: SetupOwnershipManager()
+    ).execute(homeDirectory: fixture.home, dryRun: false, json: false)
+    #expect(!human.output.contains("brew uninstall"))
     #expect(try fixture.configuration() == "font_size 14\n\(fixture.includeDirective)\n")
     #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(FileManager.default.fileExists(atPath: fixture.backup.path))

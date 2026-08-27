@@ -1,4 +1,5 @@
 import Foundation
+import ThemeCore
 
 enum InstallationOwnership: String, Encodable, Sendable {
   case development
@@ -57,7 +58,7 @@ struct RuntimeEnvironment: Sendable {
     if FileManager.default.fileExists(atPath: informationURL.path) {
       let data: Data
       do {
-        data = try Data(contentsOf: informationURL)
+        data = try BoundedRegularFile.read(at: informationURL).data
       } catch {
         throw InvalidBuildInformationError(
           reason: "cannot read \(informationURL.path)"
@@ -137,7 +138,7 @@ struct RuntimeEnvironment: Sendable {
 
   private func installationOwnership(hasPackagedInformation: Bool) -> InstallationOwnership {
     let receipt = installationPrefixURL.appending(path: "INSTALL_RECEIPT.json")
-    if hasPackagedInformation, FileManager.default.fileExists(atPath: receipt.path) {
+    if hasPackagedInformation, (try? BoundedRegularFile.read(at: receipt)) != nil {
       return .homebrew
     }
     if hasPackagedInformation {
