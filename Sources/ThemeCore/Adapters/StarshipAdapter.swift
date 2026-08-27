@@ -37,9 +37,9 @@ enum StarshipAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct StarshipAdapter: Sendable {
+package struct StarshipAdapter: Sendable {
   static let id = "starship"
-  static let bridgePath = "state/adapters/starship.toml"
+  package static let bridgePath = "state/adapters/starship.toml"
   static let outputPath = "generated/starship.toml"
   static let paletteName = "macarchy_current"
   static let rendererVersion = 1

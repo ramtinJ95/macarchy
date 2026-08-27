@@ -151,6 +151,10 @@ struct SetupOwnershipManager: Sendable {
   static let yaziSyntaxLinkID = "yazi.syntax-link"
   static let atuinSelectorID = "atuin.selector"
   static let atuinThemeLinkID = "atuin.theme-link"
+  static let neovimWatcherID = "neovim.watcher"
+  static let neovimThemeLinkID = "neovim.theme-link"
+  static let starshipBehaviorID = "starship.behavior"
+  static let starshipConfigurationLinkID = "starship.configuration-link"
   static let maximumConfigurationSize = 1_048_576
   private static let integrationOrder = [
     integrationID,
@@ -165,6 +169,10 @@ struct SetupOwnershipManager: Sendable {
     yaziSyntaxLinkID,
     atuinSelectorID,
     atuinThemeLinkID,
+    neovimWatcherID,
+    neovimThemeLinkID,
+    starshipBehaviorID,
+    starshipConfigurationLinkID,
   ]
 
   let faultInjector: @Sendable (SetupOwnershipCheckpoint) throws -> Void
@@ -270,6 +278,14 @@ struct SetupOwnershipManager: Sendable {
       (atuinSelectorID, url.path)
     case context.atuinThemeLink.path:
       (atuinThemeLinkID, url.path)
+    case context.neovimWatcherConfiguration.path:
+      (neovimWatcherID, url.path)
+    case context.neovimThemeLink.path:
+      (neovimThemeLinkID, url.path)
+    case context.starshipBehavior.path:
+      (starshipBehaviorID, url.path)
+    case context.starshipConfigurationLink.path:
+      (starshipConfigurationLinkID, url.path)
     case context.kittyConfiguration.path, context.backupURL.path, context.replacementURL.path:
       (integrationID, url.path)
     default:
@@ -322,6 +338,17 @@ struct SetupOwnershipManager: Sendable {
       results.append(
         try setupAtuinThemeLink(context: context, dryRun: dryRun, records: &records))
       results.append(try setupAtuinSelector(context: context, dryRun: dryRun, records: &records))
+      results.append(try setupNeovimWatcher(context: context))
+      results.append(
+        try setupNeovimThemeLink(context: context, dryRun: dryRun, records: &records))
+      results.append(try setupStarshipBehavior(context: context))
+      results.append(
+        try setupStarshipConfigurationLink(
+          context: context,
+          dryRun: dryRun,
+          records: &records
+        )
+      )
       return Self.orderedResults(results)
     } catch let error as SetupOwnershipTransactionError {
       throw SetupOwnershipTransactionError(wrapping: error, completedResults: results)
@@ -358,6 +385,30 @@ struct SetupOwnershipManager: Sendable {
   ) throws -> [SetupIntegrationResult] {
     var results = [SetupIntegrationResult]()
     do {
+      results.append(
+        try teardownThemeLink(
+          id: Self.starshipConfigurationLinkID,
+          target: context.starshipConfigurationLink,
+          destination: context.starshipBridgeDestination,
+          label: "Starship configuration",
+          context: context,
+          dryRun: dryRun,
+          records: &records
+        )
+      )
+      results.append(teardownStarshipBehavior(context: context))
+      results.append(
+        try teardownThemeLink(
+          id: Self.neovimThemeLinkID,
+          target: context.neovimThemeLink,
+          destination: context.neovimThemeDestination,
+          label: "Neovim theme",
+          context: context,
+          dryRun: dryRun,
+          records: &records
+        )
+      )
+      results.append(teardownNeovimWatcher(context: context))
       results.append(
         try teardownRegularFile(
           id: Self.atuinSelectorID,

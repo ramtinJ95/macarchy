@@ -24,6 +24,13 @@ extension SetupOwnershipManager {
     let atuinConfiguration: URL
     let atuinThemeLink: URL
     let atuinThemeDestination: URL
+    let neovimWatcherConfiguration: URL
+    let neovimThemeLink: URL
+    let neovimThemeDestination: URL
+    let starshipBehavior: URL
+    let starshipConfigurationLink: URL
+    let starshipStowConfigurationLink: URL
+    let starshipBridgeDestination: URL
     let includeDirective: String
     let manifestURL: URL
     let backupRelativePath = "state/setup/backups/kitty.conf"
@@ -62,6 +69,17 @@ extension SetupOwnershipManager {
       atuinThemeLink = homeDirectory.appending(
         path: ".config/atuin/themes/\(AtuinAdapter.themeName).toml")
       atuinThemeDestination = stateRoot.appending(path: "current/\(AtuinAdapter.outputPath)")
+      neovimWatcherConfiguration = homeDirectory.appending(
+        path: ".config/nvim/lua/plugins/colorscheme.lua")
+      neovimThemeLink = homeDirectory.appending(
+        path: ".config/nvim/lua/macarchy/current.lua")
+      neovimThemeDestination = stateRoot.appending(
+        path: "current/\(NeovimAdapter.outputPath)")
+      starshipBehavior = homeDirectory.appending(path: ".config/starship/behavior.toml")
+      starshipConfigurationLink = homeDirectory.appending(path: ".config/starship.toml")
+      starshipStowConfigurationLink = homeDirectory.appending(
+        path: SetupOwnershipManager.starshipStowConfigurationRelativePath)
+      starshipBridgeDestination = stateRoot.appending(path: StarshipAdapter.bridgePath)
       includeDirective = ThemeActivationCoordinator.kittyIncludeDirective(root: stateRoot)
       manifestURL = stateRoot.appending(path: "state/setup/ownership.json")
     }
