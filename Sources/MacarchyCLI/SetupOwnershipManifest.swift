@@ -154,6 +154,19 @@ extension SetupOwnershipManager {
           target: context.codexThemeLink,
           destination: context.codexThemeDestination
         )
+      case Self.spicetifySelectorsID:
+        try validateSpicetifySelectorRecord(
+          record,
+          target: context.spicetifyConfiguration,
+          backupURL: context.spicetifySelectorsBackup,
+          context: context
+        )
+      case Self.spicetifyColorLinkID:
+        try validateThemeLinkRecord(
+          record,
+          target: context.spicetifyColorLink,
+          destination: context.spicetifyColorDestination
+        )
       default:
         throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
       }
@@ -246,12 +259,14 @@ struct SetupOwnershipRecord: Codable, Equatable {
   enum Kind: String, Codable, Equatable {
     case jsonSelector = "json_selector"
     case regularFile = "regular_file"
+    case spicetifySelection = "spicetify_selection"
     case symbolicLink = "symbolic_link"
   }
 
   enum Phase: String, Codable, Equatable {
     case applied
     case prepared
+    case teardownPrepared = "teardown_prepared"
   }
 
   let id: String
@@ -262,6 +277,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let originalDigest: String?
   let installedDigest: String
   let linkDestination: String?
+  let replacementDigest: String?
 
   var applied: SetupOwnershipRecord {
     SetupOwnershipRecord(
@@ -272,7 +288,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
       backupPath: backupPath,
       originalDigest: originalDigest,
       installedDigest: installedDigest,
-      linkDestination: linkDestination
+      linkDestination: linkDestination,
+      replacementDigest: nil
     )
   }
 
@@ -285,6 +302,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case originalDigest = "original_digest"
     case installedDigest = "installed_digest"
     case linkDestination = "link_destination"
+    case replacementDigest = "replacement_digest"
   }
 
   init(
@@ -295,7 +313,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     backupPath: String?,
     originalDigest: String?,
     installedDigest: String,
-    linkDestination: String?
+    linkDestination: String?,
+    replacementDigest: String? = nil
   ) {
     self.id = id
     self.phase = phase
@@ -305,6 +324,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     self.originalDigest = originalDigest
     self.installedDigest = installedDigest
     self.linkDestination = linkDestination
+    self.replacementDigest = replacementDigest
   }
 
 }

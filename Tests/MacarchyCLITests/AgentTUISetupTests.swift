@@ -34,7 +34,7 @@ struct AgentTUISetupTests {
     try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    let agentResults = Array(results.suffix(integrationIDs.count))
+    let agentResults = Array(results.dropLast(2).suffix(integrationIDs.count))
 
     #expect(agentResults.map(\.id) == integrationIDs)
     #expect(agentResults.allSatisfy { $0.status == .external && !$0.mutationAttempted })
@@ -65,7 +65,7 @@ struct AgentTUISetupTests {
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
     #expect(preview.prefix(12).allSatisfy { $0.status == .external })
     #expect(
-      preview.suffix(8).map(\.status)
+      preview.dropLast(2).suffix(8).map(\.status)
         == [.planned, .planned, .external, .planned, .planned, .planned, .planned, .planned]
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -79,11 +79,11 @@ struct AgentTUISetupTests {
 
     #expect(setup.prefix(12).allSatisfy { $0.status == .external })
     #expect(
-      setup.suffix(8).map(\.status)
+      setup.dropLast(2).suffix(8).map(\.status)
         == [.owned, .owned, .external, .owned, .owned, .owned, .owned, .owned]
     )
     #expect(
-      setup.suffix(8).filter { $0.id != "herdr.selector" }.allSatisfy {
+      setup.dropLast(2).suffix(8).filter { $0.id != "herdr.selector" }.allSatisfy {
         $0.mutationAttempted
       }
     )
@@ -122,10 +122,10 @@ struct AgentTUISetupTests {
     try Data(providerRewrite.utf8).write(to: fixture.piConfiguration, options: .atomic)
     let repeated = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
     #expect(
-      repeated.suffix(8).map(\.status)
+      repeated.dropLast(2).suffix(8).map(\.status)
         == [.owned, .owned, .external, .owned, .owned, .owned, .owned, .owned]
     )
-    #expect(!repeated.suffix(8).contains { $0.mutationAttempted })
+    #expect(!repeated.dropLast(2).suffix(8).contains { $0.mutationAttempted })
 
     let teardown = try SetupOwnershipManager().teardown(
       homeDirectory: fixture.home,
@@ -134,7 +134,7 @@ struct AgentTUISetupTests {
 
     #expect(teardown.prefix(12).allSatisfy { $0.status == .none })
     #expect(
-      teardown.suffix(8).map(\.status)
+      teardown.dropLast(2).suffix(8).map(\.status)
         == [.removed, .removed, .none, .removed, .removed, .removed, .removed, .removed]
     )
     #expect(

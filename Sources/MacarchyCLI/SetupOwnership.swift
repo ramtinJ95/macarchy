@@ -119,6 +119,7 @@ struct SetupOwnershipTransactionError: Error, CustomStringConvertible, Sendable 
 
 struct SetupIntegrationResult: Encodable, Sendable {
   enum Status: String, Encodable, Sendable {
+    case disabled
     case external
     case failed
     case none
@@ -163,6 +164,8 @@ struct SetupOwnershipManager: Sendable {
   static let tuicrSyntaxLinkID = "tuicr.syntax-link"
   static let codexSelectorID = "codex.selector"
   static let codexThemeLinkID = "codex.theme-link"
+  static let spicetifySelectorsID = "spicetify.selectors"
+  static let spicetifyColorLinkID = "spicetify.color-link"
   static let maximumConfigurationSize = 1_048_576
   private static let integrationOrder = [
     integrationID,
@@ -189,6 +192,8 @@ struct SetupOwnershipManager: Sendable {
     tuicrSyntaxLinkID,
     codexSelectorID,
     codexThemeLinkID,
+    spicetifySelectorsID,
+    spicetifyColorLinkID,
   ]
 
   let faultInjector: @Sendable (SetupOwnershipCheckpoint) throws -> Void
@@ -324,6 +329,12 @@ struct SetupOwnershipManager: Sendable {
       (codexSelectorID, url.path)
     case context.codexThemeLink.path:
       (codexThemeLinkID, url.path)
+    case context.spicetifyConfiguration.path, context.spicetifySelectorsBackup.path,
+      context.spicetifyConfiguration.deletingLastPathComponent()
+      .appending(path: context.spicetifySelectorsReplacementName).path:
+      (spicetifySelectorsID, url.path)
+    case context.spicetifyColorLink.path:
+      (spicetifyColorLinkID, url.path)
     case context.kittyConfiguration.path, context.backupURL.path, context.replacementURL.path:
       (integrationID, url.path)
     default:
@@ -399,6 +410,13 @@ struct SetupOwnershipManager: Sendable {
       results.append(
         try setupCodexThemeLink(context: context, dryRun: dryRun, records: &records))
       results.append(try setupCodexSelector(context: context, dryRun: dryRun, records: &records))
+      results.append(
+        contentsOf: try setupSpicetifyIntegrations(
+          context: context,
+          dryRun: dryRun,
+          records: &records
+        )
+      )
       return Self.orderedResults(results)
     } catch let error as SetupOwnershipTransactionError {
       throw SetupOwnershipTransactionError(wrapping: error, completedResults: results)
@@ -435,6 +453,13 @@ struct SetupOwnershipManager: Sendable {
   ) throws -> [SetupIntegrationResult] {
     var results = [SetupIntegrationResult]()
     do {
+      results.append(
+        contentsOf: try teardownSpicetifyIntegrations(
+          context: context,
+          dryRun: dryRun,
+          records: &records
+        )
+      )
       results.append(
         try teardownCodexSelector(context: context, dryRun: dryRun, records: &records)
       )

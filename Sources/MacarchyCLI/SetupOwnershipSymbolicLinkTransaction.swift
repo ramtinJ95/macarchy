@@ -289,6 +289,11 @@ extension SetupOwnershipManager {
     guard record.installedDigest == sha256Digest(Data(destination.path.utf8)) else {
       throw SetupOwnershipError.invalidManifest("\(record.id) link digest is invalid")
     }
+    guard record.phase == .prepared || record.phase == .applied,
+      record.replacementDigest == nil
+    else {
+      throw SetupOwnershipError.invalidManifest("\(record.id) link has invalid transaction state")
+    }
   }
 
   enum SymbolicLinkState: Equatable {

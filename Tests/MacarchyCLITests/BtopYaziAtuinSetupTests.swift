@@ -44,9 +44,12 @@ struct BtopYaziAtuinSetupTests {
           "tuicr.syntax-link",
           "codex.selector",
           "codex.theme-link",
+          "spicetify.selectors",
+          "spicetify.color-link",
         ]
     )
-    #expect(results.allSatisfy { $0.status == .external && !$0.mutationAttempted })
+    #expect(results.prefix(24).allSatisfy { $0.status == .external && !$0.mutationAttempted })
+    #expect(results.suffix(2).allSatisfy { $0.status == .disabled && !$0.mutationAttempted })
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
@@ -66,7 +69,8 @@ struct BtopYaziAtuinSetupTests {
       preview[5..<12].map(\.status)
         == [.external, .planned, .planned, .planned, .planned, .planned, .planned]
     )
-    #expect(preview.dropFirst(12).allSatisfy { $0.status == .external })
+    #expect(preview[12..<24].allSatisfy { $0.status == .external })
+    #expect(preview.suffix(2).allSatisfy { $0.status == .disabled })
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
@@ -76,7 +80,8 @@ struct BtopYaziAtuinSetupTests {
       setup[5..<12].map(\.status)
         == [.external, .owned, .owned, .owned, .owned, .owned, .owned]
     )
-    #expect(setup.dropFirst(12).allSatisfy { $0.status == .external })
+    #expect(setup[12..<24].allSatisfy { $0.status == .external })
+    #expect(setup.suffix(2).allSatisfy { $0.status == .disabled })
     #expect(try String(contentsOf: fixture.btopConfiguration, encoding: .utf8) == btop)
     #expect(
       try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
@@ -276,7 +281,8 @@ struct BtopYaziAtuinSetupTests {
       resumed[5..<12].map(\.status)
         == [.external, .external, .owned, .external, .external, .external, .external]
     )
-    #expect(resumed.dropFirst(12).allSatisfy { $0.status == .external })
+    #expect(resumed[12..<24].allSatisfy { $0.status == .external })
+    #expect(resumed.suffix(2).allSatisfy { $0.status == .disabled })
     #expect(
       try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
         == "[flavor]\ndark = \"macarchy-current\"\nlight = \"default\"\n"

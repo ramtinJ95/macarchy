@@ -399,6 +399,11 @@ extension SetupOwnershipManager {
     guard record.linkDestination == nil else {
       throw SetupOwnershipError.invalidManifest("\(record.id) cannot own a symbolic link")
     }
+    guard record.phase == .prepared || record.phase == .applied,
+      record.replacementDigest == nil
+    else {
+      throw SetupOwnershipError.invalidManifest("\(record.id) has invalid transaction state")
+    }
     _ = try requiredOriginalDigest(record)
   }
 
