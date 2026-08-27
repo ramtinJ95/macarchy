@@ -233,17 +233,20 @@ package struct ProcessRequest: Equatable, Sendable {
   package let arguments: [String]
   package let timeout: TimeInterval?
   package let environmentOverrides: [String: String]
+  package let environmentRemovals: Set<String>
 
   package init(
     executableURL: URL,
     arguments: [String],
     timeout: TimeInterval? = nil,
-    environmentOverrides: [String: String] = [:]
+    environmentOverrides: [String: String] = [:],
+    environmentRemovals: Set<String> = []
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
     self.timeout = timeout
     self.environmentOverrides = environmentOverrides
+    self.environmentRemovals = environmentRemovals
   }
 }
 
@@ -270,11 +273,16 @@ package struct ProcessRunner: Sendable {
     let output = Pipe()
     process.executableURL = request.executableURL
     process.arguments = request.arguments
-    if !request.environmentOverrides.isEmpty {
-      process.environment = ProcessInfo.processInfo.environment.merging(
+    if !request.environmentOverrides.isEmpty || !request.environmentRemovals.isEmpty {
+      var environment = ProcessInfo.processInfo.environment
+      for key in request.environmentRemovals {
+        environment.removeValue(forKey: key)
+      }
+      environment.merge(
         request.environmentOverrides,
         uniquingKeysWith: { _, override in override }
       )
+      process.environment = environment
     }
     process.standardOutput = output
     process.standardError = output
