@@ -199,7 +199,7 @@ struct ThemeCoreSliceTests {
   }
 
   @Test
-  func missingMappingsFailsExplicitly() throws {
+  func packageCanDeliberatelyOmitNamedConsumerMappings() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "missing-mappings")
@@ -209,11 +209,8 @@ struct ThemeCoreSliceTests {
       encoding: .utf8
     )
 
-    let diagnostic = try themeDiagnostic {
-      _ = try ThemePackageLoader().load(packageURL: packageURL)
-    }
-    #expect(diagnostic.field == "mappings")
-    #expect(diagnostic.message.contains("At least one"))
+    let package = try ThemePackageLoader().load(packageURL: packageURL)
+    #expect(package.mappings.isEmpty)
   }
 
   @Test
