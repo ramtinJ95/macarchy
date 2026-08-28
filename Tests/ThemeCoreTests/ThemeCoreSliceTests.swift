@@ -5,6 +5,175 @@ import Testing
 
 struct ThemeCoreSliceTests {
   @Test
+  func renderedArtifactCollectionRejectsInvalidRequirementsAndDuplicatePaths() throws {
+    let artifact = RenderedArtifact(path: "generated/example.txt", data: Data("one".utf8))
+    let collection = try RenderedTheme(artifacts: [artifact])
+    #expect(collection.artifact(atPath: artifact.path)?.data == artifact.data)
+    #expect(artifact.sizePolicy == .ordinary)
+    #expect(artifact.maximumSize == BoundedRegularFile.maximumSize)
+    #expect(artifact.requirement == .required)
+
+    #expect(throws: RenderedArtifactCollectionError.duplicatePath(artifact.path)) {
+      _ = try RenderedTheme(artifacts: [artifact, artifact])
+    }
+    #expect(throws: RenderedArtifactCollectionError.invalidPath("../outside")) {
+      _ = try RenderedTheme(
+        artifacts: [RenderedArtifact(path: "../outside", data: Data())]
+      )
+    }
+    #expect(
+      throws: RenderedArtifactCollectionError.invalidRequirement(
+        path: "generated/example.txt"
+      )
+    ) {
+      _ = try RenderedTheme(
+        artifacts: [
+          RenderedArtifact(
+            path: "generated/example.txt",
+            data: Data(),
+            requirement: .requiredWhenRendererVersion(renderer: .herdr, minimumVersion: 0)
+          )
+        ]
+      )
+    }
+    #expect(VersionGatedRendererIdentity(id: HerdrAdapter.id) == .herdr)
+    #expect(VersionGatedRendererIdentity(id: NeovimAdapter.id) == .neovim)
+    #expect(VersionGatedRendererIdentity(id: SlackAdapter.id) == .slack)
+    #expect(VersionGatedRendererIdentity(id: "unknown-renderer") == nil)
+  }
+
+  @Test
+  func renderedArtifactSizesUseOnlyApprovedClosedPolicies() throws {
+    #expect(BoundedRegularFile.maximumSize == 1_048_576)
+    #expect(WallpaperAsset.maximumSize == 32 * 1_048_576)
+    #expect(
+      RenderedArtifactSizePolicy(maximumSize: BoundedRegularFile.maximumSize) == .ordinary
+    )
+    #expect(RenderedArtifactSizePolicy(maximumSize: WallpaperAsset.maximumSize) == .wallpaper)
+    for rejected in [Int.min, -1, 0, 1, WallpaperAsset.maximumSize + 1, Int.max] {
+      #expect(RenderedArtifactSizePolicy(maximumSize: rejected) == nil)
+    }
+
+    let ordinaryPath = "generated/ordinary.txt"
+    let exactOrdinary = try RenderedTheme(
+      artifacts: [
+        RenderedArtifact(
+          path: ordinaryPath,
+          data: Data(count: BoundedRegularFile.maximumSize)
+        )
+      ]
+    )
+    let outputRoot = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: outputRoot) }
+    try ThemeRenderer().write(exactOrdinary, to: outputRoot)
+    #expect(
+      try Data(contentsOf: outputRoot.appending(path: ordinaryPath)).count
+        == BoundedRegularFile.maximumSize
+    )
+
+    #expect(
+      throws: RenderedArtifactCollectionError.dataTooLarge(
+        path: ordinaryPath,
+        size: BoundedRegularFile.maximumSize + 1,
+        maximumSize: BoundedRegularFile.maximumSize
+      )
+    ) {
+      _ = try RenderedTheme(
+        artifacts: [
+          RenderedArtifact(
+            path: ordinaryPath,
+            data: Data(count: BoundedRegularFile.maximumSize + 1)
+          )
+        ]
+      )
+    }
+
+    let wallpaperPath = "generated/wallpaper.png"
+    _ = try RenderedTheme(
+      artifacts: [
+        RenderedArtifact(
+          path: wallpaperPath,
+          data: Data(count: WallpaperAsset.maximumSize),
+          sizePolicy: .wallpaper
+        )
+      ]
+    )
+    #expect(
+      throws: RenderedArtifactCollectionError.dataTooLarge(
+        path: wallpaperPath,
+        size: WallpaperAsset.maximumSize + 1,
+        maximumSize: WallpaperAsset.maximumSize
+      )
+    ) {
+      _ = try RenderedTheme(
+        artifacts: [
+          RenderedArtifact(
+            path: wallpaperPath,
+            data: Data(count: WallpaperAsset.maximumSize + 1),
+            sizePolicy: .wallpaper
+          )
+        ]
+      )
+    }
+  }
+
+  @Test
+  func renderedArtifactCollectionRejectsFilesystemEquivalentAndPrefixPaths() {
+    let caseAliases = [
+      RenderedArtifact(path: "generated/example.txt", data: Data()),
+      RenderedArtifact(path: "GENERATED/EXAMPLE.TXT", data: Data()),
+    ]
+    #expect(
+      throws: RenderedArtifactCollectionError.equivalentPaths(
+        caseAliases[0].path,
+        caseAliases[1].path
+      )
+    ) {
+      _ = try RenderedTheme(artifacts: caseAliases)
+    }
+
+    let canonicalUnicodeAliases = [
+      RenderedArtifact(path: "generated/\u{00E9}xample.txt", data: Data()),
+      RenderedArtifact(path: "generated/e\u{0301}xample.txt", data: Data()),
+    ]
+    #expect(
+      throws: RenderedArtifactCollectionError.equivalentPaths(
+        canonicalUnicodeAliases[0].path,
+        canonicalUnicodeAliases[1].path
+      )
+    ) {
+      _ = try RenderedTheme(artifacts: canonicalUnicodeAliases)
+    }
+
+    let file = RenderedArtifact(path: "generated/cache", data: Data())
+    let descendant = RenderedArtifact(path: "generated/cache/theme.txt", data: Data())
+    let expected = RenderedArtifactCollectionError.componentPrefixCollision(
+      file: file.path,
+      descendant: descendant.path
+    )
+    #expect(throws: expected) {
+      _ = try RenderedTheme(artifacts: [file, descendant])
+    }
+    #expect(throws: expected) {
+      _ = try RenderedTheme(artifacts: [descendant, file])
+    }
+
+    #expect(
+      throws: RenderedArtifactCollectionError.componentPrefixCollision(
+        file: "GENERATED/CACHE",
+        descendant: descendant.path
+      )
+    ) {
+      _ = try RenderedTheme(
+        artifacts: [
+          RenderedArtifact(path: "GENERATED/CACHE", data: Data()),
+          descendant,
+        ]
+      )
+    }
+  }
+
+  @Test
   func rendererWritesExactOutputsToInjectedRoot() throws {
     let packageURL =
       repositoryRoot
@@ -16,60 +185,49 @@ struct ThemeCoreSliceTests {
     defer { try? FileManager.default.removeItem(at: outputRoot) }
     try ThemeRenderer().write(rendered, to: outputRoot)
 
-    let themeJSON = outputRoot.appending(path: "theme.json")
-    let atuin = outputRoot.appending(path: "generated/atuin.toml")
-    let bat = outputRoot.appending(path: "generated/bat.tmTheme")
-    let btop = outputRoot.appending(path: "generated/btop.theme")
-    let capabilities = outputRoot.appending(path: "generated/capabilities.json")
-    let eza = outputRoot.appending(path: "generated/eza.yml")
-    let herdr = outputRoot.appending(path: "generated/herdr.txt")
-    let kitty = outputRoot.appending(path: "generated/kitty.conf")
-    let neovim = outputRoot.appending(path: "generated/neovim.lua")
-    let pi = outputRoot.appending(path: "generated/pi.json")
-    let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
-    let slack = outputRoot.appending(path: "generated/slack.txt")
-    let spicetify = outputRoot.appending(path: "generated/spicetify.ini")
-    let starship = outputRoot.appending(path: "generated/starship.toml")
-    let tuicr = outputRoot.appending(path: "generated/tuicr.toml")
-    let wallpaper = outputRoot.appending(path: "generated/wallpaper.png")
-    let yaziFlavor = outputRoot.appending(path: "generated/yazi-flavor.toml")
-    let yaziSyntax = outputRoot.appending(path: "generated/yazi.tmTheme")
-    let writtenJSON = try Data(contentsOf: themeJSON)
-    let writtenAtuin = try String(contentsOf: atuin, encoding: .utf8)
-    let writtenBat = try String(contentsOf: bat, encoding: .utf8)
-    let writtenBtop = try String(contentsOf: btop, encoding: .utf8)
-    let writtenCapabilities = try Data(contentsOf: capabilities)
-    let writtenEza = try String(contentsOf: eza, encoding: .utf8)
-    let writtenHerdr = try String(contentsOf: herdr, encoding: .utf8)
-    let writtenKitty = try String(contentsOf: kitty, encoding: .utf8)
-    let writtenNeovim = try String(contentsOf: neovim, encoding: .utf8)
-    let writtenPi = try String(contentsOf: pi, encoding: .utf8)
-    let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
-    let writtenSlack = try String(contentsOf: slack, encoding: .utf8)
-    let writtenSpicetify = try String(contentsOf: spicetify, encoding: .utf8)
-    let writtenStarship = try String(contentsOf: starship, encoding: .utf8)
-    let writtenTuicr = try String(contentsOf: tuicr, encoding: .utf8)
-    let writtenWallpaper = try Data(contentsOf: wallpaper)
-    let writtenYaziFlavor = try String(contentsOf: yaziFlavor, encoding: .utf8)
-    let writtenYaziSyntax = try String(contentsOf: yaziSyntax, encoding: .utf8)
-    #expect(writtenJSON == rendered.themeJSON)
-    #expect(writtenAtuin == rendered.atuinTheme)
-    #expect(writtenBat == rendered.batTheme)
-    #expect(writtenBtop == rendered.btopTheme)
-    #expect(writtenCapabilities == rendered.capabilities)
-    #expect(writtenEza == rendered.ezaTheme)
-    #expect(writtenHerdr == rendered.herdrTheme)
-    #expect(writtenKitty == rendered.kittyConfiguration)
-    #expect(writtenNeovim == rendered.neovimTheme)
-    #expect(writtenPi == rendered.piTheme)
-    #expect(writtenSketchyBar == rendered.sketchyBarPalette)
-    #expect(writtenSlack == rendered.slackTheme)
-    #expect(writtenSpicetify == rendered.spicetifyTheme)
-    #expect(writtenStarship == rendered.starshipPalette)
-    #expect(writtenTuicr == rendered.tuicrTheme)
-    #expect(writtenWallpaper == rendered.wallpaper)
-    #expect(writtenYaziFlavor == rendered.yaziFlavor)
-    #expect(writtenYaziSyntax == rendered.batTheme)
+    #expect(
+      Set(rendered.artifacts.map(\.path))
+        == [
+          "generated/atuin.toml", "generated/bat.tmTheme", "generated/btop.theme",
+          "generated/capabilities.json", "generated/eza.yml", "generated/herdr.txt",
+          "generated/kitty.conf", "generated/neovim.lua", "generated/pi.json",
+          "generated/sketchybar.lua", "generated/slack.txt", "generated/spicetify.ini",
+          "generated/starship.toml", "generated/tuicr.toml", "generated/wallpaper.png",
+          "generated/yazi-flavor.toml", "generated/yazi.tmTheme", "theme.json",
+        ]
+    )
+    for artifact in rendered.artifacts {
+      #expect(try Data(contentsOf: outputRoot.appending(path: artifact.path)) == artifact.data)
+    }
+    let compatibilityOutputs = [
+      AtuinAdapter.outputPath: Data(rendered.atuinTheme.utf8),
+      TextMateThemeArtifact.outputPath: Data(rendered.batTheme.utf8),
+      BtopAdapter.outputPath: Data(rendered.btopTheme.utf8),
+      EzaAdapter.outputPath: Data(rendered.ezaTheme.utf8),
+      HerdrAdapter.outputPath: Data(rendered.herdrTheme.utf8),
+      ThemeRenderer.themeOutputPath: rendered.themeJSON,
+      KittyAdapter.outputPath: Data(rendered.kittyConfiguration.utf8),
+      NeovimAdapter.outputPath: Data(rendered.neovimTheme.utf8),
+      PiAdapter.outputPath: Data(rendered.piTheme.utf8),
+      SketchyBarAdapter.outputPath: Data(rendered.sketchyBarPalette.utf8),
+      SlackAdapter.outputPath: Data(rendered.slackTheme.utf8),
+      SpicetifyAdapter.outputPath: Data(rendered.spicetifyTheme.utf8),
+      StarshipAdapter.outputPath: Data(rendered.starshipPalette.utf8),
+      TuicrAdapter.outputPath: Data(rendered.tuicrTheme.utf8),
+      WallpaperAdapter.outputPath: rendered.wallpaper,
+      YaziAdapter.flavorOutputPath: Data(rendered.yaziFlavor.utf8),
+    ]
+    for (path, data) in compatibilityOutputs {
+      #expect(rendered.artifact(atPath: path)?.data == data)
+    }
+    let writtenJSON = try Data(contentsOf: outputRoot.appending(path: "theme.json"))
+    let writtenWallpaper = try Data(
+      contentsOf: outputRoot.appending(path: WallpaperAdapter.outputPath)
+    )
+    #expect(
+      rendered.artifact(atPath: TextMateThemeArtifact.outputPath)?.data
+        == rendered.artifact(atPath: TextMateThemeArtifact.yaziOutputPath)?.data
+    )
     #expect(
       writtenWallpaper
         == (try Data(contentsOf: packageURL.appending(path: package.wallpaper.path)))
@@ -168,53 +326,33 @@ struct ThemeCoreSliceTests {
       let goldenRoot =
         repositoryRoot
         .appending(path: "Tests/Fixtures/Golden/\(package.id)", directoryHint: .isDirectory)
-      #expect(
-        rendered.atuinTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "atuin.toml"), encoding: .utf8)))
-      #expect(
-        rendered.batTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "bat.tmTheme"), encoding: .utf8)))
-      #expect(
-        rendered.btopTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "btop.theme"), encoding: .utf8)))
-      #expect(
-        rendered.ezaTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "eza.yml"), encoding: .utf8)))
-      let herdrData = Data(rendered.herdrTheme.utf8)
+      let goldenArtifacts = [
+        (AtuinAdapter.outputPath, "atuin.toml"),
+        (TextMateThemeArtifact.outputPath, "bat.tmTheme"),
+        (TextMateThemeArtifact.yaziOutputPath, "bat.tmTheme"),
+        (BtopAdapter.outputPath, "btop.theme"),
+        (EzaAdapter.outputPath, "eza.yml"),
+        (ThemeRenderer.themeOutputPath, "theme.json"),
+        (KittyAdapter.outputPath, "kitty.conf"),
+        (NeovimAdapter.outputPath, "neovim.lua"),
+        (PiAdapter.outputPath, "pi.json"),
+        (SketchyBarAdapter.outputPath, "sketchybar.lua"),
+        (SlackAdapter.outputPath, "slack.txt"),
+        (SpicetifyAdapter.outputPath, "spicetify.ini"),
+        (StarshipAdapter.outputPath, "starship.toml"),
+        (TuicrAdapter.outputPath, "tuicr.toml"),
+        (YaziAdapter.flavorOutputPath, "yazi-flavor.toml"),
+      ]
+      for (artifactPath, goldenName) in goldenArtifacts {
+        #expect(
+          try #require(rendered.artifact(atPath: artifactPath)).data
+            == Data(contentsOf: goldenRoot.appending(path: goldenName))
+        )
+      }
+      let herdrData = try #require(rendered.artifact(atPath: HerdrAdapter.outputPath)).data
       let herdr = try JSONDecoder().decode(GeneratedHerdrTheme.self, from: herdrData).validated()
       #expect(herdr.name == herdrThemeNames[package.id])
       #expect(herdr.custom.isEmpty)
-      #expect(
-        rendered.themeJSON == (try Data(contentsOf: goldenRoot.appending(path: "theme.json"))))
-      #expect(
-        rendered.kittyConfiguration
-          == (try String(contentsOf: goldenRoot.appending(path: "kitty.conf"), encoding: .utf8)))
-      #expect(
-        rendered.neovimTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "neovim.lua"), encoding: .utf8)))
-      #expect(
-        rendered.piTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "pi.json"), encoding: .utf8)))
-      #expect(
-        rendered.sketchyBarPalette
-          == (try String(
-            contentsOf: goldenRoot.appending(path: "sketchybar.lua"), encoding: .utf8)))
-      #expect(
-        rendered.slackTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "slack.txt"), encoding: .utf8)))
-      #expect(
-        rendered.spicetifyTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "spicetify.ini"), encoding: .utf8)))
-      let starshipGolden = try String(
-        contentsOf: goldenRoot.appending(path: "starship.toml"), encoding: .utf8)
-      #expect(rendered.starshipPalette == starshipGolden)
-      #expect(
-        rendered.tuicrTheme
-          == (try String(contentsOf: goldenRoot.appending(path: "tuicr.toml"), encoding: .utf8)))
-      #expect(
-        rendered.yaziFlavor
-          == (try String(
-            contentsOf: goldenRoot.appending(path: "yazi-flavor.toml"), encoding: .utf8)))
     }
   }
 
@@ -268,7 +406,7 @@ struct ThemeCoreSliceTests {
     #expect(package.mappings.isEmpty)
 
     let rendered = try ThemeRenderer().render(package: package, generationID: "imported")
-    let herdrData = Data(rendered.herdrTheme.utf8)
+    let herdrData = try #require(rendered.artifact(atPath: HerdrAdapter.outputPath)).data
     let herdr = try JSONDecoder().decode(GeneratedHerdrTheme.self, from: herdrData).validated()
     #expect(herdr.name == "catppuccin")
     #expect(

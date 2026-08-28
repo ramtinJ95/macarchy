@@ -1,91 +1,55 @@
 import Foundation
 
-public struct RenderedTheme: Sendable {
-  public let atuinTheme: String
-  public let batTheme: String
-  public let btopTheme: String
-  let capabilities: Data
-  public let ezaTheme: String
-  public let herdrTheme: String
-  public let themeJSON: Data
-  public let kittyConfiguration: String
-  public let neovimTheme: String
-  public let piTheme: String
-  public let sketchyBarPalette: String
-  public let slackTheme: String
-  public let spicetifyTheme: String
-  public let starshipPalette: String
-  public let tuicrTheme: String
-  public let wallpaper: Data
-  public let yaziFlavor: String
-
-  var files: [String: Data] {
-    let files = [
-      ThemeRenderer.atuinOutputPath: Data(atuinTheme.utf8),
-      ThemeRenderer.batOutputPath: Data(batTheme.utf8),
-      ThemeRenderer.btopOutputPath: Data(btopTheme.utf8),
-      ThemeRenderer.capabilitiesOutputPath: capabilities,
-      ThemeRenderer.ezaOutputPath: Data(ezaTheme.utf8),
-      ThemeRenderer.herdrOutputPath: Data(herdrTheme.utf8),
-      ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
-      ThemeRenderer.neovimOutputPath: Data(neovimTheme.utf8),
-      ThemeRenderer.piOutputPath: Data(piTheme.utf8),
-      ThemeRenderer.sketchyBarOutputPath: Data(sketchyBarPalette.utf8),
-      ThemeRenderer.slackOutputPath: Data(slackTheme.utf8),
-      ThemeRenderer.spicetifyOutputPath: Data(spicetifyTheme.utf8),
-      ThemeRenderer.starshipOutputPath: Data(starshipPalette.utf8),
-      ThemeRenderer.themeOutputPath: themeJSON,
-      ThemeRenderer.tuicrOutputPath: Data(tuicrTheme.utf8),
-      ThemeRenderer.wallpaperOutputPath: wallpaper,
-      ThemeRenderer.yaziFlavorOutputPath: Data(yaziFlavor.utf8),
-      ThemeRenderer.yaziSyntaxOutputPath: Data(batTheme.utf8),
-    ]
-    return files
-  }
-}
-
 public struct ThemeRenderer: Sendable {
-  static let atuinOutputPath = AtuinAdapter.outputPath
-  static let batOutputPath = BatAdapter.outputPath
-  static let btopOutputPath = BtopAdapter.outputPath
   static let capabilitiesOutputPath = "generated/capabilities.json"
-  static let ezaOutputPath = EzaAdapter.outputPath
-  static let herdrOutputPath = HerdrAdapter.outputPath
-  static let kittyOutputPath = KittyAdapter.outputPath
-  static let neovimOutputPath = NeovimAdapter.outputPath
-  static let piOutputPath = PiAdapter.outputPath
-  static let sketchyBarOutputPath = SketchyBarAdapter.outputPath
-  static let slackOutputPath = SlackAdapter.outputPath
-  static let spicetifyOutputPath = SpicetifyAdapter.outputPath
-  static let starshipOutputPath = StarshipAdapter.outputPath
   static let themeOutputPath = "theme.json"
-  static let tuicrOutputPath = TuicrAdapter.outputPath
-  static let wallpaperOutputPath = WallpaperAdapter.outputPath
-  static let yaziFlavorOutputPath = YaziAdapter.flavorOutputPath
-  static let yaziSyntaxOutputPath = YaziAdapter.syntaxOutputPath
-  static let requiredOutputPaths = Set([
-    atuinOutputPath, batOutputPath, btopOutputPath, ezaOutputPath,
-    kittyOutputPath, piOutputPath, sketchyBarOutputPath,
-    spicetifyOutputPath, starshipOutputPath, themeOutputPath, tuicrOutputPath, wallpaperOutputPath,
-    yaziFlavorOutputPath, yaziSyntaxOutputPath,
-  ])
-  static let capabilityOutputPaths = Set([
-    capabilitiesOutputPath, herdrOutputPath, neovimOutputPath, slackOutputPath,
-  ])
-  static let outputPaths = requiredOutputPaths.union(capabilityOutputPaths)
+  static let artifactMetadata = [
+    RenderedArtifactMetadata(path: AtuinAdapter.outputPath),
+    RenderedArtifactMetadata(path: TextMateThemeArtifact.outputPath),
+    RenderedArtifactMetadata(path: BtopAdapter.outputPath),
+    RenderedArtifactMetadata(path: capabilitiesOutputPath, requirement: .optional),
+    RenderedArtifactMetadata(path: EzaAdapter.outputPath),
+    RenderedArtifactMetadata(
+      path: HerdrAdapter.outputPath,
+      requirement: .requiredWhenRendererVersion(renderer: .herdr, minimumVersion: 3)
+    ),
+    RenderedArtifactMetadata(path: KittyAdapter.outputPath),
+    RenderedArtifactMetadata(
+      path: NeovimAdapter.outputPath,
+      requirement: .requiredWhenRendererVersion(renderer: .neovim, minimumVersion: 4)
+    ),
+    RenderedArtifactMetadata(path: PiAdapter.outputPath),
+    RenderedArtifactMetadata(path: SketchyBarAdapter.outputPath),
+    RenderedArtifactMetadata(
+      path: SlackAdapter.outputPath,
+      requirement: .requiredWhenRendererVersion(renderer: .slack, minimumVersion: 1)
+    ),
+    RenderedArtifactMetadata(path: SpicetifyAdapter.outputPath),
+    RenderedArtifactMetadata(path: StarshipAdapter.outputPath),
+    RenderedArtifactMetadata(path: themeOutputPath),
+    RenderedArtifactMetadata(path: TuicrAdapter.outputPath),
+    RenderedArtifactMetadata(
+      path: WallpaperAdapter.outputPath,
+      sizePolicy: .wallpaper
+    ),
+    RenderedArtifactMetadata(path: YaziAdapter.flavorOutputPath),
+    RenderedArtifactMetadata(path: TextMateThemeArtifact.yaziOutputPath),
+  ]
 
-  static func requiredOutputPaths(rendererVersions: [String: Int]) -> Set<String> {
-    var paths = requiredOutputPaths
-    if rendererVersions[HerdrAdapter.id, default: 0] >= 3 {
-      paths.insert(herdrOutputPath)
-    }
-    if rendererVersions[NeovimAdapter.id, default: 0] >= 4 {
-      paths.insert(neovimOutputPath)
-    }
-    if rendererVersions[SlackAdapter.id, default: 0] >= 1 {
-      paths.insert(slackOutputPath)
-    }
-    return paths
+  static func validatedArtifactMetadata() throws -> [String: RenderedArtifactMetadata] {
+    let collection = try RenderedTheme(
+      artifacts: artifactMetadata.map { RenderedArtifact(metadata: $0, data: Data()) }
+    )
+    return Dictionary(uniqueKeysWithValues: collection.artifacts.map { ($0.path, $0.metadata) })
+  }
+
+  static func requiredOutputPaths(rendererVersions: [String: Int]) throws -> Set<String> {
+    Set(
+      try validatedArtifactMetadata().values.compactMap { metadata in
+        metadata.requirement.isRequired(rendererVersions: rendererVersions)
+          ? metadata.path : nil
+      }
+    )
   }
 
   public init() {}
@@ -108,39 +72,79 @@ public struct ThemeRenderer: Sendable {
       GeneratedThemeCapabilities(unsupportedAdapters: [])
     )
     capabilities.append(0x0a)
+    let textMateTheme = TextMateThemeArtifact.render(package: package)
+    let metadata = try Self.validatedArtifactMetadata()
 
-    return RenderedTheme(
-      atuinTheme: AtuinAdapter.render(package: package),
-      batTheme: BatAdapter.render(package: package),
-      btopTheme: BtopAdapter.render(package: package),
-      capabilities: capabilities,
-      ezaTheme: EzaAdapter.render(package: package),
-      herdrTheme: try HerdrAdapter.render(package: package),
-      themeJSON: json,
-      kittyConfiguration: KittyAdapter.render(package: package),
-      neovimTheme: try NeovimAdapter.render(package: package, generationID: generationID),
-      piTheme: try PiAdapter.render(package: package),
-      sketchyBarPalette: SketchyBarAdapter.render(package: package),
-      slackTheme: SlackAdapter.render(package: package),
-      spicetifyTheme: SpicetifyAdapter.render(package: package),
-      starshipPalette: StarshipAdapter.render(package: package),
-      tuicrTheme: TuicrAdapter.render(package: package),
-      wallpaper: wallpaperData,
-      yaziFlavor: YaziAdapter.renderFlavor(package: package)
+    return try RenderedTheme(
+      artifacts: [
+        artifact(metadata, AtuinAdapter.outputPath, AtuinAdapter.render(package: package)),
+        artifact(metadata, TextMateThemeArtifact.outputPath, textMateTheme),
+        artifact(metadata, BtopAdapter.outputPath, BtopAdapter.render(package: package)),
+        artifact(metadata, Self.capabilitiesOutputPath, capabilities),
+        artifact(metadata, EzaAdapter.outputPath, EzaAdapter.render(package: package)),
+        artifact(metadata, HerdrAdapter.outputPath, try HerdrAdapter.render(package: package)),
+        artifact(metadata, KittyAdapter.outputPath, KittyAdapter.render(package: package)),
+        artifact(
+          metadata,
+          NeovimAdapter.outputPath,
+          try NeovimAdapter.render(package: package, generationID: generationID)
+        ),
+        artifact(metadata, PiAdapter.outputPath, try PiAdapter.render(package: package)),
+        artifact(
+          metadata,
+          SketchyBarAdapter.outputPath,
+          SketchyBarAdapter.render(package: package)
+        ),
+        artifact(metadata, SlackAdapter.outputPath, SlackAdapter.render(package: package)),
+        artifact(
+          metadata,
+          SpicetifyAdapter.outputPath,
+          SpicetifyAdapter.render(package: package)
+        ),
+        artifact(
+          metadata,
+          StarshipAdapter.outputPath,
+          StarshipAdapter.render(package: package)
+        ),
+        artifact(metadata, Self.themeOutputPath, json),
+        artifact(metadata, TuicrAdapter.outputPath, TuicrAdapter.render(package: package)),
+        artifact(metadata, WallpaperAdapter.outputPath, wallpaperData),
+        artifact(
+          metadata,
+          YaziAdapter.flavorOutputPath,
+          YaziAdapter.renderFlavor(package: package)
+        ),
+        artifact(metadata, TextMateThemeArtifact.yaziOutputPath, textMateTheme),
+      ]
     )
   }
 
-  static func maximumOutputSize(for path: String) -> Int {
-    path == WallpaperAdapter.outputPath
-      ? WallpaperAsset.maximumSize : BoundedRegularFile.maximumSize
+  private func artifact(
+    _ metadata: [String: RenderedArtifactMetadata],
+    _ path: String,
+    _ string: String
+  ) throws -> RenderedArtifact {
+    try artifact(metadata, path, Data(string.utf8))
+  }
+
+  private func artifact(
+    _ metadata: [String: RenderedArtifactMetadata],
+    _ path: String,
+    _ data: Data
+  ) throws -> RenderedArtifact {
+    guard let artifactMetadata = metadata[path] else {
+      throw RenderedArtifactCollectionError.missingMetadata(path)
+    }
+    return RenderedArtifact(metadata: artifactMetadata, data: data)
   }
 
   public func write(_ rendered: RenderedTheme, to outputRoot: URL) throws {
-    for (path, data) in rendered.files {
-      let output = outputRoot.appending(path: path)
+    try rendered.validateDataSizes()
+    for artifact in rendered.artifacts {
+      let output = outputRoot.appending(path: artifact.path)
       try FileManager.default.createDirectory(
         at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-      try data.write(to: output, options: .atomic)
+      try artifact.data.write(to: output, options: .atomic)
     }
   }
 }

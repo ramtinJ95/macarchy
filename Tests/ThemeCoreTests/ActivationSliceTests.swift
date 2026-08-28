@@ -11,35 +11,156 @@ import Testing
 struct ActivationSliceTests {
   @Test
   func importedPaletteOutputsBecomeRequiredWithoutInvalidatingOlderManifests() throws {
+    let metadata = try ThemeRenderer.validatedArtifactMetadata()
+    #expect(metadata[ThemeRenderer.capabilitiesOutputPath]?.requirement == .optional)
+    #expect(metadata[WallpaperAdapter.outputPath]?.sizePolicy == .wallpaper)
+    #expect(metadata[WallpaperAdapter.outputPath]?.maximumSize == WallpaperAsset.maximumSize)
     #expect(
-      !ThemeRenderer.requiredOutputPaths(rendererVersions: [HerdrAdapter.id: 2])
-        .contains(ThemeRenderer.herdrOutputPath)
+      metadata[HerdrAdapter.outputPath]?.requirement
+        == .requiredWhenRendererVersion(renderer: .herdr, minimumVersion: 3)
     )
     #expect(
-      ThemeRenderer.requiredOutputPaths(rendererVersions: [HerdrAdapter.id: 3])
-        .contains(ThemeRenderer.herdrOutputPath)
+      try !ThemeRenderer.requiredOutputPaths(rendererVersions: [HerdrAdapter.id: 2])
+        .contains(HerdrAdapter.outputPath)
     )
     #expect(
-      !ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 3])
-        .contains(ThemeRenderer.neovimOutputPath)
+      try ThemeRenderer.requiredOutputPaths(rendererVersions: [HerdrAdapter.id: 3])
+        .contains(HerdrAdapter.outputPath)
     )
     #expect(
-      ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 4])
-        .contains(ThemeRenderer.neovimOutputPath)
+      try !ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 3])
+        .contains(NeovimAdapter.outputPath)
     )
     #expect(
-      !ThemeRenderer.requiredOutputPaths(rendererVersions: [:])
-        .contains(ThemeRenderer.slackOutputPath)
+      try ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 4])
+        .contains(NeovimAdapter.outputPath)
     )
     #expect(
-      ThemeRenderer.requiredOutputPaths(rendererVersions: [SlackAdapter.id: 1])
-        .contains(ThemeRenderer.slackOutputPath)
+      try !ThemeRenderer.requiredOutputPaths(rendererVersions: [:])
+        .contains(SlackAdapter.outputPath)
+    )
+    #expect(
+      try ThemeRenderer.requiredOutputPaths(rendererVersions: [SlackAdapter.id: 1])
+        .contains(SlackAdapter.outputPath)
     )
     let legacyHerdr = try HerdrAdapter.decodeGeneratedTheme(
       Data("tokyo-night\n".utf8),
       rendererVersion: 2
     )
     #expect(legacyHerdr == GeneratedHerdrTheme(name: "tokyo-night"))
+  }
+
+  @Test
+  func sealedGenerationArtifactValidationEnforcesInventoryAcrossVersionGates() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let base = try testActivator(root: root).activate(package: catppuccinPackage())
+    let generationURL = root.appending(
+      path: "generations/\(base.generationID)",
+      directoryHint: .isDirectory
+    )
+
+    func manifest(
+      rendererVersions: [String: Int],
+      artifacts: [String: String]
+    ) -> GenerationManifest {
+      GenerationManifest(
+        generationID: base.generationID,
+        themeID: base.themeID,
+        themeSchemaVersion: base.themeSchemaVersion,
+        inputDigest: base.inputDigest,
+        rendererVersions: rendererVersions,
+        artifacts: artifacts
+      )
+    }
+
+    var unknownArtifacts = base.artifacts
+    unknownArtifacts["generated/unknown.txt"] = sha256Digest(Data())
+    #expect(throws: GenerationIntegrityError.self) {
+      try manifest(
+        rendererVersions: base.rendererVersions,
+        artifacts: unknownArtifacts
+      ).validateArtifacts(at: generationURL)
+    }
+
+    var missingRequired = base.artifacts
+    missingRequired.removeValue(forKey: ThemeRenderer.themeOutputPath)
+    #expect(throws: GenerationIntegrityError.self) {
+      try manifest(
+        rendererVersions: base.rendererVersions,
+        artifacts: missingRequired
+      ).validateArtifacts(at: generationURL)
+    }
+
+    for currentGatedPath in [
+      HerdrAdapter.outputPath,
+      NeovimAdapter.outputPath,
+      SlackAdapter.outputPath,
+    ] {
+      var missingCurrentGated = base.artifacts
+      missingCurrentGated.removeValue(forKey: currentGatedPath)
+      #expect(throws: GenerationIntegrityError.self) {
+        try manifest(
+          rendererVersions: base.rendererVersions,
+          artifacts: missingCurrentGated
+        ).validateArtifacts(at: generationURL)
+      }
+    }
+
+    var omittedOptional = base.artifacts
+    omittedOptional.removeValue(forKey: ThemeRenderer.capabilitiesOutputPath)
+    try manifest(
+      rendererVersions: base.rendererVersions,
+      artifacts: omittedOptional
+    ).validateArtifacts(at: generationURL)
+
+    var legacyVersions = base.rendererVersions
+    legacyVersions[HerdrAdapter.id] = 2
+    legacyVersions[NeovimAdapter.id] = 3
+    legacyVersions.removeValue(forKey: SlackAdapter.id)
+    var omittedLegacyGated = base.artifacts
+    omittedLegacyGated.removeValue(forKey: HerdrAdapter.outputPath)
+    omittedLegacyGated.removeValue(forKey: NeovimAdapter.outputPath)
+    omittedLegacyGated.removeValue(forKey: SlackAdapter.outputPath)
+    try manifest(
+      rendererVersions: legacyVersions,
+      artifacts: omittedLegacyGated
+    ).validateArtifacts(at: generationURL)
+  }
+
+  @Test
+  func oversizedRenderedArtifactPreservesActivationTypedErrorAndCheckpoint() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let reachedOutputCheckpoint = Mutex(false)
+    let activator = ThemeActivator(root: root) { checkpoint in
+      if checkpoint == .outputsRendered {
+        reachedOutputCheckpoint.withLock { $0 = true }
+      }
+    }
+    let oversized = Data(count: WallpaperAsset.maximumSize + 1)
+
+    #expect(
+      throws: ThemeActivationError.generatedFileTooLarge(
+        path: WallpaperAdapter.outputPath,
+        size: oversized.count,
+        maximumSize: WallpaperAsset.maximumSize
+      )
+    ) {
+      _ = try activator.activate(
+        package: catppuccinPackage(),
+        expectedActiveGenerationID: nil,
+        wallpaperData: oversized
+      )
+    }
+    #expect(reachedOutputCheckpoint.withLock { $0 })
+    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "current").path))
   }
 
   @Test
@@ -69,6 +190,11 @@ struct ActivationSliceTests {
     #expect(manifest.themeID == package.id)
     #expect(manifest.themeSchemaVersion == package.schemaVersion)
     #expect(manifest.inputDigest == activation.inputDigest)
+    let rendered = try ThemeRenderer().render(
+      package: package,
+      generationID: activation.generationID
+    )
+    #expect(manifest.artifacts == rendered.manifestArtifacts)
     #expect(
       manifest.rendererVersions
         == [
@@ -147,7 +273,11 @@ struct ActivationSliceTests {
     #expect(neovim.contains("colorscheme = \"\(NeovimAdapter.importedColorscheme)\""))
     #expect(neovim.contains("theme_id = \"\(package.id)\""))
     #expect(neovim.contains("accent = \"\(package.semantic.accent.rawValue)\""))
-    #expect(Set(manifest.artifacts.keys).isSuperset(of: ThemeRenderer.requiredOutputPaths))
+    #expect(
+      try Set(manifest.artifacts.keys).isSuperset(
+        of: ThemeRenderer.requiredOutputPaths(rendererVersions: manifest.rendererVersions)
+      )
+    )
     #expect(
       try ReconciliationStatusStore(root: root).activeManifest().generationID
         == manifest.generationID)

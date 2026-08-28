@@ -400,7 +400,7 @@ extension Fixture {
   }
 
   var tuicrSyntaxDestination: URL {
-    stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+    stateRoot.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
   }
 
   var codexConfiguration: URL {
@@ -412,7 +412,7 @@ extension Fixture {
   }
 
   var codexThemeDestination: URL {
-    stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+    stateRoot.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
   }
 
   var tuicrSelectorBackup: URL {

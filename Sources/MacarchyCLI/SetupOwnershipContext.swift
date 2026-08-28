@@ -68,7 +68,9 @@ extension SetupOwnershipManager {
       batConfiguration = homeDirectory.appending(path: ".config/bat/config")
       batThemeLink = homeDirectory.appending(
         path: ".config/bat/themes/\(BatAdapter.themeFileName)")
-      batThemeDestination = stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      batThemeDestination = stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.outputPath)"
+      )
       shellConfiguration = homeDirectory.appending(path: ".zshrc")
       ezaThemeLink = homeDirectory.appending(
         path: ".config/eza/\(EzaAdapter.themeFileName)")
@@ -83,7 +85,9 @@ extension SetupOwnershipManager {
       yaziFlavorLink = yaziFlavorDirectory.appending(path: "flavor.toml")
       yaziFlavorDestination = stateRoot.appending(path: "current/\(YaziAdapter.flavorOutputPath)")
       yaziSyntaxLink = yaziFlavorDirectory.appending(path: "tmtheme.xml")
-      yaziSyntaxDestination = stateRoot.appending(path: "current/\(YaziAdapter.syntaxOutputPath)")
+      yaziSyntaxDestination = stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.yaziOutputPath)"
+      )
       atuinConfiguration = homeDirectory.appending(path: ".config/atuin/config.toml")
       atuinThemeLink = homeDirectory.appending(
         path: ".config/atuin/themes/\(AtuinAdapter.themeName).toml")
@@ -110,11 +114,15 @@ extension SetupOwnershipManager {
       tuicrThemeDestination = stateRoot.appending(path: "current/\(TuicrAdapter.outputPath)")
       tuicrSyntaxLink = homeDirectory.appending(
         path: ".config/tuicr/themes/\(TuicrAdapter.themeName).tmTheme")
-      tuicrSyntaxDestination = stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      tuicrSyntaxDestination = stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.outputPath)"
+      )
       codexConfiguration = homeDirectory.appending(path: ".codex/config.toml")
       codexThemeLink = homeDirectory.appending(
         path: ".codex/themes/\(CodexAdapter.themeName).tmTheme")
-      codexThemeDestination = stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      codexThemeDestination = stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.outputPath)"
+      )
       let spicetifyDirectory = homeDirectory.appending(
         path: ".config/spicetify", directoryHint: .isDirectory)
       spicetifyConfiguration = spicetifyDirectory.appending(path: "config-xpui.ini")

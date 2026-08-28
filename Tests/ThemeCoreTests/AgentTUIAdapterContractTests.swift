@@ -130,7 +130,7 @@ extension AdapterContractTests {
     ] {
       try FileManager.default.createSymbolicLink(
         at: link,
-        withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+        withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
       )
     }
 
@@ -414,7 +414,7 @@ extension AdapterContractTests {
     )
     try FileManager.default.createSymbolicLink(
       at: tuicr.appending(path: "themes/\(TuicrAdapter.themeName).tmTheme"),
-      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
     )
     let tuicrAdapter = TuicrAdapter(
       root: root,
@@ -429,7 +429,7 @@ extension AdapterContractTests {
     let codexTheme = codex.appending(path: "themes/\(CodexAdapter.themeName).tmTheme")
     try FileManager.default.createSymbolicLink(
       at: codexTheme,
-      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
     )
     let codexAdapter = CodexAdapter(
       root: root,
