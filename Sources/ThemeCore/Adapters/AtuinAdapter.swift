@@ -64,35 +64,21 @@ package struct AtuinAdapter: Sendable {
     }
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      adapterID: Self.id,
+      requirement: .required,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        message: "Fresh Atuin search interfaces use the generated theme"
-      )
-    } catch {
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
-    }
+    runtime.inspection(readyMessage: "Fresh Atuin search interfaces use the generated theme")
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
-      do {
-        try preflight()
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
-
+    runtime.reconciliation {
       let result = try processRunner.run(
         ProcessRequest(
           executableURL: executableURL,
