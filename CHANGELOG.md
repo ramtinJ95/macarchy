@@ -7,6 +7,31 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-28
+
+### Added
+
+- Added strict inspection of enabled skhd bindings through
+  `macarchy keybindings list`, with stable human and JSON output and explicit
+  diagnostics for unsupported syntax or duplicate effective chords.
+- Added a metadata-only keybinding catalog for curated labels, categories,
+  ordering, and search aliases, plus `macarchy keybindings doctor` diagnostics
+  for missing and stale metadata.
+- Added a short-lived, theme-aware AppKit keybindings popup through
+  `macarchy keybindings show`, with immediate keyboard search, navigation, and
+  reliable Escape or focus-loss dismissal.
+
+### Security
+
+- Keybinding commands remain opaque display text and are never executed by the
+  parser, doctor, or popup. The popup requires no Accessibility or Screen
+  Recording grant and installs no resident helper.
+
+### Known limitations
+
+- Popup selection is informational. Executing a selected binding requires a
+  separate future security and interaction decision.
+
 ## [0.2.2] - 2026-08-28
 
 ### Added
@@ -119,7 +144,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ramtinJ95/macarchy/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/ramtinJ95/macarchy/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ramtinJ95/macarchy/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ramtinJ95/macarchy/compare/v0.1.0...v0.2.0
