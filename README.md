@@ -31,7 +31,7 @@ See the [changelog](CHANGELOG.md) for release details.
 
 Current integrations include macOS appearance, wallpaper, Kitty, SketchyBar,
 bat, eza, btop, Yazi, Atuin, Neovim, Starship, Pi, Herdr, tuicr, Codex CLI, and
-optional Spicetify support.
+optional Spicetify support. Macarchy also generates manual Slack theme imports.
 
 ## Requirements
 
@@ -144,6 +144,15 @@ backup and ownership evidence, rejects unowned custom colors, and removes its
 custom values when returning to a built-in. Missing wallpaper provenance is
 reported as a personal-use warning; imported assets are not release-eligible
 without verified rights.
+
+Slack does not expose a supported theme automation API, configuration file, or
+preferences deep link. Every committed activation therefore prints a
+comma-separated legacy theme payload and stores the same value in the active
+generation as `generated/slack.txt`. In Slack, open **Preferences → Appearance
+→ Custom theme → Theme colors → Import theme**, paste the payload, and apply
+it. This manual boundary follows [Slack's documented import
+flow](https://slack.com/help/articles/205166337-Change-your-Slack-theme) rather
+than editing Slack's private Electron storage.
 
 ## Setup without dotfile takeover
 
