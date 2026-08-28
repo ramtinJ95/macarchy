@@ -140,62 +140,36 @@ struct SetupIntegrationResult: Encodable, Sendable {
 }
 
 struct SetupOwnershipManager: Sendable {
-  static let integrationID = "kitty.include"
-  static let batSelectorID = "bat.selector"
-  static let batThemeLinkID = "bat.theme-link"
-  static let ezaEnvironmentID = "eza.environment"
-  static let ezaThemeLinkID = "eza.theme-link"
-  static let btopSelectorID = "btop.selector"
-  static let btopThemeLinkID = "btop.theme-link"
-  static let yaziSelectorID = "yazi.selector"
-  static let yaziFlavorLinkID = "yazi.flavor-link"
-  static let yaziSyntaxLinkID = "yazi.syntax-link"
-  static let atuinSelectorID = "atuin.selector"
-  static let atuinThemeLinkID = "atuin.theme-link"
-  static let neovimWatcherID = "neovim.watcher"
-  static let neovimThemeLinkID = "neovim.theme-link"
-  static let starshipBehaviorID = "starship.behavior"
-  static let starshipConfigurationLinkID = "starship.configuration-link"
-  static let piSelectorID = "pi.selector"
-  static let piThemeLinkID = "pi.theme-link"
-  static let herdrSelectorID = "herdr.selector"
-  static let tuicrSelectorID = "tuicr.selector"
-  static let tuicrThemeLinkID = "tuicr.theme-link"
-  static let tuicrSyntaxLinkID = "tuicr.syntax-link"
-  static let codexSelectorID = "codex.selector"
-  static let codexThemeLinkID = "codex.theme-link"
-  static let spicetifySelectorsID = "spicetify.selectors"
-  static let spicetifyColorLinkID = "spicetify.color-link"
+  static let integrationID = ConsumerSetupPlan.Step.Operation.kittyInclude.rawValue
+  static let batSelectorID = ConsumerSetupPlan.Step.Operation.batSelector.rawValue
+  static let batThemeLinkID = ConsumerSetupPlan.Step.Operation.batThemeLink.rawValue
+  static let ezaEnvironmentID = ConsumerSetupPlan.Step.Operation.ezaEnvironment.rawValue
+  static let ezaThemeLinkID = ConsumerSetupPlan.Step.Operation.ezaThemeLink.rawValue
+  static let btopSelectorID = ConsumerSetupPlan.Step.Operation.btopSelector.rawValue
+  static let btopThemeLinkID = ConsumerSetupPlan.Step.Operation.btopThemeLink.rawValue
+  static let yaziSelectorID = ConsumerSetupPlan.Step.Operation.yaziSelector.rawValue
+  static let yaziFlavorLinkID = ConsumerSetupPlan.Step.Operation.yaziFlavorLink.rawValue
+  static let yaziSyntaxLinkID = ConsumerSetupPlan.Step.Operation.yaziSyntaxLink.rawValue
+  static let atuinSelectorID = ConsumerSetupPlan.Step.Operation.atuinSelector.rawValue
+  static let atuinThemeLinkID = ConsumerSetupPlan.Step.Operation.atuinThemeLink.rawValue
+  static let neovimWatcherID = ConsumerSetupPlan.Step.Operation.neovimWatcher.rawValue
+  static let neovimThemeLinkID = ConsumerSetupPlan.Step.Operation.neovimThemeLink.rawValue
+  static let starshipBehaviorID = ConsumerSetupPlan.Step.Operation.starshipBehavior.rawValue
+  static let starshipConfigurationLinkID =
+    ConsumerSetupPlan.Step.Operation.starshipConfigurationLink.rawValue
+  static let piSelectorID = ConsumerSetupPlan.Step.Operation.piSelector.rawValue
+  static let piThemeLinkID = ConsumerSetupPlan.Step.Operation.piThemeLink.rawValue
+  static let herdrSelectorID = ConsumerSetupPlan.Step.Operation.herdrSelector.rawValue
+  static let tuicrSelectorID = ConsumerSetupPlan.Step.Operation.tuicrSelector.rawValue
+  static let tuicrThemeLinkID = ConsumerSetupPlan.Step.Operation.tuicrThemeLink.rawValue
+  static let tuicrSyntaxLinkID = ConsumerSetupPlan.Step.Operation.tuicrSyntaxLink.rawValue
+  static let codexSelectorID = ConsumerSetupPlan.Step.Operation.codexSelector.rawValue
+  static let codexThemeLinkID = ConsumerSetupPlan.Step.Operation.codexThemeLink.rawValue
+  static let spicetifySelectorsID =
+    ConsumerSetupPlan.Step.Operation.spicetifySelectors.rawValue
+  static let spicetifyColorLinkID =
+    ConsumerSetupPlan.Step.Operation.spicetifyColorLink.rawValue
   static let maximumConfigurationSize = 1_048_576
-  private static let integrationOrder = [
-    integrationID,
-    batSelectorID,
-    batThemeLinkID,
-    ezaEnvironmentID,
-    ezaThemeLinkID,
-    btopSelectorID,
-    btopThemeLinkID,
-    yaziSelectorID,
-    yaziFlavorLinkID,
-    yaziSyntaxLinkID,
-    atuinSelectorID,
-    atuinThemeLinkID,
-    neovimWatcherID,
-    neovimThemeLinkID,
-    starshipBehaviorID,
-    starshipConfigurationLinkID,
-    piSelectorID,
-    piThemeLinkID,
-    herdrSelectorID,
-    tuicrSelectorID,
-    tuicrThemeLinkID,
-    tuicrSyntaxLinkID,
-    codexSelectorID,
-    codexThemeLinkID,
-    spicetifySelectorsID,
-    spicetifyColorLinkID,
-  ]
-
   let faultInjector: @Sendable (SetupOwnershipCheckpoint) throws -> Void
 
   init(
@@ -252,13 +226,19 @@ struct SetupOwnershipManager: Sendable {
     homeDirectory: URL
   ) -> [SetupIntegrationResult] {
     let completed = (error as? SetupOwnershipTransactionError)?.completedResults ?? []
-    return orderedResults(completed + [failureResult(error, homeDirectory: homeDirectory)])
+    let context = Context(homeDirectory: homeDirectory)
+    return orderedResults(
+      completed + [failureResult(error, homeDirectory: homeDirectory)],
+      context: context
+    )
   }
 
   private static func orderedResults(
-    _ results: [SetupIntegrationResult]
+    _ results: [SetupIntegrationResult],
+    context: Context
   ) -> [SetupIntegrationResult] {
-    let order = Dictionary(uniqueKeysWithValues: integrationOrder.enumerated().map { ($1, $0) })
+    let steps = SetupOwnershipManager().consumerSetupPlans(context: context).flatMap(\.steps)
+    let order = Dictionary(uniqueKeysWithValues: steps.enumerated().map { ($1.id, $0) })
     return results.sorted {
       order[$0.id, default: Int.max] < order[$1.id, default: Int.max]
     }
@@ -268,78 +248,13 @@ struct SetupOwnershipManager: Sendable {
     for url: URL,
     context: Context
   ) -> (id: String, target: String) {
-    switch url.path {
-    case context.batConfiguration.path, context.batSelectorBackup.path,
-      context.batConfiguration.deletingLastPathComponent()
-      .appending(path: context.batSelectorReplacementName).path:
-      (batSelectorID, url.path)
-    case context.batThemeLink.path:
-      (batThemeLinkID, url.path)
-    case context.shellConfiguration.path, context.ezaEnvironmentBackup.path,
-      context.shellConfiguration.deletingLastPathComponent()
-      .appending(path: context.ezaEnvironmentReplacementName).path:
-      (ezaEnvironmentID, url.path)
-    case context.ezaThemeLink.path:
-      (ezaThemeLinkID, url.path)
-    case context.btopConfiguration.path:
-      (btopSelectorID, url.path)
-    case context.btopThemeLink.path:
-      (btopThemeLinkID, url.path)
-    case context.yaziConfiguration.path, context.yaziSelectorBackup.path,
-      context.yaziConfiguration.deletingLastPathComponent()
-      .appending(path: context.yaziSelectorReplacementName).path:
-      (yaziSelectorID, url.path)
-    case context.yaziFlavorLink.path:
-      (yaziFlavorLinkID, url.path)
-    case context.yaziSyntaxLink.path:
-      (yaziSyntaxLinkID, url.path)
-    case context.atuinConfiguration.path, context.atuinSelectorBackup.path,
-      context.atuinConfiguration.deletingLastPathComponent()
-      .appending(path: context.atuinSelectorReplacementName).path:
-      (atuinSelectorID, url.path)
-    case context.atuinThemeLink.path:
-      (atuinThemeLinkID, url.path)
-    case context.neovimWatcherConfiguration.path:
-      (neovimWatcherID, url.path)
-    case context.neovimThemeLink.path:
-      (neovimThemeLinkID, url.path)
-    case context.starshipBehavior.path:
-      (starshipBehaviorID, url.path)
-    case context.starshipConfigurationLink.path:
-      (starshipConfigurationLinkID, url.path)
-    case context.piConfiguration.path,
-      context.piConfiguration.deletingLastPathComponent()
-      .appending(path: context.piSelectorReplacementName).path:
-      (piSelectorID, url.path)
-    case context.piThemeLink.path:
-      (piThemeLinkID, url.path)
-    case context.herdrConfiguration.path:
-      (herdrSelectorID, url.path)
-    case context.tuicrConfiguration.path, context.tuicrSelectorBackup.path,
-      context.tuicrConfiguration.deletingLastPathComponent()
-      .appending(path: context.tuicrSelectorReplacementName).path:
-      (tuicrSelectorID, url.path)
-    case context.tuicrThemeLink.path:
-      (tuicrThemeLinkID, url.path)
-    case context.tuicrSyntaxLink.path:
-      (tuicrSyntaxLinkID, url.path)
-    case context.codexConfiguration.path, context.codexSelectorBackup.path,
-      context.codexConfiguration.deletingLastPathComponent()
-      .appending(path: context.codexSelectorReplacementName).path:
-      (codexSelectorID, url.path)
-    case context.codexThemeLink.path:
-      (codexThemeLinkID, url.path)
-    case context.spicetifyConfiguration.path, context.spicetifySelectorsBackup.path,
-      context.spicetifyConfiguration.deletingLastPathComponent()
-      .appending(path: context.spicetifySelectorsReplacementName).path:
-      (spicetifySelectorsID, url.path)
-    case context.spicetifyColorLink.path:
-      (spicetifyColorLinkID, url.path)
-    case context.kittyConfiguration.path, context.backupURL.path, context.replacementURL.path:
-      (integrationID, url.path)
-    default:
-      ("setup.ownership", url.path)
+    let steps = SetupOwnershipManager().consumerSetupPlans(context: context).flatMap(\.steps)
+    if let step = steps.first(where: { step in
+      step.affectedPaths.contains { $0.path == url.path }
+    }) {
+      return (step.id, url.path)
     }
+    return ("setup.ownership", url.path)
   }
 
   func setup(
@@ -368,58 +283,23 @@ struct SetupOwnershipManager: Sendable {
     var records = try readRecords(context: context)
     var results = [SetupIntegrationResult]()
     do {
-      results.append(try setupKitty(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupBatSelector(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupBatThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupEzaEnvironment(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupEzaThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupBtopSelector(context: context))
-      results.append(
-        try setupBtopThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupYaziFlavorLink(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupYaziSyntaxLink(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupYaziSelector(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupAtuinThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupAtuinSelector(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupNeovimWatcher(context: context))
-      results.append(
-        try setupNeovimThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupStarshipBehavior(context: context))
-      results.append(
-        try setupStarshipConfigurationLink(
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try setupPiThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupPiSelector(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupHerdrSelector(context: context))
-      results.append(
-        try setupTuicrThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupTuicrSyntaxLink(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupTuicrSelector(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        try setupCodexThemeLink(context: context, dryRun: dryRun, records: &records))
-      results.append(try setupCodexSelector(context: context, dryRun: dryRun, records: &records))
-      results.append(
-        contentsOf: try setupSpicetifyIntegrations(
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      return Self.orderedResults(results)
+      for plan in consumerSetupPlans(context: context) {
+        results.append(contentsOf: try plan.setup(dryRun, &records))
+      }
+      return Self.orderedResults(results, context: context)
     } catch let error as SetupOwnershipTransactionError {
       throw SetupOwnershipTransactionError(wrapping: error, completedResults: results)
+    } catch let error as ConsumerSetupPlanPartialFailure {
+      let completed = results + error.completedResults
+      guard completed.contains(where: \.mutationAttempted) else { throw error.cause }
+      let failure = Self.failureResult(error.cause, homeDirectory: context.homeDirectory)
+      throw SetupOwnershipTransactionError(
+        error.cause,
+        integrationID: failure.id,
+        target: URL(filePath: failure.target),
+        completedResults: completed,
+        failureMutationAttempted: false
+      )
     } catch {
       guard results.contains(where: \.mutationAttempted) else { throw error }
       let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
@@ -453,206 +333,31 @@ struct SetupOwnershipManager: Sendable {
   ) throws -> [SetupIntegrationResult] {
     var results = [SetupIntegrationResult]()
     do {
-      results.append(
-        contentsOf: try teardownSpicetifyIntegrations(
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownCodexSelector(context: context, dryRun: dryRun, records: &records)
-      )
-      results.append(
-        try teardownCodexThemeLink(context: context, dryRun: dryRun, records: &records)
-      )
-      results.append(
-        try teardownTuicrSelector(context: context, dryRun: dryRun, records: &records)
-      )
-      results.append(
-        try teardownTuicrSyntaxLink(context: context, dryRun: dryRun, records: &records)
-      )
-      results.append(
-        try teardownTuicrThemeLink(context: context, dryRun: dryRun, records: &records)
-      )
-      results.append(teardownHerdrSelector(context: context))
-      results.append(
-        try teardownPiSelector(context: context, dryRun: dryRun, records: &records)
-      )
-      results.append(
-        try teardownPiThemeLink(context: context, dryRun: dryRun, records: &records)
-      )
-      results.append(
-        try teardownThemeLink(
-          id: Self.starshipConfigurationLinkID,
-          target: context.starshipConfigurationLink,
-          destination: context.starshipBridgeDestination,
-          label: "Starship configuration",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(teardownStarshipBehavior(context: context))
-      results.append(
-        try teardownThemeLink(
-          id: Self.neovimThemeLinkID,
-          target: context.neovimThemeLink,
-          destination: context.neovimThemeDestination,
-          label: "Neovim theme",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(teardownNeovimWatcher(context: context))
-      results.append(
-        try teardownRegularFile(
-          id: Self.atuinSelectorID,
-          target: context.atuinConfiguration,
-          backupURL: context.atuinSelectorBackup,
-          replacementName: context.atuinSelectorReplacementName,
-          label: "Atuin theme selector",
-          read: { try readConfiguration($0, id: Self.atuinSelectorID) },
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownThemeLink(
-          id: Self.atuinThemeLinkID,
-          target: context.atuinThemeLink,
-          destination: context.atuinThemeDestination,
-          label: "Atuin",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownRegularFile(
-          id: Self.yaziSelectorID,
-          target: context.yaziConfiguration,
-          backupURL: context.yaziSelectorBackup,
-          replacementName: context.yaziSelectorReplacementName,
-          label: "Yazi flavor selector",
-          read: { try readConfiguration($0, id: Self.yaziSelectorID) },
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownThemeLink(
-          id: Self.yaziSyntaxLinkID,
-          target: context.yaziSyntaxLink,
-          destination: context.yaziSyntaxDestination,
-          label: "Yazi syntax theme",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownThemeLink(
-          id: Self.yaziFlavorLinkID,
-          target: context.yaziFlavorLink,
-          destination: context.yaziFlavorDestination,
-          label: "Yazi flavor",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        integrationResult(
-          id: Self.btopSelectorID,
-          target: context.btopConfiguration,
-          status: .none,
-          message: "No Macarchy-owned btop selector exists"
-        )
-      )
-      results.append(
-        try teardownThemeLink(
-          id: Self.btopThemeLinkID,
-          target: context.btopThemeLink,
-          destination: context.btopThemeDestination,
-          label: "btop",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownThemeLink(
-          id: Self.ezaThemeLinkID,
-          target: context.ezaThemeLink,
-          destination: context.ezaThemeDestination,
-          label: "eza",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownRegularFile(
-          id: Self.ezaEnvironmentID,
-          target: context.shellConfiguration,
-          backupURL: context.ezaEnvironmentBackup,
-          replacementName: context.ezaEnvironmentReplacementName,
-          label: "eza environment",
-          read: { try readConfiguration($0, id: Self.ezaEnvironmentID) },
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownThemeLink(
-          id: Self.batThemeLinkID,
-          target: context.batThemeLink,
-          destination: context.batThemeDestination,
-          label: "bat",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownRegularFile(
-          id: Self.batSelectorID,
-          target: context.batConfiguration,
-          backupURL: context.batSelectorBackup,
-          replacementName: context.batSelectorReplacementName,
-          label: "bat selector",
-          read: { try readConfiguration($0, id: Self.batSelectorID) },
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      results.append(
-        try teardownRegularFile(
-          id: Self.integrationID,
-          target: context.kittyConfiguration,
-          backupURL: context.backupURL,
-          replacementName: context.replacementName,
-          label: "Kitty include",
-          read: { try readConfiguration($0) },
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      return Self.orderedResults(results)
+      for plan in consumerSetupPlans(context: context).reversed() {
+        results.append(contentsOf: try plan.teardown(dryRun, &records))
+      }
+      return Self.orderedResults(results, context: context)
     } catch let error as SetupOwnershipTransactionError {
       throw SetupOwnershipTransactionError(
         wrapping: error,
-        completedResults: Self.orderedResults(results)
+        completedResults: Self.orderedResults(results, context: context)
+      )
+    } catch let error as ConsumerSetupPlanPartialFailure {
+      let completed = Self.orderedResults(
+        results + error.completedResults,
+        context: context
+      )
+      guard completed.contains(where: \.mutationAttempted) else { throw error.cause }
+      let failure = Self.failureResult(error.cause, homeDirectory: context.homeDirectory)
+      throw SetupOwnershipTransactionError(
+        error.cause,
+        integrationID: failure.id,
+        target: URL(filePath: failure.target),
+        completedResults: completed,
+        failureMutationAttempted: false
       )
     } catch {
-      let completed = Self.orderedResults(results)
+      let completed = Self.orderedResults(results, context: context)
       guard completed.contains(where: \.mutationAttempted) else { throw error }
       let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
       throw SetupOwnershipTransactionError(

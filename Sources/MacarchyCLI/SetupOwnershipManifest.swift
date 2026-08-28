@@ -29,147 +29,15 @@ extension SetupOwnershipManager {
     guard Set(manifest.records.map(\.id)).count == manifest.records.count else {
       throw SetupOwnershipError.invalidManifest("integration identifiers must be unique")
     }
+    let steps = consumerSetupPlans(context: context).flatMap(\.steps)
     for record in manifest.records {
-      switch record.id {
-      case Self.integrationID:
-        try validateRegularFileRecord(
-          record,
-          target: context.kittyConfiguration,
-          backupURL: context.backupURL,
-          context: context
-        )
-      case Self.batSelectorID:
-        try validateRegularFileRecord(
-          record,
-          target: context.batConfiguration,
-          backupURL: context.batSelectorBackup,
-          context: context
-        )
-      case Self.batThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.batThemeLink,
-          destination: context.batThemeDestination
-        )
-      case Self.ezaEnvironmentID:
-        try validateRegularFileRecord(
-          record,
-          target: context.shellConfiguration,
-          backupURL: context.ezaEnvironmentBackup,
-          context: context
-        )
-      case Self.ezaThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.ezaThemeLink,
-          destination: context.ezaThemeDestination
-        )
-      case Self.btopThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.btopThemeLink,
-          destination: context.btopThemeDestination
-        )
-      case Self.yaziSelectorID:
-        try validateRegularFileRecord(
-          record,
-          target: context.yaziConfiguration,
-          backupURL: context.yaziSelectorBackup,
-          context: context
-        )
-      case Self.yaziFlavorLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.yaziFlavorLink,
-          destination: context.yaziFlavorDestination
-        )
-      case Self.yaziSyntaxLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.yaziSyntaxLink,
-          destination: context.yaziSyntaxDestination
-        )
-      case Self.atuinSelectorID:
-        try validateRegularFileRecord(
-          record,
-          target: context.atuinConfiguration,
-          backupURL: context.atuinSelectorBackup,
-          context: context
-        )
-      case Self.atuinThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.atuinThemeLink,
-          destination: context.atuinThemeDestination
-        )
-      case Self.neovimThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.neovimThemeLink,
-          destination: context.neovimThemeDestination
-        )
-      case Self.starshipConfigurationLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.starshipConfigurationLink,
-          destination: context.starshipBridgeDestination
-        )
-      case Self.piSelectorID:
-        try validatePiSelectorRecord(record, context: context)
-      case Self.piThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.piThemeLink,
-          destination: context.piThemeDestination
-        )
-      case Self.tuicrSelectorID:
-        try validateRegularFileRecord(
-          record,
-          target: context.tuicrConfiguration,
-          backupURL: context.tuicrSelectorBackup,
-          context: context
-        )
-      case Self.tuicrThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.tuicrThemeLink,
-          destination: context.tuicrThemeDestination
-        )
-      case Self.tuicrSyntaxLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.tuicrSyntaxLink,
-          destination: context.tuicrSyntaxDestination
-        )
-      case Self.codexSelectorID:
-        try validateRegularFileRecord(
-          record,
-          target: context.codexConfiguration,
-          backupURL: context.codexSelectorBackup,
-          context: context
-        )
-      case Self.codexThemeLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.codexThemeLink,
-          destination: context.codexThemeDestination
-        )
-      case Self.spicetifySelectorsID:
-        try validateSpicetifySelectorRecord(
-          record,
-          target: context.spicetifyConfiguration,
-          backupURL: context.spicetifySelectorsBackup,
-          context: context
-        )
-      case Self.spicetifyColorLinkID:
-        try validateThemeLinkRecord(
-          record,
-          target: context.spicetifyColorLink,
-          destination: context.spicetifyColorDestination
-        )
-      default:
+      guard
+        let step = steps.first(where: { $0.id == record.id }),
+        let validate = step.validateOwnershipRecord
+      else {
         throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
       }
+      try validate(record)
     }
     return manifest.records
   }
