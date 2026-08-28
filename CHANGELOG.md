@@ -7,6 +7,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-28
+
 ### Added
 
 - Added complete data-only Neovim palettes for imported Omarchy themes through
@@ -97,6 +99,7 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/ramtinJ95/macarchy/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ramtinJ95/macarchy/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ramtinJ95/macarchy/releases/tag/v0.1.0
