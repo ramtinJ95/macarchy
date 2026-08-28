@@ -1,0 +1,4 @@
+alt - j	yabai -m window --focus south
+alt + shift - s	yabai -m window --display west; yabai -m display --focus west;
+alt + shift - a	yabai -m window --resize left:-20:0
+alt - m	osascript -e 'tell application id "com.spotify.client" to reopen'

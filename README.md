@@ -81,6 +81,8 @@ macarchy theme set <theme-id> [--dry-run]
 macarchy theme next [--dry-run]
 macarchy theme install <github-url> [--dry-run] [--json]
 macarchy theme status [--json]
+macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
+macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup [--dry-run] [--json]
@@ -95,6 +97,17 @@ Development builds find bundled themes from the checkout containing `.build`.
 Installed builds resolve resources relative to the executable, so commands do
 not depend on the current working directory. `--themes-root`, `--state-root`,
 and consumer-specific path options are available for development and testing.
+
+`keybindings list` parses enabled key-to-command bindings from the configured
+skhd file without executing them. It preserves chained shell commands as
+opaque display text, normalizes modifier order, ignores disabled lines, and
+returns explicit nonzero diagnostics for unsupported enabled syntax or
+duplicate effective chords. The default source is `~/.config/skhd/skhdrc`.
+Optional labels, categories, ordering, and search aliases come from the strict
+metadata-only `~/.config/macarchy/keybindings.toml` catalog. Catalog entries
+are keyed by normalized chord identity and cannot contain commands. The
+keybindings doctor warns about missing or stale metadata and parser/duplicate
+diagnostics, while unreadable or invalid inputs fail explicitly.
 
 `update status` reads cached GitHub release evidence and the locally installed
 Homebrew tap without refreshing either source. `update check` explicitly

@@ -8,7 +8,8 @@ struct Macarchy: AsyncParsableCommand {
     commandName: "macarchy",
     abstract: "A cohesive, theme-driven macOS environment.",
     subcommands: [
-      Theme.self, Reconcile.self, Doctor.self, Setup.self, Teardown.self, Update.self, Version.self,
+      Theme.self, Keybindings.self, Reconcile.self, Doctor.self, Setup.self, Teardown.self,
+      Update.self, Version.self,
     ]
   )
 
@@ -243,6 +244,74 @@ struct Macarchy: AsyncParsableCommand {
         homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
         dryRun: dryRun,
         json: json
+      )
+      print(execution.output)
+      if !execution.succeeded {
+        throw ExitCode.failure
+      }
+    }
+  }
+}
+
+struct Keybindings: ParsableCommand {
+  static let configuration = CommandConfiguration(
+    abstract: "Inspect configured skhd keybindings.",
+    subcommands: [List.self, Doctor.self]
+  )
+
+  struct Options: ParsableArguments {
+    @Option(help: "skhd configuration file.")
+    var skhdConfig = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/skhd/skhdrc").path
+
+    @Option(help: "Keybinding metadata catalog.")
+    var catalog = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy/keybindings.toml").path
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    var skhdConfigurationURL: URL {
+      URL(filePath: skhdConfig).standardizedFileURL
+    }
+
+    var catalogURL: URL {
+      URL(filePath: catalog).standardizedFileURL
+    }
+  }
+
+  struct List: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "List enabled bindings from the skhd configuration."
+    )
+
+    @OptionGroup var options: Options
+
+    mutating func run() throws {
+      let execution = try KeybindingsListCommandRunner.live.execute(
+        configurationURL: options.skhdConfigurationURL,
+        catalogURL: options.catalogURL,
+        json: options.json
+      )
+      print(execution.output)
+      if !execution.succeeded {
+        throw ExitCode.failure
+      }
+    }
+  }
+
+  struct Doctor: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Diagnose skhd parsing and keybinding catalog coverage."
+    )
+
+    @OptionGroup var options: Options
+
+    mutating func run() throws {
+      let execution = try KeybindingsDoctorCommandRunner.live.execute(
+        configurationURL: options.skhdConfigurationURL,
+        catalogURL: options.catalogURL,
+        json: options.json
       )
       print(execution.output)
       if !execution.succeeded {

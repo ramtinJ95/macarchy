@@ -1,0 +1,34 @@
+{
+  "findings" : [
+    {
+      "id" : "skhd.parse",
+      "message" : "Parsed 2 enabled bindings.",
+      "status" : "ok"
+    },
+    {
+      "id" : "catalog.load",
+      "message" : "Loaded 2 metadata entries.",
+      "status" : "ok"
+    },
+    {
+      "id" : "catalog.missing",
+      "identities" : [
+        "alt-k"
+      ],
+      "message" : "Parsed bindings are missing metadata. Count: 1.",
+      "status" : "warning"
+    },
+    {
+      "id" : "catalog.stale",
+      "identities" : [
+        "cmd-x"
+      ],
+      "message" : "Metadata entries do not match an enabled binding. Count: 1.",
+      "status" : "warning"
+    }
+  ],
+  "mutated" : false,
+  "operation" : "keybindings_doctor",
+  "outcome" : "healthy",
+  "schema_version" : 1
+}

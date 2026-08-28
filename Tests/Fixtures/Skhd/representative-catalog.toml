@@ -1,0 +1,14 @@
+schema_version = 1
+
+[[bindings]]
+identity = "alt+shift-s"
+label = "Move window to the left display"
+category = "Window movement"
+order = 10
+aliases = ["monitor left", "display west"]
+
+[[bindings]]
+identity = "alt-j"
+label = "Focus the window below"
+category = "Window focus"
+order = 20

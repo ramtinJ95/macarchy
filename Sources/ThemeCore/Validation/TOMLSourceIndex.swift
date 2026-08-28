@@ -15,12 +15,35 @@ struct TOMLSourceIndex {
     var fields: [TOMLFieldLocation] = []
     var tables: [TOMLFieldLocation] = []
 
-    for (offset, rawLine) in text.split(separator: "\n", omittingEmptySubsequences: false)
-      .enumerated()
-    {
+    for (offset, rawLine) in text.split(
+      omittingEmptySubsequences: false,
+      whereSeparator: { $0.isNewline }
+    ).enumerated() {
       let line = String(rawLine)
       let trimmed = line.trimmingCharacters(in: .whitespaces)
       guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+
+      if trimmed.hasPrefix("[[") {
+        guard trimmed.hasSuffix("]]") else {
+          throw ThemeDiagnostic(
+            location: .init(file: file, line: offset + 1, column: 1),
+            message: "\(syntaxRole) array tables must end with ']]'"
+          )
+        }
+        let table = trimmed.dropFirst(2).dropLast(2).trimmingCharacters(in: .whitespaces)
+        guard Self.isBareKey(table) else {
+          throw ThemeDiagnostic(
+            location: .init(file: file, line: offset + 1, column: 1),
+            field: table,
+            message: "\(syntaxRole) tables must use bare names"
+          )
+        }
+        currentTable = table
+        let column =
+          (line.firstIndex(of: "[").map { line.distance(from: line.startIndex, to: $0) } ?? 0) + 1
+        tables.append(.init(path: table, line: offset + 1, column: column))
+        continue
+      }
 
       if trimmed.hasPrefix("["), let closing = trimmed.firstIndex(of: "]") {
         let start = trimmed.index(after: trimmed.startIndex)
