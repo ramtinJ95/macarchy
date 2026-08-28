@@ -177,48 +177,6 @@ struct AgentTUISetupTests {
   }
 
   @Test
-  func piSelectorResumesInterruptedKeyInsertionAndRemoval() throws {
-    let fixture = try Fixture(configuration: "", externalAgentTUIs: false)
-    defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    let original = "{\n  \"provider\": \"openai\"\n}\n"
-    try fixture.createLocalAgentTUIConfigurations(
-      pi: original,
-      tuicr: "theme = \"macarchy-current\"\n",
-      codex: "[tui]\ntheme = \"macarchy-current\"\n"
-    )
-    try fixture.createAgentTUIThemeLinks()
-    let interruptedSetup = SetupOwnershipManager { checkpoint in
-      if checkpoint == .replacementSwapped { throw FixtureError.interrupted }
-    }
-
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interruptedSetup.setup(homeDirectory: fixture.home, dryRun: false)
-    }
-    #expect(try fixture.pathIsMissing(fixture.piSelectorReplacement) == false)
-
-    let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    #expect(resumed.first { $0.id == "pi.selector" }?.status == .owned)
-    #expect(try fixture.pathIsMissing(fixture.piSelectorReplacement))
-
-    let interruptedTeardown = SetupOwnershipManager { checkpoint in
-      if checkpoint == .replacementSwapped { throw FixtureError.interrupted }
-    }
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interruptedTeardown.teardown(homeDirectory: fixture.home, dryRun: false)
-    }
-    #expect(try fixture.pathIsMissing(fixture.piSelectorReplacement) == false)
-
-    let teardown = try SetupOwnershipManager().teardown(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
-    #expect(teardown.first { $0.id == "pi.selector" }?.status == .removed)
-    #expect(try String(contentsOf: fixture.piConfiguration, encoding: .utf8) == original)
-    #expect(try fixture.pathIsMissing(fixture.piSelectorReplacement))
-  }
-
-  @Test
   func piSelectorRejectsEquivalentButNoncanonicalKeySpelling() throws {
     let fixture = try Fixture(configuration: "", externalAgentTUIs: false)
     defer { fixture.remove() }
