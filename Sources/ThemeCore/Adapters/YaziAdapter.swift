@@ -81,35 +81,23 @@ package struct YaziAdapter: Sendable {
     }
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      adapterID: Self.id,
+      requirement: .required,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        message: "Yazi uses the generated flavor and supports live theme reload"
-      )
-    } catch {
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
-    }
+    runtime.inspection(
+      readyMessage: "Yazi uses the generated flavor and supports live theme reload"
+    )
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
-      do {
-        try preflight()
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
-
+    runtime.reconciliation {
       let running = try processRunner.run(
         ProcessRequest(executableURL: Self.killallURL, arguments: ["-0", "yazi"])
       )

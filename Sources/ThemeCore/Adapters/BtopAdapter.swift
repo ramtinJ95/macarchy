@@ -70,35 +70,23 @@ package struct BtopAdapter: Sendable {
     }
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      adapterID: Self.id,
+      requirement: .required,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        message: "btop uses the generated theme and supports live SIGUSR2 reload"
-      )
-    } catch {
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
-    }
+    runtime.inspection(
+      readyMessage: "btop uses the generated theme and supports live SIGUSR2 reload"
+    )
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
-      do {
-        try preflight()
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
-
+    runtime.reconciliation {
       let reload = try processRunner.run(
         ProcessRequest(executableURL: Self.killallURL, arguments: ["-USR2", "btop"])
       )

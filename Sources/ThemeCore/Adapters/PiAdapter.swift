@@ -55,35 +55,23 @@ package struct PiAdapter: Sendable {
     }
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      adapterID: Self.id,
+      requirement: .required,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        message: "Pi watches the generated theme and repaints running sessions"
-      )
-    } catch {
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
-    }
+    runtime.inspection(
+      readyMessage: "Pi watches the generated theme and repaints running sessions"
+    )
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
-      do {
-        try preflight()
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
-
+    runtime.reconciliation {
       try ActivationLock(root: root).withLock {
         try refreshThemeLink()
       }

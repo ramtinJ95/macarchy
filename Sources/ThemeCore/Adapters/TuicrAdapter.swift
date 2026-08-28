@@ -63,38 +63,25 @@ package struct TuicrAdapter: Sendable {
     }
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      adapterID: Self.id,
+      requirement: .required,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        message: "Fresh tuicr sessions use the generated palette"
-      )
-    } catch {
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
-    }
+    runtime.inspection(readyMessage: "Fresh tuicr sessions use the generated palette")
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
-      do {
-        try preflight()
-        return AdapterOutcome(
-          status: .restartRequired,
-          message: "Restart tuicr to use the active palette"
-        )
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
+    runtime.reconciliation {
+      AdapterOutcome(
+        status: .restartRequired,
+        message: "Restart tuicr to use the active palette"
+      )
     }
   }
 
