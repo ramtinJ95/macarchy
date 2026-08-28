@@ -83,6 +83,7 @@ macarchy theme install <github-url> [--dry-run] [--json]
 macarchy theme status [--json]
 macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
+macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup [--dry-run] [--json]
@@ -108,6 +109,11 @@ metadata-only `~/.config/macarchy/keybindings.toml` catalog. Catalog entries
 are keyed by normalized chord identity and cannot contain commands. The
 keybindings doctor warns about missing or stale metadata and parser/duplicate
 diagnostics, while unreadable or invalid inputs fail explicitly.
+
+`keybindings show` opens the same correlated rows in a short-lived searchable
+AppKit popup. The popup follows the active Macarchy theme, supports keyboard
+search and navigation, closes on Escape or focus loss, and remains strictly
+informational: selecting a row never executes its configured command.
 
 `update status` reads cached GitHub release evidence and the locally installed
 Homebrew tap without refreshing either source. `update check` explicitly
