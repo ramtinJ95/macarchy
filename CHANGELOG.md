@@ -13,6 +13,12 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   include it in committed human and JSON activation reports, and retain it as
   `generated/slack.txt` in the active immutable generation.
 
+### Fixed
+
+- Give Pi user, extension, pending-tool, successful-tool, and failed-tool
+  regions distinct palette-derived backgrounds, and raise overly dim secondary
+  text to readable contrast against those regions.
+
 ### Known limitations
 
 - Slack exposes no supported API or configuration seam for automatic personal
