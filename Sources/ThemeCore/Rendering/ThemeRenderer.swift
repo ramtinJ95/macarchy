@@ -12,6 +12,7 @@ public struct RenderedTheme: Sendable {
   public let neovimTheme: String
   public let piTheme: String
   public let sketchyBarPalette: String
+  public let slackTheme: String
   public let spicetifyTheme: String
   public let starshipPalette: String
   public let tuicrTheme: String
@@ -30,6 +31,7 @@ public struct RenderedTheme: Sendable {
       ThemeRenderer.neovimOutputPath: Data(neovimTheme.utf8),
       ThemeRenderer.piOutputPath: Data(piTheme.utf8),
       ThemeRenderer.sketchyBarOutputPath: Data(sketchyBarPalette.utf8),
+      ThemeRenderer.slackOutputPath: Data(slackTheme.utf8),
       ThemeRenderer.spicetifyOutputPath: Data(spicetifyTheme.utf8),
       ThemeRenderer.starshipOutputPath: Data(starshipPalette.utf8),
       ThemeRenderer.themeOutputPath: themeJSON,
@@ -53,6 +55,7 @@ public struct ThemeRenderer: Sendable {
   static let neovimOutputPath = NeovimAdapter.outputPath
   static let piOutputPath = PiAdapter.outputPath
   static let sketchyBarOutputPath = SketchyBarAdapter.outputPath
+  static let slackOutputPath = SlackAdapter.outputPath
   static let spicetifyOutputPath = SpicetifyAdapter.outputPath
   static let starshipOutputPath = StarshipAdapter.outputPath
   static let themeOutputPath = "theme.json"
@@ -67,7 +70,7 @@ public struct ThemeRenderer: Sendable {
     yaziFlavorOutputPath, yaziSyntaxOutputPath,
   ])
   static let capabilityOutputPaths = Set([
-    capabilitiesOutputPath, herdrOutputPath, neovimOutputPath,
+    capabilitiesOutputPath, herdrOutputPath, neovimOutputPath, slackOutputPath,
   ])
   static let outputPaths = requiredOutputPaths.union(capabilityOutputPaths)
 
@@ -78,6 +81,9 @@ public struct ThemeRenderer: Sendable {
     }
     if rendererVersions[NeovimAdapter.id, default: 0] >= 4 {
       paths.insert(neovimOutputPath)
+    }
+    if rendererVersions[SlackAdapter.id, default: 0] >= 1 {
+      paths.insert(slackOutputPath)
     }
     return paths
   }
@@ -115,6 +121,7 @@ public struct ThemeRenderer: Sendable {
       neovimTheme: try NeovimAdapter.render(package: package, generationID: generationID),
       piTheme: try PiAdapter.render(package: package),
       sketchyBarPalette: SketchyBarAdapter.render(package: package),
+      slackTheme: SlackAdapter.render(package: package),
       spicetifyTheme: SpicetifyAdapter.render(package: package),
       starshipPalette: StarshipAdapter.render(package: package),
       tuicrTheme: TuicrAdapter.render(package: package),

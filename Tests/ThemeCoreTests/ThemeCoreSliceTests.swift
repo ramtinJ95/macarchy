@@ -27,6 +27,7 @@ struct ThemeCoreSliceTests {
     let neovim = outputRoot.appending(path: "generated/neovim.lua")
     let pi = outputRoot.appending(path: "generated/pi.json")
     let sketchyBar = outputRoot.appending(path: "generated/sketchybar.lua")
+    let slack = outputRoot.appending(path: "generated/slack.txt")
     let spicetify = outputRoot.appending(path: "generated/spicetify.ini")
     let starship = outputRoot.appending(path: "generated/starship.toml")
     let tuicr = outputRoot.appending(path: "generated/tuicr.toml")
@@ -44,6 +45,7 @@ struct ThemeCoreSliceTests {
     let writtenNeovim = try String(contentsOf: neovim, encoding: .utf8)
     let writtenPi = try String(contentsOf: pi, encoding: .utf8)
     let writtenSketchyBar = try String(contentsOf: sketchyBar, encoding: .utf8)
+    let writtenSlack = try String(contentsOf: slack, encoding: .utf8)
     let writtenSpicetify = try String(contentsOf: spicetify, encoding: .utf8)
     let writtenStarship = try String(contentsOf: starship, encoding: .utf8)
     let writtenTuicr = try String(contentsOf: tuicr, encoding: .utf8)
@@ -61,6 +63,7 @@ struct ThemeCoreSliceTests {
     #expect(writtenNeovim == rendered.neovimTheme)
     #expect(writtenPi == rendered.piTheme)
     #expect(writtenSketchyBar == rendered.sketchyBarPalette)
+    #expect(writtenSlack == rendered.slackTheme)
     #expect(writtenSpicetify == rendered.spicetifyTheme)
     #expect(writtenStarship == rendered.starshipPalette)
     #expect(writtenTuicr == rendered.tuicrTheme)
@@ -153,6 +156,9 @@ struct ThemeCoreSliceTests {
         rendered.sketchyBarPalette
           == (try String(
             contentsOf: goldenRoot.appending(path: "sketchybar.lua"), encoding: .utf8)))
+      #expect(
+        rendered.slackTheme
+          == (try String(contentsOf: goldenRoot.appending(path: "slack.txt"), encoding: .utf8)))
       #expect(
         rendered.spicetifyTheme
           == (try String(contentsOf: goldenRoot.appending(path: "spicetify.ini"), encoding: .utf8)))

@@ -5,5 +5,6 @@
   "operation" : "theme_set",
   "outcome" : "committed_activation_error",
   "schema_version" : 1,
+  "slack_theme" : "#1e1e2e,#313244,#cba6f7,#1e1e2e,#45475a,#cdd6f4,#a6e3a1,#f38ba8,#313244,#cdd6f4",
   "theme_id" : "catppuccin-mocha"
 }
