@@ -24,7 +24,7 @@ enum PiAdapterError: Error, CustomStringConvertible, Sendable {
 package struct PiAdapter: Sendable {
   static let id = "pi"
   package static let outputPath = "generated/pi.json"
-  static let rendererVersion = 2
+  static let rendererVersion = 3
   package static let themeName = "macarchy-current"
   package static let selectionKey = "theme"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/pi")
@@ -97,17 +97,39 @@ package struct PiAdapter: Sendable {
   static func render(package: ThemePackage) throws -> String {
     let semantic = package.semantic
     let ansi = package.terminal.ansi
+    let userMessageBackground = mix(semantic.background, with: semantic.accent, amount: 0.18)
+    let customMessageBackground = mix(semantic.background, with: semantic.info, amount: 0.14)
+    let toolPendingBackground = mix(semantic.background, with: semantic.warning, amount: 0.10)
+    let toolSuccessBackground = mix(semantic.background, with: semantic.success, amount: 0.12)
+    let toolErrorBackground = mix(semantic.background, with: semantic.error, amount: 0.14)
+    let conversationBackgrounds = [
+      semantic.background.rawValue,
+      userMessageBackground,
+      customMessageBackground,
+      toolPendingBackground,
+      toolSuccessBackground,
+      toolErrorBackground,
+    ]
     let vars: [String: String] = [
       "accent": semantic.accent.rawValue,
       "background": semantic.background.rawValue,
       "border": semantic.border.rawValue,
+      "customMessageBg": customMessageBackground,
       "error": semantic.error.rawValue,
-      "muted": semantic.mutedText.rawValue,
+      "muted": readableMutedText(
+        semantic.mutedText,
+        toward: semantic.text,
+        against: conversationBackgrounds
+      ),
       "overlay": semantic.overlay.rawValue,
       "selection": semantic.selection.rawValue,
       "success": semantic.success.rawValue,
       "surface": semantic.surface.rawValue,
       "text": semantic.text.rawValue,
+      "toolErrorBg": toolErrorBackground,
+      "toolPendingBg": toolPendingBackground,
+      "toolSuccessBg": toolSuccessBackground,
+      "userMessageBg": userMessageBackground,
       "warning": semantic.warning.rawValue,
       "blue": ansi[4].rawValue,
       "cyan": ansi[6].rawValue,
@@ -125,14 +147,14 @@ package struct PiAdapter: Sendable {
       "text": "text",
       "thinkingText": "muted",
       "selectedBg": "selection",
-      "userMessageBg": "surface",
+      "userMessageBg": "userMessageBg",
       "userMessageText": "text",
-      "customMessageBg": "surface",
+      "customMessageBg": "customMessageBg",
       "customMessageText": "text",
       "customMessageLabel": "accent",
-      "toolPendingBg": "surface",
-      "toolSuccessBg": "surface",
-      "toolErrorBg": "overlay",
+      "toolPendingBg": "toolPendingBg",
+      "toolSuccessBg": "toolSuccessBg",
+      "toolErrorBg": "toolErrorBg",
       "toolTitle": "accent",
       "toolOutput": "muted",
       "mdHeading": "accent",
@@ -174,8 +196,8 @@ package struct PiAdapter: Sendable {
       "colors": colors,
       "export": [
         "pageBg": "background",
-        "cardBg": "surface",
-        "infoBg": "selection",
+        "cardBg": "userMessageBg",
+        "infoBg": "toolPendingBg",
       ],
     ]
     let data = try JSONSerialization.data(
@@ -183,6 +205,51 @@ package struct PiAdapter: Sendable {
       options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     )
     return String(decoding: data, as: UTF8.self) + "\n"
+  }
+
+  private static func mix(_ start: SRGBColor, with end: SRGBColor, amount: Double) -> String {
+    let startComponents = components(start.rawValue)
+    let endComponents = components(end.rawValue)
+    let mixed = zip(startComponents, endComponents).map { start, end in
+      Int((Double(start) * (1 - amount) + Double(end) * amount).rounded())
+    }
+    return String(format: "#%02x%02x%02x", mixed[0], mixed[1], mixed[2])
+  }
+
+  private static func readableMutedText(
+    _ muted: SRGBColor,
+    toward text: SRGBColor,
+    against backgrounds: [String]
+  ) -> String {
+    for percentage in 0...100 {
+      let candidate = mix(muted, with: text, amount: Double(percentage) / 100)
+      if backgrounds.allSatisfy({ contrast(candidate, $0) >= 4.5 }) {
+        return candidate
+      }
+    }
+    return text.rawValue
+  }
+
+  private static func contrast(_ first: String, _ second: String) -> Double {
+    let firstLuminance = relativeLuminance(first)
+    let secondLuminance = relativeLuminance(second)
+    return (max(firstLuminance, secondLuminance) + 0.05)
+      / (min(firstLuminance, secondLuminance) + 0.05)
+  }
+
+  private static func relativeLuminance(_ color: String) -> Double {
+    let linear = components(color).map { component in
+      let value = Double(component) / 255
+      return value <= 0.04045
+        ? value / 12.92
+        : pow((value + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+  }
+
+  private static func components(_ color: String) -> [Int] {
+    let value = Int(color.dropFirst(), radix: 16)!
+    return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff]
   }
 
   private func selectedTheme() throws -> String? {
