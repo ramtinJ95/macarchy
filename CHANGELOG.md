@@ -12,13 +12,18 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added complete data-only Neovim palettes for imported Omarchy themes through
   a pinned, preinstalled Aether v3 renderer and the existing live
   canonical-pointer watcher.
+- Added complete 16-token Herdr custom palettes for imported themes with live
+  config reload, first-import backup, and durable managed-value evidence.
 
 ### Changed
 
 - Imported Neovim palettes are now required generated artifacts. Activation
   preflight requires the pinned source-controlled renderer seams, while
-  reconciliation and `doctor` validate the active palette; Herdr remains the
-  only imported named-theme consumer using the typed `unsupported` fallback.
+  reconciliation and `doctor` validate the active palette.
+- Imported Herdr palettes are now required generated artifacts. Reconciliation
+  atomically updates only the theme selector and exact custom-token allowlist,
+  preserves unrelated config edits, retries interrupted ownership transactions,
+  and removes managed custom values when returning to a built-in.
 
 ### Security
 
@@ -26,6 +31,9 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source-controlled, generated Lua contains only validated identities and color
   values, and Aether's competing Omarchy/Aether filesystem watchers are not
   enabled.
+- Imported Herdr configuration remains ignored. Macarchy derives colors only
+  from validated canonical palette data and rejects ambiguous TOML shapes,
+  automatic switching, unknown custom keys, and unowned active custom colors.
 
 ## [0.2.0] - 2026-08-27
 
