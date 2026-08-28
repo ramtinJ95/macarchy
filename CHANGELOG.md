@@ -7,6 +7,18 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Generate a Slack legacy-theme import payload for every canonical theme,
+  include it in committed human and JSON activation reports, and retain it as
+  `generated/slack.txt` in the active immutable generation.
+
+### Known limitations
+
+- Slack exposes no supported API or configuration seam for automatic personal
+  theme changes. Applying the generated payload remains a per-workspace manual
+  action in Slack's Appearance preferences.
+
 ## [0.2.1] - 2026-08-28
 
 ### Added
