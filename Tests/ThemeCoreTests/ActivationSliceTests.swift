@@ -10,7 +10,15 @@ import Testing
 @Suite(.serialized)
 struct ActivationSliceTests {
   @Test
-  func importedNeovimOutputBecomesRequiredWithoutInvalidatingM5Manifests() {
+  func importedPaletteOutputsBecomeRequiredWithoutInvalidatingOlderManifests() throws {
+    #expect(
+      !ThemeRenderer.requiredOutputPaths(rendererVersions: [HerdrAdapter.id: 2])
+        .contains(ThemeRenderer.herdrOutputPath)
+    )
+    #expect(
+      ThemeRenderer.requiredOutputPaths(rendererVersions: [HerdrAdapter.id: 3])
+        .contains(ThemeRenderer.herdrOutputPath)
+    )
     #expect(
       !ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 3])
         .contains(ThemeRenderer.neovimOutputPath)
@@ -19,6 +27,11 @@ struct ActivationSliceTests {
       ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 4])
         .contains(ThemeRenderer.neovimOutputPath)
     )
+    let legacyHerdr = try HerdrAdapter.decodeGeneratedTheme(
+      Data("tokyo-night\n".utf8),
+      rendererVersion: 2
+    )
+    #expect(legacyHerdr == GeneratedHerdrTheme(name: "tokyo-night"))
   }
 
   @Test
@@ -51,7 +64,7 @@ struct ActivationSliceTests {
     #expect(
       manifest.rendererVersions
         == [
-          "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 2,
+          "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 3,
           "kitty": 2,
           "neovim": 4, "normalized_theme": 1, "pi": 2, "sketchybar": 1,
           "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1, "yazi": 1,
@@ -96,17 +109,12 @@ struct ActivationSliceTests {
   }
 
   @Test
-  func activationPreservesPriorHerdrAndGeneratesImportedNeovimPalette() throws {
+  func activationGeneratesImportedHerdrAndNeovimPalettes() throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
       try? FileManager.default.removeItem(at: root)
     }
-    let previous = try testActivator(root: root).activate(package: catppuccinPackage())
-    let previousGeneration = root.appending(path: "generations/\(previous.generationID)")
-    let previousHerdr = try Data(
-      contentsOf: previousGeneration.appending(path: HerdrAdapter.outputPath)
-    )
     let package = try packageWithoutNamedThemeMappings(at: root)
 
     let manifest = try testActivator(root: root).activate(package: package)
@@ -116,9 +124,13 @@ struct ActivationSliceTests {
       from: Data(contentsOf: generation.appending(path: ThemeRenderer.capabilitiesOutputPath))
     )
 
-    #expect(try capabilities.validated().unsupportedAdapters == ["herdr"])
-    #expect(
-      try Data(contentsOf: generation.appending(path: HerdrAdapter.outputPath)) == previousHerdr)
+    #expect(try capabilities.validated().unsupportedAdapters.isEmpty)
+    let herdr = try JSONDecoder().decode(
+      GeneratedHerdrTheme.self,
+      from: Data(contentsOf: generation.appending(path: HerdrAdapter.outputPath))
+    ).validated()
+    #expect(herdr.name == "catppuccin")
+    #expect(Set(herdr.custom.keys) == HerdrAdapter.customKeySet)
     let neovim = try String(
       contentsOf: generation.appending(path: NeovimAdapter.outputPath),
       encoding: .utf8

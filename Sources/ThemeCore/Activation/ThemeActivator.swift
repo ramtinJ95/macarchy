@@ -224,11 +224,9 @@ public struct ThemeActivator: Sendable {
     interruptedTrash: [URL]
   ) throws -> LockedActivationResult {
     let previousGenerationID = currentGenerationID()
-    let namedThemeFallbacks = try namedThemeFallbacks(package: package)
     let inputDigest = try generationInputDigest(
       package: package,
-      wallpaperData: wallpaperData,
-      namedThemeFallbacks: namedThemeFallbacks
+      wallpaperData: wallpaperData
     )
     try faultInjector(.inputDigested)
 
@@ -245,8 +243,7 @@ public struct ThemeActivator: Sendable {
     let rendered = try ThemeRenderer().render(
       package: package,
       generationID: generationID,
-      wallpaperData: wallpaperData,
-      namedThemeFallbacks: namedThemeFallbacks
+      wallpaperData: wallpaperData
     )
     try faultInjector(.outputsRendered)
     for (path, data) in rendered.files {
@@ -613,8 +610,7 @@ public struct ThemeActivator: Sendable {
 
   private func generationInputDigest(
     package: ThemePackage,
-    wallpaperData: Data,
-    namedThemeFallbacks: [String: String]
+    wallpaperData: Data
   ) throws -> String {
     let input = GenerationInput(
       manifestSchemaVersion: GenerationManifest.currentSchemaVersion,
@@ -625,43 +621,9 @@ public struct ThemeActivator: Sendable {
       terminal: package.terminal,
       wallpaperDigest: sha256Digest(wallpaperData),
       mappings: package.mappings,
-      namedThemeFallbackDigests: namedThemeFallbacks.mapValues {
-        sha256Digest(Data($0.utf8))
-      },
       rendererVersions: Self.rendererVersions
     )
     return sha256Digest(try encode(input))
-  }
-
-  private func namedThemeFallbacks(package: ThemePackage) throws -> [String: String] {
-    let missing = GeneratedThemeCapabilities.unsupportedAdapters(for: package)
-    guard !missing.isEmpty, currentGenerationID() != nil else { return [:] }
-
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
-    let generationURL = root.appending(
-      path: "generations/\(manifest.generationID)",
-      directoryHint: .isDirectory
-    )
-    var fallbacks = [String: String]()
-    for adapterID in missing {
-      let outputPath: String
-      switch adapterID {
-      case HerdrAdapter.id:
-        outputPath = HerdrAdapter.outputPath
-      default:
-        continue
-      }
-      guard manifest.artifacts[outputPath] != nil else { continue }
-      let data = try BoundedRegularFile.read(at: generationURL.appending(path: outputPath)).data
-      guard let fallback = String(data: data, encoding: .utf8) else {
-        throw ThemeActivationError.corruptGeneration(
-          id: manifest.generationID,
-          reason: "\(outputPath) is not UTF-8"
-        )
-      }
-      fallbacks[adapterID] = fallback
-    }
-    return fallbacks
   }
 
   private func encode<Value: Encodable>(_ value: Value) throws -> Data {
@@ -739,7 +701,6 @@ private struct GenerationInput: Encodable {
   let terminal: TerminalColors
   let wallpaperDigest: String
   let mappings: [String: String]
-  let namedThemeFallbackDigests: [String: String]
   let rendererVersions: [String: Int]
 
   enum CodingKeys: String, CodingKey {
@@ -747,7 +708,6 @@ private struct GenerationInput: Encodable {
     case themeSchemaVersion = "theme_schema_version"
     case themeID = "theme_id"
     case appearance, semantic, terminal, mappings
-    case namedThemeFallbackDigests = "named_theme_fallback_digests"
     case wallpaperDigest = "wallpaper_digest"
     case rendererVersions = "renderer_versions"
   }

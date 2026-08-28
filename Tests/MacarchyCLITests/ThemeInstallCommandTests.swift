@@ -105,8 +105,8 @@ struct ThemeInstallCommandTests {
     #expect(execution.output.contains("would install"))
     #expect(execution.output.contains("Imported backgrounds:\n- backgrounds/purple.png"))
     #expect(execution.output.contains("Warnings: missing_asset_provenance"))
-    #expect(execution.output.contains("- herdr [required]: unsupported"))
-    #expect(execution.output.contains("- neovim [required]: unsupported"))
+    #expect(execution.output.contains("- herdr [required]: pending"))
+    #expect(execution.output.contains("- neovim [required]: pending"))
     #expect(!FileManager.default.fileExists(atPath: fixture.stateRoot.path))
 
     let jsonExecution = try await fixture.runner().execute(
@@ -128,7 +128,7 @@ struct ThemeInstallCommandTests {
     #expect(reconciliation.count == ThemeActivationCoordinator.adapterRequirements.count)
     #expect(
       reconciliation.first { $0["adapter_id"] as? String == "herdr" }?["status"] as? String
-        == "unsupported"
+        == "pending"
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.stateRoot.path))
   }

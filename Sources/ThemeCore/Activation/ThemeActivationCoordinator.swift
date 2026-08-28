@@ -698,9 +698,7 @@ package struct ThemeActivationCoordinator: Sendable {
     try btop.preflight()
     try codex.preflight()
     try eza.preflight()
-    if package.mappings[HerdrAdapter.id] != nil {
-      try herdr.preflight(package: package)
-    }
+    try herdr.preflight(package: package)
     try kitty.preflight()
     try neovim.preflight(package: package)
     try pi.preflight()
