@@ -92,7 +92,7 @@ cmd - 7 : yabai -m space --focus 7
 # -- Shortcuts to launch/focus on my most used apps
 alt - s : open -a 'Slack'
 alt - a : open -a 'kitty'
-cmd - k : open -a 'kitty'
+cmd - k : /Users/ramtin/.local/bin/macarchy keybindings show
 alt - b : open -a 'Google Chrome'
 alt - m : osascript -e 'tell application id "com.spotify.client" to reopen' -e 'tell application id "com.spotify.client" to activate'
 alt - g : open -a 'Google Chrome' https://github.com

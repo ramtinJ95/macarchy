@@ -15,6 +15,10 @@ struct SkhdConfigurationParserTests {
     #expect(result.diagnostics.isEmpty)
     #expect(result.bindings.first?.identity == "alt-j")
     #expect(result.bindings.last?.identity == "ctrl+alt-r")
+    #expect(
+      result.bindings.first { $0.identity == "cmd-k" }?.command
+        == "/Users/ramtin/.local/bin/macarchy keybindings show"
+    )
   }
 
   @Test
