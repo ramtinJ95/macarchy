@@ -2371,7 +2371,7 @@ struct AdapterContractTests {
   }
 
   @Test
-  func missingHerdrMappingRemainsNonBlockingWhileImportedNeovimRuns() async throws {
+  func importedHerdrAndNeovimPalettesReconcileAsRequiredAdapters() async throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -2402,6 +2402,9 @@ struct AdapterContractTests {
       ),
       processRunner: ProcessRunner { request in
         processCalls.withLock { $0 += 1 }
+        if request.executableURL == HerdrAdapter.liveExecutableURL {
+          return ProcessResult(terminationStatus: 0, output: "")
+        }
         if request.executableURL == NeovimAdapter.liveExecutableURL {
           return ProcessResult(
             terminationStatus: 0,
@@ -2418,16 +2421,15 @@ struct AdapterContractTests {
     let inspections = try coordinator.inspectAdapters(["herdr", "neovim"])
     let reconciliation = try await coordinator.reconcile(adapterIDs: ["herdr", "neovim"])
 
-    #expect(inspections.map(\.status) == [.unsupported, .ready])
+    #expect(inspections.map(\.status) == [.drifted, .ready])
     #expect(
       reconciliation.record.results
         == [
           AdapterResult(
             adapterID: "herdr",
             requirement: .required,
-            status: .unsupported,
-            message:
-              "The active theme has no safe herdr named-theme mapping; its prior appearance is retained"
+            status: .applied,
+            message: "Herdr reloaded the active theme"
           ),
           AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
           AdapterResult(
@@ -2439,7 +2441,10 @@ struct AdapterContractTests {
           ),
         ]
     )
-    #expect(processCalls.withLock { $0 } == 1)
+    #expect(
+      try coordinator.inspectAdapters(["herdr", "neovim"]).map(\.status) == [.ready, .ready]
+    )
+    #expect(processCalls.withLock { $0 } == 2)
   }
 
   @Test
@@ -3017,6 +3022,190 @@ struct AdapterContractTests {
     let stoppedOutcome = try await stopped.reconciliation().run()
     #expect(stoppedOutcome.status == .applied)
     #expect(stoppedOutcome.message == "Herdr will use the active theme on next launch")
+  }
+
+  @Test
+  func herdrAdoptsUpdatesAndRemovesOnlyItsCompleteCustomPalette() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let importedCatppuccin = packageWithoutNamedThemeMappings(try catppuccinPackage())
+    _ = try testActivator(root: root).activate(package: importedCatppuccin)
+
+    let configuration = root.appending(path: "herdr/config.toml")
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let original = """
+      onboarding = false
+      [theme]
+      name = "tokyo-night" # preserve selector comment
+      auto_switch = false
+      [terminal]
+      shell_mode = "auto"
+
+      """
+    try original.write(to: configuration, atomically: true, encoding: .utf8)
+
+    let interrupted = HerdrAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+      faultInjector: { checkpoint in
+        if checkpoint == .configurationWritten {
+          throw ReconciliationTestError.expectedInterruption
+        }
+      }
+    )
+    #expect(try await interrupted.reconciliation().run().status == .failed)
+
+    let adapter = HerdrAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+    )
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    #expect(
+      try String(
+        contentsOf: root.appending(path: "state/adapters/herdr-config.toml.backup"),
+        encoding: .utf8
+      ) == original
+    )
+
+    var importedConfiguration = try String(contentsOf: configuration, encoding: .utf8)
+    #expect(importedConfiguration.contains("name = \"catppuccin\" # preserve selector comment"))
+    #expect(importedConfiguration.contains("[theme.custom]"))
+    for key in HerdrAdapter.customKeys {
+      #expect(importedConfiguration.contains("\n\(key) = \""))
+    }
+
+    importedConfiguration = importedConfiguration.replacingOccurrences(
+      of: "onboarding = false",
+      with: "onboarding = true # unrelated provider edit"
+    )
+    try importedConfiguration.write(to: configuration, atomically: true, encoding: .utf8)
+    let importedTokyo = packageWithoutNamedThemeMappings(try tokyoNightPackage())
+    _ = try testActivator(root: root).activate(package: importedTokyo)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    let updated = try String(contentsOf: configuration, encoding: .utf8)
+    #expect(updated.contains("onboarding = true # unrelated provider edit"))
+    #expect(updated.contains("blue = \"#7aa2f7\""))
+    #expect(
+      try String(
+        contentsOf: root.appending(path: "state/adapters/herdr-config.toml.backup"),
+        encoding: .utf8
+      ) == original
+    )
+
+    _ = try testActivator(root: root).activate(package: tokyoNightPackage())
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    let restored = try String(contentsOf: configuration, encoding: .utf8)
+    #expect(restored.contains("name = \"tokyo-night\" # preserve selector comment"))
+    #expect(restored.contains("[theme.custom]"))
+    #expect(restored.contains("onboarding = true # unrelated provider edit"))
+    for key in HerdrAdapter.customKeys {
+      #expect(!restored.contains("\n\(key) = "))
+    }
+    #expect(adapter.inspection().status == .ready)
+    try FileManager.default.removeItem(
+      at: root.appending(path: "state/adapters/herdr-config.toml.backup")
+    )
+    #expect(adapter.inspection().status == .failed)
+  }
+
+  @Test
+  func herdrRejectsUnownedAndAmbiguousCustomPaletteShapes() throws {
+    for configuration in [
+      "[theme]\nname = \"catppuccin\"\n[theme.custom]\naccent = \"#ffffff\"\nunknown = \"#000000\"\n",
+      "[theme]\nname = \"catppuccin\"\n[theme.custom]\n\"accent\" = \"#ffffff\"\n",
+      "[theme]\nname = \"catppuccin\"\ncustom.accent = \"#ffffff\"\n",
+      "[theme]\nname = \"catppuccin\"\n[theme.custom]\naccent = \"#ffffff\"\naccent = \"#000000\"\n",
+      "[theme]\nname = \"catppuccin\"\n[theme.custom]\naccent = '#ffffff'\n",
+    ] {
+      #expect(throws: HerdrAdapterError.self) {
+        try HerdrAdapter.validateConfiguration(configuration)
+      }
+    }
+
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
+    _ = try testActivator(root: root).activate(package: package)
+    let configuration = root.appending(path: "herdr/config.toml")
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "[theme]\nname = \"catppuccin\"\n[theme.custom]\naccent = \"#ffffff\"\n".write(
+      to: configuration, atomically: true, encoding: .utf8)
+    let adapter = HerdrAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: .live
+    )
+
+    #expect(throws: HerdrAdapterError.self) {
+      try adapter.preflight(package: package)
+    }
+    #expect(adapter.inspection().status == .drifted)
+  }
+
+  @Test
+  func herdrResumesFirstImportBeforeBackupWithoutMutatingPreflight() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
+    _ = try testActivator(root: root).activate(package: package)
+    let configuration = root.appending(path: "herdr/config.toml")
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let original = "[theme]\nauto_switch = false\n[terminal]\nshell_mode = \"auto\"\n"
+    try original.write(to: configuration, atomically: true, encoding: .utf8)
+    let backup = root.appending(path: "state/adapters/herdr-config.toml.backup")
+
+    let interrupted = HerdrAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+      faultInjector: { checkpoint in
+        if checkpoint == .ownershipPrepared {
+          throw ReconciliationTestError.expectedInterruption
+        }
+      }
+    )
+    #expect(try await interrupted.reconciliation().run().status == .failed)
+    #expect(!FileManager.default.fileExists(atPath: backup.path))
+
+    #expect(throws: HerdrAdapterError.self) {
+      try interrupted.preflight(package: package)
+    }
+    #expect(!FileManager.default.fileExists(atPath: backup.path))
+
+    let retry = HerdrAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: HerdrAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+    )
+    #expect(try await retry.reconciliation().run().status == .applied)
+    #expect(try String(contentsOf: backup, encoding: .utf8) == original)
+    let updated = try String(contentsOf: configuration, encoding: .utf8)
+    #expect(updated.contains("name = \"catppuccin\""))
+    #expect(updated.contains("[theme.custom]"))
   }
 
   @Test

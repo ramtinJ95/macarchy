@@ -112,7 +112,7 @@ struct ThemeInstallCommandRunner: Sendable {
         let report = ThemeInstallReport.dryRun(
           conversion: converted.report,
           replacing: replacing,
-          reconciliation: Self.dryRunReconciliation(package: converted.package)
+          reconciliation: Self.dryRunReconciliation()
         )
         return (try report.render(json: json), report.succeeded)
       }
@@ -221,18 +221,13 @@ struct ThemeInstallCommandRunner: Sendable {
     )
   }
 
-  private static func dryRunReconciliation(package: ThemePackage) -> [AdapterResult] {
+  private static func dryRunReconciliation() -> [AdapterResult] {
     ThemeActivationCoordinator.adapterRequirements.map { adapterID, requirement in
-      let unsupported =
-        GeneratedThemeCapabilities.namedThemeAdapterIDs.contains(adapterID)
-        && package.mappings[adapterID] == nil
-      return AdapterResult(
+      AdapterResult(
         adapterID: adapterID,
         requirement: requirement,
-        status: unsupported ? .unsupported : .pending,
-        message: unsupported
-          ? "No safe imported named-theme mapping; the prior appearance would be retained"
-          : "Would reconcile after canonical commit"
+        status: .pending,
+        message: "Would reconcile after canonical commit"
       )
     }.sorted { $0.adapterID < $1.adapterID }
   }

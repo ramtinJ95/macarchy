@@ -14,7 +14,7 @@ package struct CanonicalTOMLSelector {
 
   private init(configuration: String, selectionTable: String?, key: String) {
     var arrayDepth = 0
-    var multilineQuote: MultilineQuote?
+    var multilineQuote: TOMLMultilineQuote?
     var inSelectionTable = selectionTable == nil
     var tableHeaderCount = 0
     var values = [String]()
@@ -52,15 +52,15 @@ package struct CanonicalTOMLSelector {
   }
 }
 
-private enum MultilineQuote {
+enum TOMLMultilineQuote {
   case basic
   case literal
 }
 
-private func scanTOMLLine(
+func scanTOMLLine(
   _ line: String,
   arrayDepth: inout Int,
-  multilineQuote: inout MultilineQuote?
+  multilineQuote: inout TOMLMultilineQuote?
 ) -> String {
   let characters = Array(line)
   var visible = ""

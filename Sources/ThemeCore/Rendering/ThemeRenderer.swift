@@ -6,7 +6,7 @@ public struct RenderedTheme: Sendable {
   public let btopTheme: String
   let capabilities: Data
   public let ezaTheme: String
-  public let herdrTheme: String?
+  public let herdrTheme: String
   public let themeJSON: Data
   public let kittyConfiguration: String
   public let neovimTheme: String
@@ -19,12 +19,13 @@ public struct RenderedTheme: Sendable {
   public let yaziFlavor: String
 
   var files: [String: Data] {
-    var files = [
+    let files = [
       ThemeRenderer.atuinOutputPath: Data(atuinTheme.utf8),
       ThemeRenderer.batOutputPath: Data(batTheme.utf8),
       ThemeRenderer.btopOutputPath: Data(btopTheme.utf8),
       ThemeRenderer.capabilitiesOutputPath: capabilities,
       ThemeRenderer.ezaOutputPath: Data(ezaTheme.utf8),
+      ThemeRenderer.herdrOutputPath: Data(herdrTheme.utf8),
       ThemeRenderer.kittyOutputPath: Data(kittyConfiguration.utf8),
       ThemeRenderer.neovimOutputPath: Data(neovimTheme.utf8),
       ThemeRenderer.piOutputPath: Data(piTheme.utf8),
@@ -37,9 +38,6 @@ public struct RenderedTheme: Sendable {
       ThemeRenderer.yaziFlavorOutputPath: Data(yaziFlavor.utf8),
       ThemeRenderer.yaziSyntaxOutputPath: Data(batTheme.utf8),
     ]
-    if let herdrTheme {
-      files[ThemeRenderer.herdrOutputPath] = Data(herdrTheme.utf8)
-    }
     return files
   }
 }
@@ -74,28 +72,26 @@ public struct ThemeRenderer: Sendable {
   static let outputPaths = requiredOutputPaths.union(capabilityOutputPaths)
 
   static func requiredOutputPaths(rendererVersions: [String: Int]) -> Set<String> {
-    guard rendererVersions[NeovimAdapter.id, default: 0] >= 4 else {
-      return requiredOutputPaths
+    var paths = requiredOutputPaths
+    if rendererVersions[HerdrAdapter.id, default: 0] >= 3 {
+      paths.insert(herdrOutputPath)
     }
-    return requiredOutputPaths.union([neovimOutputPath])
+    if rendererVersions[NeovimAdapter.id, default: 0] >= 4 {
+      paths.insert(neovimOutputPath)
+    }
+    return paths
   }
 
   public init() {}
 
   public func render(package: ThemePackage, generationID: String) throws -> RenderedTheme {
-    try render(
-      package: package,
-      generationID: generationID,
-      wallpaperData: package.wallpaperData,
-      namedThemeFallbacks: [:]
-    )
+    try render(package: package, generationID: generationID, wallpaperData: package.wallpaperData)
   }
 
   func render(
     package: ThemePackage,
     generationID: String,
-    wallpaperData: Data,
-    namedThemeFallbacks: [String: String] = [:]
+    wallpaperData: Data
   ) throws -> RenderedTheme {
     let normalized = NormalizedTheme(package: package, generationID: generationID)
     let encoder = JSONEncoder()
@@ -103,9 +99,7 @@ public struct ThemeRenderer: Sendable {
     var json = try encoder.encode(normalized)
     json.append(0x0a)
     var capabilities = try encoder.encode(
-      GeneratedThemeCapabilities(
-        unsupportedAdapters: GeneratedThemeCapabilities.unsupportedAdapters(for: package)
-      )
+      GeneratedThemeCapabilities(unsupportedAdapters: [])
     )
     capabilities.append(0x0a)
 
@@ -115,8 +109,7 @@ public struct ThemeRenderer: Sendable {
       btopTheme: BtopAdapter.render(package: package),
       capabilities: capabilities,
       ezaTheme: EzaAdapter.render(package: package),
-      herdrTheme: package.mappings[HerdrAdapter.id] == nil
-        ? namedThemeFallbacks[HerdrAdapter.id] : try HerdrAdapter.render(package: package),
+      herdrTheme: try HerdrAdapter.render(package: package),
       themeJSON: json,
       kittyConfiguration: KittyAdapter.render(package: package),
       neovimTheme: try NeovimAdapter.render(package: package, generationID: generationID),
@@ -147,7 +140,7 @@ public struct ThemeRenderer: Sendable {
 
 package struct GeneratedThemeCapabilities: Codable, Sendable {
   static let currentSchemaVersion = 1
-  // Neovim remains valid here for backward-compatible validation of M5 generations.
+  // Both IDs remain valid for backward-compatible validation of M5 generations.
   package static let namedThemeAdapterIDs = Set([HerdrAdapter.id, NeovimAdapter.id])
 
   let schemaVersion: Int
@@ -156,10 +149,6 @@ package struct GeneratedThemeCapabilities: Codable, Sendable {
   init(unsupportedAdapters: [String]) {
     schemaVersion = Self.currentSchemaVersion
     self.unsupportedAdapters = unsupportedAdapters.sorted()
-  }
-
-  static func unsupportedAdapters(for package: ThemePackage) -> [String] {
-    package.mappings[HerdrAdapter.id] == nil ? [HerdrAdapter.id] : []
   }
 
   func validated() throws -> Self {

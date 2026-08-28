@@ -75,10 +75,6 @@ struct ThemeCoreSliceTests {
     let decoded = try JSONDecoder().decode(NormalizedTheme.self, from: writtenJSON)
     #expect(decoded.themeID == package.id)
     #expect(decoded.generationID == "test-generation")
-    #expect(
-      try JSONDecoder().decode(GeneratedThemeCapabilities.self, from: writtenCapabilities)
-        .validated().unsupportedAdapters.isEmpty
-    )
   }
 
   @Test
@@ -113,19 +109,15 @@ struct ThemeCoreSliceTests {
     let themesRoot = repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
     let packages = try ThemeRepository(builtInRoot: themesRoot).packages()
     #expect(packages.map(\.id) == ["catppuccin-mocha", "kanagawa-wave", "tokyo-night"])
-    let herdrThemes = [
-      "catppuccin-mocha": "catppuccin\n",
-      "kanagawa-wave": "kanagawa\n",
-      "tokyo-night": "tokyo-night\n",
+    let herdrThemeNames = [
+      "catppuccin-mocha": "catppuccin",
+      "kanagawa-wave": "kanagawa",
+      "tokyo-night": "tokyo-night",
     ]
 
     for package in packages {
       let generationID = "golden-\(package.id)"
       let rendered = try ThemeRenderer().render(package: package, generationID: generationID)
-      #expect(
-        try JSONDecoder().decode(GeneratedThemeCapabilities.self, from: rendered.capabilities)
-          .validated().unsupportedAdapters.isEmpty
-      )
 
       let goldenRoot =
         repositoryRoot
@@ -142,7 +134,10 @@ struct ThemeCoreSliceTests {
       #expect(
         rendered.ezaTheme
           == (try String(contentsOf: goldenRoot.appending(path: "eza.yml"), encoding: .utf8)))
-      #expect(rendered.herdrTheme == herdrThemes[package.id])
+      let herdrData = Data(rendered.herdrTheme.utf8)
+      let herdr = try JSONDecoder().decode(GeneratedHerdrTheme.self, from: herdrData).validated()
+      #expect(herdr.name == herdrThemeNames[package.id])
+      #expect(herdr.custom.isEmpty)
       #expect(
         rendered.themeJSON == (try Data(contentsOf: goldenRoot.appending(path: "theme.json"))))
       #expect(
@@ -222,6 +217,32 @@ struct ThemeCoreSliceTests {
 
     let package = try ThemePackageLoader().load(packageURL: packageURL)
     #expect(package.mappings.isEmpty)
+
+    let rendered = try ThemeRenderer().render(package: package, generationID: "imported")
+    let herdrData = Data(rendered.herdrTheme.utf8)
+    let herdr = try JSONDecoder().decode(GeneratedHerdrTheme.self, from: herdrData).validated()
+    #expect(herdr.name == "catppuccin")
+    #expect(
+      herdr.custom
+        == [
+          "accent": "#cba6f7",
+          "panel_bg": "#1e1e2e",
+          "surface0": "#313244",
+          "surface1": "#45475a",
+          "surface_dim": "#1e1e2e",
+          "overlay0": "#585b70",
+          "overlay1": "#a6adc8",
+          "text": "#cdd6f4",
+          "subtext0": "#a6adc8",
+          "mauve": "#f5c2e7",
+          "green": "#a6e3a1",
+          "yellow": "#f9e2af",
+          "red": "#f38ba8",
+          "blue": "#89b4fa",
+          "teal": "#94e2d5",
+          "peach": "#f9e2af",
+        ]
+    )
   }
 
   @Test
