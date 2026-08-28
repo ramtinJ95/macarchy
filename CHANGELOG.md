@@ -7,6 +7,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-28
+
 ### Added
 
 - Generate a Slack legacy-theme import payload for every canonical theme,
@@ -117,7 +119,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/ramtinJ95/macarchy/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ramtinJ95/macarchy/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/ramtinJ95/macarchy/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ramtinJ95/macarchy/releases/tag/v0.1.0

@@ -10,7 +10,7 @@ Macarchy is independently authored and inspired by
 or a general application installer.
 
 The current stable release is
-[v0.2.1](https://github.com/ramtinJ95/macarchy/releases/tag/v0.2.1).
+[v0.2.2](https://github.com/ramtinJ95/macarchy/releases/tag/v0.2.2).
 See the [changelog](CHANGELOG.md) for release details.
 
 ## What it does
