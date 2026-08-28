@@ -486,7 +486,7 @@ package struct ThemeActivationCoordinator: Sendable {
       namedThemeInspection(
         adapterID: NeovimAdapter.id,
         unsupportedAdapterIDs: unsupportedAdapterIDs,
-        supportedInspection: neovim.inspection
+        supportedInspection: { neovim.inspection(includeRuntimeChecks: includeRuntimeChecks) }
       ),
       pi.inspection(),
       sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
@@ -616,7 +616,7 @@ package struct ThemeActivationCoordinator: Sendable {
       configuredNamedThemeAdapter(
         id: NeovimAdapter.id,
         unsupportedAdapterIDs: unsupportedAdapterIDs,
-        inspection: neovim.inspection,
+        inspection: { neovim.inspection() },
         reconciliation: neovim.reconciliation
       ),
       ConfiguredAdapter(
@@ -702,9 +702,7 @@ package struct ThemeActivationCoordinator: Sendable {
       try herdr.preflight(package: package)
     }
     try kitty.preflight()
-    if package.mappings[NeovimAdapter.id] != nil {
-      try neovim.preflight()
-    }
+    try neovim.preflight(package: package)
     try pi.preflight()
     try sketchyBar.preflight()
     try starship.preflight()

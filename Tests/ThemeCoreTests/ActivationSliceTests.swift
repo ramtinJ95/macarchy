@@ -10,6 +10,18 @@ import Testing
 @Suite(.serialized)
 struct ActivationSliceTests {
   @Test
+  func importedNeovimOutputBecomesRequiredWithoutInvalidatingM5Manifests() {
+    #expect(
+      !ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 3])
+        .contains(ThemeRenderer.neovimOutputPath)
+    )
+    #expect(
+      ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 4])
+        .contains(ThemeRenderer.neovimOutputPath)
+    )
+  }
+
+  @Test
   func activationCreatesCompleteGenerationAndReplacesCurrentWithRelativeSymlink() throws {
     let root = try temporaryDirectory()
     defer {
@@ -41,7 +53,7 @@ struct ActivationSliceTests {
         == [
           "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 2,
           "kitty": 2,
-          "neovim": 3, "normalized_theme": 1, "pi": 2, "sketchybar": 1,
+          "neovim": 4, "normalized_theme": 1, "pi": 2, "sketchybar": 1,
           "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1, "yazi": 1,
         ]
     )
@@ -84,7 +96,7 @@ struct ActivationSliceTests {
   }
 
   @Test
-  func activationPreservesPriorNamedThemeArtifactsWhenMappingsAreUnavailable() throws {
+  func activationPreservesPriorHerdrAndGeneratesImportedNeovimPalette() throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -95,9 +107,6 @@ struct ActivationSliceTests {
     let previousHerdr = try Data(
       contentsOf: previousGeneration.appending(path: HerdrAdapter.outputPath)
     )
-    let previousNeovim = try Data(
-      contentsOf: previousGeneration.appending(path: NeovimAdapter.outputPath)
-    )
     let package = try packageWithoutNamedThemeMappings(at: root)
 
     let manifest = try testActivator(root: root).activate(package: package)
@@ -107,12 +116,16 @@ struct ActivationSliceTests {
       from: Data(contentsOf: generation.appending(path: ThemeRenderer.capabilitiesOutputPath))
     )
 
-    #expect(try capabilities.validated().unsupportedAdapters == ["herdr", "neovim"])
+    #expect(try capabilities.validated().unsupportedAdapters == ["herdr"])
     #expect(
       try Data(contentsOf: generation.appending(path: HerdrAdapter.outputPath)) == previousHerdr)
-    #expect(
-      try Data(contentsOf: generation.appending(path: NeovimAdapter.outputPath)) == previousNeovim
+    let neovim = try String(
+      contentsOf: generation.appending(path: NeovimAdapter.outputPath),
+      encoding: .utf8
     )
+    #expect(neovim.contains("colorscheme = \"\(NeovimAdapter.importedColorscheme)\""))
+    #expect(neovim.contains("theme_id = \"\(package.id)\""))
+    #expect(neovim.contains("accent = \"\(package.semantic.accent.rawValue)\""))
     #expect(Set(manifest.artifacts.keys).isSuperset(of: ThemeRenderer.requiredOutputPaths))
     #expect(
       try ReconciliationStatusStore(root: root).activeManifest().generationID

@@ -954,6 +954,7 @@ struct AdapterContractTests {
     )
 
     #expect(neovim.inspection().status == .ready)
+    #expect(neovim.inspection(includeRuntimeChecks: true).status == .ready)
     #expect(starship.inspection().status == .drifted)
     #expect(try await neovim.reconciliation().run().status == .applied)
     #expect(try await starship.reconciliation().run().status == .applied)
@@ -986,6 +987,99 @@ struct AdapterContractTests {
   }
 
   @Test
+  func neovimRuntimeInspectionExposesRejectedActivePalette() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
+    let plugins = neovimDirectory.appending(path: "lua/plugins", directoryHint: .isDirectory)
+    let macarchy = neovimDirectory.appending(path: "lua/macarchy", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: macarchy, withIntermediateDirectories: true)
+    try "\(NeovimAdapter.integrationDirective)\n".write(
+      to: plugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: macarchy.appending(path: "current.lua"),
+      withDestinationURL: root.appending(path: "current/\(NeovimAdapter.outputPath)")
+    )
+    let adapter = NeovimAdapter(
+      root: root,
+      configurationDirectoryURL: neovimDirectory,
+      executableURL: NeovimAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(terminationStatus: 1, output: "Aether palette mismatch")
+      }
+    )
+
+    #expect(adapter.inspection().status == .ready)
+    let runtime = adapter.inspection(includeRuntimeChecks: true)
+    #expect(runtime.status == .failed)
+    #expect(runtime.message == "Aether palette mismatch")
+  }
+
+  @Test
+  func importedNeovimPreflightRequiresPinnedSourceControlledRenderer() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
+    let plugins = neovimDirectory.appending(path: "lua/plugins", directoryHint: .isDirectory)
+    let macarchy = neovimDirectory.appending(path: "lua/macarchy", directoryHint: .isDirectory)
+    let colors = neovimDirectory.appending(path: "colors", directoryHint: .isDirectory)
+    for directory in [plugins, macarchy, colors] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    let configuration = plugins.appending(path: "colorscheme.lua")
+    try "\(NeovimAdapter.integrationDirective)\n".write(
+      to: configuration, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: macarchy.appending(path: "current.lua"),
+      withDestinationURL: root.appending(path: "current/\(NeovimAdapter.outputPath)")
+    )
+    let adapter = NeovimAdapter(
+      root: root,
+      configurationDirectoryURL: neovimDirectory,
+      executableURL: NeovimAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+    )
+    let imported = packageWithoutNamedThemeMappings(try catppuccinPackage())
+
+    #expect(throws: NeovimAdapterError.self) {
+      try adapter.preflight(package: imported)
+    }
+    try """
+    \(NeovimAdapter.integrationDirective)
+    \(NeovimAdapter.aetherRepositoryDirective)
+    \(NeovimAdapter.aetherBranchDirective)
+    \(NeovimAdapter.aetherCommitDirective)
+
+    """.write(to: configuration, atomically: true, encoding: .utf8)
+    try "\(NeovimAdapter.importedColorschemeDirective)\n".write(
+      to: colors.appending(path: "\(NeovimAdapter.importedColorscheme).lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    try adapter.preflight(package: imported)
+    _ = try testActivator(root: root).activate(package: imported)
+    try """
+    \(NeovimAdapter.integrationDirective)
+    \(NeovimAdapter.aetherRepositoryDirective)
+    \(NeovimAdapter.aetherBranchDirective)
+
+    """.write(to: configuration, atomically: true, encoding: .utf8)
+    #expect(adapter.inspection(includeRuntimeChecks: true).status == .drifted)
+  }
+
+  @Test
   func neovimGeneratedMappingCannotInjectLua() throws {
     let base = try catppuccinPackage()
     let unsafe = ThemePackage(
@@ -1003,6 +1097,28 @@ struct AdapterContractTests {
     #expect(throws: NeovimAdapterError.self) {
       _ = try NeovimAdapter.render(package: unsafe, generationID: "g-test")
     }
+  }
+
+  @Test
+  func neovimImportedPaletteIsCompleteDataOnly() throws {
+    let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
+    let rendered = try NeovimAdapter.render(package: package, generationID: "g-imported")
+    let paletteKeys = [
+      "accent", "cursor", "foreground", "background", "selection_foreground",
+      "selection_background", "bg", "lighter_bg", "selection", "muted", "dark_fg", "fg",
+      "light_fg", "bright_fg", "red", "yellow", "orange", "green", "cyan", "blue",
+      "purple", "brown", "dark_bg", "darker_bg", "bright_red", "bright_yellow",
+      "bright_green", "bright_cyan", "bright_blue", "bright_purple",
+    ]
+
+    #expect(rendered.contains("generation_id = \"g-imported\""))
+    #expect(rendered.contains("colorscheme = \"\(NeovimAdapter.importedColorscheme)\""))
+    for key in paletteKeys {
+      #expect(rendered.contains("\(key) = \"#"))
+    }
+    #expect(rendered.components(separatedBy: " = \"#").count - 1 == paletteKeys.count)
+    #expect(!rendered.contains("function"))
+    #expect(!rendered.contains("require"))
   }
 
   @Test
@@ -2255,7 +2371,7 @@ struct AdapterContractTests {
   }
 
   @Test
-  func missingNamedThemeMappingsRemainNonBlockingAndDoNotRunConsumers() async throws {
+  func missingHerdrMappingRemainsNonBlockingWhileImportedNeovimRuns() async throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -2284,9 +2400,15 @@ struct AdapterContractTests {
         kittyConfigurationURL: configurationURL,
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
       ),
-      processRunner: ProcessRunner { _ in
+      processRunner: ProcessRunner { request in
         processCalls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 1, output: "must not run")
+        if request.executableURL == NeovimAdapter.liveExecutableURL {
+          return ProcessResult(
+            terminationStatus: 0,
+            output: "MACARCHY_THEME=\(manifest.generationID):\(manifest.themeID)"
+          )
+        }
+        return ProcessResult(terminationStatus: 1, output: "unexpected process")
       },
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root)
@@ -2296,7 +2418,7 @@ struct AdapterContractTests {
     let inspections = try coordinator.inspectAdapters(["herdr", "neovim"])
     let reconciliation = try await coordinator.reconcile(adapterIDs: ["herdr", "neovim"])
 
-    #expect(inspections.map(\.status) == [.unsupported, .unsupported])
+    #expect(inspections.map(\.status) == [.unsupported, .ready])
     #expect(
       reconciliation.record.results
         == [
@@ -2311,13 +2433,13 @@ struct AdapterContractTests {
           AdapterResult(
             adapterID: "neovim",
             requirement: .required,
-            status: .unsupported,
+            status: .applied,
             message:
-              "The active theme has no safe neovim named-theme mapping; its prior appearance is retained"
+              "Neovim validated the active colorscheme; running sessions repaint through the pointer watcher"
           ),
         ]
     )
-    #expect(processCalls.withLock { $0 } == 0)
+    #expect(processCalls.withLock { $0 } == 1)
   }
 
   @Test
@@ -3170,6 +3292,7 @@ struct AdapterContractTests {
       path: "lua/plugins", directoryHint: .isDirectory)
     let neovimMacarchy = neovimDirectory.appending(
       path: "lua/macarchy", directoryHint: .isDirectory)
+    let neovimColors = neovimDirectory.appending(path: "colors", directoryHint: .isDirectory)
     let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
     let piDirectory = root.appending(path: "pi", directoryHint: .isDirectory)
     let piThemes = piDirectory.appending(path: "themes", directoryHint: .isDirectory)
@@ -3193,6 +3316,7 @@ struct AdapterContractTests {
     try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimColors, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
       at: starshipDirectory, withIntermediateDirectories: true)
     for directory in [
@@ -3274,8 +3398,19 @@ struct AdapterContractTests {
       to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
     try "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".write(
       to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
-    try "\(NeovimAdapter.integrationDirective)\n".write(
+    try """
+    \(NeovimAdapter.integrationDirective)
+    \(NeovimAdapter.aetherRepositoryDirective)
+    \(NeovimAdapter.aetherBranchDirective)
+    \(NeovimAdapter.aetherCommitDirective)
+
+    """.write(
       to: neovimPlugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
+    try "\(NeovimAdapter.importedColorschemeDirective)\n".write(
+      to: neovimColors.appending(path: "\(NeovimAdapter.importedColorscheme).lua"),
+      atomically: true,
+      encoding: .utf8
+    )
     try "format = \"$character\"\n".write(
       to: starshipDirectory.appending(path: "behavior.toml"),
       atomically: true,
