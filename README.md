@@ -134,12 +134,14 @@ previous package and generation; a postcommit consumer failure remains visible
 without pretending the commit was rolled back.
 
 Imported palettes drive macOS appearance, wallpaper, Kitty, SketchyBar, shell
-tools, and every other generated-palette consumer. Macarchy does not invent a
-Neovim colorscheme or Herdr built-in mapping when the repository has no safe
-mapping. Those consumers report `unsupported` in install output, status, and
-doctor, and retain their prior named appearance. Missing wallpaper provenance
-is reported as a personal-use warning; imported assets are not release-eligible
-without verified rights.
+tools, Neovim, and every other generated-palette consumer. Neovim receives a
+strictly data-only palette rendered through a pinned, preinstalled Aether v3
+plugin; repository-provided Lua remains ignored and Macarchy's canonical
+pointer remains the only theme authority. Macarchy does not invent a Herdr
+built-in mapping when the repository has no safe mapping. Herdr reports
+`unsupported` in install output, status, and doctor and retains its prior named
+appearance. Missing wallpaper provenance is reported as a personal-use warning;
+imported assets are not release-eligible without verified rights.
 
 ## Setup without dotfile takeover
 

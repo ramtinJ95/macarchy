@@ -7,6 +7,26 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Added complete data-only Neovim palettes for imported Omarchy themes through
+  a pinned, preinstalled Aether v3 renderer and the existing live
+  canonical-pointer watcher.
+
+### Changed
+
+- Imported Neovim palettes are now required generated artifacts. Activation
+  preflight requires the pinned source-controlled renderer seams, while
+  reconciliation and `doctor` validate the active palette; Herdr remains the
+  only imported named-theme consumer using the typed `unsupported` fallback.
+
+### Security
+
+- Imported `neovim.lua` remains ignored. Executable watcher/plugin behavior is
+  source-controlled, generated Lua contains only validated identities and color
+  values, and Aether's competing Omarchy/Aether filesystem watchers are not
+  enabled.
+
 ## [0.2.0] - 2026-08-27
 
 ### Added
