@@ -386,7 +386,9 @@ struct ThemeSetCommandTests {
     )
     try FileManager.default.createSymbolicLink(
       at: batThemes.appending(path: "\(BatAdapter.themeName).tmTheme"),
-      withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.outputPath)"
+      )
     )
     try FileManager.default.createSymbolicLink(
       at: btopThemes.appending(path: "\(BtopAdapter.themeName).theme"),
@@ -398,7 +400,9 @@ struct ThemeSetCommandTests {
     )
     try FileManager.default.createSymbolicLink(
       at: yaziFlavor.appending(path: "tmtheme.xml"),
-      withDestinationURL: stateRoot.appending(path: "current/\(YaziAdapter.syntaxOutputPath)")
+      withDestinationURL: stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.yaziOutputPath)"
+      )
     )
     try FileManager.default.createSymbolicLink(
       at: atuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
@@ -422,11 +426,15 @@ struct ThemeSetCommandTests {
     )
     try FileManager.default.createSymbolicLink(
       at: tuicrDirectory.appending(path: "themes/\(TuicrAdapter.themeName).tmTheme"),
-      withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.outputPath)"
+      )
     )
     try FileManager.default.createSymbolicLink(
       at: codexDirectory.appending(path: "themes/\(CodexAdapter.themeName).tmTheme"),
-      withDestinationURL: stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: stateRoot.appending(
+        path: "current/\(TextMateThemeArtifact.outputPath)"
+      )
     )
     try FileManager.default.createSymbolicLink(
       at: spicetifyTheme.appending(path: "color.ini"),

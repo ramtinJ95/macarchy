@@ -88,7 +88,7 @@ final class Fixture {
   }
 
   var batThemeDestination: URL {
-    stateRoot.appending(path: "current/\(BatAdapter.outputPath)")
+    stateRoot.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
   }
 
   var batThemeRemoval: URL {
@@ -149,7 +149,7 @@ final class Fixture {
   }
 
   var yaziSyntaxDestination: URL {
-    stateRoot.appending(path: "current/\(YaziAdapter.syntaxOutputPath)")
+    stateRoot.appending(path: "current/\(TextMateThemeArtifact.yaziOutputPath)")
   }
 
   var atuinConfiguration: URL {

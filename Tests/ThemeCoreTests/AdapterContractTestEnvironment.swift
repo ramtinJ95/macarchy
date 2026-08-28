@@ -221,7 +221,7 @@ extension AdapterContractTests {
     let batTheme = batThemes.appending(path: "\(BatAdapter.themeName).tmTheme")
     try FileManager.default.createSymbolicLink(
       at: batTheme,
-      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
     )
     try FileManager.default.createSymbolicLink(
       at: btopThemes.appending(path: "\(BtopAdapter.themeName).theme"),
@@ -233,7 +233,7 @@ extension AdapterContractTests {
     )
     try FileManager.default.createSymbolicLink(
       at: yaziFlavor.appending(path: "tmtheme.xml"),
-      withDestinationURL: root.appending(path: "current/\(YaziAdapter.syntaxOutputPath)")
+      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.yaziOutputPath)")
     )
     try FileManager.default.createSymbolicLink(
       at: atuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
@@ -257,11 +257,11 @@ extension AdapterContractTests {
     )
     try FileManager.default.createSymbolicLink(
       at: tuicrThemes.appending(path: "\(TuicrAdapter.themeName).tmTheme"),
-      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
     )
     try FileManager.default.createSymbolicLink(
       at: codexThemes.appending(path: "\(CodexAdapter.themeName).tmTheme"),
-      withDestinationURL: root.appending(path: "current/\(BatAdapter.outputPath)")
+      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
     )
     try FileManager.default.createSymbolicLink(
       at: spicetifyTheme.appending(path: "color.ini"),

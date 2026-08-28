@@ -51,11 +51,25 @@ struct GenerationIntegrityError: Error, CustomStringConvertible, Sendable {
 
 extension GenerationManifest {
   func validateArtifacts(at generationURL: URL) throws {
+    let metadata: [String: RenderedArtifactMetadata]
+    do {
+      metadata = try ThemeRenderer.validatedArtifactMetadata()
+    } catch {
+      throw GenerationIntegrityError(
+        reason: "renderer artifact metadata is invalid: \(String(describing: error))"
+      )
+    }
+    let requiredPaths: Set<String>
+    do {
+      requiredPaths = try ThemeRenderer.requiredOutputPaths(rendererVersions: rendererVersions)
+    } catch {
+      throw GenerationIntegrityError(
+        reason: "renderer artifact requirements are invalid: \(String(describing: error))"
+      )
+    }
     try requireIntegrity(
-      Set(artifacts.keys).isSubset(of: ThemeRenderer.outputPaths)
-        && Set(artifacts.keys).isSuperset(
-          of: ThemeRenderer.requiredOutputPaths(rendererVersions: rendererVersions)
-        ),
+      Set(artifacts.keys).isSubset(of: Set(metadata.keys))
+        && Set(artifacts.keys).isSuperset(of: requiredPaths),
       "artifact manifest is missing a required output or contains an unknown output"
     )
     try requireReadOnlyDirectory(generationURL, name: generationURL.lastPathComponent)
@@ -67,9 +81,12 @@ extension GenerationManifest {
     for path in artifacts.keys.sorted() {
       let artifact: BoundedRegularFile
       do {
+        guard let artifactMetadata = metadata[path] else {
+          throw GenerationIntegrityError(reason: "unknown artifact path \(path)")
+        }
         artifact = try BoundedRegularFile.read(
           at: generationURL.appending(path: path),
-          maximumSize: ThemeRenderer.maximumOutputSize(for: path)
+          maximumSize: artifactMetadata.maximumSize
         )
       } catch {
         throw GenerationIntegrityError(

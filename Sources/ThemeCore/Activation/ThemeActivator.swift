@@ -86,7 +86,7 @@ package enum ActivationCheckpoint: Sendable {
 public struct ThemeActivator: Sendable {
   private static let rendererVersions = [
     AtuinAdapter.id: AtuinAdapter.rendererVersion,
-    BatAdapter.id: BatAdapter.rendererVersion,
+    TextMateThemeArtifact.rendererID: TextMateThemeArtifact.rendererVersion,
     BtopAdapter.id: BtopAdapter.rendererVersion,
     EzaAdapter.id: EzaAdapter.rendererVersion,
     HerdrAdapter.id: HerdrAdapter.rendererVersion,
@@ -241,14 +241,30 @@ public struct ThemeActivator: Sendable {
     }
 
     let generationID = "g-\(UUID().uuidString.lowercased())"
-    let rendered = try ThemeRenderer().render(
-      package: package,
-      generationID: generationID,
-      wallpaperData: wallpaperData
-    )
+    let rendered: RenderedTheme
+    do {
+      rendered = try ThemeRenderer().render(
+        package: package,
+        generationID: generationID,
+        wallpaperData: wallpaperData
+      )
+    } catch RenderedArtifactCollectionError.dataTooLarge(
+      let path,
+      let size,
+      let maximumSize
+    ) {
+      // Preserve activation's established checkpoint and typed size-error contract
+      // while package-level artifact collections reject oversized data themselves.
+      try faultInjector(.outputsRendered)
+      throw ThemeActivationError.generatedFileTooLarge(
+        path: path,
+        size: size,
+        maximumSize: maximumSize
+      )
+    }
     try faultInjector(.outputsRendered)
-    for (path, data) in rendered.files {
-      try requireGeneratedFileSize(data, path: path)
+    for artifact in rendered.artifacts {
+      try requireGeneratedFileSize(artifact)
     }
 
     let manifest = GenerationManifest(
@@ -257,10 +273,14 @@ public struct ThemeActivator: Sendable {
       themeSchemaVersion: package.schemaVersion,
       inputDigest: inputDigest,
       rendererVersions: Self.rendererVersions,
-      artifacts: rendered.files.mapValues(sha256Digest)
+      artifacts: rendered.manifestArtifacts
     )
     let manifestData = try encode(manifest)
-    try requireGeneratedFileSize(manifestData, path: "manifest.json")
+    try requireGeneratedFileSize(
+      manifestData,
+      path: "manifest.json",
+      maximumSize: BoundedRegularFile.maximumSize
+    )
 
     let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: generationsRoot, withIntermediateDirectories: true)
@@ -282,7 +302,7 @@ public struct ThemeActivator: Sendable {
     try manifestData.write(to: stagingURL.appending(path: "manifest.json"), options: [.atomic])
     try faultInjector(.generationWritten)
 
-    try makeReadOnly(stagingURL, artifactPaths: rendered.files.keys)
+    try makeReadOnly(stagingURL, artifactPaths: rendered.artifacts.map(\.path))
     try faultInjector(.generationSealed)
     try FileManager.default.moveItem(at: stagingURL, to: generationURL)
     shouldRemoveStaging = false
@@ -635,8 +655,19 @@ public struct ThemeActivator: Sendable {
     return data
   }
 
-  private func requireGeneratedFileSize(_ data: Data, path: String) throws {
-    let maximumSize = ThemeRenderer.maximumOutputSize(for: path)
+  private func requireGeneratedFileSize(_ artifact: RenderedArtifact) throws {
+    try requireGeneratedFileSize(
+      artifact.data,
+      path: artifact.path,
+      maximumSize: artifact.maximumSize
+    )
+  }
+
+  private func requireGeneratedFileSize(
+    _ data: Data,
+    path: String,
+    maximumSize: Int
+  ) throws {
     guard data.count <= maximumSize else {
       throw ThemeActivationError.generatedFileTooLarge(
         path: path,
@@ -648,7 +679,7 @@ public struct ThemeActivator: Sendable {
 
   private func makeReadOnly(
     _ generationURL: URL,
-    artifactPaths: Dictionary<String, Data>.Keys
+    artifactPaths: [String]
   ) throws {
     let generated = generationURL.appending(path: "generated", directoryHint: .isDirectory)
     let files =
