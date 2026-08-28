@@ -6,7 +6,7 @@
     "border" : "border",
     "borderAccent" : "accent",
     "borderMuted" : "overlay",
-    "customMessageBg" : "surface",
+    "customMessageBg" : "customMessageBg",
     "customMessageLabel" : "accent",
     "customMessageText" : "text",
     "dim" : "overlay",
@@ -45,18 +45,18 @@
     "toolDiffAdded" : "success",
     "toolDiffContext" : "muted",
     "toolDiffRemoved" : "error",
-    "toolErrorBg" : "overlay",
+    "toolErrorBg" : "toolErrorBg",
     "toolOutput" : "muted",
-    "toolPendingBg" : "surface",
-    "toolSuccessBg" : "surface",
+    "toolPendingBg" : "toolPendingBg",
+    "toolSuccessBg" : "toolSuccessBg",
     "toolTitle" : "accent",
-    "userMessageBg" : "surface",
+    "userMessageBg" : "userMessageBg",
     "userMessageText" : "text",
     "warning" : "warning"
   },
   "export" : {
-    "cardBg" : "surface",
-    "infoBg" : "selection",
+    "cardBg" : "userMessageBg",
+    "infoBg" : "toolPendingBg",
     "pageBg" : "background"
   },
   "name" : "macarchy-current",
@@ -65,6 +65,7 @@
     "background" : "#1e1e2e",
     "blue" : "#89b4fa",
     "border" : "#585b70",
+    "customMessageBg" : "#2a3649",
     "cyan" : "#94e2d5",
     "error" : "#f38ba8",
     "muted" : "#a6adc8",
@@ -73,6 +74,10 @@
     "success" : "#a6e3a1",
     "surface" : "#313244",
     "text" : "#cdd6f4",
+    "toolErrorBg" : "#3c2d3f",
+    "toolPendingBg" : "#34323b",
+    "toolSuccessBg" : "#2e363c",
+    "userMessageBg" : "#3d3652",
     "warning" : "#f9e2af"
   }
 }

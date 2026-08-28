@@ -2867,7 +2867,13 @@ struct AdapterContractTests {
     #expect(colors["accent"] == "accent")
     #expect(colors["thinkingMax"] == "error")
     let export = try #require(document["export"] as? [String: String])
-    #expect(export == ["pageBg": "background", "cardBg": "surface", "infoBg": "selection"])
+    #expect(
+      export
+        == [
+          "pageBg": "background",
+          "cardBg": "userMessageBg",
+          "infoBg": "toolPendingBg",
+        ])
 
     try "{\"theme\":\"dark\"}\n".write(
       to: configuration.appending(path: "settings.json"), atomically: true, encoding: .utf8)

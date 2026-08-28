@@ -81,6 +81,49 @@ struct ThemeCoreSliceTests {
   }
 
   @Test
+  func piDerivesReadableConversationRolesWhenSurfaceMatchesThePage() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let packageURL = try copyCatppuccin(to: root, named: "lavender-like")
+    let manifest = packageURL.appending(path: "theme.toml")
+    let original = try String(contentsOf: manifest, encoding: .utf8)
+    let lavenderLike =
+      original
+      .replacingOccurrences(of: "background = \"#1e1e2e\"", with: "background = \"#11111b\"")
+      .replacingOccurrences(of: "surface = \"#313244\"", with: "surface = \"#11111b\"")
+      .replacingOccurrences(of: "muted_text = \"#a6adc8\"", with: "muted_text = \"#585b70\"")
+      .replacingOccurrences(of: "info = \"#74c7ec\"", with: "info = \"#94e2d5\"")
+    try lavenderLike.write(to: manifest, atomically: true, encoding: .utf8)
+
+    let package = try ThemePackageLoader().load(packageURL: packageURL)
+    let rendered = try PiAdapter.render(package: package)
+    let document = try #require(
+      JSONSerialization.jsonObject(with: Data(rendered.utf8)) as? [String: Any]
+    )
+    let vars = try #require(document["vars"] as? [String: String])
+    let colors = try #require(document["colors"] as? [String: String])
+    let roleBackgrounds = [
+      vars["background"],
+      vars["userMessageBg"],
+      vars["customMessageBg"],
+      vars["toolPendingBg"],
+      vars["toolSuccessBg"],
+      vars["toolErrorBg"],
+    ]
+
+    #expect(
+      roleBackgrounds
+        == ["#11111b", "#322c43", "#232e35", "#28262a", "#232a2b", "#31222f"])
+    #expect(Set(roleBackgrounds.compactMap { $0 }).count == roleBackgrounds.count)
+    #expect(vars["muted"] == "#9096af")
+    #expect(colors["userMessageBg"] == "userMessageBg")
+    #expect(colors["customMessageBg"] == "customMessageBg")
+    #expect(colors["toolPendingBg"] == "toolPendingBg")
+    #expect(colors["toolSuccessBg"] == "toolSuccessBg")
+    #expect(colors["toolErrorBg"] == "toolErrorBg")
+  }
+
+  @Test
   func malformedColorReportsFieldAndSourceLine() throws {
     let source =
       repositoryRoot

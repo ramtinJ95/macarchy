@@ -74,7 +74,7 @@ struct ActivationSliceTests {
         == [
           "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 3,
           "kitty": 2,
-          "neovim": 4, "normalized_theme": 1, "pi": 2, "sketchybar": 1,
+          "neovim": 4, "normalized_theme": 1, "pi": 3, "sketchybar": 1,
           "slack": 1, "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1,
           "yazi": 1,
         ]
