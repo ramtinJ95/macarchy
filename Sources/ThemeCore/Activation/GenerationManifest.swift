@@ -53,7 +53,9 @@ extension GenerationManifest {
   func validateArtifacts(at generationURL: URL) throws {
     try requireIntegrity(
       Set(artifacts.keys).isSubset(of: ThemeRenderer.outputPaths)
-        && Set(artifacts.keys).isSuperset(of: ThemeRenderer.requiredOutputPaths),
+        && Set(artifacts.keys).isSuperset(
+          of: ThemeRenderer.requiredOutputPaths(rendererVersions: rendererVersions)
+        ),
       "artifact manifest is missing a required output or contains an unknown output"
     )
     try requireReadOnlyDirectory(generationURL, name: generationURL.lastPathComponent)

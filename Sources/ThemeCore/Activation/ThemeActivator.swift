@@ -634,9 +634,7 @@ public struct ThemeActivator: Sendable {
   }
 
   private func namedThemeFallbacks(package: ThemePackage) throws -> [String: String] {
-    let missing = GeneratedThemeCapabilities.namedThemeAdapterIDs.filter {
-      package.mappings[$0] == nil
-    }
+    let missing = GeneratedThemeCapabilities.unsupportedAdapters(for: package)
     guard !missing.isEmpty, currentGenerationID() != nil else { return [:] }
 
     let manifest = try ReconciliationStatusStore(root: root).activeManifest()
@@ -650,8 +648,6 @@ public struct ThemeActivator: Sendable {
       switch adapterID {
       case HerdrAdapter.id:
         outputPath = HerdrAdapter.outputPath
-      case NeovimAdapter.id:
-        outputPath = NeovimAdapter.outputPath
       default:
         continue
       }
