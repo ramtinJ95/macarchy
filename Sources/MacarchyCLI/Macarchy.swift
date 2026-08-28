@@ -256,10 +256,10 @@ struct Macarchy: AsyncParsableCommand {
 struct Keybindings: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect configured skhd keybindings.",
-    subcommands: [List.self, Doctor.self]
+    subcommands: [List.self, Doctor.self, Show.self]
   )
 
-  struct Options: ParsableArguments {
+  struct SourceOptions: ParsableArguments {
     @Option(help: "skhd configuration file.")
     var skhdConfig = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/skhd/skhdrc").path
@@ -268,9 +268,6 @@ struct Keybindings: ParsableCommand {
     var catalog = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/macarchy/keybindings.toml").path
 
-    @Flag(help: "Emit machine-readable output.")
-    var json = false
-
     var skhdConfigurationURL: URL {
       URL(filePath: skhdConfig).standardizedFileURL
     }
@@ -278,6 +275,16 @@ struct Keybindings: ParsableCommand {
     var catalogURL: URL {
       URL(filePath: catalog).standardizedFileURL
     }
+  }
+
+  struct Options: ParsableArguments {
+    @OptionGroup var sources: SourceOptions
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    var skhdConfigurationURL: URL { sources.skhdConfigurationURL }
+    var catalogURL: URL { sources.catalogURL }
   }
 
   struct List: ParsableCommand {
@@ -316,6 +323,30 @@ struct Keybindings: ParsableCommand {
       print(execution.output)
       if !execution.succeeded {
         throw ExitCode.failure
+      }
+    }
+  }
+
+  struct Show: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Show enabled bindings in a searchable native popup."
+    )
+
+    @OptionGroup var sources: SourceOptions
+
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+    mutating func run() async throws {
+      let content = try KeybindingsShowCommandLoader.live.load(
+        configurationURL: sources.skhdConfigurationURL,
+        catalogURL: sources.catalogURL,
+        stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+      )
+      try await MainActor.run {
+        let controller = try KeybindingsPopupWindowController(content: content)
+        try controller.run()
       }
     }
   }
