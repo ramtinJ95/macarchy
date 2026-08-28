@@ -1,0 +1,6 @@
+Macarchy keybindings doctor:
+- skhd.parse [ok]: Parsed 2 enabled bindings.
+- catalog.load [ok]: Loaded 2 metadata entries.
+- catalog.missing [warning]: Parsed bindings are missing metadata. Count: 1. alt-k
+- catalog.stale [warning]: Metadata entries do not match an enabled binding. Count: 1. cmd-x
+No changes made.

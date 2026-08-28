@@ -1,0 +1,33 @@
+{
+  "bindings" : [
+    {
+      "chord" : "alt - j",
+      "command" : "yabai -m window --focus south",
+      "identity" : "alt-j",
+      "line" : 2
+    },
+    {
+      "chord" : "alt + shift - s",
+      "command" : "yabai -m window --display west; yabai -m display --focus west;",
+      "identity" : "alt+shift-s",
+      "line" : 8
+    },
+    {
+      "chord" : "alt + shift - a",
+      "command" : "yabai -m window --resize left:-20:0",
+      "identity" : "alt+shift-a",
+      "line" : 11
+    },
+    {
+      "chord" : "alt - m",
+      "command" : "osascript -e 'tell application id \"com.spotify.client\" to reopen'",
+      "identity" : "alt-m",
+      "line" : 12
+    }
+  ],
+  "diagnostics" : [
+
+  ],
+  "schema_version" : 1,
+  "source" : "/fixtures/representative.skhdrc"
+}

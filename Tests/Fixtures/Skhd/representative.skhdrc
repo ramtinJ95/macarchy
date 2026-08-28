@@ -1,0 +1,12 @@
+# Focus a window.
+alt - j : yabai -m window --focus south
+
+# Disabled bindings do not appear.
+# cmd - k : open -a 'kitty'
+
+# Modifier order is normalized and chained commands stay opaque.
+shift + alt - s : yabai -m window --display west; yabai -m display --focus west;
+
+# Colons and shell quoting belong to the command.
+shift + alt - a : yabai -m window --resize left:-20:0
+alt - m : osascript -e 'tell application id "com.spotify.client" to reopen'
