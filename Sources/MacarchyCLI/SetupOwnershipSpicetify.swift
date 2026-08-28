@@ -7,61 +7,32 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> [SetupIntegrationResult] {
+    guard
+      let plan = consumerSetupPlans(context: context).first(where: {
+        $0.consumerID == "spicetify"
+      })
+    else {
+      preconditionFailure("Spicetify setup plan is missing")
+    }
+    return try plan.setup(dryRun, &records)
+  }
+
+  func withSpicetifySetupGroup(
+    context: Context,
+    dryRun: Bool,
+    records: inout [SetupOwnershipRecord],
+    execute: ConsumerSetupPlan.Execution
+  ) throws -> [SetupIntegrationResult] {
     if try spicetifyProviderStateIsAbsent(context: context, records: records) {
       return disabledSpicetifyIntegrationResults(context: context)
     }
     if dryRun {
-      return try setupSpicetifyIntegrationsUnlocked(
-        context: context,
-        dryRun: true,
-        records: &records
-      )
+      return try execute(&records)
     }
     // Central setup already holds activation.lock. Reconciliation never takes that lock,
     // so the global order is activation.lock followed by spicetify.lock.
     return try SpicetifyLock(root: context.stateRoot).withLock {
-      try setupSpicetifyIntegrationsUnlocked(
-        context: context,
-        dryRun: false,
-        records: &records
-      )
-    }
-  }
-
-  private func setupSpicetifyIntegrationsUnlocked(
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> [SetupIntegrationResult] {
-    var completed = [SetupIntegrationResult]()
-    do {
-      let colorLink = try setupSpicetifyColorLink(
-        context: context,
-        dryRun: dryRun,
-        records: &records
-      )
-      completed.append(colorLink)
-      let selectors = try setupSpicetifySelectors(
-        context: context,
-        dryRun: dryRun,
-        records: &records
-      )
-      return [selectors, colorLink]
-    } catch let error as SetupOwnershipTransactionError {
-      throw SetupOwnershipTransactionError(
-        wrapping: error,
-        completedResults: completed
-      )
-    } catch {
-      guard completed.contains(where: \.mutationAttempted) else { throw error }
-      let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: completed,
-        failureMutationAttempted: false
-      )
+      try execute(&records)
     }
   }
 
@@ -115,23 +86,31 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> [SetupIntegrationResult] {
+    guard
+      let plan = consumerSetupPlans(context: context).first(where: {
+        $0.consumerID == "spicetify"
+      })
+    else {
+      preconditionFailure("Spicetify setup plan is missing")
+    }
+    return try plan.teardown(dryRun, &records)
+  }
+
+  func withSpicetifyTeardownGroup(
+    context: Context,
+    dryRun: Bool,
+    records: inout [SetupOwnershipRecord],
+    execute: ConsumerSetupPlan.Execution
+  ) throws -> [SetupIntegrationResult] {
     let integrationIDs = [Self.spicetifySelectorsID, Self.spicetifyColorLinkID]
     if !records.contains(where: { integrationIDs.contains($0.id) }) {
       return unownedSpicetifyTeardownResults(context: context)
     }
     if dryRun {
-      return try teardownSpicetifyIntegrationsUnlocked(
-        context: context,
-        dryRun: true,
-        records: &records
-      )
+      return try execute(&records)
     }
     return try SpicetifyLock(root: context.stateRoot).withLock {
-      try teardownSpicetifyIntegrationsUnlocked(
-        context: context,
-        dryRun: false,
-        records: &records
-      )
+      try execute(&records)
     }
   }
 
@@ -152,50 +131,6 @@ extension SetupOwnershipManager {
         message: "No Macarchy-owned Spicetify color scheme link exists"
       ),
     ]
-  }
-
-  private func teardownSpicetifyIntegrationsUnlocked(
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> [SetupIntegrationResult] {
-    var completed = [SetupIntegrationResult]()
-    do {
-      completed.append(
-        try teardownSpicetifySelectorOwnership(
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      completed.append(
-        try teardownThemeLink(
-          id: Self.spicetifyColorLinkID,
-          target: context.spicetifyColorLink,
-          destination: context.spicetifyColorDestination,
-          label: "Spicetify color scheme",
-          context: context,
-          dryRun: dryRun,
-          records: &records
-        )
-      )
-      return completed
-    } catch let error as SetupOwnershipTransactionError {
-      throw SetupOwnershipTransactionError(
-        wrapping: error,
-        completedResults: completed
-      )
-    } catch {
-      guard completed.contains(where: \.mutationAttempted) else { throw error }
-      let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: completed,
-        failureMutationAttempted: false
-      )
-    }
   }
 
   func setupSpicetifySelectors(
