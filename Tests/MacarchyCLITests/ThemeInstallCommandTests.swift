@@ -132,6 +132,44 @@ struct ThemeInstallCommandTests {
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.stateRoot.path))
   }
+
+  @Test
+  func committedInstallIncludesSlackImportPayloadInJSON() async throws {
+    let fixture = try ThemeInstallFixture()
+    defer { fixture.remove() }
+    let manifest = GenerationManifest(
+      generationID: "g-imported",
+      themeID: "purple-dream",
+      themeSchemaVersion: 1,
+      inputDigest: "sha256:" + String(repeating: "a", count: 64),
+      rendererVersions: ["normalized_theme": 1],
+      artifacts: [:]
+    )
+    let activation = ThemeActivationResult(
+      manifest: manifest,
+      reconciliation: try ReconciliationRecord(manifest: manifest, results: [])
+    )
+
+    let execution = try await fixture.runner(activationResult: activation).execute(
+      source: fixture.source,
+      repository: fixture.repository,
+      userThemesRoot: fixture.userThemes,
+      stateRoot: fixture.stateRoot,
+      consumerPaths: testConsumerPaths(),
+      dryRun: false,
+      json: true
+    )
+
+    #expect(execution.succeeded)
+    let report = try #require(
+      JSONSerialization.jsonObject(with: Data(execution.output.utf8)) as? [String: Any]
+    )
+    #expect(report["committed"] as? Bool == true)
+    #expect(
+      report["slack_theme"] as? String
+        == "#1a0d2e,#1a0d2e,#8b9aff,#1a0d2e,#d4a5ff,#d4a5ff,#5ffbf1,#ff6ec7,#1a0d2e,#d4a5ff"
+    )
+  }
 }
 
 private struct ThemeInstallFixture {
@@ -219,6 +257,7 @@ private struct ThemeInstallFixture {
   func runner(
     failure: Failure? = nil,
     activationFailure: Error? = nil,
+    activationResult: ThemeActivationResult? = nil,
     processCalls: ProcessCallCounter? = nil
   ) -> ThemeInstallCommandRunner {
     let selectedCheckout = failure == .conversion ? invalidCheckout : checkout
@@ -243,6 +282,9 @@ private struct ThemeInstallFixture {
     let activation = ThemeSetCommandRunner(
       preflight: { _, _, _ in },
       activate: { _, _, _, _ in
+        if let activationResult {
+          return activationResult
+        }
         guard let activationFailure else {
           throw InjectedFailure.unexpectedActivation
         }

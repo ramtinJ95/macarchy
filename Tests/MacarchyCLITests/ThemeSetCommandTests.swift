@@ -80,6 +80,49 @@ struct ThemeSetCommandTests {
   }
 
   @Test
+  func successfulCommitPrintsAndEncodesTheSlackImportPayload() async throws {
+    let runner = runner {
+      try activation(results: [])
+    }
+    let stateRoot = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-slack-output-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: stateRoot) }
+
+    let text = try await runner.execute(
+      repository: repository,
+      themeID: "catppuccin-mocha",
+      stateRoot: stateRoot,
+      consumerPaths: testConsumerPaths(),
+      dryRun: false,
+      json: false
+    )
+    #expect(text.output.contains("Slack theme requires manual import"))
+    #expect(
+      text.output.contains(
+        "#1e1e2e,#313244,#cba6f7,#1e1e2e,#45475a,#cdd6f4,#a6e3a1,#f38ba8,#313244,#cdd6f4"
+      )
+    )
+
+    let json = try await runner.execute(
+      repository: repository,
+      themeID: "catppuccin-mocha",
+      stateRoot: stateRoot,
+      consumerPaths: testConsumerPaths(),
+      dryRun: false,
+      json: true
+    )
+    let object = try #require(
+      JSONSerialization.jsonObject(with: Data(json.output.utf8)) as? [String: Any]
+    )
+    #expect(
+      object["slack_theme"] as? String
+        == "#1e1e2e,#313244,#cba6f7,#1e1e2e,#45475a,#cdd6f4,#a6e3a1,#f38ba8,#313244,#cdd6f4"
+    )
+  }
+
+  @Test
   func requiredFailureReturnsFailureWithoutUndoingTheCommit() async throws {
     let runner = runner {
       try activation(

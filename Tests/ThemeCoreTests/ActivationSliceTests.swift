@@ -27,6 +27,14 @@ struct ActivationSliceTests {
       ThemeRenderer.requiredOutputPaths(rendererVersions: [NeovimAdapter.id: 4])
         .contains(ThemeRenderer.neovimOutputPath)
     )
+    #expect(
+      !ThemeRenderer.requiredOutputPaths(rendererVersions: [:])
+        .contains(ThemeRenderer.slackOutputPath)
+    )
+    #expect(
+      ThemeRenderer.requiredOutputPaths(rendererVersions: [SlackAdapter.id: 1])
+        .contains(ThemeRenderer.slackOutputPath)
+    )
     let legacyHerdr = try HerdrAdapter.decodeGeneratedTheme(
       Data("tokyo-night\n".utf8),
       rendererVersion: 2
@@ -67,7 +75,8 @@ struct ActivationSliceTests {
           "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 3,
           "kitty": 2,
           "neovim": 4, "normalized_theme": 1, "pi": 2, "sketchybar": 1,
-          "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1, "yazi": 1,
+          "slack": 1, "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1,
+          "yazi": 1,
         ]
     )
     #expect(manifest.inputDigest.hasPrefix("sha256:"))
@@ -79,8 +88,8 @@ struct ActivationSliceTests {
           "generated/capabilities.json", "generated/eza.yml", "generated/herdr.txt",
           "generated/kitty.conf",
           "generated/neovim.lua", "generated/pi.json", "generated/sketchybar.lua",
-          "generated/spicetify.ini", "generated/starship.toml", "generated/tuicr.toml",
-          "generated/wallpaper.png", "generated/yazi-flavor.toml",
+          "generated/slack.txt", "generated/spicetify.ini", "generated/starship.toml",
+          "generated/tuicr.toml", "generated/wallpaper.png", "generated/yazi-flavor.toml",
           "generated/yazi.tmTheme", "theme.json",
         ]
     )

@@ -3,3 +3,7 @@ Reconciliation:
 - btop [required]: restart_required
 - kitty [required]: applied
 - spicetify [optional]: failed: apply failed
+Slack theme requires manual import; Slack exposes no supported theme automation API.
+#1e1e2e,#313244,#cba6f7,#1e1e2e,#45475a,#cdd6f4,#a6e3a1,#f38ba8,#313244,#cdd6f4
+Slack: Preferences > Appearance > Custom theme > Theme colors > Import theme.
+The payload is also stored as the active generation's generated/slack.txt artifact.

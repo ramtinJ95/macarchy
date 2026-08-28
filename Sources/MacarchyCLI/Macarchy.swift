@@ -590,15 +590,24 @@ struct ThemeSetCommandRunner: Sendable {
             stateRoot,
             consumerPaths,
             expectedActiveGenerationID
-          )
+          ),
+          slackTheme: SlackAdapter.render(package: package)
         )
       } catch let error as ThemeActivationError {
         if case .activeGenerationChanged = error { throw error }
         report = .precommitFailure(themeID: package.id, error: error)
       } catch let error as ThemeCommittedActivationError {
-        report = .committedActivationError(manifest: error.manifest, cause: error.cause)
+        report = .committedActivationError(
+          manifest: error.manifest,
+          cause: error.cause,
+          slackTheme: SlackAdapter.render(package: package)
+        )
       } catch let error as ThemeCommittedWithReconciliationError {
-        report = .committedError(manifest: error.manifest, cause: error.cause)
+        report = .committedError(
+          manifest: error.manifest,
+          cause: error.cause,
+          slackTheme: SlackAdapter.render(package: package)
+        )
       } catch {
         report = .precommitFailure(themeID: package.id, error: error)
       }
@@ -1261,23 +1270,31 @@ enum ThemeSetReport {
 
   case dryRun(themeID: String)
   case precommitFailure(themeID: String, error: String)
-  case committed(result: ThemeActivationResult, requiredFailure: Bool)
-  case committedActivationError(manifest: GenerationManifest, cause: String)
-  case committedError(manifest: GenerationManifest, cause: String)
+  case committed(result: ThemeActivationResult, requiredFailure: Bool, slackTheme: String)
+  case committedActivationError(
+    manifest: GenerationManifest,
+    cause: String,
+    slackTheme: String
+  )
+  case committedError(manifest: GenerationManifest, cause: String, slackTheme: String)
 
   var succeeded: Bool {
     switch self {
-    case .dryRun, .committed(_, requiredFailure: false):
+    case .dryRun, .committed(_, requiredFailure: false, _):
       true
-    case .precommitFailure, .committed(_, requiredFailure: true), .committedActivationError,
+    case .precommitFailure, .committed(_, requiredFailure: true, _), .committedActivationError,
       .committedError:
       false
     }
   }
 
-  static func committed(_ result: ThemeActivationResult) -> Self {
+  static func committed(_ result: ThemeActivationResult, slackTheme: String) -> Self {
     let requiredFailure = hasRequiredReconciliationFailure(result.reconciliation.results)
-    return .committed(result: result, requiredFailure: requiredFailure)
+    return .committed(
+      result: result,
+      requiredFailure: requiredFailure,
+      slackTheme: slackTheme
+    )
   }
 
   static func precommitFailure(themeID: String, error: any Error) -> Self {
@@ -1303,7 +1320,7 @@ enum ThemeSetReport {
         "Canonical state: unchanged.",
         "Error: \(error)",
       ].joined(separator: "\n")
-    case .committed(let result, let requiredFailure):
+    case .committed(let result, let requiredFailure, let slackTheme):
       var lines = [
         "Activated '\(result.manifest.themeID)' as generation '\(result.manifest.generationID)'.",
         "Reconciliation:",
@@ -1312,19 +1329,22 @@ enum ThemeSetReport {
       if requiredFailure {
         lines.append("Required reconciliation failed; the commit was not rolled back.")
       }
+      lines.append(contentsOf: renderSlackManualImport(slackTheme))
       return lines.joined(separator: "\n")
-    case .committedActivationError(let manifest, let cause):
-      return [
-        "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
-        "Postcommit activation work could not complete: \(cause)",
-        "The commit was not rolled back.",
-      ].joined(separator: "\n")
-    case .committedError(let manifest, let cause):
-      return [
-        "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
-        "Reconciliation could not complete: \(cause)",
-        "The commit was not rolled back.",
-      ].joined(separator: "\n")
+    case .committedActivationError(let manifest, let cause, let slackTheme):
+      return
+        ([
+          "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
+          "Postcommit activation work could not complete: \(cause)",
+          "The commit was not rolled back.",
+        ] + renderSlackManualImport(slackTheme)).joined(separator: "\n")
+    case .committedError(let manifest, let cause, let slackTheme):
+      return
+        ([
+          "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
+          "Reconciliation could not complete: \(cause)",
+          "The commit was not rolled back.",
+        ] + renderSlackManualImport(slackTheme)).joined(separator: "\n")
     }
   }
 
@@ -1343,29 +1363,32 @@ enum ThemeSetReport {
         committed: false,
         error: error
       )
-    case .committed(let result, let requiredFailure):
+    case .committed(let result, let requiredFailure, let slackTheme):
       ThemeSetJSONReport(
         themeID: result.manifest.themeID,
         outcome: requiredFailure ? .requiredReconciliationFailure : .success,
         committed: true,
         generationID: result.manifest.generationID,
         reconciliation: result.reconciliation.results,
+        slackTheme: slackTheme.trimmingCharacters(in: .whitespacesAndNewlines),
         error: requiredFailure ? "Required reconciliation did not complete successfully" : nil
       )
-    case .committedActivationError(let manifest, let cause):
+    case .committedActivationError(let manifest, let cause, let slackTheme):
       ThemeSetJSONReport(
         themeID: manifest.themeID,
         outcome: .committedActivationError,
         committed: true,
         generationID: manifest.generationID,
+        slackTheme: slackTheme.trimmingCharacters(in: .whitespacesAndNewlines),
         error: cause
       )
-    case .committedError(let manifest, let cause):
+    case .committedError(let manifest, let cause, let slackTheme):
       ThemeSetJSONReport(
         themeID: manifest.themeID,
         outcome: .committedReconciliationError,
         committed: true,
         generationID: manifest.generationID,
+        slackTheme: slackTheme.trimmingCharacters(in: .whitespacesAndNewlines),
         error: cause
       )
     }
@@ -1381,7 +1404,27 @@ struct ThemeSetJSONReport: Encodable {
   let committed: Bool
   var generationID: String? = nil
   var reconciliation: [AdapterResult]? = nil
+  var slackTheme: String? = nil
   var error: String? = nil
+
+  enum CodingKeys: String, CodingKey {
+    case schemaVersion = "schema_version"
+    case operation, outcome, committed
+    case themeID = "theme_id"
+    case generationID = "generation_id"
+    case reconciliation
+    case slackTheme = "slack_theme"
+    case error
+  }
+}
+
+private func renderSlackManualImport(_ theme: String) -> [String] {
+  [
+    "Slack theme requires manual import; Slack exposes no supported theme automation API.",
+    theme.trimmingCharacters(in: .whitespacesAndNewlines),
+    SlackAdapter.importInstructions,
+    "The payload is also stored as the active generation's \(SlackAdapter.outputPath) artifact.",
+  ]
 }
 
 private func renderAdapterResult(_ result: AdapterResult) -> String {
