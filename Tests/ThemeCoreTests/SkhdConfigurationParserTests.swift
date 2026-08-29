@@ -10,14 +10,18 @@ struct SkhdConfigurationParserTests {
   func personalFixtureHasExactCoverageWithoutDiagnostics() throws {
     let result = parser.parse(try fixtureContents("personal.skhdrc"))
 
-    #expect(result.bindings.count == 56)
-    #expect(Set(result.bindings.map(\.identity)).count == 56)
+    #expect(result.bindings.count == 57)
+    #expect(Set(result.bindings.map(\.identity)).count == 57)
     #expect(result.diagnostics.isEmpty)
     #expect(result.bindings.first?.identity == "alt-j")
     #expect(result.bindings.last?.identity == "ctrl+alt-r")
     #expect(
       result.bindings.first { $0.identity == "cmd-k" }?.command
         == "/Users/ramtin/.local/bin/macarchy keybindings show"
+    )
+    #expect(
+      result.bindings.first { $0.identity == "cmd+shift-t" }?.command
+        == "/Users/ramtin/.local/bin/macarchy theme browse"
     )
   }
 

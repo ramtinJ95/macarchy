@@ -93,6 +93,7 @@ cmd - 7 : yabai -m space --focus 7
 alt - s : open -a 'Slack'
 alt - a : open -a 'kitty'
 cmd - k : /Users/ramtin/.local/bin/macarchy keybindings show
+cmd + shift - t : /Users/ramtin/.local/bin/macarchy theme browse
 alt - b : open -a 'Google Chrome'
 alt - m : osascript -e 'tell application id "com.spotify.client" to reopen' -e 'tell application id "com.spotify.client" to activate'
 alt - g : open -a 'Google Chrome' https://github.com
