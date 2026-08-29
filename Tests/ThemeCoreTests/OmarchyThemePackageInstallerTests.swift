@@ -133,6 +133,8 @@ struct OmarchyThemePackageInstallerTests {
     defer { fixture.remove() }
     let lock = ThemePackageLock(root: fixture.root)
     let state = PackageLockTestState()
+    let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+    var enteredIterator = entered.makeAsyncIterator()
     defer { state.values.withLock { $0.releaseFirst = true } }
 
     let first = Task.detached {
@@ -142,13 +144,14 @@ struct OmarchyThemePackageInstallerTests {
           state.active += 1
           state.maximumActive = max(state.maximumActive, state.active)
         }
+        enteredContinuation.yield()
         while !state.values.withLock({ $0.releaseFirst }) {
           try await Task.sleep(for: .milliseconds(1))
         }
         state.values.withLock { $0.active -= 1 }
       }
     }
-    try await waitUntil { state.values.withLock { $0.entered == 1 } }
+    _ = await enteredIterator.next()
 
     let second = Task.detached {
       try await lock.withLock {
@@ -173,14 +176,6 @@ struct OmarchyThemePackageInstallerTests {
 
 private final class PackageLockTestState: Sendable {
   let values = Mutex((entered: 0, active: 0, maximumActive: 0, releaseFirst: false))
-}
-
-private func waitUntil(_ condition: @Sendable () -> Bool) async throws {
-  for _ in 0..<1_000 {
-    if condition() { return }
-    try await Task.sleep(for: .milliseconds(1))
-  }
-  Issue.record("Timed out waiting for package-lock state")
 }
 
 private struct InstallationFixture {
