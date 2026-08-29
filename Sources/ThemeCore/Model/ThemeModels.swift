@@ -98,6 +98,13 @@ public enum ThemeBackgroundFormat: String, Codable, Sendable {
   }
 }
 
+public struct ThemePreviewAsset: Sendable {
+  public let sourcePath: String
+  public let packagePath: String
+  public let format: ThemeBackgroundFormat
+  public let data: Data
+}
+
 public struct ThemePackage: Sendable {
   public let packageURL: URL
   public let schemaVersion: Int

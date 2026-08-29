@@ -86,6 +86,13 @@ struct OmarchyThemeConverterTests {
           "preview.png", "preview/preview-0.png", "preview/preview-1.png",
           "preview/preview-2.png",
         ])
+    let importedPreviews = try ImportedThemePreviewLoader().load(package: converted.package)
+    #expect(
+      importedPreviews.map(\.sourcePath) == converted.report.previews.map(\.sourcePath))
+    #expect(
+      importedPreviews.map(\.packagePath) == converted.report.previews.map(\.packagePath))
+    #expect(importedPreviews.map(\.format) == [.png, .png, .png, .png])
+    #expect(importedPreviews.allSatisfy { $0.data == fixture.pngData })
     #expect(converted.report.warnings == [.missingAssetProvenance])
     #expect(converted.report.paletteFile == "colors.toml")
     #expect(converted.report.appearanceMarker == nil)
@@ -150,6 +157,159 @@ struct OmarchyThemeConverterTests {
           contentsOf: converted.package.packageURL.appending(
             path: "backgrounds/digital-mountain.jpg")))
     )
+  }
+
+  @Test
+  func packageReloadRejectsTamperedImportedPreviewBytes() throws {
+    let fixture = try ConversionFixture()
+    defer { fixture.remove() }
+    try fixture.addValidInputs()
+    let converted = try fixture.convert()
+    let preview = try #require(
+      ImportedThemePreviewLoader().load(package: converted.package).first
+    )
+    try Data("not an image".utf8).write(
+      to: converted.package.packageURL.appending(path: preview.packagePath)
+    )
+
+    let ordinaryReload = try ThemePackageLoader().load(packageURL: converted.package.packageURL)
+    #expect(ordinaryReload.id == converted.package.id)
+
+    do {
+      _ = try ImportedThemePreviewLoader().load(package: converted.package)
+      Issue.record("Expected imported preview validation to fail")
+    } catch let diagnostic as ThemeDiagnostic {
+      #expect(diagnostic.field == "previews.package_path")
+      #expect(diagnostic.description.contains(preview.packagePath))
+    }
+  }
+
+  @Test
+  func importedGallerySupportsJPEGAndEnforcesResourceLimits() throws {
+    let fixture = try ConversionFixture()
+    defer { fixture.remove() }
+    try fixture.addValidInputs()
+    try fixture.addJPEGPreview()
+    let converted = try fixture.convert()
+    let previews = try ImportedThemePreviewLoader().load(package: converted.package)
+
+    #expect(previews.map(\.format) == [.png, .png, .png, .png, .jpeg])
+    let countDiagnostic = try previewDiagnostic {
+      _ = try ImportedThemePreviewLoader(
+        maximumPreviewCount: previews.count - 1,
+        maximumTotalBytes: Int64.max
+      ).load(package: converted.package)
+    }
+    #expect(countDiagnostic.field == "previews")
+
+    let totalBytes = previews.reduce(Int64(0)) { $0 + Int64($1.data.count) }
+    let bytesDiagnostic = try previewDiagnostic {
+      _ = try ImportedThemePreviewLoader(
+        maximumPreviewCount: previews.count,
+        maximumTotalBytes: totalBytes - 1
+      ).load(package: converted.package)
+    }
+    #expect(bytesDiagnostic.field == "previews")
+  }
+
+  @Test
+  func importedGalleryRequiresMatchingSafeReportPathsAndOrdinaryDirectories() throws {
+    let fixture = try ConversionFixture()
+    defer { fixture.remove() }
+    try fixture.addValidInputs()
+    let converted = try fixture.convert()
+    let reportURL = converted.package.packageURL.appending(path: "import.json")
+    let originalReport = try Data(contentsOf: reportURL)
+    defer { try? originalReport.write(to: reportURL) }
+
+    let schemaDiagnostic = try mutatedReportDiagnostic(
+      package: converted.package,
+      original: originalReport
+    ) { $0["schema_version"] = 2 }
+    #expect(schemaDiagnostic.field == "schema_version")
+
+    let themeDiagnostic = try mutatedReportDiagnostic(
+      package: converted.package,
+      original: originalReport
+    ) { $0["theme_id"] = "other-theme" }
+    #expect(themeDiagnostic.field == "theme_id")
+
+    let sourceDiagnostic = try mutatedReportDiagnostic(
+      package: converted.package,
+      original: originalReport
+    ) { document in
+      var previews = try #require(document["previews"] as? [[String: Any]])
+      previews[0]["source_path"] = "../preview.png"
+      document["previews"] = previews
+    }
+    #expect(sourceDiagnostic.field == "previews.source_path")
+
+    let packagePathDiagnostic = try mutatedReportDiagnostic(
+      package: converted.package,
+      original: originalReport
+    ) { document in
+      var previews = try #require(document["previews"] as? [[String: Any]])
+      previews[0]["package_path"] = "../preview.png"
+      document["previews"] = previews
+    }
+    #expect(packagePathDiagnostic.field == "previews.package_path")
+
+    let nulDiagnostic = try mutatedReportDiagnostic(
+      package: converted.package,
+      original: originalReport
+    ) { document in
+      var previews = try #require(document["previews"] as? [[String: Any]])
+      previews[0]["package_path"] = "previews/preview.png\u{0}.png"
+      document["previews"] = previews
+    }
+    #expect(nulDiagnostic.field == "previews.package_path")
+
+    let mappingDiagnostic = try mutatedReportDiagnostic(
+      package: converted.package,
+      original: originalReport
+    ) { document in
+      var previews = try #require(document["previews"] as? [[String: Any]])
+      previews[0]["source_path"] = "preview/other.png"
+      document["previews"] = previews
+    }
+    #expect(mappingDiagnostic.field == "previews.source_path")
+
+    try originalReport.write(to: reportURL)
+    let reportHandle = try FileHandle(forWritingTo: reportURL)
+    try reportHandle.truncate(
+      atOffset: UInt64(OmarchyThemeConversionReport.maximumEncodedSize + 1)
+    )
+    try reportHandle.close()
+    let sizeDiagnostic = try previewDiagnostic {
+      _ = try ImportedThemePreviewLoader().load(package: converted.package)
+    }
+    #expect(sizeDiagnostic.description.contains("32 MiB"))
+
+    try originalReport.write(to: reportURL)
+    let previewsURL = converted.package.packageURL.appending(
+      path: "previews",
+      directoryHint: .isDirectory
+    )
+    let fifoURL = previewsURL.appending(path: "preview.png")
+    try FileManager.default.removeItem(at: fifoURL)
+    try #require(mkfifo(fifoURL.path, 0o600) == 0)
+    let fifoDiagnostic = try previewDiagnostic {
+      _ = try ImportedThemePreviewLoader().load(package: converted.package)
+    }
+    #expect(fifoDiagnostic.field == "previews.package_path")
+    try FileManager.default.removeItem(at: fifoURL)
+    try fixture.pngData.write(to: fifoURL)
+
+    let displaced = converted.package.packageURL.appending(
+      path: "displaced-previews",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.moveItem(at: previewsURL, to: displaced)
+    try FileManager.default.createSymbolicLink(at: previewsURL, withDestinationURL: displaced)
+    let symlinkDiagnostic = try previewDiagnostic {
+      _ = try ImportedThemePreviewLoader().load(package: converted.package)
+    }
+    #expect(symlinkDiagnostic.field == "previews.package_path")
   }
 
   @Test
@@ -325,6 +485,31 @@ struct OmarchyThemeConverterTests {
     throw ConversionTestError.expectedFailure
   }
 
+  private func previewDiagnostic(_ operation: () throws -> Void) throws -> ThemeDiagnostic {
+    do {
+      try operation()
+    } catch let diagnostic as ThemeDiagnostic {
+      return diagnostic
+    }
+    throw ConversionTestError.expectedFailure
+  }
+
+  private func mutatedReportDiagnostic(
+    package: ThemePackage,
+    original: Data,
+    update: (inout [String: Any]) throws -> Void
+  ) throws -> ThemeDiagnostic {
+    var document = try #require(
+      JSONSerialization.jsonObject(with: original) as? [String: Any]
+    )
+    try update(&document)
+    let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
+    try data.write(to: package.packageURL.appending(path: "import.json"))
+    return try previewDiagnostic {
+      _ = try ImportedThemePreviewLoader().load(package: package)
+    }
+  }
+
 }
 
 private enum ConversionTestError: Error {
@@ -385,6 +570,12 @@ private final class ConversionFixture {
     for name in ["preview-0.png", "preview-1.png", "preview-2.png"] {
       try pngData.write(to: checkout.appending(path: "preview/\(name)"))
     }
+  }
+
+  func addJPEGPreview() throws {
+    try jpegData(from: pngData).write(
+      to: checkout.appending(path: "preview/preview-3.jpg")
+    )
   }
 
   func convert() throws -> ConvertedOmarchyTheme {

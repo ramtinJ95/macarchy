@@ -34,6 +34,7 @@ public enum OmarchyConversionWarning: String, Codable, Equatable, Sendable {
 
 public struct OmarchyThemeConversionReport: Codable, Sendable {
   public static let currentSchemaVersion = 1
+  package static let maximumEncodedSize = 32 * 1_048_576
 
   public let schemaVersion: Int
   public let themeID: String
@@ -569,6 +570,11 @@ public struct OmarchyThemeConverter: Sendable {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
     var data = try encoder.encode(report)
     data.append(0x0a)
+    guard data.count <= OmarchyThemeConversionReport.maximumEncodedSize else {
+      throw OmarchyThemeConversionError.packageFilesystem(
+        "generated import.json exceeds the 32 MiB report limit"
+      )
+    }
     try data.write(to: url)
   }
 
