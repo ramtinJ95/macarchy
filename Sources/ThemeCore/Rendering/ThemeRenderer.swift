@@ -3,42 +3,19 @@ import Foundation
 public struct ThemeRenderer: Sendable {
   static let capabilitiesOutputPath = "generated/capabilities.json"
   static let themeOutputPath = "theme.json"
-  static let artifactMetadata = [
-    RenderedArtifactMetadata(path: AtuinAdapter.outputPath),
-    RenderedArtifactMetadata(path: TextMateThemeArtifact.outputPath),
-    RenderedArtifactMetadata(path: BtopAdapter.outputPath),
+  private static let internalArtifactMetadata = [
     RenderedArtifactMetadata(path: capabilitiesOutputPath, requirement: .optional),
-    RenderedArtifactMetadata(path: EzaAdapter.outputPath),
-    RenderedArtifactMetadata(
-      path: HerdrAdapter.outputPath,
-      requirement: .requiredWhenRendererVersion(renderer: .herdr, minimumVersion: 3)
-    ),
-    RenderedArtifactMetadata(path: KittyAdapter.outputPath),
-    RenderedArtifactMetadata(
-      path: NeovimAdapter.outputPath,
-      requirement: .requiredWhenRendererVersion(renderer: .neovim, minimumVersion: 4)
-    ),
-    RenderedArtifactMetadata(path: PiAdapter.outputPath),
-    RenderedArtifactMetadata(path: SketchyBarAdapter.outputPath),
-    RenderedArtifactMetadata(
-      path: SlackAdapter.outputPath,
-      requirement: .requiredWhenRendererVersion(renderer: .slack, minimumVersion: 1)
-    ),
-    RenderedArtifactMetadata(path: SpicetifyAdapter.outputPath),
-    RenderedArtifactMetadata(path: StarshipAdapter.outputPath),
     RenderedArtifactMetadata(path: themeOutputPath),
-    RenderedArtifactMetadata(path: TuicrAdapter.outputPath),
-    RenderedArtifactMetadata(
-      path: WallpaperAdapter.outputPath,
-      sizePolicy: .wallpaper
-    ),
-    RenderedArtifactMetadata(path: YaziAdapter.flavorOutputPath),
-    RenderedArtifactMetadata(path: TextMateThemeArtifact.yaziOutputPath),
   ]
+  private let catalog: ConsumerCatalog
 
-  static func validatedArtifactMetadata() throws -> [String: RenderedArtifactMetadata] {
+  static func validatedArtifactMetadata(
+    catalog: ConsumerCatalog = .shared
+  ) throws -> [String: RenderedArtifactMetadata] {
     let collection = try RenderedTheme(
-      artifacts: artifactMetadata.map { RenderedArtifact(metadata: $0, data: Data()) }
+      artifacts: (catalog.artifactMetadata + internalArtifactMetadata).map {
+        RenderedArtifact(metadata: $0, data: Data())
+      }
     )
     return Dictionary(uniqueKeysWithValues: collection.artifacts.map { ($0.path, $0.metadata) })
   }
@@ -52,7 +29,13 @@ public struct ThemeRenderer: Sendable {
     )
   }
 
-  public init() {}
+  public init() {
+    catalog = .shared
+  }
+
+  package init(catalog: ConsumerCatalog) {
+    self.catalog = catalog
+  }
 
   public func render(package: ThemePackage, generationID: String) throws -> RenderedTheme {
     try render(package: package, generationID: generationID, wallpaperData: package.wallpaperData)
@@ -72,59 +55,28 @@ public struct ThemeRenderer: Sendable {
       GeneratedThemeCapabilities(unsupportedAdapters: [])
     )
     capabilities.append(0x0a)
-    let textMateTheme = TextMateThemeArtifact.render(package: package)
-    let metadata = try Self.validatedArtifactMetadata()
-
-    return try RenderedTheme(
-      artifacts: [
-        artifact(metadata, AtuinAdapter.outputPath, AtuinAdapter.render(package: package)),
-        artifact(metadata, TextMateThemeArtifact.outputPath, textMateTheme),
-        artifact(metadata, BtopAdapter.outputPath, BtopAdapter.render(package: package)),
-        artifact(metadata, Self.capabilitiesOutputPath, capabilities),
-        artifact(metadata, EzaAdapter.outputPath, EzaAdapter.render(package: package)),
-        artifact(metadata, HerdrAdapter.outputPath, try HerdrAdapter.render(package: package)),
-        artifact(metadata, KittyAdapter.outputPath, KittyAdapter.render(package: package)),
-        artifact(
-          metadata,
-          NeovimAdapter.outputPath,
-          try NeovimAdapter.render(package: package, generationID: generationID)
-        ),
-        artifact(metadata, PiAdapter.outputPath, try PiAdapter.render(package: package)),
-        artifact(
-          metadata,
-          SketchyBarAdapter.outputPath,
-          SketchyBarAdapter.render(package: package)
-        ),
-        artifact(metadata, SlackAdapter.outputPath, SlackAdapter.render(package: package)),
-        artifact(
-          metadata,
-          SpicetifyAdapter.outputPath,
-          SpicetifyAdapter.render(package: package)
-        ),
-        artifact(
-          metadata,
-          StarshipAdapter.outputPath,
-          StarshipAdapter.render(package: package)
-        ),
-        artifact(metadata, Self.themeOutputPath, json),
-        artifact(metadata, TuicrAdapter.outputPath, TuicrAdapter.render(package: package)),
-        artifact(metadata, WallpaperAdapter.outputPath, wallpaperData),
-        artifact(
-          metadata,
-          YaziAdapter.flavorOutputPath,
-          YaziAdapter.renderFlavor(package: package)
-        ),
-        artifact(metadata, TextMateThemeArtifact.yaziOutputPath, textMateTheme),
-      ]
-    )
-  }
-
-  private func artifact(
-    _ metadata: [String: RenderedArtifactMetadata],
-    _ path: String,
-    _ string: String
-  ) throws -> RenderedArtifact {
-    try artifact(metadata, path, Data(string.utf8))
+    let metadata = try Self.validatedArtifactMetadata(catalog: catalog)
+    var artifacts = [
+      try artifact(metadata, Self.capabilitiesOutputPath, capabilities),
+      try artifact(metadata, Self.themeOutputPath, json),
+    ]
+    for entry in catalog.entries {
+      guard let renderer = entry.renderer else { continue }
+      let outputs = try renderer.render(package, generationID, wallpaperData)
+      let expectedPaths = Set(renderer.artifacts.map(\.path))
+      let outputPaths = outputs.map(\.path)
+      guard Set(outputPaths) == expectedPaths, Set(outputPaths).count == outputPaths.count else {
+        throw GenerationIntegrityError(
+          reason: "renderer '\(renderer.id)' output does not match its declared artifacts"
+        )
+      }
+      artifacts.append(
+        contentsOf: try outputs.map { output in
+          try artifact(metadata, output.path, output.data)
+        }
+      )
+    }
+    return try RenderedTheme(artifacts: artifacts)
   }
 
   private func artifact(
@@ -152,7 +104,8 @@ public struct ThemeRenderer: Sendable {
 package struct GeneratedThemeCapabilities: Codable, Sendable {
   static let currentSchemaVersion = 1
   // Both IDs remain valid for backward-compatible validation of M5 generations.
-  package static let namedThemeAdapterIDs = Set([HerdrAdapter.id, NeovimAdapter.id])
+  package static let namedThemeAdapterIDs =
+    ConsumerCatalog.shared.namedThemeFallbackConsumerIDs
 
   let schemaVersion: Int
   let unsupportedAdapters: [String]

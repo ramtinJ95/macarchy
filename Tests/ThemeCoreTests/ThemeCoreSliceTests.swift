@@ -39,7 +39,7 @@ struct ThemeCoreSliceTests {
     #expect(VersionGatedRendererIdentity(id: HerdrAdapter.id) == .herdr)
     #expect(VersionGatedRendererIdentity(id: NeovimAdapter.id) == .neovim)
     #expect(VersionGatedRendererIdentity(id: SlackAdapter.id) == .slack)
-    #expect(VersionGatedRendererIdentity(id: "unknown-renderer") == nil)
+    #expect(VersionGatedRendererIdentity(id: "fixture-renderer").id == "fixture-renderer")
   }
 
   @Test
