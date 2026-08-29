@@ -100,7 +100,7 @@ struct ThemeInstallCommandRunner: Sendable {
         from: source,
         to: preparedRoot.appending(path: "package", directoryHint: .isDirectory)
       )
-      try activation.preflight(converted.package, stateRoot, consumerPaths)
+      try activation.preflight(converted.package, nil, stateRoot, consumerPaths)
 
       if dryRun {
         let replacing = try installer.wouldReplace(

@@ -50,16 +50,16 @@ private struct BackgroundPreferenceDocument: Codable {
   }
 }
 
-struct BackgroundPreferenceStore: Sendable {
+package struct BackgroundPreferenceStore: Sendable {
   private let root: URL
   private let preferencesURL: URL
 
-  init(root: URL) {
+  package init(root: URL) {
     self.root = root.standardizedFileURL
     preferencesURL = self.root.appending(path: "state/background-preferences.json")
   }
 
-  func load() throws -> [String: String] {
+  package func load() throws -> [String: String] {
     let data: Data
     do {
       data = try BoundedRegularFile.read(at: preferencesURL).data
