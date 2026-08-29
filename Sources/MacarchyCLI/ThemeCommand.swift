@@ -5,7 +5,9 @@ import ThemeCore
 struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect or select themes.",
-    subcommands: [List.self, Set.self, Install.self, Next.self, Status.self, Background.self]
+    subcommands: [
+      List.self, Set.self, Install.self, Next.self, Status.self, Background.self, Browse.self,
+    ]
   )
 }
 
@@ -137,6 +139,46 @@ extension Theme {
       print(execution.output)
       if !execution.succeeded {
         throw ExitCode.failure
+      }
+    }
+  }
+
+  struct Browse: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Browse installed themes, previews, and backgrounds in a native popup."
+    )
+
+    @OptionGroup var roots: ThemeRootOptions
+    @OptionGroup var state: Macarchy.StateOptions
+
+    mutating func run() async throws {
+      let stateRoot = state.stateRootURL
+      let repository = roots.repository(
+        userRoot: stateRoot.appending(path: "themes", directoryHint: .isDirectory)
+      )
+      let content = try ThemeBrowserCommandLoader.live.load(
+        repository: repository,
+        stateRoot: stateRoot
+      )
+      let consumerPaths = state.consumerPaths
+      let execution = try await MainActor.run {
+        let controller = try ThemeBrowserWindowController(content: content) {
+          themeID, backgroundID in
+          try await ThemeSetCommandRunner.live.execute(
+            repository: repository,
+            themeID: themeID,
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths,
+            dryRun: false,
+            json: false,
+            requestedBackgroundID: backgroundID
+          )
+        }
+        return try controller.run()
+      }
+      if let execution {
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
       }
     }
   }

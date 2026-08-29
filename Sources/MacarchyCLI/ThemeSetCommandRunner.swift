@@ -2,24 +2,26 @@ import Foundation
 import ThemeCore
 
 struct ThemeSetCommandRunner: Sendable {
-  let preflight: @Sendable (ThemePackage, URL, ThemeConsumerPaths) throws -> Void
+  let preflight: @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths) throws -> Void
   let activate:
-    @Sendable (ThemePackage, URL, ThemeConsumerPaths, String?) async throws -> ThemeActivationResult
+    @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths, String?) async throws
+      -> ThemeActivationResult
 
   static let live = ThemeSetCommandRunner(
-    preflight: { package, stateRoot, consumerPaths in
+    preflight: { package, backgroundID, stateRoot, consumerPaths in
       try ThemeActivationCoordinator(
         root: stateRoot,
         consumerPaths: consumerPaths
-      ).preflight(package: package)
+      ).preflight(package: package, requestedBackgroundID: backgroundID)
     },
-    activate: { package, stateRoot, consumerPaths, expectedActiveGenerationID in
+    activate: { package, backgroundID, stateRoot, consumerPaths, expectedActiveGenerationID in
       try await ThemeActivationCoordinator(
         root: stateRoot,
         consumerPaths: consumerPaths
       ).activate(
         package: package,
-        expectedActiveGenerationID: expectedActiveGenerationID
+        expectedActiveGenerationID: expectedActiveGenerationID,
+        requestedBackgroundID: backgroundID
       )
     }
   )
@@ -30,7 +32,8 @@ struct ThemeSetCommandRunner: Sendable {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
-    json: Bool
+    json: Bool,
+    requestedBackgroundID: String? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     let run: @Sendable () async throws -> (output: String, succeeded: Bool) = {
       let package = try repository.package(id: themeID)
@@ -40,7 +43,8 @@ struct ThemeSetCommandRunner: Sendable {
         consumerPaths: consumerPaths,
         dryRun: dryRun,
         expectedActiveGenerationID: nil,
-        json: json
+        json: json,
+        requestedBackgroundID: requestedBackgroundID
       )
     }
     do {
@@ -58,14 +62,16 @@ struct ThemeSetCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     expectedActiveGenerationID: String?,
-    json: Bool
+    json: Bool,
+    requestedBackgroundID: String? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     let report = try await report(
       package: package,
       stateRoot: stateRoot,
       consumerPaths: consumerPaths,
       dryRun: dryRun,
-      expectedActiveGenerationID: expectedActiveGenerationID
+      expectedActiveGenerationID: expectedActiveGenerationID,
+      requestedBackgroundID: requestedBackgroundID
     )
     return (try report.render(json: json), report.succeeded)
   }
@@ -75,12 +81,13 @@ struct ThemeSetCommandRunner: Sendable {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
-    expectedActiveGenerationID: String?
+    expectedActiveGenerationID: String?,
+    requestedBackgroundID: String? = nil
   ) async throws -> ThemeSetReport {
     let report: ThemeSetReport
     if dryRun {
       do {
-        try preflight(package, stateRoot, consumerPaths)
+        try preflight(package, requestedBackgroundID, stateRoot, consumerPaths)
         report = .dryRun(themeID: package.id)
       } catch {
         report = .precommitFailure(themeID: package.id, error: error)
@@ -90,6 +97,7 @@ struct ThemeSetCommandRunner: Sendable {
         report = .committed(
           try await activate(
             package,
+            requestedBackgroundID,
             stateRoot,
             consumerPaths,
             expectedActiveGenerationID

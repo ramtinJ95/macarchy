@@ -273,16 +273,16 @@ struct ThemeSetCommandTests {
     )
     let runner = ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
     return ThemeSetCommandRunner(
-      preflight: { package, stateRoot, consumerPaths in
+      preflight: { package, backgroundID, stateRoot, consumerPaths in
         try ThemeActivationCoordinator(
           root: stateRoot,
           consumerPaths: consumerPaths,
           processRunner: runner,
           wallpaperControl: control,
           wallpaperSignal: wallpaperSignal
-        ).preflight(package: package)
+        ).preflight(package: package, requestedBackgroundID: backgroundID)
       },
-      activate: { package, stateRoot, consumerPaths, expectedGenerationID in
+      activate: { package, backgroundID, stateRoot, consumerPaths, expectedGenerationID in
         try await ThemeActivationCoordinator(
           root: stateRoot,
           consumerPaths: consumerPaths,
@@ -291,7 +291,8 @@ struct ThemeSetCommandTests {
           wallpaperSignal: wallpaperSignal
         ).activate(
           package: package,
-          expectedActiveGenerationID: expectedGenerationID
+          expectedActiveGenerationID: expectedGenerationID,
+          requestedBackgroundID: backgroundID
         )
       }
     )
@@ -301,8 +302,8 @@ struct ThemeSetCommandTests {
     activate: @escaping @Sendable () async throws -> ThemeActivationResult
   ) -> ThemeSetCommandRunner {
     ThemeSetCommandRunner(
-      preflight: { _, _, _ in },
-      activate: { _, _, _, _ in try await activate() }
+      preflight: { _, _, _, _ in },
+      activate: { _, _, _, _, _ in try await activate() }
     )
   }
 

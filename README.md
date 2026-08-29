@@ -77,6 +77,7 @@ Useful commands:
 
 ```sh
 macarchy theme list
+macarchy theme browse
 macarchy theme background list <theme-id> [--state-root <path>]
 macarchy theme background current [--state-root <path>]
 macarchy theme background set <background-id> [--dry-run]
@@ -118,6 +119,13 @@ diagnostics, while unreadable or invalid inputs fail explicitly.
 AppKit popup. The popup follows the active Macarchy theme, supports keyboard
 search and navigation, closes on Escape or focus loss, and remains strictly
 informational: selecting a row never executes its configured command.
+
+`theme browse` opens a short-lived AppKit browser for every valid built-in and
+installed theme. Search and navigation change only the local generated palette
+preview, optional validated import gallery, and background selection. Enter or
+the Apply button performs one canonical activation of the selected theme and
+background; closing or changing focus without applying leaves state unchanged.
+The personal skhd configuration opens it with Cmd-Shift-T.
 
 `update status` reads cached GitHub release evidence and the locally installed
 Homebrew tap without refreshing either source. `update check` explicitly

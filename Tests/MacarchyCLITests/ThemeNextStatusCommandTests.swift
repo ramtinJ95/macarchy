@@ -15,8 +15,8 @@ struct ThemeNextStatusCommandTests {
     ] {
       let selected = Mutex<String?>(nil)
       let activation = ThemeSetCommandRunner(
-        preflight: { package, _, _ in selected.withLock { $0 = package.id } },
-        activate: { _, _, _, _ in throw TestError.unexpectedActivation }
+        preflight: { package, _, _, _ in selected.withLock { $0 = package.id } },
+        activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
       let runner = ThemeNextCommandRunner(
         activeManifest: { _ in testManifest(themeID: active) },
@@ -41,8 +41,8 @@ struct ThemeNextStatusCommandTests {
     let runner = ThemeNextCommandRunner(
       activeManifest: { _ in testManifest(themeID: "removed-theme") },
       activation: ThemeSetCommandRunner(
-        preflight: { _, _, _ in },
-        activate: { _, _, _, _ in throw TestError.unexpectedActivation }
+        preflight: { _, _, _, _ in },
+        activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
     )
 
@@ -74,8 +74,8 @@ struct ThemeNextStatusCommandTests {
     let canonical = Mutex(testManifest(generationID: "g-initial", themeID: "catppuccin-mocha"))
     let attempts = Mutex([String]())
     let activation = ThemeSetCommandRunner(
-      preflight: { _, _, _ in },
-      activate: { package, _, _, expectedGenerationID in
+      preflight: { _, _, _, _ in },
+      activate: { package, _, _, _, expectedGenerationID in
         let attempt = attempts.withLock { attempts in
           attempts.append(package.id)
           return attempts.count
