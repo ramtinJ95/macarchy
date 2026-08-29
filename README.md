@@ -132,7 +132,7 @@ schema_version = 1
 [keybindings]
 override = "keybindings.skhdrc"
 metadata = "keybindings-metadata.toml"
-disabled = ["alt-m"]
+disabled = ["alt+shift-m"]
 ```
 
 The plan reports replacement, addition, disablement, source attribution,

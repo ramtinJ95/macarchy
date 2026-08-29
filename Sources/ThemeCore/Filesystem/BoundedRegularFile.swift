@@ -64,7 +64,13 @@ package enum BoundedRegularFileError: Error, CustomStringConvertible, Equatable,
     case .system(let operation, let code):
       "\(operation) failed (errno \(code)): \(String(cString: strerror(code)))"
     case .tooLarge(let maximumSize):
-      "exceeds the \(maximumSize / 1_048_576) MiB file limit"
+      if maximumSize >= 1_048_576, maximumSize.isMultiple(of: 1_048_576) {
+        "exceeds the \(maximumSize / 1_048_576) MiB file limit"
+      } else if maximumSize >= 1_024, maximumSize.isMultiple(of: 1_024) {
+        "exceeds the \(maximumSize / 1_024) KiB file limit"
+      } else {
+        "exceeds the \(maximumSize)-byte file limit"
+      }
     }
   }
 }

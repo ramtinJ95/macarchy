@@ -64,6 +64,37 @@ struct KeybindingGenerationInspectionTests {
   }
 
   @Test
+  func unknownGenerationInventoryBlocksInspection() throws {
+    let root = try temporaryDirectory()
+    let generation = try publishFixture(
+      stateRoot: root,
+      expectedConfiguration: "alt - j : default\n",
+      actualConfiguration: "alt - j : default\n"
+    )
+    defer {
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: generation.path
+      )
+      try? FileManager.default.removeItem(at: root)
+    }
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755],
+      ofItemAtPath: generation.path
+    )
+    try Data("unexpected".utf8).write(to: generation.appending(path: "extra.txt"))
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o555],
+      ofItemAtPath: generation.path
+    )
+
+    let inspection = inspector.inspect(stateRoot: root)
+
+    #expect(inspection.status == .invalid)
+    #expect(inspection.message?.contains("unknown or missing item") == true)
+  }
+
+  @Test
   func symlinkedKeybindingStateAncestorIsInvalid() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

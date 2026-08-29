@@ -6,6 +6,14 @@ import Testing
 
 struct BoundedRegularFileTests {
   @Test
+  func subMebibyteLimitsUseExactDiagnosticUnits() {
+    #expect(
+      BoundedRegularFileError.tooLarge(65_536).description
+        == "exceeds the 64 KiB file limit"
+    )
+  }
+
+  @Test
   func fifoInputsFailAsNonregularWithoutBlocking() throws {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-bounded-file-tests-\(UUID().uuidString)",
