@@ -143,7 +143,39 @@ struct DependencyProfile: Sendable {
       )
     }
 
-    return DependencyProfile(
+    func consumerCapability(
+      _ consumerID: ConsumerID,
+      dependencyID: String? = nil,
+      probes: [DependencyCapabilityProbe],
+      remediation: DependencyRemediation
+    ) -> DependencyCapability {
+      let entry = ConsumerCatalog.shared.entry(for: consumerID)
+      let capabilityID = dependencyID ?? consumerID.rawValue
+      guard
+        let registration = entry?.dependencies.first(where: { $0.id == capabilityID })
+      else {
+        preconditionFailure(
+          "Consumer '\(consumerID.rawValue)' does not declare dependency '\(capabilityID)'"
+        )
+      }
+      let category: DependencyCapabilityCategory =
+        switch registration.role {
+        case .desktopSubstrate:
+          .desktopSubstrate
+        case .requiredAdapter:
+          .requiredAdapter
+        case .optionalAdapter:
+          .optionalAdapter
+        }
+      return DependencyCapability(
+        id: registration.id,
+        category: category,
+        probes: probes,
+        remediation: remediation
+      )
+    }
+
+    let profile = DependencyProfile(
       name: "personal",
       capabilities: [
         DependencyCapability(
@@ -167,15 +199,13 @@ struct DependencyProfile: Sendable {
           probes: executable("/opt/homebrew/bin/brew"),
           remediation: .external("Install Homebrew from https://brew.sh.")
         ),
-        DependencyCapability(
-          id: "kitty",
-          category: .desktopSubstrate,
+        consumerCapability(
+          .kitty,
           probes: [.exists(URL(filePath: "/Applications/kitty.app"))],
           remediation: .cask("kitty")
         ),
-        DependencyCapability(
-          id: "sketchybar",
-          category: .desktopSubstrate,
+        consumerCapability(
+          .sketchyBar,
           probes: executable("/opt/homebrew/bin/sketchybar"),
           remediation: externallyTrustedFormula("felixkratz/formulae/sketchybar")
         ),
@@ -191,9 +221,8 @@ struct DependencyProfile: Sendable {
           probes: executable("/opt/homebrew/bin/yabai"),
           remediation: externallyTrustedFormula("asmvik/formulae/yabai")
         ),
-        DependencyCapability(
-          id: "atuin",
-          category: .requiredAdapter,
+        consumerCapability(
+          .atuin,
           probes: [
             .anyExecutable(
               externalThenHomebrewExecutableURLs(
@@ -205,33 +234,28 @@ struct DependencyProfile: Sendable {
           ],
           remediation: .formula("atuin")
         ),
-        DependencyCapability(
-          id: "bat",
-          category: .requiredAdapter,
+        consumerCapability(
+          .bat,
           probes: executable("/opt/homebrew/bin/bat"),
           remediation: .formula("bat")
         ),
-        DependencyCapability(
-          id: "btop",
-          category: .requiredAdapter,
+        consumerCapability(
+          .btop,
           probes: executable("/opt/homebrew/bin/btop"),
           remediation: .formula("btop")
         ),
-        DependencyCapability(
-          id: "codex",
-          category: .requiredAdapter,
+        consumerCapability(
+          .codex,
           probes: executable("/opt/homebrew/bin/codex"),
           remediation: .cask("codex")
         ),
-        DependencyCapability(
-          id: "eza",
-          category: .requiredAdapter,
+        consumerCapability(
+          .eza,
           probes: executable("/opt/homebrew/bin/eza"),
           remediation: .formula("eza")
         ),
-        DependencyCapability(
-          id: "herdr",
-          category: .requiredAdapter,
+        consumerCapability(
+          .herdr,
           probes: [
             .anyExecutable(
               externalThenHomebrewExecutableURLs(
@@ -243,55 +267,55 @@ struct DependencyProfile: Sendable {
           ],
           remediation: .formula("herdr")
         ),
-        DependencyCapability(
-          id: "neovim",
-          category: .requiredAdapter,
+        consumerCapability(
+          .neovim,
           probes: executable("/opt/homebrew/bin/nvim"),
           remediation: .formula("neovim")
         ),
-        DependencyCapability(
-          id: "pi",
-          category: .requiredAdapter,
+        consumerCapability(
+          .pi,
           probes: executable("/opt/homebrew/bin/pi"),
           remediation: .external(
             "Run: npm install --global @earendil-works/pi-coding-agent"
           )
         ),
-        DependencyCapability(
-          id: "starship",
-          category: .requiredAdapter,
+        consumerCapability(
+          .starship,
           probes: executable("/opt/homebrew/bin/starship"),
           remediation: .formula("starship")
         ),
-        DependencyCapability(
-          id: "tuicr",
-          category: .requiredAdapter,
+        consumerCapability(
+          .tuicr,
           probes: executable("/opt/homebrew/bin/tuicr"),
           remediation: .formula("tuicr")
         ),
-        DependencyCapability(
-          id: "yazi",
-          category: .requiredAdapter,
+        consumerCapability(
+          .yazi,
           probes: [
             .executable(URL(filePath: "/opt/homebrew/bin/yazi")),
             .executable(URL(filePath: "/opt/homebrew/bin/ya")),
           ],
           remediation: .formula("yazi")
         ),
-        DependencyCapability(
-          id: "spicetify",
-          category: .optionalAdapter,
+        consumerCapability(
+          .spicetify,
           probes: executable("/opt/homebrew/bin/spicetify"),
           remediation: .formula("spicetify-cli")
         ),
-        DependencyCapability(
-          id: "spotify",
-          category: .optionalAdapter,
+        consumerCapability(
+          .spicetify,
+          dependencyID: "spotify",
           probes: [.exists(URL(filePath: "/Applications/Spotify.app"))],
           remediation: .cask("spotify")
         ),
       ]
     )
+    do {
+      try ConsumerIntegrationConsistency.validateDependencyCapabilities(profile.capabilities)
+    } catch {
+      preconditionFailure("Invalid consumer dependency catalog integration: \(error)")
+    }
+    return profile
   }
 }
 

@@ -2,11 +2,14 @@ import Foundation
 import ThemeCore
 
 func renderSlackManualImport(_ theme: String) -> [String] {
-  [
-    "Slack theme requires manual import; Slack exposes no supported theme automation API.",
+  guard let notice = ConsumerCatalog.shared.manualNotice(for: .slack) else {
+    preconditionFailure("Slack manual notice is missing from the consumer catalog")
+  }
+  return [
+    notice.summary,
     theme.trimmingCharacters(in: .whitespacesAndNewlines),
-    SlackAdapter.importInstructions,
-    "The payload is also stored as the active generation's \(SlackAdapter.outputPath) artifact.",
+    notice.instructions,
+    notice.artifactSummary,
   ]
 }
 

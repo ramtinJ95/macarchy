@@ -1,4 +1,5 @@
 import Foundation
+import ThemeCore
 
 struct ConsumerSetupPlan {
   struct Step {
@@ -51,14 +52,14 @@ struct ConsumerSetupPlan {
     case spicetify
   }
 
-  let consumerID: String
+  let consumerID: ConsumerID
   let steps: [Step]
   private let manager: SetupOwnershipManager
   private let context: SetupOwnershipManager.Context
   private let executionGroup: ExecutionGroup
 
   init(
-    consumerID: String,
+    consumerID: ConsumerID,
     steps: [Step],
     manager: SetupOwnershipManager,
     context: SetupOwnershipManager.Context,
@@ -187,9 +188,9 @@ struct ConsumerSetupPlanPartialFailure: Error {
 
 extension SetupOwnershipManager {
   func consumerSetupPlans(context: Context) -> [ConsumerSetupPlan] {
-    [
+    let plans = [
       ConsumerSetupPlan(
-        consumerID: "kitty",
+        consumerID: .kitty,
         steps: [
           regularFileStep(
             .kittyInclude,
@@ -205,7 +206,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "bat",
+        consumerID: .bat,
         steps: [
           regularFileStep(
             .batSelector,
@@ -228,7 +229,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "eza",
+        consumerID: .eza,
         steps: [
           regularFileStep(
             .ezaEnvironment,
@@ -251,7 +252,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "btop",
+        consumerID: .btop,
         steps: [
           externalStep(
             .btopSelector,
@@ -271,7 +272,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "yazi",
+        consumerID: .yazi,
         steps: [
           regularFileStep(
             .yaziSelector,
@@ -301,7 +302,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "atuin",
+        consumerID: .atuin,
         steps: [
           regularFileStep(
             .atuinSelector,
@@ -324,7 +325,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "neovim",
+        consumerID: .neovim,
         steps: [
           externalStep(
             .neovimWatcher,
@@ -344,7 +345,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "starship",
+        consumerID: .starship,
         steps: [
           externalStep(
             .starshipBehavior,
@@ -364,7 +365,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "pi",
+        consumerID: .pi,
         steps: [
           piSelectorStep(setupRank: 1, teardownRank: 0, context: context),
           themeLinkStep(
@@ -379,7 +380,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "herdr",
+        consumerID: .herdr,
         steps: [
           externalStep(
             .herdrSelector,
@@ -392,7 +393,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "tuicr",
+        consumerID: .tuicr,
         steps: [
           regularFileStep(
             .tuicrSelector,
@@ -422,7 +423,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "codex",
+        consumerID: .codex,
         steps: [
           regularFileStep(
             .codexSelector,
@@ -445,7 +446,7 @@ extension SetupOwnershipManager {
         context: context
       ),
       ConsumerSetupPlan(
-        consumerID: "spicetify",
+        consumerID: .spicetify,
         steps: [
           spicetifySelectorStep(setupRank: 1, teardownRank: 0, context: context),
           themeLinkStep(
@@ -461,6 +462,12 @@ extension SetupOwnershipManager {
         executionGroup: .spicetify
       ),
     ]
+    do {
+      try ConsumerIntegrationConsistency.validateSetupPlans(plans)
+    } catch {
+      preconditionFailure("Invalid consumer setup catalog integration: \(error)")
+    }
+    return plans
   }
 
   func setup(
