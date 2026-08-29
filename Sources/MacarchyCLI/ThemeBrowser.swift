@@ -12,17 +12,19 @@ struct ThemeBrowserItem: Sendable {
   let package: ThemePackage
   let generatedPreview: ThemeBrowserPreview
   let initialBackgroundID: String?
-  let wallpaperOverrideData: Data?
 
   var id: String { package.id }
   var displayName: String { package.displayName }
   var appearance: ThemeAppearance { package.appearance }
   var backgrounds: [ThemeBackground] { package.backgrounds }
-  var usesWallpaperOverride: Bool { wallpaperOverrideData != nil }
+
+  func isPersonalBackground(id: String) -> Bool {
+    package.background(id: id)?.origin == .personal
+  }
 
   func backgroundData(id: String) -> Data? {
     guard let background = package.backgrounds.first(where: { $0.id == id }) else { return nil }
-    return wallpaperOverrideData ?? package.data(for: background)
+    return package.data(for: background)
   }
 
   fileprivate func matches(_ terms: [String]) -> Bool {
@@ -226,7 +228,7 @@ struct ThemeBrowserCommandLoader: Sendable {
   let loadPackages: @Sendable (ThemeRepository) throws -> [ThemePackage]
   let loadPreferences: @Sendable (URL) throws -> [String: String]
   let loadActiveManifest: @Sendable (URL) throws -> GenerationManifest?
-  let loadWallpaperOverrides: @Sendable (URL, [String]) throws -> [String: Data]
+  let addPersonalBackgrounds: @Sendable (URL, ThemePackage) throws -> ThemePackage
   let renderPreview: @Sendable (ThemePackage) -> GeneratedThemePreview
 
   static let live = ThemeBrowserCommandLoader(
@@ -239,8 +241,8 @@ struct ThemeBrowserCommandLoader: Sendable {
         return nil
       }
     },
-    loadWallpaperOverrides: { root, themeIDs in
-      try MacarchyConfigurationStore(root: root).wallpaperData(themeIDs: themeIDs)
+    addPersonalBackgrounds: { root, package in
+      try MacarchyConfigurationStore(root: root).addingPersonalBackgrounds(to: package)
     },
     renderPreview: { ThemePreviewRenderer().render(package: $0) }
   )
@@ -250,9 +252,11 @@ struct ThemeBrowserCommandLoader: Sendable {
     guard !packages.isEmpty else { throw ThemeBrowserError.noThemes }
     let preferences = try loadPreferences(stateRoot)
     let activeManifest = try loadActiveManifest(stateRoot)
-    let wallpaperOverrides = try loadWallpaperOverrides(stateRoot, packages.map(\.id))
+    let effectivePackages = try packages.map { package in
+      try addPersonalBackgrounds(stateRoot, package)
+    }
 
-    let items = packages.map { package in
+    let items = effectivePackages.map { package in
       let activeBackgroundID =
         activeManifest?.themeID == package.id
         ? activeManifest?.background?.id
@@ -268,11 +272,10 @@ struct ThemeBrowserCommandLoader: Sendable {
           label: "Generated palette",
           data: preview.data
         ),
-        initialBackgroundID: initialBackgroundID,
-        wallpaperOverrideData: wallpaperOverrides[package.id]
+        initialBackgroundID: initialBackgroundID
       )
     }
-    let packageIDs = Set(packages.map(\.id))
+    let packageIDs = Set(effectivePackages.map(\.id))
     let initialThemeID =
       activeManifest.map(\.themeID).flatMap { packageIDs.contains($0) ? $0 : nil }
       ?? packages[0].id

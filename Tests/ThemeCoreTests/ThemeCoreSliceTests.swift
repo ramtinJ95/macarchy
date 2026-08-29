@@ -508,7 +508,7 @@ struct ThemeCoreSliceTests {
   }
 
   @Test
-  func wallpaperOverrideRejectsInvalidConfigurationAndSource() throws {
+  func personalWallpaperConfigurationRejectsInvalidShapeAndSource() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let configuration = root.appending(path: "config.toml")
@@ -530,7 +530,7 @@ struct ThemeCoreSliceTests {
       _ = try MacarchyConfigurationStore(root: root).load()
     }
 
-    try "schema_version = 2\n".write(
+    try "schema_version = 3\n".write(
       to: configuration,
       atomically: true,
       encoding: .utf8
@@ -543,9 +543,8 @@ struct ThemeCoreSliceTests {
     try Data("not png".utf8).write(to: invalidPNG)
     try overrideConfiguration(in: configuration, wallpaper: invalidPNG)
     #expect(throws: MacarchyConfigurationError.self) {
-      _ = try MacarchyConfigurationStore(root: root).load().wallpaperData(
-        themeID: "catppuccin-mocha"
-      )
+      _ = try MacarchyConfigurationStore(root: root).load().personalBackgrounds(
+        themeID: "catppuccin-mocha")
     }
 
     let oversized = root.appending(path: "oversized.png")
@@ -555,10 +554,38 @@ struct ThemeCoreSliceTests {
     try handle.close()
     try overrideConfiguration(in: configuration, wallpaper: oversized)
     #expect(throws: MacarchyConfigurationError.self) {
-      _ = try MacarchyConfigurationStore(root: root).load().wallpaperData(
-        themeID: "catppuccin-mocha"
-      )
+      _ = try MacarchyConfigurationStore(root: root).load().personalBackgrounds(
+        themeID: "catppuccin-mocha")
     }
+  }
+
+  @Test
+  func personalWallpaperAdditionsExtendRatherThanReplacePackageInventory() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let wallpaper = repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png")
+    try """
+    schema_version = 2
+
+    [[wallpaper_additions]]
+    theme_id = "catppuccin-mocha"
+    id = "samurai"
+    path = "\(wallpaper.path)"
+    """.write(
+      to: root.appending(path: "config.toml"), atomically: true, encoding: .utf8)
+    let package = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
+    )
+
+    let effective = try MacarchyConfigurationStore(root: root).addingPersonalBackgrounds(
+      to: package)
+
+    #expect(effective.backgrounds.dropLast().map(\.id) == package.backgrounds.map(\.id))
+    #expect(effective.backgrounds.last?.id == "samurai")
+    #expect(effective.backgrounds.last?.origin == .personal)
+    #expect(effective.backgrounds.last?.format == .png)
+    #expect(
+      effective.backgrounds.last.map(effective.data(for:)) == (try Data(contentsOf: wallpaper)))
   }
 
   @Test
@@ -618,7 +645,7 @@ struct ThemeCoreSliceTests {
     try FileManager.default.copyItem(at: source, to: destination)
     let manifest = destination.appending(path: "theme.toml")
     let original = try String(contentsOf: manifest, encoding: .utf8)
-    let updated = original.replacingOccurrences(
+    let replaced = original.replacingOccurrences(
       of: """
         [[backgrounds]]
         id = "default"
@@ -636,6 +663,10 @@ struct ThemeCoreSliceTests {
         license = "MIT"
         """
     )
+    let updated =
+      try #require(
+        replaced.components(separatedBy: "\n\n[[backgrounds]]\nid = \"waves\"").first
+      ) + "\n"
     try #require(updated != original)
     try updated.write(to: manifest, atomically: true, encoding: .utf8)
     try FileManager.default.copyItem(

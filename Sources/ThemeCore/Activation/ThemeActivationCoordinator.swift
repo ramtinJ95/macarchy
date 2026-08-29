@@ -724,6 +724,9 @@ package struct ThemeActivationCoordinator: Sendable {
     recoverActivePreference: Bool
   ) throws -> PreparedThemeBackground {
     let configuration = try configurationStore.load()
+    let effectivePackage = try package.addingPersonalBackgrounds(
+      configuration.personalBackgrounds(themeID: package.id)
+    )
     var preferences = try backgroundPreferences.load()
     if recoverActivePreference,
       let active = try activeManifestIfPresent(),
@@ -739,15 +742,10 @@ package struct ThemeActivationCoordinator: Sendable {
         try backgroundPreferences.persist(preferences)
       }
     }
-    let overrideData =
-      package.backgrounds.isEmpty
-      ? nil
-      : try configuration.wallpaperData(themeID: package.id)
     let background = try BackgroundSelectionResolver.resolve(
-      package: package,
+      package: effectivePackage,
       requestedBackgroundID: requestedBackgroundID,
-      preferences: preferences,
-      overrideData: overrideData
+      preferences: preferences
     )
     for entry in ConsumerCatalog.shared.runtimeEntries {
       switch entry.mode.runtimeKind! {

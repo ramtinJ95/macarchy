@@ -22,7 +22,7 @@ struct ThemeBrowserTests {
           background: GenerationBackground(id: activeBackground.id, format: activeBackground.format)
         )
       },
-      loadWallpaperOverrides: { _, _ in [:] },
+      addPersonalBackgrounds: { _, package in package },
       renderPreview: { ThemePreviewRenderer().render(package: $0) }
     )
 
@@ -71,8 +71,7 @@ struct ThemeBrowserTests {
         label: "Generated palette",
         data: ThemePreviewRenderer().render(package: package).data
       ),
-      initialBackgroundID: first.id,
-      wallpaperOverrideData: nil
+      initialBackgroundID: first.id
     )
     var state = ThemeBrowserState(
       content: ThemeBrowserContent(items: [item], initialThemeID: item.id)
@@ -96,7 +95,7 @@ struct ThemeBrowserTests {
       loadPackages: { _ in [package] },
       loadPreferences: { _ in [:] },
       loadActiveManifest: { _ in nil },
-      loadWallpaperOverrides: { _, _ in [:] },
+      addPersonalBackgrounds: { _, package in package },
       renderPreview: { ThemePreviewRenderer().render(package: $0) }
     ).load(
       repository: repository,
@@ -114,16 +113,28 @@ struct ThemeBrowserTests {
   }
 
   @Test
-  func loaderPreviewsTheEffectivePersonalWallpaperOverride() throws {
+  func loaderAppendsAndPreviewsPersonalBackgrounds() throws {
     let package = try repository.package(id: "catppuccin-mocha")
-    let override = Data("personal-samurai-wallpaper".utf8)
+    let source = try #require(package.backgrounds.first)
+    let personalData = package.data(for: source)
+    let personal = ThemeBackgroundAddition(
+      background: ThemeBackground(
+        id: "samurai",
+        path: "/personal/samurai.webp",
+        source: "Personal wallpaper configured by the user",
+        author: "Personal; not verified",
+        license: "Personal use only; not bundled",
+        format: .webp,
+        origin: .personal
+      ),
+      data: personalData
+    )
     let content = try ThemeBrowserCommandLoader(
       loadPackages: { _ in [package] },
       loadPreferences: { _ in [:] },
       loadActiveManifest: { _ in nil },
-      loadWallpaperOverrides: { _, themeIDs in
-        #expect(themeIDs == [package.id])
-        return [package.id: override]
+      addPersonalBackgrounds: { _, loaded in
+        try loaded.addingPersonalBackgrounds([personal])
       },
       renderPreview: { ThemePreviewRenderer().render(package: $0) }
     ).load(
@@ -132,9 +143,11 @@ struct ThemeBrowserTests {
     )
 
     let item = try #require(content.items.first)
-    let background = try #require(item.backgrounds.first)
-    #expect(item.usesWallpaperOverride)
-    #expect(item.backgroundData(id: background.id) == override)
+    #expect(item.backgrounds.dropLast().map(\.origin).allSatisfy { $0 == .package })
+    #expect(item.backgrounds.last?.id == "samurai")
+    #expect(item.isPersonalBackground(id: "samurai"))
+    #expect(item.backgroundData(id: "samurai") == personalData)
+    #expect(item.backgroundData(id: source.id) == package.data(for: source))
   }
 
   @Test

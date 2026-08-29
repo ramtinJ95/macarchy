@@ -1,22 +1,8 @@
 import Foundation
 import TOMLDecoder
 
-enum WallpaperAssetError: Error, CustomStringConvertible, Sendable {
-  case invalidPNG
-
-  var description: String { "file cannot be decoded as PNG" }
-}
-
-struct WallpaperAsset {
+enum WallpaperAsset {
   static let maximumSize = ThemeImageAsset.maximumSize
-
-  static func load(at url: URL) throws -> Data {
-    do {
-      return try ThemeImageAsset.load(at: url, format: .png)
-    } catch is ThemeImageAssetError {
-      throw WallpaperAssetError.invalidPNG
-    }
-  }
 }
 
 public struct ThemePackageLoader: Sendable {

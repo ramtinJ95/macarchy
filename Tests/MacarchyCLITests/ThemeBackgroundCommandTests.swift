@@ -106,6 +106,9 @@ struct ThemeBackgroundCommandTests {
     )
     let manifestURL = package.appending(path: "theme.toml")
     var manifest = try String(contentsOf: manifestURL, encoding: .utf8)
+    manifest = try #require(
+      manifest.components(separatedBy: "\n\n[[backgrounds]]\nid = \"waves\"").first
+    )
     manifest += """
 
       [[backgrounds]]

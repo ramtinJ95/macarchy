@@ -22,26 +22,73 @@ enum MacarchyConfigurationError: Error, CustomStringConvertible, Sendable {
 private struct MacarchyConfigurationDocument: Decodable {
   let schemaVersion: Int
   let wallpaperOverrides: [String: String]?
+  let wallpaperAdditions: [PersonalWallpaperDocument]?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case wallpaperOverrides = "wallpaper_overrides"
+    case wallpaperAdditions = "wallpaper_additions"
   }
 }
 
-struct MacarchyConfiguration: Sendable {
-  let wallpaperOverrides: [String: String]
+private struct PersonalWallpaperDocument: Decodable {
+  let themeID: String
+  let id: String
+  let path: String
 
-  func wallpaperData(themeID: String) throws -> Data? {
-    guard let path = wallpaperOverrides[themeID] else { return nil }
-    let wallpaperURL = URL(filePath: path).resolvingSymlinksInPath().standardizedFileURL
-    do {
-      return try WallpaperAsset.load(at: wallpaperURL)
-    } catch {
-      throw MacarchyConfigurationError.invalidWallpaperOverride(
-        themeID: themeID,
-        reason: String(describing: error)
-      )
+  enum CodingKeys: String, CodingKey {
+    case themeID = "theme_id"
+    case id, path
+  }
+}
+
+private struct PersonalWallpaper: Sendable {
+  let id: String
+  let path: String
+}
+
+struct ThemeBackgroundAddition: Sendable {
+  let background: ThemeBackground
+  let data: Data
+}
+
+struct MacarchyConfiguration: Sendable {
+  private let wallpaperAdditions: [String: [PersonalWallpaper]]
+
+  fileprivate init(wallpaperAdditions: [String: [PersonalWallpaper]]) {
+    self.wallpaperAdditions = wallpaperAdditions
+  }
+
+  func personalBackgrounds(themeID: String) throws -> [ThemeBackgroundAddition] {
+    try (wallpaperAdditions[themeID] ?? []).map { addition in
+      let id = addition.id
+      let path = addition.path
+      let wallpaperURL = URL(filePath: path).resolvingSymlinksInPath().standardizedFileURL
+      guard let format = ThemeBackgroundFormat(pathExtension: wallpaperURL.pathExtension) else {
+        throw MacarchyConfigurationError.invalidWallpaperOverride(
+          themeID: themeID,
+          reason: "personal background '\(id)' has unsupported image extension"
+        )
+      }
+      do {
+        return ThemeBackgroundAddition(
+          background: ThemeBackground(
+            id: id,
+            path: path,
+            source: "Personal wallpaper configured by the user",
+            author: "Personal; not verified",
+            license: "Personal use only; not bundled",
+            format: format,
+            origin: .personal
+          ),
+          data: try ThemeImageAsset.load(at: wallpaperURL, format: format)
+        )
+      } catch {
+        throw MacarchyConfigurationError.invalidWallpaperOverride(
+          themeID: themeID,
+          reason: "personal background '\(id)' is invalid: \(error)"
+        )
+      }
     }
   }
 }
@@ -53,19 +100,17 @@ package struct MacarchyConfigurationStore: Sendable {
     configurationURL = root.appending(path: "config.toml")
   }
 
-  package func wallpaperData(themeIDs: [String]) throws -> [String: Data] {
+  package func addingPersonalBackgrounds(to package: ThemePackage) throws -> ThemePackage {
     let configuration = try load()
-    return try Dictionary(
-      uniqueKeysWithValues: themeIDs.compactMap { themeID in
-        try configuration.wallpaperData(themeID: themeID).map { (themeID, $0) }
-      }
+    return try package.addingPersonalBackgrounds(
+      configuration.personalBackgrounds(themeID: package.id)
     )
   }
 
   func load() throws -> MacarchyConfiguration {
     var metadata = stat()
     guard lstat(configurationURL.path, &metadata) == 0 else {
-      if errno == ENOENT { return MacarchyConfiguration(wallpaperOverrides: [:]) }
+      if errno == ENOENT { return MacarchyConfiguration(wallpaperAdditions: [:]) }
       throw MacarchyConfigurationError.cannotRead(configurationURL)
     }
 
@@ -86,14 +131,18 @@ package struct MacarchyConfigurationStore: Sendable {
     } catch {
       throw MacarchyConfigurationError.invalid(String(describing: error))
     }
-    let allowedTables = Set(["wallpaper_overrides"])
-    guard Set(index.tables.map(\.path)).isSubset(of: allowedTables) else {
+    guard
+      index.tables.allSatisfy({ table in
+        table.path == "wallpaper_overrides" || table.path == "wallpaper_additions"
+      })
+    else {
       throw MacarchyConfigurationError.invalid("contains an unknown table")
     }
     guard
       index.fields.allSatisfy({ field in
         field.path == "schema_version"
           || field.path.hasPrefix("wallpaper_overrides.")
+          || field.path.hasPrefix("wallpaper_additions.")
       })
     else {
       throw MacarchyConfigurationError.invalid("contains an unknown key")
@@ -105,24 +154,71 @@ package struct MacarchyConfigurationStore: Sendable {
     } catch {
       throw MacarchyConfigurationError.invalid(String(describing: error))
     }
-    guard document.schemaVersion == 1 else {
+    guard [1, 2].contains(document.schemaVersion) else {
       throw MacarchyConfigurationError.invalid(
-        "unsupported schema version \(document.schemaVersion); expected 1"
+        "unsupported schema version \(document.schemaVersion); expected 1 or 2"
       )
     }
 
-    let overrides = document.wallpaperOverrides ?? [:]
-    for (id, path) in overrides {
-      guard ThemeSchema.isThemeID(id) else {
+    if document.schemaVersion == 1, document.wallpaperAdditions != nil {
+      throw MacarchyConfigurationError.invalid(
+        "wallpaper_additions requires schema_version = 2"
+      )
+    }
+    if document.schemaVersion == 2, document.wallpaperOverrides != nil {
+      throw MacarchyConfigurationError.invalid(
+        "wallpaper_overrides was replaced by wallpaper_additions in schema version 2"
+      )
+    }
+
+    var additions: [String: [PersonalWallpaper]] = [:]
+    if document.schemaVersion == 1 {
+      for (themeID, path) in document.wallpaperOverrides ?? [:] {
+        additions[themeID] = [PersonalWallpaper(id: "personal", path: path)]
+      }
+    } else {
+      for addition in document.wallpaperAdditions ?? [] {
+        additions[addition.themeID, default: []].append(
+          PersonalWallpaper(id: addition.id, path: addition.path)
+        )
+      }
+    }
+    for (themeID, backgrounds) in additions {
+      guard ThemeSchema.isThemeID(themeID) else {
         throw MacarchyConfigurationError.invalidWallpaperOverride(
-          themeID: id,
+          themeID: themeID,
           reason: "theme identifier is invalid"
         )
       }
-      try Self.requireAbsolute(path, field: "wallpaper_overrides.\(id)")
+      guard !backgrounds.isEmpty else {
+        throw MacarchyConfigurationError.invalidWallpaperOverride(
+          themeID: themeID,
+          reason: "personal background collection is empty"
+        )
+      }
+      guard Set(backgrounds.map(\.id)).count == backgrounds.count else {
+        throw MacarchyConfigurationError.invalidWallpaperOverride(
+          themeID: themeID,
+          reason: "personal background identifiers must be unique"
+        )
+      }
+      for background in backgrounds {
+        let backgroundID = background.id
+        let path = background.path
+        guard ThemeSchema.isThemeID(backgroundID) else {
+          throw MacarchyConfigurationError.invalidWallpaperOverride(
+            themeID: themeID,
+            reason: "personal background identifier '\(backgroundID)' is invalid"
+          )
+        }
+        try Self.requireAbsolute(
+          path,
+          field: "wallpaper_additions.\(themeID).\(backgroundID)"
+        )
+      }
     }
 
-    return MacarchyConfiguration(wallpaperOverrides: overrides)
+    return MacarchyConfiguration(wallpaperAdditions: additions)
   }
 
   private static func requireAbsolute(_ path: String, field: String) throws {
