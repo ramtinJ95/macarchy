@@ -207,7 +207,10 @@ extension Theme {
       mutating func run() throws {
         let userThemes = URL(filePath: stateRoot, directoryHint: .isDirectory)
           .standardizedFileURL.appending(path: "themes", directoryHint: .isDirectory)
-        let package = try roots.repository(userRoot: userThemes).package(id: themeID)
+        let package = try MacarchyConfigurationStore(root: userThemes.deletingLastPathComponent())
+          .addingPersonalBackgrounds(
+            to: roots.repository(userRoot: userThemes).package(id: themeID)
+          )
         for background in package.backgrounds {
           print("\(background.id)\t\(background.format.rawValue)\t\(background.path)")
         }

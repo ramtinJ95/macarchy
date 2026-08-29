@@ -76,6 +76,30 @@ public struct ThemeBackground: Sendable {
   public let author: String
   public let license: String
   public let format: ThemeBackgroundFormat
+  public let origin: ThemeBackgroundOrigin
+
+  init(
+    id: String,
+    path: String,
+    source: String,
+    author: String,
+    license: String,
+    format: ThemeBackgroundFormat,
+    origin: ThemeBackgroundOrigin = .package
+  ) {
+    self.id = id
+    self.path = path
+    self.source = source
+    self.author = author
+    self.license = license
+    self.format = format
+    self.origin = origin
+  }
+}
+
+public enum ThemeBackgroundOrigin: Equatable, Sendable {
+  case package
+  case personal
 }
 
 public enum ThemeBackgroundFormat: String, Codable, Sendable {
@@ -140,6 +164,33 @@ public struct ThemePackage: Sendable {
       preconditionFailure("Theme package has no default background")
     }
     return data
+  }
+
+  func addingPersonalBackgrounds(_ additions: [ThemeBackgroundAddition]) throws -> ThemePackage {
+    guard !additions.isEmpty else { return self }
+    let collisions = Set(backgrounds.map(\.id)).intersection(additions.map(\.background.id))
+    guard collisions.isEmpty else {
+      throw MacarchyConfigurationError.invalid(
+        "personal background identifiers collide with package backgrounds: "
+          + collisions.sorted().joined(separator: ", ")
+      )
+    }
+    var data = backgroundData
+    for addition in additions {
+      data[addition.background.id] = addition.data
+    }
+    return ThemePackage(
+      packageURL: packageURL,
+      schemaVersion: schemaVersion,
+      id: id,
+      displayName: displayName,
+      appearance: appearance,
+      semantic: semantic,
+      terminal: terminal,
+      backgrounds: backgrounds + additions.map(\.background),
+      backgroundData: data,
+      mappings: mappings
+    )
   }
 
   init(

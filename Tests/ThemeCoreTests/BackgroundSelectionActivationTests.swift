@@ -163,6 +163,9 @@ extension AdapterContractTests {
     try FileManager.default.copyItem(at: source, to: second)
     let manifestURL = packageURL.appending(path: "theme.toml")
     var manifest = try String(contentsOf: manifestURL, encoding: .utf8)
+    manifest = try #require(
+      manifest.components(separatedBy: "\n\n[[backgrounds]]\nid = \"waves\"").first
+    )
     manifest += """
 
       [[backgrounds]]
@@ -184,15 +187,9 @@ extension AdapterContractTests {
     )
     let manifestURL = packageURL.appending(path: "theme.toml")
     let manifest = try String(contentsOf: manifestURL, encoding: .utf8)
-    let background = """
-      [[backgrounds]]
-      id = "default"
-      path = "wallpapers/1-totoro.webp"
-      source = "Omarchy themes/catppuccin/backgrounds/1-totoro.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
-      author = "Omarchy contributors"
-      license = "MIT (Omarchy repository)"
-      """
-    let updated = manifest.replacingOccurrences(of: background, with: "")
+    let updated =
+      try #require(manifest.components(separatedBy: "\n[[backgrounds]]").first)
+      + "\n"
     try #require(updated != manifest)
     try updated.write(to: manifestURL, atomically: true, encoding: .utf8)
     try FileManager.default.removeItem(at: packageURL.appending(path: "LICENSES/wallpaper.md"))

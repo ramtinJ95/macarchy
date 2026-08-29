@@ -158,8 +158,7 @@ struct BackgroundSelectionResolver {
   static func resolve(
     package: ThemePackage,
     requestedBackgroundID: String?,
-    preferences: [String: String],
-    overrideData: Data?
+    preferences: [String: String]
   ) throws -> PreparedThemeBackground {
     guard let first = package.backgrounds.first else {
       if requestedBackgroundID != nil {
@@ -193,9 +192,9 @@ struct BackgroundSelectionResolver {
     return PreparedThemeBackground(
       selection: GenerationBackground(
         id: selected.id,
-        format: overrideData == nil ? selected.format : .png
+        format: selected.format
       ),
-      data: overrideData ?? package.data(for: selected),
+      data: package.data(for: selected),
       notice: notice
     )
   }

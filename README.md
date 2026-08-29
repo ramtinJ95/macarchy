@@ -129,6 +129,24 @@ the Apply button performs one canonical activation of the selected theme and
 background; closing or changing focus without applying leaves state unchanged.
 The personal skhd configuration opens it with Cmd-Shift-T.
 
+Built-in and imported themes may expose any number of validated PNG, JPEG, and
+WebP backgrounds. Personal files can be appended without replacing package
+choices by using schema-2 configuration; they remain local and are copied into
+the immutable generation only when selected:
+
+```toml
+schema_version = 2
+
+[[wallpaper_additions]]
+theme_id = "catppuccin-mocha"
+id = "samurai"
+path = "/absolute/path/to/samurai.png"
+```
+
+Repeat `[[wallpaper_additions]]` with a unique stable ID for additional files.
+Schema-1 `[wallpaper_overrides]` remains readable as one legacy personal
+addition so an upgrade does not hide the package gallery.
+
 `update status` reads cached GitHub release evidence and the locally installed
 Homebrew tap without refreshing either source. `update check` explicitly
 refreshes the GitHub evidence. Macarchy may perform that same conditional

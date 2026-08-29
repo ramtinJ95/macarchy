@@ -813,7 +813,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       let background = item.backgrounds.first(where: { $0.id == backgroundID })
     else { return }
     let index = item.backgrounds.firstIndex(where: { $0.id == backgroundID }) ?? 0
-    let format = item.usesWallpaperOverride ? "png · personal override" : background.format.rawValue
+    let format =
+      item.isPersonalBackground(id: backgroundID)
+      ? "\(background.format.rawValue) · personal"
+      : background.format.rawValue
     backgroundLabel.stringValue =
       "\(index + 1) of \(item.backgrounds.count) · \(background.id) · \(format)"
     backgroundLabel.toolTip = background.path

@@ -389,7 +389,7 @@ extension AdapterContractTests {
   }
 
   @Test
-  func configuredWallpaperBytesFlowThroughActivationIntoTheGeneration() async throws {
+  func selectedPersonalWallpaperBytesFlowThroughActivationIntoTheGeneration() async throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -435,7 +435,10 @@ extension AdapterContractTests {
       wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
 
-    let result = try await coordinator.activate(package: package)
+    let result = try await coordinator.activate(
+      package: package,
+      requestedBackgroundID: "personal"
+    )
     let generated = try Data(
       contentsOf: root.appending(
         path: "generations/\(result.manifest.generationID)/generated/wallpaper.png"

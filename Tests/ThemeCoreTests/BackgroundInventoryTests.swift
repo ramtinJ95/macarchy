@@ -21,8 +21,7 @@ struct BackgroundInventoryTests {
       _ = try BackgroundSelectionResolver.resolve(
         package: package,
         requestedBackgroundID: "missing",
-        preferences: [:],
-        overrideData: nil
+        preferences: [:]
       )
     }
     let rendered = try ThemeRenderer().render(package: package, generationID: "zero-background")
@@ -116,8 +115,7 @@ struct BackgroundInventoryTests {
       _ = try BackgroundSelectionResolver.resolve(
         package: package,
         requestedBackgroundID: "missing",
-        preferences: [:],
-        overrideData: nil
+        preferences: [:]
       )
     }
   }
@@ -209,7 +207,7 @@ struct BackgroundInventoryTests {
     try FileManager.default.copyItem(at: source, to: destination)
     let manifest = destination.appending(path: "theme.toml")
     let original = try String(contentsOf: manifest, encoding: .utf8)
-    let updated = original.replacingOccurrences(
+    let replaced = original.replacingOccurrences(
       of: """
         [[backgrounds]]
         id = "default"
@@ -227,6 +225,10 @@ struct BackgroundInventoryTests {
         license = "MIT"
         """
     )
+    let updated =
+      try #require(
+        replaced.components(separatedBy: "\n\n[[backgrounds]]\nid = \"waves\"").first
+      ) + "\n"
     try #require(updated != original)
     try updated.write(to: manifest, atomically: true, encoding: .utf8)
     try FileManager.default.copyItem(
