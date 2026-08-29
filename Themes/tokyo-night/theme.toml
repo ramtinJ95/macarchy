@@ -6,33 +6,33 @@ appearance = "dark"
 [semantic]
 background = "#1a1b26"
 surface = "#24283b"
-overlay = "#414868"
-border = "#565f89"
-text = "#c0caf5"
-muted_text = "#a9b1d6"
+overlay = "#292e42"
+border = "#414868"
+text = "#a9b1d6"
+muted_text = "#565f89"
 accent = "#7aa2f7"
-selection = "#33467c"
-info = "#7dcfff"
+selection = "#292e42"
+info = "#449dab"
 success = "#9ece6a"
 warning = "#e0af68"
 error = "#f7768e"
 
 [terminal]
-foreground = "#c0caf5"
+foreground = "#a9b1d6"
 background = "#1a1b26"
 cursor = "#c0caf5"
 selection_foreground = "#c0caf5"
-selection_background = "#33467c"
+selection_background = "#292e42"
 ansi = [
-  "#15161e", "#f7768e", "#9ece6a", "#e0af68",
-  "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6",
-  "#414868", "#f7768e", "#9ece6a", "#e0af68",
-  "#7aa2f7", "#bb9af7", "#7dcfff", "#c0caf5",
+  "#1a1b26", "#f7768e", "#9ece6a", "#e0af68",
+  "#7aa2f7", "#ad8ee6", "#449dab", "#a9b1d6",
+  "#414868", "#ff7a93", "#b9f27c", "#ff9e64",
+  "#7da6ff", "#bb9af7", "#0db9d7", "#c0caf5",
 ]
 
 [[backgrounds]]
 id = "default"
-path = "wallpapers/default.png"
-source = "Original Macarchy palette artwork"
-author = "Ramtin Javanmardi"
-license = "MIT"
+path = "wallpapers/0-winding-road.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/0-winding-road.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"

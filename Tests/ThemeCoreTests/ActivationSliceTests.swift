@@ -1041,11 +1041,7 @@ struct ActivationSliceTests {
           path: "generations/\(overrideManifest.generationID)/generated/wallpaper.png"
         )
       )
-        == Data(
-          contentsOf: repositoryRoot.appending(
-            path: "Themes/tokyo-night/wallpapers/default.png"
-          )
-        )
+        == tokyoNightPackage().defaultBackgroundData
     )
   }
 

@@ -9,7 +9,7 @@ enum ThemeImageAssetError: Error, CustomStringConvertible, Sendable {
   var description: String {
     switch self {
     case .mediaTypeMismatch:
-      "the bytes do not decode as the filename's PNG or JPEG type"
+      "the bytes do not decode as the filename's PNG, JPEG, or WebP type"
     case .invalidDimensions:
       "image dimensions must be positive, at most 16384 per side, and at most 64 megapixels"
     case .incompleteDecode:

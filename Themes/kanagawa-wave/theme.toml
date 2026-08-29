@@ -5,34 +5,34 @@ appearance = "dark"
 
 [semantic]
 background = "#1f1f28"
-surface = "#2a2a37"
+surface = "#223249"
 overlay = "#363646"
 border = "#54546d"
 text = "#dcd7ba"
 muted_text = "#727169"
-accent = "#7e9cd8"
-selection = "#2d4f67"
-info = "#7fb4ca"
-success = "#98bb6c"
-warning = "#e6c384"
-error = "#e82424"
+accent = "#dcd7ba"
+selection = "#363646"
+info = "#6a9589"
+success = "#76946a"
+warning = "#c0a36e"
+error = "#c34043"
 
 [terminal]
 foreground = "#dcd7ba"
 background = "#1f1f28"
-cursor = "#c8c093"
-selection_foreground = "#c8c093"
-selection_background = "#2d4f67"
+cursor = "#dcd7ba"
+selection_foreground = "#dcd7ba"
+selection_background = "#363646"
 ansi = [
-  "#16161d", "#c34043", "#76946a", "#c0a36e",
-  "#7e9cd8", "#957fb8", "#6a9589", "#c8c093",
-  "#727169", "#e82424", "#98bb6c", "#e6c384",
+  "#1f1f28", "#c34043", "#76946a", "#c0a36e",
+  "#7e9cd8", "#957fb8", "#6a9589", "#dcd7ba",
+  "#54546d", "#e82424", "#98bb6c", "#e6c384",
   "#7fb4ca", "#938aa9", "#7aa89f", "#dcd7ba",
 ]
 
 [[backgrounds]]
 id = "default"
-path = "wallpapers/default.png"
-source = "Original Macarchy palette artwork"
-author = "Ramtin Javanmardi"
-license = "MIT"
+path = "wallpapers/1-kanagawa.jpg"
+source = "Omarchy themes/kanagawa/backgrounds/1-kanagawa.jpg at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"

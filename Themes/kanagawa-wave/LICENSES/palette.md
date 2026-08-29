@@ -1,4 +1,18 @@
-# Kanagawa Wave palette
+# Omarchy Kanagawa palette
+
+Macarchy's canonical semantic and terminal colors are resolved from Omarchy's
+`themes/kanagawa/colors.toml` using Macarchy's documented Omarchy palette
+conversion. The source is byte-identical at both the M5 compatibility baseline
+and the current parity revision:
+
+- Compatibility baseline: `9285b19d6a72eba3df8537d62a4cd5506a803d89`
+- Parity revision: `0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516`
+- Source: <https://github.com/basecamp/omarchy/blob/0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516/themes/kanagawa/colors.toml>
+- License: MIT; see Omarchy's root `LICENSE`
+
+The package retains the stable `kanagawa-wave` identifier and named-consumer
+mappings. Its earlier directly authored Wave palette was based on the following
+upstream source:
 
 - Upstream: `rebelot/kanagawa.nvim`
 - Revision: `bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3`
@@ -6,9 +20,7 @@
 - License: MIT
 - Source files: `lua/kanagawa/colors.lua` and `extras/kitty/kanagawa.conf`
 
-Macarchy maps the upstream Kanagawa Wave colors into its theme-neutral semantic
-roles and uses the upstream terminal foreground, background, selection, cursor,
-and ANSI 0–15 palette. The upstream MIT license follows.
+The upstream Kanagawa MIT license follows.
 
 > MIT License
 >

@@ -14,11 +14,11 @@
       <key>settings</key>
       <dict>
         <key>background</key><string>#1a1b26</string>
-        <key>foreground</key><string>#c0caf5</string>
+        <key>foreground</key><string>#a9b1d6</string>
         <key>caret</key><string>#c0caf5</string>
-        <key>selection</key><string>#33467c80</string>
+        <key>selection</key><string>#292e4280</string>
         <key>lineHighlight</key><string>#24283b</string>
-        <key>invisibles</key><string>#414868</string>
+        <key>invisibles</key><string>#292e42</string>
       </dict>
     </dict>
     <dict>
@@ -26,7 +26,7 @@
       <key>scope</key><string>comment</string>
       <key>settings</key>
       <dict>
-        <key>foreground</key><string>#a9b1d6</string>
+        <key>foreground</key><string>#565f89</string>
         <key>fontStyle</key><string>italic</string>
       </dict>
     </dict>
@@ -43,7 +43,7 @@
       <key>scope</key><string>constant.numeric, constant.language</string>
       <key>settings</key>
       <dict>
-        <key>foreground</key><string>#7dcfff</string>
+        <key>foreground</key><string>#449dab</string>
       </dict>
     </dict>
     <dict>
@@ -67,7 +67,7 @@
       <key>scope</key><string>entity.name.type, entity.name.class, support.type</string>
       <key>settings</key>
       <dict>
-        <key>foreground</key><string>#7dcfff</string>
+        <key>foreground</key><string>#449dab</string>
       </dict>
     </dict>
     <dict>
@@ -75,7 +75,7 @@
       <key>scope</key><string>variable, variable.other</string>
       <key>settings</key>
       <dict>
-        <key>foreground</key><string>#c0caf5</string>
+        <key>foreground</key><string>#a9b1d6</string>
       </dict>
     </dict>
     <dict>

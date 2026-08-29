@@ -32,7 +32,7 @@ ansi = [
 
 [[backgrounds]]
 id = "default"
-path = "wallpapers/default.png"
-source = "Original Macarchy palette artwork"
-author = "Ramtin Javanmardi"
-license = "MIT"
+path = "wallpapers/1-totoro.webp"
+source = "Omarchy themes/catppuccin/backgrounds/1-totoro.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"

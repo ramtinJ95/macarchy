@@ -3,30 +3,30 @@
   "generation_id" : "golden-kanagawa-wave",
   "schema_version" : 1,
   "semantic" : {
-    "accent" : "#7e9cd8",
+    "accent" : "#dcd7ba",
     "background" : "#1f1f28",
     "border" : "#54546d",
-    "error" : "#e82424",
-    "info" : "#7fb4ca",
+    "error" : "#c34043",
+    "info" : "#6a9589",
     "muted_text" : "#727169",
     "overlay" : "#363646",
-    "selection" : "#2d4f67",
-    "success" : "#98bb6c",
-    "surface" : "#2a2a37",
+    "selection" : "#363646",
+    "success" : "#76946a",
+    "surface" : "#223249",
     "text" : "#dcd7ba",
-    "warning" : "#e6c384"
+    "warning" : "#c0a36e"
   },
   "terminal" : {
     "ansi" : [
-      "#16161d",
+      "#1f1f28",
       "#c34043",
       "#76946a",
       "#c0a36e",
       "#7e9cd8",
       "#957fb8",
       "#6a9589",
-      "#c8c093",
-      "#727169",
+      "#dcd7ba",
+      "#54546d",
       "#e82424",
       "#98bb6c",
       "#e6c384",
@@ -36,10 +36,10 @@
       "#dcd7ba"
     ],
     "background" : "#1f1f28",
-    "cursor" : "#c8c093",
+    "cursor" : "#dcd7ba",
     "foreground" : "#dcd7ba",
-    "selection_background" : "#2d4f67",
-    "selection_foreground" : "#c8c093"
+    "selection_background" : "#363646",
+    "selection_foreground" : "#dcd7ba"
   },
   "theme_id" : "kanagawa-wave"
 }

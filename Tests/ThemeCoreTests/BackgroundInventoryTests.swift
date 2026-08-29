@@ -207,6 +207,32 @@ struct BackgroundInventoryTests {
       path: "Themes/catppuccin-mocha", directoryHint: .isDirectory)
     let destination = root.appending(path: name, directoryHint: .isDirectory)
     try FileManager.default.copyItem(at: source, to: destination)
+    let manifest = destination.appending(path: "theme.toml")
+    let original = try String(contentsOf: manifest, encoding: .utf8)
+    let updated = original.replacingOccurrences(
+      of: """
+        [[backgrounds]]
+        id = "default"
+        path = "wallpapers/1-totoro.webp"
+        source = "Omarchy themes/catppuccin/backgrounds/1-totoro.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+        author = "Omarchy contributors"
+        license = "MIT (Omarchy repository)"
+        """,
+      with: """
+        [[backgrounds]]
+        id = "default"
+        path = "wallpapers/default.png"
+        source = "Original Macarchy palette artwork"
+        author = "Ramtin Javanmardi"
+        license = "MIT"
+        """
+    )
+    try #require(updated != original)
+    try updated.write(to: manifest, atomically: true, encoding: .utf8)
+    try FileManager.default.copyItem(
+      at: repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png"),
+      to: destination.appending(path: "wallpapers/default.png")
+    )
     return destination
   }
 
