@@ -71,6 +71,7 @@ package struct KeybindingComposition: Equatable, Sendable {
 
 package struct KeybindingComposer: Sendable {
   package static let rendererVersion = 1
+  package static let maximumRenderedSize = 1_048_576
 
   package init() {}
 
@@ -239,6 +240,17 @@ package struct KeybindingComposer: Sendable {
     let rendered =
       bindings.map { "\($0.binding.chord) : \($0.binding.command)" }
       .joined(separator: "\n") + "\n"
+    guard rendered.utf8.count <= Self.maximumRenderedSize else {
+      diagnostics.append(
+        KeybindingCompositionDiagnostic(
+          code: "rendered_configuration_too_large",
+          severity: .error,
+          source: profile.overrideURL ?? defaultsSource,
+          message: "rendered skhdrc exceeds the 1 MiB limit"
+        )
+      )
+      return blocked(diagnostics)
+    }
     let inputDigest = canonicalInputDigest(
       bindings: bindings,
       disabledDefaults: disabledDefaults

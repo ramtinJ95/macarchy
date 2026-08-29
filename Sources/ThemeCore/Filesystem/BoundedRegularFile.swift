@@ -9,7 +9,7 @@ package struct BoundedRegularFile {
 
   package static func read(at url: URL, maximumSize: Int = maximumSize) throws -> Self {
     let descriptor = url.path.withCString {
-      Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      Darwin.open($0, O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW)
     }
     guard descriptor >= 0 else {
       throw BoundedRegularFileError.system(operation: "open", code: errno)

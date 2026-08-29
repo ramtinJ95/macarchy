@@ -26,8 +26,13 @@ struct KeybindingProviderInspection: Encodable, Sendable {
 
 struct KeybindingProviderInspector: Sendable {
   static let managedTarget = "../macarchy/keybindings/current/skhdrc"
+  static let ownershipID = "keybindings.skhd-entry"
 
-  func inspect(homeDirectory: URL, stateRoot: URL) -> KeybindingProviderInspection {
+  func inspect(
+    homeDirectory: URL,
+    stateRoot: URL,
+    generation: KeybindingGenerationInspection
+  ) -> KeybindingProviderInspection {
     let home = homeDirectory.standardizedFileURL
     let stateRoot = stateRoot.standardizedFileURL
     let configurationDirectory = home.appending(path: ".config", directoryHint: .isDirectory)
@@ -117,7 +122,9 @@ struct KeybindingProviderInspector: Sendable {
         configurationDescriptor: configurationDescriptor,
         directory: directory,
         entry: entry,
-        expectedTarget: expectedTarget
+        expectedTarget: expectedTarget,
+        stateRoot: stateRoot,
+        generation: generation
       )
     default:
       return result(
@@ -234,7 +241,9 @@ struct KeybindingProviderInspector: Sendable {
     configurationDescriptor: Int32,
     directory: URL,
     entry: URL,
-    expectedTarget: String
+    expectedTarget: String,
+    stateRoot: URL,
+    generation: KeybindingGenerationInspection
   ) -> KeybindingProviderInspection {
     let directoryDescriptor: Int32
     do {
@@ -297,14 +306,51 @@ struct KeybindingProviderInspector: Sendable {
         )
       }
       if target == expectedTarget {
-        return result(
-          .adoptionRequired,
+        switch entryOwnershipClaim(
+          stateRoot: stateRoot,
           entry: entry,
-          expectedTarget: expectedTarget,
-          ownership: "matching_unclaimed_symlink",
-          originalTarget: target,
-          message: "entry-point link matches the plan but has no Macarchy ownership evidence"
-        )
+          expectedTarget: expectedTarget
+        ) {
+        case .claimed:
+          return result(
+            .managed,
+            entry: entry,
+            expectedTarget: expectedTarget,
+            ownership: "manifest_claimed_symlink",
+            originalTarget: target,
+            message: "ownership manifest claims the matching entry-point link"
+          )
+        case .unclaimed:
+          guard generation.status == .current, let configuration = generation.configuration else {
+            return result(
+              .blocked,
+              entry: entry,
+              expectedTarget: expectedTarget,
+              ownership: "matching_unclaimed_unreadable",
+              originalTarget: target,
+              message: "matching unclaimed link has no valid current generation to preview"
+            )
+          }
+          return result(
+            .adoptionRequired,
+            entry: entry,
+            expectedTarget: expectedTarget,
+            ownership: "matching_unclaimed_symlink",
+            source: stateRoot.appending(path: "keybindings/current/skhdrc"),
+            originalTarget: target,
+            message: "entry-point link matches the plan but has no Macarchy ownership evidence",
+            sourceConfiguration: configuration
+          )
+        case .invalid(let message):
+          return result(
+            .blocked,
+            entry: entry,
+            expectedTarget: expectedTarget,
+            ownership: "invalid_ownership_evidence",
+            originalTarget: target,
+            message: message
+          )
+        }
       }
       if target == Self.managedTarget, expectedTarget != Self.managedTarget {
         return result(
@@ -402,6 +448,67 @@ struct KeybindingProviderInspector: Sendable {
     return stateRoot.appending(path: "keybindings/current/skhdrc").path
   }
 
+  private func entryOwnershipClaim(
+    stateRoot: URL,
+    entry: URL,
+    expectedTarget: String
+  ) -> EntryOwnershipClaim {
+    let setupDirectory = stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
+    let manifestURL = setupDirectory.appending(path: "ownership.json")
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: setupDirectory)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return .unclaimed
+    } catch {
+      return .invalid("cannot inspect setup ownership evidence: \(error)")
+    }
+    defer { Darwin.close(descriptor) }
+
+    let data: Data
+    do {
+      data = try PinnedFilesystem.readRegularFile(
+        parentDescriptor: descriptor,
+        name: "ownership.json",
+        url: manifestURL,
+        maximumSize: 65_536
+      ).data
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return .unclaimed
+    } catch {
+      return .invalid("cannot read setup ownership evidence: \(error)")
+    }
+    let manifest: SetupOwnershipManifest
+    do {
+      try SetupOwnershipManager().validateManifestKeys(data)
+      manifest = try JSONDecoder().decode(SetupOwnershipManifest.self, from: data)
+    } catch {
+      return .invalid("setup ownership evidence is invalid: \(error)")
+    }
+    guard manifest.schemaVersion == SetupOwnershipManifest.currentSchemaVersion else {
+      return .invalid("setup ownership evidence has an unsupported schema")
+    }
+    guard Set(manifest.records.map(\.id)).count == manifest.records.count else {
+      return .invalid("setup ownership evidence contains duplicate integration identifiers")
+    }
+    guard let record = manifest.records.first(where: { $0.id == Self.ownershipID }) else {
+      return .unclaimed
+    }
+    guard
+      record.phase == .applied,
+      record.kind == .symbolicLink,
+      record.targetPath == entry.path,
+      record.backupPath == nil,
+      record.originalDigest == nil,
+      record.installedDigest == sha256Digest(Data(expectedTarget.utf8)),
+      record.linkDestination == expectedTarget,
+      record.replacementDigest == nil
+    else {
+      return .invalid("keybinding entry ownership record does not match the provider link")
+    }
+    return .claimed
+  }
+
   private static func resolveSymlink(_ destination: String, relativeTo parent: URL) -> URL {
     if NSString(string: destination).isAbsolutePath {
       return URL(filePath: destination).standardizedFileURL
@@ -430,4 +537,10 @@ struct KeybindingProviderInspector: Sendable {
       sourceConfiguration: sourceConfiguration
     )
   }
+}
+
+private enum EntryOwnershipClaim {
+  case claimed
+  case unclaimed
+  case invalid(String)
 }
