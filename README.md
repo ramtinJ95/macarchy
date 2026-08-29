@@ -89,6 +89,7 @@ macarchy theme next [--dry-run]
 macarchy theme install <github-url> [--dry-run] [--json]
 macarchy theme status [--json]
 macarchy theme get slack
+macarchy keybindings plan [--profile <path>] [--state-root <path>] [--json]
 macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
@@ -117,6 +118,27 @@ metadata-only `~/.config/macarchy/keybindings.toml` catalog. Catalog entries
 are keyed by normalized chord identity and cannot contain commands. The
 keybindings doctor warns about missing or stale metadata and parser/duplicate
 diagnostics, while unreadable or invalid inputs fail explicitly.
+
+`keybindings plan` is the read-only entry point for managed keybindings. It
+composes immutable packaged defaults with an optional sparse native override,
+explicit disabled default identities, and an optional metadata-only overlay.
+The default portable profile is `~/.config/macarchy/profile.toml`; an absent
+default profile means packaged defaults, while an explicit missing `--profile`
+is an error. Relative input paths resolve beside the resolved profile source:
+
+```toml
+schema_version = 1
+
+[keybindings]
+override = "keybindings.skhdrc"
+metadata = "keybindings-metadata.toml"
+disabled = ["alt-m"]
+```
+
+The plan reports replacement, addition, disablement, source attribution,
+deterministic effective bytes, current-generation state, and provider-entry
+ownership in human or JSON form. It never publishes a generation, changes
+`~/.config/skhd`, reloads skhd, or executes a configured command.
 
 `keybindings show` opens the same correlated rows in a short-lived searchable
 AppKit popup. The popup follows the active Macarchy theme, supports keyboard

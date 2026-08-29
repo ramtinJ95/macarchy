@@ -19,6 +19,8 @@ mkdir -p "$temporary_directory/home" "$temporary_directory/work"
 [[ -x "$binary" ]]
 [[ -f "$metadata" ]]
 [[ -d "$layout/share/macarchy/themes" ]]
+[[ -f "$layout/share/macarchy/keybindings/defaults.skhdrc" ]]
+[[ -f "$layout/share/macarchy/keybindings/metadata.toml" ]]
 [[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
@@ -35,6 +37,8 @@ print -r -- "$signature" | grep -q '^Signature=adhoc$'
   print "share/doc/macarchy/LICENSE"
   git -C "$repository_root" ls-files -- Themes \
     | sed 's#^Themes/#share/macarchy/themes/#'
+  git -C "$repository_root" ls-files -- Keybindings \
+    | sed 's#^Keybindings/#share/macarchy/keybindings/#'
 } | LC_ALL=C sort > "$temporary_directory/expected-inventory.txt"
 (
   cd "$layout"
