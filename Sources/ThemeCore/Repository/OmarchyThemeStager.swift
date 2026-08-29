@@ -127,8 +127,8 @@ public enum OmarchyThemeStagingError: Error, CustomStringConvertible, Equatable,
 
 public struct OmarchyThemeStager: Sendable {
   private static let maximumDiagnosticBytes = 4_096
-  private static let maximumStagingBytes: Int64 = 256 * 1_048_576
-  private static let maximumStagingEntries = 10_000
+  package static let maximumStagingBytes: Int64 = 256 * 1_048_576
+  package static let maximumStagingEntries = 10_000
   private static let gitExecutableURL = URL(filePath: "/usr/bin/git")
   private static let gitEnvironmentRemovals: Set<String> = [
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
