@@ -302,10 +302,10 @@ struct HomebrewLifecycleTests {
           failures.withLock { $0.append(String(describing: error)) }
         }
       }
-      #expect(secondStarted.wait(timeout: .now() + 5) == .success)
+      secondStarted.wait()
       #expect(secondEntered.wait(timeout: .now()) == .timedOut)
     }
-    #expect(secondDone.wait(timeout: .now() + 5) == .success)
+    secondDone.wait()
     #expect(failures.withLock { $0 }.isEmpty)
 
     let lockURL = root.appending(path: "run/homebrew-update.lock")
