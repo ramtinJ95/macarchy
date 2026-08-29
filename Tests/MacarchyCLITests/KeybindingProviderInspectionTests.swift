@@ -20,7 +20,7 @@ struct KeybindingProviderInspectionTests {
       withDestinationURL: fixture.dotfiles
     )
 
-    let inspection = inspector.inspect(homeDirectory: fixture.home)
+    let inspection = inspect(fixture)
 
     #expect(inspection.status == .adoptionRequired)
     #expect(inspection.ownership == "directory_symlink")
@@ -43,14 +43,14 @@ struct KeybindingProviderInspectionTests {
       withDestinationURL: fixture.dotfiles
     )
 
-    let inspection = inspector.inspect(homeDirectory: fixture.home)
+    let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
     #expect(inspection.message.contains("partial.skhdrc"))
   }
 
   @Test
-  func exactManagedEntryLinkIsAConvergedProviderSeam() throws {
+  func matchingEntryLinkRemainsUnclaimedWithoutOwnershipEvidence() throws {
     let fixture = try fixtureHome()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     try FileManager.default.createDirectory(
@@ -62,10 +62,76 @@ struct KeybindingProviderInspectionTests {
       withDestinationPath: KeybindingProviderInspector.managedTarget
     )
 
-    let inspection = inspector.inspect(homeDirectory: fixture.home)
+    let inspection = inspect(fixture)
 
-    #expect(inspection.status == .managed)
-    #expect(inspection.ownership == "managed_symlink")
+    #expect(inspection.status == .adoptionRequired)
+    #expect(inspection.ownership == "matching_unclaimed_symlink")
+  }
+
+  @Test
+  func symlinkedConfigurationAncestorBlocksInspection() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let configuration = fixture.home.appending(path: ".config", directoryHint: .isDirectory)
+    try FileManager.default.removeItem(at: configuration)
+    let external = fixture.root.appending(path: "external-config", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: configuration, withDestinationURL: external)
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "unsafe_ancestor")
+  }
+
+  @Test
+  func danglingDirectoryLevelEntrySymlinkBlocksAdoption() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createSymbolicLink(
+      atPath: fixture.dotfiles.appending(path: "skhdrc").path,
+      withDestinationPath: "missing.skhdrc"
+    )
+    try FileManager.default.createSymbolicLink(
+      at: fixture.skhdDirectory,
+      withDestinationURL: fixture.dotfiles
+    )
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.message.contains("not a bounded regular file"))
+  }
+
+  @Test
+  func selectedStateRootMustMatchTheExistingProviderLink() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory,
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createSymbolicLink(
+      atPath: fixture.skhdDirectory.appending(path: "skhdrc").path,
+      withDestinationPath: KeybindingProviderInspector.managedTarget
+    )
+
+    let inspection = inspector.inspect(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.root.appending(path: "other-state", directoryHint: .isDirectory)
+    )
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "state_root_mismatch")
+  }
+
+  private func inspect(
+    _ fixture: (root: URL, home: URL, dotfiles: URL, skhdDirectory: URL)
+  ) -> KeybindingProviderInspection {
+    inspector.inspect(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    )
   }
 
   private func fixtureHome() throws -> (

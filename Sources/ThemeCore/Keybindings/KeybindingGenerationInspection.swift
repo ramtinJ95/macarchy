@@ -32,10 +32,41 @@ package struct KeybindingGenerationInspector: Sendable {
       directoryHint: .isDirectory
     )
     let current = keybindingsRoot.appending(path: "current")
-    var currentMetadata = stat()
-    guard lstat(current.path, &currentMetadata) == 0 else {
-      if errno == ENOENT { return .missing }
-      return invalid("cannot inspect current pointer: \(Self.systemError(errno))")
+    let stateDescriptor: Int32
+    do {
+      stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return .missing
+    } catch {
+      return invalid("cannot open pinned state root: \(error)")
+    }
+    defer { Darwin.close(stateDescriptor) }
+
+    let keybindingsDescriptor: Int32
+    do {
+      keybindingsDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: stateDescriptor,
+        name: "keybindings",
+        url: keybindingsRoot
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return .missing
+    } catch {
+      return invalid("cannot open pinned keybinding state: \(error)")
+    }
+    defer { Darwin.close(keybindingsDescriptor) }
+
+    let currentMetadata: stat
+    do {
+      currentMetadata = try PinnedFilesystem.metadata(
+        parentDescriptor: keybindingsDescriptor,
+        name: "current",
+        url: current
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return .missing
+    } catch {
+      return invalid("cannot inspect current pointer: \(error)")
     }
     guard currentMetadata.st_mode & S_IFMT == S_IFLNK else {
       return invalid("current is not a symbolic link")
@@ -43,7 +74,11 @@ package struct KeybindingGenerationInspector: Sendable {
 
     let destination: String
     do {
-      destination = try FileManager.default.destinationOfSymbolicLink(atPath: current.path)
+      destination = try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: keybindingsDescriptor,
+        name: "current",
+        url: current
+      )
     } catch {
       return invalid("cannot read current pointer: \(error)")
     }
@@ -56,15 +91,40 @@ package struct KeybindingGenerationInspector: Sendable {
       return invalid("current generation identity is invalid")
     }
 
-    let generation = keybindingsRoot.appending(
-      path: destination,
+    let generationsRoot = keybindingsRoot.appending(
+      path: "generations",
       directoryHint: .isDirectory
     )
+    let generationsDescriptor: Int32
+    do {
+      generationsDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: keybindingsDescriptor,
+        name: "generations",
+        url: generationsRoot
+      )
+    } catch {
+      return invalid("cannot open pinned generations directory: \(error)")
+    }
+    defer { Darwin.close(generationsDescriptor) }
+
+    let generation = generationsRoot.appending(
+      path: generationID,
+      directoryHint: .isDirectory
+    )
+    let generationDescriptor: Int32
+    do {
+      generationDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: generationsDescriptor,
+        name: generationID,
+        url: generation
+      )
+    } catch {
+      return invalid("cannot open pinned current generation: \(error)")
+    }
+    defer { Darwin.close(generationDescriptor) }
     var generationMetadata = stat()
-    guard lstat(generation.path, &generationMetadata) == 0,
-      generationMetadata.st_mode & S_IFMT == S_IFDIR
-    else {
-      return invalid("current generation directory is missing or unsafe")
+    guard fstat(generationDescriptor, &generationMetadata) == 0 else {
+      return invalid("cannot inspect current generation directory: \(Self.systemError(errno))")
     }
     guard generationMetadata.st_mode & 0o222 == 0 else {
       return invalid("current generation directory is writable")
@@ -73,7 +133,12 @@ package struct KeybindingGenerationInspector: Sendable {
     let manifestURL = generation.appending(path: "manifest.json")
     let manifestData: Data
     do {
-      let file = try BoundedRegularFile.read(at: manifestURL, maximumSize: 65_536)
+      let file = try PinnedFilesystem.readRegularFile(
+        parentDescriptor: generationDescriptor,
+        name: "manifest.json",
+        url: manifestURL,
+        maximumSize: 65_536
+      )
       guard file.permissions & 0o222 == 0 else {
         return invalid("current generation manifest is writable")
       }
@@ -110,7 +175,11 @@ package struct KeybindingGenerationInspector: Sendable {
 
     let configurationURL = generation.appending(path: "skhdrc")
     do {
-      let file = try BoundedRegularFile.read(at: configurationURL)
+      let file = try PinnedFilesystem.readRegularFile(
+        parentDescriptor: generationDescriptor,
+        name: "skhdrc",
+        url: configurationURL
+      )
       guard file.permissions & 0o222 == 0 else {
         return invalid("current generated skhdrc is writable")
       }

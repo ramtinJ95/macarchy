@@ -6,14 +6,16 @@ struct KeybindingsPlanCommandRunner: Sendable {
   let loadProfile: @Sendable (URL, Bool) throws -> KeybindingProfile
   let loadCatalog: @Sendable (URL) throws -> SkhdKeybindingCatalog
   let inspectGeneration: @Sendable (URL) -> KeybindingGenerationInspection
-  let inspectProvider: @Sendable (URL) -> KeybindingProviderInspection
+  let inspectProvider: @Sendable (URL, URL) -> KeybindingProviderInspection
 
   static let live = KeybindingsPlanCommandRunner(
     read: readSkhdConfiguration,
     loadProfile: { try KeybindingProfileLoader().load(at: $0, required: $1) },
     loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },
     inspectGeneration: { KeybindingGenerationInspector().inspect(stateRoot: $0) },
-    inspectProvider: { KeybindingProviderInspector().inspect(homeDirectory: $0) }
+    inspectProvider: {
+      KeybindingProviderInspector().inspect(homeDirectory: $0, stateRoot: $1)
+    }
   )
 
   func execute(
@@ -27,7 +29,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     let defaultsURL = resourcesRoot.appending(path: "defaults.skhdrc")
     let defaultMetadataURL = resourcesRoot.appending(path: "metadata.toml")
     let generation = inspectGeneration(stateRoot)
-    let provider = inspectProvider(homeDirectory)
+    let provider = inspectProvider(homeDirectory, stateRoot)
     var diagnostics: [KeybindingsPlanDiagnostic] = []
 
     let defaultsText: String?
@@ -164,17 +166,20 @@ struct KeybindingsPlanCommandRunner: Sendable {
       )
     }
 
+    let adoptionDelta = adoptionDelta(
+      provider: provider,
+      composition: composition,
+      diagnostics: &diagnostics
+    )
+
     let rendered = composition?.renderedConfiguration
     let renderedDigest = composition?.renderedDigest
-    let proposedInputDigest = rendered.map {
-      sha256Digest(
-        Data("renderer_version=\(KeybindingComposer.rendererVersion)\n\($0)".utf8)
-      )
-    }
+    let proposedInputDigest = composition?.inputDigest
     let actions = plannedActions(
       generation: generation,
       provider: provider,
       renderedDigest: renderedDigest,
+      inputDigest: proposedInputDigest,
       isBlocked: diagnostics.contains { $0.severity == "error" }
     )
     let outcome: String
@@ -212,6 +217,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       proposedInputDigest: proposedInputDigest,
       generation: KeybindingsPlanGeneration(generation),
       provider: provider,
+      adoptionDelta: adoptionDelta,
       actions: actions,
       diagnostics: diagnostics.sorted(by: KeybindingsPlanDiagnostic.order)
     )
@@ -222,11 +228,15 @@ struct KeybindingsPlanCommandRunner: Sendable {
     generation: KeybindingGenerationInspection,
     provider: KeybindingProviderInspection,
     renderedDigest: String?,
+    inputDigest: String?,
     isBlocked: Bool
   ) -> [KeybindingsPlanAction] {
-    guard !isBlocked, let renderedDigest else { return [] }
+    guard !isBlocked, let renderedDigest, let inputDigest else { return [] }
     var actions: [KeybindingsPlanAction] = []
-    if generation.status == .missing || generation.renderedDigest != renderedDigest {
+    if generation.status == .missing
+      || generation.renderedDigest != renderedDigest
+      || generation.inputDigest != inputDigest
+    {
       actions.append(
         KeybindingsPlanAction(
           id: "publish_generation",
@@ -260,6 +270,64 @@ struct KeybindingsPlanCommandRunner: Sendable {
     }
     return actions
   }
+
+  private func adoptionDelta(
+    provider: KeybindingProviderInspection,
+    composition: KeybindingComposition?,
+    diagnostics: inout [KeybindingsPlanDiagnostic]
+  ) -> KeybindingsAdoptionDelta? {
+    guard
+      provider.status == .adoptionRequired,
+      let source = provider.source,
+      let sourceConfiguration = provider.sourceConfiguration,
+      let composition,
+      !composition.isBlocked
+    else { return nil }
+
+    let parsed = SkhdConfigurationParser().parse(sourceConfiguration)
+    if !parsed.diagnostics.isEmpty {
+      diagnostics.append(
+        contentsOf: parsed.diagnostics.map {
+          KeybindingsPlanDiagnostic(
+            $0,
+            source: URL(filePath: source)
+          )
+        }
+      )
+      return nil
+    }
+    let existing = Dictionary(
+      uniqueKeysWithValues: parsed.bindings.map { ($0.identity, $0.command) }
+    )
+    let proposed = Dictionary(
+      uniqueKeysWithValues: composition.bindings.map {
+        ($0.binding.identity, $0.binding.command)
+      }
+    )
+    let existingIdentities = Set(existing.keys)
+    let proposedIdentities = Set(proposed.keys)
+    let added = proposedIdentities.subtracting(existingIdentities).sorted().map {
+      KeybindingsAdoptionChange(identity: $0, existingCommand: nil, proposedCommand: proposed[$0])
+    }
+    let removed = existingIdentities.subtracting(proposedIdentities).sorted().map {
+      KeybindingsAdoptionChange(identity: $0, existingCommand: existing[$0], proposedCommand: nil)
+    }
+    let changed = existingIdentities.intersection(proposedIdentities).sorted().compactMap {
+      identity -> KeybindingsAdoptionChange? in
+      guard existing[identity] != proposed[identity] else { return nil }
+      return KeybindingsAdoptionChange(
+        identity: identity,
+        existingCommand: existing[identity],
+        proposedCommand: proposed[identity]
+      )
+    }
+    return KeybindingsAdoptionDelta(
+      source: source,
+      added: added,
+      removed: removed,
+      changed: changed
+    )
+  }
 }
 
 private struct KeybindingsPlanReport: Encodable {
@@ -276,6 +344,7 @@ private struct KeybindingsPlanReport: Encodable {
   let proposedInputDigest: String?
   let generation: KeybindingsPlanGeneration
   let provider: KeybindingProviderInspection
+  let adoptionDelta: KeybindingsAdoptionDelta?
   let actions: [KeybindingsPlanAction]
   let diagnostics: [KeybindingsPlanDiagnostic]
 
@@ -290,7 +359,11 @@ private struct KeybindingsPlanReport: Encodable {
       "- user replacements: \(summary.userReplacements)",
       "- user additions: \(summary.userAdditions)",
       "- disabled defaults: \(summary.disabledDefaults)",
+      "- proposed input digest: \(proposedInputDigest ?? "unavailable")",
+      "- rendered digest: \(renderedDigest ?? "unavailable")",
       "- generation [\(generation.status)]: \(generation.message)",
+      "- current input digest: \(generation.currentInputDigest ?? "none")",
+      "- current rendered digest: \(generation.currentRenderedDigest ?? "none")",
       "- provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
     ]
     if !bindings.isEmpty {
@@ -304,6 +377,14 @@ private struct KeybindingsPlanReport: Encodable {
     if !disabledDefaults.isEmpty {
       lines.append("Disabled packaged defaults:")
       lines.append(contentsOf: disabledDefaults.map { "- \($0.identity): \($0.command)" })
+    }
+    if let adoptionDelta {
+      lines.append(
+        "Adoption delta from \(adoptionDelta.source): "
+          + "\(adoptionDelta.added.count) added, \(adoptionDelta.removed.count) removed, "
+          + "\(adoptionDelta.changed.count) changed"
+      )
+      lines.append(contentsOf: adoptionDelta.humanLines)
     }
     if actions.isEmpty {
       lines.append("Actions: none")
@@ -320,6 +401,10 @@ private struct KeybindingsPlanReport: Encodable {
             ?? diagnostic.source
           return "- \(location): \(diagnostic.severity) [\(diagnostic.code)]: \(diagnostic.message)"
         })
+    }
+    if let renderedSkhdrc {
+      lines.append(
+        "Rendered skhdrc:\n--- begin exact bytes ---\n\(renderedSkhdrc)--- end exact bytes ---")
     }
     lines.append("No changes made.")
     return lines.joined(separator: "\n")
@@ -404,12 +489,14 @@ private struct KeybindingsPlanDisabled: Encodable {
 private struct KeybindingsPlanGeneration: Encodable {
   let status: String
   let generationID: String?
+  let currentInputDigest: String?
   let currentRenderedDigest: String?
   let message: String
 
   init(_ inspection: KeybindingGenerationInspection) {
     status = inspection.status.rawValue
     generationID = inspection.generationID
+    currentInputDigest = inspection.inputDigest
     currentRenderedDigest = inspection.renderedDigest
     switch inspection.status {
     case .missing:
@@ -420,6 +507,27 @@ private struct KeybindingsPlanGeneration: Encodable {
       message = inspection.message ?? "current generation is invalid"
     }
   }
+}
+
+private struct KeybindingsAdoptionDelta: Encodable {
+  let source: String
+  let added: [KeybindingsAdoptionChange]
+  let removed: [KeybindingsAdoptionChange]
+  let changed: [KeybindingsAdoptionChange]
+
+  var humanLines: [String] {
+    added.map { "- add \($0.identity): \($0.proposedCommand ?? "")" }
+      + removed.map { "- remove \($0.identity): \($0.existingCommand ?? "")" }
+      + changed.map {
+        "- change \($0.identity): \($0.existingCommand ?? "") -> \($0.proposedCommand ?? "")"
+      }
+  }
+}
+
+private struct KeybindingsAdoptionChange: Encodable {
+  let identity: String
+  let existingCommand: String?
+  let proposedCommand: String?
 }
 
 private struct KeybindingsPlanAction: Encodable {
@@ -462,6 +570,18 @@ private struct KeybindingsPlanDiagnostic: Encodable {
       line: diagnostic.line,
       relatedLine: diagnostic.relatedLine,
       identity: diagnostic.identity,
+      message: diagnostic.message
+    )
+  }
+
+  init(_ diagnostic: SkhdDiagnostic, source: URL) {
+    self.init(
+      code: diagnostic.code.rawValue,
+      severity: "error",
+      source: source.path,
+      line: diagnostic.line,
+      relatedLine: diagnostic.relatedLine,
+      identity: nil,
       message: diagnostic.message
     )
   }

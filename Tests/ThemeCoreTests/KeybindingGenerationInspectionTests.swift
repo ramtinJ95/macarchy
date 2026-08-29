@@ -63,6 +63,25 @@ struct KeybindingGenerationInspectionTests {
     #expect(inspection.message?.contains("digest does not match") == true)
   }
 
+  @Test
+  func symlinkedKeybindingStateAncestorIsInvalid() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
+    let external = root.appending(path: "external/keybindings", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: stateRoot.appending(path: "keybindings", directoryHint: .isDirectory),
+      withDestinationURL: external
+    )
+
+    let inspection = inspector.inspect(stateRoot: stateRoot)
+
+    #expect(inspection.status == .invalid)
+    #expect(inspection.message?.contains("pinned keybinding state") == true)
+  }
+
   private func publishFixture(
     stateRoot: URL,
     expectedConfiguration: String,
