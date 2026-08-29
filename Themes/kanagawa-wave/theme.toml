@@ -36,3 +36,10 @@ path = "wallpapers/1-kanagawa.jpg"
 source = "Omarchy themes/kanagawa/backgrounds/1-kanagawa.jpg at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
 author = "Omarchy contributors"
 license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "omarchy"
+path = "wallpapers/omarchy.webp"
+source = "Omarchy themes/kanagawa/backgrounds/omarchy.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"

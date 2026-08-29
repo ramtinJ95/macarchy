@@ -36,3 +36,52 @@ path = "wallpapers/0-winding-road.webp"
 source = "Omarchy themes/tokyo-night/backgrounds/0-winding-road.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
 author = "Omarchy contributors"
 license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "quattro"
+path = "wallpapers/1-quattro.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/1-quattro.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "swirl-buck"
+path = "wallpapers/2-swirl-buck.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/2-swirl-buck.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "sunset-lake"
+path = "wallpapers/3-sunset-lake.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/3-sunset-lake.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "omakub"
+path = "wallpapers/4-omakub.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/4-omakub.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "oma-cityscape"
+path = "wallpapers/5-oma-cityscape.jpg"
+source = "Omarchy themes/tokyo-night/backgrounds/5-oma-cityscape.jpg at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "oma"
+path = "wallpapers/6-oma.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/6-oma.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "omarchy"
+path = "wallpapers/omarchy.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/omarchy.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
