@@ -7,6 +7,35 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-29
+
+### Added
+
+- Added ordered background inventories with remembered per-theme selections
+  and `theme background current`, `set`, and `next` commands.
+- Added deterministic generated palette previews and validated, lazily loaded
+  preview galleries for imported themes.
+- Added `macarchy theme browse`, a theme-aware AppKit picker with search,
+  keyboard theme, preview, and wallpaper navigation, and explicit Apply.
+
+### Changed
+
+- Generation manifests now record the selected background, its actual media
+  type, and a separate non-background theme digest.
+- Changing only the active theme's background reconciles wallpaper without
+  reloading unrelated consumers. Themes without backgrounds deliberately leave
+  wallpaper unmanaged.
+- Imported themes use one explicit `[[backgrounds]]` contract. Packages created
+  with the older `[wallpaper]` contract must be reinstalled.
+
+### Fixed
+
+- Wallpaper reconciliation rereads canonical intent under the activation lock,
+  applies every display on AppKit's required thread, and preserves lazy
+  inactive-Space convergence.
+- Large imported wallpapers are decoded into bounded thumbnails off the AppKit
+  event thread so keyboard browsing remains responsive.
+
 ## [0.3.1] - 2026-08-29
 
 ### Added
@@ -164,7 +193,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ramtinJ95/macarchy/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ramtinJ95/macarchy/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ramtinJ95/macarchy/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/ramtinJ95/macarchy/compare/v0.2.1...v0.2.2
