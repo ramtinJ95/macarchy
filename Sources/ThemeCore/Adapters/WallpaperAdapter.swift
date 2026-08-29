@@ -39,48 +39,59 @@ struct WallpaperControl: Sendable {
 
   static let live = Self(
     inspect: {
-      try NSScreen.screens.map { screen in
-        let name = screen.localizedName
-        guard
-          let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-            as? NSNumber
-        else {
-          throw WallpaperAdapterError.missingDisplayID(name)
+      try onMainThread {
+        try NSScreen.screens.map { screen in
+          let name = screen.localizedName
+          guard
+            let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+              as? NSNumber
+          else {
+            throw WallpaperAdapterError.missingDisplayID(name)
+          }
+          guard let wallpaperURL = NSWorkspace.shared.desktopImageURL(for: screen) else {
+            throw WallpaperAdapterError.unreadableWallpaper(name)
+          }
+          guard NSWorkspace.shared.desktopImageOptions(for: screen) != nil else {
+            throw WallpaperAdapterError.unreadableOptions(name)
+          }
+          return WallpaperDisplay(
+            id: number.uint32Value,
+            name: name,
+            wallpaperURL: wallpaperURL
+          )
         }
-        guard let wallpaperURL = NSWorkspace.shared.desktopImageURL(for: screen) else {
-          throw WallpaperAdapterError.unreadableWallpaper(name)
-        }
-        guard NSWorkspace.shared.desktopImageOptions(for: screen) != nil else {
-          throw WallpaperAdapterError.unreadableOptions(name)
-        }
-        return WallpaperDisplay(
-          id: number.uint32Value,
-          name: name,
-          wallpaperURL: wallpaperURL
-        )
       }
     },
     set: { wallpaperURL, displayID in
-      guard
-        let screen = NSScreen.screens.first(where: { screen in
-          let number =
-            screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
-            as? NSNumber
-          return number?.uint32Value == displayID
-        })
-      else {
-        throw WallpaperAdapterError.unavailableDisplay(displayID)
+      try onMainThread {
+        guard
+          let screen = NSScreen.screens.first(where: { screen in
+            let number =
+              screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+              as? NSNumber
+            return number?.uint32Value == displayID
+          })
+        else {
+          throw WallpaperAdapterError.unavailableDisplay(displayID)
+        }
+        guard let options = NSWorkspace.shared.desktopImageOptions(for: screen) else {
+          throw WallpaperAdapterError.unreadableOptions(screen.localizedName)
+        }
+        try NSWorkspace.shared.setDesktopImageURL(
+          wallpaperURL,
+          for: screen,
+          options: options
+        )
       }
-      guard let options = NSWorkspace.shared.desktopImageOptions(for: screen) else {
-        throw WallpaperAdapterError.unreadableOptions(screen.localizedName)
-      }
-      try NSWorkspace.shared.setDesktopImageURL(
-        wallpaperURL,
-        for: screen,
-        options: options
-      )
     }
   )
+
+  private static func onMainThread<Value: Sendable>(
+    _ operation: @escaping @Sendable () throws -> Value
+  ) throws -> Value {
+    if Thread.isMainThread { return try operation() }
+    return try DispatchQueue.main.sync(execute: operation)
+  }
 }
 
 struct WallpaperAdapter: Sendable {
@@ -147,11 +158,20 @@ struct WallpaperAdapter: Sendable {
   }
 
   func reconciliation(
-    desiredWallpaperURL: @escaping @Sendable () throws -> URL
+    desiredWallpaperURL: @escaping @Sendable () throws -> URL?
   ) -> AdapterReconciliation {
     AdapterReconciliation(id: Self.id, requirement: .required) {
-      let preparation: (URL, [WallpaperDisplay], AdapterOutcome?) = try activationLock.withLock {
-        let desiredWallpaperURL = try desiredWallpaperURL()
+      let preparation: (URL?, [WallpaperDisplay], AdapterOutcome?) = try activationLock.withLock {
+        guard let desiredWallpaperURL = try desiredWallpaperURL() else {
+          return (
+            nil,
+            [],
+            AdapterOutcome(
+              status: .disabled,
+              message: "This theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
+            )
+          )
+        }
         let before = try preflight()
         for display in before
         where !Self.sameFile(display.wallpaperURL, desiredWallpaperURL) {
@@ -172,6 +192,9 @@ struct WallpaperAdapter: Sendable {
       }
       let (desiredWallpaperURL, before, failure) = preparation
       if let failure { return failure }
+      guard let desiredWallpaperURL else {
+        preconditionFailure("Managed wallpaper preparation must return a desired URL")
+      }
 
       // Settling only observes state; release the lock so it cannot delay other live adapters.
       var drifted = [WallpaperDisplay]()

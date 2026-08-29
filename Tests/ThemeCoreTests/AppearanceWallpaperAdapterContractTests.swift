@@ -177,6 +177,32 @@ extension AdapterContractTests {
   }
 
   @Test
+  func wallpaperLeavesUnmanagedThemesUntouched() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let inspections = Mutex(0)
+    let writes = Mutex(0)
+    let adapter = WallpaperAdapter(
+      root: root,
+      control: WallpaperControl(
+        inspect: {
+          inspections.withLock { $0 += 1 }
+          return []
+        },
+        set: { _, _ in writes.withLock { $0 += 1 } }
+      )
+    )
+    let reconciliation = adapter.reconciliation { nil }
+
+    let result = try await reconciliation.run()
+
+    #expect(result.status == .disabled)
+    #expect(result.message?.contains("intentionally unmanaged") == true)
+    #expect(inspections.withLock { $0 } == 0)
+    #expect(writes.withLock { $0 } == 0)
+  }
+
+  @Test
   func yabaiWallpaperSignalRequiresTheStableExecutableAndExactDirective() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
