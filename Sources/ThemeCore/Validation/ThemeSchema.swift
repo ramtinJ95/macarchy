@@ -13,18 +13,43 @@ enum ThemeSchema {
       "foreground", "background", "cursor", "selection_foreground",
       "selection_background", "ansi",
     ],
-    "wallpaper": ["path", "source", "author", "license"],
+    "backgrounds": ["id", "path", "source", "author", "license"],
   ]
 
   static let requiredThemePaths: Set<String> = Set(
-    themeKeys.flatMap { table, keys in
+    themeKeys.filter { $0.key != "backgrounds" }.flatMap { table, keys in
       keys.map { table.isEmpty ? $0 : "\(table).\($0)" }
     }
   )
 
   static func validateThemeShape(index: TOMLSourceIndex, file: URL) throws {
+    if let table = index.tables.first(where: { $0.path == "wallpaper" }) {
+      throw ThemeDiagnostic(
+        location: .init(file: file, line: table.line, column: table.column),
+        field: table.path,
+        message:
+          "Theme packages using [wallpaper] must be reinstalled to use [[backgrounds]]"
+      )
+    }
     try validateKnownTables(
       index: index, allowed: Set(themeKeys.keys).subtracting([""]), file: file)
+
+    if let table = index.tables.first(where: { $0.path == "backgrounds" && !$0.isArray }) {
+      throw ThemeDiagnostic(
+        location: .init(file: file, line: table.line, column: table.column),
+        field: table.path,
+        message: "Background inventory entries must use [[backgrounds]] array tables"
+      )
+    }
+
+    let backgroundCount = index.tables.count { $0.path == "backgrounds" }
+    guard backgroundCount > 0 else {
+      throw ThemeDiagnostic(
+        location: .init(file: file),
+        field: "backgrounds",
+        message: "Theme manifests require at least one [[backgrounds]] entry"
+      )
+    }
 
     for field in index.fields {
       let parts = field.path.split(separator: ".", maxSplits: 1).map(String.init)
@@ -46,6 +71,14 @@ enum ThemeSchema {
         field: missing,
         message: "Missing required schema key"
       )
+    }
+
+    for key in themeKeys["backgrounds", default: []].sorted() {
+      let path = "backgrounds.\(key)"
+      guard index.fields.count(where: { $0.path == path }) == backgroundCount else {
+        throw ThemeDiagnostic(
+          location: .init(file: file), field: path, message: "Missing required schema key")
+      }
     }
   }
 

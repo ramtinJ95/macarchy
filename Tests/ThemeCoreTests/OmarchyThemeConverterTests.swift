@@ -71,6 +71,16 @@ struct OmarchyThemeConverterTests {
           "backgrounds/shiny_purple.png",
         ])
     #expect(
+      converted.package.backgrounds.map(\.path) == converted.report.backgrounds.map(\.packagePath))
+    #expect(converted.package.backgrounds.map(\.format) == [.png, .jpeg, .png])
+    #expect(
+      converted.package.backgrounds.map(\.id)
+        == [
+          "background-1-scenery-pink-lakeside-sunset-lake-landscape-scenic-panorama-7680x3215-144-png-a4883efe",
+          "digital-mountain-jpg-b5291928",
+          "shiny-purple-png-01e119c2",
+        ])
+    #expect(
       converted.report.previews.map(\.sourcePath)
         == [
           "preview.png", "preview/preview-0.png", "preview/preview-1.png",
@@ -120,7 +130,7 @@ struct OmarchyThemeConverterTests {
   }
 
   @Test
-  func convertsAJPEGDefaultIntoTheSchemaV1PNGWallpaper() throws {
+  func keepsAJPEGDefaultAsTheCanonicalBackgroundBytes() throws {
     let fixture = try ConversionFixture()
     defer { fixture.remove() }
     try fixture.addValidInputs()
@@ -133,10 +143,13 @@ struct OmarchyThemeConverterTests {
 
     let converted = try fixture.convert()
     #expect(converted.report.defaultBackground == "backgrounds/digital-mountain.jpg")
-    let wallpaper = try Data(
-      contentsOf: converted.package.packageURL.appending(path: "wallpapers/default.png"))
-    let source = try #require(CGImageSourceCreateWithData(wallpaper as CFData, nil))
-    #expect((CGImageSourceGetType(source) as String?) == "public.png")
+    #expect(converted.package.backgrounds.map(\.format) == [.jpeg])
+    #expect(
+      converted.package.defaultBackgroundData
+        == (try Data(
+          contentsOf: converted.package.packageURL.appending(
+            path: "backgrounds/digital-mountain.jpg")))
+    )
   }
 
   @Test

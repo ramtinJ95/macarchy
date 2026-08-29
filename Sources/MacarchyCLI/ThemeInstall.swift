@@ -71,8 +71,7 @@ struct ThemeInstallCommandRunner: Sendable {
     do {
       try validateCollision(
         themeID: parsedSource.themeID,
-        repository: repository,
-        userThemesRoot: userThemesRoot
+        repository: repository
       )
       _ = try installer.wouldReplace(
         themeID: parsedSource.themeID,
@@ -120,8 +119,7 @@ struct ThemeInstallCommandRunner: Sendable {
       return try await ThemePackageLock(root: stateRoot).withLock {
         try validateCollision(
           themeID: converted.package.id,
-          repository: repository,
-          userThemesRoot: userThemesRoot
+          repository: repository
         )
         let installation = try installer.install(
           package: converted.package,
@@ -199,16 +197,9 @@ struct ThemeInstallCommandRunner: Sendable {
 
   private func validateCollision(
     themeID: String,
-    repository: ThemeRepository,
-    userThemesRoot: URL
+    repository: ThemeRepository
   ) throws {
-    let destination = userThemesRoot.appending(
-      path: themeID,
-      directoryHint: .isDirectory
-    ).standardizedFileURL
-    let collision = try repository.packages().first { package in
-      package.id == themeID && package.packageURL.standardizedFileURL != destination
-    }
+    let collision = try repository.builtInPackage(id: themeID)
     guard let collision else {
       return
     }

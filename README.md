@@ -77,6 +77,7 @@ Useful commands:
 
 ```sh
 macarchy theme list
+macarchy theme background list <theme-id> [--state-root <path>]
 macarchy theme set <theme-id> [--dry-run]
 macarchy theme next [--dry-run]
 macarchy theme install <github-url> [--dry-run] [--json]
@@ -146,6 +147,11 @@ commit, and imports only palette data, supported files directly under
 fail validation. Scripts, hooks, executables, Lua, application overrides,
 templates, nested backgrounds, and unknown active configuration are ignored,
 named in the report, and never executed or installed.
+
+Each valid package exposes an ordered background inventory with explicit stable
+IDs. PNG and JPEG entries are fully decoded within the documented image bounds.
+Theme packages created by an older Macarchy release with a `[wallpaper]` table
+must be reinstalled so the importer rebuilds them with `[[backgrounds]]`.
 
 Reinstalling the same URL validates the replacement before atomically swapping
 the package and activating it. A failure before canonical commit restores the

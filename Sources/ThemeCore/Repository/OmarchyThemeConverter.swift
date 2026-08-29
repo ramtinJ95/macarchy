@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import ImageIO
 
 public enum OmarchyIgnoredFileReason: String, Codable, Equatable, Sendable {
   case applicationOverride = "application_override"
@@ -96,14 +95,6 @@ public enum OmarchyThemeConversionError: Error, CustomStringConvertible, Equatab
 }
 
 public struct OmarchyThemeConverter: Sendable {
-  private static let maximumImageDimension = 16_384
-  private static let maximumImagePixels = 64_000_000
-  private static let supportedExtensions = [
-    "jpeg": "public.jpeg",
-    "jpg": "public.jpeg",
-    "png": "public.png",
-  ]
-
   private let stager: OmarchyThemeStager
 
   public init() {
@@ -186,8 +177,7 @@ public struct OmarchyThemeConverter: Sendable {
         at: transaction,
         staged: staged,
         palette: palette,
-        classified: classified,
-        defaultBackground: firstBackground
+        classified: classified
       )
       let report = Self.report(
         staged: staged,
@@ -220,7 +210,6 @@ public struct OmarchyThemeConverter: Sendable {
   private struct LoadedImage {
     let sourcePath: String
     let packagePath: String
-    let mediaType: String
     let data: Data
   }
 
@@ -234,7 +223,7 @@ public struct OmarchyThemeConverter: Sendable {
   private struct ImportTarget {
     let packagePath: String
     let isBackground: Bool
-    let mediaType: String
+    let format: ThemeBackgroundFormat
   }
 
   private static func inventory(checkout: URL) throws -> [InventoryFile] {
@@ -323,27 +312,27 @@ public struct OmarchyThemeConverter: Sendable {
 
       let parts = file.path.split(separator: "/")
       let ext = URL(filePath: file.path).pathExtension.lowercased()
-      let supportedType = supportedExtensions[ext]
+      let supportedFormat = ThemeBackgroundFormat(pathExtension: ext)
       let target: ImportTarget?
-      if parts.count == 2, parts[0] == "backgrounds", let supportedType {
+      if parts.count == 2, parts[0] == "backgrounds", let supportedFormat {
         target = ImportTarget(
           packagePath: "backgrounds/\(parts[1])",
           isBackground: true,
-          mediaType: supportedType
+          format: supportedFormat
         )
       } else if parts.count == 1, parts[0].lowercased() == "preview.\(ext)",
-        let supportedType
+        let supportedFormat
       {
         target = ImportTarget(
           packagePath: "previews/\(parts[0])",
           isBackground: false,
-          mediaType: supportedType
+          format: supportedFormat
         )
-      } else if parts.count == 2, parts[0] == "preview", let supportedType {
+      } else if parts.count == 2, parts[0] == "preview", let supportedFormat {
         target = ImportTarget(
           packagePath: "previews/\(parts[1])",
           isBackground: false,
-          mediaType: supportedType
+          format: supportedFormat
         )
       } else {
         target = nil
@@ -384,7 +373,7 @@ public struct OmarchyThemeConverter: Sendable {
       let image = try loadImage(
         sourcePath: file.path,
         packagePath: target.packagePath,
-        expectedType: target.mediaType,
+        expectedFormat: target.format,
         checkout: checkout
       )
       if target.isBackground {
@@ -405,66 +394,25 @@ public struct OmarchyThemeConverter: Sendable {
   private static func loadImage(
     sourcePath: String,
     packagePath: String,
-    expectedType: String,
+    expectedFormat: ThemeBackgroundFormat,
     checkout: URL
   ) throws -> LoadedImage {
     let data: Data
     do {
-      data = try BoundedRegularFile.read(
+      data = try ThemeImageAsset.load(
         at: checkout.appending(path: sourcePath),
-        maximumSize: WallpaperAsset.maximumSize
-      ).data
+        format: expectedFormat
+      )
     } catch {
       throw OmarchyThemeConversionError.invalidAsset(
         path: sourcePath,
         reason: String(describing: error)
       )
     }
-    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-      CGImageSourceGetCount(source) > 0,
-      (CGImageSourceGetType(source) as String?) == expectedType
-    else {
-      throw OmarchyThemeConversionError.invalidAsset(
-        path: sourcePath,
-        reason: "the bytes do not decode as the filename's PNG or JPEG type"
-      )
-    }
-    guard
-      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-      let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
-      let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
-      width > 0, height > 0,
-      width <= maximumImageDimension, height <= maximumImageDimension,
-      width.multipliedReportingOverflow(by: height).overflow == false,
-      width * height <= maximumImagePixels
-    else {
-      throw OmarchyThemeConversionError.invalidAsset(
-        path: sourcePath,
-        reason:
-          "image dimensions must be positive, at most 16384 per side, and at most 64 megapixels"
-      )
-    }
-    let decodeOptions =
-      [
-        kCGImageSourceShouldCache: true,
-        kCGImageSourceShouldCacheImmediately: true,
-      ] as CFDictionary
-    guard let image = CGImageSourceCreateImageAtIndex(source, 0, decodeOptions),
-      CGImageSourceGetStatus(source) == .statusComplete,
-      CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
-      let provider = image.dataProvider,
-      provider.data != nil
-    else {
-      throw OmarchyThemeConversionError.invalidAsset(
-        path: sourcePath,
-        reason: "ImageIO cannot fully decode the image"
-      )
-    }
 
     return LoadedImage(
       sourcePath: sourcePath,
       packagePath: packagePath,
-      mediaType: expectedType,
       data: data
     )
   }
@@ -473,10 +421,9 @@ public struct OmarchyThemeConverter: Sendable {
     at package: URL,
     staged: StagedOmarchyTheme,
     palette: OmarchyPaletteConversion,
-    classified: Classified,
-    defaultBackground: LoadedImage
+    classified: Classified
   ) throws {
-    for directory in ["sources", "backgrounds", "previews", "wallpapers", "LICENSES"] {
+    for directory in ["sources", "backgrounds", "previews", "LICENSES"] {
       try FileManager.default.createDirectory(
         at: package.appending(path: directory, directoryHint: .isDirectory),
         withIntermediateDirectories: false
@@ -491,15 +438,7 @@ public struct OmarchyThemeConverter: Sendable {
       try image.data.write(to: package.appending(path: image.packagePath))
     }
 
-    let defaultPNG = try pngData(from: defaultBackground)
-    guard defaultPNG.count <= WallpaperAsset.maximumSize else {
-      throw OmarchyThemeConversionError.invalidAsset(
-        path: defaultBackground.sourcePath,
-        reason: "the converted PNG exceeds the 32 MiB wallpaper limit"
-      )
-    }
-    try defaultPNG.write(to: package.appending(path: "wallpapers/default.png"))
-    try themeManifest(staged: staged, palette: palette).write(
+    try themeManifest(staged: staged, palette: palette, backgrounds: classified.backgrounds).write(
       to: package.appending(path: "theme.toml"),
       atomically: false,
       encoding: .utf8
@@ -526,41 +465,10 @@ public struct OmarchyThemeConverter: Sendable {
     )
   }
 
-  private static func pngData(from image: LoadedImage) throws -> Data {
-    if image.mediaType == "public.png" { return image.data }
-    guard let source = CGImageSourceCreateWithData(image.data as CFData, nil) else {
-      throw OmarchyThemeConversionError.invalidAsset(
-        path: image.sourcePath,
-        reason: "cannot reopen the selected JPEG"
-      )
-    }
-    let output = NSMutableData()
-    guard
-      let destination = CGImageDestinationCreateWithData(
-        output as CFMutableData,
-        "public.png" as CFString,
-        1,
-        nil
-      )
-    else {
-      throw OmarchyThemeConversionError.invalidAsset(
-        path: image.sourcePath,
-        reason: "cannot prepare the default PNG conversion"
-      )
-    }
-    CGImageDestinationAddImageFromSource(destination, source, 0, nil)
-    guard CGImageDestinationFinalize(destination) else {
-      throw OmarchyThemeConversionError.invalidAsset(
-        path: image.sourcePath,
-        reason: "cannot convert the selected default image to PNG"
-      )
-    }
-    return output as Data
-  }
-
   private static func themeManifest(
     staged: StagedOmarchyTheme,
-    palette: OmarchyPaletteConversion
+    palette: OmarchyPaletteConversion,
+    backgrounds: [LoadedImage]
   ) -> String {
     let semantic = palette.semantic
     let terminal = palette.terminal
@@ -568,6 +476,16 @@ public struct OmarchyThemeConverter: Sendable {
     let displayName = staged.themeID.split(separator: "-").map { part in
       part.prefix(1).uppercased() + part.dropFirst()
     }.joined(separator: " ")
+    let backgroundEntries = backgrounds.map { background in
+      """
+      [[backgrounds]]
+      id = "\(backgroundID(for: background.packagePath))"
+      path = "\(background.packagePath)"
+      source = "\(staged.sourceURL.absoluteString) at \(staged.resolvedCommit)"
+      author = "Not verified by the safe importer"
+      license = "Not verified; personal use only"
+      """
+    }.joined(separator: "\n\n")
     return """
       schema_version = 1
       id = "\(staged.themeID)"
@@ -598,12 +516,26 @@ public struct OmarchyThemeConverter: Sendable {
       \(ansi),
       ]
 
-      [wallpaper]
-      path = "wallpapers/default.png"
-      source = "\(staged.sourceURL.absoluteString) at \(staged.resolvedCommit)"
-      author = "Not verified by the safe importer"
-      license = "Not verified; personal use only"
+      \(backgroundEntries)
       """ + "\n"
+  }
+
+  private static func backgroundID(for packagePath: String) -> String {
+    var slug = ""
+    var previousWasSeparator = false
+    for character in URL(filePath: packagePath).lastPathComponent.lowercased() {
+      if character.isASCII, character.isLetter || character.isNumber {
+        slug.append(character)
+        previousWasSeparator = false
+      } else if !previousWasSeparator, !slug.isEmpty {
+        slug.append("-")
+        previousWasSeparator = true
+      }
+    }
+    if slug.last == "-" { slug.removeLast() }
+    if slug.first?.isLetter != true { slug = "background-\(slug)" }
+    let digest = sha256Digest(Data(packagePath.utf8)).dropFirst("sha256:".count).prefix(8)
+    return "\(slug)-\(digest)"
   }
 
   private static func report(

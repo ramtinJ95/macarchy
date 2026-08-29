@@ -669,7 +669,7 @@ package struct ThemeActivationCoordinator: Sendable {
     let configuration = try configurationStore.load()
     let wallpaperData =
       try configuration.wallpaperData(themeID: package.id)
-      ?? package.wallpaperData
+      ?? package.defaultBackgroundData
     for entry in ConsumerCatalog.shared.runtimeEntries {
       switch entry.mode.runtimeKind! {
       case .macOSAppearance:

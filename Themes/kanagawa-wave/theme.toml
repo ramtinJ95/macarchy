@@ -30,7 +30,8 @@ ansi = [
   "#7fb4ca", "#938aa9", "#7aa89f", "#dcd7ba",
 ]
 
-[wallpaper]
+[[backgrounds]]
+id = "default"
 path = "wallpapers/default.png"
 source = "Original Macarchy palette artwork"
 author = "Ramtin Javanmardi"

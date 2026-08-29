@@ -7,14 +7,22 @@ struct ThemeDocument: Decodable {
   let appearance: String
   let semantic: RawSemanticColors
   let terminal: RawTerminalColors
-  let wallpaper: ThemeWallpaper
+  let backgrounds: [RawThemeBackground]
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case id
     case displayName = "display_name"
-    case appearance, semantic, terminal, wallpaper
+    case appearance, semantic, terminal, backgrounds
   }
+}
+
+struct RawThemeBackground: Decodable {
+  let id: String
+  let path: String
+  let source: String
+  let author: String
+  let license: String
 }
 
 struct RawSemanticColors: Decodable {

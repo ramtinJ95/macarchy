@@ -69,11 +69,33 @@ public struct TerminalColors: Codable, Sendable {
   }
 }
 
-public struct ThemeWallpaper: Codable, Sendable {
+public struct ThemeBackground: Sendable {
+  public let id: String
   public let path: String
   public let source: String
   public let author: String
   public let license: String
+  public let format: ThemeBackgroundFormat
+}
+
+public enum ThemeBackgroundFormat: String, Sendable {
+  case jpeg
+  case png
+
+  init?(pathExtension: String) {
+    switch pathExtension.lowercased() {
+    case "jpeg", "jpg": self = .jpeg
+    case "png": self = .png
+    default: return nil
+    }
+  }
+
+  var mediaType: String {
+    switch self {
+    case .jpeg: "public.jpeg"
+    case .png: "public.png"
+    }
+  }
 }
 
 public struct ThemePackage: Sendable {
@@ -84,9 +106,49 @@ public struct ThemePackage: Sendable {
   public let appearance: ThemeAppearance
   public let semantic: SemanticColors
   public let terminal: TerminalColors
-  public let wallpaper: ThemeWallpaper
-  let wallpaperData: Data
+  public let backgrounds: [ThemeBackground]
+  let backgroundData: [String: Data]
   public let mappings: [String: String]
+
+  var defaultBackgroundData: Data {
+    guard let first = backgrounds.first, let data = backgroundData[first.id] else {
+      preconditionFailure("Theme package is missing its default background data")
+    }
+    return data
+  }
+
+  init(
+    packageURL: URL,
+    schemaVersion: Int,
+    id: String,
+    displayName: String,
+    appearance: ThemeAppearance,
+    semantic: SemanticColors,
+    terminal: TerminalColors,
+    backgrounds: [ThemeBackground],
+    backgroundData: [String: Data],
+    mappings: [String: String]
+  ) {
+    precondition(!backgrounds.isEmpty, "Theme packages require at least one background")
+    precondition(
+      Set(backgrounds.map(\.id)).count == backgrounds.count,
+      "Theme package background identifiers must be unique"
+    )
+    precondition(
+      Set(backgroundData.keys) == Set(backgrounds.map(\.id)),
+      "Theme package background data must exactly cover its inventory"
+    )
+    self.packageURL = packageURL
+    self.schemaVersion = schemaVersion
+    self.id = id
+    self.displayName = displayName
+    self.appearance = appearance
+    self.semantic = semantic
+    self.terminal = terminal
+    self.backgrounds = backgrounds
+    self.backgroundData = backgroundData
+    self.mappings = mappings
+  }
 }
 
 public struct NormalizedTheme: Codable, Sendable {

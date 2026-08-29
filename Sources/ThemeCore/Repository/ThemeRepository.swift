@@ -10,8 +10,16 @@ public struct ThemeRepository: Sendable {
   }
 
   public func packages() throws -> [ThemePackage] {
+    try loadPackages(in: [builtInRoot, userRoot].compactMap { $0 })
+  }
+
+  package func builtInPackage(id: String) throws -> ThemePackage? {
+    try loadPackages(in: [builtInRoot]).first { $0.id == id }
+  }
+
+  private func loadPackages(in roots: [URL]) throws -> [ThemePackage] {
     var packages: [ThemePackage] = []
-    for root in [builtInRoot, userRoot].compactMap({ $0 }) {
+    for root in roots {
       let children: [URL]
       do {
         children = try FileManager.default.contentsOfDirectory(
