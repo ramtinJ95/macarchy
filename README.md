@@ -1,5 +1,9 @@
 # Macarchy
 
+[![Macarchy theme browser preview](Media/macarchy-preview.jpg)](Media/macarchy-preview.mp4)
+
+[Watch the 38-second Macarchy preview.](Media/macarchy-preview.mp4)
+
 Macarchy makes a macOS desktop follow one coherent theme. A single command
 selects the canonical palette, regenerates application themes, and updates each
 supported surface at its best proven boundary: live when possible, otherwise on
