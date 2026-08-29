@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import ImageIO
+import Synchronization
 import ThemeCore
 
 @MainActor
@@ -40,9 +42,9 @@ private final class ThemeBrowserWindow: NSWindow {
 
 @MainActor
 private final class ThemeBrowserTableRowView: NSTableRowView {
-  let normalTextColor: NSColor
-  let selectedTextColor: NSColor
-  let selectedBackgroundColor: NSColor
+  private var normalTextColor: NSColor
+  private var selectedTextColor: NSColor
+  private var selectedBackgroundColor: NSColor
 
   init(normalTextColor: NSColor, selectedTextColor: NSColor, selectedBackgroundColor: NSColor) {
     self.normalTextColor = normalTextColor
@@ -58,15 +60,31 @@ private final class ThemeBrowserTableRowView: NSTableRowView {
 
   override var isSelected: Bool {
     didSet {
-      for case let cell as NSTableCellView in subviews {
-        cell.textField?.textColor = isSelected ? selectedTextColor : normalTextColor
-      }
+      updateTextColor()
     }
+  }
+
+  func updatePalette(
+    normalTextColor: NSColor,
+    selectedTextColor: NSColor,
+    selectedBackgroundColor: NSColor
+  ) {
+    self.normalTextColor = normalTextColor
+    self.selectedTextColor = selectedTextColor
+    self.selectedBackgroundColor = selectedBackgroundColor
+    updateTextColor()
+    needsDisplay = true
   }
 
   override func drawSelection(in dirtyRect: NSRect) {
     selectedBackgroundColor.setFill()
     NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 2), xRadius: 6, yRadius: 6).fill()
+  }
+
+  private func updateTextColor() {
+    for case let cell as NSTableCellView in subviews {
+      cell.textField?.textColor = isSelected ? selectedTextColor : normalTextColor
+    }
   }
 }
 
@@ -114,6 +132,48 @@ private enum ThemeBrowserGalleryOutcome: Sendable {
   case failed(String)
 }
 
+enum ThemeBrowserImageDecoder {
+  static func thumbnail(data: Data, maximumPixelSize: Int) -> CGImage? {
+    guard
+      let source = CGImageSourceCreateWithData(data as CFData, nil),
+      maximumPixelSize > 0
+    else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+      kCGImageSourceShouldCacheImmediately: true,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+  }
+}
+
+private enum ThemeBrowserImageOutcome: Sendable {
+  case failed
+  case loaded(CGImage)
+}
+
+private struct ThemeBrowserBackgroundImageKey {
+  let themeID: String
+  let backgroundID: String
+
+  var cacheKey: NSString {
+    "\(themeID)\u{0}\(backgroundID)" as NSString
+  }
+}
+
+private final class ThemeBrowserAsyncResult<Value: Sendable>: Sendable {
+  private let storage = Mutex<Value?>(nil)
+
+  func complete(_ value: Value) {
+    storage.withLock { $0 = value }
+  }
+
+  func value() -> Value? {
+    storage.withLock { $0 }
+  }
+}
+
 @MainActor
 final class ThemeBrowserWindowController: NSWindowController, NSApplicationDelegate,
   NSSearchFieldDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate
@@ -129,6 +189,14 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private var previews: [ThemeBrowserPreview] = []
   private var previewIndex = 0
   private var galleryTask: Task<Void, Never>?
+  private var galleryResult: ThemeBrowserAsyncResult<ThemeBrowserGalleryOutcome>?
+  private var galleryTimer: Timer?
+  private var galleryThemeID: String?
+  private var backgroundImageTask: Task<Void, Never>?
+  private var backgroundImageResult: ThemeBrowserAsyncResult<ThemeBrowserImageOutcome>?
+  private var backgroundImageTimer: Timer?
+  private var backgroundImageKey: ThemeBrowserBackgroundImageKey?
+  private let backgroundImageCache = NSCache<NSString, NSImage>()
   private var applyProcess: ThemeBrowserApplyProcessLauncher.RunningProcess?
   private var applyTimer: Timer?
   private var isApplying = false
@@ -165,6 +233,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     self.galleryLoader = galleryLoader
     self.launchSelection = launchSelection
     browserState = ThemeBrowserState(content: content)
+    backgroundImageCache.countLimit = 24
+    backgroundImageCache.totalCostLimit = 96 * 1_024 * 1_024
 
     guard let visibleFrame = Self.activeScreen()?.visibleFrame else {
       throw ThemeBrowserError.noActiveDisplay
@@ -204,7 +274,11 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       }
     }
     configureContent(in: window)
-    selectTheme(id: browserState.selectedThemeID)
+    if let initialRow = browserState.visibleItems.firstIndex(where: {
+      $0.id == browserState.selectedThemeID
+    }) {
+      selectVisibleRow(initialRow)
+    }
   }
 
   @available(*, unavailable)
@@ -236,6 +310,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
   func windowWillClose(_ notification: Notification) {
     galleryTask?.cancel()
+    galleryTimer?.invalidate()
+    backgroundImageTask?.cancel()
+    backgroundImageTimer?.invalidate()
     applyTimer?.invalidate()
   }
 
@@ -609,11 +686,6 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private func selectTheme(id: String) {
     guard let item = content.item(id: id) else { return }
     browserState.selectTheme(id: id)
-    let selectedRow = browserState.visibleItems.firstIndex(where: { $0.id == id })
-    if let selectedRow, tableView.selectedRow != selectedRow {
-      tableView.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)
-      tableView.scrollRowToVisible(selectedRow)
-    }
     window?.appearance = NSAppearance(named: item.appearance == .dark ? .darkAqua : .aqua)
     window?.backgroundColor = item.package.semantic.background.nsColor
     rootView.layer?.backgroundColor = item.package.semantic.background.nsColor.cgColor
@@ -626,7 +698,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     statusLabel.textColor = item.package.semantic.mutedText.nsColor
     keyboardHelp.textColor = item.package.semantic.mutedText.nsColor
     statusLabel.stringValue = "Browsing is local. Only Apply changes the active theme."
-    tableView.reloadData()
+    updateVisibleThemeRowPalette(item: item)
     previews = [item.generatedPreview]
     previewIndex = 0
     updatePreviewPresentation()
@@ -636,30 +708,52 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
   private func loadGallery(for item: ThemeBrowserItem) {
     galleryTask?.cancel()
-    let selectedID = item.id
+    galleryTimer?.invalidate()
+    let result = ThemeBrowserAsyncResult<ThemeBrowserGalleryOutcome>()
+    galleryResult = result
+    galleryThemeID = item.id
     previewLabel.stringValue = "Generated palette · loading gallery…"
     let loader = galleryLoader
-    galleryTask = Task { @MainActor [weak self] in
-      let outcome = await Task.detached(priority: .userInitiated) {
-        do {
-          return ThemeBrowserGalleryOutcome.loaded(try loader.load(item: item))
-        } catch {
-          return ThemeBrowserGalleryOutcome.failed(String(describing: error))
-        }
-      }.value
-      guard let self, !Task.isCancelled, browserState.selectedThemeID == selectedID else { return }
-      switch outcome {
-      case .loaded(let imported):
-        previews = [item.generatedPreview] + imported
-        previewIndex = min(previewIndex, previews.count - 1)
-        updatePreviewPresentation()
-      case .failed(let reason):
-        previews = [item.generatedPreview]
-        previewIndex = 0
-        updatePreviewPresentation()
-        statusLabel.textColor = item.package.semantic.error.nsColor
-        statusLabel.stringValue = "Imported preview gallery failed validation: \(reason)"
+    galleryTask = Task.detached(priority: .userInitiated) {
+      guard !Task.isCancelled else { return }
+      do {
+        result.complete(.loaded(try loader.load(item: item)))
+      } catch {
+        result.complete(.failed(String(describing: error)))
       }
+    }
+    galleryTimer = Timer.scheduledTimer(
+      timeInterval: 0.05,
+      target: self,
+      selector: #selector(checkGalleryResult(_:)),
+      userInfo: nil,
+      repeats: true
+    )
+  }
+
+  @objc private func checkGalleryResult(_ timer: Timer) {
+    guard let outcome = galleryResult?.value() else { return }
+    timer.invalidate()
+    galleryTask = nil
+    galleryTimer = nil
+    galleryResult = nil
+    defer { galleryThemeID = nil }
+    guard
+      let galleryThemeID,
+      browserState.selectedThemeID == galleryThemeID,
+      let item = selectedItem
+    else { return }
+    switch outcome {
+    case .loaded(let imported):
+      previews = [item.generatedPreview] + imported
+      previewIndex = min(previewIndex, previews.count - 1)
+      updatePreviewPresentation()
+    case .failed(let reason):
+      previews = [item.generatedPreview]
+      previewIndex = 0
+      updatePreviewPresentation()
+      statusLabel.textColor = item.package.semantic.error.nsColor
+      statusLabel.stringValue = "Imported preview gallery failed validation: \(reason)"
     }
   }
 
@@ -718,7 +812,6 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     guard let backgroundID = browserState.selection.backgroundID,
       let background = item.backgrounds.first(where: { $0.id == backgroundID })
     else { return }
-    backgroundImageView.image = item.backgroundData(id: backgroundID).flatMap(NSImage.init(data:))
     let index = item.backgrounds.firstIndex(where: { $0.id == backgroundID }) ?? 0
     backgroundLabel.stringValue =
       "\(index + 1) of \(item.backgrounds.count) · \(background.id) · \(background.format.rawValue)"
@@ -727,11 +820,84 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     let navigable = item.backgrounds.count > 1
     previousBackgroundButton.isEnabled = navigable
     nextBackgroundButton.isEnabled = navigable
+    loadBackgroundImage(item: item, backgroundID: backgroundID)
+  }
+
+  private func loadBackgroundImage(item: ThemeBrowserItem, backgroundID: String) {
+    backgroundImageTask?.cancel()
+    backgroundImageTimer?.invalidate()
+    let key = ThemeBrowserBackgroundImageKey(themeID: item.id, backgroundID: backgroundID)
+    backgroundImageKey = key
+    if let cached = backgroundImageCache.object(forKey: key.cacheKey) {
+      backgroundImageView.image = cached
+      return
+    }
+    backgroundImageView.image = nil
+    guard let data = item.backgroundData(id: backgroundID) else {
+      showBackgroundDecodeFailure(item: item, backgroundID: backgroundID)
+      return
+    }
+    let result = ThemeBrowserAsyncResult<ThemeBrowserImageOutcome>()
+    backgroundImageResult = result
+    backgroundImageTask = Task.detached(priority: .userInitiated) {
+      do {
+        try await Task.sleep(for: .milliseconds(75))
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      let image = ThemeBrowserImageDecoder.thumbnail(data: data, maximumPixelSize: 1_200)
+      result.complete(image.map(ThemeBrowserImageOutcome.loaded) ?? .failed)
+    }
+    backgroundImageTimer = Timer.scheduledTimer(
+      timeInterval: 0.03,
+      target: self,
+      selector: #selector(checkBackgroundImageResult(_:)),
+      userInfo: nil,
+      repeats: true
+    )
+  }
+
+  @objc private func checkBackgroundImageResult(_ timer: Timer) {
+    guard let outcome = backgroundImageResult?.value() else { return }
+    timer.invalidate()
+    backgroundImageTask = nil
+    backgroundImageTimer = nil
+    backgroundImageResult = nil
+    guard
+      let key = backgroundImageKey,
+      browserState.selectedThemeID == key.themeID,
+      browserState.selection.backgroundID == key.backgroundID,
+      let item = selectedItem
+    else { return }
+    switch outcome {
+    case .loaded(let image):
+      let decoded = NSImage(
+        cgImage: image,
+        size: NSSize(width: image.width, height: image.height)
+      )
+      backgroundImageCache.setObject(
+        decoded,
+        forKey: key.cacheKey,
+        cost: image.bytesPerRow * image.height
+      )
+      backgroundImageView.image = decoded
+    case .failed:
+      showBackgroundDecodeFailure(item: item, backgroundID: key.backgroundID)
+    }
+  }
+
+  private func showBackgroundDecodeFailure(item: ThemeBrowserItem, backgroundID: String) {
+    statusLabel.textColor = item.package.semantic.error.nsColor
+    statusLabel.stringValue =
+      "Cannot render background '\(backgroundID)' for theme '\(item.id)'"
   }
 
   private func moveThemeSelection(by offset: Int) {
     guard !browserState.visibleItems.isEmpty else { return }
+    let previousID = browserState.selectedThemeID
     browserState.moveTheme(by: offset)
+    guard browserState.selectedThemeID != previousID else { return }
     guard
       let row = browserState.visibleItems.firstIndex(where: {
         $0.id == browserState.selectedThemeID
@@ -741,9 +907,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   private func selectVisibleRow(_ row: Int) {
-    tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-    tableView.scrollRowToVisible(row)
-    selectTheme(id: browserState.visibleItems[row].id)
+    guard browserState.visibleItems.indices.contains(row) else { return }
+    if tableView.selectedRow == row {
+      selectTheme(id: browserState.visibleItems[row].id)
+    } else {
+      tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+      tableView.scrollRowToVisible(row)
+    }
   }
 
   private var visiblePageRowCount: Int {
@@ -756,6 +926,20 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     } else {
       countLabel.stringValue =
         "\(browserState.visibleItems.count) of \(content.items.count) installed themes"
+    }
+  }
+
+  private func updateVisibleThemeRowPalette(item: ThemeBrowserItem) {
+    for row in 0..<tableView.numberOfRows {
+      guard
+        let rowView = tableView.rowView(atRow: row, makeIfNecessary: false)
+          as? ThemeBrowserTableRowView
+      else { continue }
+      rowView.updatePalette(
+        normalTextColor: item.package.semantic.text.nsColor,
+        selectedTextColor: item.package.terminal.selectionForeground.nsColor,
+        selectedBackgroundColor: item.package.terminal.selectionBackground.nsColor
+      )
     }
   }
 

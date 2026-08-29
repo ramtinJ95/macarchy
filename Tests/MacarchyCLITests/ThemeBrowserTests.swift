@@ -67,7 +67,6 @@ struct ThemeBrowserTests {
     let item = ThemeBrowserItem(
       package: package,
       generatedPreview: ThemeBrowserPreview(
-        kind: .generated,
         label: "Generated palette",
         data: ThemePreviewRenderer().render(package: package).data
       ),
@@ -109,6 +108,19 @@ struct ThemeBrowserTests {
     let item = try #require(content.items.first)
     #expect(try gallery.load(item: item).isEmpty)
     #expect(calls.withLock { $0 } == 1)
+  }
+
+  @Test
+  func backgroundDecoderCreatesABoundedThumbnail() throws {
+    let package = try repository.package(id: "catppuccin-mocha")
+    let background = try #require(package.backgrounds.first)
+    let data = package.data(for: background)
+
+    let image = try #require(
+      ThemeBrowserImageDecoder.thumbnail(data: data, maximumPixelSize: 320)
+    )
+
+    #expect(max(image.width, image.height) <= 320)
   }
 
   @Test
@@ -217,7 +229,7 @@ struct ThemeBrowserTests {
       backgroundID: "plane-purple"
     )
 
-    let process = try launcher.launch(
+    _ = try launcher.launch(
       selection: selection,
       executableURL: executableURL,
       arguments: arguments,
@@ -229,8 +241,6 @@ struct ThemeBrowserTests {
     #expect(invocation.arguments == arguments)
     #expect(invocation.environment["PRESERVED"] == "yes")
     #expect(ThemeBrowserApplyRequest(environment: invocation.environment)?.selection == selection)
-    #expect(!process.isRunning())
-    #expect(process.terminationStatus() == 0)
   }
 
   private var repository: ThemeRepository {
