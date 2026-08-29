@@ -430,7 +430,7 @@ extension SetupOwnershipTests {
           prepareWallpaperData: {
             preflightEntered.withLock { $0 = true }
             releasePreflight.wait()
-            return package.wallpaperData
+            return package.defaultBackgroundData
           }
         )
       }

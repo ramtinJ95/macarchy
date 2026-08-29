@@ -38,7 +38,11 @@ public struct ThemeRenderer: Sendable {
   }
 
   public func render(package: ThemePackage, generationID: String) throws -> RenderedTheme {
-    try render(package: package, generationID: generationID, wallpaperData: package.wallpaperData)
+    try render(
+      package: package,
+      generationID: generationID,
+      wallpaperData: package.defaultBackgroundData
+    )
   }
 
   func render(

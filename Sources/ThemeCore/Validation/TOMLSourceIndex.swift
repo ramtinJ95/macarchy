@@ -6,14 +6,21 @@ struct TOMLFieldLocation {
   let column: Int
 }
 
+struct TOMLTableLocation {
+  let path: String
+  let line: Int
+  let column: Int
+  let isArray: Bool
+}
+
 struct TOMLSourceIndex {
   let fields: [TOMLFieldLocation]
-  let tables: [TOMLFieldLocation]
+  let tables: [TOMLTableLocation]
 
   init(text: String, file: URL, syntaxRole: String = "Theme manifest") throws {
     var currentTable = ""
     var fields: [TOMLFieldLocation] = []
-    var tables: [TOMLFieldLocation] = []
+    var tables: [TOMLTableLocation] = []
 
     for (offset, rawLine) in text.split(
       omittingEmptySubsequences: false,
@@ -41,7 +48,7 @@ struct TOMLSourceIndex {
         currentTable = table
         let column =
           (line.firstIndex(of: "[").map { line.distance(from: line.startIndex, to: $0) } ?? 0) + 1
-        tables.append(.init(path: table, line: offset + 1, column: column))
+        tables.append(.init(path: table, line: offset + 1, column: column, isArray: true))
         continue
       }
 
@@ -58,7 +65,7 @@ struct TOMLSourceIndex {
         currentTable = table
         let column =
           (line.firstIndex(of: "[").map { line.distance(from: line.startIndex, to: $0) } ?? 0) + 1
-        tables.append(.init(path: table, line: offset + 1, column: column))
+        tables.append(.init(path: table, line: offset + 1, column: column, isArray: false))
         continue
       }
 

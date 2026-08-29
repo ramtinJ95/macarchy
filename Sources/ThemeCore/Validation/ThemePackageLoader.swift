@@ -1,5 +1,4 @@
 import Foundation
-import ImageIO
 import TOMLDecoder
 
 enum WallpaperAssetError: Error, CustomStringConvertible, Sendable {
@@ -9,16 +8,14 @@ enum WallpaperAssetError: Error, CustomStringConvertible, Sendable {
 }
 
 struct WallpaperAsset {
-  static let maximumSize = 32 * 1_048_576
+  static let maximumSize = ThemeImageAsset.maximumSize
 
   static func load(at url: URL) throws -> Data {
-    let data = try BoundedRegularFile.read(at: url, maximumSize: maximumSize).data
-    let source = CGImageSourceCreateWithData(data as CFData, nil)
-    let imageType = source.flatMap(CGImageSourceGetType) as String?
-    guard source.map(CGImageSourceGetCount) ?? 0 > 0, imageType == "public.png" else {
+    do {
+      return try ThemeImageAsset.load(at: url, format: .png)
+    } catch is ThemeImageAssetError {
       throw WallpaperAssetError.invalidPNG
     }
-    return data
   }
 }
 
@@ -42,7 +39,7 @@ public struct ThemePackageLoader: Sendable {
 
     let validated = try validate(theme: theme, themeIndex: themeIndex, themeFile: themeFile)
     try validate(mappings: mappings, index: mappingsIndex, file: mappingsFile)
-    let wallpaperData = try validateAssets(
+    let assets = try validateAssets(
       theme: theme, packageURL: packageURL, index: themeIndex, file: themeFile)
 
     return ThemePackage(
@@ -53,8 +50,8 @@ public struct ThemePackageLoader: Sendable {
       appearance: validated.appearance,
       semantic: validated.semantic,
       terminal: validated.terminal,
-      wallpaper: theme.wallpaper,
-      wallpaperData: wallpaperData,
+      backgrounds: assets.backgrounds,
+      backgroundData: assets.data,
       mappings: mappings.mappings
     )
   }
@@ -207,54 +204,100 @@ public struct ThemePackageLoader: Sendable {
     packageURL: URL,
     index: TOMLSourceIndex,
     file: URL
-  ) throws -> Data {
-    let path = theme.wallpaper.path
+  ) throws -> (backgrounds: [ThemeBackground], data: [String: Data]) {
+    let provenance = packageURL.appending(path: "LICENSES/wallpaper.md")
     try require(
-      path == "wallpapers/default.png", path: "wallpaper.path",
-      message: "Schema v1 requires wallpapers/default.png", index: index, file: file)
+      FileManager.default.fileExists(atPath: provenance.path), path: "backgrounds.license",
+      message: "Missing LICENSES/wallpaper.md provenance record", index: index, file: file)
 
-    let wallpaperURL = packageURL.appending(path: path)
-    let resolvedPackage = packageURL.resolvingSymlinksInPath().standardizedFileURL
-    let resolvedWallpaper = wallpaperURL.resolvingSymlinksInPath().standardizedFileURL
+    var backgrounds: [ThemeBackground] = []
+    var data: [String: Data] = [:]
+    var resolvedPaths: Set<String> = []
+    for raw in theme.backgrounds {
+      try require(
+        ThemeSchema.isThemeID(raw.id), path: "backgrounds.id",
+        message: "Background ID must match [a-z][a-z0-9]*(?:-[a-z0-9]+)*", index: index,
+        file: file)
+      try require(
+        data[raw.id] == nil, path: "backgrounds.id",
+        message: "Duplicate background identifier '\(raw.id)'", index: index, file: file)
+      guard
+        let format = ThemeBackgroundFormat(pathExtension: URL(filePath: raw.path).pathExtension)
+      else {
+        throw ThemeDiagnostic(
+          location: index.location(for: "backgrounds.path", file: file),
+          field: "backgrounds.path",
+          message: "Background '\(raw.id)' has unsupported image extension"
+        )
+      }
+      let background = ThemeBackground(
+        id: raw.id,
+        path: raw.path,
+        source: raw.source,
+        author: raw.author,
+        license: raw.license,
+        format: format
+      )
+      let resolvedPath = packageURL.appending(path: raw.path).resolvingSymlinksInPath()
+        .standardizedFileURL.path.precomposedStringWithCanonicalMapping.lowercased()
+      try require(
+        resolvedPaths.insert(resolvedPath).inserted, path: "backgrounds.path",
+        message: "Background path '\(raw.path)' is listed more than once", index: index, file: file)
+      let bytes = try validateBackground(
+        background, packageURL: packageURL, index: index, file: file)
+      backgrounds.append(background)
+      data[background.id] = bytes
+    }
+    return (backgrounds, data)
+  }
+
+  private func validateBackground(
+    _ background: ThemeBackground,
+    packageURL: URL,
+    index: TOMLSourceIndex,
+    file: URL
+  ) throws -> Data {
+    let pathField = "backgrounds.path"
+    let components = background.path.split(separator: "/", omittingEmptySubsequences: false)
     try require(
-      resolvedWallpaper.path.hasPrefix(resolvedPackage.path + "/"),
-      path: "wallpaper.path",
-      message: "Wallpaper symlink must resolve inside the theme package",
+      !background.path.hasPrefix("/")
+        && components.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." },
+      path: pathField,
+      message: "Background path must be a safe relative package path",
+      index: index,
+      file: file
+    )
+    for (suffix, value) in [
+      ("source", background.source),
+      ("author", background.author),
+      ("license", background.license),
+    ] {
+      try require(
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        path: "backgrounds.\(suffix)", message: "Background provenance value must not be empty",
+        index: index, file: file)
+    }
+
+    let backgroundURL = packageURL.appending(path: background.path)
+    let resolvedPackage = packageURL.resolvingSymlinksInPath().standardizedFileURL
+    let resolvedBackground = backgroundURL.resolvingSymlinksInPath().standardizedFileURL
+    try require(
+      resolvedBackground.path.hasPrefix(resolvedPackage.path + "/"),
+      path: pathField,
+      message: "Background symlink must resolve inside the theme package",
       index: index,
       file: file
     )
 
-    let wallpaperData: Data
     do {
-      wallpaperData = try WallpaperAsset.load(at: resolvedWallpaper)
-    } catch WallpaperAssetError.invalidPNG {
-      throw ThemeDiagnostic(
-        location: index.location(for: "wallpaper.path", file: file),
-        field: "wallpaper.path",
-        message: "Wallpaper asset cannot be decoded as PNG"
-      )
+      return try ThemeImageAsset.load(at: resolvedBackground, format: background.format)
     } catch {
       throw ThemeDiagnostic(
-        location: index.location(for: "wallpaper.path", file: file),
-        field: "wallpaper.path",
-        message: "Cannot read wallpaper asset at \(path): \(error)"
+        location: index.location(for: pathField, file: file),
+        field: pathField,
+        message: "Cannot load background '\(background.id)' at \(background.path): \(error)"
       )
     }
-
-    let provenance = packageURL.appending(path: "LICENSES/wallpaper.md")
-    try require(
-      FileManager.default.fileExists(atPath: provenance.path), path: "wallpaper.license",
-      message: "Missing LICENSES/wallpaper.md provenance record", index: index, file: file)
-    for (path, value) in [
-      ("wallpaper.source", theme.wallpaper.source),
-      ("wallpaper.author", theme.wallpaper.author),
-      ("wallpaper.license", theme.wallpaper.license),
-    ] {
-      try require(
-        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, path: path,
-        message: "Wallpaper provenance value must not be empty", index: index, file: file)
-    }
-    return wallpaperData
   }
 
   private func require(

@@ -42,8 +42,8 @@ extension AdapterContractTests {
       appearance: base.appearance,
       semantic: base.semantic,
       terminal: base.terminal,
-      wallpaper: base.wallpaper,
-      wallpaperData: base.wallpaperData,
+      backgrounds: base.backgrounds,
+      backgroundData: base.backgroundData,
       mappings: [:]
     )
   }

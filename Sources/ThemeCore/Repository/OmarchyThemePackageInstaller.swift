@@ -222,7 +222,6 @@ package struct OmarchyThemePackageInstaller: Sendable {
 
       let replaced = try destinationExists(themeID: sourcePackage.id, root: root)
       if replaced {
-        _ = try ThemePackageLoader().load(packageURL: destination)
         try OmarchyThemePackageInstallation.swap(
           incoming,
           destination,
@@ -244,8 +243,8 @@ package struct OmarchyThemePackageInstaller: Sendable {
         appearance: copied.appearance,
         semantic: copied.semantic,
         terminal: copied.terminal,
-        wallpaper: copied.wallpaper,
-        wallpaperData: copied.wallpaperData,
+        backgrounds: copied.backgrounds,
+        backgroundData: copied.backgroundData,
         mappings: copied.mappings
       )
       return OmarchyThemePackageInstallation(

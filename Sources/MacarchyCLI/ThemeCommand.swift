@@ -5,7 +5,7 @@ import ThemeCore
 struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect or select themes.",
-    subcommands: [List.self, Set.self, Install.self, Next.self, Status.self]
+    subcommands: [List.self, Set.self, Install.self, Next.self, Status.self, Background.self]
   )
 }
 
@@ -137,6 +137,37 @@ extension Theme {
       print(execution.output)
       if !execution.succeeded {
         throw ExitCode.failure
+      }
+    }
+  }
+
+  struct Background: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Inspect or select a theme background.",
+      subcommands: [List.self]
+    )
+
+    struct List: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "List a theme package's validated backgrounds in selection order."
+      )
+
+      @OptionGroup var roots: ThemeRootOptions
+
+      @Option(help: "Canonical Macarchy state directory.")
+      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+      @Argument(help: "Theme package identifier.")
+      var themeID: String
+
+      mutating func run() throws {
+        let userThemes = URL(filePath: stateRoot, directoryHint: .isDirectory)
+          .standardizedFileURL.appending(path: "themes", directoryHint: .isDirectory)
+        let package = try roots.repository(userRoot: userThemes).package(id: themeID)
+        for background in package.backgrounds {
+          print("\(background.id)\t\(background.format.rawValue)\t\(background.path)")
+        }
       }
     }
   }

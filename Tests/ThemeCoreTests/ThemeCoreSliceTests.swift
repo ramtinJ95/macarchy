@@ -230,7 +230,7 @@ struct ThemeCoreSliceTests {
     )
     #expect(
       writtenWallpaper
-        == (try Data(contentsOf: packageURL.appending(path: package.wallpaper.path)))
+        == (try Data(contentsOf: packageURL.appending(path: package.backgrounds[0].path)))
     )
 
     let decoded = try JSONDecoder().decode(NormalizedTheme.self, from: writtenJSON)
@@ -468,7 +468,7 @@ struct ThemeCoreSliceTests {
   }
 
   @Test
-  func missingAndCorruptWallpaperAssetsFail() throws {
+  func missingAndCorruptBackgroundAssetsFail() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
 
@@ -477,20 +477,20 @@ struct ThemeCoreSliceTests {
     let missingDiagnostic = try themeDiagnostic {
       _ = try ThemePackageLoader().load(packageURL: missingPackage)
     }
-    #expect(missingDiagnostic.field == "wallpaper.path")
-    #expect(missingDiagnostic.message.contains("Cannot read wallpaper"))
+    #expect(missingDiagnostic.field == "backgrounds.path")
+    #expect(missingDiagnostic.message.contains("Cannot load background 'default'"))
 
     let corruptPackage = try copyCatppuccin(to: root, named: "corrupt-asset")
     try Data("not a png".utf8).write(to: corruptPackage.appending(path: "wallpapers/default.png"))
     let corruptDiagnostic = try themeDiagnostic {
       _ = try ThemePackageLoader().load(packageURL: corruptPackage)
     }
-    #expect(corruptDiagnostic.field == "wallpaper.path")
+    #expect(corruptDiagnostic.field == "backgrounds.path")
     #expect(corruptDiagnostic.message.contains("PNG"))
   }
 
   @Test
-  func wallpaperSymlinkCannotEscapePackage() throws {
+  func backgroundSymlinkCannotEscapePackage() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "external-wallpaper")
@@ -503,7 +503,7 @@ struct ThemeCoreSliceTests {
     let diagnostic = try themeDiagnostic {
       _ = try ThemePackageLoader().load(packageURL: packageURL)
     }
-    #expect(diagnostic.field == "wallpaper.path")
+    #expect(diagnostic.field == "backgrounds.path")
     #expect(diagnostic.message.contains("resolve inside"))
   }
 

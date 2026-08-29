@@ -762,7 +762,7 @@ struct ActivationSliceTests {
       _ = try conditional.activate(
         package: requested,
         expectedActiveGenerationID: original.generationID,
-        wallpaperData: requested.wallpaperData
+        wallpaperData: requested.defaultBackgroundData
       )
     }
     #expect(
@@ -921,7 +921,7 @@ struct ActivationSliceTests {
     let overrideManifest = try testActivator(root: stateRoot).activate(
       package: catppuccinPackage(),
       expectedActiveGenerationID: nil,
-      wallpaperData: tokyoNightPackage().wallpaperData
+      wallpaperData: tokyoNightPackage().defaultBackgroundData
     )
 
     #expect(originalManifest.inputDigest == equivalentManifest.inputDigest)

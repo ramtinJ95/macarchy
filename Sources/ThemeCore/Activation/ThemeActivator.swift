@@ -131,7 +131,7 @@ public struct ThemeActivator: Sendable {
     try activate(
       package: package,
       expectedActiveGenerationID: nil,
-      wallpaperData: package.wallpaperData
+      wallpaperData: package.defaultBackgroundData
     )
   }
 

@@ -134,9 +134,10 @@ struct ThemeInstallCommandTests {
   }
 
   @Test
-  func committedInstallIncludesSlackImportPayloadInJSON() async throws {
+  func committedReinstallPublishesCurrentInventoryAndSlackPayload() async throws {
     let fixture = try ThemeInstallFixture()
     defer { fixture.remove() }
+    try fixture.preparePreviousPackageAndCanonicalTheme()
     let manifest = GenerationManifest(
       generationID: "g-imported",
       themeID: "purple-dream",
@@ -169,6 +170,10 @@ struct ThemeInstallCommandTests {
       report["slack_theme"] as? String
         == "#1a0d2e,#1a0d2e,#8b9aff,#1a0d2e,#d4a5ff,#d4a5ff,#5ffbf1,#ff6ec7,#1a0d2e,#d4a5ff"
     )
+    #expect(try fixture.installedCommit() == ThemeInstallFixture.newCommit)
+    let reinstalled = try ThemePackageLoader().load(packageURL: fixture.installedPackage)
+    #expect(reinstalled.backgrounds.map(\.path) == ["backgrounds/purple.png"])
+    #expect(try fixture.transactionResidue().isEmpty)
   }
 }
 
@@ -248,6 +253,7 @@ private struct ThemeInstallFixture {
       ),
       to: installedPackage
     )
+    try rewriteInstalledPackageWithOlderWallpaperContract()
     let authored = try ThemePackageLoader().load(
       packageURL: builtInThemes.appending(path: "catppuccin-mocha")
     )
@@ -315,6 +321,22 @@ private struct ThemeInstallFixture {
 
   func remove() {
     try? FileManager.default.removeItem(at: root)
+  }
+
+  private func rewriteInstalledPackageWithOlderWallpaperContract() throws {
+    let manifestURL = installedPackage.appending(path: "theme.toml")
+    let manifest = try String(contentsOf: manifestURL, encoding: .utf8)
+    let marker = try #require(manifest.range(of: "\n[[backgrounds]]\n"))
+    let olderManifest =
+      manifest[..<marker.lowerBound] + """
+
+        [wallpaper]
+        path = "wallpapers/default.png"
+        source = "Older installed fixture"
+        author = "Fixture"
+        license = "Personal use"
+        """ + "\n"
+    try String(olderManifest).write(to: manifestURL, atomically: true, encoding: .utf8)
   }
 
   private func activator() -> ThemeActivator {
