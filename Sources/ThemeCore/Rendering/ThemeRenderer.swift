@@ -41,14 +41,14 @@ public struct ThemeRenderer: Sendable {
     try render(
       package: package,
       generationID: generationID,
-      wallpaperData: package.defaultBackgroundData
+      wallpaperData: package.firstBackgroundData
     )
   }
 
   func render(
     package: ThemePackage,
     generationID: String,
-    wallpaperData: Data
+    wallpaperData: Data?
   ) throws -> RenderedTheme {
     let normalized = NormalizedTheme(package: package, generationID: generationID)
     let encoder = JSONEncoder()
@@ -66,6 +66,7 @@ public struct ThemeRenderer: Sendable {
     ]
     for entry in catalog.entries {
       guard let renderer = entry.renderer else { continue }
+      if entry.id == .wallpaper, wallpaperData == nil { continue }
       let outputs = try renderer.render(package, generationID, wallpaperData)
       let expectedPaths = Set(renderer.artifacts.map(\.path))
       let outputPaths = outputs.map(\.path)

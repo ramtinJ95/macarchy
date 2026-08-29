@@ -214,7 +214,7 @@ struct ThemeCoreSliceTests {
       SpicetifyAdapter.outputPath: Data(rendered.spicetifyTheme.utf8),
       StarshipAdapter.outputPath: Data(rendered.starshipPalette.utf8),
       TuicrAdapter.outputPath: Data(rendered.tuicrTheme.utf8),
-      WallpaperAdapter.outputPath: rendered.wallpaper,
+      WallpaperAdapter.outputPath: try #require(rendered.wallpaper),
       YaziAdapter.flavorOutputPath: Data(rendered.yaziFlavor.utf8),
     ]
     for (path, data) in compatibilityOutputs {

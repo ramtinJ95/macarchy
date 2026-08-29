@@ -302,6 +302,7 @@ private func testManifest(
     themeID: themeID,
     themeSchemaVersion: 1,
     inputDigest: "sha256:test",
+    themeDigest: "sha256:theme",
     rendererVersions: ["kitty": 1, "normalized_theme": 1],
     artifacts: [
       "generated/kitty.conf": "sha256:kitty",

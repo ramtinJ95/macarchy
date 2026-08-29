@@ -7,7 +7,7 @@ struct ThemeDocument: Decodable {
   let appearance: String
   let semantic: RawSemanticColors
   let terminal: RawTerminalColors
-  let backgrounds: [RawThemeBackground]
+  let backgrounds: [RawThemeBackground]?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"

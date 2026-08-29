@@ -427,10 +427,14 @@ extension SetupOwnershipTests {
         try ThemeActivator(root: stateRoot).activate(
           package: package,
           expectedActiveGenerationID: nil,
-          prepareWallpaperData: {
+          preparedBackground: {
             preflightEntered.withLock { $0 = true }
             releasePreflight.wait()
-            return package.defaultBackgroundData
+            let background = try #require(package.backgrounds.first)
+            return PreparedThemeBackground(
+              selection: GenerationBackground(id: background.id, format: background.format),
+              data: package.data(for: background)
+            )
           }
         )
       }

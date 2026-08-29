@@ -3,13 +3,16 @@ import Darwin
 import Foundation
 
 public struct GenerationManifest: Codable, Sendable {
-  public static let currentSchemaVersion = 1
+  public static let currentSchemaVersion = 2
+  package static let legacySchemaVersion = 1
 
   public let manifestSchemaVersion: Int
   public let generationID: String
   public let themeID: String
   public let themeSchemaVersion: Int
   public let inputDigest: String
+  public let themeDigest: String
+  public let background: GenerationBackground?
   public let rendererVersions: [String: Int]
   public let artifacts: [String: String]
 
@@ -18,6 +21,8 @@ public struct GenerationManifest: Codable, Sendable {
     themeID: String,
     themeSchemaVersion: Int,
     inputDigest: String,
+    themeDigest: String,
+    background: GenerationBackground? = nil,
     rendererVersions: [String: Int],
     artifacts: [String: String]
   ) {
@@ -26,11 +31,22 @@ public struct GenerationManifest: Codable, Sendable {
     self.themeID = themeID
     self.themeSchemaVersion = themeSchemaVersion
     self.inputDigest = inputDigest
+    self.themeDigest = themeDigest
+    self.background = background
     self.rendererVersions = rendererVersions
     self.artifacts = artifacts
   }
 
   static let encodedKeys = Set(CodingKeys.allCases.map(\.stringValue))
+  private static let legacyEncodedKeys = encodedKeys.subtracting(["theme_digest", "background"])
+
+  static func encodedKeys(schemaVersion: Int) -> Set<String>? {
+    switch schemaVersion {
+    case legacySchemaVersion: legacyEncodedKeys
+    case currentSchemaVersion: encodedKeys
+    default: nil
+    }
+  }
 
   enum CodingKeys: String, CodingKey, CaseIterable {
     case manifestSchemaVersion = "manifest_schema_version"
@@ -38,8 +54,45 @@ public struct GenerationManifest: Codable, Sendable {
     case themeID = "theme_id"
     case themeSchemaVersion = "theme_schema_version"
     case inputDigest = "input_digest"
+    case themeDigest = "theme_digest"
+    case background
     case rendererVersions = "renderer_versions"
     case artifacts
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    manifestSchemaVersion = try container.decode(Int.self, forKey: .manifestSchemaVersion)
+    generationID = try container.decode(String.self, forKey: .generationID)
+    themeID = try container.decode(String.self, forKey: .themeID)
+    themeSchemaVersion = try container.decode(Int.self, forKey: .themeSchemaVersion)
+    inputDigest = try container.decode(String.self, forKey: .inputDigest)
+    themeDigest =
+      manifestSchemaVersion == Self.legacySchemaVersion
+      ? ""
+      : try container.decode(String.self, forKey: .themeDigest)
+    background = try container.decodeIfPresent(GenerationBackground.self, forKey: .background)
+    rendererVersions = try container.decode([String: Int].self, forKey: .rendererVersions)
+    artifacts = try container.decode([String: String].self, forKey: .artifacts)
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(manifestSchemaVersion, forKey: .manifestSchemaVersion)
+    try container.encode(generationID, forKey: .generationID)
+    try container.encode(themeID, forKey: .themeID)
+    try container.encode(themeSchemaVersion, forKey: .themeSchemaVersion)
+    try container.encode(inputDigest, forKey: .inputDigest)
+    if manifestSchemaVersion >= Self.currentSchemaVersion {
+      try container.encode(themeDigest, forKey: .themeDigest)
+      if let background {
+        try container.encode(background, forKey: .background)
+      } else {
+        try container.encodeNil(forKey: .background)
+      }
+    }
+    try container.encode(rendererVersions, forKey: .rendererVersions)
+    try container.encode(artifacts, forKey: .artifacts)
   }
 }
 
@@ -59,9 +112,12 @@ extension GenerationManifest {
         reason: "renderer artifact metadata is invalid: \(String(describing: error))"
       )
     }
-    let requiredPaths: Set<String>
+    var requiredPaths: Set<String>
     do {
       requiredPaths = try ThemeRenderer.requiredOutputPaths(rendererVersions: rendererVersions)
+      if manifestSchemaVersion == Self.legacySchemaVersion {
+        requiredPaths.insert(WallpaperAdapter.outputPath)
+      }
     } catch {
       throw GenerationIntegrityError(
         reason: "renderer artifact requirements are invalid: \(String(describing: error))"
@@ -72,6 +128,18 @@ extension GenerationManifest {
         && Set(artifacts.keys).isSuperset(of: requiredPaths),
       "artifact manifest is missing a required output or contains an unknown output"
     )
+    try requireIntegrity(isSHA256Digest(inputDigest), "input digest is invalid")
+    if manifestSchemaVersion == Self.currentSchemaVersion {
+      try requireIntegrity(isSHA256Digest(themeDigest), "theme digest is invalid")
+      try requireIntegrity(
+        background.map { ThemeSchema.isThemeID($0.id) } ?? true,
+        "background identifier is invalid"
+      )
+      try requireIntegrity(
+        (background != nil) == (artifacts[WallpaperAdapter.outputPath] != nil),
+        "background identity and wallpaper artifact presence disagree"
+      )
+    }
     try requireReadOnlyDirectory(generationURL, name: generationURL.lastPathComponent)
     try requireReadOnlyDirectory(
       generationURL.appending(path: "generated", directoryHint: .isDirectory),
@@ -98,6 +166,15 @@ extension GenerationManifest {
         artifacts[path] == sha256Digest(artifact.data),
         "artifact digest does not match \(path)"
       )
+      if path == WallpaperAdapter.outputPath, let background {
+        do {
+          try ThemeImageAsset.validateMediaType(data: artifact.data, format: background.format)
+        } catch {
+          throw GenerationIntegrityError(
+            reason: "wallpaper artifact does not match background format: \(error)"
+          )
+        }
+      }
     }
   }
 
@@ -120,6 +197,13 @@ extension GenerationManifest {
 
 package func sha256Digest(_ data: Data) -> String {
   "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+func isSHA256Digest(_ value: String) -> Bool {
+  let digest = value.dropFirst("sha256:".count)
+  return value.hasPrefix("sha256:")
+    && digest.count == 64
+    && digest.allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
 }
 
 func isGenerationID(_ value: String) -> Bool {

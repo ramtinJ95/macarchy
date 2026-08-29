@@ -43,13 +43,6 @@ enum ThemeSchema {
     }
 
     let backgroundCount = index.tables.count { $0.path == "backgrounds" }
-    guard backgroundCount > 0 else {
-      throw ThemeDiagnostic(
-        location: .init(file: file),
-        field: "backgrounds",
-        message: "Theme manifests require at least one [[backgrounds]] entry"
-      )
-    }
 
     for field in index.fields {
       let parts = field.path.split(separator: ".", maxSplits: 1).map(String.init)

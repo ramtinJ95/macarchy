@@ -158,9 +158,11 @@ struct DoctorCommandRunner: Sendable {
       } else {
         result.requirement == .required ? .failure : .warning
       }
+    let carried =
+      result.carriedForwardFromGenerationID.map { " (carried from \($0))" } ?? ""
     let message =
-      result.message.map { "\(result.status.rawValue): \($0)" }
-      ?? result.status.rawValue
+      result.message.map { "\(result.status.rawValue)\(carried): \($0)" }
+      ?? "\(result.status.rawValue)\(carried)"
     return DoctorFinding(
       id: "reconciliation.\(result.adapterID)",
       status: status,

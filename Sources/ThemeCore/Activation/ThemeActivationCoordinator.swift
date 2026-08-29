@@ -3,6 +3,17 @@ import Foundation
 package struct ThemeActivationResult: Sendable {
   package let manifest: GenerationManifest
   package let reconciliation: ReconciliationRecord
+  package let notice: String?
+
+  package init(
+    manifest: GenerationManifest,
+    reconciliation: ReconciliationRecord,
+    notice: String? = nil
+  ) {
+    self.manifest = manifest
+    self.reconciliation = reconciliation
+    self.notice = notice
+  }
 }
 
 package struct ThemeCommittedWithReconciliationError: Error, CustomStringConvertible, Sendable {
@@ -46,6 +57,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let atuin: AtuinAdapter
   private let bat: BatAdapter
   private let btop: BtopAdapter
+  private let backgroundPreferences: BackgroundPreferenceStore
   private let codex: CodexAdapter
   private let configurationStore: MacarchyConfigurationStore
   private let eza: EzaAdapter
@@ -72,6 +84,7 @@ package struct ThemeActivationCoordinator: Sendable {
     let statusStore = ReconciliationStatusStore(root: root)
     self.root = root
     activator = ThemeActivator(root: root)
+    backgroundPreferences = BackgroundPreferenceStore(root: root)
     appearance = .live(root: root)
     atuin = AtuinAdapter(
       root: root,
@@ -228,6 +241,7 @@ package struct ThemeActivationCoordinator: Sendable {
       onThemeChanged: onThemeChanged,
       postDarwinNotification: postDarwinNotification
     )
+    backgroundPreferences = BackgroundPreferenceStore(root: root)
     appearance = MacOSAppearanceAdapter(
       root: root,
       controlIsAvailable: appearanceControlIsAvailable,
@@ -340,43 +354,74 @@ package struct ThemeActivationCoordinator: Sendable {
     )
   }
 
-  package func preflight(package: ThemePackage) throws {
-    let wallpaperData = try prepare(package: package)
+  package func preflight(
+    package: ThemePackage,
+    requestedBackgroundID: String? = nil
+  ) throws {
+    let background = try prepare(
+      package: package,
+      requestedBackgroundID: requestedBackgroundID,
+      recoverActivePreference: false
+    )
     _ = try ThemeRenderer().render(
       package: package,
       generationID: "dry-run-\(package.id)",
-      wallpaperData: wallpaperData
+      wallpaperData: background.data
     )
   }
 
   package func activate(
     package: ThemePackage,
-    expectedActiveGenerationID: String? = nil
+    expectedActiveGenerationID: String? = nil,
+    requestedBackgroundID: String? = nil
   ) async throws -> ThemeActivationResult {
     try await withTaskExecutorPreference(Self.activationExecutor) {
       try Task.checkCancellation()
+      var backgroundNotice: String?
+      var previousEvidence: PreviousReconciliationEvidence?
       let manifest = try activator.activate(
         package: package,
         expectedActiveGenerationID: expectedActiveGenerationID,
-        prepareWallpaperData: {
-          let wallpaperData = try prepare(package: package)
+        preparedBackground: {
+          if requestedBackgroundID != nil {
+            previousEvidence = try previousReconciliationEvidence()
+          }
+          let background = try prepare(
+            package: package,
+            requestedBackgroundID: requestedBackgroundID,
+            recoverActivePreference: true
+          )
+          backgroundNotice = background.notice
           try Task.checkCancellation()
-          return wallpaperData
+          return background
+        },
+        onCommittedLocked: { manifest in
+          try persistPreference(manifest: manifest)
         }
       )
 
       do {
+        let adapters = configuredAdapters(
+          desiredAppearance: package.appearance,
+          desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+          unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+        )
+        let plan = backgroundOnlyReconciliationPlan(
+          requestedBackgroundID: requestedBackgroundID,
+          previousEvidence: previousEvidence,
+          manifest: manifest,
+          adapters: adapters
+        )
         let reconciliation = try await reconciler.reconcile(
           manifest: manifest,
-          adapters: configuredAdapters(
-            desiredAppearance: package.appearance,
-            desiredWallpaperURL: nil,
-            unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
-          ).map {
-            $0.reconciliation()
-          }
+          adapters: plan.adapters.map { $0.reconciliation() },
+          preserving: plan.preservedResults
         )
-        return ThemeActivationResult(manifest: manifest, reconciliation: reconciliation)
+        return ThemeActivationResult(
+          manifest: manifest,
+          reconciliation: reconciliation,
+          notice: backgroundNotice
+        )
       } catch {
         throw ThemeCommittedWithReconciliationError(
           manifest: manifest,
@@ -432,14 +477,17 @@ package struct ThemeActivationCoordinator: Sendable {
           message: "Cannot inspect active theme appearance: \(error)"
         )
       }
+      let wallpaperURL = activeWallpaperURL(manifest: manifest)
       wallpaperInspection = inspectWallpaper(
-        desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+        desiredWallpaperURL: wallpaperURL,
+        intentionallyUnmanaged: wallpaperURL == nil,
         includeRuntimeChecks: includeRuntimeChecks
       )
     } catch ReconciliationStatusError.noActiveGeneration {
       appearanceInspection = appearance.inspection(desiredAppearance: nil)
       wallpaperInspection = inspectWallpaper(
         desiredWallpaperURL: nil,
+        intentionallyUnmanaged: false,
         includeRuntimeChecks: includeRuntimeChecks
       )
     } catch {
@@ -483,7 +531,7 @@ package struct ThemeActivationCoordinator: Sendable {
     let manifest = try statusStore.activeManifest()
     let adapters = configuredAdapters(
       desiredAppearance: nil,
-      desiredWallpaperURL: nil,
+      desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
       unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
     )
     let selected = selectedAdapters(adapterIDs, from: adapters)
@@ -629,13 +677,22 @@ package struct ThemeActivationCoordinator: Sendable {
         inspection: {
           inspectWallpaper(
             desiredWallpaperURL: desiredWallpaperURL,
+            intentionallyUnmanaged: (try? statusStore.activeManifest()).map {
+              activeWallpaperURL(manifest: $0) == nil
+            } ?? false,
             includeRuntimeChecks: includeRuntimeChecks
           )
         },
         reconciliation: {
-          wallpaper.reconciliation {
+          AdapterReconciliation(id: WallpaperAdapter.id, requirement: .required) {
             let manifest = try statusStore.activeManifest()
-            return activeWallpaperURL(manifest: manifest)
+            guard let desiredWallpaperURL = activeWallpaperURL(manifest: manifest) else {
+              return AdapterOutcome(
+                status: .disabled,
+                message: "This theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
+              )
+            }
+            return try await wallpaper.reconciliation { desiredWallpaperURL }.run()
           }
         }
       )
@@ -665,11 +722,37 @@ package struct ThemeActivationCoordinator: Sendable {
     return normalized.appearance
   }
 
-  private func prepare(package: ThemePackage) throws -> Data {
+  private func prepare(
+    package: ThemePackage,
+    requestedBackgroundID: String?,
+    recoverActivePreference: Bool
+  ) throws -> PreparedThemeBackground {
     let configuration = try configurationStore.load()
-    let wallpaperData =
-      try configuration.wallpaperData(themeID: package.id)
-      ?? package.defaultBackgroundData
+    var preferences = try backgroundPreferences.load()
+    if recoverActivePreference,
+      let active = try activeManifestIfPresent(),
+      active.manifestSchemaVersion == GenerationManifest.currentSchemaVersion
+    {
+      let prior = preferences
+      if let background = active.background {
+        preferences[active.themeID] = background.id
+      } else {
+        preferences.removeValue(forKey: active.themeID)
+      }
+      if preferences != prior {
+        try backgroundPreferences.persist(preferences)
+      }
+    }
+    let overrideData =
+      package.backgrounds.isEmpty
+      ? nil
+      : try configuration.wallpaperData(themeID: package.id)
+    let background = try BackgroundSelectionResolver.resolve(
+      package: package,
+      requestedBackgroundID: requestedBackgroundID,
+      preferences: preferences,
+      overrideData: overrideData
+    )
     for entry in ConsumerCatalog.shared.runtimeEntries {
       switch entry.mode.runtimeKind! {
       case .macOSAppearance:
@@ -701,25 +784,36 @@ package struct ThemeActivationCoordinator: Sendable {
       case .tuicr:
         try tuicr.preflight()
       case .wallpaper:
-        _ = try wallpaper.preflight()
-        try wallpaperSignal.preflight()
+        if background.selection != nil {
+          _ = try wallpaper.preflight()
+          try wallpaperSignal.preflight()
+        }
       case .yazi:
         try yazi.preflight()
       }
     }
-    return wallpaperData
+    return background
   }
 
-  private func activeWallpaperURL(manifest: GenerationManifest) -> URL {
-    root.appending(
+  private func activeWallpaperURL(manifest: GenerationManifest) -> URL? {
+    guard manifest.artifacts[WallpaperAdapter.outputPath] != nil else { return nil }
+    return root.appending(
       path: "generations/\(manifest.generationID)/\(WallpaperAdapter.outputPath)"
     )
   }
 
   private func inspectWallpaper(
     desiredWallpaperURL: URL?,
+    intentionallyUnmanaged: Bool,
     includeRuntimeChecks: Bool
   ) -> AdapterInspection {
+    guard !intentionallyUnmanaged else {
+      return AdapterInspection(
+        adapterID: WallpaperAdapter.id,
+        requirement: .required,
+        message: "The active theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
+      )
+    }
     let wallpaperInspection = wallpaper.inspection(
       desiredWallpaperURL: desiredWallpaperURL
     )
@@ -755,6 +849,88 @@ package struct ThemeActivationCoordinator: Sendable {
           .compactMap { $0 }
           .joined(separator: "; ")
       )
+    }
+  }
+
+  private func activeManifestIfPresent() throws -> GenerationManifest? {
+    do {
+      return try statusStore.activeManifest()
+    } catch ReconciliationStatusError.noActiveGeneration {
+      return nil
+    }
+  }
+
+  private func persistPreference(manifest: GenerationManifest) throws {
+    var preferences = try backgroundPreferences.load()
+    let prior = preferences
+    if let background = manifest.background {
+      preferences[manifest.themeID] = background.id
+    } else {
+      preferences.removeValue(forKey: manifest.themeID)
+    }
+    if preferences != prior {
+      try backgroundPreferences.persist(preferences)
+    }
+  }
+
+  private func previousReconciliationEvidence() throws -> PreviousReconciliationEvidence? {
+    guard let manifest = try activeManifestIfPresent() else { return nil }
+    let state: ReconciliationState
+    do {
+      state = try statusStore.reconciliationState(for: manifest)
+    } catch {
+      return PreviousReconciliationEvidence(manifest: manifest, record: nil)
+    }
+    guard case .current(let record) = state else {
+      return PreviousReconciliationEvidence(manifest: manifest, record: nil)
+    }
+    return PreviousReconciliationEvidence(manifest: manifest, record: record)
+  }
+
+  private func backgroundOnlyReconciliationPlan(
+    requestedBackgroundID: String?,
+    previousEvidence: PreviousReconciliationEvidence?,
+    manifest: GenerationManifest,
+    adapters: [ConfiguredAdapter]
+  ) -> (adapters: [ConfiguredAdapter], preservedResults: [AdapterResult]) {
+    guard
+      requestedBackgroundID != nil,
+      let previousEvidence,
+      previousEvidence.manifest.themeDigest == manifest.themeDigest,
+      !manifest.themeDigest.isEmpty,
+      let record = previousEvidence.record,
+      isCompleteReconciliation(record)
+    else { return (adapters, []) }
+
+    if previousEvidence.manifest.generationID == manifest.generationID {
+      return (
+        adapters.filter { $0.id == WallpaperAdapter.id },
+        record.results.filter { $0.adapterID != WallpaperAdapter.id }
+      )
+    }
+
+    let carried = record.results.filter { $0.adapterID != WallpaperAdapter.id }.map { result in
+      AdapterResult(
+        adapterID: result.adapterID,
+        requirement: result.requirement,
+        status: result.status,
+        message: result.message,
+        carriedForwardFromGenerationID: previousEvidence.manifest.generationID
+      )
+    }
+    let carriedIDs = Set(carried.map(\.adapterID))
+    return (
+      adapters.filter { $0.id == WallpaperAdapter.id || !carriedIDs.contains($0.id) },
+      carried
+    )
+  }
+
+  private func isCompleteReconciliation(_ record: ReconciliationRecord) -> Bool {
+    guard Set(record.results.map(\.adapterID)) == Set(Self.adapterRequirements.keys) else {
+      return false
+    }
+    return record.results.allSatisfy { result in
+      Self.adapterRequirements[result.adapterID] == result.requirement
     }
   }
 
@@ -832,6 +1008,11 @@ package struct ThemeActivationCoordinator: Sendable {
   package static func kittyIncludeDirective(root: URL) -> String {
     "include \(root.appending(path: KittyAdapter.bridgePath).path)"
   }
+}
+
+private struct PreviousReconciliationEvidence: Sendable {
+  let manifest: GenerationManifest
+  let record: ReconciliationRecord?
 }
 
 private struct ConfiguredAdapter: Sendable {

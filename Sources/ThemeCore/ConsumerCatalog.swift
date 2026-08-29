@@ -124,7 +124,7 @@ package struct ConsumerRendererRegistration: Sendable {
   package let version: Int
   package let artifacts: [RenderedArtifactMetadata]
   package let render:
-    @Sendable (_ package: ThemePackage, _ generationID: String, _ wallpaperData: Data) throws
+    @Sendable (_ package: ThemePackage, _ generationID: String, _ wallpaperData: Data?) throws
       -> [ConsumerRenderedOutput]
 
   package init(
@@ -133,7 +133,7 @@ package struct ConsumerRendererRegistration: Sendable {
     artifacts: [RenderedArtifactMetadata],
     render:
       @escaping @Sendable (
-        _ package: ThemePackage, _ generationID: String, _ wallpaperData: Data
+        _ package: ThemePackage, _ generationID: String, _ wallpaperData: Data?
       ) throws -> [ConsumerRenderedOutput]
   ) {
     self.id = id
@@ -606,10 +606,17 @@ package struct ConsumerCatalog: Sendable {
         id: WallpaperAdapter.id,
         version: WallpaperAdapter.rendererVersion,
         artifacts: [
-          RenderedArtifactMetadata(path: WallpaperAdapter.outputPath, sizePolicy: .wallpaper)
+          RenderedArtifactMetadata(
+            path: WallpaperAdapter.outputPath,
+            sizePolicy: .wallpaper,
+            requirement: .optional
+          )
         ]
       ) { _, _, wallpaperData in
-        [ConsumerRenderedOutput(path: WallpaperAdapter.outputPath, data: wallpaperData)]
+        guard let wallpaperData else {
+          throw GenerationIntegrityError(reason: "wallpaper renderer requires selected bytes")
+        }
+        return [ConsumerRenderedOutput(path: WallpaperAdapter.outputPath, data: wallpaperData)]
       }
     ),
     ConsumerCatalogEntry(

@@ -29,6 +29,8 @@ enum NeovimAdapterError: Error, CustomStringConvertible, Sendable {
 package struct NeovimAdapter: Sendable {
   static let id = "neovim"
   package static let integrationDirective = "local current = macarchy.watch()"
+  package static let backgroundAwareWatcherDirective =
+    "if same_theme(state.theme, theme) then"
   package static let importedColorscheme = "macarchy-imported"
   package static let importedColorschemeDirective =
     "require(\"config.macarchy-theme\").apply_imported()"
@@ -54,6 +56,10 @@ package struct NeovimAdapter: Sendable {
     configurationDirectoryURL.appending(path: "colors/\(Self.importedColorscheme).lua")
   }
 
+  private var watcherURL: URL {
+    configurationDirectoryURL.appending(path: "lua/config/macarchy-theme.lua")
+  }
+
   private var activeThemeURL: URL {
     root.appending(path: "current/\(Self.outputPath)")
   }
@@ -72,6 +78,14 @@ package struct NeovimAdapter: Sendable {
     try themeLink.validate()
     guard Self.containsIntegrationDirective(in: try readConfiguration()) else {
       throw NeovimAdapterError.missingIntegration(Self.integrationDirective)
+    }
+    guard
+      Self.contains(
+        directive: Self.backgroundAwareWatcherDirective,
+        in: try readConfiguration(at: watcherURL)
+      )
+    else {
+      throw NeovimAdapterError.missingIntegration(Self.backgroundAwareWatcherDirective)
     }
   }
 
