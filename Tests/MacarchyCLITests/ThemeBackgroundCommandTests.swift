@@ -27,7 +27,7 @@ struct ThemeBackgroundCommandTests {
     let canonical = Mutex(
       backgroundManifest(
         generationID: "g-initial",
-        background: GenerationBackground(id: "default", format: .png)
+        background: GenerationBackground(id: "default", format: .webp)
       )
     )
     let selected = Mutex([String]())
@@ -101,8 +101,8 @@ struct ThemeBackgroundCommandTests {
       to: package
     )
     try FileManager.default.copyItem(
-      at: package.appending(path: "wallpapers/default.png"),
-      to: package.appending(path: "wallpapers/second.png")
+      at: package.appending(path: "wallpapers/1-totoro.webp"),
+      to: package.appending(path: "wallpapers/second.webp")
     )
     let manifestURL = package.appending(path: "theme.toml")
     var manifest = try String(contentsOf: manifestURL, encoding: .utf8)
@@ -110,7 +110,7 @@ struct ThemeBackgroundCommandTests {
 
       [[backgrounds]]
       id = "second"
-      path = "wallpapers/second.png"
+      path = "wallpapers/second.webp"
       source = "Command fixture"
       author = "Fixture author"
       license = "MIT"

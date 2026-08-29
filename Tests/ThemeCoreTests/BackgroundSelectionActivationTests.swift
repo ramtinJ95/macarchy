@@ -26,7 +26,7 @@ extension AdapterContractTests {
     )
 
     let first = try await coordinator.activate(package: package)
-    #expect(first.manifest.background == GenerationBackground(id: "default", format: .png))
+    #expect(first.manifest.background == GenerationBackground(id: "default", format: .webp))
     let baseline = try ReconciliationStatusStore(root: root).persist(
       manifest: first.manifest,
       results: first.reconciliation.results.map { result in
@@ -47,7 +47,7 @@ extension AdapterContractTests {
       requestedBackgroundID: "second"
     )
 
-    #expect(second.manifest.background == GenerationBackground(id: "second", format: .png))
+    #expect(second.manifest.background == GenerationBackground(id: "second", format: .webp))
     #expect(requests.values.withLock { $0 }.isEmpty)
     #expect(wallpaperState.value.withLock { $0.setCount } == 2)
     let priorResults = Dictionary(
@@ -75,11 +75,11 @@ extension AdapterContractTests {
       wallpaperControl: trackedWallpaperControl(state: wallpaperState)
     )
     let restored = try await restarted.activate(package: package)
-    #expect(restored.manifest.background == GenerationBackground(id: "second", format: .png))
+    #expect(restored.manifest.background == GenerationBackground(id: "second", format: .webp))
 
     let removed = try removingSecondBackground(from: package)
     let fallback = try await restarted.activate(package: removed)
-    #expect(fallback.manifest.background == GenerationBackground(id: "default", format: .png))
+    #expect(fallback.manifest.background == GenerationBackground(id: "default", format: .webp))
     #expect(
       fallback.notice
         == "Remembered background 'second' is no longer available; selected the first background."
@@ -158,8 +158,8 @@ extension AdapterContractTests {
       at: repositoryRoot.appending(path: "Themes/catppuccin-mocha"),
       to: packageURL
     )
-    let source = packageURL.appending(path: "wallpapers/default.png")
-    let second = packageURL.appending(path: "wallpapers/second.png")
+    let source = packageURL.appending(path: "wallpapers/1-totoro.webp")
+    let second = packageURL.appending(path: "wallpapers/second.webp")
     try FileManager.default.copyItem(at: source, to: second)
     let manifestURL = packageURL.appending(path: "theme.toml")
     var manifest = try String(contentsOf: manifestURL, encoding: .utf8)
@@ -167,7 +167,7 @@ extension AdapterContractTests {
 
       [[backgrounds]]
       id = "second"
-      path = "wallpapers/second.png"
+      path = "wallpapers/second.webp"
       source = "Selection fixture"
       author = "Fixture author"
       license = "MIT"
@@ -187,10 +187,10 @@ extension AdapterContractTests {
     let background = """
       [[backgrounds]]
       id = "default"
-      path = "wallpapers/default.png"
-      source = "Original Macarchy palette artwork"
-      author = "Ramtin Javanmardi"
-      license = "MIT"
+      path = "wallpapers/1-totoro.webp"
+      source = "Omarchy themes/catppuccin/backgrounds/1-totoro.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+      author = "Omarchy contributors"
+      license = "MIT (Omarchy repository)"
       """
     let updated = manifest.replacingOccurrences(of: background, with: "")
     try #require(updated != manifest)
@@ -206,7 +206,7 @@ extension AdapterContractTests {
 
       [[backgrounds]]
       id = "second"
-      path = "wallpapers/second.png"
+      path = "wallpapers/second.webp"
       source = "Selection fixture"
       author = "Fixture author"
       license = "MIT"
@@ -215,7 +215,7 @@ extension AdapterContractTests {
     try #require(updated != manifest)
     try updated.write(to: manifestURL, atomically: true, encoding: .utf8)
     try FileManager.default.removeItem(
-      at: package.packageURL.appending(path: "wallpapers/second.png")
+      at: package.packageURL.appending(path: "wallpapers/second.webp")
     )
     return try ThemePackageLoader().load(packageURL: package.packageURL)
   }

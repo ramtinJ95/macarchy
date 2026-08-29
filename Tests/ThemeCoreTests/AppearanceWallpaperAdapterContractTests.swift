@@ -396,7 +396,9 @@ extension AdapterContractTests {
       try? FileManager.default.removeItem(at: root)
     }
     let package = try catppuccinPackage()
-    var override = package.defaultBackgroundData
+    var override = try Data(
+      contentsOf: repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png")
+    )
     override.append(Data(repeating: 0, count: BoundedRegularFile.maximumSize))
     let overrideURL = root.appending(path: "personal.png")
     try override.write(to: overrideURL)

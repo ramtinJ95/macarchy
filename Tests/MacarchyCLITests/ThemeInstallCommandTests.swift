@@ -221,7 +221,7 @@ private struct ThemeInstallFixture {
       withIntermediateDirectories: true
     )
     try FileManager.default.copyItem(
-      at: builtInThemes.appending(path: "catppuccin-mocha/wallpapers/default.png"),
+      at: Self.repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png"),
       to: checkout.appending(path: "backgrounds/purple.png")
     )
     try "ignored".write(

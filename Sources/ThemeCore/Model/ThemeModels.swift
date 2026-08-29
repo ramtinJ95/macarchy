@@ -81,11 +81,13 @@ public struct ThemeBackground: Sendable {
 public enum ThemeBackgroundFormat: String, Codable, Sendable {
   case jpeg
   case png
+  case webp
 
   init?(pathExtension: String) {
     switch pathExtension.lowercased() {
     case "jpeg", "jpg": self = .jpeg
     case "png": self = .png
+    case "webp": self = .webp
     default: return nil
     }
   }
@@ -94,6 +96,7 @@ public enum ThemeBackgroundFormat: String, Codable, Sendable {
     switch self {
     case .jpeg: "public.jpeg"
     case .png: "public.png"
+    case .webp: "org.webmproject.webp"
     }
   }
 }

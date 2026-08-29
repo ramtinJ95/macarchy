@@ -410,7 +410,7 @@ struct OmarchyThemeConverterTests {
       return
     }
     #expect(mismatchPath == "backgrounds/mismatch.jpg")
-    #expect(mismatchReason.contains("filename's PNG or JPEG type"))
+    #expect(mismatchReason.contains("filename's PNG, JPEG, or WebP type"))
     #expect(!FileManager.default.fileExists(atPath: invalid.destination.path))
 
     let oversized = try ConversionFixture()
@@ -537,7 +537,7 @@ private final class ConversionFixture {
     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
     pngData = try Data(
       contentsOf: Self.repositoryRoot.appending(
-        path: "Themes/catppuccin-mocha/wallpapers/default.png"))
+        path: "Tests/Fixtures/Images/test-wallpaper.png"))
   }
 
   func addPalette() throws {
