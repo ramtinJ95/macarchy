@@ -685,14 +685,10 @@ package struct ThemeActivationCoordinator: Sendable {
         },
         reconciliation: {
           AdapterReconciliation(id: WallpaperAdapter.id, requirement: .required) {
-            let manifest = try statusStore.activeManifest()
-            guard let desiredWallpaperURL = activeWallpaperURL(manifest: manifest) else {
-              return AdapterOutcome(
-                status: .disabled,
-                message: "This theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
-              )
-            }
-            return try await wallpaper.reconciliation { desiredWallpaperURL }.run()
+            try await wallpaper.reconciliation {
+              let manifest = try statusStore.activeManifest()
+              return activeWallpaperURL(manifest: manifest)
+            }.run()
           }
         }
       )
