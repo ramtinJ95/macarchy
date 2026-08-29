@@ -6,7 +6,8 @@ struct KeybindingsPlanCommandRunner: Sendable {
   let loadProfile: @Sendable (URL, Bool) throws -> KeybindingProfile
   let loadCatalog: @Sendable (URL) throws -> SkhdKeybindingCatalog
   let inspectGeneration: @Sendable (URL) -> KeybindingGenerationInspection
-  let inspectProvider: @Sendable (URL, URL) -> KeybindingProviderInspection
+  let inspectProvider:
+    @Sendable (URL, URL, KeybindingGenerationInspection) -> KeybindingProviderInspection
 
   static let live = KeybindingsPlanCommandRunner(
     read: readSkhdConfiguration,
@@ -14,7 +15,11 @@ struct KeybindingsPlanCommandRunner: Sendable {
     loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },
     inspectGeneration: { KeybindingGenerationInspector().inspect(stateRoot: $0) },
     inspectProvider: {
-      KeybindingProviderInspector().inspect(homeDirectory: $0, stateRoot: $1)
+      KeybindingProviderInspector().inspect(
+        homeDirectory: $0,
+        stateRoot: $1,
+        generation: $2
+      )
     }
   )
 
@@ -29,7 +34,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     let defaultsURL = resourcesRoot.appending(path: "defaults.skhdrc")
     let defaultMetadataURL = resourcesRoot.appending(path: "metadata.toml")
     let generation = inspectGeneration(stateRoot)
-    let provider = inspectProvider(homeDirectory, stateRoot)
+    let provider = inspectProvider(homeDirectory, stateRoot, generation)
     var diagnostics: [KeybindingsPlanDiagnostic] = []
 
     let defaultsText: String?
@@ -365,6 +370,10 @@ private struct KeybindingsPlanReport: Encodable {
       "- current input digest: \(generation.currentInputDigest ?? "none")",
       "- current rendered digest: \(generation.currentRenderedDigest ?? "none")",
       "- provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
+      "- provider entry point: \(provider.entryPoint)",
+      "- provider expected target: \(provider.expectedTarget)",
+      "- provider original target: \(provider.originalTarget ?? "none")",
+      "- provider source: \(provider.source ?? "none")",
     ]
     if !bindings.isEmpty {
       lines.append("Effective bindings:")

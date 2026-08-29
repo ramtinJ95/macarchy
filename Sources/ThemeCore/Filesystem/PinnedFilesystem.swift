@@ -108,7 +108,11 @@ package enum PinnedFilesystem {
     maximumSize: Int = BoundedRegularFile.maximumSize
   ) throws -> BoundedRegularFile {
     let descriptor = name.withCString {
-      Darwin.openat(parentDescriptor, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      Darwin.openat(
+        parentDescriptor,
+        $0,
+        O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW
+      )
     }
     guard descriptor >= 0 else {
       throw PinnedFilesystemError(operation: "open pinned regular file", url: url, code: errno)
@@ -148,7 +152,15 @@ package enum PinnedFilesystem {
     defer { closedir(directory) }
 
     var entries: [String] = []
-    while let entry = readdir(directory) {
+    while true {
+      errno = 0
+      guard let entry = readdir(directory) else {
+        let code = errno
+        guard code == 0 else {
+          throw PinnedFilesystemError(operation: "enumerate pinned directory", url: url, code: code)
+        }
+        break
+      }
       let name = withUnsafePointer(to: entry.pointee.d_name) { pointer in
         pointer.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) {
           String(cString: $0)

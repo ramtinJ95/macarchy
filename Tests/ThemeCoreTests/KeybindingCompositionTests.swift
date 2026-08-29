@@ -186,6 +186,27 @@ struct KeybindingCompositionTests {
     #expect(missingMetadata.diagnostics.map(\.code) == ["packaged_metadata_missing"])
   }
 
+  @Test
+  func oversizedRenderedConfigurationBlocksBeforeGenerationPlanning() throws {
+    let oversizedCommand = String(
+      repeating: "x",
+      count: KeybindingComposer.maximumRenderedSize
+    )
+    let result = composer.compose(
+      defaultsText: "alt - j : \(oversizedCommand)\n",
+      defaultsSource: defaultsSource,
+      defaultCatalog: try catalog([("alt-j", "Oversized", 10)]),
+      defaultMetadataSource: URL(filePath: "/package/metadata.toml"),
+      profile: .empty,
+      overrideText: nil,
+      userCatalog: nil
+    )
+
+    #expect(result.isBlocked)
+    #expect(result.renderedConfiguration == nil)
+    #expect(result.diagnostics.map(\.code) == ["rendered_configuration_too_large"])
+  }
+
   private func catalog(_ records: [(String, String, Int)]) throws -> SkhdKeybindingCatalog {
     var text = "schema_version = 1\n"
     for (identity, label, order) in records {

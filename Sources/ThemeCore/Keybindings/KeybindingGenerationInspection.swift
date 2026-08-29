@@ -12,6 +12,7 @@ package struct KeybindingGenerationInspection: Equatable, Sendable {
   package let generationID: String?
   package let inputDigest: String?
   package let renderedDigest: String?
+  package let configuration: String?
   package let message: String?
 
   package static let missing = KeybindingGenerationInspection(
@@ -19,6 +20,7 @@ package struct KeybindingGenerationInspection: Equatable, Sendable {
     generationID: nil,
     inputDigest: nil,
     renderedDigest: nil,
+    configuration: nil,
     message: nil
   )
 }
@@ -174,6 +176,7 @@ package struct KeybindingGenerationInspector: Sendable {
     }
 
     let configurationURL = generation.appending(path: "skhdrc")
+    let configuration: String
     do {
       let file = try PinnedFilesystem.readRegularFile(
         parentDescriptor: generationDescriptor,
@@ -186,6 +189,14 @@ package struct KeybindingGenerationInspector: Sendable {
       guard sha256Digest(file.data) == expectedDigest else {
         return invalid("current generated skhdrc digest does not match its manifest")
       }
+      guard let text = String(data: file.data, encoding: .utf8) else {
+        return invalid("current generated skhdrc is not valid UTF-8")
+      }
+      let parsed = SkhdConfigurationParser().parse(text)
+      guard parsed.diagnostics.isEmpty else {
+        return invalid("current generated skhdrc is not valid supported syntax")
+      }
+      configuration = text
     } catch {
       return invalid("cannot read current generated skhdrc: \(error)")
     }
@@ -195,6 +206,7 @@ package struct KeybindingGenerationInspector: Sendable {
       generationID: generationID,
       inputDigest: manifest.inputDigest,
       renderedDigest: expectedDigest,
+      configuration: configuration,
       message: nil
     )
   }
@@ -205,6 +217,7 @@ package struct KeybindingGenerationInspector: Sendable {
       generationID: nil,
       inputDigest: nil,
       renderedDigest: nil,
+      configuration: nil,
       message: message
     )
   }

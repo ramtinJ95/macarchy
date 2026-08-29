@@ -2,6 +2,7 @@ import Foundation
 import Testing
 
 @testable import MacarchyCLI
+@testable import ThemeCore
 
 struct KeybindingProviderInspectionTests {
   private let inspector = KeybindingProviderInspector()
@@ -50,7 +51,7 @@ struct KeybindingProviderInspectionTests {
   }
 
   @Test
-  func matchingEntryLinkRemainsUnclaimedWithoutOwnershipEvidence() throws {
+  func matchingEntryLinkWithoutReadableGenerationBlocksAdoptionPreview() throws {
     let fixture = try fixtureHome()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     try FileManager.default.createDirectory(
@@ -64,8 +65,33 @@ struct KeybindingProviderInspectionTests {
 
     let inspection = inspect(fixture)
 
-    #expect(inspection.status == .adoptionRequired)
-    #expect(inspection.ownership == "matching_unclaimed_symlink")
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "matching_unclaimed_unreadable")
+  }
+
+  @Test
+  func matchingEntryLinkWithExactManifestClaimIsManaged() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory,
+      withIntermediateDirectories: true
+    )
+    let entry = fixture.skhdDirectory.appending(path: "skhdrc")
+    try FileManager.default.createSymbolicLink(
+      atPath: entry.path,
+      withDestinationPath: KeybindingProviderInspector.managedTarget
+    )
+    let stateRoot = fixture.home.appending(
+      path: ".config/macarchy",
+      directoryHint: .isDirectory
+    )
+    try writeOwnershipClaim(stateRoot: stateRoot, entry: entry)
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .managed)
+    #expect(inspection.ownership == "manifest_claimed_symlink")
   }
 
   @Test
@@ -118,7 +144,8 @@ struct KeybindingProviderInspectionTests {
 
     let inspection = inspector.inspect(
       homeDirectory: fixture.home,
-      stateRoot: fixture.root.appending(path: "other-state", directoryHint: .isDirectory)
+      stateRoot: fixture.root.appending(path: "other-state", directoryHint: .isDirectory),
+      generation: .missing
     )
 
     #expect(inspection.status == .blocked)
@@ -130,7 +157,29 @@ struct KeybindingProviderInspectionTests {
   ) -> KeybindingProviderInspection {
     inspector.inspect(
       homeDirectory: fixture.home,
-      stateRoot: fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+      stateRoot: fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory),
+      generation: .missing
+    )
+  }
+
+  private func writeOwnershipClaim(stateRoot: URL, entry: URL) throws {
+    let setup = stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: setup, withIntermediateDirectories: true)
+    let target = KeybindingProviderInspector.managedTarget
+    let record = SetupOwnershipRecord(
+      id: KeybindingProviderInspector.ownershipID,
+      phase: .applied,
+      kind: .symbolicLink,
+      targetPath: entry.path,
+      backupPath: nil,
+      originalDigest: nil,
+      installedDigest: sha256Digest(Data(target.utf8)),
+      linkDestination: target
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(SetupOwnershipManifest(records: [record])).write(
+      to: setup.appending(path: "ownership.json")
     )
   }
 

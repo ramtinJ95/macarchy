@@ -138,13 +138,9 @@ struct KeybindingsPlanCommandTests {
       renderedDigest: renderedDigest,
       inputDigest: inputDigest
     )
+    try writeOwnershipClaim(fixture)
 
-    let execution = try execute(
-      fixture,
-      json: false,
-      profileRequired: false,
-      using: managedRunner
-    )
+    let execution = try execute(fixture, json: false, profileRequired: false)
 
     #expect(execution.succeeded)
     #expect(execution.output.contains("Macarchy keybindings plan [no_change]:"))
@@ -165,6 +161,14 @@ struct KeybindingsPlanCommandTests {
       }
       try? FileManager.default.removeItem(at: fixture.root)
     }
+    try FileManager.default.createDirectory(
+      at: fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createSymbolicLink(
+      atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path,
+      withDestinationPath: KeybindingProviderInspector.managedTarget
+    )
     let initial = try execute(fixture, json: true, profileRequired: false)
     let initialReport = try jsonObject(initial.output)
     let rendered = try #require(initialReport["rendered_skhdrc"] as? String)
@@ -175,13 +179,9 @@ struct KeybindingsPlanCommandTests {
       renderedDigest: renderedDigest,
       inputDigest: sha256Digest(Data("different validated input".utf8))
     )
+    try writeOwnershipClaim(fixture)
 
-    let execution = try execute(
-      fixture,
-      json: true,
-      profileRequired: false,
-      using: managedRunner
-    )
+    let execution = try execute(fixture, json: true, profileRequired: false)
     let report = try jsonObject(execution.output)
     let actions = try #require(report["actions"] as? [[String: Any]])
 
@@ -219,6 +219,46 @@ struct KeybindingsPlanCommandTests {
     #expect(added.map { $0["identity"] as? String } == ["alt-k"])
     #expect(removed.map { $0["identity"] as? String } == ["cmd-x"])
     #expect(changed.map { $0["identity"] as? String } == ["alt-j"])
+  }
+
+  @Test
+  func matchingUnclaimedLinkUsesCurrentGenerationForAdoptionDelta() throws {
+    let fixture = try planFixture()
+    var generation: URL?
+    defer {
+      if let generation {
+        try? FileManager.default.setAttributes(
+          [.posixPermissions: 0o755],
+          ofItemAtPath: generation.path
+        )
+      }
+      try? FileManager.default.removeItem(at: fixture.root)
+    }
+    try FileManager.default.createDirectory(
+      at: fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createSymbolicLink(
+      atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path,
+      withDestinationPath: KeybindingProviderInspector.managedTarget
+    )
+    let existing = "cmd - x : existing generation\n"
+    generation = try publishGeneration(
+      stateRoot: fixture.stateRoot,
+      rendered: existing,
+      renderedDigest: sha256Digest(Data(existing.utf8)),
+      inputDigest: sha256Digest(Data("existing input".utf8))
+    )
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let delta = try #require(report["adoption_delta"] as? [String: Any])
+    let added = try #require(delta["added"] as? [[String: Any]])
+    let removed = try #require(delta["removed"] as? [[String: Any]])
+
+    #expect(execution.succeeded)
+    #expect(added.map { $0["identity"] as? String } == ["alt-j", "alt-k"])
+    #expect(removed.map { $0["identity"] as? String } == ["cmd-x"])
   }
 
   @Test
@@ -369,24 +409,25 @@ struct KeybindingsPlanCommandTests {
       .deletingLastPathComponent()
   }
 
-  private var managedRunner: KeybindingsPlanCommandRunner {
-    KeybindingsPlanCommandRunner(
-      read: runner.read,
-      loadProfile: runner.loadProfile,
-      loadCatalog: runner.loadCatalog,
-      inspectGeneration: runner.inspectGeneration,
-      inspectProvider: { _, _ in
-        KeybindingProviderInspection(
-          status: .managed,
-          entryPoint: "/home/.config/skhd/skhdrc",
-          ownership: "manifest_claimed_symlink",
-          source: nil,
-          originalTarget: KeybindingProviderInspector.managedTarget,
-          expectedTarget: KeybindingProviderInspector.managedTarget,
-          message: "ownership manifest claims the matching entry link",
-          sourceConfiguration: nil
-        )
-      }
+  private func writeOwnershipClaim(_ fixture: PlanFixture) throws {
+    let setup = fixture.stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: setup, withIntermediateDirectories: true)
+    let target = KeybindingProviderInspector.managedTarget
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let record = SetupOwnershipRecord(
+      id: KeybindingProviderInspector.ownershipID,
+      phase: .applied,
+      kind: .symbolicLink,
+      targetPath: entry.path,
+      backupPath: nil,
+      originalDigest: nil,
+      installedDigest: sha256Digest(Data(target.utf8)),
+      linkDestination: target
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(SetupOwnershipManifest(records: [record])).write(
+      to: setup.appending(path: "ownership.json")
     )
   }
 
