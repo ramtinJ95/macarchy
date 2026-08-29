@@ -24,15 +24,88 @@ private final class ThemeBrowserWindow: NSWindow {
     }
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     let direction = event.keyCode == 123 ? -1 : event.keyCode == 124 ? 1 : 0
-    if direction != 0, modifiers.contains(.option) {
-      navigate?(direction < 0 ? .previousBackground : .nextBackground)
-      return
-    }
-    if direction != 0, modifiers.contains(.control) {
+    if direction != 0, modifiers.contains(.shift),
+      modifiers.isDisjoint(with: [.command, .control, .option])
+    {
       navigate?(direction < 0 ? .previousPreview : .nextPreview)
       return
     }
+    if direction != 0, modifiers.isDisjoint(with: [.command, .control, .option]) {
+      navigate?(direction < 0 ? .previousBackground : .nextBackground)
+      return
+    }
     super.sendEvent(event)
+  }
+}
+
+@MainActor
+private final class ThemeBrowserTableRowView: NSTableRowView {
+  let normalTextColor: NSColor
+  let selectedTextColor: NSColor
+  let selectedBackgroundColor: NSColor
+
+  init(normalTextColor: NSColor, selectedTextColor: NSColor, selectedBackgroundColor: NSColor) {
+    self.normalTextColor = normalTextColor
+    self.selectedTextColor = selectedTextColor
+    self.selectedBackgroundColor = selectedBackgroundColor
+    super.init(frame: .zero)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) is unavailable")
+  }
+
+  override var isSelected: Bool {
+    didSet {
+      for case let cell as NSTableCellView in subviews {
+        cell.textField?.textColor = isSelected ? selectedTextColor : normalTextColor
+      }
+    }
+  }
+
+  override func drawSelection(in dirtyRect: NSRect) {
+    selectedBackgroundColor.setFill()
+    NSBezierPath(roundedRect: bounds.insetBy(dx: 4, dy: 2), xRadius: 6, yRadius: 6).fill()
+  }
+}
+
+@MainActor
+private final class ThemeBrowserWallpaperImageView: NSImageView {
+  override func draw(_ dirtyRect: NSRect) {
+    guard let image else {
+      super.draw(dirtyRect)
+      return
+    }
+    let imageAspect = image.size.width / image.size.height
+    let boundsAspect = bounds.width / bounds.height
+    let sourceRect: NSRect
+    if imageAspect > boundsAspect {
+      let width = image.size.height * boundsAspect
+      sourceRect = NSRect(
+        x: (image.size.width - width) / 2,
+        y: 0,
+        width: width,
+        height: image.size.height
+      )
+    } else {
+      let height = image.size.width / boundsAspect
+      sourceRect = NSRect(
+        x: 0,
+        y: (image.size.height - height) / 2,
+        width: image.size.width,
+        height: height
+      )
+    }
+    NSGraphicsContext.current?.imageInterpolation = .high
+    image.draw(
+      in: bounds,
+      from: sourceRect,
+      operation: .sourceOver,
+      fraction: 1,
+      respectFlipped: true,
+      hints: nil
+    )
   }
 }
 
@@ -49,53 +122,55 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
   private let content: ThemeBrowserContent
   private let galleryLoader: ThemeBrowserGalleryLoader
-  private let applySelection:
-    @Sendable (_ themeID: String, _ backgroundID: String?) async throws
-      -> (output: String, succeeded: Bool)
+  private let launchSelection:
+    (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
 
   private var browserState: ThemeBrowserState
   private var previews: [ThemeBrowserPreview] = []
   private var previewIndex = 0
   private var galleryTask: Task<Void, Never>?
+  private var applyProcess: ThemeBrowserApplyProcessLauncher.RunningProcess?
+  private var applyTimer: Timer?
   private var isApplying = false
-  private(set) var execution: (output: String, succeeded: Bool)?
 
   private let rootView = NSView()
+  private let sidebar = NSStackView()
   private let searchField = NSSearchField()
   private let countLabel = NSTextField(labelWithString: "")
   private let tableView = NSTableView()
+  private let themeScrollView = NSScrollView()
   private let themeNameLabel = NSTextField(labelWithString: "")
   private let previewImageView = NSImageView()
   private let previewLabel = NSTextField(labelWithString: "")
   private let previousPreviewButton = NSButton(title: "Previous", target: nil, action: nil)
   private let nextPreviewButton = NSButton(title: "Next", target: nil, action: nil)
-  private let backgroundImageView = NSImageView()
+  private let backgroundImageView = ThemeBrowserWallpaperImageView()
   private let backgroundLabel = NSTextField(labelWithString: "")
   private let backgroundPicker = NSPopUpButton()
   private let previousBackgroundButton = NSButton(title: "Previous", target: nil, action: nil)
   private let nextBackgroundButton = NSButton(title: "Next", target: nil, action: nil)
   private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
+  private let keyboardHelp = NSTextField(
+    labelWithString: "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ↩ apply   esc close"
+  )
 
   init(
     content: ThemeBrowserContent,
     galleryLoader: ThemeBrowserGalleryLoader = .live,
-    applySelection:
-      @escaping @Sendable (
-        _ themeID: String,
-        _ backgroundID: String?
-      ) async throws -> (output: String, succeeded: Bool)
+    launchSelection:
+      @escaping (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
   ) throws {
     self.content = content
     self.galleryLoader = galleryLoader
-    self.applySelection = applySelection
+    self.launchSelection = launchSelection
     browserState = ThemeBrowserState(content: content)
 
     guard let visibleFrame = Self.activeScreen()?.visibleFrame else {
       throw ThemeBrowserError.noActiveDisplay
     }
-    let width = min(1_140, visibleFrame.width - 48)
-    let height = min(780, visibleFrame.height - 48)
+    let width = min(720, visibleFrame.width - 96)
+    let height = min(640, visibleFrame.height - 96)
     let frame = NSRect(
       x: visibleFrame.midX - width / 2,
       y: visibleFrame.midY - height / 2,
@@ -104,7 +179,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     )
     let window = ThemeBrowserWindow(
       contentRect: frame,
-      styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+      styleMask: [.titled, .closable, .fullSizeContentView],
       backing: .buffered,
       defer: false
     )
@@ -137,7 +212,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     fatalError("init(coder:) is unavailable")
   }
 
-  func run() throws -> (output: String, succeeded: Bool)? {
+  func run() throws {
     let application = NSApplication.shared
     guard application.setActivationPolicy(.accessory) else {
       throw ThemeBrowserError.cannotActivateAccessoryApplication
@@ -149,11 +224,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     window?.makeKeyAndOrderFront(nil)
     window?.makeFirstResponder(searchField)
     application.run()
-    return execution
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    false
+    true
   }
 
   func windowDidResignKey(_ notification: Notification) {
@@ -162,7 +236,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
   func windowWillClose(_ notification: Notification) {
     galleryTask?.cancel()
-    NSApplication.shared.stop(nil)
+    applyTimer?.invalidate()
   }
 
   func numberOfRows(in tableView: NSTableView) -> Int {
@@ -181,7 +255,22 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       ?? makeThemeCell(identifier: identifier)
     cell.textField?.stringValue = item.displayName
     cell.textField?.toolTip = "\(item.id) · \(item.appearance.rawValue)"
+    if let selectedItem {
+      cell.textField?.textColor =
+        row == tableView.selectedRow
+        ? selectedItem.package.terminal.selectionForeground.nsColor
+        : selectedItem.package.semantic.text.nsColor
+    }
     return cell
+  }
+
+  func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+    guard let selectedItem else { return nil }
+    return ThemeBrowserTableRowView(
+      normalTextColor: selectedItem.package.semantic.text.nsColor,
+      selectedTextColor: selectedItem.package.terminal.selectionForeground.nsColor,
+      selectedBackgroundColor: selectedItem.package.terminal.selectionBackground.nsColor
+    )
   }
 
   func tableViewSelectionDidChange(_ notification: Notification) {
@@ -220,11 +309,23 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     case #selector(NSResponder.pageUp(_:)):
       moveThemeSelection(by: -visiblePageRowCount)
       return true
+    case #selector(NSResponder.moveLeft(_:)):
+      moveBackground(by: -1)
+      return true
+    case #selector(NSResponder.moveRight(_:)):
+      moveBackground(by: 1)
+      return true
+    case #selector(NSResponder.moveLeftAndModifySelection(_:)):
+      movePreview(by: -1)
+      return true
+    case #selector(NSResponder.moveRightAndModifySelection(_:)):
+      movePreview(by: 1)
+      return true
     case #selector(NSResponder.insertNewline(_:)):
       applySelectedTheme(nil)
       return true
     case #selector(NSResponder.cancelOperation(_:)):
-      if !isApplying { window?.close() }
+      window?.close()
       return true
     default:
       return false
@@ -261,17 +362,50 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     setControlsEnabled(false)
     statusLabel.textColor = item.package.semantic.accent.nsColor
     statusLabel.stringValue = "Applying \(item.displayName)…"
-    let backgroundID = browserState.selection.backgroundID
-    let themeID = item.id
-    Task { @MainActor [weak self, applySelection] in
-      guard let self else { return }
-      do {
-        execution = try await applySelection(themeID, backgroundID)
-      } catch {
-        execution = ("Theme '\(themeID)' was not activated: \(error)", false)
-      }
-      galleryTask?.cancel()
-      window?.close()
+    statusLabel.toolTip = nil
+    do {
+      applyProcess = try launchSelection(browserState.selection)
+      applyTimer = Timer.scheduledTimer(
+        timeInterval: 0.1,
+        target: self,
+        selector: #selector(checkApplyProcess(_:)),
+        userInfo: nil,
+        repeats: true
+      )
+    } catch {
+      isApplying = false
+      setControlsEnabled(true)
+      statusLabel.textColor = item.package.semantic.error.nsColor
+      statusLabel.stringValue = "Could not start theme activation: \(error)"
+      statusLabel.toolTip = String(describing: error)
+    }
+  }
+
+  @objc private func checkApplyProcess(_ timer: Timer) {
+    guard let applyProcess else {
+      finishApply(timer: timer, status: nil)
+      return
+    }
+    guard !applyProcess.isRunning() else { return }
+    finishApply(timer: timer, status: applyProcess.terminationStatus())
+  }
+
+  private func finishApply(timer: Timer, status: Int32?) {
+    timer.invalidate()
+    applyTimer = nil
+    applyProcess = nil
+    isApplying = false
+    setControlsEnabled(true)
+    guard let item = selectedItem else { return }
+    if status == 0 {
+      statusLabel.textColor = item.package.semantic.accent.nsColor
+      statusLabel.stringValue = "Applied \(item.displayName). Choose another or press Esc to close."
+      statusLabel.toolTip = nil
+    } else {
+      statusLabel.textColor = item.package.semantic.error.nsColor
+      statusLabel.stringValue =
+        "Theme activation failed\(status.map { " (exit \($0))" } ?? ""). See the test log for details."
+      statusLabel.toolTip = "/tmp/macarchy-theme-browser-test.log"
     }
   }
 
@@ -279,130 +413,166 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     rootView.wantsLayer = true
     window.contentView = rootView
 
-    let title = NSTextField(labelWithString: Self.windowTitle)
-    title.font = .systemFont(ofSize: 24, weight: .semibold)
     searchField.placeholderString = "Search installed themes"
     searchField.delegate = self
-    searchField.font = .systemFont(ofSize: 14)
-    countLabel.font = .systemFont(ofSize: 12)
+    searchField.font = .systemFont(ofSize: 13)
+    searchField.controlSize = .small
+    countLabel.font = .systemFont(ofSize: 11)
 
     let themeColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("theme"))
     themeColumn.title = "Theme"
-    themeColumn.width = 250
+    themeColumn.width = 200
     tableView.addTableColumn(themeColumn)
     tableView.headerView = nil
-    tableView.rowHeight = 38
+    tableView.rowHeight = 30
     tableView.allowsEmptySelection = true
     tableView.allowsMultipleSelection = false
     tableView.delegate = self
     tableView.dataSource = self
-    let themeScrollView = NSScrollView()
     themeScrollView.documentView = tableView
     themeScrollView.hasVerticalScroller = true
     themeScrollView.autohidesScrollers = true
     themeScrollView.borderType = .noBorder
+    themeScrollView.drawsBackground = false
+    tableView.backgroundColor = .clear
 
-    let keyboardHelp = NSTextField(
-      wrappingLabelWithString:
-        "Type to search · ↑↓ themes · ⌥←→ backgrounds · ⌃←→ previews · Enter applies · Escape closes"
-    )
-    keyboardHelp.font = .systemFont(ofSize: 11)
-
-    let sidebar = NSStackView(views: [
-      title, countLabel, searchField, themeScrollView, keyboardHelp,
-    ])
+    sidebar.addArrangedSubview(searchField)
+    sidebar.addArrangedSubview(countLabel)
+    sidebar.addArrangedSubview(themeScrollView)
     sidebar.orientation = .vertical
     sidebar.alignment = .leading
-    sidebar.spacing = 10
-    sidebar.setCustomSpacing(16, after: countLabel)
-    sidebar.setCustomSpacing(14, after: searchField)
+    sidebar.spacing = 8
+    sidebar.wantsLayer = true
+    sidebar.layer?.cornerRadius = 8
+    themeScrollView.setContentHuggingPriority(.init(1), for: .vertical)
+    themeScrollView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-    themeNameLabel.font = .systemFont(ofSize: 22, weight: .semibold)
+    themeNameLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+    themeNameLabel.lineBreakMode = .byTruncatingTail
+    themeNameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     previewImageView.imageScaling = .scaleProportionallyUpOrDown
     previewImageView.wantsLayer = true
-    previewImageView.layer?.cornerRadius = 12
+    previewImageView.layer?.cornerRadius = 8
     previewImageView.layer?.masksToBounds = true
-    previewLabel.font = .systemFont(ofSize: 12)
+    previewImageView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    previewImageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    previewImageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    previewLabel.font = .systemFont(ofSize: 11)
     previewLabel.alignment = .center
+    previewLabel.lineBreakMode = .byTruncatingMiddle
+    previewLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     configureButton(previousPreviewButton, action: #selector(showPreviousPreview(_:)))
     configureButton(nextPreviewButton, action: #selector(showNextPreview(_:)))
+    previousPreviewButton.title = "‹"
+    nextPreviewButton.title = "›"
     let previewControls = NSStackView(views: [
       previousPreviewButton, previewLabel, nextPreviewButton,
     ])
     previewControls.orientation = .horizontal
     previewControls.alignment = .centerY
     previewControls.distribution = .fill
-    previewControls.spacing = 10
+    previewControls.spacing = 8
+    let headerSpacer = NSView()
+    headerSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
+    let header = NSStackView(views: [themeNameLabel, headerSpacer, previewControls])
+    header.orientation = .horizontal
+    header.alignment = .centerY
+    header.spacing = 8
 
-    let backgroundTitle = NSTextField(labelWithString: "Background")
-    backgroundTitle.font = .systemFont(ofSize: 15, weight: .semibold)
     backgroundImageView.imageScaling = .scaleProportionallyUpOrDown
     backgroundImageView.wantsLayer = true
-    backgroundImageView.layer?.cornerRadius = 10
+    backgroundImageView.layer?.cornerRadius = 8
     backgroundImageView.layer?.masksToBounds = true
-    backgroundLabel.font = .systemFont(ofSize: 12)
+    backgroundImageView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    backgroundImageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    backgroundImageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+    backgroundLabel.font = .systemFont(ofSize: 11)
+    backgroundLabel.lineBreakMode = .byTruncatingTail
     configureButton(previousBackgroundButton, action: #selector(showPreviousBackground(_:)))
     configureButton(nextBackgroundButton, action: #selector(showNextBackground(_:)))
+    previousBackgroundButton.title = "‹"
+    nextBackgroundButton.title = "›"
     backgroundPicker.target = self
     backgroundPicker.action = #selector(chooseBackground(_:))
+    backgroundPicker.controlSize = .small
+    backgroundPicker.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let backgroundControls = NSStackView(views: [
       previousBackgroundButton, backgroundPicker, nextBackgroundButton,
     ])
     backgroundControls.orientation = .horizontal
     backgroundControls.alignment = .centerY
-    backgroundControls.spacing = 10
+    backgroundControls.spacing = 8
 
     applyButton.target = self
     applyButton.action = #selector(applySelectedTheme(_:))
     applyButton.bezelStyle = .rounded
+    applyButton.controlSize = .small
     applyButton.keyEquivalent = "\r"
     statusLabel.font = .systemFont(ofSize: 11)
     statusLabel.maximumNumberOfLines = 2
 
+    keyboardHelp.font = .monospacedSystemFont(ofSize: 9, weight: .regular)
+    keyboardHelp.lineBreakMode = .byTruncatingTail
+    keyboardHelp.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    let bottomSpacer = NSView()
+    bottomSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
+    let bottomBar = NSStackView(views: [
+      keyboardHelp, bottomSpacer, applyButton,
+    ])
+    bottomBar.orientation = .horizontal
+    bottomBar.alignment = .centerY
+    bottomBar.spacing = 8
+
     let detail = NSStackView(views: [
-      themeNameLabel, previewImageView, previewControls, backgroundTitle, backgroundImageView,
-      backgroundLabel, backgroundControls, statusLabel, applyButton,
+      header, previewImageView, backgroundImageView, backgroundControls, backgroundLabel,
+      statusLabel, bottomBar,
     ])
     detail.orientation = .vertical
     detail.alignment = .leading
-    detail.spacing = 10
-    detail.setCustomSpacing(16, after: previewControls)
+    detail.spacing = 8
+    detail.setContentHuggingPriority(.init(1), for: .horizontal)
+    backgroundImageView.setContentHuggingPriority(.init(1), for: .vertical)
+    for view in [
+      header, previewImageView, backgroundControls, backgroundLabel, statusLabel, bottomBar,
+    ] {
+      view.setContentHuggingPriority(.defaultHigh, for: .vertical)
+      view.setContentCompressionResistancePriority(.defaultHigh, for: .vertical)
+    }
 
     let rootStack = NSStackView(views: [sidebar, detail])
     rootStack.orientation = .horizontal
     rootStack.alignment = .top
-    rootStack.spacing = 24
+    rootStack.distribution = .fill
+    rootStack.spacing = 16
     rootStack.translatesAutoresizingMaskIntoConstraints = false
     rootView.addSubview(rootStack)
 
-    for view in [title, countLabel, searchField, themeScrollView, keyboardHelp] {
-      view.translatesAutoresizingMaskIntoConstraints = false
-      view.widthAnchor.constraint(equalTo: sidebar.widthAnchor).isActive = true
-    }
-    for view in [
-      themeNameLabel, previewImageView, previewControls, backgroundTitle, backgroundImageView,
-      backgroundLabel, backgroundControls, statusLabel, applyButton,
-    ] {
-      view.translatesAutoresizingMaskIntoConstraints = false
-    }
     NSLayoutConstraint.activate([
-      rootStack.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 24),
-      rootStack.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -24),
-      rootStack.topAnchor.constraint(equalTo: rootView.topAnchor, constant: 24),
-      rootStack.bottomAnchor.constraint(equalTo: rootView.bottomAnchor, constant: -20),
-      sidebar.widthAnchor.constraint(equalToConstant: 280),
-      searchField.heightAnchor.constraint(equalToConstant: 36),
-      themeScrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 440),
-      detail.widthAnchor.constraint(greaterThanOrEqualToConstant: 560),
+      rootStack.leadingAnchor.constraint(equalTo: rootView.leadingAnchor, constant: 16),
+      rootStack.trailingAnchor.constraint(equalTo: rootView.trailingAnchor, constant: -16),
+      rootStack.topAnchor.constraint(
+        equalTo: rootView.safeAreaLayoutGuide.topAnchor,
+        constant: 8
+      ),
+      rootStack.bottomAnchor.constraint(equalTo: rootView.bottomAnchor, constant: -16),
+      sidebar.widthAnchor.constraint(equalToConstant: 220),
+      sidebar.heightAnchor.constraint(equalTo: rootStack.heightAnchor),
+      detail.heightAnchor.constraint(equalTo: rootStack.heightAnchor),
+      searchField.widthAnchor.constraint(equalTo: sidebar.widthAnchor),
+      searchField.heightAnchor.constraint(equalToConstant: 28),
+      countLabel.widthAnchor.constraint(equalTo: sidebar.widthAnchor),
+      themeScrollView.widthAnchor.constraint(equalTo: sidebar.widthAnchor),
+      header.widthAnchor.constraint(equalTo: detail.widthAnchor),
       previewImageView.widthAnchor.constraint(equalTo: detail.widthAnchor),
-      previewImageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 280),
-      previewControls.widthAnchor.constraint(equalTo: detail.widthAnchor),
+      previewImageView.heightAnchor.constraint(equalToConstant: 88),
       backgroundImageView.widthAnchor.constraint(equalTo: detail.widthAnchor),
-      backgroundImageView.heightAnchor.constraint(equalToConstant: 170),
+      backgroundImageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 200),
       backgroundLabel.widthAnchor.constraint(equalTo: detail.widthAnchor),
       backgroundControls.widthAnchor.constraint(equalTo: detail.widthAnchor),
       statusLabel.widthAnchor.constraint(equalTo: detail.widthAnchor),
-      applyButton.widthAnchor.constraint(equalToConstant: 110),
+      statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
+      bottomBar.widthAnchor.constraint(equalTo: detail.widthAnchor),
+      applyButton.widthAnchor.constraint(equalToConstant: 84),
     ])
 
     updateCount()
@@ -412,6 +582,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     button.target = self
     button.action = action
     button.bezelStyle = .rounded
+    button.controlSize = .small
   }
 
   private func makeThemeCell(identifier: NSUserInterfaceItemIdentifier) -> NSTableCellView {
@@ -444,14 +615,18 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       tableView.scrollRowToVisible(selectedRow)
     }
     window?.appearance = NSAppearance(named: item.appearance == .dark ? .darkAqua : .aqua)
+    window?.backgroundColor = item.package.semantic.background.nsColor
     rootView.layer?.backgroundColor = item.package.semantic.background.nsColor.cgColor
+    sidebar.layer?.backgroundColor = item.package.semantic.surface.nsColor.cgColor
     themeNameLabel.stringValue = "\(item.displayName) · \(item.appearance.rawValue)"
     themeNameLabel.textColor = item.package.semantic.text.nsColor
     countLabel.textColor = item.package.semantic.mutedText.nsColor
     previewLabel.textColor = item.package.semantic.mutedText.nsColor
     backgroundLabel.textColor = item.package.semantic.mutedText.nsColor
     statusLabel.textColor = item.package.semantic.mutedText.nsColor
+    keyboardHelp.textColor = item.package.semantic.mutedText.nsColor
     statusLabel.stringValue = "Browsing is local. Only Apply changes the active theme."
+    tableView.reloadData()
     previews = [item.generatedPreview]
     previewIndex = 0
     updatePreviewPresentation()
@@ -503,7 +678,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       statusLabel.stringValue = ThemeBrowserError.cannotRenderPreview(themeID: item.id).description
     }
     previewLabel.stringValue = "\(previewIndex + 1) of \(previews.count) · \(preview.label)"
-    let navigable = previews.count > 1 && !isApplying
+    let navigable = previews.count > 1
     previousPreviewButton.isEnabled = navigable
     nextPreviewButton.isEnabled = navigable
   }
@@ -511,11 +686,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private func configureBackgrounds(item: ThemeBrowserItem) {
     backgroundPicker.removeAllItems()
     for background in item.backgrounds {
-      backgroundPicker.addItem(withTitle: "\(background.id) · \(background.path)")
+      backgroundPicker.addItem(withTitle: background.id)
+      backgroundPicker.lastItem?.toolTip = background.path
     }
     guard !item.backgrounds.isEmpty else {
       backgroundImageView.image = nil
       backgroundLabel.stringValue = "No backgrounds · wallpaper remains unmanaged"
+      backgroundLabel.toolTip = nil
       backgroundPicker.isEnabled = false
       previousBackgroundButton.isEnabled = false
       nextBackgroundButton.isEnabled = false
@@ -542,10 +719,12 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       let background = item.backgrounds.first(where: { $0.id == backgroundID })
     else { return }
     backgroundImageView.image = item.backgroundData(id: backgroundID).flatMap(NSImage.init(data:))
+    let index = item.backgrounds.firstIndex(where: { $0.id == backgroundID }) ?? 0
     backgroundLabel.stringValue =
-      "\(background.id) · \(background.format.rawValue) · \(background.path)"
-    backgroundPicker.isEnabled = !isApplying
-    let navigable = item.backgrounds.count > 1 && !isApplying
+      "\(index + 1) of \(item.backgrounds.count) · \(background.id) · \(background.format.rawValue)"
+    backgroundLabel.toolTip = background.path
+    backgroundPicker.isEnabled = true
+    let navigable = item.backgrounds.count > 1
     previousBackgroundButton.isEnabled = navigable
     nextBackgroundButton.isEnabled = navigable
   }

@@ -65,6 +65,87 @@ struct ThemeBrowserSelection: Equatable, Sendable {
   let backgroundID: String?
 }
 
+struct ThemeBrowserApplyRequest: Equatable, Sendable {
+  static let themeEnvironmentKey = "MACARCHY_THEME_BROWSER_APPLY_THEME"
+  static let backgroundEnvironmentKey = "MACARCHY_THEME_BROWSER_APPLY_BACKGROUND"
+
+  let selection: ThemeBrowserSelection
+
+  init?(environment: [String: String]) {
+    guard let themeID = environment[Self.themeEnvironmentKey], !themeID.isEmpty else {
+      return nil
+    }
+    selection = ThemeBrowserSelection(
+      themeID: themeID,
+      backgroundID: environment[Self.backgroundEnvironmentKey]
+    )
+  }
+
+  init(selection: ThemeBrowserSelection) {
+    self.selection = selection
+  }
+
+  func environment(addingTo base: [String: String]) -> [String: String] {
+    var environment = base
+    environment[Self.themeEnvironmentKey] = selection.themeID
+    if let backgroundID = selection.backgroundID {
+      environment[Self.backgroundEnvironmentKey] = backgroundID
+    } else {
+      environment.removeValue(forKey: Self.backgroundEnvironmentKey)
+    }
+    return environment
+  }
+}
+
+enum ThemeBrowserApplyLaunchError: Error, CustomStringConvertible, Sendable {
+  case missingExecutable
+
+  var description: String {
+    switch self {
+    case .missingExecutable:
+      "Cannot locate the Macarchy executable for theme activation"
+    }
+  }
+}
+
+struct ThemeBrowserApplyProcessLauncher: Sendable {
+  struct RunningProcess: Sendable {
+    let isRunning: @Sendable () -> Bool
+    let terminationStatus: @Sendable () -> Int32
+  }
+
+  let spawn:
+    @Sendable (_ executableURL: URL, _ arguments: [String], _ environment: [String: String]) throws
+      -> RunningProcess
+
+  static let live = ThemeBrowserApplyProcessLauncher(
+    spawn: { executableURL, arguments, environment in
+      let process = Process()
+      process.executableURL = executableURL
+      process.arguments = arguments
+      process.environment = environment
+      process.standardOutput = FileHandle.standardOutput
+      process.standardError = FileHandle.standardError
+      try process.run()
+      return RunningProcess(
+        isRunning: { process.isRunning },
+        terminationStatus: { process.terminationStatus }
+      )
+    }
+  )
+
+  func launch(
+    selection: ThemeBrowserSelection,
+    executableURL: URL? = Bundle.main.executableURL,
+    arguments: [String] = Array(CommandLine.arguments.dropFirst()),
+    environment: [String: String] = ProcessInfo.processInfo.environment
+  ) throws -> RunningProcess {
+    guard let executableURL else { throw ThemeBrowserApplyLaunchError.missingExecutable }
+    let request = ThemeBrowserApplyRequest(selection: selection)
+    return try spawn(executableURL, arguments, request.environment(addingTo: environment))
+  }
+}
+
 struct ThemeBrowserState: Sendable {
   let content: ThemeBrowserContent
   private(set) var visibleItems: [ThemeBrowserItem]
@@ -213,5 +294,69 @@ struct ThemeBrowserGalleryLoader: Sendable {
         data: asset.data
       )
     }
+  }
+}
+
+struct ThemeBrowserApplyRunner: Sendable {
+  let activeThemeID: @Sendable (URL) throws -> String?
+  let setActiveBackground:
+    @Sendable (ThemeRepository, String, URL, ThemeConsumerPaths) async throws
+      -> (output: String, succeeded: Bool)
+  let setThemeAndBackground:
+    @Sendable (ThemeRepository, String, String?, URL, ThemeConsumerPaths) async throws
+      -> (output: String, succeeded: Bool)
+
+  static let live = ThemeBrowserApplyRunner(
+    activeThemeID: { root in
+      do {
+        return try ReconciliationStatusStore(root: root).activeManifest().themeID
+      } catch ReconciliationStatusError.noActiveGeneration {
+        return nil
+      }
+    },
+    setActiveBackground: { repository, backgroundID, root, consumerPaths in
+      try await ThemeBackgroundCommandRunner.live.set(
+        repository: repository,
+        backgroundID: backgroundID,
+        stateRoot: root,
+        consumerPaths: consumerPaths,
+        dryRun: false
+      )
+    },
+    setThemeAndBackground: { repository, themeID, backgroundID, root, consumerPaths in
+      try await ThemeSetCommandRunner.live.execute(
+        repository: repository,
+        themeID: themeID,
+        stateRoot: root,
+        consumerPaths: consumerPaths,
+        dryRun: false,
+        json: false,
+        requestedBackgroundID: backgroundID
+      )
+    }
+  )
+
+  func execute(
+    repository: ThemeRepository,
+    themeID: String,
+    backgroundID: String?,
+    stateRoot: URL,
+    consumerPaths: ThemeConsumerPaths
+  ) async throws -> (output: String, succeeded: Bool) {
+    if try activeThemeID(stateRoot) == themeID, let backgroundID {
+      return try await setActiveBackground(
+        repository,
+        backgroundID,
+        stateRoot,
+        consumerPaths
+      )
+    }
+    return try await setThemeAndBackground(
+      repository,
+      themeID,
+      backgroundID,
+      stateRoot,
+      consumerPaths
+    )
   }
 }
