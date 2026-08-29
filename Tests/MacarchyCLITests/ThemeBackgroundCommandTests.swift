@@ -77,6 +77,69 @@ struct ThemeBackgroundCommandTests {
     #expect(canonical.withLock { $0.background?.id } == "default")
   }
 
+  @Test
+  func personalSetPassesTheBasePackageToActivation() async throws {
+    let fixture = try personalBackgroundFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let observedBackgrounds = Mutex([String]())
+    let observedSelection = Mutex<String?>(nil)
+    let runner = ThemeBackgroundCommandRunner(
+      activeManifest: { _ in
+        backgroundManifest(
+          background: GenerationBackground(id: "default", format: .webp)
+        )
+      },
+      preflight: { package, backgroundID, _, _ in
+        observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
+        observedSelection.withLock { $0 = backgroundID }
+      },
+      activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+    )
+
+    let result = try await runner.set(
+      repository: fixture.repository,
+      backgroundID: "samurai",
+      stateRoot: fixture.stateRoot,
+      consumerPaths: testConsumerPaths(),
+      dryRun: true
+    )
+
+    #expect(result.succeeded)
+    #expect(observedSelection.withLock { $0 } == "samurai")
+    #expect(observedBackgrounds.withLock { $0 } == ["default", "second"])
+  }
+
+  @Test
+  func personalNextSelectsFromTheEffectivePackageButActivatesTheBasePackage() async throws {
+    let fixture = try personalBackgroundFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let observedBackgrounds = Mutex([String]())
+    let observedSelection = Mutex<String?>(nil)
+    let runner = ThemeBackgroundCommandRunner(
+      activeManifest: { _ in
+        backgroundManifest(
+          background: GenerationBackground(id: "second", format: .webp)
+        )
+      },
+      preflight: { package, backgroundID, _, _ in
+        observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
+        observedSelection.withLock { $0 = backgroundID }
+      },
+      activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+    )
+
+    let result = try await runner.next(
+      repository: fixture.repository,
+      stateRoot: fixture.stateRoot,
+      consumerPaths: testConsumerPaths(),
+      dryRun: true
+    )
+
+    #expect(result.succeeded)
+    #expect(observedSelection.withLock { $0 } == "samurai")
+    #expect(observedBackgrounds.withLock { $0 } == ["default", "second"])
+  }
+
   private func runner(manifest: GenerationManifest) -> ThemeBackgroundCommandRunner {
     ThemeBackgroundCommandRunner(
       activeManifest: { _ in manifest },
@@ -120,6 +183,33 @@ struct ThemeBackgroundCommandTests {
       """
     try manifest.write(to: manifestURL, atomically: true, encoding: .utf8)
     return (root, ThemeRepository(builtInRoot: themes))
+  }
+
+  private func personalBackgroundFixture() throws -> (
+    root: URL,
+    stateRoot: URL,
+    repository: ThemeRepository
+  ) {
+    let fixture = try multiBackgroundRepository()
+    let stateRoot = fixture.root.appending(path: "state", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: true)
+    let wallpaper = fixture.root.appending(
+      path: "themes/catppuccin-mocha/wallpapers/1-totoro.webp"
+    )
+    let configuration = """
+      schema_version = 2
+
+      [[wallpaper_additions]]
+      theme_id = "catppuccin-mocha"
+      id = "samurai"
+      path = "\(wallpaper.path)"
+      """
+    try configuration.write(
+      to: stateRoot.appending(path: "config.toml"),
+      atomically: true,
+      encoding: .utf8
+    )
+    return (fixture.root, stateRoot, fixture.repository)
   }
 
   private var repositoryRoot: URL {
