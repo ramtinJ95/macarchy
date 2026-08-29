@@ -36,3 +36,24 @@ path = "wallpapers/1-totoro.webp"
 source = "Omarchy themes/catppuccin/backgrounds/1-totoro.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
 author = "Omarchy contributors"
 license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "waves"
+path = "wallpapers/2-waves.webp"
+source = "Omarchy themes/catppuccin/backgrounds/2-waves.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "blue-eye"
+path = "wallpapers/3-blue-eye.webp"
+source = "Omarchy themes/catppuccin/backgrounds/3-blue-eye.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "omarchy"
+path = "wallpapers/omarchy.webp"
+source = "Omarchy themes/catppuccin/backgrounds/omarchy.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"
