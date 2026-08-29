@@ -813,8 +813,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       let background = item.backgrounds.first(where: { $0.id == backgroundID })
     else { return }
     let index = item.backgrounds.firstIndex(where: { $0.id == backgroundID }) ?? 0
+    let format = item.usesWallpaperOverride ? "png · personal override" : background.format.rawValue
     backgroundLabel.stringValue =
-      "\(index + 1) of \(item.backgrounds.count) · \(background.id) · \(background.format.rawValue)"
+      "\(index + 1) of \(item.backgrounds.count) · \(background.id) · \(format)"
     backgroundLabel.toolTip = background.path
     backgroundPicker.isEnabled = true
     let navigable = item.backgrounds.count > 1

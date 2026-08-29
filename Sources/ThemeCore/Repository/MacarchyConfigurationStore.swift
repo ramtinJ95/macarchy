@@ -46,11 +46,20 @@ struct MacarchyConfiguration: Sendable {
   }
 }
 
-struct MacarchyConfigurationStore: Sendable {
+package struct MacarchyConfigurationStore: Sendable {
   private let configurationURL: URL
 
-  init(root: URL) {
+  package init(root: URL) {
     configurationURL = root.appending(path: "config.toml")
+  }
+
+  package func wallpaperData(themeIDs: [String]) throws -> [String: Data] {
+    let configuration = try load()
+    return try Dictionary(
+      uniqueKeysWithValues: themeIDs.compactMap { themeID in
+        try configuration.wallpaperData(themeID: themeID).map { (themeID, $0) }
+      }
+    )
   }
 
   func load() throws -> MacarchyConfiguration {

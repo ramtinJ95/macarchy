@@ -22,6 +22,7 @@ struct ThemeBrowserTests {
           background: GenerationBackground(id: activeBackground.id, format: activeBackground.format)
         )
       },
+      loadWallpaperOverrides: { _, _ in [:] },
       renderPreview: { ThemePreviewRenderer().render(package: $0) }
     )
 
@@ -70,7 +71,8 @@ struct ThemeBrowserTests {
         label: "Generated palette",
         data: ThemePreviewRenderer().render(package: package).data
       ),
-      initialBackgroundID: first.id
+      initialBackgroundID: first.id,
+      wallpaperOverrideData: nil
     )
     var state = ThemeBrowserState(
       content: ThemeBrowserContent(items: [item], initialThemeID: item.id)
@@ -94,6 +96,7 @@ struct ThemeBrowserTests {
       loadPackages: { _ in [package] },
       loadPreferences: { _ in [:] },
       loadActiveManifest: { _ in nil },
+      loadWallpaperOverrides: { _, _ in [:] },
       renderPreview: { ThemePreviewRenderer().render(package: $0) }
     ).load(
       repository: repository,
@@ -108,6 +111,30 @@ struct ThemeBrowserTests {
     let item = try #require(content.items.first)
     #expect(try gallery.load(item: item).isEmpty)
     #expect(calls.withLock { $0 } == 1)
+  }
+
+  @Test
+  func loaderPreviewsTheEffectivePersonalWallpaperOverride() throws {
+    let package = try repository.package(id: "catppuccin-mocha")
+    let override = Data("personal-samurai-wallpaper".utf8)
+    let content = try ThemeBrowserCommandLoader(
+      loadPackages: { _ in [package] },
+      loadPreferences: { _ in [:] },
+      loadActiveManifest: { _ in nil },
+      loadWallpaperOverrides: { _, themeIDs in
+        #expect(themeIDs == [package.id])
+        return [package.id: override]
+      },
+      renderPreview: { ThemePreviewRenderer().render(package: $0) }
+    ).load(
+      repository: repository,
+      stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory)
+    )
+
+    let item = try #require(content.items.first)
+    let background = try #require(item.backgrounds.first)
+    #expect(item.usesWallpaperOverride)
+    #expect(item.backgroundData(id: background.id) == override)
   }
 
   @Test
