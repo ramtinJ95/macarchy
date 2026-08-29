@@ -151,6 +151,88 @@ struct ThemeBrowserTests {
     #expect(selectedBackground.withLock { $0 } == "default")
   }
 
+  @Test
+  func applyUsesWallpaperOnlyPathForTheActiveThemeAndFullActivationOtherwise() async throws {
+    let activeTheme = Mutex("lavender")
+    let calls = Mutex([String]())
+    let runner = ThemeBrowserApplyRunner(
+      activeThemeID: { _ in activeTheme.withLock { $0 } },
+      setActiveBackground: { _, backgroundID, _, _ in
+        calls.withLock { $0.append("background:\(backgroundID)") }
+        return ("background", true)
+      },
+      setThemeAndBackground: { _, themeID, backgroundID, _, _ in
+        calls.withLock { $0.append("theme:\(themeID):\(backgroundID ?? "none")") }
+        return ("theme", true)
+      }
+    )
+    let root = URL(filePath: "/test/state", directoryHint: .isDirectory)
+
+    _ = try await runner.execute(
+      repository: repository,
+      themeID: "lavender",
+      backgroundID: "plane-purple",
+      stateRoot: root,
+      consumerPaths: testConsumerPaths()
+    )
+    activeTheme.withLock { $0 = "catppuccin-mocha" }
+    _ = try await runner.execute(
+      repository: repository,
+      themeID: "lavender",
+      backgroundID: "plane-purple",
+      stateRoot: root,
+      consumerPaths: testConsumerPaths()
+    )
+
+    #expect(calls.withLock { $0 } == ["background:plane-purple", "theme:lavender:plane-purple"])
+  }
+
+  @Test
+  func applyLauncherSpawnsTheSameCommandWithAnExplicitSelectionRequest() throws {
+    struct Spawn: Sendable {
+      let executableURL: URL
+      let arguments: [String]
+      let environment: [String: String]
+    }
+    let spawned = Mutex<Spawn?>(nil)
+    let launcher = ThemeBrowserApplyProcessLauncher(
+      spawn: { executableURL, arguments, environment in
+        spawned.withLock {
+          $0 = Spawn(
+            executableURL: executableURL,
+            arguments: arguments,
+            environment: environment
+          )
+        }
+        return ThemeBrowserApplyProcessLauncher.RunningProcess(
+          isRunning: { false },
+          terminationStatus: { 0 }
+        )
+      }
+    )
+    let executableURL = URL(filePath: "/test/macarchy")
+    let arguments = ["theme", "browse", "--state-root", "/test/state"]
+    let selection = ThemeBrowserSelection(
+      themeID: "lavender",
+      backgroundID: "plane-purple"
+    )
+
+    let process = try launcher.launch(
+      selection: selection,
+      executableURL: executableURL,
+      arguments: arguments,
+      environment: ["PRESERVED": "yes"]
+    )
+
+    let invocation = try #require(spawned.withLock { $0 })
+    #expect(invocation.executableURL == executableURL)
+    #expect(invocation.arguments == arguments)
+    #expect(invocation.environment["PRESERVED"] == "yes")
+    #expect(ThemeBrowserApplyRequest(environment: invocation.environment)?.selection == selection)
+    #expect(!process.isRunning())
+    #expect(process.terminationStatus() == 0)
+  }
+
   private var repository: ThemeRepository {
     ThemeRepository(builtInRoot: themesRoot)
   }

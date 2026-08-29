@@ -156,29 +156,30 @@ extension Theme {
       let repository = roots.repository(
         userRoot: stateRoot.appending(path: "themes", directoryHint: .isDirectory)
       )
+      if let request = ThemeBrowserApplyRequest(
+        environment: ProcessInfo.processInfo.environment
+      ) {
+        let execution = try await ThemeBrowserApplyRunner.live.execute(
+          repository: repository,
+          themeID: request.selection.themeID,
+          backgroundID: request.selection.backgroundID,
+          stateRoot: stateRoot,
+          consumerPaths: state.consumerPaths
+        )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
+        return
+      }
       let content = try ThemeBrowserCommandLoader.live.load(
         repository: repository,
         stateRoot: stateRoot
       )
-      let consumerPaths = state.consumerPaths
-      let execution = try await MainActor.run {
-        let controller = try ThemeBrowserWindowController(content: content) {
-          themeID, backgroundID in
-          try await ThemeSetCommandRunner.live.execute(
-            repository: repository,
-            themeID: themeID,
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths,
-            dryRun: false,
-            json: false,
-            requestedBackgroundID: backgroundID
-          )
+      let launcher = ThemeBrowserApplyProcessLauncher.live
+      try await MainActor.run {
+        let controller = try ThemeBrowserWindowController(content: content) { selection in
+          try launcher.launch(selection: selection)
         }
-        return try controller.run()
-      }
-      if let execution {
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try controller.run()
       }
     }
   }
