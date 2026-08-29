@@ -22,6 +22,7 @@ enum ThemeImageAsset {
   static let maximumSize = 32 * 1_048_576
   static let maximumDimension = 16_384
   static let maximumPixels = 64_000_000
+  private static let validationCache = ThemeImageValidationCache()
 
   static func load(at url: URL, format: ThemeBackgroundFormat) throws -> Data {
     let data = try BoundedRegularFile.read(at: url, maximumSize: maximumSize).data
@@ -30,6 +31,13 @@ enum ThemeImageAsset {
   }
 
   static func validate(data: Data, format: ThemeBackgroundFormat) throws {
+    let key = "\(format.rawValue):\(sha256Digest(data))"
+    try validationCache.validate(key: key) {
+      try validateUncached(data: data, format: format)
+    }
+  }
+
+  private static func validateUncached(data: Data, format: ThemeBackgroundFormat) throws {
     let source = try source(data: data, format: format)
 
     guard
@@ -74,5 +82,39 @@ enum ThemeImageAsset {
       throw ThemeImageAssetError.mediaTypeMismatch
     }
     return source
+  }
+}
+
+private final class ThemeImageValidationCache: @unchecked Sendable {
+  private let condition = NSCondition()
+  private var completed: Set<String> = []
+  private var inProgress: Set<String> = []
+
+  func validate(key: String, operation: () throws -> Void) throws {
+    condition.lock()
+    while inProgress.contains(key) {
+      condition.wait()
+    }
+    if completed.contains(key) {
+      condition.unlock()
+      return
+    }
+    inProgress.insert(key)
+    condition.unlock()
+
+    do {
+      try operation()
+      condition.lock()
+      inProgress.remove(key)
+      completed.insert(key)
+      condition.broadcast()
+      condition.unlock()
+    } catch {
+      condition.lock()
+      inProgress.remove(key)
+      condition.broadcast()
+      condition.unlock()
+      throw error
+    }
   }
 }
