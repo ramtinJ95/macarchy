@@ -6,7 +6,8 @@ struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect or select themes.",
     subcommands: [
-      List.self, Set.self, Install.self, Next.self, Status.self, Background.self, Browse.self,
+      List.self, Set.self, Install.self, Next.self, Status.self, Get.self, Background.self,
+      Browse.self,
     ]
   )
 }
@@ -140,6 +141,26 @@ extension Theme {
       if !execution.succeeded {
         throw ExitCode.failure
       }
+    }
+  }
+
+  struct Get: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Print the active theme's manual-import payload for an application."
+    )
+
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+    @Argument(help: "Manual-import target identifier, such as 'slack'.")
+    var target: String
+
+    mutating func run() throws {
+      let output = try ManualThemePayloadStore(
+        root: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+      ).payload(targetID: target)
+      print(output, terminator: output.hasSuffix("\n") ? "" : "\n")
     }
   }
 

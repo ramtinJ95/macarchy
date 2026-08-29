@@ -88,6 +88,7 @@ macarchy theme set <theme-id> [--dry-run]
 macarchy theme next [--dry-run]
 macarchy theme install <github-url> [--dry-run] [--json]
 macarchy theme status [--json]
+macarchy theme get slack
 macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
@@ -204,9 +205,12 @@ without verified rights.
 Slack does not expose a supported theme automation API, configuration file, or
 preferences deep link. Every committed activation therefore prints a
 comma-separated legacy theme payload and stores the same value in the active
-generation as `generated/slack.txt`. In Slack, open **Preferences → Appearance
-→ Custom theme → Theme colors → Import theme**, paste the payload, and apply
-it. This manual boundary follows [Slack's documented import
+generation as `generated/slack.txt`. Run `macarchy theme get slack` at any
+time to print only that active import value. The target is resolved through the
+manual-consumer catalog so future import-only applications can use the same
+`theme get <target>` command. In Slack, open **Preferences → Appearance →
+Custom theme → Theme colors → Import theme**, paste the payload, and apply it.
+This manual boundary follows [Slack's documented import
 flow](https://slack.com/help/articles/205166337-Change-your-Slack-theme) rather
 than editing Slack's private Electron storage.
 
