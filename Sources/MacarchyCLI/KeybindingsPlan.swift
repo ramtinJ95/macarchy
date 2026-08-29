@@ -359,8 +359,12 @@ private struct KeybindingsPlanReport: Encodable {
     var lines = [
       "Macarchy keybindings plan [\(outcome)]:",
       "- profile [\(sources.profileStatus)]: \(sources.profile)",
+      "- packaged defaults: \(sources.defaults)",
+      "- packaged metadata: \(sources.defaultMetadata)",
+      "- user override: \(sources.override ?? "none")",
+      "- user metadata: \(sources.userMetadata ?? "none")",
       "- effective bindings: \(summary.effective)",
-      "- packaged defaults: \(summary.packagedDefaults)",
+      "- packaged default count: \(summary.packagedDefaults)",
       "- user replacements: \(summary.userReplacements)",
       "- user additions: \(summary.userAdditions)",
       "- disabled defaults: \(summary.disabledDefaults)",

@@ -83,6 +83,22 @@ struct KeybindingProviderInspector: Sendable {
     }
     defer { Darwin.close(configurationDescriptor) }
 
+    let ownershipClaim = entryOwnershipClaim(
+      homeDirectory: home,
+      stateRoot: stateRoot,
+      entry: entry,
+      expectedTarget: expectedTarget
+    )
+    if case .invalid(let message) = ownershipClaim {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "invalid_ownership_evidence",
+        message: message
+      )
+    }
+
     let directoryMetadata: stat
     do {
       directoryMetadata = try PinnedFilesystem.metadata(
@@ -91,6 +107,9 @@ struct KeybindingProviderInspector: Sendable {
         url: directory
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      if case .claimed = ownershipClaim {
+        return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+      }
       return result(
         .installRequired,
         entry: entry,
@@ -110,6 +129,9 @@ struct KeybindingProviderInspector: Sendable {
 
     switch directoryMetadata.st_mode & S_IFMT {
     case S_IFLNK:
+      if case .claimed = ownershipClaim {
+        return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+      }
       return inspectDirectorySymlink(
         configurationDescriptor: configurationDescriptor,
         configurationDirectory: configurationDirectory,
@@ -124,9 +146,13 @@ struct KeybindingProviderInspector: Sendable {
         entry: entry,
         expectedTarget: expectedTarget,
         stateRoot: stateRoot,
-        generation: generation
+        generation: generation,
+        ownershipClaim: ownershipClaim
       )
     default:
+      if case .claimed = ownershipClaim {
+        return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+      }
       return result(
         .blocked,
         entry: entry,
@@ -243,7 +269,8 @@ struct KeybindingProviderInspector: Sendable {
     entry: URL,
     expectedTarget: String,
     stateRoot: URL,
-    generation: KeybindingGenerationInspection
+    generation: KeybindingGenerationInspection,
+    ownershipClaim: EntryOwnershipClaim
   ) -> KeybindingProviderInspection {
     let directoryDescriptor: Int32
     do {
@@ -271,6 +298,9 @@ struct KeybindingProviderInspector: Sendable {
         url: entry
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      if case .claimed = ownershipClaim {
+        return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+      }
       return result(
         .installRequired,
         entry: entry,
@@ -306,11 +336,7 @@ struct KeybindingProviderInspector: Sendable {
         )
       }
       if target == expectedTarget {
-        switch entryOwnershipClaim(
-          stateRoot: stateRoot,
-          entry: entry,
-          expectedTarget: expectedTarget
-        ) {
+        switch ownershipClaim {
         case .claimed:
           return result(
             .managed,
@@ -362,6 +388,10 @@ struct KeybindingProviderInspector: Sendable {
           message: "entry-point link targets the canonical state root, not the selected state root"
         )
       }
+    }
+
+    if case .claimed = ownershipClaim {
+      return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
     }
 
     do {
@@ -449,6 +479,7 @@ struct KeybindingProviderInspector: Sendable {
   }
 
   private func entryOwnershipClaim(
+    homeDirectory: URL,
     stateRoot: URL,
     entry: URL,
     expectedTarget: String
@@ -491,22 +522,57 @@ struct KeybindingProviderInspector: Sendable {
     guard Set(manifest.records.map(\.id)).count == manifest.records.count else {
       return .invalid("setup ownership evidence contains duplicate integration identifiers")
     }
+    let manager = SetupOwnershipManager()
+    let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
+    do {
+      for record in manifest.records {
+        try manager.validateOwnershipRecord(record, context: context)
+      }
+    } catch {
+      return .invalid("setup ownership evidence contains an invalid record: \(error)")
+    }
     guard let record = manifest.records.first(where: { $0.id == Self.ownershipID }) else {
       return .unclaimed
     }
+    guard record.targetPath == entry.path, record.linkDestination == expectedTarget else {
+      return .invalid("keybinding entry ownership record does not match the selected paths")
+    }
+    return .claimed
+  }
+
+  static func validateOwnershipRecord(
+    _ record: SetupOwnershipRecord,
+    context: SetupOwnershipManager.Context
+  ) throws {
+    let target = context.homeDirectory.appending(path: ".config/skhd/skhdrc")
+    let expectedTarget = Self.managedTarget
     guard
       record.phase == .applied,
       record.kind == .symbolicLink,
-      record.targetPath == entry.path,
+      record.targetPath == target.path,
       record.backupPath == nil,
       record.originalDigest == nil,
       record.installedDigest == sha256Digest(Data(expectedTarget.utf8)),
       record.linkDestination == expectedTarget,
       record.replacementDigest == nil
     else {
-      return .invalid("keybinding entry ownership record does not match the provider link")
+      throw SetupOwnershipError.invalidManifest(
+        "keybinding entry ownership record does not match the managed provider link"
+      )
     }
-    return .claimed
+  }
+
+  private func ownershipDrift(
+    entry: URL,
+    expectedTarget: String
+  ) -> KeybindingProviderInspection {
+    result(
+      .blocked,
+      entry: entry,
+      expectedTarget: expectedTarget,
+      ownership: "ownership_drift",
+      message: "ownership manifest claims the skhd entry point, but filesystem state differs"
+    )
   }
 
   private static func resolveSymlink(_ destination: String, relativeTo parent: URL) -> URL {

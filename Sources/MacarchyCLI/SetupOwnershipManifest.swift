@@ -29,17 +29,28 @@ extension SetupOwnershipManager {
     guard Set(manifest.records.map(\.id)).count == manifest.records.count else {
       throw SetupOwnershipError.invalidManifest("integration identifiers must be unique")
     }
-    let steps = consumerSetupPlans(context: context).flatMap(\.steps)
     for record in manifest.records {
-      guard
-        let step = steps.first(where: { $0.id == record.id }),
-        let validate = step.validateOwnershipRecord
-      else {
-        throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
-      }
-      try validate(record)
+      try validateOwnershipRecord(record, context: context)
     }
     return manifest.records
+  }
+
+  func validateOwnershipRecord(
+    _ record: SetupOwnershipRecord,
+    context: Context
+  ) throws {
+    if record.id == KeybindingProviderInspector.ownershipID {
+      try KeybindingProviderInspector.validateOwnershipRecord(record, context: context)
+      return
+    }
+    let steps = consumerSetupPlans(context: context).flatMap(\.steps)
+    guard
+      let step = steps.first(where: { $0.id == record.id }),
+      let validate = step.validateOwnershipRecord
+    else {
+      throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
+    }
+    try validate(record)
   }
 
   func validateManifestKeys(_ data: Data) throws {

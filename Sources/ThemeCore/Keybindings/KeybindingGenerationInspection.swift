@@ -131,6 +131,18 @@ package struct KeybindingGenerationInspector: Sendable {
     guard generationMetadata.st_mode & 0o222 == 0 else {
       return invalid("current generation directory is writable")
     }
+    do {
+      let inventory = try PinnedFilesystem.directoryEntries(
+        descriptor: generationDescriptor,
+        url: generation,
+        limit: 3
+      )
+      guard inventory.entries == ["manifest.json", "skhdrc"], !inventory.truncated else {
+        return invalid("current generation contains an unknown or missing item")
+      }
+    } catch {
+      return invalid("cannot inventory current generation: \(error)")
+    }
 
     let manifestURL = generation.appending(path: "manifest.json")
     let manifestData: Data

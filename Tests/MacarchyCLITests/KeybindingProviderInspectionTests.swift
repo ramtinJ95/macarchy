@@ -95,6 +95,58 @@ struct KeybindingProviderInspectionTests {
   }
 
   @Test
+  func claimedMissingEntryIsOwnershipDrift() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.skhdDirectory.appending(path: "skhdrc")
+    let stateRoot = fixture.home.appending(
+      path: ".config/macarchy",
+      directoryHint: .isDirectory
+    )
+    try writeOwnershipClaim(stateRoot: stateRoot, entry: entry)
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "ownership_drift")
+  }
+
+  @Test
+  func invalidSiblingOwnershipRecordBlocksManagedClassification() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory,
+      withIntermediateDirectories: true
+    )
+    let entry = fixture.skhdDirectory.appending(path: "skhdrc")
+    try FileManager.default.createSymbolicLink(
+      atPath: entry.path,
+      withDestinationPath: KeybindingProviderInspector.managedTarget
+    )
+    let stateRoot = fixture.home.appending(
+      path: ".config/macarchy",
+      directoryHint: .isDirectory
+    )
+    let unknown = SetupOwnershipRecord(
+      id: "unknown.integration",
+      phase: .applied,
+      kind: .symbolicLink,
+      targetPath: fixture.home.appending(path: ".config/unknown").path,
+      backupPath: nil,
+      originalDigest: nil,
+      installedDigest: sha256Digest(Data("target".utf8)),
+      linkDestination: "target"
+    )
+    try writeOwnershipClaim(stateRoot: stateRoot, entry: entry, additionalRecords: [unknown])
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "invalid_ownership_evidence")
+  }
+
+  @Test
   func symlinkedConfigurationAncestorBlocksInspection() throws {
     let fixture = try fixtureHome()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -162,7 +214,11 @@ struct KeybindingProviderInspectionTests {
     )
   }
 
-  private func writeOwnershipClaim(stateRoot: URL, entry: URL) throws {
+  private func writeOwnershipClaim(
+    stateRoot: URL,
+    entry: URL,
+    additionalRecords: [SetupOwnershipRecord] = []
+  ) throws {
     let setup = stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: setup, withIntermediateDirectories: true)
     let target = KeybindingProviderInspector.managedTarget
@@ -178,7 +234,7 @@ struct KeybindingProviderInspectionTests {
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(SetupOwnershipManifest(records: [record])).write(
+    try encoder.encode(SetupOwnershipManifest(records: [record] + additionalRecords)).write(
       to: setup.appending(path: "ownership.json")
     )
   }
