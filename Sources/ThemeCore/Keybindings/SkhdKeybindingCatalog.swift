@@ -21,7 +21,7 @@ package struct SkhdKeybindingCatalog: Equatable, Sendable {
 
   package static let missing = SkhdKeybindingCatalog(entries: [], isPresent: false)
 
-  fileprivate static func present(entries: [SkhdCatalogEntry]) -> Self {
+  package static func present(entries: [SkhdCatalogEntry]) -> Self {
     SkhdKeybindingCatalog(entries: entries, isPresent: true)
   }
 }
@@ -240,10 +240,7 @@ package struct SkhdKeybindingCatalogLoader: Sendable {
   }
 
   private static func isCanonicalIdentity(_ identity: String) -> Bool {
-    let result = SkhdConfigurationParser().parse("\(identity) : catalog")
-    return result.diagnostics.isEmpty
-      && result.bindings.count == 1
-      && result.bindings[0].identity == identity
+    SkhdConfigurationParser().isCanonicalIdentity(identity)
   }
 
   private static func validate(

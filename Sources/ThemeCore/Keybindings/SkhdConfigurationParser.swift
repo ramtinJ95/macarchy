@@ -39,6 +39,13 @@ package struct SkhdParseResult: Equatable, Sendable {
 package struct SkhdConfigurationParser: Sendable {
   package init() {}
 
+  package func isCanonicalIdentity(_ identity: String) -> Bool {
+    let result = parse("\(identity) : identity")
+    return result.diagnostics.isEmpty
+      && result.bindings.count == 1
+      && result.bindings[0].identity == identity
+  }
+
   package func parse(_ text: String) -> SkhdParseResult {
     var bindings: [SkhdBinding] = []
     var diagnostics: [SkhdDiagnostic] = []

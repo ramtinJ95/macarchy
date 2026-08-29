@@ -1,0 +1,313 @@
+schema_version = 1
+
+[[bindings]]
+identity = "alt-j"
+label = "Focus the window below"
+category = "Window focus"
+order = 10
+aliases = ["south", "down"]
+
+[[bindings]]
+identity = "alt-k"
+label = "Focus the window above"
+category = "Window focus"
+order = 20
+aliases = ["north", "up"]
+
+[[bindings]]
+identity = "alt-h"
+label = "Focus the window to the left"
+category = "Window focus"
+order = 30
+aliases = ["west"]
+
+[[bindings]]
+identity = "alt-l"
+label = "Focus the window to the right"
+category = "Window focus"
+order = 40
+aliases = ["east"]
+
+[[bindings]]
+identity = "alt+shift-r"
+label = "Rotate the current layout clockwise"
+category = "Layout"
+order = 50
+
+[[bindings]]
+identity = "alt+shift-y"
+label = "Mirror the current layout across the y-axis"
+category = "Layout"
+order = 60
+aliases = ["flip vertical"]
+
+[[bindings]]
+identity = "alt+shift-x"
+label = "Mirror the current layout across the x-axis"
+category = "Layout"
+order = 70
+aliases = ["flip horizontal"]
+
+[[bindings]]
+identity = "alt+shift-t"
+label = "Toggle the focused window between tiled and floating"
+category = "Layout"
+order = 80
+aliases = ["float", "tile"]
+
+[[bindings]]
+identity = "alt+shift-m"
+label = "Toggle fullscreen zoom for the focused window"
+category = "Layout"
+order = 90
+aliases = ["maximize", "zoom"]
+
+[[bindings]]
+identity = "cmd+shift-f"
+label = "Toggle fullscreen zoom for the focused window"
+category = "Layout"
+order = 100
+aliases = ["maximize", "zoom"]
+
+[[bindings]]
+identity = "alt+shift-e"
+label = "Balance windows in the current Space"
+category = "Layout"
+order = 110
+aliases = ["equalize"]
+
+[[bindings]]
+identity = "cmd+ctrl+alt+shift-x"
+label = "Toggle the focused window's split direction"
+category = "Layout"
+order = 120
+aliases = ["horizontal split", "vertical split"]
+
+[[bindings]]
+identity = "alt+shift-a"
+label = "Grow the focused window leftward"
+category = "Window resize"
+order = 130
+
+[[bindings]]
+identity = "alt+shift-w"
+label = "Grow the focused window upward"
+category = "Window resize"
+order = 140
+
+[[bindings]]
+identity = "alt+shift-d"
+label = "Grow the focused window rightward"
+category = "Window resize"
+order = 150
+
+[[bindings]]
+identity = "cmd+shift-a"
+label = "Shrink the focused window from the right"
+category = "Window resize"
+order = 160
+
+[[bindings]]
+identity = "cmd+shift-s"
+label = "Shrink the focused window from the top"
+category = "Window resize"
+order = 170
+
+[[bindings]]
+identity = "cmd+shift-w"
+label = "Shrink the focused window from the bottom"
+category = "Window resize"
+order = 180
+
+[[bindings]]
+identity = "cmd+shift-d"
+label = "Shrink the focused window from the left"
+category = "Window resize"
+order = 190
+
+[[bindings]]
+identity = "alt+shift-j"
+label = "Swap the focused window with the window below"
+category = "Window movement"
+order = 200
+aliases = ["south", "down"]
+
+[[bindings]]
+identity = "alt+shift-k"
+label = "Swap the focused window with the window above"
+category = "Window movement"
+order = 210
+aliases = ["north", "up"]
+
+[[bindings]]
+identity = "alt+shift-h"
+label = "Swap the focused window with the window to the left"
+category = "Window movement"
+order = 220
+aliases = ["west"]
+
+[[bindings]]
+identity = "alt+shift-l"
+label = "Swap the focused window with the window to the right"
+category = "Window movement"
+order = 230
+aliases = ["east"]
+
+[[bindings]]
+identity = "ctrl+alt-j"
+label = "Move and split the focused window below"
+category = "Window movement"
+order = 240
+aliases = ["warp south", "down"]
+
+[[bindings]]
+identity = "ctrl+alt-k"
+label = "Move and split the focused window above"
+category = "Window movement"
+order = 250
+aliases = ["warp north", "up"]
+
+[[bindings]]
+identity = "ctrl+alt-h"
+label = "Move and split the focused window to the left"
+category = "Window movement"
+order = 260
+aliases = ["warp west"]
+
+[[bindings]]
+identity = "ctrl+alt-l"
+label = "Move and split the focused window to the right"
+category = "Window movement"
+order = 270
+aliases = ["warp east"]
+
+[[bindings]]
+identity = "alt+shift-s"
+label = "Move the focused window to the left display"
+category = "Window movement"
+order = 280
+aliases = ["monitor west", "previous display"]
+
+[[bindings]]
+identity = "alt+shift-g"
+label = "Move the focused window to the right display"
+category = "Window movement"
+order = 290
+aliases = ["monitor east", "next display"]
+
+[[bindings]]
+identity = "alt+shift-p"
+label = "Move the focused window to the previous Space"
+category = "Window movement"
+order = 300
+
+[[bindings]]
+identity = "alt+shift-n"
+label = "Move the focused window to the next Space"
+category = "Window movement"
+order = 310
+
+[[bindings]]
+identity = "alt+shift-1"
+label = "Move the focused window to Space 1 and follow it"
+category = "Window movement"
+order = 320
+
+[[bindings]]
+identity = "alt+shift-2"
+label = "Move the focused window to Space 2 and follow it"
+category = "Window movement"
+order = 330
+
+[[bindings]]
+identity = "alt+shift-3"
+label = "Move the focused window to Space 3 and follow it"
+category = "Window movement"
+order = 340
+
+[[bindings]]
+identity = "alt+shift-4"
+label = "Move the focused window to Space 4 and follow it"
+category = "Window movement"
+order = 350
+
+[[bindings]]
+identity = "alt+shift-5"
+label = "Move the focused window to Space 5 and follow it"
+category = "Window movement"
+order = 360
+
+[[bindings]]
+identity = "alt+shift-6"
+label = "Move the focused window to Space 6 and follow it"
+category = "Window movement"
+order = 370
+
+[[bindings]]
+identity = "alt+shift-7"
+label = "Move the focused window to Space 7 and follow it"
+category = "Window movement"
+order = 380
+
+[[bindings]]
+identity = "cmd-1"
+label = "Focus Space 1"
+category = "Space navigation"
+order = 390
+
+[[bindings]]
+identity = "cmd-2"
+label = "Focus Space 2"
+category = "Space navigation"
+order = 400
+
+[[bindings]]
+identity = "cmd-3"
+label = "Focus Space 3"
+category = "Space navigation"
+order = 410
+
+[[bindings]]
+identity = "cmd-4"
+label = "Focus Space 4"
+category = "Space navigation"
+order = 420
+
+[[bindings]]
+identity = "cmd-5"
+label = "Focus Space 5"
+category = "Space navigation"
+order = 430
+
+[[bindings]]
+identity = "cmd-6"
+label = "Focus Space 6"
+category = "Space navigation"
+order = 440
+
+[[bindings]]
+identity = "cmd-7"
+label = "Focus Space 7"
+category = "Space navigation"
+order = 450
+
+[[bindings]]
+identity = "alt-a"
+label = "Open Kitty"
+category = "Applications"
+order = 470
+aliases = ["terminal"]
+
+[[bindings]]
+identity = "cmd-k"
+label = "Show configured keybindings"
+category = "Macarchy"
+order = 480
+aliases = ["bindings", "shortcuts", "help"]
+
+[[bindings]]
+identity = "cmd+shift-t"
+label = "Browse themes and backgrounds"
+category = "Macarchy"
+order = 485
+aliases = ["themes", "backgrounds", "picker"]
