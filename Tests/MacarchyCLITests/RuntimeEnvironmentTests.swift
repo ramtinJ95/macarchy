@@ -23,6 +23,7 @@ struct RuntimeEnvironmentTests {
     let runtime = RuntimeEnvironment(executableURL: executable)
 
     #expect(runtime.builtInThemesURL.path == checkout.appending(path: "Themes").path)
+    #expect(runtime.builtInKeybindingsURL.path == checkout.appending(path: "Keybindings").path)
     #expect(
       try runtime.buildInformation()
         == MacarchyBuildInformation(
@@ -43,6 +44,7 @@ struct RuntimeEnvironmentTests {
     let packages = try Theme.ThemeRootOptions.parse([]).repository(runtime: runtime).packages()
 
     #expect(runtime.builtInThemesURL.path == layout.themes.path)
+    #expect(runtime.builtInKeybindingsURL.path == layout.keybindings.path)
     #expect(packages.map(\.id) == ["catppuccin-mocha", "kanagawa-wave", "tokyo-night"])
     #expect(try runtime.buildInformation().installation == .unmanaged)
 
@@ -167,10 +169,11 @@ struct RuntimeEnvironmentTests {
     at root: URL,
     includeThemes: Bool = true,
     buildInformation: String? = nil
-  ) throws -> (executable: URL, themes: URL) {
+  ) throws -> (executable: URL, themes: URL, keybindings: URL) {
     let executable = root.appending(path: "bin/macarchy")
     let resources = root.appending(path: "share/macarchy", directoryHint: .isDirectory)
     let themes = resources.appending(path: "themes", directoryHint: .isDirectory)
+    let keybindings = resources.appending(path: "keybindings", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(
       at: executable.deletingLastPathComponent(),
       withIntermediateDirectories: true
@@ -188,7 +191,11 @@ struct RuntimeEnvironmentTests {
         to: themes
       )
     }
-    return (executable, themes)
+    try FileManager.default.copyItem(
+      at: repositoryRoot.appending(path: "Keybindings", directoryHint: .isDirectory),
+      to: keybindings
+    )
+    return (executable, themes, keybindings)
   }
 
   private func temporaryDirectory(

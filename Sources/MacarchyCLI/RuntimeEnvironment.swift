@@ -47,6 +47,23 @@ struct RuntimeEnvironment: Sendable {
     return packaged
   }
 
+  var builtInKeybindingsURL: URL {
+    let packaged = packagedResourceRoot.appending(
+      path: "keybindings",
+      directoryHint: .isDirectory
+    )
+    if FileManager.default.fileExists(atPath: packagedBuildInformationURL.path) {
+      return packaged
+    }
+    if let developmentCheckoutURL {
+      return developmentCheckoutURL.appending(
+        path: "Keybindings",
+        directoryHint: .isDirectory
+      )
+    }
+    return packaged
+  }
+
   private var packagedResourceRoot: URL {
     installationPrefixURL
       .appending(path: "share", directoryHint: .isDirectory)
