@@ -30,6 +30,10 @@ struct ConsumerCatalogTests {
           catalog.artifactMetadata.map(\.path) + ["theme.json", "generated/capabilities.json"]))
     #expect(catalog.namedThemeFallbackConsumerIDs == [HerdrAdapter.id, NeovimAdapter.id])
     #expect(catalog.manualNotice(for: .slack)?.artifactPath == SlackAdapter.outputPath)
+    #expect(
+      catalog.manualPayloadTargets
+        == [ConsumerManualPayloadTarget(id: "slack", artifactPath: SlackAdapter.outputPath)]
+    )
   }
 
   @Test

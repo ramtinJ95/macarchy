@@ -105,6 +105,11 @@ package struct ConsumerManualNotice: Sendable {
   }
 }
 
+package struct ConsumerManualPayloadTarget: Equatable, Sendable {
+  package let id: String
+  package let artifactPath: String
+}
+
 package struct ConsumerRenderedOutput: Sendable {
   package let path: String
   package let data: Data
@@ -339,6 +344,18 @@ package struct ConsumerCatalog: Sendable {
 
   package func manualNotice(for id: ConsumerID) -> ConsumerManualNotice? {
     entry(for: id)?.manualNotice
+  }
+
+  package var manualPayloadTargets: [ConsumerManualPayloadTarget] {
+    entries.compactMap { entry in
+      entry.manualNotice.map {
+        ConsumerManualPayloadTarget(id: entry.id.rawValue, artifactPath: $0.artifactPath)
+      }
+    }
+  }
+
+  package func manualPayloadTarget(id: String) -> ConsumerManualPayloadTarget? {
+    manualPayloadTargets.first { $0.id == id }
   }
 
   private static func isValidID(_ value: String) -> Bool {
