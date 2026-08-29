@@ -24,7 +24,7 @@ enum PiAdapterError: Error, CustomStringConvertible, Sendable {
 package struct PiAdapter: Sendable {
   static let id = "pi"
   package static let outputPath = "generated/pi.json"
-  static let rendererVersion = 3
+  static let rendererVersion = 4
   package static let themeName = "macarchy-current"
   package static let selectionKey = "theme"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/pi")
@@ -103,8 +103,13 @@ package struct PiAdapter: Sendable {
       "background": semantic.background.rawValue,
       "border": semantic.border.rawValue,
       "customMessageBg": customMessageBackground,
+      "dim": readableForeground(
+        semantic.overlay,
+        toward: semantic.text,
+        against: conversationBackgrounds
+      ),
       "error": semantic.error.rawValue,
-      "muted": readableMutedText(
+      "muted": readableForeground(
         semantic.mutedText,
         toward: semantic.text,
         against: conversationBackgrounds
@@ -131,7 +136,7 @@ package struct PiAdapter: Sendable {
       "error": "error",
       "warning": "warning",
       "muted": "muted",
-      "dim": "overlay",
+      "dim": "dim",
       "text": "text",
       "thinkingText": "muted",
       "selectedBg": "selection",
@@ -204,13 +209,13 @@ package struct PiAdapter: Sendable {
     return String(format: "#%02x%02x%02x", mixed[0], mixed[1], mixed[2])
   }
 
-  private static func readableMutedText(
-    _ muted: SRGBColor,
+  private static func readableForeground(
+    _ foreground: SRGBColor,
     toward text: SRGBColor,
     against backgrounds: [String]
   ) -> String {
     for percentage in 0...100 {
-      let candidate = mix(muted, with: text, amount: Double(percentage) / 100)
+      let candidate = mix(foreground, with: text, amount: Double(percentage) / 100)
       if backgrounds.allSatisfy({ contrast(candidate, $0) >= 4.5 }) {
         return candidate
       }
