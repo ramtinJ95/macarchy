@@ -78,6 +78,9 @@ Useful commands:
 ```sh
 macarchy theme list
 macarchy theme background list <theme-id> [--state-root <path>]
+macarchy theme background current [--state-root <path>]
+macarchy theme background set <background-id> [--dry-run]
+macarchy theme background next [--dry-run]
 macarchy theme set <theme-id> [--dry-run]
 macarchy theme next [--dry-run]
 macarchy theme install <github-url> [--dry-run] [--json]

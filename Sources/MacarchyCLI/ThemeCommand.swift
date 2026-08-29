@@ -141,10 +141,10 @@ extension Theme {
     }
   }
 
-  struct Background: ParsableCommand {
+  struct Background: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Inspect or select a theme background.",
-      subcommands: [List.self]
+      subcommands: [List.self, Current.self, Set.self, Next.self]
     )
 
     struct List: ParsableCommand {
@@ -168,6 +168,66 @@ extension Theme {
         for background in package.backgrounds {
           print("\(background.id)\t\(background.format.rawValue)\t\(background.path)")
         }
+      }
+    }
+
+    struct Current: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Show the active generation's canonical background selection."
+      )
+
+      @Option(help: "Canonical Macarchy state directory.")
+      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+      mutating func run() throws {
+        print(
+          try ThemeBackgroundCommandRunner.live.current(
+            stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+          )
+        )
+      }
+    }
+
+    struct Set: AsyncParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Select a background for the active theme."
+      )
+
+      @OptionGroup var options: ActivationOptions
+
+      @Argument(help: "Stable background identifier.")
+      var backgroundID: String
+
+      mutating func run() async throws {
+        let execution = try await ThemeBackgroundCommandRunner.live.set(
+          repository: options.repository,
+          backgroundID: backgroundID,
+          stateRoot: options.stateRootURL,
+          consumerPaths: options.consumerPaths,
+          dryRun: options.dryRun
+        )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
+      }
+    }
+
+    struct Next: AsyncParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Select the next background for the active theme and wrap in package order."
+      )
+
+      @OptionGroup var options: ActivationOptions
+
+      mutating func run() async throws {
+        let execution = try await ThemeBackgroundCommandRunner.live.next(
+          repository: options.repository,
+          stateRoot: options.stateRootURL,
+          consumerPaths: options.consumerPaths,
+          dryRun: options.dryRun
+        )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
       }
     }
   }
