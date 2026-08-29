@@ -274,6 +274,8 @@ struct ThemeCoreSliceTests {
         == ["#11111b", "#322c43", "#232e35", "#28262a", "#232a2b", "#31222f"])
     #expect(Set(roleBackgrounds.compactMap { $0 }).count == roleBackgrounds.count)
     #expect(vars["muted"] == "#9096af")
+    #expect(vars["dim"] == "#9096af")
+    #expect(colors["dim"] == "dim")
     #expect(colors["userMessageBg"] == "userMessageBg")
     #expect(colors["customMessageBg"] == "customMessageBg")
     #expect(colors["toolPendingBg"] == "toolPendingBg")
