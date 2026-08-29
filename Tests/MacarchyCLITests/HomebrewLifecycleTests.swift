@@ -281,9 +281,6 @@ struct HomebrewLifecycleTests {
     )
     defer { try? FileManager.default.removeItem(at: root) }
     let lock = HomebrewUpdateLock(root: root)
-    let firstEntered = DispatchSemaphore(value: 0)
-    let releaseFirst = DispatchSemaphore(value: 0)
-    let firstDone = DispatchSemaphore(value: 0)
     let secondStarted = DispatchSemaphore(value: 0)
     let secondEntered = DispatchSemaphore(value: 0)
     let secondDone = DispatchSemaphore(value: 0)
@@ -293,34 +290,21 @@ struct HomebrewLifecycleTests {
       attributes: .concurrent
     )
 
-    queue.async {
-      defer { firstDone.signal() }
-      do {
-        try lock.withLock {
-          firstEntered.signal()
-          releaseFirst.wait()
+    try lock.withLock {
+      queue.async {
+        defer { secondDone.signal() }
+        secondStarted.signal()
+        do {
+          _ = try lock.withLock {
+            secondEntered.signal()
+          }
+        } catch {
+          failures.withLock { $0.append(String(describing: error)) }
         }
-      } catch {
-        failures.withLock { $0.append(String(describing: error)) }
       }
+      #expect(secondStarted.wait(timeout: .now() + 5) == .success)
+      #expect(secondEntered.wait(timeout: .now()) == .timedOut)
     }
-    #expect(firstEntered.wait(timeout: .now() + 5) == .success)
-    queue.async {
-      defer { secondDone.signal() }
-      secondStarted.signal()
-      do {
-        _ = try lock.withLock {
-          secondEntered.signal()
-        }
-      } catch {
-        failures.withLock { $0.append(String(describing: error)) }
-      }
-    }
-
-    #expect(secondStarted.wait(timeout: .now() + 5) == .success)
-    #expect(secondEntered.wait(timeout: .now()) == .timedOut)
-    releaseFirst.signal()
-    #expect(firstDone.wait(timeout: .now() + 5) == .success)
     #expect(secondDone.wait(timeout: .now() + 5) == .success)
     #expect(failures.withLock { $0 }.isEmpty)
 
