@@ -228,34 +228,16 @@ package enum RenderedArtifactRequirement: Equatable, Sendable {
   }
 }
 
-package enum VersionGatedRendererIdentity: Equatable, Sendable {
-  case herdr
-  case neovim
-  case slack
+package struct VersionGatedRendererIdentity: Equatable, Hashable, Sendable {
+  package let id: String
 
-  package init?(id: String) {
-    switch id {
-    case HerdrAdapter.id:
-      self = .herdr
-    case NeovimAdapter.id:
-      self = .neovim
-    case SlackAdapter.id:
-      self = .slack
-    default:
-      return nil
-    }
+  package init(id: String) {
+    self.id = id
   }
 
-  package var id: String {
-    switch self {
-    case .herdr:
-      HerdrAdapter.id
-    case .neovim:
-      NeovimAdapter.id
-    case .slack:
-      SlackAdapter.id
-    }
-  }
+  package static let herdr = VersionGatedRendererIdentity(id: HerdrAdapter.id)
+  package static let neovim = VersionGatedRendererIdentity(id: NeovimAdapter.id)
+  package static let slack = VersionGatedRendererIdentity(id: SlackAdapter.id)
 }
 
 package enum RenderedArtifactCollectionError: Error, CustomStringConvertible, Equatable, Sendable {

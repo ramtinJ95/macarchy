@@ -34,24 +34,11 @@ package struct ThemeActivationCoordinator: Sendable {
     label: "io.github.ramtinj95.macarchy.activation"
   )
 
-  package static let adapterRequirements = [
-    AtuinAdapter.id: AdapterRequirement.required,
-    BatAdapter.id: AdapterRequirement.required,
-    BtopAdapter.id: AdapterRequirement.required,
-    CodexAdapter.id: AdapterRequirement.required,
-    EzaAdapter.id: AdapterRequirement.required,
-    HerdrAdapter.id: AdapterRequirement.required,
-    KittyAdapter.id: AdapterRequirement.required,
-    MacOSAppearanceAdapter.id: AdapterRequirement.required,
-    NeovimAdapter.id: AdapterRequirement.required,
-    PiAdapter.id: AdapterRequirement.required,
-    SketchyBarAdapter.id: AdapterRequirement.required,
-    SpicetifyAdapter.id: AdapterRequirement.optional,
-    StarshipAdapter.id: AdapterRequirement.required,
-    TuicrAdapter.id: AdapterRequirement.required,
-    WallpaperAdapter.id: AdapterRequirement.required,
-    YaziAdapter.id: AdapterRequirement.required,
-  ]
+  package static let adapterRequirements = Dictionary(
+    uniqueKeysWithValues: ConsumerCatalog.shared.runtimeEntries.map { entry in
+      (entry.id.rawValue, entry.mode.requirement!)
+    }
+  )
 
   private let root: URL
   private let activator: ThemeActivator
@@ -470,32 +457,21 @@ package struct ThemeActivationCoordinator: Sendable {
       )
     }
     let selectedIDs = Set(adapterIDs)
-    return [
-      appearanceInspection,
-      atuin.inspection(),
-      bat.inspection(),
-      btop.inspection(),
-      codex.inspection(),
-      eza.inspection(),
-      namedThemeInspection(
-        adapterID: HerdrAdapter.id,
-        unsupportedAdapterIDs: unsupportedAdapterIDs,
-        supportedInspection: herdr.inspection
-      ),
-      kitty.inspection(),
-      namedThemeInspection(
-        adapterID: NeovimAdapter.id,
-        unsupportedAdapterIDs: unsupportedAdapterIDs,
-        supportedInspection: { neovim.inspection(includeRuntimeChecks: includeRuntimeChecks) }
-      ),
-      pi.inspection(),
-      sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks),
-      spicetify.inspection(),
-      starship.inspection(),
-      tuicr.inspection(),
-      wallpaperInspection,
-      yazi.inspection(),
-    ].filter {
+    return configuredAdapters(
+      desiredAppearance: nil,
+      desiredWallpaperURL: nil,
+      unsupportedAdapterIDs: unsupportedAdapterIDs,
+      includeRuntimeChecks: includeRuntimeChecks
+    ).map { adapter in
+      switch adapter.id {
+      case MacOSAppearanceAdapter.id:
+        appearanceInspection
+      case WallpaperAdapter.id:
+        wallpaperInspection
+      default:
+        adapter.inspection()
+      }
+    }.filter {
       adapterIDs.isEmpty || selectedIDs.contains($0.adapterID)
     }
   }
@@ -564,11 +540,31 @@ package struct ThemeActivationCoordinator: Sendable {
   private func configuredAdapters(
     desiredAppearance: ThemeAppearance?,
     desiredWallpaperURL: URL?,
-    unsupportedAdapterIDs: Set<String>
+    unsupportedAdapterIDs: Set<String>,
+    includeRuntimeChecks: Bool = false
   ) -> [ConfiguredAdapter] {
-    [
-      ConfiguredAdapter(
-        id: MacOSAppearanceAdapter.id,
+    ConsumerCatalog.shared.runtimeEntries.map { entry in
+      configuredAdapter(
+        entry,
+        desiredAppearance: desiredAppearance,
+        desiredWallpaperURL: desiredWallpaperURL,
+        unsupportedAdapterIDs: unsupportedAdapterIDs,
+        includeRuntimeChecks: includeRuntimeChecks
+      )
+    }
+  }
+
+  private func configuredAdapter(
+    _ entry: ConsumerCatalogEntry,
+    desiredAppearance: ThemeAppearance?,
+    desiredWallpaperURL: URL?,
+    unsupportedAdapterIDs: Set<String>,
+    includeRuntimeChecks: Bool
+  ) -> ConfiguredAdapter {
+    switch entry.mode.runtimeKind! {
+    case .macOSAppearance:
+      return ConfiguredAdapter(
+        entry: entry,
         inspection: { appearance.inspection(desiredAppearance: desiredAppearance) },
         reconciliation: {
           appearance.reconciliation {
@@ -576,80 +572,64 @@ package struct ThemeActivationCoordinator: Sendable {
             return try activeAppearance(manifest: manifest)
           }
         }
-      ),
-      ConfiguredAdapter(
-        id: AtuinAdapter.id,
-        inspection: atuin.inspection,
-        reconciliation: atuin.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: BatAdapter.id,
-        inspection: bat.inspection,
-        reconciliation: bat.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: BtopAdapter.id,
-        inspection: btop.inspection,
-        reconciliation: btop.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: CodexAdapter.id,
-        inspection: codex.inspection,
-        reconciliation: codex.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: EzaAdapter.id,
-        inspection: eza.inspection,
-        reconciliation: eza.reconciliation
-      ),
-      configuredNamedThemeAdapter(
-        id: HerdrAdapter.id,
+      )
+    case .atuin:
+      return ConfiguredAdapter(
+        entry: entry, inspection: atuin.inspection, reconciliation: atuin.reconciliation)
+    case .bat:
+      return ConfiguredAdapter(
+        entry: entry, inspection: bat.inspection, reconciliation: bat.reconciliation)
+    case .btop:
+      return ConfiguredAdapter(
+        entry: entry, inspection: btop.inspection, reconciliation: btop.reconciliation)
+    case .codex:
+      return ConfiguredAdapter(
+        entry: entry, inspection: codex.inspection, reconciliation: codex.reconciliation)
+    case .eza:
+      return ConfiguredAdapter(
+        entry: entry, inspection: eza.inspection, reconciliation: eza.reconciliation)
+    case .herdr:
+      return configuredNamedThemeAdapter(
+        entry: entry,
         unsupportedAdapterIDs: unsupportedAdapterIDs,
         inspection: herdr.inspection,
         reconciliation: herdr.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: KittyAdapter.id,
-        inspection: kitty.inspection,
-        reconciliation: kitty.reconciliation
-      ),
-      configuredNamedThemeAdapter(
-        id: NeovimAdapter.id,
+      )
+    case .kitty:
+      return ConfiguredAdapter(
+        entry: entry, inspection: kitty.inspection, reconciliation: kitty.reconciliation)
+    case .neovim:
+      return configuredNamedThemeAdapter(
+        entry: entry,
         unsupportedAdapterIDs: unsupportedAdapterIDs,
-        inspection: { neovim.inspection() },
+        inspection: { neovim.inspection(includeRuntimeChecks: includeRuntimeChecks) },
         reconciliation: neovim.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: PiAdapter.id,
-        inspection: pi.inspection,
-        reconciliation: pi.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: SketchyBarAdapter.id,
-        inspection: { sketchyBar.inspection() },
+      )
+    case .pi:
+      return ConfiguredAdapter(
+        entry: entry, inspection: pi.inspection, reconciliation: pi.reconciliation)
+    case .sketchyBar:
+      return ConfiguredAdapter(
+        entry: entry,
+        inspection: { sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks) },
         reconciliation: sketchyBar.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: SpicetifyAdapter.id,
-        inspection: spicetify.inspection,
-        reconciliation: spicetify.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: StarshipAdapter.id,
-        inspection: starship.inspection,
-        reconciliation: starship.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: TuicrAdapter.id,
-        inspection: tuicr.inspection,
-        reconciliation: tuicr.reconciliation
-      ),
-      ConfiguredAdapter(
-        id: WallpaperAdapter.id,
+      )
+    case .spicetify:
+      return ConfiguredAdapter(
+        entry: entry, inspection: spicetify.inspection, reconciliation: spicetify.reconciliation)
+    case .starship:
+      return ConfiguredAdapter(
+        entry: entry, inspection: starship.inspection, reconciliation: starship.reconciliation)
+    case .tuicr:
+      return ConfiguredAdapter(
+        entry: entry, inspection: tuicr.inspection, reconciliation: tuicr.reconciliation)
+    case .wallpaper:
+      return ConfiguredAdapter(
+        entry: entry,
         inspection: {
           inspectWallpaper(
             desiredWallpaperURL: desiredWallpaperURL,
-            includeRuntimeChecks: false
+            includeRuntimeChecks: includeRuntimeChecks
           )
         },
         reconciliation: {
@@ -658,13 +638,11 @@ package struct ThemeActivationCoordinator: Sendable {
             return activeWallpaperURL(manifest: manifest)
           }
         }
-      ),
-      ConfiguredAdapter(
-        id: YaziAdapter.id,
-        inspection: yazi.inspection,
-        reconciliation: yazi.reconciliation
-      ),
-    ]
+      )
+    case .yazi:
+      return ConfiguredAdapter(
+        entry: entry, inspection: yazi.inspection, reconciliation: yazi.reconciliation)
+    }
   }
 
   private func activeAppearance(manifest: GenerationManifest) throws -> ThemeAppearance {
@@ -692,22 +670,43 @@ package struct ThemeActivationCoordinator: Sendable {
     let wallpaperData =
       try configuration.wallpaperData(themeID: package.id)
       ?? package.wallpaperData
-    _ = try appearance.preflight()
-    try atuin.preflight()
-    try bat.preflight()
-    try btop.preflight()
-    try codex.preflight()
-    try eza.preflight()
-    try herdr.preflight(package: package)
-    try kitty.preflight()
-    try neovim.preflight(package: package)
-    try pi.preflight()
-    try sketchyBar.preflight()
-    try starship.preflight()
-    try tuicr.preflight()
-    _ = try wallpaper.preflight()
-    try wallpaperSignal.preflight()
-    try yazi.preflight()
+    for entry in ConsumerCatalog.shared.runtimeEntries {
+      switch entry.mode.runtimeKind! {
+      case .macOSAppearance:
+        _ = try appearance.preflight()
+      case .atuin:
+        try atuin.preflight()
+      case .bat:
+        try bat.preflight()
+      case .btop:
+        try btop.preflight()
+      case .codex:
+        try codex.preflight()
+      case .eza:
+        try eza.preflight()
+      case .herdr:
+        try herdr.preflight(package: package)
+      case .kitty:
+        try kitty.preflight()
+      case .neovim:
+        try neovim.preflight(package: package)
+      case .pi:
+        try pi.preflight()
+      case .sketchyBar:
+        try sketchyBar.preflight()
+      case .spicetify:
+        break
+      case .starship:
+        try starship.preflight()
+      case .tuicr:
+        try tuicr.preflight()
+      case .wallpaper:
+        _ = try wallpaper.preflight()
+        try wallpaperSignal.preflight()
+      case .yazi:
+        try yazi.preflight()
+      }
+    }
     return wallpaperData
   }
 
@@ -791,43 +790,32 @@ package struct ThemeActivationCoordinator: Sendable {
     }
   }
 
-  private func namedThemeInspection(
-    adapterID: String,
-    unsupportedAdapterIDs: Set<String>,
-    supportedInspection: () -> AdapterInspection
-  ) -> AdapterInspection {
-    guard unsupportedAdapterIDs.contains(adapterID) else {
-      return supportedInspection()
-    }
-    return AdapterInspection(
-      adapterID: adapterID,
-      requirement: .required,
-      status: .unsupported,
-      message: unsupportedNamedThemeMessage(adapterID: adapterID)
-    )
-  }
-
   private func configuredNamedThemeAdapter(
-    id: String,
+    entry: ConsumerCatalogEntry,
     unsupportedAdapterIDs: Set<String>,
     inspection: @escaping @Sendable () -> AdapterInspection,
     reconciliation: @escaping @Sendable () -> AdapterReconciliation
   ) -> ConfiguredAdapter {
+    let id = entry.id.rawValue
     guard unsupportedAdapterIDs.contains(id) else {
-      return ConfiguredAdapter(id: id, inspection: inspection, reconciliation: reconciliation)
+      return ConfiguredAdapter(
+        entry: entry,
+        inspection: inspection,
+        reconciliation: reconciliation
+      )
     }
     return ConfiguredAdapter(
-      id: id,
+      entry: entry,
       inspection: {
         AdapterInspection(
           adapterID: id,
-          requirement: .required,
+          requirement: entry.mode.requirement!,
           status: .unsupported,
           message: unsupportedNamedThemeMessage(adapterID: id)
         )
       },
       reconciliation: {
-        AdapterReconciliation(id: id, requirement: .required) {
+        AdapterReconciliation(id: id, requirement: entry.mode.requirement!) {
           AdapterOutcome(
             status: .unsupported,
             message: unsupportedNamedThemeMessage(adapterID: id)
@@ -847,7 +835,37 @@ package struct ThemeActivationCoordinator: Sendable {
 }
 
 private struct ConfiguredAdapter: Sendable {
-  let id: String
-  let inspection: @Sendable () -> AdapterInspection
-  let reconciliation: @Sendable () -> AdapterReconciliation
+  let entry: ConsumerCatalogEntry
+  private let inspect: @Sendable () -> AdapterInspection
+  private let reconcile: @Sendable () -> AdapterReconciliation
+
+  init(
+    entry: ConsumerCatalogEntry,
+    inspection: @escaping @Sendable () -> AdapterInspection,
+    reconciliation: @escaping @Sendable () -> AdapterReconciliation
+  ) {
+    self.entry = entry
+    inspect = inspection
+    reconcile = reconciliation
+  }
+
+  var id: String { entry.id.rawValue }
+
+  func inspection() -> AdapterInspection {
+    let inspection = inspect()
+    precondition(
+      inspection.adapterID == id && inspection.requirement == entry.mode.requirement,
+      "Runtime inspection disagrees with the consumer catalog for '\(id)'"
+    )
+    return inspection
+  }
+
+  func reconciliation() -> AdapterReconciliation {
+    let reconciliation = reconcile()
+    precondition(
+      reconciliation.id == id && reconciliation.requirement == entry.mode.requirement,
+      "Runtime reconciliation disagrees with the consumer catalog for '\(id)'"
+    )
+    return reconciliation
+  }
 }

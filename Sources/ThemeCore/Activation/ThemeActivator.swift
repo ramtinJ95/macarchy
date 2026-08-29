@@ -84,25 +84,17 @@ package enum ActivationCheckpoint: Sendable {
 }
 
 public struct ThemeActivator: Sendable {
-  private static let rendererVersions = [
-    AtuinAdapter.id: AtuinAdapter.rendererVersion,
-    TextMateThemeArtifact.rendererID: TextMateThemeArtifact.rendererVersion,
-    BtopAdapter.id: BtopAdapter.rendererVersion,
-    EzaAdapter.id: EzaAdapter.rendererVersion,
-    HerdrAdapter.id: HerdrAdapter.rendererVersion,
-    KittyAdapter.id: KittyAdapter.rendererVersion,
-    NeovimAdapter.id: NeovimAdapter.rendererVersion,
-    PiAdapter.id: PiAdapter.rendererVersion,
-    SketchyBarAdapter.id: SketchyBarAdapter.rendererVersion,
-    SlackAdapter.id: SlackAdapter.rendererVersion,
-    SpicetifyAdapter.id: SpicetifyAdapter.rendererVersion,
-    StarshipAdapter.id: StarshipAdapter.rendererVersion,
-    TuicrAdapter.id: TuicrAdapter.rendererVersion,
-    WallpaperAdapter.id: WallpaperAdapter.rendererVersion,
-    YaziAdapter.id: YaziAdapter.rendererVersion,
-    "capabilities": 1,
-    "normalized_theme": 1,
-  ]
+  private static let rendererVersions: [String: Int] = {
+    let internalVersions = ["capabilities": 1, "normalized_theme": 1]
+    let consumerVersions = ConsumerCatalog.shared.rendererVersions
+    precondition(
+      Set(internalVersions.keys).isDisjoint(with: consumerVersions.keys),
+      "Internal renderer IDs collide with the consumer catalog"
+    )
+    return consumerVersions.merging(internalVersions) { _, _ in
+      preconditionFailure("Duplicate renderer ID")
+    }
+  }()
 
   private let root: URL
   private let activationLock: ActivationLock
