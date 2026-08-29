@@ -21,22 +21,26 @@ public struct AdapterResult: Codable, Equatable, Sendable {
   public let requirement: AdapterRequirement
   public let status: AdapterStatus
   public let message: String?
+  public let carriedForwardFromGenerationID: String?
 
   public init(
     adapterID: String,
     requirement: AdapterRequirement,
     status: AdapterStatus,
-    message: String? = nil
+    message: String? = nil,
+    carriedForwardFromGenerationID: String? = nil
   ) {
     self.adapterID = adapterID
     self.requirement = requirement
     self.status = status
     self.message = message
+    self.carriedForwardFromGenerationID = carriedForwardFromGenerationID
   }
 
   enum CodingKeys: String, CodingKey {
     case adapterID = "adapter_id"
     case requirement, status, message
+    case carriedForwardFromGenerationID = "carried_forward_from_generation_id"
   }
 }
 
@@ -53,6 +57,7 @@ public struct ReconciliationRecord: Codable, Equatable, Sendable {
     guard Set(sorted.map(\.adapterID)).count == sorted.count else {
       throw ReconciliationStatusError.duplicateAdapterID
     }
+    try Self.validateCarriedGenerationIDs(sorted)
     schemaVersion = Self.currentSchemaVersion
     generationID = manifest.generationID
     themeID = manifest.themeID
@@ -66,7 +71,20 @@ public struct ReconciliationRecord: Codable, Equatable, Sendable {
     guard results == results.sorted(by: { $0.adapterID < $1.adapterID }) else {
       throw ReconciliationStatusError.nondeterministicResultOrder
     }
+    try Self.validateCarriedGenerationIDs(results)
     return self
+  }
+
+  private static func validateCarriedGenerationIDs(_ results: [AdapterResult]) throws {
+    guard
+      results.allSatisfy({
+        $0.carriedForwardFromGenerationID.map(isGenerationID) ?? true
+      })
+    else {
+      throw ReconciliationStatusError.invalidStatus(
+        "carried-forward generation identifier is invalid"
+      )
+    }
   }
 
   enum CodingKeys: String, CodingKey {
@@ -281,15 +299,20 @@ public struct ReconciliationStatusStore: Sendable {
   ) throws -> GenerationManifest {
     do {
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-      guard let object, Set(object.keys) == GenerationManifest.encodedKeys else {
+      guard
+        let object,
+        let schemaVersion = object["manifest_schema_version"] as? Int,
+        let encodedKeys = GenerationManifest.encodedKeys(schemaVersion: schemaVersion),
+        Set(object.keys) == encodedKeys
+      else {
         throw ReconciliationStatusError.invalidActiveGeneration(
           "manifest.json contains unknown or missing fields"
         )
       }
       let manifest = try JSONDecoder().decode(GenerationManifest.self, from: data)
-      guard manifest.manifestSchemaVersion == GenerationManifest.currentSchemaVersion else {
+      guard manifest.manifestSchemaVersion == schemaVersion else {
         throw ReconciliationStatusError.invalidActiveGeneration(
-          "unsupported manifest schema version \(manifest.manifestSchemaVersion)"
+          "manifest schema version changed while decoding"
         )
       }
       guard manifest.generationID == generationID else {

@@ -179,6 +179,8 @@ extension AdapterContractTests {
       path: "lua/plugins", directoryHint: .isDirectory)
     let neovimMacarchy = neovimDirectory.appending(
       path: "lua/macarchy", directoryHint: .isDirectory)
+    let neovimConfig = neovimDirectory.appending(
+      path: "lua/config", directoryHint: .isDirectory)
     let neovimColors = neovimDirectory.appending(path: "colors", directoryHint: .isDirectory)
     let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
     let piDirectory = root.appending(path: "pi", directoryHint: .isDirectory)
@@ -203,6 +205,7 @@ extension AdapterContractTests {
     try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimConfig, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimColors, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
       at: starshipDirectory, withIntermediateDirectories: true)
@@ -295,6 +298,11 @@ extension AdapterContractTests {
       to: neovimPlugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
     try "\(NeovimAdapter.importedColorschemeDirective)\n".write(
       to: neovimColors.appending(path: "\(NeovimAdapter.importedColorscheme).lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "\(NeovimAdapter.backgroundAwareWatcherDirective)\n".write(
+      to: neovimConfig.appending(path: "macarchy-theme.lua"),
       atomically: true,
       encoding: .utf8
     )

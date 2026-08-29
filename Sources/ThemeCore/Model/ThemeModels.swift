@@ -78,7 +78,7 @@ public struct ThemeBackground: Sendable {
   public let format: ThemeBackgroundFormat
 }
 
-public enum ThemeBackgroundFormat: String, Sendable {
+public enum ThemeBackgroundFormat: String, Codable, Sendable {
   case jpeg
   case png
 
@@ -110,9 +110,24 @@ public struct ThemePackage: Sendable {
   let backgroundData: [String: Data]
   public let mappings: [String: String]
 
+  package func background(id: String) -> ThemeBackground? {
+    backgrounds.first { $0.id == id }
+  }
+
+  package func data(for background: ThemeBackground) -> Data {
+    guard let data = backgroundData[background.id] else {
+      preconditionFailure("Theme package is missing data for background '\(background.id)'")
+    }
+    return data
+  }
+
+  var firstBackgroundData: Data? {
+    backgrounds.first.map(data(for:))
+  }
+
   var defaultBackgroundData: Data {
-    guard let first = backgrounds.first, let data = backgroundData[first.id] else {
-      preconditionFailure("Theme package is missing its default background data")
+    guard let data = firstBackgroundData else {
+      preconditionFailure("Theme package has no default background")
     }
     return data
   }
@@ -129,7 +144,6 @@ public struct ThemePackage: Sendable {
     backgroundData: [String: Data],
     mappings: [String: String]
   ) {
-    precondition(!backgrounds.isEmpty, "Theme packages require at least one background")
     precondition(
       Set(backgrounds.map(\.id)).count == backgrounds.count,
       "Theme package background identifiers must be unique"
@@ -148,6 +162,16 @@ public struct ThemePackage: Sendable {
     self.backgrounds = backgrounds
     self.backgroundData = backgroundData
     self.mappings = mappings
+  }
+}
+
+public struct GenerationBackground: Codable, Equatable, Sendable {
+  public let id: String
+  public let format: ThemeBackgroundFormat
+
+  public init(id: String, format: ThemeBackgroundFormat) {
+    self.id = id
+    self.format = format
   }
 }
 

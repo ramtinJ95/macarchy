@@ -10,6 +10,44 @@ import Testing
 @Suite(.serialized)
 struct ActivationSliceTests {
   @Test
+  func schemaOneActiveGenerationRemainsReadableAcrossBackgroundManifestUpgrade() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let current = try testActivator(root: root).activate(package: catppuccinPackage())
+    let manifestURL = root.appending(
+      path: "generations/\(current.generationID)/manifest.json"
+    )
+    var object = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
+    )
+    object["manifest_schema_version"] = GenerationManifest.legacySchemaVersion
+    object.removeValue(forKey: "theme_digest")
+    object.removeValue(forKey: "background")
+    var data = try JSONSerialization.data(
+      withJSONObject: object,
+      options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    )
+    data.append(0x0a)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o644],
+      ofItemAtPath: manifestURL.path
+    )
+    try data.write(to: manifestURL)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o444],
+      ofItemAtPath: manifestURL.path
+    )
+
+    let legacy = try ReconciliationStatusStore(root: root).activeManifest()
+    #expect(legacy.manifestSchemaVersion == GenerationManifest.legacySchemaVersion)
+    #expect(legacy.themeDigest.isEmpty)
+    #expect(legacy.background == nil)
+  }
+
+  @Test
   func importedPaletteOutputsBecomeRequiredWithoutInvalidatingOlderManifests() throws {
     let metadata = try ThemeRenderer.validatedArtifactMetadata()
     #expect(metadata[ThemeRenderer.capabilitiesOutputPath]?.requirement == .optional)
@@ -62,16 +100,30 @@ struct ActivationSliceTests {
       path: "generations/\(base.generationID)",
       directoryHint: .isDirectory
     )
+    var nullDigestObject = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(contentsOf: generationURL.appending(path: "manifest.json"))
+      ) as? [String: Any]
+    )
+    nullDigestObject["theme_digest"] = NSNull()
+    let nullDigestData = try JSONSerialization.data(withJSONObject: nullDigestObject)
+    #expect(throws: DecodingError.self) {
+      _ = try JSONDecoder().decode(GenerationManifest.self, from: nullDigestData)
+    }
 
     func manifest(
       rendererVersions: [String: Int],
-      artifacts: [String: String]
+      artifacts: [String: String],
+      themeDigest: String? = nil,
+      background: GenerationBackground? = nil
     ) -> GenerationManifest {
       GenerationManifest(
         generationID: base.generationID,
         themeID: base.themeID,
         themeSchemaVersion: base.themeSchemaVersion,
         inputDigest: base.inputDigest,
+        themeDigest: themeDigest ?? base.themeDigest,
+        background: background ?? base.background,
         rendererVersions: rendererVersions,
         artifacts: artifacts
       )
@@ -93,6 +145,33 @@ struct ActivationSliceTests {
         rendererVersions: base.rendererVersions,
         artifacts: missingRequired
       ).validateArtifacts(at: generationURL)
+    }
+
+    var missingSelectedWallpaper = base.artifacts
+    missingSelectedWallpaper.removeValue(forKey: WallpaperAdapter.outputPath)
+    #expect(throws: GenerationIntegrityError.self) {
+      try manifest(
+        rendererVersions: base.rendererVersions,
+        artifacts: missingSelectedWallpaper
+      ).validateArtifacts(at: generationURL)
+    }
+
+    let wrongFormat = manifest(
+      rendererVersions: base.rendererVersions,
+      artifacts: base.artifacts,
+      background: GenerationBackground(id: "default", format: .jpeg)
+    )
+    #expect(throws: GenerationIntegrityError.self) {
+      try wrongFormat.validateArtifacts(at: generationURL)
+    }
+
+    let invalidDigest = manifest(
+      rendererVersions: base.rendererVersions,
+      artifacts: base.artifacts,
+      themeDigest: ""
+    )
+    #expect(throws: GenerationIntegrityError.self) {
+      try invalidDigest.validateArtifacts(at: generationURL)
     }
 
     for currentGatedPath in [
@@ -132,7 +211,7 @@ struct ActivationSliceTests {
   }
 
   @Test
-  func oversizedRenderedArtifactPreservesActivationTypedErrorAndCheckpoint() throws {
+  func preparedBackgroundValidationPreservesOversizeErrorAndRejectsFormatMismatch() throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -156,10 +235,27 @@ struct ActivationSliceTests {
       _ = try activator.activate(
         package: catppuccinPackage(),
         expectedActiveGenerationID: nil,
-        wallpaperData: oversized
+        preparedBackground: {
+          try preparedBackground(package: catppuccinPackage(), data: oversized)
+        }
       )
     }
     #expect(reachedOutputCheckpoint.withLock { $0 })
+    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "current").path))
+
+    let package = try catppuccinPackage()
+    #expect(throws: ThemeImageAssetError.mediaTypeMismatch) {
+      _ = try activator.activate(
+        package: package,
+        expectedActiveGenerationID: nil,
+        preparedBackground: {
+          PreparedThemeBackground(
+            selection: GenerationBackground(id: "default", format: .jpeg),
+            data: package.defaultBackgroundData
+          )
+        }
+      )
+    }
     #expect(!FileManager.default.fileExists(atPath: root.appending(path: "current").path))
   }
 
@@ -762,7 +858,9 @@ struct ActivationSliceTests {
       _ = try conditional.activate(
         package: requested,
         expectedActiveGenerationID: original.generationID,
-        wallpaperData: requested.defaultBackgroundData
+        preparedBackground: {
+          try preparedBackground(package: requested, data: requested.defaultBackgroundData)
+        }
       )
     }
     #expect(
@@ -921,14 +1019,22 @@ struct ActivationSliceTests {
     let overrideManifest = try testActivator(root: stateRoot).activate(
       package: catppuccinPackage(),
       expectedActiveGenerationID: nil,
-      wallpaperData: tokyoNightPackage().defaultBackgroundData
+      preparedBackground: {
+        try preparedBackground(
+          package: catppuccinPackage(),
+          data: tokyoNightPackage().defaultBackgroundData
+        )
+      }
     )
 
     #expect(originalManifest.inputDigest == equivalentManifest.inputDigest)
     #expect(originalManifest.generationID == equivalentManifest.generationID)
+    #expect(originalManifest.themeDigest == equivalentManifest.themeDigest)
     #expect(originalManifest.inputDigest != changedManifest.inputDigest)
     #expect(originalManifest.generationID != changedManifest.generationID)
+    #expect(originalManifest.themeDigest != changedManifest.themeDigest)
     #expect(originalManifest.inputDigest != overrideManifest.inputDigest)
+    #expect(originalManifest.themeDigest == overrideManifest.themeDigest)
     #expect(
       try Data(
         contentsOf: stateRoot.appending(
@@ -1102,6 +1208,17 @@ struct ActivationSliceTests {
 
   private func testActivator(root: URL) -> ThemeActivator {
     ThemeActivator(root: root, faultInjector: { _ in })
+  }
+
+  private func preparedBackground(
+    package: ThemePackage,
+    data: Data
+  ) throws -> PreparedThemeBackground {
+    let background = try #require(package.backgrounds.first)
+    return PreparedThemeBackground(
+      selection: GenerationBackground(id: background.id, format: background.format),
+      data: data
+    )
   }
 
   private func installPreviousGeneration(at root: URL) throws -> URL {

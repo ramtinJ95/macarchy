@@ -29,13 +29,8 @@ enum ThemeImageAsset {
     return data
   }
 
-  private static func validate(data: Data, format: ThemeBackgroundFormat) throws {
-    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-      CGImageSourceGetCount(source) > 0,
-      (CGImageSourceGetType(source) as String?) == format.mediaType
-    else {
-      throw ThemeImageAssetError.mediaTypeMismatch
-    }
+  static func validate(data: Data, format: ThemeBackgroundFormat) throws {
+    let source = try source(data: data, format: format)
 
     guard
       let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
@@ -62,5 +57,22 @@ enum ThemeImageAsset {
     else {
       throw ThemeImageAssetError.incompleteDecode
     }
+  }
+
+  static func validateMediaType(data: Data, format: ThemeBackgroundFormat) throws {
+    _ = try source(data: data, format: format)
+  }
+
+  private static func source(
+    data: Data,
+    format: ThemeBackgroundFormat
+  ) throws -> CGImageSource {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+      CGImageSourceGetCount(source) > 0,
+      (CGImageSourceGetType(source) as String?) == format.mediaType
+    else {
+      throw ThemeImageAssetError.mediaTypeMismatch
+    }
+    return source
   }
 }

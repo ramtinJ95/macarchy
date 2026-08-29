@@ -6,6 +6,45 @@ import Testing
 
 struct BackgroundInventoryTests {
   @Test
+  func zeroBackgroundPackageIsValidAndProducesAnUnmanagedGeneration() throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let packageURL = try copyCatppuccin(to: root)
+    try replaceBackgroundContract(in: packageURL, with: "")
+    try FileManager.default.removeItem(at: packageURL.appending(path: "LICENSES/wallpaper.md"))
+    let package = try ThemePackageLoader().load(packageURL: packageURL)
+    #expect(package.backgrounds.isEmpty)
+    #expect(throws: BackgroundSelectionError.noBackgrounds(themeID: package.id)) {
+      _ = try BackgroundSelectionResolver.resolve(
+        package: package,
+        requestedBackgroundID: "missing",
+        preferences: [:],
+        overrideData: nil
+      )
+    }
+    let rendered = try ThemeRenderer().render(package: package, generationID: "zero-background")
+    #expect(rendered.wallpaper == nil)
+
+    let stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
+    let manifest = try ThemeActivator(root: stateRoot).activate(package: package)
+    #expect(manifest.background == nil)
+    #expect(manifest.artifacts[WallpaperAdapter.outputPath] == nil)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: stateRoot.appending(
+          path: "generations/\(manifest.generationID)/\(WallpaperAdapter.outputPath)"
+        ).path
+      )
+    )
+    try manifest.validateArtifacts(
+      at: stateRoot.appending(path: "generations/\(manifest.generationID)")
+    )
+  }
+
+  @Test
   func olderWallpaperContractRequiresReinstallation() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -68,6 +107,19 @@ struct BackgroundInventoryTests {
     #expect(
       package.backgrounds.map(\.path)
         == ["backgrounds/day/default.png", "backgrounds/night/default.jpg"])
+    #expect(
+      throws: BackgroundSelectionError.unknownBackground(
+        themeID: package.id,
+        backgroundID: "missing"
+      )
+    ) {
+      _ = try BackgroundSelectionResolver.resolve(
+        package: package,
+        requestedBackgroundID: "missing",
+        preferences: [:],
+        overrideData: nil
+      )
+    }
   }
 
   @Test
@@ -131,6 +183,23 @@ struct BackgroundInventoryTests {
       path: "macarchy-background-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
+  }
+
+  private func makeWritableForRemoval(_ root: URL) {
+    guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+    else { return }
+    var directories = [root]
+    for case let item as URL in enumerator {
+      if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+        directories.append(item)
+      }
+    }
+    for directory in directories.reversed() {
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: directory.path
+      )
+    }
   }
 
   private func copyCatppuccin(to root: URL, name: String = "theme") throws -> URL {

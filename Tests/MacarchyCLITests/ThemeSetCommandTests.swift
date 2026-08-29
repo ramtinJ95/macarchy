@@ -348,6 +348,8 @@ struct ThemeSetCommandTests {
       path: "lua/plugins", directoryHint: .isDirectory)
     let neovimMacarchy = neovimDirectory.appending(
       path: "lua/macarchy", directoryHint: .isDirectory)
+    let neovimConfig = neovimDirectory.appending(
+      path: "lua/config", directoryHint: .isDirectory)
     let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
     let piDirectory = root.appending(path: "pi", directoryHint: .isDirectory)
     let herdrConfiguration = root.appending(path: "herdr/config.toml")
@@ -368,6 +370,7 @@ struct ThemeSetCommandTests {
     try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: neovimConfig, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(
       at: starshipDirectory, withIntermediateDirectories: true)
     for directory in [
@@ -460,6 +463,11 @@ struct ThemeSetCommandTests {
       to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
     try "\(NeovimAdapter.integrationDirective)\n".write(
       to: neovimPlugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
+    try "\(NeovimAdapter.backgroundAwareWatcherDirective)\n".write(
+      to: neovimConfig.appending(path: "macarchy-theme.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
     try "format = \"$character\"\n".write(
       to: starshipDirectory.appending(path: "behavior.toml"),
       atomically: true,
@@ -520,6 +528,7 @@ private func manifest() -> GenerationManifest {
     themeID: "catppuccin-mocha",
     themeSchemaVersion: 1,
     inputDigest: "sha256:test",
+    themeDigest: "sha256:theme",
     rendererVersions: ["kitty": 1, "normalized_theme": 1],
     artifacts: [
       "generated/kitty.conf": "sha256:kitty",

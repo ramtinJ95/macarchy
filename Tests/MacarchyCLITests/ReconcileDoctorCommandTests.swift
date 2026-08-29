@@ -6,6 +6,37 @@ import Testing
 
 struct ReconcileDoctorCommandTests {
   @Test
+  func doctorMakesCarriedReconciliationEvidenceExplicit() throws {
+    let manifest = testManifest()
+    let sourceGeneration = "g-00000000-0000-0000-0000-000000000001"
+    let record = try ReconciliationRecord(
+      manifest: manifest,
+      results: [
+        AdapterResult(
+          adapterID: "pi",
+          requirement: .required,
+          status: .applied,
+          message: "Running Pi sessions reloaded the active palette",
+          carriedForwardFromGenerationID: sourceGeneration
+        )
+      ]
+    )
+    let runner = DoctorCommandRunner(
+      read: { _ in .state(manifest: manifest, reconciliation: .current(record)) },
+      inspect: { _, _ in [] }
+    )
+
+    for json in [false, true] {
+      let output = try runner.execute(
+        stateRoot: URL(filePath: "/test/state"),
+        consumerPaths: testConsumerPaths(),
+        json: json
+      ).output
+      #expect(output.contains("carried from \(sourceGeneration)"))
+    }
+  }
+
+  @Test
   func reconcileDryRunAndRequiredFailureMatchOutputContracts() async throws {
     let manifest = testManifest()
     let dryRun = ReconcileCommandRunner(
@@ -517,6 +548,7 @@ private func testManifest() -> GenerationManifest {
     themeID: "catppuccin-mocha",
     themeSchemaVersion: 1,
     inputDigest: "sha256:test",
+    themeDigest: "sha256:theme",
     rendererVersions: ["kitty": 1, "normalized_theme": 1],
     artifacts: [
       "generated/kitty.conf": "sha256:kitty",

@@ -15,9 +15,10 @@ func renderSlackManualImport(_ theme: String) -> [String] {
 
 func renderAdapterResult(_ result: AdapterResult) -> String {
   let message = result.message.map { ": \($0)" } ?? ""
+  let carried = result.carriedForwardFromGenerationID.map { " (carried from \($0))" } ?? ""
   return
     "- \(result.adapterID) [\(result.requirement.rawValue)]: "
-    + "\(result.status.rawValue)\(message)"
+    + "\(result.status.rawValue)\(carried)\(message)"
 }
 
 func hasRequiredReconciliationFailure(_ results: [AdapterResult]) -> Bool {
@@ -50,6 +51,7 @@ let namedThemeOnlyAdapterIDs = GeneratedThemeCapabilities.namedThemeAdapterIDs
 func isAcceptedReconciliationResult(_ result: AdapterResult) -> Bool {
   result.status == .applied
     || result.status == .restartRequired
+    || (result.adapterID == "wallpaper" && result.status == .disabled)
     || (result.status == .unsupported && namedThemeOnlyAdapterIDs.contains(result.adapterID))
 }
 

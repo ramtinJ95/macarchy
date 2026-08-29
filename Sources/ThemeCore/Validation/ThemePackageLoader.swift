@@ -205,15 +205,18 @@ public struct ThemePackageLoader: Sendable {
     index: TOMLSourceIndex,
     file: URL
   ) throws -> (backgrounds: [ThemeBackground], data: [String: Data]) {
-    let provenance = packageURL.appending(path: "LICENSES/wallpaper.md")
-    try require(
-      FileManager.default.fileExists(atPath: provenance.path), path: "backgrounds.license",
-      message: "Missing LICENSES/wallpaper.md provenance record", index: index, file: file)
+    let rawBackgrounds = theme.backgrounds ?? []
+    if !rawBackgrounds.isEmpty {
+      let provenance = packageURL.appending(path: "LICENSES/wallpaper.md")
+      try require(
+        FileManager.default.fileExists(atPath: provenance.path), path: "backgrounds.license",
+        message: "Missing LICENSES/wallpaper.md provenance record", index: index, file: file)
+    }
 
     var backgrounds: [ThemeBackground] = []
     var data: [String: Data] = [:]
     var resolvedPaths: Set<String> = []
-    for raw in theme.backgrounds {
+    for raw in rawBackgrounds {
       try require(
         ThemeSchema.isThemeID(raw.id), path: "backgrounds.id",
         message: "Background ID must match [a-z][a-z0-9]*(?:-[a-z0-9]+)*", index: index,

@@ -143,6 +143,7 @@ struct ThemeInstallCommandTests {
       themeID: "purple-dream",
       themeSchemaVersion: 1,
       inputDigest: "sha256:" + String(repeating: "a", count: 64),
+      themeDigest: "sha256:" + String(repeating: "b", count: 64),
       rendererVersions: ["normalized_theme": 1],
       artifacts: [:]
     )

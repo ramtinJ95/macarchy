@@ -57,7 +57,7 @@ public struct RenderedTheme: Sendable {
   public var spicetifyTheme: String { requiredString(atPath: SpicetifyAdapter.outputPath) }
   public var starshipPalette: String { requiredString(atPath: StarshipAdapter.outputPath) }
   public var tuicrTheme: String { requiredString(atPath: TuicrAdapter.outputPath) }
-  public var wallpaper: Data { requiredData(atPath: WallpaperAdapter.outputPath) }
+  public var wallpaper: Data? { artifact(atPath: WallpaperAdapter.outputPath)?.data }
   public var yaziFlavor: String { requiredString(atPath: YaziAdapter.flavorOutputPath) }
 
   package init(artifacts: [RenderedArtifact]) throws {

@@ -65,9 +65,10 @@ enum ThemeSetReport {
       ].joined(separator: "\n")
     case .committed(let result, let requiredFailure, let slackTheme):
       var lines = [
-        "Activated '\(result.manifest.themeID)' as generation '\(result.manifest.generationID)'.",
-        "Reconciliation:",
+        "Activated '\(result.manifest.themeID)' as generation '\(result.manifest.generationID)'."
       ]
+      if let notice = result.notice { lines.append("Notice: \(notice)") }
+      lines.append("Reconciliation:")
       lines.append(contentsOf: result.reconciliation.results.map(renderAdapterResult))
       if requiredFailure {
         lines.append("Required reconciliation failed; the commit was not rolled back.")
@@ -113,6 +114,7 @@ enum ThemeSetReport {
         committed: true,
         generationID: result.manifest.generationID,
         reconciliation: result.reconciliation.results,
+        notice: result.notice,
         slackTheme: slackTheme.trimmingCharacters(in: .whitespacesAndNewlines),
         error: requiredFailure ? "Required reconciliation did not complete successfully" : nil
       )
@@ -147,6 +149,7 @@ struct ThemeSetJSONReport: Encodable {
   let committed: Bool
   var generationID: String? = nil
   var reconciliation: [AdapterResult]? = nil
+  var notice: String? = nil
   var slackTheme: String? = nil
   var error: String? = nil
 
@@ -156,6 +159,7 @@ struct ThemeSetJSONReport: Encodable {
     case themeID = "theme_id"
     case generationID = "generation_id"
     case reconciliation
+    case notice
     case slackTheme = "slack_theme"
     case error
   }

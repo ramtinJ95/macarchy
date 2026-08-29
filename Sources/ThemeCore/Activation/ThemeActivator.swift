@@ -128,32 +128,28 @@ public struct ThemeActivator: Sendable {
   }
 
   public func activate(package: ThemePackage) throws -> GenerationManifest {
-    try activate(
+    let background =
+      package.backgrounds.first.map {
+        PreparedThemeBackground(
+          selection: GenerationBackground(id: $0.id, format: $0.format),
+          data: package.data(for: $0)
+        )
+      } ?? PreparedThemeBackground(selection: nil, data: nil)
+    return try activate(
       package: package,
       expectedActiveGenerationID: nil,
-      wallpaperData: package.defaultBackgroundData
+      preparedBackground: { background }
     )
   }
 
   package func activate(
     package: ThemePackage,
     expectedActiveGenerationID: String?,
-    wallpaperData: Data
-  ) throws -> GenerationManifest {
-    try activate(
-      package: package,
-      expectedActiveGenerationID: expectedActiveGenerationID,
-      prepareWallpaperData: { wallpaperData }
-    )
-  }
-
-  package func activate(
-    package: ThemePackage,
-    expectedActiveGenerationID: String?,
-    prepareWallpaperData: () throws -> Data
+    preparedBackground: () throws -> PreparedThemeBackground,
+    onCommittedLocked: (GenerationManifest) throws -> Void = { _ in }
   ) throws -> GenerationManifest {
     let result = try activationLock.withLock {
-      let wallpaperData = try prepareWallpaperData()
+      let background = try preparedBackground()
       if let expectedActiveGenerationID {
         let active = try ReconciliationStatusStore(root: root).activeManifest().generationID
         guard active == expectedActiveGenerationID else {
@@ -165,11 +161,17 @@ public struct ThemeActivator: Sendable {
       }
 
       let interruptedTrash = try recoverInterruptedActivation()
-      return try activateLocked(
+      let result = try activateLocked(
         package: package,
-        wallpaperData: wallpaperData,
+        background: background,
         interruptedTrash: interruptedTrash
       )
+      do {
+        try onCommittedLocked(result.manifest)
+      } catch {
+        throw committedError(result.manifest, String(describing: error))
+      }
+      return result
     }
 
     onThemeChanged(ThemeChanged(manifest: result.manifest))
@@ -213,13 +215,15 @@ public struct ThemeActivator: Sendable {
 
   private func activateLocked(
     package: ThemePackage,
-    wallpaperData: Data,
+    background: PreparedThemeBackground,
     interruptedTrash: [URL]
   ) throws -> LockedActivationResult {
     let previousGenerationID = currentGenerationID()
+    try validate(background: background)
+    let themeDigest = try generationThemeDigest(package: package)
     let inputDigest = try generationInputDigest(
-      package: package,
-      wallpaperData: wallpaperData
+      themeDigest: themeDigest,
+      background: background
     )
     try faultInjector(.inputDigested)
 
@@ -238,7 +242,7 @@ public struct ThemeActivator: Sendable {
       rendered = try ThemeRenderer().render(
         package: package,
         generationID: generationID,
-        wallpaperData: wallpaperData
+        wallpaperData: background.data
       )
     } catch RenderedArtifactCollectionError.dataTooLarge(
       let path,
@@ -264,6 +268,8 @@ public struct ThemeActivator: Sendable {
       themeID: package.id,
       themeSchemaVersion: package.schemaVersion,
       inputDigest: inputDigest,
+      themeDigest: themeDigest,
+      background: background.selection,
       rendererVersions: Self.rendererVersions,
       artifacts: rendered.manifestArtifacts
     )
@@ -416,9 +422,11 @@ public struct ThemeActivator: Sendable {
       let manifestFile = safelyReadManifest(at: url.appending(path: "manifest.json")),
       manifestFile.permissions & 0o222 == 0,
       let object = manifestObject(in: manifestFile.data),
-      Set(object.keys) == GenerationManifest.encodedKeys,
+      let schemaVersion = object["manifest_schema_version"] as? Int,
+      let encodedKeys = GenerationManifest.encodedKeys(schemaVersion: schemaVersion),
+      Set(object.keys) == encodedKeys,
       let manifest = try? JSONDecoder().decode(GenerationManifest.self, from: manifestFile.data),
-      manifest.manifestSchemaVersion == GenerationManifest.currentSchemaVersion,
+      manifest.manifestSchemaVersion == schemaVersion,
       manifest.generationID == url.lastPathComponent,
       (try? manifest.validateArtifacts(at: url)) != nil
     else { return nil }
@@ -622,21 +630,49 @@ public struct ThemeActivator: Sendable {
   }
 
   private func generationInputDigest(
-    package: ThemePackage,
-    wallpaperData: Data
+    themeDigest: String,
+    background: PreparedThemeBackground
   ) throws -> String {
     let input = GenerationInput(
       manifestSchemaVersion: GenerationManifest.currentSchemaVersion,
-      themeSchemaVersion: package.schemaVersion,
-      themeID: package.id,
-      appearance: package.appearance,
-      semantic: package.semantic,
-      terminal: package.terminal,
-      wallpaperDigest: sha256Digest(wallpaperData),
-      mappings: package.mappings,
-      rendererVersions: Self.rendererVersions
+      themeDigest: themeDigest,
+      background: background.selection,
+      wallpaperDigest: background.data.map(sha256Digest)
     )
     return sha256Digest(try encode(input))
+  }
+
+  private func validate(background: PreparedThemeBackground) throws {
+    switch (background.selection, background.data) {
+    case (nil, nil):
+      return
+    case (nil, _), (_, nil):
+      throw GenerationIntegrityError(
+        reason:
+          "background identity and selected bytes must either both be present or both be absent"
+      )
+    case (let selection?, let data?):
+      if data.count <= ThemeImageAsset.maximumSize {
+        try ThemeImageAsset.validate(data: data, format: selection.format)
+      }
+    }
+  }
+
+  private func generationThemeDigest(package: ThemePackage) throws -> String {
+    sha256Digest(
+      try encode(
+        GenerationThemeInput(
+          manifestSchemaVersion: GenerationManifest.currentSchemaVersion,
+          themeSchemaVersion: package.schemaVersion,
+          themeID: package.id,
+          appearance: package.appearance,
+          semantic: package.semantic,
+          terminal: package.terminal,
+          mappings: package.mappings,
+          rendererVersions: Self.rendererVersions
+        )
+      )
+    )
   }
 
   private func encode<Value: Encodable>(_ value: Value) throws -> Data {
@@ -718,12 +754,25 @@ private struct LockedActivationResult {
 
 private struct GenerationInput: Encodable {
   let manifestSchemaVersion: Int
+  let themeDigest: String
+  let background: GenerationBackground?
+  let wallpaperDigest: String?
+
+  enum CodingKeys: String, CodingKey {
+    case manifestSchemaVersion = "manifest_schema_version"
+    case themeDigest = "theme_digest"
+    case background
+    case wallpaperDigest = "wallpaper_digest"
+  }
+}
+
+private struct GenerationThemeInput: Encodable {
+  let manifestSchemaVersion: Int
   let themeSchemaVersion: Int
   let themeID: String
   let appearance: ThemeAppearance
   let semantic: SemanticColors
   let terminal: TerminalColors
-  let wallpaperDigest: String
   let mappings: [String: String]
   let rendererVersions: [String: Int]
 
@@ -732,7 +781,6 @@ private struct GenerationInput: Encodable {
     case themeSchemaVersion = "theme_schema_version"
     case themeID = "theme_id"
     case appearance, semantic, terminal, mappings
-    case wallpaperDigest = "wallpaper_digest"
     case rendererVersions = "renderer_versions"
   }
 }

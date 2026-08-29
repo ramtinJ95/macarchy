@@ -20,6 +20,7 @@ extension AdapterContractTests {
       path: "lua/macarchy", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
+    try writeBackgroundAwareWatcher(at: neovimDirectory)
     try
       "local macarchy = require(\"config.macarchy-theme\")\n\(NeovimAdapter.integrationDirective)\n"
       .write(
@@ -131,6 +132,7 @@ extension AdapterContractTests {
     let macarchy = neovimDirectory.appending(path: "lua/macarchy", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: macarchy, withIntermediateDirectories: true)
+    try writeBackgroundAwareWatcher(at: neovimDirectory)
     try "\(NeovimAdapter.integrationDirective)\n".write(
       to: plugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
     try FileManager.default.createSymbolicLink(
@@ -151,6 +153,15 @@ extension AdapterContractTests {
     let runtime = adapter.inspection(includeRuntimeChecks: true)
     #expect(runtime.status == .failed)
     #expect(runtime.message == "Aether palette mismatch")
+
+    try "return {}\n".write(
+      to: neovimDirectory.appending(path: "lua/config/macarchy-theme.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let watcherDrift = adapter.inspection()
+    #expect(watcherDrift.status == .drifted)
+    #expect(watcherDrift.message?.contains(NeovimAdapter.backgroundAwareWatcherDirective) == true)
   }
 
   @Test
@@ -168,6 +179,7 @@ extension AdapterContractTests {
     for directory in [plugins, macarchy, colors] {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
+    try writeBackgroundAwareWatcher(at: neovimDirectory)
     let configuration = plugins.appending(path: "colorscheme.lua")
     try "\(NeovimAdapter.integrationDirective)\n".write(
       to: configuration, atomically: true, encoding: .utf8)
@@ -251,6 +263,19 @@ extension AdapterContractTests {
     #expect(rendered.components(separatedBy: " = \"#").count - 1 == paletteKeys.count)
     #expect(!rendered.contains("function"))
     #expect(!rendered.contains("require"))
+  }
+
+  private func writeBackgroundAwareWatcher(at neovimDirectory: URL) throws {
+    let watcher = neovimDirectory.appending(path: "lua/config/macarchy-theme.lua")
+    try FileManager.default.createDirectory(
+      at: watcher.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "\(NeovimAdapter.backgroundAwareWatcherDirective)\n".write(
+      to: watcher,
+      atomically: true,
+      encoding: .utf8
+    )
   }
 
 }
