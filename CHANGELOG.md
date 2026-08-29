@@ -7,6 +7,25 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-29
+
+### Added
+
+- Bundled every validated wallpaper from the pinned Omarchy revision for
+  Catppuccin Mocha, Kanagawa, and Tokyo Night, preserving upstream order and
+  exact asset bytes.
+- Added ordered `[[wallpaper_additions]]` configuration so personal PNG, JPEG,
+  and WebP files extend any theme's package gallery without replacing it.
+  Existing schema-1 wallpaper overrides remain readable as additive entries.
+- Added `macarchy theme get slack`, backed by a generic manual-consumer lookup,
+  to print the active generation's exact Slack import value on demand.
+
+### Fixed
+
+- Raised Pi's tertiary `dim` text independently to readable contrast against
+  the page and every derived conversation background, including Tokyo Night
+  and Lavender-like palettes.
+
 ## [0.4.1] - 2026-08-29
 
 ### Changed
@@ -210,7 +229,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/ramtinJ95/macarchy/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ramtinJ95/macarchy/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ramtinJ95/macarchy/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ramtinJ95/macarchy/compare/v0.3.0...v0.3.1
