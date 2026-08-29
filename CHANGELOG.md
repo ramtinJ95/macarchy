@@ -7,6 +7,23 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-29
+
+### Changed
+
+- Tokyo Night and Kanagawa now exactly match Macarchy's accepted conversion of
+  Omarchy's default palettes across every generated consumer theme.
+- The three generated built-in wallpapers were replaced with exact Omarchy
+  defaults. Validated WebP support preserves the Tokyo Night and Catppuccin
+  assets without transcoding, while Kanagawa ships its upstream JPEG.
+- Catppuccin uses an Omarchy wallpaper as its redistributable fallback while
+  the configured personal Samurai image remains an unbundled local override.
+
+### Fixed
+
+- The theme browser now previews and labels a configured personal wallpaper
+  override instead of showing package bytes that activation would replace.
+
 ## [0.4.0] - 2026-08-29
 
 ### Added
@@ -193,7 +210,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/ramtinJ95/macarchy/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ramtinJ95/macarchy/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/ramtinJ95/macarchy/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ramtinJ95/macarchy/compare/v0.2.2...v0.3.0
