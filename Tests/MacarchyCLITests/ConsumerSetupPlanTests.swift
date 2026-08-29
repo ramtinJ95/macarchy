@@ -174,7 +174,7 @@ struct ConsumerSetupPlanTests {
     let steps = plans.flatMap(\.steps)
 
     #expect(
-      plans.map(\.consumerID)
+      plans.map { $0.consumerID.rawValue }
         == [
           "kitty", "bat", "eza", "btop", "yazi", "atuin", "neovim", "starship",
           "pi", "herdr", "tuicr", "codex", "spicetify",

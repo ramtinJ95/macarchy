@@ -9,7 +9,7 @@ extension SetupOwnershipManager {
   ) throws -> [SetupIntegrationResult] {
     guard
       let plan = consumerSetupPlans(context: context).first(where: {
-        $0.consumerID == "spicetify"
+        $0.consumerID == .spicetify
       })
     else {
       preconditionFailure("Spicetify setup plan is missing")
@@ -88,7 +88,7 @@ extension SetupOwnershipManager {
   ) throws -> [SetupIntegrationResult] {
     guard
       let plan = consumerSetupPlans(context: context).first(where: {
-        $0.consumerID == "spicetify"
+        $0.consumerID == .spicetify
       })
     else {
       preconditionFailure("Spicetify setup plan is missing")
