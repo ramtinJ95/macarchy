@@ -63,10 +63,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     let operation: @Sendable () async throws -> (output: String, succeeded: Bool) = {
       while true {
         let active = try currentManifest(stateRoot: stateRoot)
-        let package = try configuredPackage(
-          try repository.package(id: active.themeID),
-          stateRoot: stateRoot
-        )
+        let package = try repository.package(id: active.themeID)
         do {
           return try await apply(
             package: package,
@@ -94,25 +91,30 @@ struct ThemeBackgroundCommandRunner: Sendable {
     let operation: @Sendable () async throws -> (output: String, succeeded: Bool) = {
       while true {
         let active = try currentManifest(stateRoot: stateRoot)
-        let package = try configuredPackage(
-          try repository.package(id: active.themeID),
+        let package = try repository.package(id: active.themeID)
+        let effectivePackage = try configuredPackage(
+          package,
           stateRoot: stateRoot
         )
-        guard !package.backgrounds.isEmpty else {
-          throw BackgroundSelectionError.noBackgrounds(themeID: package.id)
+        guard !effectivePackage.backgrounds.isEmpty else {
+          throw BackgroundSelectionError.noBackgrounds(themeID: effectivePackage.id)
         }
         let backgroundID: String
         if let currentID = active.background?.id {
-          guard let currentIndex = package.backgrounds.firstIndex(where: { $0.id == currentID })
+          guard
+            let currentIndex = effectivePackage.backgrounds.firstIndex(where: {
+              $0.id == currentID
+            })
           else {
             throw ThemeBackgroundCommandError.activeBackgroundUnavailable(
-              themeID: package.id,
+              themeID: effectivePackage.id,
               backgroundID: currentID
             )
           }
-          backgroundID = package.backgrounds[(currentIndex + 1) % package.backgrounds.count].id
+          backgroundID =
+            effectivePackage.backgrounds[(currentIndex + 1) % effectivePackage.backgrounds.count].id
         } else {
-          backgroundID = package.backgrounds[0].id
+          backgroundID = effectivePackage.backgrounds[0].id
         }
 
         do {
