@@ -62,6 +62,7 @@ package struct KeybindingComposition: Equatable, Sendable {
   package let diagnostics: [KeybindingCompositionDiagnostic]
   package let renderedConfiguration: String?
   package let renderedDigest: String?
+  package let inputDigest: String?
 
   package var isBlocked: Bool {
     diagnostics.contains { $0.severity == .error }
@@ -238,13 +239,18 @@ package struct KeybindingComposer: Sendable {
     let rendered =
       bindings.map { "\($0.binding.chord) : \($0.binding.command)" }
       .joined(separator: "\n") + "\n"
+    let inputDigest = canonicalInputDigest(
+      bindings: bindings,
+      disabledDefaults: disabledDefaults
+    )
 
     return KeybindingComposition(
       bindings: bindings,
       disabledDefaults: disabledDefaults,
       diagnostics: diagnostics.sorted(by: diagnosticOrder),
       renderedConfiguration: rendered,
-      renderedDigest: sha256Digest(Data(rendered.utf8))
+      renderedDigest: sha256Digest(Data(rendered.utf8)),
+      inputDigest: inputDigest
     )
   }
 
@@ -272,8 +278,27 @@ package struct KeybindingComposer: Sendable {
       disabledDefaults: [],
       diagnostics: diagnostics.sorted(by: diagnosticOrder),
       renderedConfiguration: nil,
-      renderedDigest: nil
+      renderedDigest: nil,
+      inputDigest: nil
     )
+  }
+
+  private func canonicalInputDigest(
+    bindings: [EffectiveKeybinding],
+    disabledDefaults: [DisabledPackagedKeybinding]
+  ) -> String {
+    let document = CanonicalKeybindingInput(
+      schemaVersion: 1,
+      rendererVersion: Self.rendererVersion,
+      bindings: bindings.map(CanonicalKeybinding.init),
+      disabledIdentities: disabledDefaults.map(\.binding.identity).sorted()
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    guard let data = try? encoder.encode(document) else {
+      preconditionFailure("Canonical keybinding input encoding must not fail")
+    }
+    return sha256Digest(data)
   }
 
   private func diagnosticOrder(
@@ -282,5 +307,46 @@ package struct KeybindingComposer: Sendable {
   ) -> Bool {
     (lhs.severity.rawValue, lhs.source, lhs.line ?? 0, lhs.code, lhs.identity ?? "")
       < (rhs.severity.rawValue, rhs.source, rhs.line ?? 0, rhs.code, rhs.identity ?? "")
+  }
+}
+
+private struct CanonicalKeybindingInput: Encodable {
+  let schemaVersion: Int
+  let rendererVersion: Int
+  let bindings: [CanonicalKeybinding]
+  let disabledIdentities: [String]
+}
+
+private struct CanonicalKeybinding: Encodable {
+  let identity: String
+  let chord: String
+  let command: String
+  let commandSource: String
+  let metadata: CanonicalKeybindingMetadata?
+  let metadataSource: String?
+
+  init(_ effective: EffectiveKeybinding) {
+    identity = effective.binding.identity
+    chord = effective.binding.chord
+    command = effective.binding.command
+    commandSource = effective.commandSource.rawValue
+    metadata = effective.metadata.map(CanonicalKeybindingMetadata.init)
+    metadataSource = effective.metadataSource?.rawValue
+  }
+}
+
+private struct CanonicalKeybindingMetadata: Encodable {
+  let identity: String
+  let label: String
+  let category: String
+  let order: Int
+  let aliases: [String]
+
+  init(_ metadata: SkhdCatalogEntry) {
+    identity = metadata.identity
+    label = metadata.label
+    category = metadata.category
+    order = metadata.order
+    aliases = metadata.aliases
   }
 }

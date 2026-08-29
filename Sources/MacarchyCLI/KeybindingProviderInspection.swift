@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import ThemeCore
 
 enum KeybindingProviderStatus: String, Encodable, Sendable {
   case managed
@@ -14,45 +15,115 @@ struct KeybindingProviderInspection: Encodable, Sendable {
   let ownership: String
   let source: String?
   let originalTarget: String?
+  let expectedTarget: String
   let message: String
+  let sourceConfiguration: String?
+
+  enum CodingKeys: String, CodingKey {
+    case status, entryPoint, ownership, source, originalTarget, expectedTarget, message
+  }
 }
 
 struct KeybindingProviderInspector: Sendable {
   static let managedTarget = "../macarchy/keybindings/current/skhdrc"
 
-  func inspect(homeDirectory: URL) -> KeybindingProviderInspection {
-    let directory = homeDirectory.appending(
-      path: ".config/skhd",
+  func inspect(homeDirectory: URL, stateRoot: URL) -> KeybindingProviderInspection {
+    let home = homeDirectory.standardizedFileURL
+    let stateRoot = stateRoot.standardizedFileURL
+    let configurationDirectory = home.appending(path: ".config", directoryHint: .isDirectory)
+    let directory = configurationDirectory.appending(
+      path: "skhd",
       directoryHint: .isDirectory
     )
     let entry = directory.appending(path: "skhdrc")
-    var directoryMetadata = stat()
-    guard lstat(directory.path, &directoryMetadata) == 0 else {
-      if errno == ENOENT {
-        return result(
-          .installRequired,
-          entry: entry,
-          ownership: "absent",
-          message: "skhd configuration directory and entry point are absent"
-        )
-      }
+    let expectedTarget = expectedTarget(home: home, stateRoot: stateRoot)
+
+    let homeDescriptor: Int32
+    do {
+      homeDescriptor = try PinnedFilesystem.openDirectory(at: home)
+    } catch {
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "unsafe_ancestor",
+        message: "cannot open the selected home without following symlinks: \(error)"
+      )
+    }
+    defer { Darwin.close(homeDescriptor) }
+
+    let configurationDescriptor: Int32
+    do {
+      configurationDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: homeDescriptor,
+        name: ".config",
+        url: configurationDirectory
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return result(
+        .installRequired,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "absent",
+        message: "skhd configuration directory and entry point are absent"
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "unsafe_ancestor",
+        message: "~/.config is not a pinned ordinary directory: \(error)"
+      )
+    }
+    defer { Darwin.close(configurationDescriptor) }
+
+    let directoryMetadata: stat
+    do {
+      directoryMetadata = try PinnedFilesystem.metadata(
+        parentDescriptor: configurationDescriptor,
+        name: "skhd",
+        url: directory
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return result(
+        .installRequired,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "absent",
+        message: "skhd configuration directory and entry point are absent"
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "unknown",
-        message: "cannot inspect skhd configuration directory: \(Self.systemError(errno))"
+        message: "cannot inspect skhd configuration directory: \(error)"
       )
     }
 
     switch directoryMetadata.st_mode & S_IFMT {
     case S_IFLNK:
-      return inspectDirectorySymlink(directory: directory, entry: entry)
+      return inspectDirectorySymlink(
+        configurationDescriptor: configurationDescriptor,
+        configurationDirectory: configurationDirectory,
+        directory: directory,
+        entry: entry,
+        expectedTarget: expectedTarget
+      )
     case S_IFDIR:
-      return inspectEntry(in: directory, entry: entry)
+      return inspectEntry(
+        configurationDescriptor: configurationDescriptor,
+        directory: directory,
+        entry: entry,
+        expectedTarget: expectedTarget
+      )
     default:
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "conflict",
         message: "~/.config/skhd is neither a directory nor a symbolic link"
       )
@@ -60,155 +131,293 @@ struct KeybindingProviderInspector: Sendable {
   }
 
   private func inspectDirectorySymlink(
+    configurationDescriptor: Int32,
+    configurationDirectory: URL,
     directory: URL,
-    entry: URL
+    entry: URL,
+    expectedTarget: String
   ) -> KeybindingProviderInspection {
     let target: String
     do {
-      target = try FileManager.default.destinationOfSymbolicLink(atPath: directory.path)
+      target = try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: configurationDescriptor,
+        name: "skhd",
+        url: directory
+      )
     } catch {
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "directory_symlink",
         message: "cannot read skhd directory symlink: \(error)"
       )
     }
-    let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
-    var resolvedMetadata = stat()
-    guard lstat(resolvedDirectory.path, &resolvedMetadata) == 0,
-      resolvedMetadata.st_mode & S_IFMT == S_IFDIR
-    else {
-      return result(
-        .blocked,
-        entry: entry,
-        ownership: "directory_symlink",
-        originalTarget: target,
-        message: "skhd directory symlink does not resolve to a directory"
-      )
-    }
-
-    let inventory: [String]
+    let targetDirectory = Self.resolveSymlink(
+      target,
+      relativeTo: configurationDirectory
+    )
+    let targetDescriptor: Int32
     do {
-      inventory = try FileManager.default.contentsOfDirectory(atPath: resolvedDirectory.path)
-        .sorted()
+      targetDescriptor = try PinnedFilesystem.openDirectory(at: targetDirectory)
     } catch {
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "directory_symlink",
+        originalTarget: target,
+        message: "skhd directory symlink target is not a pinned ordinary directory: \(error)"
+      )
+    }
+    defer { Darwin.close(targetDescriptor) }
+
+    let inventory: (entries: [String], truncated: Bool)
+    do {
+      inventory = try PinnedFilesystem.directoryEntries(
+        descriptor: targetDescriptor,
+        url: targetDirectory,
+        limit: 2
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "directory_symlink",
         originalTarget: target,
         message: "cannot inventory the skhd directory symlink target: \(error)"
       )
     }
-    guard inventory == ["skhdrc"] else {
-      let entries = inventory.isEmpty ? "none" : inventory.joined(separator: ", ")
+    guard inventory.entries == ["skhdrc"], !inventory.truncated else {
+      let entries = inventory.entries.isEmpty ? "none" : inventory.entries.joined(separator: ", ")
+      let suffix = inventory.truncated ? ", additional entries omitted" : ""
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "directory_symlink",
         originalTarget: target,
-        message: "directory-level adoption requires only skhdrc; found: \(entries)"
+        message: "directory-level adoption requires only skhdrc; found: \(entries)\(suffix)"
       )
     }
 
-    let source = resolvedDirectory.appending(path: "skhdrc")
-    var sourceMetadata = stat()
-    guard lstat(source.path, &sourceMetadata) == 0,
-      [S_IFREG, S_IFLNK].contains(sourceMetadata.st_mode & S_IFMT)
-    else {
+    do {
+      let source = try sourceConfiguration(
+        parentDescriptor: targetDescriptor,
+        parentURL: targetDirectory,
+        name: "skhdrc"
+      )
+      return result(
+        .adoptionRequired,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "directory_symlink",
+        source: source.url,
+        originalTarget: target,
+        message: "eligible directory-level symlink requires explicit adoption",
+        sourceConfiguration: source.text
+      )
+    } catch {
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "directory_symlink",
-        source: source,
         originalTarget: target,
-        message: "directory-level skhdrc is not a file or symbolic link"
+        message: "directory-level skhdrc is not a bounded regular file: \(error)"
       )
     }
-    return result(
-      .adoptionRequired,
-      entry: entry,
-      ownership: "directory_symlink",
-      source: source,
-      originalTarget: target,
-      message: "eligible directory-level symlink requires explicit adoption"
-    )
   }
 
-  private func inspectEntry(in directory: URL, entry: URL) -> KeybindingProviderInspection {
-    var entryMetadata = stat()
-    guard lstat(entry.path, &entryMetadata) == 0 else {
-      if errno == ENOENT {
-        return result(
-          .installRequired,
-          entry: entry,
-          ownership: "ordinary_directory",
-          message: "skhd entry point is absent"
-        )
-      }
+  private func inspectEntry(
+    configurationDescriptor: Int32,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String
+  ) -> KeybindingProviderInspection {
+    let directoryDescriptor: Int32
+    do {
+      directoryDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: configurationDescriptor,
+        name: "skhd",
+        url: directory
+      )
+    } catch {
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "ordinary_directory",
-        message: "cannot inspect skhd entry point: \(Self.systemError(errno))"
+        message: "cannot pin the ordinary skhd directory: \(error)"
+      )
+    }
+    defer { Darwin.close(directoryDescriptor) }
+
+    let entryMetadata: stat
+    do {
+      entryMetadata = try PinnedFilesystem.metadata(
+        parentDescriptor: directoryDescriptor,
+        name: "skhdrc",
+        url: entry
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return result(
+        .installRequired,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "ordinary_directory",
+        message: "skhd entry point is absent"
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "ordinary_directory",
+        message: "cannot inspect skhd entry point: \(error)"
       )
     }
 
-    switch entryMetadata.st_mode & S_IFMT {
-    case S_IFLNK:
+    if entryMetadata.st_mode & S_IFMT == S_IFLNK {
+      let target: String
       do {
-        let target = try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        if target == Self.managedTarget {
-          return result(
-            .managed,
-            entry: entry,
-            ownership: "managed_symlink",
-            originalTarget: target,
-            message: "provider entry point targets the current keybinding generation"
-          )
-        }
-        return result(
-          .adoptionRequired,
-          entry: entry,
-          ownership: "entry_symlink",
-          source: entry.resolvingSymlinksInPath(),
-          originalTarget: target,
-          message: "existing skhd entry-point symlink requires explicit adoption"
+        target = try PinnedFilesystem.symlinkDestination(
+          parentDescriptor: directoryDescriptor,
+          name: "skhdrc",
+          url: entry
         )
       } catch {
         return result(
           .blocked,
           entry: entry,
+          expectedTarget: expectedTarget,
           ownership: "entry_symlink",
           message: "cannot read skhd entry-point symlink: \(error)"
         )
       }
-    case S_IFREG:
+      if target == expectedTarget {
+        return result(
+          .adoptionRequired,
+          entry: entry,
+          expectedTarget: expectedTarget,
+          ownership: "matching_unclaimed_symlink",
+          originalTarget: target,
+          message: "entry-point link matches the plan but has no Macarchy ownership evidence"
+        )
+      }
+      if target == Self.managedTarget, expectedTarget != Self.managedTarget {
+        return result(
+          .blocked,
+          entry: entry,
+          expectedTarget: expectedTarget,
+          ownership: "state_root_mismatch",
+          originalTarget: target,
+          message: "entry-point link targets the canonical state root, not the selected state root"
+        )
+      }
+    }
+
+    do {
+      let source = try sourceConfiguration(
+        parentDescriptor: directoryDescriptor,
+        parentURL: directory,
+        name: "skhdrc"
+      )
+      let target =
+        entryMetadata.st_mode & S_IFMT == S_IFLNK
+        ? try PinnedFilesystem.symlinkDestination(
+          parentDescriptor: directoryDescriptor,
+          name: "skhdrc",
+          url: entry
+        ) : nil
       return result(
         .adoptionRequired,
         entry: entry,
-        ownership: "regular_file",
-        source: entry,
-        message: "existing skhd file requires explicit adoption"
+        expectedTarget: expectedTarget,
+        ownership: target == nil ? "regular_file" : "entry_symlink",
+        source: source.url,
+        originalTarget: target,
+        message: "existing skhd entry point requires explicit adoption",
+        sourceConfiguration: source.text
       )
-    default:
+    } catch {
       return result(
         .blocked,
         entry: entry,
+        expectedTarget: expectedTarget,
         ownership: "conflict",
-        message: "skhd entry point is neither a file nor a symbolic link"
+        message: "existing skhd entry point is not a bounded regular file: \(error)"
       )
     }
+  }
+
+  private func sourceConfiguration(
+    parentDescriptor: Int32,
+    parentURL: URL,
+    name: String
+  ) throws -> (url: URL, text: String) {
+    let sourceURL = parentURL.appending(path: name)
+    let metadata = try PinnedFilesystem.metadata(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: sourceURL
+    )
+    let resolvedURL: URL
+    let file: BoundedRegularFile
+    switch metadata.st_mode & S_IFMT {
+    case S_IFREG:
+      resolvedURL = sourceURL
+      file = try PinnedFilesystem.readRegularFile(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: sourceURL
+      )
+    case S_IFLNK:
+      let destination = try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: sourceURL
+      )
+      resolvedURL = Self.resolveSymlink(destination, relativeTo: parentURL)
+      file = try PinnedFilesystem.readRegularFile(at: resolvedURL)
+    default:
+      throw PinnedFilesystemError(
+        operation: "read unsupported configuration item",
+        url: sourceURL,
+        code: EINVAL
+      )
+    }
+    guard let text = String(data: file.data, encoding: .utf8) else {
+      throw PinnedFilesystemError(
+        operation: "decode configuration as UTF-8", url: resolvedURL, code: EILSEQ)
+    }
+    return (resolvedURL, text)
+  }
+
+  private func expectedTarget(home: URL, stateRoot: URL) -> String {
+    let canonical = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+      .standardizedFileURL
+    if stateRoot == canonical { return Self.managedTarget }
+    return stateRoot.appending(path: "keybindings/current/skhdrc").path
+  }
+
+  private static func resolveSymlink(_ destination: String, relativeTo parent: URL) -> URL {
+    if NSString(string: destination).isAbsolutePath {
+      return URL(filePath: destination).standardizedFileURL
+    }
+    return parent.appending(path: destination).standardizedFileURL
   }
 
   private func result(
     _ status: KeybindingProviderStatus,
     entry: URL,
+    expectedTarget: String,
     ownership: String,
     source: URL? = nil,
     originalTarget: String? = nil,
-    message: String
+    message: String,
+    sourceConfiguration: String? = nil
   ) -> KeybindingProviderInspection {
     KeybindingProviderInspection(
       status: status,
@@ -216,11 +425,9 @@ struct KeybindingProviderInspector: Sendable {
       ownership: ownership,
       source: source?.path,
       originalTarget: originalTarget,
-      message: message
+      expectedTarget: expectedTarget,
+      message: message,
+      sourceConfiguration: sourceConfiguration
     )
-  }
-
-  private static func systemError(_ code: Int32) -> String {
-    "\(String(cString: strerror(code))) (errno \(code))"
   }
 }

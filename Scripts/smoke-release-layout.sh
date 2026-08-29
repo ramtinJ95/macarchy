@@ -63,4 +63,14 @@ print -r -- "$themes" | grep -q '^catppuccin-mocha'
 print -r -- "$themes" | grep -q '^kanagawa-wave'
 print -r -- "$themes" | grep -q '^tokyo-night'
 
+HOME="$temporary_directory/home" \
+  CFFIXED_USER_HOME="$temporary_directory/home" \
+  "$binary" keybindings plan \
+  --state-root "$temporary_directory/home/.config/macarchy" \
+  --json > "$temporary_directory/keybindings-plan.json"
+grep -q '"outcome" : "ready"' "$temporary_directory/keybindings-plan.json"
+grep -q '"effective" : 48' "$temporary_directory/keybindings-plan.json"
+grep -q '"rendered_digest" : "sha256:' "$temporary_directory/keybindings-plan.json"
+grep -q '"mutated" : false' "$temporary_directory/keybindings-plan.json"
+
 print "release layout smoke test passed"

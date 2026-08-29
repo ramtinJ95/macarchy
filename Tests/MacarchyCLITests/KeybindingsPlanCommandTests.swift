@@ -76,6 +76,12 @@ struct KeybindingsPlanCommandTests {
     #expect(bindings.map { $0["identity"] as? String } == ["alt-j", "cmd-x"])
     #expect(disabled.map { $0["identity"] as? String } == ["alt-k"])
     #expect((report["rendered_skhdrc"] as? String)?.hasSuffix("\n") == true)
+
+    let human = try execute(fixture, json: false, profileRequired: true)
+    #expect(human.output.contains("- proposed input digest:"))
+    #expect(human.output.contains("- rendered digest:"))
+    #expect(human.output.contains("--- begin exact bytes ---"))
+    #expect(human.output.contains(report["rendered_digest"] as? String ?? "missing"))
   }
 
   @Test
@@ -133,7 +139,12 @@ struct KeybindingsPlanCommandTests {
       inputDigest: inputDigest
     )
 
-    let execution = try execute(fixture, json: false, profileRequired: false)
+    let execution = try execute(
+      fixture,
+      json: false,
+      profileRequired: false,
+      using: managedRunner
+    )
 
     #expect(execution.succeeded)
     #expect(execution.output.contains("Macarchy keybindings plan [no_change]:"))
@@ -141,12 +152,121 @@ struct KeybindingsPlanCommandTests {
     #expect(execution.output.hasSuffix("No changes made."))
   }
 
+  @Test
+  func matchingBytesWithDifferentValidatedInputStillPlanReplacement() throws {
+    let fixture = try planFixture()
+    var generation: URL?
+    defer {
+      if let generation {
+        try? FileManager.default.setAttributes(
+          [.posixPermissions: 0o755],
+          ofItemAtPath: generation.path
+        )
+      }
+      try? FileManager.default.removeItem(at: fixture.root)
+    }
+    let initial = try execute(fixture, json: true, profileRequired: false)
+    let initialReport = try jsonObject(initial.output)
+    let rendered = try #require(initialReport["rendered_skhdrc"] as? String)
+    let renderedDigest = try #require(initialReport["rendered_digest"] as? String)
+    generation = try publishGeneration(
+      stateRoot: fixture.stateRoot,
+      rendered: rendered,
+      renderedDigest: renderedDigest,
+      inputDigest: sha256Digest(Data("different validated input".utf8))
+    )
+
+    let execution = try execute(
+      fixture,
+      json: true,
+      profileRequired: false,
+      using: managedRunner
+    )
+    let report = try jsonObject(execution.output)
+    let actions = try #require(report["actions"] as? [[String: Any]])
+
+    #expect(execution.succeeded)
+    #expect(report["outcome"] as? String == "ready")
+    #expect(actions.map { $0["id"] as? String } == ["publish_generation"])
+  }
+
+  @Test
+  func adoptionPlanReportsExactExistingBehaviorDelta() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let dotfiles = fixture.root.appending(path: "dotfiles-skhd", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+    try "alt - j : personal replacement\ncmd - x : personal only\n".write(
+      to: dotfiles.appending(path: "skhdrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let configuration = fixture.home.appending(path: ".config", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: configuration, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: configuration.appending(path: "skhd", directoryHint: .isDirectory),
+      withDestinationURL: dotfiles
+    )
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let delta = try #require(report["adoption_delta"] as? [String: Any])
+    let added = try #require(delta["added"] as? [[String: Any]])
+    let removed = try #require(delta["removed"] as? [[String: Any]])
+    let changed = try #require(delta["changed"] as? [[String: Any]])
+
+    #expect(execution.succeeded)
+    #expect(added.map { $0["identity"] as? String } == ["alt-k"])
+    #expect(removed.map { $0["identity"] as? String } == ["cmd-x"])
+    #expect(changed.map { $0["identity"] as? String } == ["alt-j"])
+  }
+
+  @Test
+  func requiredFailureBoundariesBlockWithoutActions() throws {
+    let cases: [(profile: String, override: String?)] = [
+      (
+        "schema_version = 1\n[keybindings]\noverride = \"personal.skhdrc\"\n",
+        "alt - j : first\nalt - j : duplicate\n"
+      ),
+      (
+        "schema_version = 1\n[keybindings]\noverride = \"personal.skhdrc\"\ndisabled = [\"alt-j\"]\n",
+        "alt - j : contradiction\n"
+      ),
+      (
+        "schema_version = 1\n[keybindings]\noverride = \"missing.skhdrc\"\n",
+        nil
+      ),
+    ]
+
+    for testCase in cases {
+      let fixture = try planFixture()
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      try testCase.profile.write(to: fixture.profile, atomically: true, encoding: .utf8)
+      if let override = testCase.override {
+        try override.write(
+          to: fixture.profile.deletingLastPathComponent().appending(path: "personal.skhdrc"),
+          atomically: true,
+          encoding: .utf8
+        )
+      }
+
+      let execution = try execute(fixture, json: true, profileRequired: true)
+      let report = try jsonObject(execution.output)
+
+      #expect(!execution.succeeded)
+      #expect(report["outcome"] as? String == "blocked")
+      #expect((report["actions"] as? [Any])?.isEmpty == true)
+      #expect((report["diagnostics"] as? [Any])?.isEmpty == false)
+    }
+  }
+
   private func execute(
     _ fixture: PlanFixture,
     json: Bool,
-    profileRequired: Bool
+    profileRequired: Bool,
+    using selectedRunner: KeybindingsPlanCommandRunner? = nil
   ) throws -> (output: String, succeeded: Bool) {
-    try runner.execute(
+    try (selectedRunner ?? runner).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: profileRequired,
@@ -247,6 +367,27 @@ struct KeybindingsPlanCommandTests {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
+  }
+
+  private var managedRunner: KeybindingsPlanCommandRunner {
+    KeybindingsPlanCommandRunner(
+      read: runner.read,
+      loadProfile: runner.loadProfile,
+      loadCatalog: runner.loadCatalog,
+      inspectGeneration: runner.inspectGeneration,
+      inspectProvider: { _, _ in
+        KeybindingProviderInspection(
+          status: .managed,
+          entryPoint: "/home/.config/skhd/skhdrc",
+          ownership: "manifest_claimed_symlink",
+          source: nil,
+          originalTarget: KeybindingProviderInspector.managedTarget,
+          expectedTarget: KeybindingProviderInspector.managedTarget,
+          message: "ownership manifest claims the matching entry link",
+          sourceConfiguration: nil
+        )
+      }
+    )
   }
 
   private func temporaryDirectory() throws -> URL {

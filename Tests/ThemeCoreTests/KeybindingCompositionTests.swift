@@ -82,8 +82,42 @@ struct KeybindingCompositionTests {
 
     #expect(first.renderedConfiguration == second.renderedConfiguration)
     #expect(first.renderedDigest == second.renderedDigest)
+    #expect(first.inputDigest == second.inputDigest)
     #expect(first.diagnostics.allSatisfy { $0.severity == .warning })
     #expect(second.diagnostics.allSatisfy { $0.severity == .warning })
+  }
+
+  @Test
+  func metadataAndProvenanceChangeInputDigestWithoutChangingRenderedBytes() throws {
+    let defaults = "alt - j : focus south\n"
+    let packaged = try catalog([("alt-j", "Packaged label", 10)])
+    let inherited = composer.compose(
+      defaultsText: defaults,
+      defaultsSource: defaultsSource,
+      defaultCatalog: packaged,
+      defaultMetadataSource: URL(filePath: "/package/metadata.toml"),
+      profile: .empty,
+      overrideText: nil,
+      userCatalog: nil
+    )
+    let overlaid = composer.compose(
+      defaultsText: defaults,
+      defaultsSource: defaultsSource,
+      defaultCatalog: packaged,
+      defaultMetadataSource: URL(filePath: "/package/metadata.toml"),
+      profile: KeybindingProfile(
+        sourceURL: profileSource,
+        overrideURL: nil,
+        metadataURL: metadataSource,
+        disabledIdentities: []
+      ),
+      overrideText: nil,
+      userCatalog: try catalog([("alt-j", "Personal label", 10)])
+    )
+
+    #expect(inherited.renderedConfiguration == overlaid.renderedConfiguration)
+    #expect(inherited.renderedDigest == overlaid.renderedDigest)
+    #expect(inherited.inputDigest != overlaid.inputDigest)
   }
 
   @Test
