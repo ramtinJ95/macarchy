@@ -4,12 +4,6 @@ import ThemeCore
 private let themeBrowserSearchLocale = Locale(identifier: "en_US_POSIX")
 
 struct ThemeBrowserPreview: Sendable {
-  enum Kind: Sendable {
-    case generated
-    case imported
-  }
-
-  let kind: Kind
   let label: String
   let data: Data
 }
@@ -65,7 +59,7 @@ struct ThemeBrowserSelection: Equatable, Sendable {
   let backgroundID: String?
 }
 
-struct ThemeBrowserApplyRequest: Equatable, Sendable {
+struct ThemeBrowserApplyRequest: Sendable {
   static let themeEnvironmentKey = "MACARCHY_THEME_BROWSER_APPLY_THEME"
   static let backgroundEnvironmentKey = "MACARCHY_THEME_BROWSER_APPLY_BACKGROUND"
 
@@ -264,7 +258,6 @@ struct ThemeBrowserCommandLoader: Sendable {
       return ThemeBrowserItem(
         package: package,
         generatedPreview: ThemeBrowserPreview(
-          kind: .generated,
           label: "Generated palette",
           data: preview.data
         ),
@@ -289,7 +282,6 @@ struct ThemeBrowserGalleryLoader: Sendable {
   func load(item: ThemeBrowserItem) throws -> [ThemeBrowserPreview] {
     try loadAssets(item.package).map { asset in
       ThemeBrowserPreview(
-        kind: .imported,
         label: asset.sourcePath,
         data: asset.data
       )
