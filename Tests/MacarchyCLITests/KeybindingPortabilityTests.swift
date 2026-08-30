@@ -229,10 +229,6 @@ struct KeybindingPortabilityTests {
         [.posixPermissions: 0o700],
         ofItemAtPath: emptyDirectory.path
       )
-      try FileManager.default.createSymbolicLink(
-        atPath: inputs.appending(path: "dangling").path,
-        withDestinationPath: "empty/missing"
-      )
     }
     let firstBefore = try filesystemSnapshot(at: firstInputs)
     let secondBefore = try filesystemSnapshot(at: secondInputs)
@@ -241,12 +237,6 @@ struct KeybindingPortabilityTests {
         $0.path == "empty" && $0.type == "directory" && $0.mode == 0o700
       }
     )
-    #expect(
-      firstBefore.contains {
-        $0.path == "dangling" && $0.type == "symlink" && $0.target == "empty/missing"
-      }
-    )
-
     let firstPlan = try plan(
       resources: firstResources,
       profile: firstInputs.appending(path: "profile.toml"),
@@ -341,6 +331,72 @@ struct KeybindingPortabilityTests {
     #expect(try filesystemSnapshot(at: secondInputs) == secondBefore)
   }
 
+  @Test
+  func filesystemSnapshotStopsAtTheOverflowSentinel() throws {
+    let environment = try isolatedEnvironment()
+    defer { try? FileManager.default.removeItem(at: environment.root) }
+    let inventory = environment.root.appending(path: "overflow", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: inventory, withIntermediateDirectories: false)
+    for index in 0..<256 {
+      #expect(
+        FileManager.default.createFile(
+          atPath: inventory.appending(path: "entry-\(index)").path,
+          contents: Data()
+        )
+      )
+    }
+
+    #expect(throws: FilesystemSnapshotError.tooManyEntries) {
+      _ = try filesystemSnapshot(at: inventory)
+    }
+  }
+
+  @Test
+  func filesystemSnapshotRejectsFIFOsAndSymlinksWithoutFollowingThem() throws {
+    let environment = try isolatedEnvironment()
+    defer { try? FileManager.default.removeItem(at: environment.root) }
+
+    let fifoRoot = environment.root.appending(path: "fifo", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: fifoRoot, withIntermediateDirectories: false)
+    let fifo = fifoRoot.appending(path: "entry")
+    #expect(mkfifo(fifo.path, 0o600) == 0)
+    #expect(throws: FilesystemSnapshotError.unsupportedEntry("entry")) {
+      _ = try filesystemSnapshot(at: fifoRoot)
+    }
+
+    let symlinkRoot = environment.root.appending(path: "symlink", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: symlinkRoot, withIntermediateDirectories: false)
+    try FileManager.default.createSymbolicLink(
+      atPath: symlinkRoot.appending(path: "entry").path,
+      withDestinationPath: "missing"
+    )
+    #expect(throws: FilesystemSnapshotError.cannotOpen("entry")) {
+      _ = try filesystemSnapshot(at: symlinkRoot)
+    }
+  }
+
+  @Test
+  func filesystemSnapshotRejectsARegularFileReplacedAfterOpen() throws {
+    let environment = try isolatedEnvironment()
+    defer { try? FileManager.default.removeItem(at: environment.root) }
+    let inventory = environment.root.appending(path: "race", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: inventory, withIntermediateDirectories: false)
+    let entry = inventory.appending(path: "entry")
+    try Data("original".utf8).write(to: entry)
+    var replaced = false
+
+    #expect(throws: FilesystemSnapshotError.changedEntry("entry")) {
+      _ = try filesystemSnapshot(at: inventory) { opened in
+        guard opened == entry, !replaced else { return }
+        replaced = true
+        try FileManager.default.removeItem(at: opened)
+        guard mkfifo(opened.path, 0o600) == 0 else {
+          throw FilesystemSnapshotError.cannotOpen("entry")
+        }
+      }
+    }
+  }
+
   private func plan(
     resources: URL,
     profile: URL,
@@ -364,33 +420,62 @@ struct KeybindingPortabilityTests {
     try #require(bindings.first { $0["identity"] as? String == identity })
   }
 
-  private func filesystemSnapshot(at root: URL) throws -> [FilesystemSnapshotEntry] {
-    let maximumEntries = 128
+  private func filesystemSnapshot(
+    at root: URL,
+    afterOpeningRegularFile: ((URL) throws -> Void)? = nil
+  ) throws -> [FilesystemSnapshotEntry] {
+    let maximumEntries = 256
     let maximumDepth = 16
     let maximumRegularBytes = 2 * 1024 * 1024
     let maximumPathBytes = 1_024
     var entries: [FilesystemSnapshotEntry] = []
     var regularBytes = 0
 
-    func visit(_ url: URL, path: String, depth: Int) throws {
+    func metadata(descriptor: Int32, path: String) throws -> stat {
+      var value = stat()
+      guard fstat(descriptor, &value) == 0 else {
+        throw FilesystemSnapshotError.cannotInspect(path)
+      }
+      return value
+    }
+
+    func sameIdentity(_ left: stat, _ right: stat) -> Bool {
+      left.st_dev == right.st_dev
+        && left.st_ino == right.st_ino
+        && left.st_mode & S_IFMT == right.st_mode & S_IFMT
+    }
+
+    func unchanged(_ left: stat, _ right: stat) -> Bool {
+      sameIdentity(left, right)
+        && left.st_mode == right.st_mode
+        && left.st_size == right.st_size
+        && left.st_mtimespec.tv_sec == right.st_mtimespec.tv_sec
+        && left.st_mtimespec.tv_nsec == right.st_mtimespec.tv_nsec
+        && left.st_ctimespec.tv_sec == right.st_ctimespec.tv_sec
+        && left.st_ctimespec.tv_nsec == right.st_ctimespec.tv_nsec
+    }
+
+    func visit(
+      descriptor: Int32,
+      url: URL,
+      path: String,
+      depth: Int,
+      parentDescriptor: Int32? = nil,
+      name: String? = nil
+    ) throws {
       guard path.utf8.count <= maximumPathBytes else {
         throw FilesystemSnapshotError.pathTooLong
       }
       guard entries.count < maximumEntries else {
         throw FilesystemSnapshotError.tooManyEntries
       }
-      var metadata = stat()
-      guard lstat(url.path, &metadata) == 0 else {
-        throw FilesystemSnapshotError.cannotInspect(path)
-      }
-      let mode = UInt16(metadata.st_mode & 0o7777)
-      switch metadata.st_mode & S_IFMT {
+      let initial = try metadata(descriptor: descriptor, path: path)
+      let mode = UInt16(initial.st_mode & 0o7777)
+      switch initial.st_mode & S_IFMT {
       case S_IFDIR:
         entries.append(
           FilesystemSnapshotEntry(path: path, type: "directory", mode: mode)
         )
-        let descriptor = try PinnedFilesystem.openDirectory(at: url)
-        defer { Darwin.close(descriptor) }
         let inventory = try PinnedFilesystem.directoryEntries(
           descriptor: descriptor,
           url: url,
@@ -404,53 +489,77 @@ struct KeybindingPortabilityTests {
           throw FilesystemSnapshotError.tooDeep
         }
         for name in names {
-          try visit(
-            url.appending(path: name),
-            path: path == "." ? name : "\(path)/\(name)",
-            depth: depth + 1
-          )
+          let childPath = path == "." ? name : "\(path)/\(name)"
+          let childURL = url.appending(path: name)
+          let childDescriptor = name.withCString {
+            Darwin.openat(
+              descriptor,
+              $0,
+              O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW
+            )
+          }
+          guard childDescriptor >= 0 else {
+            throw FilesystemSnapshotError.cannotOpen(childPath)
+          }
+          do {
+            defer { Darwin.close(childDescriptor) }
+            try visit(
+              descriptor: childDescriptor,
+              url: childURL,
+              path: childPath,
+              depth: depth + 1,
+              parentDescriptor: descriptor,
+              name: name
+            )
+          }
         }
       case S_IFREG:
-        guard metadata.st_size >= 0 else {
+        guard initial.st_size >= 0 else {
           throw FilesystemSnapshotError.cannotInspect(path)
         }
-        regularBytes += Int(metadata.st_size)
-        guard regularBytes <= maximumRegularBytes else {
+        let remainingBytes = maximumRegularBytes - regularBytes
+        guard initial.st_size <= remainingBytes else {
           throw FilesystemSnapshotError.tooMuchRegularData
         }
+        try afterOpeningRegularFile?(url)
+        let file = try BoundedRegularFile.read(
+          descriptor: descriptor,
+          maximumSize: remainingBytes
+        )
+        guard file.data.count == initial.st_size else {
+          throw FilesystemSnapshotError.changedEntry(path)
+        }
+        regularBytes += file.data.count
         entries.append(
           FilesystemSnapshotEntry(
             path: path,
             type: "regular",
             mode: mode,
-            digest: sha256Digest(try Data(contentsOf: url))
+            digest: sha256Digest(file.data)
           )
-        )
-      case S_IFLNK:
-        entries.append(
-          FilesystemSnapshotEntry(
-            path: path,
-            type: "symlink",
-            mode: mode,
-            target: try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
-          )
-        )
-      case S_IFIFO:
-        entries.append(FilesystemSnapshotEntry(path: path, type: "fifo", mode: mode))
-      case S_IFSOCK:
-        entries.append(FilesystemSnapshotEntry(path: path, type: "socket", mode: mode))
-      case S_IFBLK:
-        entries.append(FilesystemSnapshotEntry(path: path, type: "block_device", mode: mode))
-      case S_IFCHR:
-        entries.append(
-          FilesystemSnapshotEntry(path: path, type: "character_device", mode: mode)
         )
       default:
-        entries.append(FilesystemSnapshotEntry(path: path, type: "unknown", mode: mode))
+        throw FilesystemSnapshotError.unsupportedEntry(path)
+      }
+
+      let final = try metadata(descriptor: descriptor, path: path)
+      guard unchanged(initial, final) else {
+        throw FilesystemSnapshotError.changedEntry(path)
+      }
+      if let parentDescriptor, let name {
+        var current = stat()
+        let result = name.withCString {
+          Darwin.fstatat(parentDescriptor, $0, &current, AT_SYMLINK_NOFOLLOW)
+        }
+        guard result == 0, sameIdentity(initial, current) else {
+          throw FilesystemSnapshotError.changedEntry(path)
+        }
       }
     }
 
-    try visit(root, path: ".", depth: 0)
+    let rootDescriptor = try PinnedFilesystem.openDirectory(at: root)
+    defer { Darwin.close(rootDescriptor) }
+    try visit(descriptor: rootDescriptor, url: root, path: ".", depth: 0)
     return entries
   }
 
@@ -512,14 +621,16 @@ private struct FilesystemSnapshotEntry: Equatable {
   let path: String
   let type: String
   let mode: UInt16
-  var target: String? = nil
   var digest: String? = nil
 }
 
-private enum FilesystemSnapshotError: Error {
+private enum FilesystemSnapshotError: Error, Equatable {
+  case cannotOpen(String)
   case cannotInspect(String)
+  case changedEntry(String)
   case pathTooLong
   case tooDeep
   case tooManyEntries
   case tooMuchRegularData
+  case unsupportedEntry(String)
 }

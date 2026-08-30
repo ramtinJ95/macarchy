@@ -13,6 +13,8 @@ repository_root=${script_directory:h}
 fixture="$repository_root/Tests/Fixtures/Keybindings/Portability/portable"
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/macarchy-keybindings-portability.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
+snapshot_source="$script_directory/keybindings-portability-snapshot.swift"
+snapshot_helper="$temporary_directory/keybindings-portability-snapshot"
 
 if [[ ! -x "$binary" ]]; then
   print -u2 "macarchy binary is not executable: $binary"
@@ -22,6 +24,12 @@ if [[ ! -f "$fixture/profile.toml" ]]; then
   print -u2 "portable keybinding fixture is missing: $fixture"
   exit 66
 fi
+if [[ ! -f "$snapshot_source" ]]; then
+  print -u2 "portability snapshot helper is missing: $snapshot_source"
+  exit 66
+fi
+
+xcrun swiftc "$snapshot_source" -o "$snapshot_helper"
 
 home="$temporary_directory/home"
 dotfiles="$home/dotfiles/keybindings"
@@ -33,59 +41,41 @@ cp "$fixture/profile.toml" "$fixture/keybindings.skhdrc" \
 snapshot_home() {
   local destination=$1
   local root=$2
-  local maximum_entries=256
-  local maximum_regular_bytes=$((1024 * 1024))
-  local entry_count=0
-  local regular_bytes=0
-  local entry_path mode type target digest size
-
-  (
-    cd "$root"
-    while IFS= read -r entry_path; do
-      (( ++entry_count ))
-      if (( entry_count > maximum_entries )); then
-        print -u2 "isolated HOME inventory exceeds $maximum_entries entries"
-        exit 1
-      fi
-
-      mode=$(/usr/bin/stat -f '%Lp' "$entry_path")
-      target=
-      digest=
-      if [[ -L "$entry_path" ]]; then
-        type=symlink
-        target=$(/usr/bin/readlink "$entry_path")
-      elif [[ -d "$entry_path" ]]; then
-        type=directory
-      elif [[ -f "$entry_path" ]]; then
-        type=regular
-        size=$(/usr/bin/stat -f '%z' "$entry_path")
-        (( regular_bytes += size ))
-        if (( regular_bytes > maximum_regular_bytes )); then
-          print -u2 "isolated HOME regular data exceeds $maximum_regular_bytes bytes"
-          exit 1
-        fi
-        digest=$(/usr/bin/shasum -a 256 "$entry_path" | awk '{ print $1 }')
-      elif [[ -p "$entry_path" ]]; then
-        type=fifo
-      elif [[ -S "$entry_path" ]]; then
-        type=socket
-      elif [[ -b "$entry_path" ]]; then
-        type=block_device
-      elif [[ -c "$entry_path" ]]; then
-        type=character_device
-      else
-        type=unknown
-      fi
-
-      print -r -- \
-        "path=${(qqq)entry_path} type=$type mode=$mode target=${(qqq)target} digest=$digest"
-    done < <(find -P . -print | LC_ALL=C sort)
-    if (( entry_count == 0 )); then
-      print -u2 "isolated HOME inventory is unexpectedly empty"
-      exit 1
-    fi
-  ) > "$destination"
+  "$snapshot_helper" "$root" > "$destination"
 }
+
+assert_snapshot_rejected() {
+  local label=$1
+  local root=$2
+  local expected=$3
+  if "$snapshot_helper" "$root" \
+    > "$temporary_directory/$label.json" \
+    2> "$temporary_directory/$label.stderr"; then
+    print -u2 "unsafe snapshot fixture was accepted: $label"
+    exit 1
+  fi
+  grep -qF "$expected" "$temporary_directory/$label.stderr"
+}
+
+overflow_root="$temporary_directory/snapshot-overflow"
+mkdir -p "$overflow_root"
+for index in {1..256}; do
+  : > "$overflow_root/entry-$index"
+done
+assert_snapshot_rejected \
+  overflow "$overflow_root" "isolated HOME inventory exceeds 256 entries"
+
+fifo_root="$temporary_directory/snapshot-fifo"
+mkdir -p "$fifo_root"
+mkfifo "$fifo_root/entry"
+assert_snapshot_rejected \
+  fifo "$fifo_root" "not a pinned regular file or directory"
+
+symlink_root="$temporary_directory/snapshot-symlink"
+mkdir -p "$symlink_root"
+ln -s missing "$symlink_root/entry"
+assert_snapshot_rejected \
+  symlink "$symlink_root" "not a pinned regular file or directory"
 
 write_expected_identities() {
   cat > "$1" <<'EOF'
