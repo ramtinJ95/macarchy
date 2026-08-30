@@ -53,6 +53,7 @@ extension SetupOwnershipManager {
       record.originalInode == nil,
       record.originalSourceDigest == nil,
       record.originalInventory == nil,
+      record.retainedOriginalPath == nil,
       record.claimNonce == nil
     else {
       throw SetupOwnershipError.invalidManifest(
@@ -230,6 +231,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let originalInode: UInt64?
   let originalSourceDigest: String?
   let originalInventory: [String]?
+  let retainedOriginalPath: String?
   let claimNonce: String?
 
   var applied: SetupOwnershipRecord {
@@ -251,6 +253,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
       originalInode: originalInode,
       originalSourceDigest: originalSourceDigest,
       originalInventory: originalInventory,
+      retainedOriginalPath: retainedOriginalPath,
       claimNonce: claimNonce
     )
   }
@@ -273,6 +276,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case originalInode = "original_inode"
     case originalSourceDigest = "original_source_digest"
     case originalInventory = "original_inventory"
+    case retainedOriginalPath = "retained_original_path"
     case claimNonce = "claim_nonce"
   }
 
@@ -294,6 +298,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     originalInode: UInt64? = nil,
     originalSourceDigest: String? = nil,
     originalInventory: [String]? = nil,
+    retainedOriginalPath: String? = nil,
     claimNonce: String? = nil
   ) {
     self.id = id
@@ -313,6 +318,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     self.originalInode = originalInode
     self.originalSourceDigest = originalSourceDigest
     self.originalInventory = originalInventory
+    self.retainedOriginalPath = retainedOriginalPath
     self.claimNonce = claimNonce
   }
 

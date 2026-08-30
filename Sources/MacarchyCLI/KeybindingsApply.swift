@@ -241,6 +241,16 @@ struct KeybindingsApplyCommandRunner: Sendable {
       record,
       context: SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     )
+    let usesLegacySymlinkRestoration =
+      record.retainedOriginalPath == nil
+      && [.symbolicLink, .directorySymbolicLink].contains(record.originalKind ?? .absent)
+    let restorationDescription: String
+    if usesLegacySymlinkRestoration {
+      restorationDescription =
+        "the reviewed prior skhd symlink text (legacy record; exact inode metadata unavailable)"
+    } else {
+      restorationDescription = "the exact prior skhd entry"
+    }
     let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
     try provider.preflightOriginalRestoration()
     do {
@@ -254,7 +264,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
         status: .planned,
         target: target.path,
         message:
-          "Would restore the exact prior skhd entry and restart the incumbent service; lifecycle=restart",
+          "Would restore \(restorationDescription) and restart the incumbent service; lifecycle=restart",
         mutationAttempted: false,
         lifecycle: .restart
       )
@@ -289,8 +299,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
         target: target.path,
         message:
           recovered
-          ? "Recovered the interrupted keybinding transaction, then restored the exact prior skhd entry; recovery lifecycle=\(recoveryLifecycle.rawValue); teardown lifecycle=restart"
-          : "Restored the exact prior skhd entry; lifecycle=restart",
+          ? "Recovered the interrupted keybinding transaction, then restored \(restorationDescription); recovery lifecycle=\(recoveryLifecycle.rawValue); teardown lifecycle=restart"
+          : "Restored \(restorationDescription); lifecycle=restart",
         mutationAttempted: true,
         lifecycle: combinedLifecycle(recoveryLifecycle, .restart)
       )

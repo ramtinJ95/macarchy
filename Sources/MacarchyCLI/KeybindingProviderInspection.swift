@@ -44,12 +44,16 @@ struct KeybindingProviderInspection: Encodable, Sendable {
   let expectedTarget: String
   let message: String
   let adoptionEvidenceDigest: String?
+  let retainedOriginalRequirement: String?
+  let retainedOriginalStatus: String?
   let sourceConfiguration: String?
   let adoptionEvidence: KeybindingAdoptionEvidence?
 
   enum CodingKeys: String, CodingKey {
     case status, entryPoint, ownership, source, originalTarget, expectedTarget, message
     case adoptionEvidenceDigest = "adoption_evidence_digest"
+    case retainedOriginalRequirement = "retained_original_requirement"
+    case retainedOriginalStatus = "retained_original_status"
   }
 }
 
@@ -317,8 +321,11 @@ struct KeybindingProviderInspector: Sendable {
         ownership: "directory_symlink",
         source: sourceURL,
         originalTarget: target,
-        message: "eligible directory-level symlink requires explicit adoption",
+        message:
+          "eligible directory-level symlink requires explicit adoption; its exact inode will be retained as an authenticated claim until teardown",
         sourceConfiguration: sourceConfiguration,
+        retainedOriginalRequirement: "exact_inode",
+        retainedOriginalStatus: "will_retain",
         adoptionEvidence: KeybindingAdoptionEvidence(
           kind: .directorySymbolicLink,
           linkDestination: target,
@@ -436,15 +443,45 @@ struct KeybindingProviderInspector: Sendable {
               record: ownershipRecord
             )
           } catch {
-            return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+            guard ownershipRecord.retainedOriginalPath != nil else {
+              return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+            }
+            return result(
+              .blocked,
+              entry: entry,
+              expectedTarget: expectedTarget,
+              ownership: "retained_original_drift",
+              message:
+                "the authenticated retained-original claim is missing, drifted, or no longer bound to its persisted path",
+              retainedOriginalRequirement: "exact_inode",
+              retainedOriginalStatus: "drifted"
+            )
+          }
+          let legacySymlink =
+            ownershipRecord.retainedOriginalPath == nil
+            && [.symbolicLink, .directorySymbolicLink].contains(
+              ownershipRecord.originalKind ?? .absent
+            )
+          let exactRestoration = legacySymlink || ownershipRecord.retainedOriginalPath != nil
+          let retainedStatus: String?
+          if ownershipRecord.retainedOriginalPath != nil {
+            retainedStatus = "authenticated"
+          } else {
+            retainedStatus = legacySymlink ? "legacy_unavailable" : nil
           }
           return result(
             .managed,
             entry: entry,
             expectedTarget: expectedTarget,
-            ownership: "manifest_claimed_symlink",
+            ownership: legacySymlink
+              ? "manifest_claimed_symlink_legacy_restore" : "manifest_claimed_symlink",
             originalTarget: target,
-            message: "ownership manifest claims the matching entry-point link"
+            message: legacySymlink
+              ? "legacy ownership predates retained-original claims; teardown can safely "
+                + "recreate the reviewed link text but cannot claim exact symlink inode metadata"
+              : "ownership manifest claims the matching entry-point link",
+            retainedOriginalRequirement: exactRestoration ? "exact_inode" : nil,
+            retainedOriginalStatus: retainedStatus
           )
         }
         guard generation.status == .current, let configuration = generation.configuration else {
@@ -466,6 +503,8 @@ struct KeybindingProviderInspector: Sendable {
           originalTarget: target,
           message: "entry-point link matches the plan but has no Macarchy ownership evidence",
           sourceConfiguration: configuration,
+          retainedOriginalRequirement: "exact_inode",
+          retainedOriginalStatus: "will_retain",
           adoptionEvidence: KeybindingAdoptionEvidence(
             kind: .symbolicLink,
             linkDestination: target,
@@ -510,8 +549,12 @@ struct KeybindingProviderInspector: Sendable {
         ownership: target == nil ? "regular_file" : "entry_symlink",
         source: source.url,
         originalTarget: target,
-        message: "existing skhd entry point requires explicit adoption",
+        message: target == nil
+          ? "existing skhd entry point requires explicit adoption"
+          : "existing skhd entry-point symlink requires explicit adoption; its exact inode will be retained as an authenticated claim until teardown",
         sourceConfiguration: source.text,
+        retainedOriginalRequirement: target == nil ? nil : "exact_inode",
+        retainedOriginalStatus: target == nil ? nil : "will_retain",
         adoptionEvidence: KeybindingAdoptionEvidence(
           kind: target == nil ? .regularFile : .symbolicLink,
           linkDestination: target,
@@ -798,6 +841,12 @@ struct KeybindingProviderInspector: Sendable {
         throw SetupOwnershipError.ownershipDrift(entry.deletingLastPathComponent())
       }
     }
+    if record.retainedOriginalPath != nil {
+      let home = entry.deletingLastPathComponent().deletingLastPathComponent()
+        .deletingLastPathComponent()
+      try KeybindingProviderTransaction(homeDirectory: home)
+        .preflightRetainedOriginalClaim(record)
+    }
   }
 
   private static func markerMatches(
@@ -896,7 +945,8 @@ struct KeybindingProviderInspector: Sendable {
         record.originalDevice == nil,
         record.originalInode == nil,
         record.originalSourceDigest == nil,
-        record.originalInventory == nil
+        record.originalInventory == nil,
+        record.retainedOriginalPath == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "absent keybinding entry ownership contains adoption evidence"
@@ -916,13 +966,22 @@ struct KeybindingProviderInspector: Sendable {
         record.originalDevice != nil,
         record.originalInode != nil,
         record.originalSourceDigest == record.originalDigest,
-        record.originalInventory == []
+        record.originalInventory == [],
+        record.retainedOriginalPath == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "regular-file keybinding adoption evidence is incomplete"
         )
       }
     case .symbolicLink, .directorySymbolicLink:
+      let retainedPath =
+        record.originalKind == .directorySymbolicLink
+        ? context.homeDirectory.appending(
+          path: ".config/.skhd.macarchy-keybindings-\(record.claimNonce ?? "invalid")"
+        ).path
+        : context.homeDirectory.appending(
+          path: ".config/skhd/.skhdrc.macarchy-keybindings-\(record.claimNonce ?? "invalid")"
+        ).path
       guard
         record.backupPath == nil,
         let destination = record.originalLinkDestination,
@@ -933,7 +992,8 @@ struct KeybindingProviderInspector: Sendable {
         record.originalInode != nil,
         record.originalSourceDigest != nil,
         record.originalInventory
-          == (record.originalKind == .directorySymbolicLink ? ["skhdrc"] : [])
+          == (record.originalKind == .directorySymbolicLink ? ["skhdrc"] : []),
+        record.retainedOriginalPath == nil || record.retainedOriginalPath == retainedPath
       else {
         throw SetupOwnershipError.invalidManifest(
           "symbolic-link keybinding adoption evidence is incomplete"
@@ -958,6 +1018,7 @@ struct KeybindingProviderInspector: Sendable {
       && record.originalInode == nil
       && record.originalSourceDigest == nil
       && record.originalInventory == nil
+      && record.retainedOriginalPath == nil
       && record.claimNonce == nil
   }
 
@@ -1002,6 +1063,8 @@ struct KeybindingProviderInspector: Sendable {
     originalTarget: String? = nil,
     message: String,
     sourceConfiguration: String? = nil,
+    retainedOriginalRequirement: String? = nil,
+    retainedOriginalStatus: String? = nil,
     adoptionEvidence: KeybindingAdoptionEvidence? = nil
   ) -> KeybindingProviderInspection {
     KeybindingProviderInspection(
@@ -1013,6 +1076,8 @@ struct KeybindingProviderInspector: Sendable {
       expectedTarget: expectedTarget,
       message: message,
       adoptionEvidenceDigest: adoptionEvidence?.digest,
+      retainedOriginalRequirement: retainedOriginalRequirement,
+      retainedOriginalStatus: retainedOriginalStatus,
       sourceConfiguration: sourceConfiguration,
       adoptionEvidence: adoptionEvidence
     )
