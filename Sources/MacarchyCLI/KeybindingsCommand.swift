@@ -75,7 +75,7 @@ struct Keybindings: ParsableCommand {
       ).standardizedFileURL
       let execution =
         if dryRun {
-          try KeybindingsPlanCommandRunner.live.execute(
+          try KeybindingsApplyCommandRunner.live.preview(
             resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
             profileURL: profileURL,
             profileRequired: profile != nil,

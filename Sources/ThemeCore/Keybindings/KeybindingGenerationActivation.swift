@@ -80,7 +80,8 @@ package struct KeybindingGenerationActivator: Sendable {
         try? removeDirectory(
           parentDescriptor: generationsDescriptor,
           name: stagingName,
-          url: stagingURL
+          url: stagingURL,
+          allowPartial: true
         )
       }
     }
@@ -123,6 +124,13 @@ package struct KeybindingGenerationActivator: Sendable {
       throw KeybindingGenerationActivationError.system(
         "commit generation",
         generationURL,
+        errno
+      )
+    }
+    guard fsync(generationsDescriptor) == 0 else {
+      throw KeybindingGenerationActivationError.system(
+        "sync committed generation",
+        generationsRoot,
         errno
       )
     }
@@ -226,11 +234,98 @@ package struct KeybindingGenerationActivator: Sendable {
     )
     let descriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)
     defer { Darwin.close(descriptor) }
-    try removeDirectory(
-      parentDescriptor: descriptor,
-      name: generationID,
-      url: generationsRoot.appending(path: generationID, directoryHint: .isDirectory)
+    do {
+      try removeDirectory(
+        parentDescriptor: descriptor,
+        name: generationID,
+        url: generationsRoot.appending(path: generationID, directoryHint: .isDirectory)
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    guard fsync(descriptor) == 0 else {
+      throw KeybindingGenerationActivationError.system(
+        "sync removed generation",
+        generationsRoot,
+        errno
+      )
+    }
+  }
+
+  package func recoverResidue() throws {
+    let keybindingsRoot = stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+    let keybindingsDescriptor: Int32
+    do {
+      keybindingsDescriptor = try PinnedFilesystem.openDirectory(at: keybindingsRoot)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    defer { Darwin.close(keybindingsDescriptor) }
+    let keybindingItems = try PinnedFilesystem.directoryEntries(
+      descriptor: keybindingsDescriptor,
+      url: keybindingsRoot,
+      limit: 1_024
     )
+    guard !keybindingItems.truncated else {
+      throw KeybindingGenerationActivationError.invalidGenerationInventory
+    }
+    for name in keybindingItems.entries where Self.isTemporaryPointer(name) {
+      let metadata = try PinnedFilesystem.metadata(
+        parentDescriptor: keybindingsDescriptor,
+        name: name,
+        url: keybindingsRoot.appending(path: name)
+      )
+      guard metadata.st_mode & S_IFMT == S_IFLNK else {
+        throw KeybindingGenerationActivationError.invalidGenerationInventory
+      }
+      let removed = name.withCString { Darwin.unlinkat(keybindingsDescriptor, $0, 0) }
+      guard removed == 0 else {
+        throw KeybindingGenerationActivationError.system(
+          "remove temporary current pointer",
+          keybindingsRoot.appending(path: name),
+          errno
+        )
+      }
+    }
+
+    let generationsRoot = keybindingsRoot.appending(
+      path: "generations",
+      directoryHint: .isDirectory
+    )
+    let generationsDescriptor: Int32
+    do {
+      generationsDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: keybindingsDescriptor,
+        name: "generations",
+        url: generationsRoot
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    defer { Darwin.close(generationsDescriptor) }
+    let generations = try PinnedFilesystem.directoryEntries(
+      descriptor: generationsDescriptor,
+      url: generationsRoot,
+      limit: 1_024
+    )
+    guard !generations.truncated else {
+      throw KeybindingGenerationActivationError.invalidGenerationInventory
+    }
+    for name in generations.entries where Self.isStagingName(name) {
+      try removeDirectory(
+        parentDescriptor: generationsDescriptor,
+        name: name,
+        url: generationsRoot.appending(path: name, directoryHint: .isDirectory),
+        allowPartial: true
+      )
+    }
+    guard fsync(keybindingsDescriptor) == 0, fsync(generationsDescriptor) == 0 else {
+      throw KeybindingGenerationActivationError.system(
+        "sync recovered keybinding residue",
+        keybindingsRoot,
+        errno
+      )
+    }
   }
 
   package func retainGenerations(_ retained: Set<String>) throws {
@@ -281,7 +376,8 @@ package struct KeybindingGenerationActivator: Sendable {
   private func removeDirectory(
     parentDescriptor: Int32,
     name: String,
-    url: URL
+    url: URL,
+    allowPartial: Bool = false
   ) throws {
     let descriptor = try PinnedFilesystem.openDirectory(
       parentDescriptor: parentDescriptor,
@@ -289,6 +385,20 @@ package struct KeybindingGenerationActivator: Sendable {
       url: url
     )
     defer { Darwin.close(descriptor) }
+    let inventory = try PinnedFilesystem.directoryEntries(
+      descriptor: descriptor,
+      url: url,
+      limit: 3
+    )
+    let expected = Set(["manifest.json", "skhdrc"])
+    guard
+      !inventory.truncated,
+      allowPartial
+        ? Set(inventory.entries).isSubset(of: expected)
+        : Set(inventory.entries) == expected
+    else {
+      throw KeybindingGenerationActivationError.invalidGenerationInventory
+    }
     guard fchmod(descriptor, 0o755) == 0 else {
       throw KeybindingGenerationActivationError.system("make generation removable", url, errno)
     }
@@ -310,6 +420,27 @@ package struct KeybindingGenerationActivator: Sendable {
 
   private static func isGenerationID(_ value: String) -> Bool {
     KeybindingGenerationInspector.isGenerationID(value)
+  }
+
+  private static func isStagingName(_ value: String) -> Bool {
+    value.hasPrefix(".staging-") && isGenerationID(String(value.dropFirst(9)))
+  }
+
+  private static func isTemporaryPointer(_ value: String) -> Bool {
+    if value.hasPrefix(".current-restore-") {
+      let nonce = String(value.dropFirst(17))
+      return nonce == nonce.lowercased() && UUID(uuidString: nonce) != nil
+    }
+    guard value.hasPrefix(".current-") else { return false }
+    let suffix = value.dropFirst(9)
+    guard suffix.count == 75 else { return false }
+    let separator = suffix.index(suffix.startIndex, offsetBy: 38)
+    guard suffix[separator] == "-" else { return false }
+    let generationID = String(suffix[..<separator])
+    let nonce = String(suffix[suffix.index(after: separator)...])
+    return isGenerationID(generationID)
+      && nonce == nonce.lowercased()
+      && UUID(uuidString: nonce) != nil
   }
 }
 

@@ -275,6 +275,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       composition: composition,
       generation: generation,
       provider: provider,
+      blockingMessages: diagnostics.filter { $0.severity == "error" }.map(\.message),
       report: report
     )
   }
@@ -390,6 +391,7 @@ struct KeybindingsPlanPreparation {
   let composition: KeybindingComposition?
   let generation: KeybindingGenerationInspection
   let provider: KeybindingProviderInspection
+  let blockingMessages: [String]
   fileprivate let report: KeybindingsPlanReport
 }
 

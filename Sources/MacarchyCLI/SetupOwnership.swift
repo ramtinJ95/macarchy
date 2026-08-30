@@ -315,6 +315,11 @@ struct SetupOwnershipManager: Sendable {
 
   private func teardown(context: Context, dryRun: Bool) throws -> [SetupIntegrationResult] {
     var records = try readRecords(context: context)
+    if records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID }) {
+      throw SetupOwnershipError.invalidManifest(
+        "managed keybindings require the dedicated transactional teardown path"
+      )
+    }
     if !dryRun {
       var preflightRecords = records
       _ = try teardownIntegrations(
