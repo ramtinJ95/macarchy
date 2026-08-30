@@ -212,6 +212,9 @@ struct KeybindingProviderTransaction: Sendable {
     var (record, existingRecords, context) = try ownershipRecord()
     var records = existingRecords
     if KeybindingProviderInspector.isLegacyCleanInstallRecord(record) {
+      let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+      defer { Darwin.close(descriptor) }
+      try removeLegacyRestorationResidue(parentDescriptor: descriptor, record: record)
       try requireLegacyEntryAbsent()
       records.removeAll { $0.id == KeybindingProviderInspector.ownershipID }
       try SetupOwnershipManager().persist(records: records, context: context)
@@ -228,7 +231,6 @@ struct KeybindingProviderTransaction: Sendable {
         if try backupExists() || backupDeletionResidueExists(record) {
           try removeAuthenticatedBackup(record, manager: manager)
         }
-        try removeBackupPublicationResidue(record)
       } else {
         guard record.phase == .prepared || record.phase == .teardownPrepared else {
           throw SetupOwnershipError.corruptBackup(backup)
@@ -237,6 +239,7 @@ struct KeybindingProviderTransaction: Sendable {
           try verifyPinnedUntouchedOriginal(record, manager: manager)
         }
       }
+      try removeBackupPublicationResidue(record)
     }
     try removeAuthenticatedProviderResidues(record)
     try faultInjector(.backupRemoved)
@@ -662,6 +665,12 @@ struct KeybindingProviderTransaction: Sendable {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
     let claim = claimName(record, directory: false)
+    try resumeProviderDeletionResidue(
+      parentDescriptor: descriptor,
+      name: claim,
+      record: record,
+      url: directory.appending(path: claim)
+    )
     let state = try leafState(descriptor: descriptor, name: "skhdrc", record: record)
     var claimState = try leafState(
       descriptor: descriptor,
@@ -751,6 +760,12 @@ struct KeybindingProviderTransaction: Sendable {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
     let claim = claimName(record, directory: false)
+    try resumeProviderDeletionResidue(
+      parentDescriptor: descriptor,
+      name: claim,
+      record: record,
+      url: directory.appending(path: claim)
+    )
     let state = try leafState(descriptor: descriptor, name: "skhdrc", record: record)
     var claimState = try leafState(
       descriptor: descriptor,
@@ -835,6 +850,13 @@ struct KeybindingProviderTransaction: Sendable {
     let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
     defer { Darwin.close(descriptor) }
     let claim = claimName(record, directory: true)
+    try resumeProviderDeletionResidue(
+      parentDescriptor: descriptor,
+      name: claim,
+      record: record,
+      url: configurationDirectory.appending(path: claim),
+      directory: true
+    )
     let state = try directoryState(descriptor: descriptor, name: "skhd", record: record)
     var claimState = try directoryState(
       descriptor: descriptor,
@@ -906,6 +928,13 @@ struct KeybindingProviderTransaction: Sendable {
     let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
     defer { Darwin.close(descriptor) }
     let claim = claimName(record, directory: true)
+    try resumeProviderDeletionResidue(
+      parentDescriptor: descriptor,
+      name: claim,
+      record: record,
+      url: configurationDirectory.appending(path: claim),
+      directory: true
+    )
     let state = try directoryState(descriptor: descriptor, name: "skhd", record: record)
     var claimState = try directoryState(
       descriptor: descriptor,
@@ -1823,9 +1852,6 @@ struct KeybindingProviderTransaction: Sendable {
     parentDescriptor: Int32,
     record: SetupOwnershipRecord
   ) throws {
-    guard
-      try legacyRestorationResidueExists(parentDescriptor: parentDescriptor, record: record)
-    else { return }
     let url = directory.appending(path: legacyRestorationName)
     try removePinnedItem(
       parentDescriptor: parentDescriptor,
@@ -1987,11 +2013,24 @@ struct KeybindingProviderTransaction: Sendable {
     if isDirectory {
       let parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
       defer { Darwin.close(parent) }
+      try resumeProviderDeletionResidue(
+        parentDescriptor: parent,
+        name: claim,
+        record: record,
+        url: configurationDirectory.appending(path: claim),
+        directory: true
+      )
       try removeManagedDirectory(parentDescriptor: parent, name: publication, record: record)
       try removeManagedDirectory(parentDescriptor: parent, name: claim, record: record)
     } else {
       let parent = try PinnedFilesystem.openDirectory(at: directory)
       defer { Darwin.close(parent) }
+      try resumeProviderDeletionResidue(
+        parentDescriptor: parent,
+        name: claim,
+        record: record,
+        url: directory.appending(path: claim)
+      )
       try removeMarkedItem(
         parentDescriptor: parent,
         name: publication,
@@ -2729,6 +2768,55 @@ struct KeybindingProviderTransaction: Sendable {
     }
   }
 
+  private func resumeProviderDeletionResidue(
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord,
+    url: URL,
+    directory: Bool = false
+  ) throws {
+    try resumeDeterministicDeletion(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url,
+      directory: directory,
+      record: record
+    ) { deletionName, deletionURL in
+      // Forward displacement and rollback reuse this deterministic pathname.
+      // Managed residue is marked; the displaced user original intentionally is not.
+      if try claimMarkerMatches(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        record: record,
+        url: deletionURL
+      ) {
+        if directory {
+          let descriptor = try PinnedFilesystem.openDirectory(
+            parentDescriptor: parentDescriptor,
+            name: deletionName,
+            url: deletionURL
+          )
+          defer { Darwin.close(descriptor) }
+          let inventory = try PinnedFilesystem.directoryEntries(
+            descriptor: descriptor,
+            url: deletionURL,
+            limit: 1
+          )
+          guard inventory.entries.isEmpty, !inventory.truncated else {
+            throw SetupOwnershipError.ownershipDrift(deletionURL)
+          }
+        }
+        return
+      }
+      try verifyDisplacedOriginal(
+        record,
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL
+      )
+    }
+  }
+
   private func removePinnedItem(
     parentDescriptor: Int32,
     name: String,
@@ -2737,18 +2825,17 @@ struct KeybindingProviderTransaction: Sendable {
     record: SetupOwnershipRecord,
     authenticate: (String, URL) throws -> Void
   ) throws {
+    try resumeDeterministicDeletion(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url,
+      directory: directory,
+      record: record,
+      authenticate: authenticate
+    )
+    guard try itemExists(parentDescriptor: parentDescriptor, name: name, url: url) else { return }
     let deletionName = try deletionName(name, record: record)
     let deletionURL = url.deletingLastPathComponent().appending(path: deletionName)
-    if try itemExists(parentDescriptor: parentDescriptor, name: deletionName, url: deletionURL) {
-      try deletePinnedCandidate(
-        parentDescriptor: parentDescriptor,
-        name: deletionName,
-        url: deletionURL,
-        directory: directory,
-        authenticate: authenticate
-      )
-    }
-    guard try itemExists(parentDescriptor: parentDescriptor, name: name, url: url) else { return }
     try authenticate(name, url)
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
     defer { Darwin.close(pinned) }
@@ -2812,6 +2899,32 @@ struct KeybindingProviderTransaction: Sendable {
         "\(error); candidate preserved after restore failed: \(String(cString: strerror(errno)))"
       )
     }
+  }
+
+  private func resumeDeterministicDeletion(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    directory: Bool,
+    record: SetupOwnershipRecord,
+    authenticate: (String, URL) throws -> Void
+  ) throws {
+    let deletionName = try deletionName(name, record: record)
+    let deletionURL = url.deletingLastPathComponent().appending(path: deletionName)
+    guard
+      try itemExists(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL
+      )
+    else { return }
+    try deletePinnedCandidate(
+      parentDescriptor: parentDescriptor,
+      name: deletionName,
+      url: deletionURL,
+      directory: directory,
+      authenticate: authenticate
+    )
   }
 
   private func deletePinnedCandidate(
