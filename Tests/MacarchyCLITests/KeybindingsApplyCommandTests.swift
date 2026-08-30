@@ -770,6 +770,138 @@ struct KeybindingsApplyCommandTests {
       #expect(try Data(contentsOf: lifecycleURL) == lifecycleBefore)
       #expect(try transactionStore.read() == pending)
     }
+
+    @Test
+    func acceptanceCheckpointRevalidatesNoChangeRaceBeforeTransactionMutation() throws {
+      let fixture = try KeybindingsApplyFixture()
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      let initialLifecycle = LifecycleFixture()
+      let initialRunner = fixture.runner(lifecycle: initialLifecycle.controller)
+      #expect(try fixture.execute(runner: initialRunner, json: true).succeeded)
+
+      let defaults = fixture.resources.appending(path: "defaults.skhdrc")
+      let originalDefaults = try Data(contentsOf: defaults)
+      try Data("alt - j : acceptance race update\n".utf8).write(to: defaults)
+      let current = fixture.stateRoot.appending(path: "keybindings/current")
+      let lifecycleEvidence = fixture.stateRoot.appending(path: "keybindings/lifecycle.json")
+      let ownership = fixture.stateRoot.appending(path: "state/setup/ownership.json")
+      let currentBefore = try FileManager.default.destinationOfSymbolicLink(atPath: current.path)
+      let lifecycleBefore = try Data(contentsOf: lifecycleEvidence)
+      let ownershipBefore = try Data(contentsOf: ownership)
+      let generationsBefore = try FileManager.default.contentsOfDirectory(
+        atPath: fixture.stateRoot.appending(path: "keybindings/generations").path
+      )
+      let calls = Mutex<[String]>([])
+      let lifecycle = KeybindingLifecycleController(
+        preflight: {
+          calls.withLock { $0.append("preflight") }
+          try originalDefaults.write(to: defaults)
+        },
+        restart: { calls.withLock { $0.append("restart") } },
+        reload: { calls.withLock { $0.append("reload") } },
+        verifyProcess: { calls.withLock { $0.append("verify") } },
+        inspectProcess: { .testRunning }
+      )
+
+      let execution = try fixture.runner(lifecycle: lifecycle)
+        .withAcceptanceManagedUpdateRollbackCheckpoint().execute(
+          resourcesRoot: fixture.resources,
+          profileURL: fixture.profile,
+          profileRequired: false,
+          stateRoot: fixture.stateRoot,
+          homeDirectory: fixture.home,
+          json: true
+        )
+      let report = try jsonObject(execution.output)
+
+      #expect(!execution.succeeded)
+      #expect(report["outcome"] as? String == "blocked")
+      #expect(report["mutated"] as? Bool == false)
+      #expect(calls.withLock { $0 } == ["preflight"])
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: current.path) == currentBefore
+      )
+      #expect(try Data(contentsOf: lifecycleEvidence) == lifecycleBefore)
+      #expect(try Data(contentsOf: ownership) == ownershipBefore)
+      #expect(
+        try FileManager.default.contentsOfDirectory(
+          atPath: fixture.stateRoot.appending(path: "keybindings/generations").path
+        ) == generationsBefore
+      )
+      #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+    }
+
+    @Test(arguments: [false, true])
+    func acceptanceCheckpointBlocksInstallAndAdoptionEligibilityRaces(
+      leaveExternalEntry: Bool
+    ) throws {
+      let fixture = try KeybindingsApplyFixture()
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      let initialLifecycle = LifecycleFixture()
+      let initialRunner = fixture.runner(lifecycle: initialLifecycle.controller)
+      #expect(try fixture.execute(runner: initialRunner, json: true).succeeded)
+      try "alt - j : acceptance eligibility update\n".write(
+        to: fixture.resources.appending(path: "defaults.skhdrc"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+      let current = fixture.stateRoot.appending(path: "keybindings/current")
+      let lifecycleEvidence = fixture.stateRoot.appending(path: "keybindings/lifecycle.json")
+      let ownership = fixture.stateRoot.appending(path: "state/setup/ownership.json")
+      let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+      let externalBytes = Data("alt - x : external eligibility race\n".utf8)
+      let currentBefore = try FileManager.default.destinationOfSymbolicLink(atPath: current.path)
+      let lifecycleBefore = try Data(contentsOf: lifecycleEvidence)
+      let generationsBefore = try FileManager.default.contentsOfDirectory(
+        atPath: fixture.stateRoot.appending(path: "keybindings/generations").path
+      )
+      let calls = Mutex<[String]>([])
+      let lifecycle = KeybindingLifecycleController(
+        preflight: {
+          calls.withLock { $0.append("preflight") }
+          try FileManager.default.removeItem(at: entry)
+          try FileManager.default.removeItem(at: ownership)
+          if leaveExternalEntry { try externalBytes.write(to: entry) }
+        },
+        restart: { calls.withLock { $0.append("restart") } },
+        reload: { calls.withLock { $0.append("reload") } },
+        verifyProcess: { calls.withLock { $0.append("verify") } },
+        inspectProcess: { .testRunning }
+      )
+
+      let execution = try fixture.runner(lifecycle: lifecycle)
+        .withAcceptanceManagedUpdateRollbackCheckpoint().execute(
+          resourcesRoot: fixture.resources,
+          profileURL: fixture.profile,
+          profileRequired: false,
+          stateRoot: fixture.stateRoot,
+          homeDirectory: fixture.home,
+          json: true
+        )
+      let report = try jsonObject(execution.output)
+
+      #expect(!execution.succeeded)
+      #expect(report["outcome"] as? String == "blocked")
+      #expect(report["mutated"] as? Bool == false)
+      #expect(calls.withLock { $0 } == ["preflight"])
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: current.path) == currentBefore
+      )
+      #expect(try Data(contentsOf: lifecycleEvidence) == lifecycleBefore)
+      #expect(
+        try FileManager.default.contentsOfDirectory(
+          atPath: fixture.stateRoot.appending(path: "keybindings/generations").path
+        ) == generationsBefore
+      )
+      #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+      #expect(!FileManager.default.fileExists(atPath: ownership.path))
+      if leaveExternalEntry {
+        #expect(try Data(contentsOf: entry) == externalBytes)
+      } else {
+        #expect(!FileManager.default.fileExists(atPath: entry.path))
+      }
+    }
   #endif
 
   @Test
