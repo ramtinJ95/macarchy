@@ -150,12 +150,17 @@ text, source bytes, and bounded inventory; any mismatch blocks before
 keybinding state mutates.
 
 Regular-file adoption restores exact bytes plus the authenticated restorable
-metadata contract: permissions, owner, group, flags, modification time,
-extended attributes, and ACL. Access, change, and creation times are not part
-of that contract because reads and safe inode replacement necessarily change
-them. Backups and deterministic filesystem claims remain private,
-descriptor-relative recovery evidence. Multiply linked regular entries are
-not eligible for adoption.
+metadata contract: permissions, owner, group, supported nonrestrictive flags,
+modification time, extended attributes, and ACL. Immutable, append-only,
+no-unlink, restricted, and data-vault flags are rejected before mutation
+because copying them before backup and restoration cleanup could strand
+transaction artifacts. Access, change, and creation times are not part of the
+contract because reads and safe inode replacement necessarily change them.
+Multiply linked regular entries are also not eligible for adoption.
+
+Private recovery claims use a per-record nonce and a no-follow inode marker.
+Recovery removes only a claim carrying that exact marker; an empty, partial, or
+same-target foreign replacement is preserved and blocks for explicit recovery.
 
 Installing or adopting the entry restarts the incumbent skhd service once
 because skhd 0.3.9 does not rediscover a newly created preferred config path on
