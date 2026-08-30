@@ -61,8 +61,8 @@ struct Keybindings: ParsableCommand {
     @Flag(help: "Inspect without publishing or activating keybindings.")
     var dryRun = false
 
-    @Flag(help: "Approve replacement and exact restoration of a previewed existing skhd entry.")
-    var adopt = false
+    @Option(help: "Exact adoption evidence digest from the reviewed keybindings plan.")
+    var adopt: String?
 
     @Flag(help: "Emit machine-readable output.")
     var json = false

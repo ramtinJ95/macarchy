@@ -331,7 +331,7 @@ struct SetupCommandTests {
       setupKeybindings: { profile, required, selectedHome, dryRun, adopt in
         calls.withLock {
           $0.append(
-            "\(profile.path)|\(required)|\(selectedHome.path)|\(dryRun)|\(adopt)"
+            "\(profile.path)|\(required)|\(selectedHome.path)|\(dryRun)|\(adopt ?? "none")"
           )
         }
         return SetupIntegrationResult(
@@ -352,7 +352,7 @@ struct SetupCommandTests {
       dryRun: false,
       keybindingProfileURL: portableProfile,
       keybindingProfileRequired: true,
-      adoptKeybindings: true,
+      adoptKeybindings: "reviewed-evidence",
       json: true
     )
     let report = try decode(execution.output)
@@ -361,8 +361,8 @@ struct SetupCommandTests {
     #expect(report.mutationAttempted)
     #expect(
       calls.withLock { $0 } == [
-        "\(portableProfile.path)|true|\(home.path)|true|true",
-        "\(portableProfile.path)|true|\(home.path)|false|true",
+        "\(portableProfile.path)|true|\(home.path)|true|reviewed-evidence",
+        "\(portableProfile.path)|true|\(home.path)|false|reviewed-evidence",
       ])
   }
 

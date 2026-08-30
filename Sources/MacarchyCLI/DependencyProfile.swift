@@ -325,7 +325,7 @@ struct SetupCommandRunner: Sendable {
   let processRunner: ProcessRunner
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let setupIntegrations: @Sendable (URL, Bool) throws -> [SetupIntegrationResult]
-  let setupKeybindings: @Sendable (URL, Bool, URL, Bool, Bool) throws -> SetupIntegrationResult?
+  let setupKeybindings: @Sendable (URL, Bool, URL, Bool, String?) throws -> SetupIntegrationResult?
 
   init(
     resolveProfile: @escaping @Sendable (String, URL) -> DependencyProfile?,
@@ -334,7 +334,7 @@ struct SetupCommandRunner: Sendable {
     writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
     setupIntegrations: @escaping @Sendable (URL, Bool) throws -> [SetupIntegrationResult],
     setupKeybindings:
-      @escaping @Sendable (URL, Bool, URL, Bool, Bool) throws -> SetupIntegrationResult? = {
+      @escaping @Sendable (URL, Bool, URL, Bool, String?) throws -> SetupIntegrationResult? = {
         _, _, _, _, _ in nil
       }
   ) {
@@ -379,7 +379,7 @@ struct SetupCommandRunner: Sendable {
     dryRun: Bool,
     keybindingProfileURL: URL? = nil,
     keybindingProfileRequired: Bool = false,
-    adoptKeybindings: Bool = false,
+    adoptKeybindings: String? = nil,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     guard let profile = resolveProfile(profileName, homeDirectory) else {
@@ -544,7 +544,7 @@ private struct SetupPreparation {
   let dryRun: Bool
   let keybindingProfileURL: URL
   let keybindingProfileRequired: Bool
-  let adoptKeybindings: Bool
+  let adoptKeybindings: String?
   let capabilities: [SetupCapability]
 }
 

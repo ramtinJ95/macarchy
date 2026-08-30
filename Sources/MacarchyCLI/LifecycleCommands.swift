@@ -68,8 +68,8 @@ extension Macarchy {
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
     var profile: String?
 
-    @Flag(help: "Approve replacement and exact restoration of a previewed existing skhd entry.")
-    var adoptKeybindings = false
+    @Option(help: "Exact keybinding adoption evidence digest from the reviewed setup plan.")
+    var adoptKeybindings: String?
 
     @Flag(help: "Install missing Homebrew dependencies for the selected profile.")
     var installDependencies = false

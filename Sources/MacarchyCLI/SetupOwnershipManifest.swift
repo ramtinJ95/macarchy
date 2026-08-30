@@ -47,7 +47,8 @@ extension SetupOwnershipManager {
     guard
       record.originalKind == nil,
       record.originalLinkDestination == nil,
-      record.originalFileMode == nil
+      record.originalFileMode == nil,
+      record.originalMetadataDigest == nil
     else {
       throw SetupOwnershipError.invalidManifest(
         "non-keybinding integration \(record.id) contains keybinding adoption evidence"
@@ -219,6 +220,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let originalKind: OriginalKind?
   let originalLinkDestination: String?
   let originalFileMode: UInt16?
+  let originalMetadataDigest: String?
 
   var applied: SetupOwnershipRecord {
     SetupOwnershipRecord(
@@ -233,7 +235,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
       replacementDigest: nil,
       originalKind: originalKind,
       originalLinkDestination: originalLinkDestination,
-      originalFileMode: originalFileMode
+      originalFileMode: originalFileMode,
+      originalMetadataDigest: originalMetadataDigest
     )
   }
 
@@ -250,6 +253,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case originalKind = "original_kind"
     case originalLinkDestination = "original_link_destination"
     case originalFileMode = "original_file_mode"
+    case originalMetadataDigest = "original_metadata_digest"
   }
 
   init(
@@ -264,7 +268,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     replacementDigest: String? = nil,
     originalKind: OriginalKind? = nil,
     originalLinkDestination: String? = nil,
-    originalFileMode: UInt16? = nil
+    originalFileMode: UInt16? = nil,
+    originalMetadataDigest: String? = nil
   ) {
     self.id = id
     self.phase = phase
@@ -278,6 +283,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     self.originalKind = originalKind
     self.originalLinkDestination = originalLinkDestination
     self.originalFileMode = originalFileMode
+    self.originalMetadataDigest = originalMetadataDigest
   }
 
 }

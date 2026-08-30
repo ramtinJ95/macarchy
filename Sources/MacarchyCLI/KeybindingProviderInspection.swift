@@ -9,6 +9,31 @@ enum KeybindingProviderStatus: String, Encodable, Sendable {
   case blocked
 }
 
+struct KeybindingAdoptionEvidence: Equatable, Sendable {
+  enum Kind: String, Sendable {
+    case absent
+    case directorySymbolicLink = "directory_symbolic_link"
+    case regularFile = "regular_file"
+    case symbolicLink = "symbolic_link"
+  }
+
+  let kind: Kind
+  let linkDestination: String?
+  let contentDigest: String?
+  let inventory: [String]
+
+  var digest: String {
+    let values = [kind.rawValue, linkDestination ?? "", contentDigest ?? ""] + inventory
+    var data = Data()
+    for value in values {
+      let bytes = Data(value.utf8)
+      data.append(Data("\(bytes.count):".utf8))
+      data.append(bytes)
+    }
+    return sha256Digest(data)
+  }
+}
+
 struct KeybindingProviderInspection: Encodable, Sendable {
   let status: KeybindingProviderStatus
   let entryPoint: String
@@ -17,10 +42,13 @@ struct KeybindingProviderInspection: Encodable, Sendable {
   let originalTarget: String?
   let expectedTarget: String
   let message: String
+  let adoptionEvidenceDigest: String?
   let sourceConfiguration: String?
+  let adoptionEvidence: KeybindingAdoptionEvidence?
 
   enum CodingKeys: String, CodingKey {
     case status, entryPoint, ownership, source, originalTarget, expectedTarget, message
+    case adoptionEvidenceDigest = "adoption_evidence_digest"
   }
 }
 
@@ -70,7 +98,8 @@ struct KeybindingProviderInspector: Sendable {
         entry: entry,
         expectedTarget: expectedTarget,
         ownership: "absent",
-        message: "skhd configuration directory and entry point are absent"
+        message: "skhd configuration directory and entry point are absent",
+        adoptionEvidence: Self.absentEvidence
       )
     } catch {
       return result(
@@ -128,7 +157,8 @@ struct KeybindingProviderInspector: Sendable {
         entry: entry,
         expectedTarget: expectedTarget,
         ownership: "absent",
-        message: "skhd configuration directory and entry point are absent"
+        message: "skhd configuration directory and entry point are absent",
+        adoptionEvidence: Self.absentEvidence
       )
     } catch {
       return result(
@@ -255,7 +285,7 @@ struct KeybindingProviderInspector: Sendable {
         name: "skhdrc",
         url: sourceURL
       )
-      guard metadata.st_mode & S_IFMT == S_IFREG else {
+      guard metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1 else {
         throw PinnedFilesystemError(
           operation: "read unsupported directory-level skhdrc",
           url: sourceURL,
@@ -282,7 +312,13 @@ struct KeybindingProviderInspector: Sendable {
         source: sourceURL,
         originalTarget: target,
         message: "eligible directory-level symlink requires explicit adoption",
-        sourceConfiguration: sourceConfiguration
+        sourceConfiguration: sourceConfiguration,
+        adoptionEvidence: KeybindingAdoptionEvidence(
+          kind: .directorySymbolicLink,
+          linkDestination: target,
+          contentDigest: sha256Digest(file.data),
+          inventory: inventory.entries
+        )
       )
     } catch {
       return result(
@@ -339,7 +375,8 @@ struct KeybindingProviderInspector: Sendable {
         entry: entry,
         expectedTarget: expectedTarget,
         ownership: "ordinary_directory",
-        message: "skhd entry point is absent"
+        message: "skhd entry point is absent",
+        adoptionEvidence: Self.absentEvidence
       )
     } catch {
       return result(
@@ -397,7 +434,13 @@ struct KeybindingProviderInspector: Sendable {
           source: stateRoot.appending(path: "keybindings/current/skhdrc"),
           originalTarget: target,
           message: "entry-point link matches the plan but has no Macarchy ownership evidence",
-          sourceConfiguration: configuration
+          sourceConfiguration: configuration,
+          adoptionEvidence: KeybindingAdoptionEvidence(
+            kind: .symbolicLink,
+            linkDestination: target,
+            contentDigest: sha256Digest(Data(configuration.utf8)),
+            inventory: []
+          )
         )
       }
       if target == Self.managedTarget, expectedTarget != Self.managedTarget {
@@ -437,7 +480,13 @@ struct KeybindingProviderInspector: Sendable {
         source: source.url,
         originalTarget: target,
         message: "existing skhd entry point requires explicit adoption",
-        sourceConfiguration: source.text
+        sourceConfiguration: source.text,
+        adoptionEvidence: KeybindingAdoptionEvidence(
+          kind: target == nil ? .regularFile : .symbolicLink,
+          linkDestination: target,
+          contentDigest: sha256Digest(source.data),
+          inventory: []
+        )
       )
     } catch {
       return result(
@@ -454,7 +503,7 @@ struct KeybindingProviderInspector: Sendable {
     parentDescriptor: Int32,
     parentURL: URL,
     name: String
-  ) throws -> (url: URL, text: String) {
+  ) throws -> (url: URL, text: String, data: Data) {
     let sourceURL = parentURL.appending(path: name)
     let metadata = try PinnedFilesystem.metadata(
       parentDescriptor: parentDescriptor,
@@ -465,6 +514,13 @@ struct KeybindingProviderInspector: Sendable {
     let file: BoundedRegularFile
     switch metadata.st_mode & S_IFMT {
     case S_IFREG:
+      guard metadata.st_nlink == 1 else {
+        throw PinnedFilesystemError(
+          operation: "reject multiply linked configuration item",
+          url: sourceURL,
+          code: EMLINK
+        )
+      }
       resolvedURL = sourceURL
       file = try PinnedFilesystem.readRegularFile(
         parentDescriptor: parentDescriptor,
@@ -478,6 +534,18 @@ struct KeybindingProviderInspector: Sendable {
         url: sourceURL
       )
       resolvedURL = Self.resolveSymlink(destination, relativeTo: parentURL)
+      var resolvedMetadata = stat()
+      guard
+        lstat(resolvedURL.path, &resolvedMetadata) == 0,
+        resolvedMetadata.st_mode & S_IFMT == S_IFREG,
+        resolvedMetadata.st_nlink == 1
+      else {
+        throw PinnedFilesystemError(
+          operation: "reject unsupported or multiply linked configuration target",
+          url: resolvedURL,
+          code: EMLINK
+        )
+      }
       file = try PinnedFilesystem.readRegularFile(at: resolvedURL)
     default:
       throw PinnedFilesystemError(
@@ -490,7 +558,7 @@ struct KeybindingProviderInspector: Sendable {
       throw PinnedFilesystemError(
         operation: "decode configuration as UTF-8", url: resolvedURL, code: EILSEQ)
     }
-    return (resolvedURL, text)
+    return (resolvedURL, text, file.data)
   }
 
   private func expectedTarget(home: URL, stateRoot: URL) -> String {
@@ -586,7 +654,8 @@ struct KeybindingProviderInspector: Sendable {
         record.backupPath == nil,
         record.originalDigest == nil,
         record.originalLinkDestination == nil,
-        record.originalFileMode == nil
+        record.originalFileMode == nil,
+        record.originalMetadataDigest == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "absent keybinding entry ownership contains adoption evidence"
@@ -601,7 +670,8 @@ struct KeybindingProviderInspector: Sendable {
         record.backupPath == manager.relativePath(backup, below: context.stateRoot),
         record.originalDigest != nil,
         record.originalLinkDestination == nil,
-        record.originalFileMode != nil
+        record.originalFileMode != nil,
+        record.originalMetadataDigest != nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "regular-file keybinding adoption evidence is incomplete"
@@ -612,7 +682,8 @@ struct KeybindingProviderInspector: Sendable {
         record.backupPath == nil,
         let destination = record.originalLinkDestination,
         record.originalDigest == sha256Digest(Data(destination.utf8)),
-        record.originalFileMode == nil
+        record.originalFileMode == nil,
+        record.originalMetadataDigest == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "symbolic-link keybinding adoption evidence is incomplete"
@@ -641,6 +712,13 @@ struct KeybindingProviderInspector: Sendable {
     return parent.appending(path: destination).standardizedFileURL
   }
 
+  private static let absentEvidence = KeybindingAdoptionEvidence(
+    kind: .absent,
+    linkDestination: nil,
+    contentDigest: nil,
+    inventory: []
+  )
+
   private func result(
     _ status: KeybindingProviderStatus,
     entry: URL,
@@ -649,7 +727,8 @@ struct KeybindingProviderInspector: Sendable {
     source: URL? = nil,
     originalTarget: String? = nil,
     message: String,
-    sourceConfiguration: String? = nil
+    sourceConfiguration: String? = nil,
+    adoptionEvidence: KeybindingAdoptionEvidence? = nil
   ) -> KeybindingProviderInspection {
     KeybindingProviderInspection(
       status: status,
@@ -659,7 +738,9 @@ struct KeybindingProviderInspector: Sendable {
       originalTarget: originalTarget,
       expectedTarget: expectedTarget,
       message: message,
-      sourceConfiguration: sourceConfiguration
+      adoptionEvidenceDigest: adoptionEvidence?.digest,
+      sourceConfiguration: sourceConfiguration,
+      adoptionEvidence: adoptionEvidence
     )
   }
 }
