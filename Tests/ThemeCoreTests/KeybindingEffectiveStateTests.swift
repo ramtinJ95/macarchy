@@ -5,6 +5,21 @@ import Testing
 
 struct KeybindingEffectiveStateTests {
   @Test
+  func absentDefaultProfileInheritsEveryPackagedBindingAndMetadataRecord() throws {
+    let fixture = try EffectiveStateFixture()
+    defer { fixture.remove() }
+
+    let state = fixture.inspect(profileRequired: false)
+
+    #expect(!state.configuration.isBlocked)
+    #expect(state.configuration.sources.profileStatus == "absent_default")
+    #expect(state.attributedBindings.map(\.binding.identity) == ["alt-j", "alt-k"])
+    #expect(state.attributedBindings.allSatisfy { $0.commandSource == .packagedDefault })
+    #expect(state.attributedBindings.allSatisfy { $0.metadataSource == .packagedDefault })
+    #expect(state.disabledDefaults.isEmpty)
+  }
+
+  @Test
   func attributesPackagedReplacementAdditionAndDisableFromOneReadOnlyLoad() throws {
     let fixture = try EffectiveStateFixture()
     defer { fixture.remove() }
@@ -64,6 +79,31 @@ struct KeybindingEffectiveStateTests {
     #expect(state.generationAgreement == .unavailable)
     #expect(
       state.configuration.diagnostics.map(\.code) == ["unknown_disabled_identity"]
+    )
+  }
+
+  @Test
+  func invalidNativeOverridePreservesExactSourceAndLineDiagnostics() throws {
+    let fixture = try EffectiveStateFixture()
+    defer { fixture.remove() }
+    try fixture.writeProfile(
+      disabled: [],
+      override: "unsupported enabled input\nstill unsupported\n"
+    )
+
+    let state = fixture.inspect(profileRequired: true)
+
+    #expect(state.configuration.isBlocked)
+    #expect(state.generationAgreement == .unavailable)
+    #expect(
+      state.configuration.diagnostics.map(\.code) == [
+        "unsupported_syntax", "unsupported_syntax",
+      ])
+    #expect(state.configuration.diagnostics.map(\.line) == [1, 2])
+    #expect(
+      state.configuration.diagnostics.allSatisfy {
+        $0.source.hasSuffix("/profile/personal.skhdrc")
+      }
     )
   }
 }
