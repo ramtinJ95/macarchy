@@ -1003,7 +1003,11 @@ extension SetupOwnershipManager {
 
     func hasCopiedMetadata(from other: Self) -> Bool {
       mode == other.mode
-        && owner == other.owner
+        && hasCopiedMetadataIgnoringMode(from: other)
+    }
+
+    func hasCopiedMetadataIgnoringMode(from other: Self) -> Bool {
+      owner == other.owner
         && group == other.group
         && flags == other.flags
         && modifiedSeconds == other.modifiedSeconds
