@@ -55,6 +55,10 @@ cp "$fixture/profile.toml" "$fixture/keybindings.skhdrc" \
 snapshot_home() {
   local destination=$1
   local root=$2
+  if [[ ${destination:A} == ${root:A} || ${destination:A} == ${root:A}/* ]]; then
+    print -u2 "snapshot output must be outside its root: $destination"
+    exit 64
+  fi
   "$snapshot_helper" "$root" > "$destination"
 }
 
@@ -90,6 +94,70 @@ mkdir -p "$symlink_root"
 ln -s missing "$symlink_root/entry"
 assert_snapshot_rejected \
   symlink "$symlink_root" "snapshot entry is not a pinned regular file or directory"
+
+evidence_root="$temporary_directory/snapshot-evidence"
+payload="$temporary_directory/snapshot-payload"
+mkdir -p "$evidence_root"
+print -rn -- "unchanged payload" > "$payload"
+cp "$payload" "$evidence_root/entry"
+chmod 600 "$evidence_root/entry"
+snapshot_home "$temporary_directory/evidence-original.json" "$evidence_root"
+cp "$payload" "$evidence_root/replacement"
+chmod 600 "$evidence_root/replacement"
+mv -f "$evidence_root/replacement" "$evidence_root/entry"
+snapshot_home "$temporary_directory/evidence-replaced.json" "$evidence_root"
+[[ "$(/usr/bin/plutil -extract 1.digest raw -o - \
+  "$temporary_directory/evidence-original.json")" \
+  == "$(/usr/bin/plutil -extract 1.digest raw -o - \
+    "$temporary_directory/evidence-replaced.json")" ]]
+[[ "$(/usr/bin/plutil -extract 1.mode raw -o - \
+  "$temporary_directory/evidence-original.json")" \
+  == "$(/usr/bin/plutil -extract 1.mode raw -o - \
+    "$temporary_directory/evidence-replaced.json")" ]]
+[[ "$(/usr/bin/plutil -extract 1.device raw -o - \
+  "$temporary_directory/evidence-original.json")" \
+  == "$(/usr/bin/plutil -extract 1.device raw -o - \
+    "$temporary_directory/evidence-replaced.json")" ]]
+[[ "$(/usr/bin/plutil -extract 1.inode raw -o - \
+  "$temporary_directory/evidence-original.json")" \
+  != "$(/usr/bin/plutil -extract 1.inode raw -o - \
+    "$temporary_directory/evidence-replaced.json")" ]]
+if cmp -s \
+  "$temporary_directory/evidence-original.json" \
+  "$temporary_directory/evidence-replaced.json"
+then
+  print -u2 "same-byte same-mode replacement was absent from snapshot evidence"
+  exit 1
+fi
+
+cp "$temporary_directory/evidence-replaced.json" \
+  "$temporary_directory/evidence-before-rewrite.json"
+cat "$payload" > "$evidence_root/entry"
+touch -t 200101010101.01 "$evidence_root/entry"
+snapshot_home "$temporary_directory/evidence-rewritten.json" "$evidence_root"
+[[ "$(/usr/bin/plutil -extract 1.digest raw -o - \
+  "$temporary_directory/evidence-before-rewrite.json")" \
+  == "$(/usr/bin/plutil -extract 1.digest raw -o - \
+    "$temporary_directory/evidence-rewritten.json")" ]]
+[[ "$(/usr/bin/plutil -extract 1.mode raw -o - \
+  "$temporary_directory/evidence-before-rewrite.json")" \
+  == "$(/usr/bin/plutil -extract 1.mode raw -o - \
+    "$temporary_directory/evidence-rewritten.json")" ]]
+[[ "$(/usr/bin/plutil -extract 1.device raw -o - \
+  "$temporary_directory/evidence-before-rewrite.json")" \
+  == "$(/usr/bin/plutil -extract 1.device raw -o - \
+    "$temporary_directory/evidence-rewritten.json")" ]]
+[[ "$(/usr/bin/plutil -extract 1.inode raw -o - \
+  "$temporary_directory/evidence-before-rewrite.json")" \
+  == "$(/usr/bin/plutil -extract 1.inode raw -o - \
+    "$temporary_directory/evidence-rewritten.json")" ]]
+if cmp -s \
+  "$temporary_directory/evidence-before-rewrite.json" \
+  "$temporary_directory/evidence-rewritten.json"
+then
+  print -u2 "same-byte same-mode rewrite was absent from snapshot evidence"
+  exit 1
+fi
 
 write_expected_identities() {
   cat > "$1" <<'EOF'
@@ -180,6 +248,13 @@ snapshot_home "$temporary_directory/home-before.txt" "$home"
 snapshot_home "$temporary_directory/resources-before.txt" "$packaged_resources"
 cd "$work"
 
+for run in default-first default-second; do
+  HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+    "$binary" keybindings plan \
+      --state-root "$state_root" \
+      --json > "$temporary_directory/$run.json"
+done
+
 for run in first second; do
   HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
     "$binary" keybindings plan \
@@ -188,12 +263,19 @@ for run in first second; do
       --json > "$temporary_directory/$run.json"
 done
 
+cmp "$temporary_directory/default-first.json" "$temporary_directory/default-second.json"
 cmp "$temporary_directory/first.json" "$temporary_directory/second.json"
 snapshot_home "$temporary_directory/home-after.txt" "$home"
 snapshot_home "$temporary_directory/resources-after.txt" "$packaged_resources"
 cmp "$temporary_directory/home-before.txt" "$temporary_directory/home-after.txt"
 cmp "$temporary_directory/resources-before.txt" "$temporary_directory/resources-after.txt"
 
+[[ "$(/usr/bin/plutil -extract outcome raw -o - \
+  "$temporary_directory/default-first.json")" == "ready" ]]
+[[ "$(/usr/bin/plutil -extract mutated raw -o - \
+  "$temporary_directory/default-first.json")" == "false" ]]
+[[ "$(/usr/bin/plutil -extract summary.effective raw -o - \
+  "$temporary_directory/default-first.json")" == "48" ]]
 [[ "$(/usr/bin/plutil -extract outcome raw -o - "$temporary_directory/first.json")" == "ready" ]]
 [[ "$(/usr/bin/plutil -extract mutated raw -o - "$temporary_directory/first.json")" == "false" ]]
 [[ "$(/usr/bin/plutil -extract summary.effective raw -o - "$temporary_directory/first.json")" == "48" ]]

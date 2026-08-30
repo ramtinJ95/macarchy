@@ -240,6 +240,11 @@ struct KeybindingPortabilityTests {
     }
     let firstBefore = try filesystemSnapshot(at: firstInputs)
     let secondBefore = try filesystemSnapshot(at: secondInputs)
+    #expect(firstBefore != secondBefore)
+    #expect(
+      firstBefore.map(\.portableContent)
+        == secondBefore.map(\.portableContent)
+    )
     #expect(
       firstBefore.contains {
         $0.path == "empty" && $0.type == "directory" && $0.mode == 0o700
@@ -405,6 +410,59 @@ struct KeybindingPortabilityTests {
     }
   }
 
+  @Test
+  func filesystemSnapshotDetectsSameByteSameModeReplacementAndRewrite() throws {
+    let environment = try isolatedEnvironment()
+    defer { try? FileManager.default.removeItem(at: environment.root) }
+    let inventory = environment.root.appending(path: "evidence", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: inventory, withIntermediateDirectories: false)
+    let entry = inventory.appending(path: "entry")
+    let replacement = inventory.appending(path: "replacement")
+    let payload = Data("unchanged payload".utf8)
+    try payload.write(to: entry)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: entry.path
+    )
+    let original = try #require(filesystemSnapshot(at: inventory).first { $0.path == "entry" })
+
+    try payload.write(to: replacement)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: replacement.path
+    )
+    #expect(rename(replacement.path, entry.path) == 0)
+    let replaced = try #require(filesystemSnapshot(at: inventory).first { $0.path == "entry" })
+
+    #expect(replaced.portableContent == original.portableContent)
+    #expect(replaced.device == original.device)
+    #expect(replaced.inode != original.inode)
+    #expect(replaced != original)
+
+    let writable = try FileHandle(forWritingTo: entry)
+    defer { try? writable.close() }
+    try writable.seek(toOffset: 0)
+    try writable.write(contentsOf: payload)
+    try writable.truncate(atOffset: UInt64(payload.count))
+    try writable.synchronize()
+    try FileManager.default.setAttributes(
+      [.modificationDate: Date(timeIntervalSince1970: 978_393_661)],
+      ofItemAtPath: entry.path
+    )
+    let rewritten = try #require(filesystemSnapshot(at: inventory).first { $0.path == "entry" })
+
+    #expect(rewritten.portableContent == replaced.portableContent)
+    #expect(rewritten.device == replaced.device)
+    #expect(rewritten.inode == replaced.inode)
+    #expect(
+      rewritten.modifiedSeconds != replaced.modifiedSeconds
+        || rewritten.modifiedNanoseconds != replaced.modifiedNanoseconds
+        || rewritten.changedSeconds != replaced.changedSeconds
+        || rewritten.changedNanoseconds != replaced.changedNanoseconds
+    )
+    #expect(rewritten != replaced)
+  }
+
   private func plan(
     resources: URL,
     profile: URL,
@@ -482,7 +540,12 @@ struct KeybindingPortabilityTests {
       switch initial.st_mode & S_IFMT {
       case S_IFDIR:
         entries.append(
-          FilesystemSnapshotEntry(path: path, type: "directory", mode: mode)
+          FilesystemSnapshotEntry(
+            path: path,
+            type: "directory",
+            mode: mode,
+            metadata: initial
+          )
         )
         let inventory = try PinnedFilesystem.directoryEntries(
           descriptor: descriptor,
@@ -543,7 +606,8 @@ struct KeybindingPortabilityTests {
             path: path,
             type: "regular",
             mode: mode,
-            digest: sha256Digest(file.data)
+            digest: sha256Digest(file.data),
+            metadata: initial
           )
         )
       default:
@@ -629,7 +693,37 @@ private struct FilesystemSnapshotEntry: Equatable {
   let path: String
   let type: String
   let mode: UInt16
-  var digest: String? = nil
+  let digest: String?
+  let device: UInt64
+  let inode: UInt64
+  let modifiedSeconds: Int64
+  let modifiedNanoseconds: Int64
+  let changedSeconds: Int64
+  let changedNanoseconds: Int64
+
+  init(path: String, type: String, mode: UInt16, digest: String? = nil, metadata: stat) {
+    self.path = path
+    self.type = type
+    self.mode = mode
+    self.digest = digest
+    device = UInt64(metadata.st_dev)
+    inode = UInt64(metadata.st_ino)
+    modifiedSeconds = Int64(metadata.st_mtimespec.tv_sec)
+    modifiedNanoseconds = Int64(metadata.st_mtimespec.tv_nsec)
+    changedSeconds = Int64(metadata.st_ctimespec.tv_sec)
+    changedNanoseconds = Int64(metadata.st_ctimespec.tv_nsec)
+  }
+
+  var portableContent: FilesystemSnapshotContent {
+    FilesystemSnapshotContent(path: path, type: type, mode: mode, digest: digest)
+  }
+}
+
+private struct FilesystemSnapshotContent: Equatable {
+  let path: String
+  let type: String
+  let mode: UInt16
+  let digest: String?
 }
 
 private enum FilesystemSnapshotError: Error, Equatable {
