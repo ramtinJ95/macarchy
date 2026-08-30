@@ -4,6 +4,10 @@ import ThemeCore
 
 enum KeybindingProviderCheckpoint: Equatable, Sendable {
   case manifestPrepared
+  case regularPathInspected
+  case regularCaptureReady
+  case backupPublicationAuthenticated
+  case backupPublicationReady
   case backupWritten
   case directoryClaimCreated
   case directoryClaimPopulated
@@ -23,6 +27,7 @@ enum KeybindingProviderCheckpoint: Equatable, Sendable {
   case deletionSourcePinned
   case deletionCandidatePublished
   case deletionCandidateAuthenticated
+  case legacyRestorationPublicationCreated
   case providerReplaced
   case originalRestored
 }
@@ -64,10 +69,11 @@ struct KeybindingProviderTransaction: Sendable {
     expectedEvidence: KeybindingAdoptionEvidence,
     approvedEvidenceDigest: String?
   ) throws {
-    _ = try captureApprovedOriginal(
+    let original = try captureApprovedOriginal(
       expectedEvidence: expectedEvidence,
       approvedEvidenceDigest: approvedEvidenceDigest
     )
+    original.closePinnedDescriptor()
   }
 
   func installEntry(
@@ -89,8 +95,11 @@ struct KeybindingProviderTransaction: Sendable {
       expectedEvidence: expectedEvidence,
       approvedEvidenceDigest: approvedEvidenceDigest
     )
+    defer { original.closePinnedDescriptor() }
     let record = original.record(entry: entry, backup: backup, manager: manager, context: context)
     do {
+      try faultInjector(.regularCaptureReady)
+      try revalidateCapturedRegularOriginal(original, manager: manager)
       try manager.save(record: record, records: &records, context: context)
       try faultInjector(.manifestPrepared)
       if let data = original.data {
@@ -178,6 +187,7 @@ struct KeybindingProviderTransaction: Sendable {
         throw SetupOwnershipError.ownershipDrift(entry)
       }
       if originalKind(record) == .regularFile {
+        _ = try validateBackupPublicationResidue(record, manager: manager)
         if try backupExists() {
           _ = try readOriginalBackup(record, manager: manager)
         } else {
@@ -210,10 +220,15 @@ struct KeybindingProviderTransaction: Sendable {
     try verifyOriginal(record, context: context)
     let manager = SetupOwnershipManager()
     if originalKind(record) == .regularFile {
-      if try backupExists() || backupDeletionResidueExists(record) {
+      let backupPublicationExists =
+        try validateBackupPublicationResidue(record, manager: manager) != nil
+      if try backupExists() || backupDeletionResidueExists(record) || backupPublicationExists {
         record = record.withPhase(.teardownPrepared)
         try manager.save(record: record, records: &records, context: context)
-        try removeAuthenticatedBackup(record, manager: manager)
+        if try backupExists() || backupDeletionResidueExists(record) {
+          try removeAuthenticatedBackup(record, manager: manager)
+        }
+        try removeBackupPublicationResidue(record)
       } else {
         guard record.phase == .prepared || record.phase == .teardownPrepared else {
           throw SetupOwnershipError.corruptBackup(backup)
@@ -280,6 +295,11 @@ struct KeybindingProviderTransaction: Sendable {
         name: ".skhdrc.macarchy-keybindings",
         url: directory.appending(path: ".skhdrc.macarchy-keybindings")
       )
+      try requireAbsent(
+        parentDescriptor: directoryDescriptor,
+        name: legacyRestorationName,
+        url: directory.appending(path: legacyRestorationName)
+      )
     }
   }
 
@@ -343,7 +363,8 @@ struct KeybindingProviderTransaction: Sendable {
         fileDevice: UInt64(directoryMetadata.st_dev),
         fileInode: UInt64(directoryMetadata.st_ino),
         sourceDigest: sha256Digest(source.data),
-        inventory: inventory.entries
+        inventory: inventory.entries,
+        pinnedRegularDescriptor: nil
       )
     }
     guard directoryMetadata.st_mode & S_IFMT == S_IFDIR else {
@@ -373,19 +394,24 @@ struct KeybindingProviderTransaction: Sendable {
         fileDevice: nil,
         fileInode: nil,
         sourceDigest: nil,
-        inventory: []
+        inventory: [],
+        pinnedRegularDescriptor: nil
       )
     }
     switch metadata.st_mode & S_IFMT {
     case S_IFREG:
       guard metadata.st_nlink == 1 else { throw SetupOwnershipError.ownershipDrift(entry) }
+      try faultInjector(.regularPathInspected)
       let descriptor = try manager.openPinnedRegularFile(
         parentDescriptor: directoryDescriptor,
         name: "skhdrc",
         url: entry,
         label: "skhd entry"
       )
-      defer { Darwin.close(descriptor) }
+      var descriptorTransferred = false
+      defer {
+        if !descriptorTransferred { Darwin.close(descriptor) }
+      }
       let data = try manager.readPinnedRegularFile(
         descriptor: descriptor,
         url: entry,
@@ -396,7 +422,19 @@ struct KeybindingProviderTransaction: Sendable {
         url: entry,
         label: "skhd entry"
       )
-      guard snapshot.linkCount == 1 else { throw SetupOwnershipError.ownershipDrift(entry) }
+      let boundMetadata = try PinnedFilesystem.metadata(
+        parentDescriptor: directoryDescriptor,
+        name: "skhdrc",
+        url: entry
+      )
+      guard
+        snapshot.mode & UInt32(S_IFMT) == UInt32(S_IFREG),
+        snapshot.linkCount == 1,
+        UInt64(boundMetadata.st_dev) == snapshot.device,
+        UInt64(boundMetadata.st_ino) == snapshot.inode,
+        boundMetadata.st_mode & S_IFMT == S_IFREG,
+        boundMetadata.st_nlink == 1
+      else { throw SetupOwnershipError.ownershipDrift(entry) }
       guard snapshot.extendedAttributes[Self.claimMarkerAttribute] == nil else {
         throw KeybindingsApplyError.blocked(
           "regular skhd entry uses Macarchy's reserved claim-marker extended attribute"
@@ -407,16 +445,18 @@ struct KeybindingProviderTransaction: Sendable {
           "regular skhd entry uses immutable, append-only, or another unsupported restrictive flag"
         )
       }
+      descriptorTransferred = true
       return OriginalEntry(
         kind: .regularFile,
         data: data,
         linkDestination: nil,
-        fileMode: UInt16(metadata.st_mode & mode_t(0o7777)),
+        fileMode: UInt16(snapshot.mode & 0o7777),
         metadataDigest: snapshot.restorableMetadataDigest(),
         fileDevice: snapshot.device,
         fileInode: snapshot.inode,
         sourceDigest: sha256Digest(data),
-        inventory: []
+        inventory: [],
+        pinnedRegularDescriptor: descriptor
       )
     case S_IFLNK:
       let destination = try PinnedFilesystem.symlinkDestination(
@@ -449,7 +489,8 @@ struct KeybindingProviderTransaction: Sendable {
         fileDevice: UInt64(metadata.st_dev),
         fileInode: UInt64(metadata.st_ino),
         sourceDigest: sha256Digest(source.data),
-        inventory: []
+        inventory: [],
+        pinnedRegularDescriptor: nil
       )
     default:
       throw SetupOwnershipError.ownershipDrift(entry)
@@ -467,6 +508,10 @@ struct KeybindingProviderTransaction: Sendable {
       throw SetupOwnershipError.ownershipDrift(entry)
     }
     let original = try captureOriginal(manager: manager)
+    var returned = false
+    defer {
+      if !returned { original.closePinnedDescriptor() }
+    }
     guard original.evidence == expectedEvidence else {
       throw KeybindingsApplyError.blocked(
         "skhd adoption evidence changed after preview; review the new plan"
@@ -487,7 +532,51 @@ struct KeybindingProviderTransaction: Sendable {
       throw SetupOwnershipError.orphanedBackup(backup)
     }
     try requireInstallClaimAbsent(for: original)
+    returned = true
     return original
+  }
+
+  private func revalidateCapturedRegularOriginal(
+    _ original: OriginalEntry,
+    manager: SetupOwnershipManager
+  ) throws {
+    guard original.kind == .regularFile,
+      let descriptor = original.pinnedRegularDescriptor
+    else { return }
+    guard lseek(descriptor, 0, SEEK_SET) == 0 else {
+      throw posixError("rewind pinned skhd entry", entry)
+    }
+    let data = try manager.readPinnedRegularFile(
+      descriptor: descriptor,
+      url: entry,
+      label: "skhd entry"
+    ).data
+    let snapshot = try manager.regularFileSnapshot(
+      descriptor: descriptor,
+      url: entry,
+      label: "skhd entry"
+    )
+    let parent = try PinnedFilesystem.openDirectory(at: directory)
+    defer { Darwin.close(parent) }
+    let path = try PinnedFilesystem.metadata(
+      parentDescriptor: parent,
+      name: "skhdrc",
+      url: entry
+    )
+    guard
+      snapshot.mode & UInt32(S_IFMT) == UInt32(S_IFREG),
+      snapshot.device == original.fileDevice,
+      snapshot.inode == original.fileInode,
+      snapshot.linkCount == 1,
+      snapshot.mode & 0o7777 == UInt32(original.fileMode ?? 0),
+      snapshot.flags & Self.unsupportedRestorationFlags == 0,
+      snapshot.restorableMetadataDigest() == original.metadataDigest,
+      sha256Digest(data) == original.sourceDigest,
+      UInt64(path.st_dev) == snapshot.device,
+      UInt64(path.st_ino) == snapshot.inode,
+      path.st_mode & S_IFMT == S_IFREG,
+      path.st_nlink == 1
+    else { throw SetupOwnershipError.ownershipDrift(entry) }
   }
 
   private func requireInstallClaimAbsent(for original: OriginalEntry) throws {
@@ -542,6 +631,7 @@ struct KeybindingProviderTransaction: Sendable {
     manager: SetupOwnershipManager
   ) throws {
     guard originalKind(record) == .regularFile else { return }
+    try recoverBackupPublication(record, manager: manager)
     if try backupExists() {
       _ = try readOriginalBackup(record, manager: manager)
       return
@@ -1132,7 +1222,7 @@ struct KeybindingProviderTransaction: Sendable {
 
     let backupParent = try openBackupDirectory(create: true)
     defer { Darwin.close(backupParent) }
-    let temporaryName = ".keybindings-skhdrc-\(UUID().uuidString.lowercased())"
+    let temporaryName = try publishingName(backup.lastPathComponent, record: record)
     let temporaryURL = backup.deletingLastPathComponent().appending(path: temporaryName)
     let temporary = temporaryName.withCString {
       Darwin.openat(
@@ -1144,43 +1234,72 @@ struct KeybindingProviderTransaction: Sendable {
     }
     guard temporary >= 0 else { throw posixError("create keybinding backup", temporaryURL) }
     defer { Darwin.close(temporary) }
-    var published = false
-    defer {
-      if !published {
-        temporaryName.withCString { _ = Darwin.unlinkat(backupParent, $0, 0) }
-      }
+    guard fcopyfile(source, temporary, nil, copyfile_flags_t(COPYFILE_METADATA)) == 0 else {
+      throw posixError("copy keybinding backup metadata", temporaryURL)
     }
+    let copiedSnapshot = try manager.regularFileSnapshot(
+      descriptor: temporary,
+      url: temporaryURL,
+      label: "keybinding backup",
+      excludingExtendedAttribute: Self.claimMarkerAttribute
+    )
+    guard copiedSnapshot.hasCopiedMetadata(from: sourceSnapshot) else {
+      throw SetupOwnershipError.ownershipDrift(entry)
+    }
+    guard fchmod(temporary, mode_t(0o600)) == 0 else {
+      throw posixError("secure keybinding backup", temporaryURL)
+    }
+    try markClaim(
+      descriptor: temporary,
+      parentDescriptor: backupParent,
+      name: temporaryName,
+      record: record,
+      url: temporaryURL
+    )
+    try faultInjector(.backupPublicationAuthenticated)
     try manager.write(
       data,
       descriptor: temporary,
       url: temporaryURL,
       operation: "write keybinding backup"
     )
-    guard fcopyfile(source, temporary, nil, copyfile_flags_t(COPYFILE_METADATA)) == 0 else {
-      throw posixError("copy keybinding backup metadata", temporaryURL)
+    var timestamps = [
+      timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT)),
+      timespec(
+        tv_sec: time_t(sourceSnapshot.modifiedSeconds),
+        tv_nsec: Int(sourceSnapshot.modifiedNanoseconds)
+      ),
+    ]
+    guard futimens(temporary, &timestamps) == 0 else {
+      throw posixError("restore keybinding backup modification time", temporaryURL)
     }
     guard fsync(temporary) == 0 else { throw posixError("sync keybinding backup", temporaryURL) }
     let snapshot = try manager.regularFileSnapshot(
       descriptor: temporary,
       url: temporaryURL,
-      label: "keybinding backup"
+      label: "keybinding backup",
+      excludingExtendedAttribute: Self.claimMarkerAttribute
     )
-    guard snapshot.hasCopiedMetadata(from: sourceSnapshot) else {
-      throw SetupOwnershipError.ownershipDrift(entry)
-    }
-    guard fchmod(temporary, mode_t(0o600)) == 0 else {
-      throw posixError("secure keybinding backup", temporaryURL)
-    }
-    guard fsync(temporary) == 0 else { throw posixError("sync keybinding backup", temporaryURL) }
     guard
-      snapshot.restorableMetadataDigest() == record.originalMetadataDigest,
-      try manager.regularFileSnapshot(
-        descriptor: temporary,
-        url: temporaryURL,
-        label: "keybinding backup"
-      ).restorableMetadataDigest(overridingMode: try originalMode(record))
+      snapshot.linkCount == 1,
+      snapshot.restorableMetadataDigest(overridingMode: try originalMode(record))
         == record.originalMetadataDigest
     else { throw SetupOwnershipError.ownershipDrift(entry) }
+    try faultInjector(.backupPublicationReady)
+    var pinnedIdentity = stat()
+    let pathIdentity = try PinnedFilesystem.metadata(
+      parentDescriptor: backupParent,
+      name: temporaryName,
+      url: temporaryURL
+    )
+    guard
+      fstat(temporary, &pinnedIdentity) == 0,
+      pathIdentity.st_dev == pinnedIdentity.st_dev,
+      pathIdentity.st_ino == pinnedIdentity.st_ino,
+      pathIdentity.st_mode & S_IFMT == S_IFREG,
+      pathIdentity.st_nlink == 1,
+      try claimMarkerMatches(descriptor: temporary, record: record, url: temporaryURL)
+    else { throw SetupOwnershipError.ownershipDrift(temporaryURL) }
     let publication = temporaryName.withCString { sourceName in
       backup.lastPathComponent.withCString { destination in
         Darwin.renameatx_np(
@@ -1193,9 +1312,88 @@ struct KeybindingProviderTransaction: Sendable {
       }
     }
     guard publication == 0 else { throw posixError("publish keybinding backup", backup) }
-    published = true
     try sync(backupParent, url: backup.deletingLastPathComponent())
     _ = try readOriginalBackup(record, manager: manager)
+  }
+
+  private func recoverBackupPublication(
+    _ record: SetupOwnershipRecord,
+    manager: SetupOwnershipManager
+  ) throws {
+    guard
+      let complete = try validateBackupPublicationResidue(record, manager: manager)
+    else { return }
+    let parent = try openBackupDirectory(create: false)
+    defer { Darwin.close(parent) }
+    let name = try publishingName(backup.lastPathComponent, record: record)
+    let url = backup.deletingLastPathComponent().appending(path: name)
+    if try backupExists() {
+      _ = try readOriginalBackup(record, manager: manager)
+      try removeMarkedItem(
+        parentDescriptor: parent,
+        name: name,
+        record: record,
+        url: url
+      )
+    } else if complete {
+      try publish(
+        parentDescriptor: parent,
+        from: name,
+        to: backup.lastPathComponent,
+        url: backup
+      )
+      _ = try readOriginalBackup(record, manager: manager)
+    } else {
+      try removeMarkedItem(
+        parentDescriptor: parent,
+        name: name,
+        record: record,
+        url: url
+      )
+    }
+  }
+
+  private func validateBackupPublicationResidue(
+    _ record: SetupOwnershipRecord,
+    manager: SetupOwnershipManager
+  ) throws -> Bool? {
+    let parent: Int32
+    do {
+      parent = try openBackupDirectory(create: false)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
+    defer { Darwin.close(parent) }
+    let name = try publishingName(backup.lastPathComponent, record: record)
+    let url = backup.deletingLastPathComponent().appending(path: name)
+    guard try itemExists(parentDescriptor: parent, name: name, url: url) else { return nil }
+    let descriptor = try manager.openPinnedRegularFile(
+      parentDescriptor: parent,
+      name: name,
+      url: url,
+      label: "keybinding backup publication"
+    )
+    defer { Darwin.close(descriptor) }
+    guard
+      try claimMarkerMatches(descriptor: descriptor, record: record, url: url)
+    else { throw SetupOwnershipError.ownershipDrift(url) }
+    let file = try manager.readPinnedRegularFile(
+      descriptor: descriptor,
+      url: url,
+      label: "keybinding backup publication"
+    )
+    let snapshot = try manager.regularFileSnapshot(
+      descriptor: descriptor,
+      url: url,
+      label: "keybinding backup publication",
+      excludingExtendedAttribute: Self.claimMarkerAttribute
+    )
+    guard snapshot.linkCount == 1 else { throw SetupOwnershipError.ownershipDrift(url) }
+    let mode = try originalMode(record)
+    return file.permissions == 0o600
+      && sha256Digest(file.data) == record.originalDigest
+      && snapshot.restorableMetadataDigest(overridingMode: mode)
+        == record.originalMetadataDigest
   }
 
   private func readOriginalBackup(
@@ -1219,9 +1417,11 @@ struct KeybindingProviderTransaction: Sendable {
     let snapshot = try manager.regularFileSnapshot(
       descriptor: descriptor,
       url: backup,
-      label: "keybinding backup"
+      label: "keybinding backup",
+      excludingExtendedAttribute: Self.claimMarkerAttribute
     )
     guard
+      try claimMarkerMatches(descriptor: descriptor, record: record, url: backup),
       file.permissions == 0o600,
       snapshot.linkCount == 1,
       sha256Digest(file.data) == record.originalDigest,
@@ -1513,6 +1713,7 @@ struct KeybindingProviderTransaction: Sendable {
       name: ".skhdrc.macarchy-keybindings",
       url: directory.appending(path: ".skhdrc.macarchy-keybindings")
     )
+    _ = try legacyRestorationResidueExists(parentDescriptor: descriptor, record: record)
     do {
       try verifyLegacyManagedLink(
         parentDescriptor: descriptor,
@@ -1528,6 +1729,7 @@ struct KeybindingProviderTransaction: Sendable {
   private func removeLegacyManagedEntry(_ record: SetupOwnershipRecord) throws {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
+    try removeLegacyRestorationResidue(parentDescriptor: descriptor, record: record)
     do {
       try removePinnedItem(
         parentDescriptor: descriptor,
@@ -1550,6 +1752,12 @@ struct KeybindingProviderTransaction: Sendable {
   private func restoreLegacyManagedEntry(_ record: SetupOwnershipRecord) throws {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
+    let publicationName = legacyRestorationName
+    let publicationURL = directory.appending(path: publicationName)
+    let residueExists = try legacyRestorationResidueExists(
+      parentDescriptor: descriptor,
+      record: record
+    )
     do {
       try verifyLegacyManagedLink(
         parentDescriptor: descriptor,
@@ -1557,27 +1765,80 @@ struct KeybindingProviderTransaction: Sendable {
         record: record,
         url: entry
       )
+      if residueExists {
+        try removeLegacyRestorationResidue(parentDescriptor: descriptor, record: record)
+      }
       return
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      let publicationName = ".skhdrc.macarchy-legacy-\(UUID().uuidString.lowercased())"
-      let publicationURL = directory.appending(path: publicationName)
-      let created = KeybindingProviderInspector.managedTarget.withCString { destination in
-        publicationName.withCString { Darwin.symlinkat(destination, descriptor, $0) }
-      }
-      guard created == 0 else {
-        throw posixError("create legacy keybinding provider link", publicationURL)
-      }
-      do {
-        try publish(
+      if !residueExists {
+        let created = KeybindingProviderInspector.managedTarget.withCString { destination in
+          publicationName.withCString { Darwin.symlinkat(destination, descriptor, $0) }
+        }
+        guard created == 0 else {
+          throw posixError("create legacy keybinding provider link", publicationURL)
+        }
+        try faultInjector(.legacyRestorationPublicationCreated)
+        try verifyLegacyManagedLink(
           parentDescriptor: descriptor,
-          from: publicationName,
-          to: "skhdrc",
-          url: entry
+          name: publicationName,
+          record: record,
+          url: publicationURL
         )
-      } catch {
-        _ = publicationName.withCString { Darwin.unlinkat(descriptor, $0, 0) }
-        throw error
       }
+      try publish(
+        parentDescriptor: descriptor,
+        from: publicationName,
+        to: "skhdrc",
+        url: entry
+      )
+    }
+  }
+
+  private var legacyRestorationName: String {
+    ".skhdrc.macarchy-legacy-restoration"
+  }
+
+  private func legacyRestorationResidueExists(
+    parentDescriptor: Int32,
+    record: SetupOwnershipRecord
+  ) throws -> Bool {
+    let url = directory.appending(path: legacyRestorationName)
+    guard
+      try itemExists(
+        parentDescriptor: parentDescriptor,
+        name: legacyRestorationName,
+        url: url
+      )
+    else { return false }
+    try verifyLegacyManagedLink(
+      parentDescriptor: parentDescriptor,
+      name: legacyRestorationName,
+      record: record,
+      url: url
+    )
+    return true
+  }
+
+  private func removeLegacyRestorationResidue(
+    parentDescriptor: Int32,
+    record: SetupOwnershipRecord
+  ) throws {
+    guard
+      try legacyRestorationResidueExists(parentDescriptor: parentDescriptor, record: record)
+    else { return }
+    let url = directory.appending(path: legacyRestorationName)
+    try removePinnedItem(
+      parentDescriptor: parentDescriptor,
+      name: legacyRestorationName,
+      url: url,
+      record: record
+    ) { name, candidate in
+      try verifyLegacyManagedLink(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        record: record,
+        url: candidate
+      )
     }
   }
 
@@ -1620,6 +1881,11 @@ struct KeybindingProviderTransaction: Sendable {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
     try requireAbsent(parentDescriptor: descriptor, name: "skhdrc", url: entry)
+    try requireAbsent(
+      parentDescriptor: descriptor,
+      name: legacyRestorationName,
+      url: directory.appending(path: legacyRestorationName)
+    )
   }
 
   private func originalKind(_ record: SetupOwnershipRecord) -> SetupOwnershipRecord.OriginalKind {
@@ -1768,9 +2034,11 @@ struct KeybindingProviderTransaction: Sendable {
       let snapshot = try manager.regularFileSnapshot(
         descriptor: descriptor,
         url: deletionURL,
-        label: "keybinding backup"
+        label: "keybinding backup",
+        excludingExtendedAttribute: Self.claimMarkerAttribute
       )
       guard
+        try claimMarkerMatches(descriptor: descriptor, record: record, url: deletionURL),
         file.permissions == 0o600,
         sha256Digest(file.data) == record.originalDigest,
         snapshot.linkCount == 1,
@@ -1778,6 +2046,23 @@ struct KeybindingProviderTransaction: Sendable {
           == record.originalMetadataDigest
       else { throw SetupOwnershipError.corruptBackup(backup) }
     }
+  }
+
+  private func removeBackupPublicationResidue(_ record: SetupOwnershipRecord) throws {
+    let parent: Int32
+    do {
+      parent = try openBackupDirectory(create: false)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    defer { Darwin.close(parent) }
+    let name = try publishingName(backup.lastPathComponent, record: record)
+    try removeMarkedItem(
+      parentDescriptor: parent,
+      name: name,
+      record: record,
+      url: backup.deletingLastPathComponent().appending(path: name)
+    )
   }
 
   private func openBackupDirectory(create: Bool) throws -> Int32 {
@@ -2683,6 +2968,11 @@ private struct OriginalEntry {
   let fileInode: UInt64?
   let sourceDigest: String?
   let inventory: [String]
+  let pinnedRegularDescriptor: Int32?
+
+  func closePinnedDescriptor() {
+    if let pinnedRegularDescriptor { Darwin.close(pinnedRegularDescriptor) }
+  }
 
   var evidence: KeybindingAdoptionEvidence {
     let evidenceKind: KeybindingAdoptionEvidence.Kind =
