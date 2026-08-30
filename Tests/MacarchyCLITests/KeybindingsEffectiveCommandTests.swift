@@ -173,7 +173,7 @@ struct KeybindingsEffectiveCommandTests {
     let doctorReport = try fixture.json(doctor.output)
     let findings = try #require(doctorReport["findings"] as? [[String: Any]])
 
-    let plan = try KeybindingsPlanCommandRunner.live.execute(
+    let plan = try fixture.planner().execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
@@ -184,15 +184,7 @@ struct KeybindingsEffectiveCommandTests {
     let planReport = try fixture.json(plan.output)
     let planned = try #require(planReport["bindings"] as? [[String: Any]])
 
-    let apply = try KeybindingsApplyCommandRunner(
-      lifecycle: KeybindingLifecycleController(
-        preflight: {},
-        restart: {},
-        reload: {},
-        verifyProcess: {},
-        inspectProcess: { .testRunning }
-      )
-    ).preview(
+    let apply = try fixture.applyRunner().preview(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
