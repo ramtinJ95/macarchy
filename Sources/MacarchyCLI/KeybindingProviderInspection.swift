@@ -55,6 +55,7 @@ struct KeybindingProviderInspection: Encodable, Sendable {
 struct KeybindingProviderInspector: Sendable {
   static let managedTarget = "../macarchy/keybindings/current/skhdrc"
   static let ownershipID = "keybindings.skhd-entry"
+  static let claimMarkerAttribute = "io.github.ramtinj95.macarchy.keybinding-claim"
 
   func inspect(
     homeDirectory: URL,
@@ -112,7 +113,7 @@ struct KeybindingProviderInspector: Sendable {
     }
     defer { Darwin.close(configurationDescriptor) }
 
-    let claimed: Bool
+    let ownershipRecord: SetupOwnershipRecord?
     switch entryOwnershipClaim(
       homeDirectory: home,
       stateRoot: stateRoot,
@@ -135,11 +136,12 @@ struct KeybindingProviderInspector: Sendable {
         ownership: "recovery_required",
         message: "keybinding entry ownership transaction is prepared but incomplete"
       )
-    case .claimed:
-      claimed = true
+    case .claimed(let record):
+      ownershipRecord = record
     case .unclaimed:
-      claimed = false
+      ownershipRecord = nil
     }
+    let claimed = ownershipRecord != nil
 
     let directoryMetadata: stat
     do {
@@ -190,7 +192,7 @@ struct KeybindingProviderInspector: Sendable {
         expectedTarget: expectedTarget,
         stateRoot: stateRoot,
         generation: generation,
-        claimed: claimed
+        ownershipRecord: ownershipRecord
       )
     default:
       if claimed {
@@ -339,8 +341,9 @@ struct KeybindingProviderInspector: Sendable {
     expectedTarget: String,
     stateRoot: URL,
     generation: KeybindingGenerationInspection,
-    claimed: Bool
+    ownershipRecord: SetupOwnershipRecord?
   ) -> KeybindingProviderInspection {
+    let claimed = ownershipRecord != nil
     let directoryDescriptor: Int32
     do {
       directoryDescriptor = try PinnedFilesystem.openDirectory(
@@ -406,7 +409,16 @@ struct KeybindingProviderInspector: Sendable {
         )
       }
       if target == expectedTarget {
-        if claimed {
+        if let ownershipRecord {
+          do {
+            try validateManagedOwnershipMarkers(
+              directoryDescriptor: directoryDescriptor,
+              entry: entry,
+              record: ownershipRecord
+            )
+          } catch {
+            return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+          }
           return result(
             .managed,
             entry: entry,
@@ -627,7 +639,57 @@ struct KeybindingProviderInspector: Sendable {
     guard record.targetPath == entry.path, record.linkDestination == expectedTarget else {
       return .invalid("keybinding entry ownership record does not match the selected paths")
     }
-    return record.phase == .applied ? .claimed : .prepared
+    return record.phase == .applied ? .claimed(record) : .prepared
+  }
+
+  private func validateManagedOwnershipMarkers(
+    directoryDescriptor: Int32,
+    entry: URL,
+    record: SetupOwnershipRecord
+  ) throws {
+    guard
+      try Self.markerMatches(parentDescriptor: directoryDescriptor, name: "skhdrc", record: record)
+    else { throw SetupOwnershipError.ownershipDrift(entry) }
+    if record.originalKind == .directorySymbolicLink {
+      guard try Self.markerMatches(descriptor: directoryDescriptor, record: record) else {
+        throw SetupOwnershipError.ownershipDrift(entry.deletingLastPathComponent())
+      }
+    }
+  }
+
+  private static func markerMatches(
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord
+  ) throws -> Bool {
+    let descriptor = name.withCString {
+      Darwin.openat(parentDescriptor, $0, O_RDONLY | O_SYMLINK | O_CLOEXEC)
+    }
+    guard descriptor >= 0 else {
+      throw SetupOwnershipError.ownershipDrift(URL(filePath: record.targetPath))
+    }
+    defer { Darwin.close(descriptor) }
+    return try markerMatches(descriptor: descriptor, record: record)
+  }
+
+  private static func markerMatches(
+    descriptor: Int32,
+    record: SetupOwnershipRecord
+  ) throws -> Bool {
+    guard let nonce = record.claimNonce else { return false }
+    var value = [UInt8](repeating: 0, count: 64)
+    let count = claimMarkerAttribute.withCString {
+      Darwin.fgetxattr(descriptor, $0, &value, value.count, 0, 0)
+    }
+    if count < 0, errno == ENOATTR { return false }
+    guard count >= 0 else {
+      throw SetupOwnershipError.system(
+        "read keybinding ownership marker",
+        URL(filePath: record.targetPath),
+        String(cString: strerror(errno))
+      )
+    }
+    return Data(value.prefix(count)) == Data(nonce.utf8)
   }
 
   static func validateOwnershipRecord(
@@ -637,7 +699,7 @@ struct KeybindingProviderInspector: Sendable {
     let target = context.homeDirectory.appending(path: ".config/skhd/skhdrc")
     let expectedTarget = Self.managedTarget
     guard
-      [.prepared, .applied].contains(record.phase),
+      [.prepared, .applied, .teardownPrepared].contains(record.phase),
       record.kind == .symbolicLink,
       record.targetPath == target.path,
       record.installedDigest == sha256Digest(Data(expectedTarget.utf8)),
@@ -658,7 +720,9 @@ struct KeybindingProviderInspector: Sendable {
         record.originalFileMode == nil,
         record.originalMetadataDigest == nil,
         record.originalDevice == nil,
-        record.originalInode == nil
+        record.originalInode == nil,
+        record.originalSourceDigest == nil,
+        record.originalInventory == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "absent keybinding entry ownership contains adoption evidence"
@@ -676,7 +740,9 @@ struct KeybindingProviderInspector: Sendable {
         record.originalFileMode != nil,
         record.originalMetadataDigest != nil,
         record.originalDevice != nil,
-        record.originalInode != nil
+        record.originalInode != nil,
+        record.originalSourceDigest == record.originalDigest,
+        record.originalInventory == []
       else {
         throw SetupOwnershipError.invalidManifest(
           "regular-file keybinding adoption evidence is incomplete"
@@ -689,8 +755,11 @@ struct KeybindingProviderInspector: Sendable {
         record.originalDigest == sha256Digest(Data(destination.utf8)),
         record.originalFileMode == nil,
         record.originalMetadataDigest == nil,
-        record.originalDevice == nil,
-        record.originalInode == nil
+        record.originalDevice != nil,
+        record.originalInode != nil,
+        record.originalSourceDigest != nil,
+        record.originalInventory
+          == (record.originalKind == .directorySymbolicLink ? ["skhdrc"] : [])
       else {
         throw SetupOwnershipError.invalidManifest(
           "symbolic-link keybinding adoption evidence is incomplete"
@@ -758,7 +827,7 @@ struct KeybindingProviderInspector: Sendable {
 }
 
 private enum EntryOwnershipClaim {
-  case claimed
+  case claimed(SetupOwnershipRecord)
   case prepared
   case unclaimed
   case invalid(String)

@@ -1048,7 +1048,10 @@ extension SetupOwnershipManager {
         && accessControlList == other.accessControlList
     }
 
-    func restorableMetadataDigest(overridingMode: UInt16? = nil) -> String {
+    func restorableMetadataDigest(
+      overridingMode: UInt16? = nil,
+      excludingExtendedAttribute excludedAttribute: String? = nil
+    ) -> String {
       var data = Data()
       func append(_ value: String) {
         let bytes = Data(value.utf8)
@@ -1061,7 +1064,7 @@ extension SetupOwnershipManager {
       append(String(flags))
       append(String(modifiedSeconds))
       append(String(modifiedNanoseconds))
-      for name in extendedAttributes.keys.sorted() {
+      for name in extendedAttributes.keys.sorted() where name != excludedAttribute {
         append(name)
         append(extendedAttributes[name, default: Data()].base64EncodedString())
       }

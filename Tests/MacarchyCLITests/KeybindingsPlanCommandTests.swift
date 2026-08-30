@@ -457,6 +457,16 @@ struct KeybindingsPlanCommandTests {
     try encoder.encode(SetupOwnershipManifest(records: [record])).write(
       to: setup.appending(path: "ownership.json")
     )
+    let descriptor = entry.path.withCString { Darwin.open($0, O_RDONLY | O_SYMLINK | O_CLOEXEC) }
+    guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    defer { Darwin.close(descriptor) }
+    let marker = Data("01234567-89ab-cdef-0123-456789abcdef".utf8)
+    let marked = marker.withUnsafeBytes { bytes in
+      KeybindingProviderInspector.claimMarkerAttribute.withCString {
+        Darwin.fsetxattr(descriptor, $0, bytes.baseAddress, bytes.count, 0, XATTR_CREATE)
+      }
+    }
+    guard marked == 0 else { throw POSIXError(.EIO) }
   }
 
   private func temporaryDirectory() throws -> URL {
