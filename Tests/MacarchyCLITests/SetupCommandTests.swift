@@ -317,6 +317,55 @@ struct SetupCommandTests {
     #expect(report.dependencyInstallation.failure?.capabilityIds == ["spicetify"])
   }
 
+  @Test
+  func setupDelegatesPreviewAndApplyToTheAuthoritativeKeybindingPath() throws {
+    let home = temporaryDirectory()
+    let portableProfile = home.appending(path: "portable/profile.toml")
+    let calls = Mutex<[String]>([])
+    let runner = SetupCommandRunner(
+      resolveProfile: DependencyProfile.named,
+      capabilityIsAvailable: { _ in true },
+      processRunner: unexpectedProcessRunner(),
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegrations: externalIntegrations(),
+      setupKeybindings: { profile, required, selectedHome, dryRun, adopt in
+        calls.withLock {
+          $0.append(
+            "\(profile.path)|\(required)|\(selectedHome.path)|\(dryRun)|\(adopt)"
+          )
+        }
+        return SetupIntegrationResult(
+          id: KeybindingProviderInspector.ownershipID,
+          status: dryRun ? .planned : .owned,
+          target: selectedHome.appending(path: ".config/skhd/skhdrc").path,
+          message: dryRun ? "Would adopt keybindings" : "Adopted keybindings",
+          mutationAttempted: !dryRun,
+          lifecycle: .restart
+        )
+      }
+    )
+
+    let execution = try runner.execute(
+      profileName: "personal",
+      homeDirectory: home,
+      installDependencies: false,
+      dryRun: false,
+      keybindingProfileURL: portableProfile,
+      keybindingProfileRequired: true,
+      adoptKeybindings: true,
+      json: true
+    )
+    let report = try decode(execution.output)
+
+    #expect(execution.succeeded)
+    #expect(report.mutationAttempted)
+    #expect(
+      calls.withLock { $0 } == [
+        "\(portableProfile.path)|true|\(home.path)|true|true",
+        "\(portableProfile.path)|true|\(home.path)|false|true",
+      ])
+  }
+
   private func runner(missing: Set<String>) -> SetupCommandRunner {
     SetupCommandRunner(
       resolveProfile: DependencyProfile.named,

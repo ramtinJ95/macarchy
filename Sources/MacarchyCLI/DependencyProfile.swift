@@ -325,6 +325,26 @@ struct SetupCommandRunner: Sendable {
   let processRunner: ProcessRunner
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let setupIntegrations: @Sendable (URL, Bool) throws -> [SetupIntegrationResult]
+  let setupKeybindings: @Sendable (URL, Bool, URL, Bool, Bool) throws -> SetupIntegrationResult?
+
+  init(
+    resolveProfile: @escaping @Sendable (String, URL) -> DependencyProfile?,
+    capabilityIsAvailable: @escaping @Sendable (DependencyCapability) -> Bool,
+    processRunner: ProcessRunner,
+    writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
+    setupIntegrations: @escaping @Sendable (URL, Bool) throws -> [SetupIntegrationResult],
+    setupKeybindings:
+      @escaping @Sendable (URL, Bool, URL, Bool, Bool) throws -> SetupIntegrationResult? = {
+        _, _, _, _, _ in nil
+      }
+  ) {
+    self.resolveProfile = resolveProfile
+    self.capabilityIsAvailable = capabilityIsAvailable
+    self.processRunner = processRunner
+    self.writePreMutationPlan = writePreMutationPlan
+    self.setupIntegrations = setupIntegrations
+    self.setupKeybindings = setupKeybindings
+  }
 
   static let live = SetupCommandRunner(
     resolveProfile: DependencyProfile.named,
@@ -335,6 +355,20 @@ struct SetupCommandRunner: Sendable {
     },
     setupIntegrations: { homeDirectory, dryRun in
       try SetupOwnershipManager().setup(homeDirectory: homeDirectory, dryRun: dryRun)
+    },
+    setupKeybindings: { profileURL, profileRequired, homeDirectory, dryRun, adopt in
+      try KeybindingsApplyCommandRunner.live.setupIntegration(
+        resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
+        profileURL: profileURL,
+        profileRequired: profileRequired,
+        stateRoot: homeDirectory.appending(
+          path: ".config/macarchy",
+          directoryHint: .isDirectory
+        ),
+        homeDirectory: homeDirectory,
+        adopt: adopt,
+        dryRun: dryRun
+      )
     }
   )
 
@@ -343,6 +377,9 @@ struct SetupCommandRunner: Sendable {
     homeDirectory: URL,
     installDependencies: Bool,
     dryRun: Bool,
+    keybindingProfileURL: URL? = nil,
+    keybindingProfileRequired: Bool = false,
+    adoptKeybindings: Bool = false,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     guard let profile = resolveProfile(profileName, homeDirectory) else {
@@ -360,6 +397,11 @@ struct SetupCommandRunner: Sendable {
         homeDirectory: homeDirectory,
         installDependencies: installDependencies,
         dryRun: dryRun,
+        keybindingProfileURL:
+          keybindingProfileURL
+          ?? homeDirectory.appending(path: ".config/macarchy/profile.toml"),
+        keybindingProfileRequired: keybindingProfileRequired,
+        adoptKeybindings: adoptKeybindings,
         capabilities: inspect(profile)
       ),
       json: json
@@ -375,6 +417,28 @@ struct SetupCommandRunner: Sendable {
     var commandResults = [HomebrewCommandResult]()
     var failure: SetupInstallationFailure?
     var mutationAttempted = false
+
+    let keybindingPreview = try setupKeybindings(
+      preparation.keybindingProfileURL,
+      preparation.keybindingProfileRequired,
+      preparation.homeDirectory,
+      true,
+      preparation.adoptKeybindings
+    )
+    if let keybindingPreview, !keybindingPreview.succeeded {
+      let report = SetupReport.profile(
+        preparation.profile.name,
+        installDependencies: preparation.installDependencies,
+        dryRun: preparation.dryRun,
+        capabilities: capabilities,
+        installPlan: HomebrewInstallPlan(capabilities: capabilities),
+        commandResults: [],
+        mutationAttempted: false,
+        installationFailure: nil,
+        integrations: [keybindingPreview]
+      )
+      return (try report.render(json: json), false)
+    }
 
     if preparation.installDependencies, !preparation.dryRun {
       let missingPrerequisites = capabilities.filter {
@@ -419,7 +483,7 @@ struct SetupCommandRunner: Sendable {
       }
     }
 
-    let integrations: [SetupIntegrationResult]
+    var integrations: [SetupIntegrationResult]
     do {
       integrations = try setupIntegrations(preparation.homeDirectory, preparation.dryRun)
     } catch {
@@ -427,6 +491,21 @@ struct SetupCommandRunner: Sendable {
         error,
         homeDirectory: preparation.homeDirectory
       )
+    }
+    if preparation.dryRun {
+      if let keybindingPreview { integrations.append(keybindingPreview) }
+    } else if integrations.allSatisfy(\.succeeded), failure == nil {
+      if let keybindings = try setupKeybindings(
+        preparation.keybindingProfileURL,
+        preparation.keybindingProfileRequired,
+        preparation.homeDirectory,
+        false,
+        preparation.adoptKeybindings
+      ) {
+        integrations.append(keybindings)
+      }
+    } else if let keybindingPreview {
+      integrations.append(keybindingPreview)
     }
     mutationAttempted = mutationAttempted || integrations.contains(where: \.mutationAttempted)
 
@@ -463,6 +542,9 @@ private struct SetupPreparation {
   let homeDirectory: URL
   let installDependencies: Bool
   let dryRun: Bool
+  let keybindingProfileURL: URL
+  let keybindingProfileRequired: Bool
+  let adoptKeybindings: Bool
   let capabilities: [SetupCapability]
 }
 

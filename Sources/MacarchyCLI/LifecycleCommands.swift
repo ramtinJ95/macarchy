@@ -62,8 +62,14 @@ extension Macarchy {
       abstract: "Prepare dependencies and supported integration seams."
     )
 
-    @Option(help: "Dependency profile to inspect.")
-    var profile = "personal"
+    @Option(name: .customLong("dependency-profile"), help: "Dependency profile to inspect.")
+    var dependencyProfile = "personal"
+
+    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
+    var profile: String?
+
+    @Flag(help: "Approve replacement and exact restoration of a previewed existing skhd entry.")
+    var adoptKeybindings = false
 
     @Flag(help: "Install missing Homebrew dependencies for the selected profile.")
     var installDependencies = false
@@ -75,11 +81,17 @@ extension Macarchy {
     var json = false
 
     mutating func run() throws {
+      let home = FileManager.default.homeDirectoryForCurrentUser
       let execution = try SetupCommandRunner.live.execute(
-        profileName: profile,
-        homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+        profileName: dependencyProfile,
+        homeDirectory: home,
         installDependencies: installDependencies,
         dryRun: dryRun,
+        keybindingProfileURL:
+          profile.map { URL(filePath: $0).standardizedFileURL }
+          ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL,
+        keybindingProfileRequired: profile != nil,
+        adoptKeybindings: adoptKeybindings,
         json: json
       )
       print(execution.output)
