@@ -44,6 +44,11 @@ extension SetupOwnershipManager {
       try KeybindingProviderInspector.validateOwnershipRecord(record, context: context)
       return
     }
+    guard record.originalKind == nil, record.originalLinkDestination == nil else {
+      throw SetupOwnershipError.invalidManifest(
+        "non-keybinding integration \(record.id) contains keybinding adoption evidence"
+      )
+    }
     let steps = consumerSetupPlans(context: context).flatMap(\.steps)
     guard
       let step = steps.first(where: { $0.id == record.id }),
@@ -191,6 +196,13 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case teardownPrepared = "teardown_prepared"
   }
 
+  enum OriginalKind: String, Codable, Equatable {
+    case absent
+    case directorySymbolicLink = "directory_symbolic_link"
+    case regularFile = "regular_file"
+    case symbolicLink = "symbolic_link"
+  }
+
   let id: String
   let phase: Phase
   let kind: Kind
@@ -200,6 +212,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let installedDigest: String
   let linkDestination: String?
   let replacementDigest: String?
+  let originalKind: OriginalKind?
+  let originalLinkDestination: String?
 
   var applied: SetupOwnershipRecord {
     SetupOwnershipRecord(
@@ -211,7 +225,9 @@ struct SetupOwnershipRecord: Codable, Equatable {
       originalDigest: originalDigest,
       installedDigest: installedDigest,
       linkDestination: linkDestination,
-      replacementDigest: nil
+      replacementDigest: nil,
+      originalKind: originalKind,
+      originalLinkDestination: originalLinkDestination
     )
   }
 
@@ -225,6 +241,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case installedDigest = "installed_digest"
     case linkDestination = "link_destination"
     case replacementDigest = "replacement_digest"
+    case originalKind = "original_kind"
+    case originalLinkDestination = "original_link_destination"
   }
 
   init(
@@ -236,7 +254,9 @@ struct SetupOwnershipRecord: Codable, Equatable {
     originalDigest: String?,
     installedDigest: String,
     linkDestination: String?,
-    replacementDigest: String? = nil
+    replacementDigest: String? = nil,
+    originalKind: OriginalKind? = nil,
+    originalLinkDestination: String? = nil
   ) {
     self.id = id
     self.phase = phase
@@ -247,6 +267,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     self.installedDigest = installedDigest
     self.linkDestination = linkDestination
     self.replacementDigest = replacementDigest
+    self.originalKind = originalKind
+    self.originalLinkDestination = originalLinkDestination
   }
 
 }

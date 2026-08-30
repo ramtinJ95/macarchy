@@ -29,12 +29,12 @@ struct KeybindingsApplyCommandTests {
     )
     #expect(provider.status == .managed)
     #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
-    #expect(throws: SetupOwnershipError.self) {
-      _ = try SetupOwnershipManager().teardown(
-        homeDirectory: fixture.home,
-        dryRun: true
-      )
-    }
+    let teardown = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: true
+    )
+    #expect(teardown.status == .planned)
 
     let second = try fixture.execute(runner: runner, json: true)
     let secondReport = try jsonObject(second.output)
@@ -43,7 +43,7 @@ struct KeybindingsApplyCommandTests {
     #expect(secondReport["mutated"] as? Bool == false)
     #expect(
       lifecycle.calls.withLock { $0 }
-        == ["preflight", "restart", "verify", "preflight", "verify"]
+        == ["preflight", "restart", "verify", "preflight", "preflight", "verify"]
     )
   }
 
@@ -69,6 +69,242 @@ struct KeybindingsApplyCommandTests {
     #expect(
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing)
     #expect(lifecycle.calls.withLock { $0 }.isEmpty)
+  }
+
+  @Test
+  func approvedRegularFileAdoptionPreviewsAndTeardownRestoresExactBytes() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let original = Data("alt - x : exact external bytes\n".utf8)
+    try original.write(to: entry)
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+
+    let refused = try fixture.execute(runner: runner, adopt: false, json: true)
+    #expect(!refused.succeeded)
+    #expect(try Data(contentsOf: entry) == original)
+    let preview = try runner.preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      adopt: true,
+      json: true
+    )
+    #expect(preview.succeeded)
+    #expect(try Data(contentsOf: entry) == original)
+
+    let applied = try fixture.execute(runner: runner, adopt: true, json: true)
+    #expect(applied.succeeded)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
+        == KeybindingProviderInspector.managedTarget
+    )
+    let teardown = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: false
+    )
+    #expect(teardown.status == .removed)
+    #expect(teardown.mutationAttempted)
+    #expect(try Data(contentsOf: entry) == original)
+    #expect(
+      lifecycle.calls.withLock { $0 } == [
+        "preflight", "preflight", "restart", "verify", "preflight", "restart", "verify",
+      ])
+  }
+
+  @Test
+  func adoptionRestartFailureRollsBackExactRegularFile() throws {
+    enum Injected: Error { case restart }
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let original = Data("alt - x : rollback exact bytes\n".utf8)
+    try original.write(to: entry)
+    let restartCount = Mutex(0)
+    let lifecycle = KeybindingLifecycleController(
+      restart: {
+        let count = restartCount.withLock { value -> Int in
+          value += 1
+          return value
+        }
+        if count == 1 { throw Injected.restart }
+      },
+      reload: {},
+      verifyProcess: {}
+    )
+
+    let execution = try fixture.execute(
+      runner: fixture.runner(lifecycle: lifecycle),
+      adopt: true,
+      json: true
+    )
+
+    #expect(!execution.succeeded)
+    #expect(restartCount.withLock { $0 } == 2)
+    #expect(try Data(contentsOf: entry) == original)
+    #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+    #expect(
+      try SetupOwnershipManager().readRecords(
+        context: SetupOwnershipManager.Context(homeDirectory: fixture.home)
+      ).isEmpty
+    )
+  }
+
+  @Test
+  func interruptedTeardownRollsBackThenIdempotentApplyKeepsManagedEntry() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    try Data("alt - x : interrupted teardown\n".utf8).write(to: entry)
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+    #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
+    lifecycle.calls.withLock { $0.removeAll() }
+    let generationID = try #require(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID
+    )
+    var transaction = KeybindingApplyTransaction(
+      operation: .teardownEntry,
+      phase: .staged,
+      generationID: generationID,
+      previousGenerationID: generationID,
+      generationCreated: false
+    )
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(transaction)
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).restoreOriginalEntry()
+    transaction = transaction.withPhase(.entryRestored)
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(transaction)
+
+    let execution = try fixture.execute(runner: runner, adopt: true, json: true)
+    let report = try jsonObject(execution.output)
+
+    #expect(execution.succeeded)
+    #expect(report["outcome"] as? String == "no_change")
+    #expect(report["mutated"] as? Bool == true)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
+        == KeybindingProviderInspector.managedTarget)
+    #expect(lifecycle.calls.withLock { $0 } == ["preflight", "verify"])
+  }
+
+  @Test
+  func globalTeardownPreflightsSiblingOwnershipBeforeRestoringKeybindings() throws {
+    let fixture = try Fixture(configuration: "font_size 13\n")
+    defer { fixture.remove() }
+    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    let skhd = fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: skhd, withIntermediateDirectories: true)
+    let entry = skhd.appending(path: "skhdrc")
+    try Data("alt - x : exact prior entry\n".utf8).write(to: entry)
+    let resources = fixture.root.appending(path: "keybinding-resources")
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    try "alt - j : focus south\n".write(
+      to: resources.appending(path: "defaults.skhdrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try """
+    schema_version = 1
+    [[bindings]]
+    identity = "alt-j"
+    label = "Focus below"
+    category = "Test"
+    order = 1
+    """.write(
+      to: resources.appending(path: "metadata.toml"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let lifecycle = LifecycleFixture()
+    let runner = KeybindingsApplyCommandRunner(lifecycle: lifecycle.controller)
+    #expect(
+      try runner.execute(
+        resourcesRoot: resources,
+        profileURL: fixture.root.appending(path: "missing-profile.toml"),
+        profileRequired: false,
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        adopt: true,
+        json: true
+      ).succeeded
+    )
+    lifecycle.calls.withLock { $0.removeAll() }
+    try Data("user drift\n".utf8).write(to: fixture.kittyConfiguration, options: .atomic)
+
+    #expect(throws: SetupOwnershipError.self) {
+      _ = try SetupOwnershipManager(keybindingLifecycle: lifecycle.controller).teardown(
+        homeDirectory: fixture.home,
+        dryRun: false
+      )
+    }
+
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
+        == KeybindingProviderInspector.managedTarget
+    )
+    #expect(lifecycle.calls.withLock { $0 } == ["preflight"])
+  }
+
+  @Test
+  func approvedEntrySymlinkAdoptionNeverChangesTargetAndRestoresExactLinkText() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let source = fixture.root.appending(path: "dotfiles/skhdrc")
+    try FileManager.default.createDirectory(
+      at: source.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let sourceBytes = Data("alt - x : external source\n".utf8)
+    try sourceBytes.write(to: source)
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let linkText = "../../../dotfiles/skhdrc"
+    try FileManager.default.createSymbolicLink(atPath: entry.path, withDestinationPath: linkText)
+    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+
+    #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
+    #expect(try Data(contentsOf: source) == sourceBytes)
+    _ = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: false
+    )
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: entry.path) == linkText)
+    #expect(try Data(contentsOf: source) == sourceBytes)
+  }
+
+  @Test
+  func boundedDirectorySymlinkAdoptionNeverWritesThroughAndRestoresExactLink() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let skhd = fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory)
+    try FileManager.default.removeItem(at: skhd)
+    let source = fixture.root.appending(path: "dotfiles/skhd", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let sourceEntry = source.appending(path: "skhdrc")
+    let sourceBytes = Data("alt - x : directory source\n".utf8)
+    try sourceBytes.write(to: sourceEntry)
+    let linkText = "../../dotfiles/skhd"
+    try FileManager.default.createSymbolicLink(atPath: skhd.path, withDestinationPath: linkText)
+    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+
+    #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
+    #expect(try Data(contentsOf: sourceEntry) == sourceBytes)
+    var metadata = stat()
+    #expect(lstat(skhd.path, &metadata) == 0)
+    #expect(metadata.st_mode & S_IFMT == S_IFDIR)
+    _ = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: false
+    )
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: skhd.path) == linkText)
+    #expect(try Data(contentsOf: sourceEntry) == sourceBytes)
   }
 
   @Test
@@ -494,6 +730,7 @@ private struct KeybindingsApplyFixture {
 
   func execute(
     runner: KeybindingsApplyCommandRunner,
+    adopt: Bool = false,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     try runner.execute(
@@ -502,6 +739,7 @@ private struct KeybindingsApplyFixture {
       profileRequired: false,
       stateRoot: stateRoot,
       homeDirectory: home,
+      adopt: adopt,
       json: json
     )
   }

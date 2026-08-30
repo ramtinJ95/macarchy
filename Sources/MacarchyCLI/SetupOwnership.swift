@@ -133,6 +133,23 @@ struct SetupIntegrationResult: Encodable, Sendable {
   let target: String
   let message: String
   let mutationAttempted: Bool
+  let lifecycle: KeybindingLifecycleAction?
+
+  init(
+    id: String,
+    status: Status,
+    target: String,
+    message: String,
+    mutationAttempted: Bool,
+    lifecycle: KeybindingLifecycleAction? = nil
+  ) {
+    self.id = id
+    self.status = status
+    self.target = target
+    self.message = message
+    self.mutationAttempted = mutationAttempted
+    self.lifecycle = lifecycle
+  }
 
   var succeeded: Bool {
     status != .failed
@@ -171,11 +188,14 @@ struct SetupOwnershipManager: Sendable {
     ConsumerSetupPlan.Step.Operation.spicetifyColorLink.rawValue
   static let maximumConfigurationSize = 1_048_576
   let faultInjector: @Sendable (SetupOwnershipCheckpoint) throws -> Void
+  let keybindingRunner: KeybindingsApplyCommandRunner
 
   init(
-    faultInjector: @escaping @Sendable (SetupOwnershipCheckpoint) throws -> Void = { _ in }
+    faultInjector: @escaping @Sendable (SetupOwnershipCheckpoint) throws -> Void = { _ in },
+    keybindingLifecycle: KeybindingLifecycleController = .live
   ) {
     self.faultInjector = faultInjector
+    keybindingRunner = KeybindingsApplyCommandRunner(lifecycle: keybindingLifecycle)
   }
 
   static func failureResult(_ error: any Error, homeDirectory: URL) -> SetupIntegrationResult {
@@ -238,7 +258,8 @@ struct SetupOwnershipManager: Sendable {
     context: Context
   ) -> [SetupIntegrationResult] {
     let steps = SetupOwnershipManager().consumerSetupPlans(context: context).flatMap(\.steps)
-    let order = Dictionary(uniqueKeysWithValues: steps.enumerated().map { ($1.id, $0) })
+    var order = Dictionary(uniqueKeysWithValues: steps.enumerated().map { ($1.id, $0) })
+    order[KeybindingProviderInspector.ownershipID] = steps.count
     return results.sorted {
       order[$0.id, default: Int.max] < order[$1.id, default: Int.max]
     }
@@ -315,20 +336,71 @@ struct SetupOwnershipManager: Sendable {
 
   private func teardown(context: Context, dryRun: Bool) throws -> [SetupIntegrationResult] {
     var records = try readRecords(context: context)
-    if records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID }) {
-      throw SetupOwnershipError.invalidManifest(
-        "managed keybindings require the dedicated transactional teardown path"
+    var preflightRecords = records
+    let pendingKeybindingTransaction = try KeybindingApplyTransactionStore(
+      stateRoot: context.stateRoot
+    ).read()
+    let hasKeybindingState =
+      records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID })
+      || pendingKeybindingTransaction != nil
+    let keybindingPreflight: SetupIntegrationResult? =
+      if hasKeybindingState {
+        try keybindingRunner.teardownLocked(
+          stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory,
+          dryRun: true
+        )
+      } else {
+        nil
+      }
+    let integrationPreflight = try teardownIntegrations(
+      context: context,
+      dryRun: true,
+      records: &preflightRecords
+    )
+    if dryRun {
+      return Self.orderedResults(
+        integrationPreflight + (keybindingPreflight.map { [$0] } ?? []),
+        context: context
       )
     }
-    if !dryRun {
-      var preflightRecords = records
-      _ = try teardownIntegrations(
+    let keybinding: SetupIntegrationResult? =
+      if hasKeybindingState {
+        try keybindingRunner.teardownLocked(
+          stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory,
+          dryRun: false
+        )
+      } else {
+        nil
+      }
+    records = try readRecords(context: context)
+    do {
+      let integrations = try teardownIntegrations(
         context: context,
-        dryRun: true,
-        records: &preflightRecords
+        dryRun: false,
+        records: &records
+      )
+      return Self.orderedResults(
+        integrations + (keybinding.map { [$0] } ?? []),
+        context: context
+      )
+    } catch let error as SetupOwnershipTransactionError {
+      throw SetupOwnershipTransactionError(
+        wrapping: error,
+        completedResults: keybinding.map { [$0] } ?? []
+      )
+    } catch {
+      guard let keybinding else { throw error }
+      let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
+      throw SetupOwnershipTransactionError(
+        error,
+        integrationID: failure.id,
+        target: URL(filePath: failure.target),
+        completedResults: [keybinding],
+        failureMutationAttempted: false
       )
     }
-    return try teardownIntegrations(context: context, dryRun: dryRun, records: &records)
   }
 
   private func teardownIntegrations(

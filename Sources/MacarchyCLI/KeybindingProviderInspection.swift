@@ -249,20 +249,40 @@ struct KeybindingProviderInspector: Sendable {
     }
 
     do {
-      let source = try sourceConfiguration(
+      let sourceURL = targetDirectory.appending(path: "skhdrc")
+      let metadata = try PinnedFilesystem.metadata(
         parentDescriptor: targetDescriptor,
-        parentURL: targetDirectory,
-        name: "skhdrc"
+        name: "skhdrc",
+        url: sourceURL
       )
+      guard metadata.st_mode & S_IFMT == S_IFREG else {
+        throw PinnedFilesystemError(
+          operation: "read unsupported directory-level skhdrc",
+          url: sourceURL,
+          code: EINVAL
+        )
+      }
+      let file = try PinnedFilesystem.readRegularFile(
+        parentDescriptor: targetDescriptor,
+        name: "skhdrc",
+        url: sourceURL
+      )
+      guard let sourceConfiguration = String(data: file.data, encoding: .utf8) else {
+        throw PinnedFilesystemError(
+          operation: "decode configuration as UTF-8",
+          url: sourceURL,
+          code: EILSEQ
+        )
+      }
       return result(
         .adoptionRequired,
         entry: entry,
         expectedTarget: expectedTarget,
         ownership: "directory_symlink",
-        source: source.url,
+        source: sourceURL,
         originalTarget: target,
         message: "eligible directory-level symlink requires explicit adoption",
-        sourceConfiguration: source.text
+        sourceConfiguration: sourceConfiguration
       )
     } catch {
       return result(
@@ -552,8 +572,6 @@ struct KeybindingProviderInspector: Sendable {
       [.prepared, .applied].contains(record.phase),
       record.kind == .symbolicLink,
       record.targetPath == target.path,
-      record.backupPath == nil,
-      record.originalDigest == nil,
       record.installedDigest == sha256Digest(Data(expectedTarget.utf8)),
       record.linkDestination == expectedTarget,
       record.replacementDigest == nil
@@ -561,6 +579,42 @@ struct KeybindingProviderInspector: Sendable {
       throw SetupOwnershipError.invalidManifest(
         "keybinding entry ownership record does not match the managed provider link"
       )
+    }
+    switch record.originalKind ?? .absent {
+    case .absent:
+      guard
+        record.backupPath == nil,
+        record.originalDigest == nil,
+        record.originalLinkDestination == nil
+      else {
+        throw SetupOwnershipError.invalidManifest(
+          "absent keybinding entry ownership contains adoption evidence"
+        )
+      }
+    case .regularFile:
+      let backup = context.stateRoot.appending(
+        path: "state/setup/backups/keybindings-skhdrc"
+      )
+      let manager = SetupOwnershipManager()
+      guard
+        record.backupPath == manager.relativePath(backup, below: context.stateRoot),
+        record.originalDigest != nil,
+        record.originalLinkDestination == nil
+      else {
+        throw SetupOwnershipError.invalidManifest(
+          "regular-file keybinding adoption evidence is incomplete"
+        )
+      }
+    case .symbolicLink, .directorySymbolicLink:
+      guard
+        record.backupPath == nil,
+        let destination = record.originalLinkDestination,
+        record.originalDigest == sha256Digest(Data(destination.utf8))
+      else {
+        throw SetupOwnershipError.invalidManifest(
+          "symbolic-link keybinding adoption evidence is incomplete"
+        )
+      }
     }
   }
 

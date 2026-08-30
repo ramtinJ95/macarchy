@@ -182,6 +182,27 @@ struct KeybindingProviderInspectionTests {
   }
 
   @Test
+  func directoryLevelInventoryRejectsAnSkhdrcSymlinkEvenWhenItsTargetExists() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let external = fixture.root.appending(path: "external.skhdrc")
+    try "alt - j : external\n".write(to: external, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: fixture.dotfiles.appending(path: "skhdrc"),
+      withDestinationURL: external
+    )
+    try FileManager.default.createSymbolicLink(
+      at: fixture.skhdDirectory,
+      withDestinationURL: fixture.dotfiles
+    )
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.message.contains("not a bounded regular file"))
+  }
+
+  @Test
   func selectedStateRootMustMatchTheExistingProviderLink() throws {
     let fixture = try fixtureHome()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
