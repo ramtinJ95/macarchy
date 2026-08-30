@@ -5,31 +5,6 @@ import Testing
 
 extension AdapterContractTests {
   @Test
-  func ordinaryAdapterRuntimePreservesIdentityRequirementAndConcreteOutcome() async throws {
-    let runtime = OrdinaryAdapterRuntime(
-      adapterID: "ordinary",
-      requirement: .optional,
-      preflight: {},
-      isIntegrationDrift: { _ in false }
-    )
-
-    let inspection = runtime.inspection(readyMessage: "ready exactly")
-    #expect(inspection.adapterID == "ordinary")
-    #expect(inspection.requirement == .optional)
-    #expect(inspection.status == .ready)
-    #expect(inspection.message == "ready exactly")
-
-    let reconciliation = runtime.reconciliation {
-      AdapterOutcome(status: .restartRequired, message: "restart exactly")
-    }
-    #expect(reconciliation.id == "ordinary")
-    #expect(reconciliation.requirement == .optional)
-    let outcome = try await reconciliation.run()
-    #expect(outcome.status == .restartRequired)
-    #expect(outcome.message == "restart exactly")
-  }
-
-  @Test
   func ordinaryAdapterRuntimeMapsTypedPreflightFailuresAndSkipsConcreteWork() async throws {
     for isIntegrationDrift in [true, false] {
       let preflightCalls = Mutex(0)
@@ -65,13 +40,28 @@ extension AdapterContractTests {
   }
 
   @Test
-  func ordinaryAdapterRuntimeDoesNotClassifyConcreteLifecycleErrors() async {
+  func ordinaryAdapterRuntimePassesThroughConcreteLifecycleOutcomesAndErrors() async throws {
     let runtime = OrdinaryAdapterRuntime(
       adapterID: "ordinary",
-      requirement: .required,
+      requirement: .optional,
       preflight: {},
       isIntegrationDrift: { _ in true }
     )
+
+    let inspection = runtime.inspection(readyMessage: "ready exactly")
+    #expect(inspection.adapterID == "ordinary")
+    #expect(inspection.requirement == .optional)
+    #expect(inspection.status == .ready)
+    #expect(inspection.message == "ready exactly")
+
+    let reconciliation = runtime.reconciliation {
+      AdapterOutcome(status: .restartRequired, message: "restart exactly")
+    }
+    #expect(reconciliation.id == "ordinary")
+    #expect(reconciliation.requirement == .optional)
+    let outcome = try await reconciliation.run()
+    #expect(outcome.status == .restartRequired)
+    #expect(outcome.message == "restart exactly")
 
     await #expect(throws: ReconciliationTestError.expectedInterruption) {
       try await runtime.reconciliation {

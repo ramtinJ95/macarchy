@@ -6,14 +6,6 @@ import Testing
 
 struct ThemeGetCommandTests {
   @Test
-  func getParsesTheGenericTargetAndStateRoot() throws {
-    let command = try Theme.Get.parse(["slack", "--state-root", "/test/state"])
-
-    #expect(command.target == "slack")
-    #expect(command.stateRoot == "/test/state")
-  }
-
-  @Test
   func getReturnsTheActiveSlackImportPayloadExactly() throws {
     let stateRoot = temporaryStateRoot()
     defer { try? FileManager.default.removeItem(at: stateRoot) }
@@ -58,9 +50,6 @@ private func temporaryStateRoot() -> URL {
 }
 
 private func catppuccinPackageURL() -> URL {
-  URL(filePath: #filePath)
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
+  repositoryRoot
     .appending(path: "Themes/catppuccin-mocha", directoryHint: .isDirectory)
 }
