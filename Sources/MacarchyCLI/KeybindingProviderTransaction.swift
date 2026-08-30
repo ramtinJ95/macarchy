@@ -60,19 +60,37 @@ struct KeybindingProviderTransaction: Sendable {
     guard try manager.parentPathContainsSymlink(entry, below: homeDirectory) == false else {
       throw SetupOwnershipError.ownershipDrift(entry)
     }
-    var metadata = stat()
-    let inspected = lstat(entry.path, &metadata)
-    if inspected == 0, metadata.st_mode & S_IFMT == S_IFLNK {
+    let state = try manager.themeLinkState(
+      id: KeybindingProviderInspector.ownershipID,
+      url: entry,
+      target: entry
+    )
+    let removalState = try manager.themeLinkRemovalState(
+      id: KeybindingProviderInspector.ownershipID,
+      target: entry
+    )
+    let alreadyClaimed: Bool
+    switch (state, removalState) {
+    case (.matching(let destination), .missing) where destination == target:
+      alreadyClaimed = false
+    case (.missing, .matching(let destination)) where destination == target:
+      alreadyClaimed = true
+    case (.missing, .missing):
+      records.removeAll { $0.id == KeybindingProviderInspector.ownershipID }
+      try manager.persist(records: records, context: context)
+      return
+    default:
+      throw SetupOwnershipError.ownershipDrift(entry)
+    }
+    if state != .missing || alreadyClaimed {
       try manager.removePinnedSymbolicLink(
         id: KeybindingProviderInspector.ownershipID,
         target: entry,
         destinationPath: target,
         homeDirectory: homeDirectory,
         label: "skhd entry",
-        alreadyClaimed: false
+        alreadyClaimed: alreadyClaimed
       )
-    } else if inspected == 0 || errno != ENOENT || record.phase == .applied {
-      throw SetupOwnershipError.ownershipDrift(entry)
     }
     records.removeAll { $0.id == KeybindingProviderInspector.ownershipID }
     try manager.persist(records: records, context: context)

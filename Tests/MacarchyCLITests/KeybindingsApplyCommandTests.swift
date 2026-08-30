@@ -19,7 +19,7 @@ struct KeybindingsApplyCommandTests {
     #expect(first.succeeded)
     #expect(firstReport["outcome"] as? String == "applied")
     #expect(firstReport["lifecycle"] as? String == "restart")
-    #expect(lifecycle.calls.withLock { $0 } == ["restart", "verify"])
+    #expect(lifecycle.calls.withLock { $0 } == ["preflight", "restart", "verify"])
     #expect(
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .current)
     let provider = KeybindingProviderInspector().inspect(
@@ -29,13 +29,22 @@ struct KeybindingsApplyCommandTests {
     )
     #expect(provider.status == .managed)
     #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+    #expect(throws: SetupOwnershipError.self) {
+      _ = try SetupOwnershipManager().teardown(
+        homeDirectory: fixture.home,
+        dryRun: true
+      )
+    }
 
     let second = try fixture.execute(runner: runner, json: true)
     let secondReport = try jsonObject(second.output)
     #expect(second.succeeded)
     #expect(secondReport["outcome"] as? String == "no_change")
     #expect(secondReport["mutated"] as? Bool == false)
-    #expect(lifecycle.calls.withLock { $0 } == ["restart", "verify"])
+    #expect(
+      lifecycle.calls.withLock { $0 }
+        == ["preflight", "restart", "verify", "preflight", "verify"]
+    )
   }
 
   @Test
@@ -60,6 +69,56 @@ struct KeybindingsApplyCommandTests {
     #expect(
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing)
     #expect(lifecycle.calls.withLock { $0 }.isEmpty)
+  }
+
+  @Test
+  func applyPreviewUsesApplyEligibilityWithoutMutation() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    try "alt - x : external\n".write(to: entry, atomically: true, encoding: .utf8)
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+
+    let execution = try runner.preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let report = try jsonObject(execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(report["mutated"] as? Bool == false)
+    #expect(lifecycle.calls.withLock { $0 }.isEmpty)
+  }
+
+  @Test
+  func lifecyclePreflightFailureBlocksBeforeGenerationMutation() throws {
+    enum Injected: Error { case preflight }
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lifecycle = KeybindingLifecycleController(
+      preflight: { throw Injected.preflight },
+      restart: {},
+      reload: {},
+      verifyProcess: {}
+    )
+
+    let execution = try fixture.execute(
+      runner: fixture.runner(lifecycle: lifecycle),
+      json: true
+    )
+    let report = try jsonObject(execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(report["mutated"] as? Bool == false)
+    #expect(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing)
   }
 
   @Test
@@ -142,7 +201,7 @@ struct KeybindingsApplyCommandTests {
 
     #expect(execution.succeeded)
     #expect(report["lifecycle"] as? String == "reload")
-    #expect(lifecycle.calls.withLock { $0 } == ["reload", "verify"])
+    #expect(lifecycle.calls.withLock { $0 } == ["preflight", "reload", "verify"])
 
     try "alt - j : third command\n".write(
       to: fixture.resources.appending(path: "defaults.skhdrc"),
@@ -189,7 +248,10 @@ struct KeybindingsApplyCommandTests {
     )
 
     #expect(execution.succeeded)
-    #expect(lifecycle.calls.withLock { $0 } == ["restart", "verify", "restart", "verify"])
+    #expect(
+      lifecycle.calls.withLock { $0 }
+        == ["restart", "verify", "preflight", "restart", "verify"]
+    )
     #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
     #expect(
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .current)
@@ -205,6 +267,7 @@ private final class LifecycleFixture: Sendable {
 
   var controller: KeybindingLifecycleController {
     KeybindingLifecycleController(
+      preflight: { self.calls.withLock { $0.append("preflight") } },
       restart: { self.calls.withLock { $0.append("restart") } },
       reload: { self.calls.withLock { $0.append("reload") } },
       verifyProcess: { self.calls.withLock { $0.append("verify") } }

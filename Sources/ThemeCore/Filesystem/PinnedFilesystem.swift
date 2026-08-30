@@ -77,6 +77,9 @@ package enum PinnedFilesystem {
     guard result == 0 else {
       throw PinnedFilesystemError(operation: "create pinned directory", url: url, code: errno)
     }
+    guard fsync(parentDescriptor) == 0 else {
+      throw PinnedFilesystemError(operation: "sync pinned directory parent", url: url, code: errno)
+    }
     return try openDirectory(parentDescriptor: parentDescriptor, name: name, url: url)
   }
 

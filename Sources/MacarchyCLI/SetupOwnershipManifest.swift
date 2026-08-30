@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import ThemeCore
 
@@ -92,27 +93,69 @@ extension SetupOwnershipManager {
   }
 
   func persist(records: [SetupOwnershipRecord], context: Context) throws {
-    if records.isEmpty {
-      try removeRegularFileIfPresent(
-        context.manifestURL,
-        unsafe: .invalidManifest("ownership path is not an ordinary file")
-      )
-      return
-    }
     do {
-      try FileManager.default.createDirectory(
-        at: context.manifestURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
+      let stateRootDescriptor = try PinnedFilesystem.openDirectory(at: context.stateRoot)
+      defer { Darwin.close(stateRootDescriptor) }
+      let stateDirectory = context.stateRoot.appending(path: "state", directoryHint: .isDirectory)
+      let stateDescriptor = try openOrCreateManifestDirectory(
+        parentDescriptor: stateRootDescriptor,
+        name: "state",
+        url: stateDirectory
       )
+      defer { Darwin.close(stateDescriptor) }
+      let setupDirectory = stateDirectory.appending(path: "setup", directoryHint: .isDirectory)
+      let setupDescriptor = try openOrCreateManifestDirectory(
+        parentDescriptor: stateDescriptor,
+        name: "setup",
+        url: setupDirectory
+      )
+      defer { Darwin.close(setupDescriptor) }
+      if records.isEmpty {
+        let removed = "ownership.json".withCString {
+          Darwin.unlinkat(setupDescriptor, $0, 0)
+        }
+        guard removed == 0 || errno == ENOENT, fsync(setupDescriptor) == 0 else {
+          throw PinnedFilesystemError(
+            operation: "remove setup ownership manifest",
+            url: context.manifestURL,
+            code: errno
+          )
+        }
+        return
+      }
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      try encoder.encode(SetupOwnershipManifest(records: records)).write(
-        to: context.manifestURL,
-        options: .atomic
+      try PinnedFilesystem.replaceRegularFileAtomically(
+        parentDescriptor: setupDescriptor,
+        name: "ownership.json",
+        url: context.manifestURL,
+        data: try encoder.encode(SetupOwnershipManifest(records: records)),
+        mode: 0o600
       )
     } catch {
       throw SetupOwnershipError.system(
         "write", context.manifestURL, String(describing: error))
+    }
+  }
+
+  private func openOrCreateManifestDirectory(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL
+  ) throws -> Int32 {
+    do {
+      return try PinnedFilesystem.openDirectory(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return try PinnedFilesystem.createDirectory(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url,
+        mode: 0o700
+      )
     }
   }
 }
