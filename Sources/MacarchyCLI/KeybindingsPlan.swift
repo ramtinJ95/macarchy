@@ -2,7 +2,9 @@ import Foundation
 import ThemeCore
 
 struct KeybindingsPlanCommandRunner: Sendable {
-  static let live = KeybindingsPlanCommandRunner()
+  let effectiveInspector: KeybindingEffectiveBehaviorInspector
+
+  static let live = KeybindingsPlanCommandRunner(effectiveInspector: .live)
 
   func execute(
     resourcesRoot: URL,
@@ -32,25 +34,26 @@ struct KeybindingsPlanCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    ignoreTransaction: Bool = false
+    ignoreTransaction: Bool = false,
+    effectiveBehavior suppliedBehavior: KeybindingEffectiveBehavior? = nil
   ) throws -> KeybindingsPlanPreparation {
-    let effectiveState = KeybindingEffectiveStateInspector().inspect(
-      resourcesRoot: resourcesRoot,
-      profileURL: profileURL,
-      profileRequired: profileRequired,
-      stateRoot: stateRoot
-    )
+    let effectiveState =
+      suppliedBehavior
+      ?? effectiveInspector.inspect(
+        resourcesRoot: resourcesRoot,
+        profileURL: profileURL,
+        profileRequired: profileRequired,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
     let effectiveConfiguration = effectiveState.configuration
     let generation = effectiveState.generation
-    let provider = KeybindingProviderInspector().inspect(
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot,
-      generation: generation
-    )
+    let provider = effectiveState.provider
     var diagnostics = effectiveConfiguration.diagnostics.map(KeybindingsPlanDiagnostic.init)
     if !ignoreTransaction {
-      do {
-        if let transaction = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read() {
+      switch effectiveState.transaction.status {
+      case .pending:
+        if let transaction = effectiveState.transaction.pendingTransaction {
           diagnostics.append(
             .error(
               code: "keybinding_recovery_required",
@@ -60,14 +63,16 @@ struct KeybindingsPlanCommandRunner: Sendable {
             )
           )
         }
-      } catch {
+      case .invalid:
         diagnostics.append(
           .error(
             code: "keybinding_transaction_invalid",
             source: stateRoot.appending(path: "keybindings/transaction.json"),
-            message: String(describing: error)
+            message: effectiveState.transaction.message
           )
         )
+      case .clear:
+        break
       }
     }
 
@@ -135,13 +140,19 @@ struct KeybindingsPlanCommandRunner: Sendable {
       renderedDigest: renderedDigest,
       proposedInputDigest: proposedInputDigest,
       generation: KeybindingsPlanGeneration(generation),
+      generationAgreement: effectiveState.generationAgreement.rawValue,
       provider: provider,
+      effectiveStatus: effectiveState.status,
+      effectiveStatusMessage: effectiveState.statusMessage,
+      transaction: effectiveState.transaction,
+      process: effectiveState.process,
       adoptionDelta: adoptionDelta,
       actions: actions,
       diagnostics: diagnostics.sorted(by: KeybindingsPlanDiagnostic.order)
     )
     return KeybindingsPlanPreparation(
       outcome: outcome,
+      effectiveBehavior: effectiveState,
       composition: composition,
       generation: generation,
       provider: provider,
@@ -258,6 +269,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
 
 struct KeybindingsPlanPreparation {
   let outcome: String
+  let effectiveBehavior: KeybindingEffectiveBehavior
   let composition: KeybindingComposition?
   let generation: KeybindingGenerationInspection
   let provider: KeybindingProviderInspection
@@ -266,7 +278,7 @@ struct KeybindingsPlanPreparation {
 }
 
 private struct KeybindingsPlanReport: Encodable {
-  let schemaVersion = 1
+  let schemaVersion = 2
   let operation = "keybindings_plan"
   let outcome: String
   let mutated = false
@@ -278,7 +290,12 @@ private struct KeybindingsPlanReport: Encodable {
   let renderedDigest: String?
   let proposedInputDigest: String?
   let generation: KeybindingsPlanGeneration
+  let generationAgreement: String
   let provider: KeybindingProviderInspection
+  let effectiveStatus: KeybindingEffectiveStatus
+  let effectiveStatusMessage: String
+  let transaction: KeybindingTransactionInspection
+  let process: KeybindingProcessInspection
   let adoptionDelta: KeybindingsAdoptionDelta?
   let actions: [KeybindingsPlanAction]
   let diagnostics: [KeybindingsPlanDiagnostic]
@@ -301,9 +318,13 @@ private struct KeybindingsPlanReport: Encodable {
       "- proposed input digest: \(proposedInputDigest ?? "unavailable")",
       "- rendered digest: \(renderedDigest ?? "unavailable")",
       "- generation [\(generation.status)]: \(generation.message)",
+      "- generation agreement: \(generationAgreement)",
       "- current input digest: \(generation.currentInputDigest ?? "none")",
       "- current rendered digest: \(generation.currentRenderedDigest ?? "none")",
       "- provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
+      "- effective state [\(effectiveStatus.rawValue)]: \(effectiveStatusMessage)",
+      "- transaction [\(transaction.status.rawValue)]: \(transaction.message)",
+      "- process [\(process.status.rawValue)]: \(process.message)",
       "- provider entry point: \(provider.entryPoint)",
       "- provider expected target: \(provider.expectedTarget)",
       "- provider original target: \(provider.originalTarget ?? "none")",

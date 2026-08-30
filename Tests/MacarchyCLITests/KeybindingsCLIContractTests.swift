@@ -52,11 +52,16 @@ struct KeybindingsCLIContractTests {
       "keybindings", "doctor", "--effective", "--profile", profile.path,
       "--state-root", stateRoot.path, "--json",
     ])
+    let effectiveStatus = try run([
+      "keybindings", "status", "--profile", profile.path,
+      "--state-root", stateRoot.path, "--json",
+    ])
 
     let legacyListJSON = try json(legacyList.output)
     let legacyDoctorJSON = try json(legacyDoctor.output)
     let effectiveListJSON = try json(effectiveList.output)
     let effectiveDoctorJSON = try json(effectiveDoctor.output)
+    let effectiveStatusJSON = try json(effectiveStatus.output)
 
     #expect(legacyList.status == 0)
     #expect(legacyDoctor.status == 0)
@@ -73,6 +78,9 @@ struct KeybindingsCLIContractTests {
     #expect(effectiveListJSON["source"] == nil)
     #expect(effectiveDoctorJSON["schema_version"] as? Int == 2)
     #expect(effectiveDoctorJSON["operation"] as? String == "keybindings_doctor_effective")
+    #expect(effectiveStatusJSON["schema_version"] as? Int == 1)
+    #expect(effectiveStatusJSON["operation"] as? String == "keybindings_status")
+    #expect(effectiveStatusJSON["outcome"] as? String != nil)
   }
 
   @Test

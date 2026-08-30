@@ -5,7 +5,7 @@ import ThemeCore
 struct Keybindings: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect configured skhd keybindings.",
-    subcommands: [Plan.self, Apply.self, List.self, Doctor.self, Show.self]
+    subcommands: [Plan.self, Apply.self, Status.self, List.self, Doctor.self, Show.self]
   )
 
   struct Plan: ParsableCommand {
@@ -156,13 +156,49 @@ struct Keybindings: ParsableCommand {
         ?? homeDirectory.appending(path: ".config/macarchy/keybindings.toml").standardizedFileURL
     }
 
-    func inspect(homeDirectory: URL) -> KeybindingEffectiveState {
-      KeybindingEffectiveStateInspector().inspect(
+    func inspect(homeDirectory: URL) -> KeybindingEffectiveBehavior {
+      KeybindingEffectiveBehaviorInspector.live.inspect(
         resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
         profileURL: profileURL(homeDirectory: homeDirectory),
         profileRequired: profileRequired,
-        stateRoot: stateRootURL(homeDirectory: homeDirectory)
+        stateRoot: stateRootURL(homeDirectory: homeDirectory),
+        homeDirectory: homeDirectory
       )
+    }
+  }
+
+  struct Status: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Report effective keybinding configuration, ownership, and runtime state."
+    )
+
+    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
+    var profile: String?
+
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    mutating func run() throws {
+      let home = FileManager.default.homeDirectoryForCurrentUser
+      let profileURL =
+        profile.map { URL(filePath: $0).standardizedFileURL }
+        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let behavior = KeybindingEffectiveBehaviorInspector.live.inspect(
+        resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
+        profileURL: profileURL,
+        profileRequired: profile != nil,
+        stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
+        homeDirectory: home
+      )
+      let execution = try KeybindingsStatusCommandRunner().execute(behavior: behavior, json: json)
+      print(execution.output)
+      if !execution.succeeded {
+        throw ExitCode.failure
+      }
     }
   }
 

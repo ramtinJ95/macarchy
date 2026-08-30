@@ -19,7 +19,7 @@ struct KeybindingsListCommandRunner: Sendable {
   )
 
   func execute(
-    effectiveState: KeybindingEffectiveState,
+    effectiveState: KeybindingEffectiveBehavior,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     let report = EffectiveKeybindingsListReport(effectiveState)
@@ -85,19 +85,29 @@ struct KeybindingsListCommandRunner: Sendable {
 private struct EffectiveKeybindingsListReport: Encodable {
   let schemaVersion = 2
   let operation = "keybindings_list_effective"
+  let status: KeybindingEffectiveStatus
+  let statusMessage: String
   let profileStatus: String
   let generationStatus: String
   let generationAgreement: String
   let generationMessage: String?
+  let provider: KeybindingProviderInspection
+  let transaction: KeybindingTransactionInspection
+  let process: KeybindingProcessInspection
   let bindings: [EffectiveKeybindingListRow]
   let disabledDefaults: [DisabledKeybindingListRow]
   let diagnostics: [EffectiveKeybindingsListDiagnostic]
 
-  init(_ state: KeybindingEffectiveState) {
+  init(_ state: KeybindingEffectiveBehavior) {
+    status = state.status
+    statusMessage = state.statusMessage
     profileStatus = state.configuration.sources.profileStatus
     generationStatus = state.generation.status.rawValue
     generationAgreement = state.generationAgreement.rawValue
     generationMessage = state.generation.message
+    provider = state.provider
+    transaction = state.transaction
+    process = state.process
     bindings = state.presentedBindings.map(EffectiveKeybindingListRow.init)
     disabledDefaults = state.presentedDisabledDefaults.map(DisabledKeybindingListRow.init)
     diagnostics = state.configuration.diagnostics.map(EffectiveKeybindingsListDiagnostic.init)
@@ -106,13 +116,21 @@ private struct EffectiveKeybindingsListReport: Encodable {
   var succeeded: Bool {
     !diagnostics.contains { $0.severity == "error" }
       && generationStatus != KeybindingGenerationStatus.invalid.rawValue
+      && status != .blocked
+      && status != .recoveryRequired
   }
 
   func render(json: Bool) throws -> String {
     if json { return try renderJSON(self) }
 
     var lines = [
-      "Macarchy effective keybindings [generation \(generationAgreement)]:"
+      "Macarchy effective keybindings [\(status.rawValue)]:",
+      "State: \(statusMessage)",
+      "Generation agreement: \(generationAgreement)",
+      "Provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
+      "Transaction [\(transaction.status.rawValue)]: \(transaction.message)",
+      "Process [\(process.status.rawValue)]: \(process.message)",
+      "Showing desired managed bindings with command and metadata attribution.",
     ]
     if let generationMessage {
       lines.append("Generation diagnostic: \(generationMessage)")

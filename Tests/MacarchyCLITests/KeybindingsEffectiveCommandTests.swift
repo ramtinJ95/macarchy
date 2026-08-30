@@ -6,6 +6,148 @@ import Testing
 
 struct KeybindingsEffectiveCommandTests {
   @Test
+  func cleanStateAgreesAcrossInspectionPlanApplyAndStatus() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+
+    let reports = try fixture.crossCommandReports()
+
+    #expect(reports.list["status"] as? String == "clean")
+    #expect(reports.plan["schema_version"] as? Int == 2)
+    #expect(reports.plan["effective_status"] as? String == "clean")
+    #expect(reports.status["outcome"] as? String == "clean")
+    #expect(reports.apply["outcome"] as? String == "planned")
+    #expect(reports.doctorIDs.contains("effective.status.clean"))
+    #expect(try fixture.show(fixture.inspect()).stateMessage.contains("Not configured"))
+  }
+
+  @Test
+  func managedConvergedStateAgreesAcrossInspectionPlanApplyAndStatus() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    #expect(
+      try fixture.applyRunner().execute(
+        resourcesRoot: fixture.resources,
+        profileURL: fixture.profile,
+        profileRequired: true,
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        json: true
+      ).succeeded
+    )
+
+    let reports = try fixture.crossCommandReports()
+
+    #expect(reports.list["status"] as? String == "converged")
+    #expect(reports.plan["effective_status"] as? String == "converged")
+    #expect(reports.status["outcome"] as? String == "converged")
+    #expect(reports.apply["outcome"] as? String == "no_change")
+    #expect(reports.doctorIDs.contains("effective.status.converged"))
+    let popup = try fixture.show(fixture.inspect())
+    #expect(popup.heading == "Managed Keybindings")
+    #expect(popup.stateMessage.contains("does not expose its complete in-memory binding table"))
+  }
+
+  @Test
+  func managedInputDriftAgreesAcrossInspectionPlanApplyAndStatus() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    _ = try fixture.applyRunner().execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    try "alt - j : changed again\ncmd - x : personal command\ncmd - a : tied order\n".write(
+      to: fixture.profile.deletingLastPathComponent().appending(path: "personal.skhdrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let reports = try fixture.crossCommandReports()
+
+    #expect(reports.list["status"] as? String == "drifted")
+    #expect(reports.plan["effective_status"] as? String == "drifted")
+    #expect(reports.status["outcome"] as? String == "drifted")
+    #expect(reports.apply["outcome"] as? String == "planned")
+    #expect(reports.doctorIDs.contains("effective.status.drifted"))
+    #expect(try fixture.show(fixture.inspect()).stateMessage.contains("Showing desired bindings"))
+  }
+
+  @Test
+  func externallyManagedAdoptionStateAgreesAcrossInspectionPlanApplyAndStatus() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    try "alt - j : authoritative external command\n".write(
+      to: fixture.home.appending(path: ".config/skhd/skhdrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let reports = try fixture.crossCommandReports()
+
+    #expect(reports.list["status"] as? String == "externally_managed")
+    #expect(reports.plan["effective_status"] as? String == "externally_managed")
+    #expect(reports.status["outcome"] as? String == "externally_managed")
+    #expect(reports.apply["outcome"] as? String == "blocked")
+    #expect(reports.doctorIDs.contains("effective.status.externally_managed"))
+    let popup = try fixture.show(fixture.inspect())
+    #expect(popup.stateMessage.contains("Externally managed"))
+    #expect(popup.stateMessage.contains("not the authoritative external source"))
+  }
+
+  @Test
+  func corruptGeneratedStateAgreesAcrossInspectionPlanApplyAndStatus() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    let keybindings = fixture.stateRoot.appending(
+      path: "keybindings", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: keybindings, withIntermediateDirectories: true)
+    try Data("not a symlink".utf8).write(to: keybindings.appending(path: "current"))
+
+    let reports = try fixture.crossCommandReports()
+
+    #expect(reports.list["status"] as? String == "blocked")
+    #expect(reports.plan["effective_status"] as? String == "blocked")
+    #expect(reports.status["outcome"] as? String == "blocked")
+    #expect(reports.apply["outcome"] as? String == "blocked")
+    #expect(reports.doctorIDs.contains("effective.status.blocked"))
+    #expect(throws: KeybindingsShowError.self) {
+      try fixture.show(fixture.inspect())
+    }
+  }
+
+  @Test
+  func pendingRecoveryStateAgreesAcrossInspectionPlanApplyAndStatus() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    try FileManager.default.createDirectory(
+      at: fixture.stateRoot,
+      withIntermediateDirectories: true
+    )
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
+      KeybindingApplyTransaction(
+        operation: .installEntry,
+        phase: .staged,
+        generationID: "k-01234567-89ab-cdef-0123-456789abcdef",
+        previousGenerationID: nil,
+        generationCreated: true
+      )
+    )
+
+    let reports = try fixture.crossCommandReports()
+
+    #expect(reports.list["status"] as? String == "recovery_required")
+    #expect(reports.plan["effective_status"] as? String == "recovery_required")
+    #expect(reports.status["outcome"] as? String == "recovery_required")
+    #expect(reports.apply["outcome"] as? String == "recovery_planned")
+    #expect(reports.doctorIDs.contains("effective.status.recovery_required"))
+    #expect(try fixture.show(fixture.inspect()).stateMessage.contains("Recovery required"))
+  }
+
+  @Test
   func listShowDoctorPlanAndApplyPreviewConsumeOneAttributedEffectiveState() throws {
     let fixture = try EffectiveCommandFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -283,12 +425,86 @@ private struct EffectiveCommandFixture {
     )
   }
 
-  func inspect() -> KeybindingEffectiveState {
-    KeybindingEffectiveStateInspector().inspect(
+  func inspect(
+    process: KeybindingProcessInspection = .running
+  ) -> KeybindingEffectiveBehavior {
+    KeybindingEffectiveBehaviorInspector(
+      processInspector: KeybindingProcessInspector { process }
+    ).inspect(
       resourcesRoot: resources,
       profileURL: profile,
       profileRequired: true,
-      stateRoot: stateRoot
+      stateRoot: stateRoot,
+      homeDirectory: home
+    )
+  }
+
+  func planner(
+    process: KeybindingProcessInspection = .running
+  ) -> KeybindingsPlanCommandRunner {
+    KeybindingsPlanCommandRunner(
+      effectiveInspector: KeybindingEffectiveBehaviorInspector(
+        processInspector: KeybindingProcessInspector { process }
+      )
+    )
+  }
+
+  func applyRunner(
+    process: KeybindingProcessInspection = .running
+  ) -> KeybindingsApplyCommandRunner {
+    KeybindingsApplyCommandRunner(
+      lifecycle: KeybindingLifecycleController(
+        preflight: {},
+        restart: {},
+        reload: {},
+        verifyProcess: {}
+      ),
+      planner: planner(process: process)
+    )
+  }
+
+  func crossCommandReports() throws -> (
+    list: [String: Any],
+    doctorIDs: [String],
+    plan: [String: Any],
+    apply: [String: Any],
+    status: [String: Any]
+  ) {
+    let behavior = inspect()
+    let list = try KeybindingsListCommandRunner.live.execute(
+      effectiveState: behavior,
+      json: true
+    )
+    let doctor = try KeybindingsDoctorCommandRunner.live.execute(
+      effectiveState: behavior,
+      stateRoot: stateRoot,
+      json: true
+    )
+    let plan = try planner().execute(
+      resourcesRoot: resources,
+      profileURL: profile,
+      profileRequired: true,
+      stateRoot: stateRoot,
+      homeDirectory: home,
+      json: true
+    )
+    let apply = try applyRunner().preview(
+      resourcesRoot: resources,
+      profileURL: profile,
+      profileRequired: true,
+      stateRoot: stateRoot,
+      homeDirectory: home,
+      json: true
+    )
+    let status = try KeybindingsStatusCommandRunner().execute(behavior: behavior, json: true)
+    let doctorJSON = try json(doctor.output)
+    let doctorFindings = try #require(doctorJSON["findings"] as? [[String: Any]])
+    return (
+      try json(list.output),
+      doctorFindings.compactMap { $0["id"] as? String },
+      try json(plan.output),
+      try json(apply.output),
+      try json(status.output)
     )
   }
 
@@ -304,7 +520,7 @@ private struct EffectiveCommandFixture {
     return try JSONDecoder().decode(NormalizedTheme.self, from: Data(contentsOf: fixture))
   }
 
-  func show(_ state: KeybindingEffectiveState) throws -> KeybindingsPopupContent {
+  func show(_ state: KeybindingEffectiveBehavior) throws -> KeybindingsPopupContent {
     try KeybindingsShowCommandLoader(
       read: readSkhdConfiguration,
       loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },

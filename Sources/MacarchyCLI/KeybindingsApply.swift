@@ -78,8 +78,17 @@ struct KeybindingLifecycleController: Sendable {
 
 struct KeybindingsApplyCommandRunner: Sendable {
   let lifecycle: KeybindingLifecycleController
+  let planner: KeybindingsPlanCommandRunner
 
-  static let live = KeybindingsApplyCommandRunner(lifecycle: .live)
+  static let live = KeybindingsApplyCommandRunner(lifecycle: .live, planner: .live)
+
+  init(
+    lifecycle: KeybindingLifecycleController,
+    planner: KeybindingsPlanCommandRunner = .live
+  ) {
+    self.lifecycle = lifecycle
+    self.planner = planner
+  }
 
   func setupIntegration(
     resourcesRoot: URL,
@@ -313,8 +322,17 @@ struct KeybindingsApplyCommandRunner: Sendable {
           "keybinding apply requires the canonical per-user state root"
         )
       }
-      let pending = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read()
-      if let pending {
+      let effectiveBehavior = planner.effectiveInspector.inspect(
+        resourcesRoot: resourcesRoot,
+        profileURL: profileURL,
+        profileRequired: profileRequired,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+      if effectiveBehavior.transaction.status == .invalid {
+        throw KeybindingsApplyError.blocked(effectiveBehavior.transaction.message)
+      }
+      if let pending = effectiveBehavior.transaction.pendingTransaction {
         try preflightRecovery(
           pending,
           stateRoot: stateRoot,
@@ -334,13 +352,14 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
         return (try report.render(json: json), true)
       }
-      let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+      let preparation = try planner.prepare(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
-        ignoreTransaction: true
+        ignoreTransaction: true,
+        effectiveBehavior: effectiveBehavior
       )
       guard preparation.outcome != "blocked", preparation.composition != nil else {
         throw KeybindingsApplyError.blocked(
@@ -498,7 +517,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       )
     }
 
-    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+    let preparation = try planner.prepare(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
       profileRequired: profileRequired,
@@ -593,7 +612,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       try perform(lifecycleAction)
       try lifecycle.verifyProcess()
 
-      let verified = try KeybindingsPlanCommandRunner.live.prepare(
+      let verified = try planner.prepare(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,

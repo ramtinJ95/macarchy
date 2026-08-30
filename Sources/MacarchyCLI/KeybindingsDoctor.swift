@@ -11,7 +11,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
   )
 
   func execute(
-    effectiveState: KeybindingEffectiveState,
+    effectiveState: KeybindingEffectiveBehavior,
     stateRoot: URL,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
@@ -28,25 +28,34 @@ struct KeybindingsDoctorCommandRunner: Sendable {
     }
 
     let transactionURL = stateRoot.appending(path: "keybindings/transaction.json")
-    do {
-      if let transaction = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read() {
+    switch effectiveState.transaction.status {
+    case .pending:
+      if let transaction = effectiveState.transaction.pendingTransaction {
         findings.append(
           KeybindingsDoctorFinding(
             id: "transaction.recovery.\(transaction.operation.rawValue)."
               + "\(transaction.phase.rawValue).\(transaction.generationID)",
             status: .failure,
-            message: "Interrupted \(transaction.operation.rawValue) transaction is in "
-              + "phase \(transaction.phase.rawValue); recovery is required.",
+            message: effectiveState.transaction.message,
             source: transactionURL.path
           )
         )
       }
-    } catch {
+    case .invalid:
       findings.append(
         KeybindingsDoctorFinding(
           id: "transaction.invalid",
           status: .failure,
-          message: String(describing: error),
+          message: effectiveState.transaction.message,
+          source: transactionURL.path
+        )
+      )
+    case .clear:
+      findings.append(
+        KeybindingsDoctorFinding(
+          id: "transaction.clear",
+          status: .ok,
+          message: effectiveState.transaction.message,
           source: transactionURL.path
         )
       )
@@ -117,6 +126,54 @@ struct KeybindingsDoctorCommandRunner: Sendable {
         break
       }
     }
+
+    let providerFindingStatus: KeybindingsDoctorFinding.Status =
+      switch effectiveState.provider.status {
+      case .managed, .installRequired:
+        .ok
+      case .adoptionRequired:
+        .warning
+      case .blocked:
+        effectiveState.provider.ownership == "ownership_drift" ? .warning : .failure
+      }
+    findings.append(
+      KeybindingsDoctorFinding(
+        id: "provider.\(effectiveState.provider.status.rawValue)."
+          + effectiveState.provider.ownership,
+        status: providerFindingStatus,
+        message: effectiveState.provider.message,
+        source: effectiveState.provider.entryPoint
+      )
+    )
+
+    let processFindingStatus: KeybindingsDoctorFinding.Status =
+      switch effectiveState.process.status {
+      case .running:
+        .ok
+      case .notRunning:
+        .warning
+      case .unavailable:
+        .failure
+      }
+    findings.append(
+      KeybindingsDoctorFinding(
+        id: "process.\(effectiveState.process.status.rawValue)",
+        status: processFindingStatus,
+        message: effectiveState.process.message
+      )
+    )
+
+    findings.append(
+      KeybindingsDoctorFinding(
+        id: "effective.status.\(effectiveState.status.rawValue)",
+        status:
+          effectiveState.status == .blocked || effectiveState.status == .recoveryRequired
+          ? .failure
+          : (effectiveState.status == .drifted || effectiveState.status == .externallyManaged
+            ? .warning : .ok),
+        message: effectiveState.statusMessage
+      )
+    )
 
     let report = KeybindingsDoctorReport(
       schemaVersion: 2,
