@@ -366,6 +366,59 @@ struct SetupCommandTests {
       ])
   }
 
+  @Test
+  func keybindingLifecyclePreviewFailureDoesNotSkipDependenciesOrSafeSeams() throws {
+    let missing = Mutex(Set(["bat"]))
+    let events = Mutex<[String]>([])
+    let runner = SetupCommandRunner(
+      resolveProfile: DependencyProfile.named,
+      capabilityIsAvailable: { capability in missing.withLock { !$0.contains(capability.id) } },
+      processRunner: ProcessRunner { _ in
+        events.withLock { $0.append("dependency") }
+        _ = missing.withLock { $0.remove("bat") }
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      writePreMutationPlan: { _ in },
+      setupIntegrations: { home, _ in
+        events.withLock { $0.append("safe-seam") }
+        return [
+          SetupIntegrationResult(
+            id: SetupOwnershipManager.integrationID,
+            status: .external,
+            target: home.appending(path: ".config/kitty/kitty.conf").path,
+            message: "safe seam inspected",
+            mutationAttempted: false
+          )
+        ]
+      },
+      setupKeybindings: { _, _, home, dryRun, _ in
+        events.withLock { $0.append(dryRun ? "keybinding-preview" : "keybinding-apply") }
+        return SetupIntegrationResult(
+          id: KeybindingProviderInspector.ownershipID,
+          status: .failed,
+          target: home.appending(path: ".config/skhd/skhdrc").path,
+          message: "skhd lifecycle is not ready",
+          mutationAttempted: false
+        )
+      }
+    )
+
+    let execution = try runner.execute(
+      profileName: "personal",
+      homeDirectory: URL(filePath: "/Users/test"),
+      installDependencies: true,
+      dryRun: false,
+      json: true
+    )
+    let report = try decode(execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(events.withLock { $0 } == ["dependency", "keybinding-preview", "safe-seam"])
+    #expect(report.integrations?.map(\.id).contains(SetupOwnershipManager.integrationID) == true)
+    #expect(
+      report.integrations?.map(\.id).contains(KeybindingProviderInspector.ownershipID) == true)
+  }
+
   private func runner(missing: Set<String>) -> SetupCommandRunner {
     SetupCommandRunner(
       resolveProfile: DependencyProfile.named,
@@ -467,6 +520,11 @@ private struct SetupTestReport: Decodable {
   let summary: SetupTestSummary?
   let availableProfiles: [String]?
   let dependencyInstallation: SetupTestInstallation
+  let integrations: [SetupTestIntegration]?
+}
+
+private struct SetupTestIntegration: Decodable {
+  let id: String
 }
 
 private struct SetupTestCapability: Decodable {

@@ -418,28 +418,6 @@ struct SetupCommandRunner: Sendable {
     var failure: SetupInstallationFailure?
     var mutationAttempted = false
 
-    let keybindingPreview = try setupKeybindings(
-      preparation.keybindingProfileURL,
-      preparation.keybindingProfileRequired,
-      preparation.homeDirectory,
-      true,
-      preparation.adoptKeybindings
-    )
-    if let keybindingPreview, !keybindingPreview.succeeded {
-      let report = SetupReport.profile(
-        preparation.profile.name,
-        installDependencies: preparation.installDependencies,
-        dryRun: preparation.dryRun,
-        capabilities: capabilities,
-        installPlan: HomebrewInstallPlan(capabilities: capabilities),
-        commandResults: [],
-        mutationAttempted: false,
-        installationFailure: nil,
-        integrations: [keybindingPreview]
-      )
-      return (try report.render(json: json), false)
-    }
-
     if preparation.installDependencies, !preparation.dryRun {
       let missingPrerequisites = capabilities.filter {
         $0.category == .platformRuntime && $0.status == .missing
@@ -483,6 +461,14 @@ struct SetupCommandRunner: Sendable {
       }
     }
 
+    let keybindingPreview = try setupKeybindings(
+      preparation.keybindingProfileURL,
+      preparation.keybindingProfileRequired,
+      preparation.homeDirectory,
+      true,
+      preparation.adoptKeybindings
+    )
+
     var integrations: [SetupIntegrationResult]
     do {
       integrations = try setupIntegrations(preparation.homeDirectory, preparation.dryRun)
@@ -494,7 +480,9 @@ struct SetupCommandRunner: Sendable {
     }
     if preparation.dryRun {
       if let keybindingPreview { integrations.append(keybindingPreview) }
-    } else if integrations.allSatisfy(\.succeeded), failure == nil {
+    } else if integrations.allSatisfy(\.succeeded), failure == nil,
+      keybindingPreview?.succeeded != false
+    {
       if let keybindings = try setupKeybindings(
         preparation.keybindingProfileURL,
         preparation.keybindingProfileRequired,
