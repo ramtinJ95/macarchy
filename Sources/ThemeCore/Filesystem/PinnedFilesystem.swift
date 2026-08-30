@@ -67,6 +67,19 @@ package enum PinnedFilesystem {
     return descriptor
   }
 
+  package static func createDirectory(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    mode: mode_t = 0o755
+  ) throws -> Int32 {
+    let result = name.withCString { Darwin.mkdirat(parentDescriptor, $0, mode) }
+    guard result == 0 else {
+      throw PinnedFilesystemError(operation: "create pinned directory", url: url, code: errno)
+    }
+    return try openDirectory(parentDescriptor: parentDescriptor, name: name, url: url)
+  }
+
   package static func metadata(
     parentDescriptor: Int32,
     name: String,
@@ -119,6 +132,81 @@ package enum PinnedFilesystem {
     }
     defer { Darwin.close(descriptor) }
     return try BoundedRegularFile.read(descriptor: descriptor, maximumSize: maximumSize)
+  }
+
+  package static func writeNewRegularFile(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    data: Data,
+    mode: mode_t
+  ) throws {
+    let descriptor = name.withCString {
+      Darwin.openat(
+        parentDescriptor,
+        $0,
+        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+        mode
+      )
+    }
+    guard descriptor >= 0 else {
+      throw PinnedFilesystemError(operation: "create pinned regular file", url: url, code: errno)
+    }
+    defer { Darwin.close(descriptor) }
+    var offset = 0
+    while offset < data.count {
+      let count = data.withUnsafeBytes { bytes in
+        Darwin.write(
+          descriptor,
+          bytes.baseAddress?.advanced(by: offset),
+          data.count - offset
+        )
+      }
+      if count < 0, errno == EINTR { continue }
+      guard count > 0 else {
+        throw PinnedFilesystemError(operation: "write pinned regular file", url: url, code: errno)
+      }
+      offset += count
+    }
+    guard fsync(descriptor) == 0 else {
+      throw PinnedFilesystemError(operation: "sync pinned regular file", url: url, code: errno)
+    }
+  }
+
+  package static func replaceRegularFileAtomically(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    data: Data,
+    mode: mode_t
+  ) throws {
+    let temporaryName = ".\(name)-\(UUID().uuidString.lowercased())"
+    let temporaryURL = url.deletingLastPathComponent().appending(path: temporaryName)
+    try writeNewRegularFile(
+      parentDescriptor: parentDescriptor,
+      name: temporaryName,
+      url: temporaryURL,
+      data: data,
+      mode: mode
+    )
+    var removeTemporary = true
+    defer {
+      if removeTemporary {
+        temporaryName.withCString { _ = Darwin.unlinkat(parentDescriptor, $0, 0) }
+      }
+    }
+    let replaced = temporaryName.withCString { source in
+      name.withCString { destination in
+        Darwin.renameat(parentDescriptor, source, parentDescriptor, destination)
+      }
+    }
+    guard replaced == 0 else {
+      throw PinnedFilesystemError(operation: "replace pinned regular file", url: url, code: errno)
+    }
+    removeTemporary = false
+    guard fsync(parentDescriptor) == 0 else {
+      throw PinnedFilesystemError(operation: "sync replaced regular file", url: url, code: errno)
+    }
   }
 
   package static func readRegularFile(

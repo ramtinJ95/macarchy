@@ -247,7 +247,7 @@ package struct KeybindingGenerationInspector: Sendable {
     }
   }
 
-  private static func isGenerationID(_ value: String) -> Bool {
+  package static func isGenerationID(_ value: String) -> Bool {
     value.hasPrefix("k-")
       && value == value.lowercased()
       && UUID(uuidString: String(value.dropFirst(2))) != nil
