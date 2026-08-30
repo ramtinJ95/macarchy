@@ -114,16 +114,6 @@ public struct RenderedTheme: Sendable {
     Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, sha256Digest($0.data)) })
   }
 
-  package func validateDataSizes() throws {
-    for artifact in artifacts where artifact.data.count > artifact.maximumSize {
-      throw RenderedArtifactCollectionError.dataTooLarge(
-        path: artifact.path,
-        size: artifact.data.count,
-        maximumSize: artifact.maximumSize
-      )
-    }
-  }
-
   private func requiredData(atPath path: String) -> Data {
     guard let artifact = artifact(atPath: path) else {
       preconditionFailure("Rendered theme is missing required artifact '\(path)'")
