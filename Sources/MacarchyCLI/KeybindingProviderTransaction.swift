@@ -18,6 +18,8 @@ enum KeybindingProviderCheckpoint: Equatable, Sendable {
   case restoredOriginalPublished
   case restoredIdentityRecorded
   case backupRemoved
+  case managedEntryClaimedForRemoval
+  case deletionSourcePinned
   case providerReplaced
   case originalRestored
 }
@@ -106,6 +108,11 @@ struct KeybindingProviderTransaction: Sendable {
 
   func restoreOriginalEntry() throws {
     let (record, _, context) = try ownershipRecord()
+    if KeybindingProviderInspector.isLegacyCleanInstallRecord(record) {
+      try removeLegacyManagedEntry(record)
+      try faultInjector(.originalRestored)
+      return
+    }
     switch originalKind(record) {
     case .directorySymbolicLink:
       try restoreOriginalDirectory(record)
@@ -117,6 +124,10 @@ struct KeybindingProviderTransaction: Sendable {
 
   func restoreManagedEntry() throws {
     let (record, _, _) = try ownershipRecord()
+    if KeybindingProviderInspector.isLegacyCleanInstallRecord(record) {
+      try restoreLegacyManagedEntry(record)
+      return
+    }
     switch originalKind(record) {
     case .directorySymbolicLink:
       try replaceOriginalDirectoryWithManaged(record)
@@ -127,6 +138,10 @@ struct KeybindingProviderTransaction: Sendable {
 
   func preflightOriginalRestoration() throws {
     let (record, _, _) = try ownershipRecord()
+    if KeybindingProviderInspector.isLegacyCleanInstallRecord(record) {
+      try preflightLegacyCleanInstall(record)
+      return
+    }
     let manager = SetupOwnershipManager()
     try requireLegacyClaimAbsent(for: record)
     switch originalKind(record) {
@@ -163,7 +178,11 @@ struct KeybindingProviderTransaction: Sendable {
         if try backupExists() {
           _ = try readOriginalBackup(record, manager: manager)
         } else {
-          guard record.phase == .prepared, state == .original, claim == .missing else {
+          guard
+            [.prepared, .teardownPrepared].contains(record.phase),
+            state == .original,
+            claim == .missing
+          else {
             throw SetupOwnershipError.corruptBackup(backup)
           }
           try verifyPinnedUntouchedOriginal(record, manager: manager)
@@ -179,6 +198,12 @@ struct KeybindingProviderTransaction: Sendable {
   func finalizeOriginalRestoration() throws {
     var (record, existingRecords, context) = try ownershipRecord()
     var records = existingRecords
+    if KeybindingProviderInspector.isLegacyCleanInstallRecord(record) {
+      try requireLegacyEntryAbsent()
+      records.removeAll { $0.id == KeybindingProviderInspector.ownershipID }
+      try SetupOwnershipManager().persist(records: records, context: context)
+      return
+    }
     try verifyOriginal(record, context: context)
     let manager = SetupOwnershipManager()
     if originalKind(record) == .regularFile {
@@ -557,11 +582,15 @@ struct KeybindingProviderTransaction: Sendable {
       recognizeIncompleteClaim: true
     )
     if claimState == .incomplete {
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try removeMarkedItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
       claimState = .missing
     }
     if state == .managed {
-      if claimState == .original { try unlink(descriptor: descriptor, name: claim, url: entry) }
+      if claimState == .original {
+        try removeOriginalItem(
+          parentDescriptor: descriptor, name: claim, record: record, url: entry)
+      }
       guard claimState == .missing || claimState == .original else {
         throw SetupOwnershipError.ownershipDrift(entry)
       }
@@ -578,7 +607,8 @@ struct KeybindingProviderTransaction: Sendable {
         try faultInjector(.providerClaimSwapped)
         try verifyDisplacedOriginal(record, parentDescriptor: descriptor, name: claim, url: entry)
       }
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try removeOriginalItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
       return
     }
     guard state == .original || (state == .missing && originalKind(record) == .absent),
@@ -610,7 +640,8 @@ struct KeybindingProviderTransaction: Sendable {
           record: record
         ) == .original
       else { throw SetupOwnershipError.ownershipDrift(entry) }
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try removeOriginalItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
     }
   }
 
@@ -629,11 +660,15 @@ struct KeybindingProviderTransaction: Sendable {
       recognizeIncompleteClaim: true
     )
     if claimState == .incomplete {
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try removeMarkedItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
       claimState = .missing
     }
     if state == .original || (state == .missing && originalKind(record) == .absent) {
-      if claimState == .managed { try unlink(descriptor: descriptor, name: claim, url: entry) }
+      if claimState == .managed {
+        try removeMarkedItem(
+          parentDescriptor: descriptor, name: claim, record: record, url: entry)
+      }
       guard claimState == .missing || claimState == .managed else {
         throw SetupOwnershipError.ownershipDrift(entry)
       }
@@ -658,7 +693,8 @@ struct KeybindingProviderTransaction: Sendable {
       try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
       try faultInjector(.restoredOriginalPublished)
       try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: "skhdrc", url: entry)
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try removeMarkedItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
       return
     }
     guard state == .managed, claimState == .missing else {
@@ -667,13 +703,16 @@ struct KeybindingProviderTransaction: Sendable {
     switch originalKind(record) {
     case .absent:
       try rename(descriptor: descriptor, from: "skhdrc", to: claim, url: entry)
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try faultInjector(.managedEntryClaimedForRemoval)
+      try removeMarkedItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .regularFile:
       try restoreRegularFileClaim(record, descriptor: descriptor, name: claim)
       try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
       try faultInjector(.restoredOriginalPublished)
       try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: "skhdrc", url: entry)
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try removeMarkedItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .symbolicLink:
       try createSymlink(
         descriptor: descriptor,
@@ -685,7 +724,8 @@ struct KeybindingProviderTransaction: Sendable {
       try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
       try faultInjector(.restoredOriginalPublished)
       try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: "skhdrc", url: entry)
-      try unlink(descriptor: descriptor, name: claim, url: entry)
+      try removeMarkedItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .directorySymbolicLink:
       throw SetupOwnershipError.invalidManifest("directory adoption cannot restore a leaf")
     }
@@ -713,7 +753,8 @@ struct KeybindingProviderTransaction: Sendable {
     }
     if state == .managed {
       if claimState == .original {
-        try unlink(descriptor: descriptor, name: claim, url: directory)
+        try removeOriginalItem(
+          parentDescriptor: descriptor, name: claim, record: record, url: directory)
       }
       guard claimState == .missing || claimState == .original else {
         throw SetupOwnershipError.ownershipDrift(directory)
@@ -727,7 +768,8 @@ struct KeybindingProviderTransaction: Sendable {
       }
       try faultInjector(.providerClaimSwapped)
       try verifyDisplacedOriginal(record, parentDescriptor: descriptor, name: claim, url: directory)
-      try unlink(descriptor: descriptor, name: claim, url: directory)
+      try removeOriginalItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: directory)
       return
     }
     guard state == .original, claimState == .missing else {
@@ -746,7 +788,8 @@ struct KeybindingProviderTransaction: Sendable {
         record: record
       ) == .original
     else { throw SetupOwnershipError.ownershipDrift(directory) }
-    try unlink(descriptor: descriptor, name: claim, url: directory)
+    try removeOriginalItem(
+      parentDescriptor: descriptor, name: claim, record: record, url: directory)
   }
 
   private func restoreOriginalDirectory(_ record: SetupOwnershipRecord) throws {
@@ -860,10 +903,11 @@ struct KeybindingProviderTransaction: Sendable {
         return markerMatches ? .managed : .other
       }
       if originalKind(record) == .symbolicLink,
-        destination == record.originalLinkDestination,
-        try originalIdentityMatches(metadata, record: record)
+        destination == record.originalLinkDestination
       {
-        return .original
+        if try markerMatches || originalIdentityMatches(metadata, record: record) {
+          return .original
+        }
       }
       return .other
     case S_IFREG where originalKind(record) == .regularFile:
@@ -908,7 +952,8 @@ struct KeybindingProviderTransaction: Sendable {
         url: url
       )
       guard destination == record.originalLinkDestination else { return .other }
-      return try originalIdentityMatches(metadata, record: record) ? .original : .other
+      return try markerMatches || originalIdentityMatches(metadata, record: record)
+        ? .original : .other
     }
     guard metadata.st_mode & S_IFMT == S_IFDIR else { return .other }
     guard markerMatches else { return .other }
@@ -1261,7 +1306,12 @@ struct KeybindingProviderTransaction: Sendable {
         try publish(parentDescriptor: descriptor, from: publicationName, to: name, url: claimURL)
         return
       }
-      try unlink(descriptor: descriptor, name: publicationName, url: publicationURL)
+      try removeMarkedItem(
+        parentDescriptor: descriptor,
+        name: publicationName,
+        record: record,
+        url: publicationURL
+      )
     }
     let claim = publicationName.withCString {
       Darwin.openat(
@@ -1384,15 +1434,160 @@ struct KeybindingProviderTransaction: Sendable {
       else {
         throw SetupOwnershipError.ownershipDrift(url)
       }
-      try unlink(descriptor: descriptor, name: "skhdrc", url: url)
+      try removeMarkedItem(
+        parentDescriptor: descriptor,
+        name: "skhdrc",
+        record: record,
+        url: url.appending(path: "skhdrc")
+      )
       try faultInjector(.directoryClaimEntryRemoved)
     } else if !inventory.entries.isEmpty {
       throw SetupOwnershipError.ownershipDrift(url)
     }
-    guard name.withCString({ Darwin.unlinkat(parentDescriptor, $0, AT_REMOVEDIR) }) == 0 else {
-      throw posixError("remove managed skhd directory", url)
+    try removePinnedItem(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url,
+      directory: true
+    ) { deletionName, deletionURL in
+      let deletionDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL
+      )
+      defer { Darwin.close(deletionDescriptor) }
+      guard
+        try claimMarkerMatches(
+          descriptor: deletionDescriptor,
+          record: record,
+          url: deletionURL
+        )
+      else { throw SetupOwnershipError.ownershipDrift(deletionURL) }
+      let deletionInventory = try PinnedFilesystem.directoryEntries(
+        descriptor: deletionDescriptor,
+        url: deletionURL,
+        limit: 1
+      )
+      guard deletionInventory.entries.isEmpty, !deletionInventory.truncated else {
+        throw SetupOwnershipError.ownershipDrift(deletionURL)
+      }
     }
-    try sync(parentDescriptor, url: configurationDirectory)
+  }
+
+  private func preflightLegacyCleanInstall(_ record: SetupOwnershipRecord) throws {
+    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    defer { Darwin.close(descriptor) }
+    try requireAbsent(
+      parentDescriptor: descriptor,
+      name: ".skhdrc.macarchy-keybindings",
+      url: directory.appending(path: ".skhdrc.macarchy-keybindings")
+    )
+    do {
+      try verifyLegacyManagedLink(
+        parentDescriptor: descriptor,
+        name: "skhdrc",
+        record: record,
+        url: entry
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+  }
+
+  private func removeLegacyManagedEntry(_ record: SetupOwnershipRecord) throws {
+    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    defer { Darwin.close(descriptor) }
+    do {
+      try removePinnedItem(
+        parentDescriptor: descriptor,
+        name: "skhdrc",
+        url: entry
+      ) { name, url in
+        try verifyLegacyManagedLink(
+          parentDescriptor: descriptor,
+          name: name,
+          record: record,
+          url: url
+        )
+      }
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+  }
+
+  private func restoreLegacyManagedEntry(_ record: SetupOwnershipRecord) throws {
+    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    defer { Darwin.close(descriptor) }
+    do {
+      try verifyLegacyManagedLink(
+        parentDescriptor: descriptor,
+        name: "skhdrc",
+        record: record,
+        url: entry
+      )
+      return
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      let publicationName = ".skhdrc.macarchy-legacy-\(UUID().uuidString.lowercased())"
+      let publicationURL = directory.appending(path: publicationName)
+      let created = KeybindingProviderInspector.managedTarget.withCString { destination in
+        publicationName.withCString { Darwin.symlinkat(destination, descriptor, $0) }
+      }
+      guard created == 0 else {
+        throw posixError("create legacy keybinding provider link", publicationURL)
+      }
+      do {
+        try publish(
+          parentDescriptor: descriptor,
+          from: publicationName,
+          to: "skhdrc",
+          url: entry
+        )
+      } catch {
+        _ = publicationName.withCString { Darwin.unlinkat(descriptor, $0, 0) }
+        throw error
+      }
+    }
+  }
+
+  private func verifyLegacyManagedLink(
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord,
+    url: URL
+  ) throws {
+    guard KeybindingProviderInspector.isLegacyCleanInstallRecord(record) else {
+      throw SetupOwnershipError.invalidManifest("legacy keybinding ownership shape changed")
+    }
+    let metadata = try PinnedFilesystem.metadata(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url
+    )
+    guard metadata.st_mode & S_IFMT == S_IFLNK, metadata.st_nlink == 1 else {
+      throw SetupOwnershipError.ownershipDrift(url)
+    }
+    let destination = try PinnedFilesystem.symlinkDestination(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url
+    )
+    guard destination == KeybindingProviderInspector.managedTarget else {
+      throw SetupOwnershipError.ownershipDrift(url)
+    }
+    let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
+    defer { Darwin.close(pinned) }
+    let markerSize = Self.claimMarkerAttribute.withCString {
+      Darwin.fgetxattr(pinned, $0, nil, 0, 0, 0)
+    }
+    if markerSize < 0, errno == ENOATTR { return }
+    guard markerSize < 0 else { throw SetupOwnershipError.ownershipDrift(url) }
+    throw posixError("inspect legacy keybinding ownership marker", url)
+  }
+
+  private func requireLegacyEntryAbsent() throws {
+    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    defer { Darwin.close(descriptor) }
+    try requireAbsent(parentDescriptor: descriptor, name: "skhdrc", url: entry)
   }
 
   private func originalKind(_ record: SetupOwnershipRecord) -> SetupOwnershipRecord.OriginalKind {
@@ -1477,41 +1672,36 @@ struct KeybindingProviderTransaction: Sendable {
   ) throws {
     let parent = try openBackupDirectory(create: false)
     defer { Darwin.close(parent) }
-    let descriptor = try manager.openPinnedRegularFile(
-      parentDescriptor: parent,
-      name: backup.lastPathComponent,
-      url: backup,
-      label: "keybinding backup"
-    )
-    defer { Darwin.close(descriptor) }
-    let file = try manager.readPinnedRegularFile(
-      descriptor: descriptor,
-      url: backup,
-      label: "keybinding backup"
-    )
-    let snapshot = try manager.regularFileSnapshot(
-      descriptor: descriptor,
-      url: backup,
-      label: "keybinding backup"
-    )
-    let pathMetadata = try PinnedFilesystem.metadata(
+    try removePinnedItem(
       parentDescriptor: parent,
       name: backup.lastPathComponent,
       url: backup
-    )
-    guard
-      file.permissions == 0o600,
-      sha256Digest(file.data) == record.originalDigest,
-      snapshot.linkCount == 1,
-      snapshot.device == UInt64(pathMetadata.st_dev),
-      snapshot.inode == UInt64(pathMetadata.st_ino),
-      snapshot.restorableMetadataDigest(overridingMode: try originalMode(record))
-        == record.originalMetadataDigest
-    else { throw SetupOwnershipError.corruptBackup(backup) }
-    guard backup.lastPathComponent.withCString({ Darwin.unlinkat(parent, $0, 0) }) == 0 else {
-      throw posixError("remove keybinding backup", backup)
+    ) { deletionName, deletionURL in
+      let descriptor = try manager.openPinnedRegularFile(
+        parentDescriptor: parent,
+        name: deletionName,
+        url: deletionURL,
+        label: "keybinding backup"
+      )
+      defer { Darwin.close(descriptor) }
+      let file = try manager.readPinnedRegularFile(
+        descriptor: descriptor,
+        url: deletionURL,
+        label: "keybinding backup"
+      )
+      let snapshot = try manager.regularFileSnapshot(
+        descriptor: descriptor,
+        url: deletionURL,
+        label: "keybinding backup"
+      )
+      guard
+        file.permissions == 0o600,
+        sha256Digest(file.data) == record.originalDigest,
+        snapshot.linkCount == 1,
+        snapshot.restorableMetadataDigest(overridingMode: try originalMode(record))
+          == record.originalMetadataDigest
+      else { throw SetupOwnershipError.corruptBackup(backup) }
     }
-    try sync(parent, url: backup.deletingLastPathComponent())
   }
 
   private func openBackupDirectory(create: Bool) throws -> Int32 {
@@ -2084,11 +2274,110 @@ struct KeybindingProviderTransaction: Sendable {
     return descriptor
   }
 
-  private func unlink(descriptor: Int32, name: String, url: URL) throws {
-    guard name.withCString({ Darwin.unlinkat(descriptor, $0, 0) }) == 0 else {
-      throw posixError("remove keybinding provider item", url)
+  private func removeMarkedItem(
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord,
+    url: URL
+  ) throws {
+    try removePinnedItem(parentDescriptor: parentDescriptor, name: name, url: url) {
+      deletionName, deletionURL in
+      guard
+        try claimMarkerMatches(
+          parentDescriptor: parentDescriptor,
+          name: deletionName,
+          record: record,
+          url: deletionURL
+        )
+      else { throw SetupOwnershipError.ownershipDrift(deletionURL) }
     }
-    try sync(descriptor, url: url.deletingLastPathComponent())
+  }
+
+  private func removeOriginalItem(
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord,
+    url: URL
+  ) throws {
+    try removePinnedItem(parentDescriptor: parentDescriptor, name: name, url: url) {
+      deletionName, deletionURL in
+      try verifyDisplacedOriginal(
+        record,
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL
+      )
+    }
+  }
+
+  private func removePinnedItem(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    directory: Bool = false,
+    authenticate: (String, URL) throws -> Void
+  ) throws {
+    try authenticate(name, url)
+    let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
+    defer { Darwin.close(pinned) }
+    var identity = stat()
+    guard fstat(pinned, &identity) == 0 else { throw posixError("pin deletion source", url) }
+    try faultInjector(.deletionSourcePinned)
+
+    let deletionName = ".\(name).deleting-\(UUID().uuidString.lowercased())"
+    let deletionURL = url.deletingLastPathComponent().appending(path: deletionName)
+    let moved = name.withCString { source in
+      deletionName.withCString { destination in
+        Darwin.renameatx_np(
+          parentDescriptor,
+          source,
+          parentDescriptor,
+          destination,
+          UInt32(RENAME_EXCL)
+        )
+      }
+    }
+    guard moved == 0 else { throw posixError("claim keybinding item for deletion", url) }
+    try sync(parentDescriptor, url: url.deletingLastPathComponent())
+    do {
+      let movedMetadata = try PinnedFilesystem.metadata(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL
+      )
+      guard
+        movedMetadata.st_dev == identity.st_dev,
+        movedMetadata.st_ino == identity.st_ino,
+        movedMetadata.st_mode & S_IFMT == identity.st_mode & S_IFMT
+      else { throw SetupOwnershipError.ownershipDrift(url) }
+      try authenticate(deletionName, deletionURL)
+    } catch {
+      let restored = deletionName.withCString { source in
+        name.withCString { destination in
+          Darwin.renameatx_np(
+            parentDescriptor,
+            source,
+            parentDescriptor,
+            destination,
+            UInt32(RENAME_EXCL)
+          )
+        }
+      }
+      if restored == 0 {
+        try sync(parentDescriptor, url: url.deletingLastPathComponent())
+        throw error
+      }
+      throw SetupOwnershipError.system(
+        "restore unauthenticated deletion candidate",
+        deletionURL,
+        "\(error); candidate preserved after restore failed: \(String(cString: strerror(errno)))"
+      )
+    }
+    let flags = directory ? AT_REMOVEDIR : 0
+    guard deletionName.withCString({ Darwin.unlinkat(parentDescriptor, $0, flags) }) == 0 else {
+      throw posixError("remove authenticated keybinding item", deletionURL)
+    }
+    try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
 
   private func rename(descriptor: Int32, from: String, to: String, url: URL) throws {

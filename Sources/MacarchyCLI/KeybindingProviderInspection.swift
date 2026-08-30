@@ -647,6 +647,16 @@ struct KeybindingProviderInspector: Sendable {
     entry: URL,
     record: SetupOwnershipRecord
   ) throws {
+    if Self.isLegacyCleanInstallRecord(record) {
+      guard
+        try Self.markerIsAbsent(
+          parentDescriptor: directoryDescriptor,
+          name: "skhdrc",
+          record: record
+        )
+      else { throw SetupOwnershipError.ownershipDrift(entry) }
+      return
+    }
     guard
       try Self.markerMatches(parentDescriptor: directoryDescriptor, name: "skhdrc", record: record)
     else { throw SetupOwnershipError.ownershipDrift(entry) }
@@ -670,6 +680,32 @@ struct KeybindingProviderInspector: Sendable {
     }
     defer { Darwin.close(descriptor) }
     return try markerMatches(descriptor: descriptor, record: record)
+  }
+
+  private static func markerIsAbsent(
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord
+  ) throws -> Bool {
+    let descriptor = name.withCString {
+      Darwin.openat(parentDescriptor, $0, O_RDONLY | O_SYMLINK | O_CLOEXEC)
+    }
+    guard descriptor >= 0 else {
+      throw SetupOwnershipError.ownershipDrift(URL(filePath: record.targetPath))
+    }
+    defer { Darwin.close(descriptor) }
+    let count = claimMarkerAttribute.withCString {
+      Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0)
+    }
+    if count < 0, errno == ENOATTR { return true }
+    guard count >= 0 else {
+      throw SetupOwnershipError.system(
+        "inspect legacy keybinding ownership marker",
+        URL(filePath: record.targetPath),
+        String(cString: strerror(errno))
+      )
+    }
+    return false
   }
 
   private static func markerMatches(
@@ -704,11 +740,16 @@ struct KeybindingProviderInspector: Sendable {
       record.targetPath == target.path,
       record.installedDigest == sha256Digest(Data(expectedTarget.utf8)),
       record.linkDestination == expectedTarget,
-      record.replacementDigest == nil,
-      validClaimNonce(record.claimNonce)
+      record.replacementDigest == nil
     else {
       throw SetupOwnershipError.invalidManifest(
         "keybinding entry ownership record does not match the managed provider link"
+      )
+    }
+    if isLegacyCleanInstallRecord(record) { return }
+    guard validClaimNonce(record.claimNonce) else {
+      throw SetupOwnershipError.invalidManifest(
+        "keybinding entry ownership record has no valid claim nonce"
       )
     }
     switch record.originalKind ?? .absent {
@@ -766,6 +807,25 @@ struct KeybindingProviderInspector: Sendable {
         )
       }
     }
+  }
+
+  static func isLegacyCleanInstallRecord(_ record: SetupOwnershipRecord) -> Bool {
+    record.phase == .applied
+      && record.kind == .symbolicLink
+      && record.backupPath == nil
+      && record.originalDigest == nil
+      && record.installedDigest == sha256Digest(Data(managedTarget.utf8))
+      && record.linkDestination == managedTarget
+      && record.replacementDigest == nil
+      && record.originalKind == nil
+      && record.originalLinkDestination == nil
+      && record.originalFileMode == nil
+      && record.originalMetadataDigest == nil
+      && record.originalDevice == nil
+      && record.originalInode == nil
+      && record.originalSourceDigest == nil
+      && record.originalInventory == nil
+      && record.claimNonce == nil
   }
 
   private static func validClaimNonce(_ value: String?) -> Bool {

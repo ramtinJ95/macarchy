@@ -3,6 +3,11 @@ import Foundation
 import ThemeCore
 
 extension SetupOwnershipManager {
+  static let maximumExtendedAttributeNameBytes = 16 * 1_024
+  static let maximumExtendedAttributeCount = 64
+  static let maximumExtendedAttributeValueSize = 64 * 1_024
+  static let maximumExtendedAttributeAggregateSize = 256 * 1_024
+
   func setupRegularFile(
     id: String,
     target: URL,
@@ -853,13 +858,29 @@ extension SetupOwnershipManager {
     let size = Darwin.flistxattr(descriptor, nil, 0, 0)
     guard size >= 0 else { throw posixError("list pinned \(label) attributes", url) }
     guard size > 0 else { return [:] }
+    guard size <= Self.maximumExtendedAttributeNameBytes else {
+      throw extendedAttributeLimitError(
+        url: url,
+        label: label,
+        reason: "attribute-name inventory exceeds \(Self.maximumExtendedAttributeNameBytes) bytes"
+      )
+    }
     var names = [CChar](repeating: 0, count: size)
     let count = Darwin.flistxattr(descriptor, &names, names.count, 0)
     guard count == size else { throw posixError("read pinned \(label) attribute names", url) }
 
     var attributes = [String: Data]()
     let bytes = names.prefix(count).map { UInt8(bitPattern: $0) }
-    for nameBytes in bytes.split(separator: 0) {
+    let splitNames = bytes.split(separator: 0)
+    guard splitNames.count <= Self.maximumExtendedAttributeCount else {
+      throw extendedAttributeLimitError(
+        url: url,
+        label: label,
+        reason: "attribute count exceeds \(Self.maximumExtendedAttributeCount)"
+      )
+    }
+    var aggregateSize = size
+    for nameBytes in splitNames {
       guard let name = String(bytes: nameBytes, encoding: .utf8) else {
         throw SetupOwnershipError.system(
           "read pinned \(label) attribute names",
@@ -871,6 +892,25 @@ extension SetupOwnershipManager {
         Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0)
       }
       guard valueSize >= 0 else { throw posixError("inspect pinned \(label) attribute", url) }
+      guard valueSize <= Self.maximumExtendedAttributeValueSize else {
+        throw extendedAttributeLimitError(
+          url: url,
+          label: label,
+          reason:
+            "attribute \(name) exceeds \(Self.maximumExtendedAttributeValueSize) bytes"
+        )
+      }
+      guard
+        aggregateSize <= Self.maximumExtendedAttributeAggregateSize - valueSize
+      else {
+        throw extendedAttributeLimitError(
+          url: url,
+          label: label,
+          reason:
+            "attribute metadata exceeds \(Self.maximumExtendedAttributeAggregateSize) bytes"
+        )
+      }
+      aggregateSize += valueSize
       var value = Data(count: valueSize)
       let valueCount = value.withUnsafeMutableBytes { bytes in
         name.withCString {
@@ -883,6 +923,14 @@ extension SetupOwnershipManager {
       attributes[name] = value
     }
     return attributes
+  }
+
+  private func extendedAttributeLimitError(
+    url: URL,
+    label: String,
+    reason: String
+  ) -> SetupOwnershipError {
+    .system("capture pinned \(label) metadata", url, reason)
   }
 
   func readConfiguration(_ url: URL) throws -> Data {
