@@ -273,6 +273,11 @@ before and after installing the updated package and diff the two files. The
 plan shows inherited command and digest changes while leaving `profile.toml`,
 the native override, and metadata overlay untouched.
 
+Saved JSON reports contain complete configured commands and absolute paths for
+profile, override, metadata, state, provider, and adoption sources. Create them
+with restrictive permissions (for example, run `umask 077` first), keep them
+out of source control, and redact commands and absolute paths before sharing.
+
 Portable inputs and generated state have separate ownership boundaries:
 
 ```text

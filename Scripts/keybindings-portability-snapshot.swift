@@ -5,7 +5,7 @@ import Foundation
 private let maximumEntries = 256
 private let maximumDepth = 16
 private let maximumPathBytes = 1_024
-private let maximumRegularBytes = 1_048_576
+private let maximumRegularBytes = 16 * 1_024 * 1_024
 
 private struct SnapshotEntry: Encodable {
   let path: String
@@ -29,17 +29,17 @@ private enum SnapshotError: Error, CustomStringConvertible {
     case .invalidArguments:
       "usage: keybindings-portability-snapshot <directory>"
     case .pathTooLong(let path):
-      "isolated HOME path exceeds 1024 bytes: \(path)"
+      "snapshot path exceeds 1024 bytes: \(path)"
     case .tooDeep(let path):
-      "isolated HOME inventory exceeds 16 levels: \(path)"
+      "snapshot inventory exceeds 16 levels: \(path)"
     case .tooManyEntries:
-      "isolated HOME inventory exceeds 256 entries"
+      "snapshot inventory exceeds 256 entries"
     case .tooMuchRegularData:
-      "isolated HOME regular data exceeds 1048576 bytes"
+      "snapshot regular data exceeds \(maximumRegularBytes) bytes"
     case .unsafeEntry(let path):
-      "isolated HOME entry is not a pinned regular file or directory: \(path)"
+      "snapshot entry is not a pinned regular file or directory: \(path)"
     case .changedEntry(let path):
-      "isolated HOME entry changed during snapshot: \(path)"
+      "snapshot entry changed during collection: \(path)"
     case .system(let operation, let code):
       "\(operation): \(String(cString: strerror(code))) (errno \(code))"
     }

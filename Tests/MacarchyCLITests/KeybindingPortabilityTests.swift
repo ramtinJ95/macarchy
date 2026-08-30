@@ -91,87 +91,96 @@ struct KeybindingPortabilityTests {
 
   @Test
   func packagedUpdateChangesOnlyUntouchedEffectiveBehaviorWithoutRewritingInputs() throws {
-    let firstEnvironment = try isolatedEnvironment()
-    let secondEnvironment = try isolatedEnvironment()
-    defer {
-      try? FileManager.default.removeItem(at: firstEnvironment.root)
-      try? FileManager.default.removeItem(at: secondEnvironment.root)
-    }
+    let environment = try isolatedEnvironment(createSkhdDirectory: true)
+    defer { try? FileManager.default.removeItem(at: environment.root) }
     let firstResources = try copyFixture(
       named: "package-v1",
-      to: firstEnvironment.root.appending(
+      to: environment.root.appending(
         path: "inputs/package-v1",
         directoryHint: .isDirectory
       )
     )
     let secondResources = try copyFixture(
       named: "package-v2",
-      to: secondEnvironment.root.appending(
+      to: environment.root.appending(
         path: "inputs/package-v2",
         directoryHint: .isDirectory
       )
     )
-    let firstInputs = try copyFixture(
+    let portableInputs = try copyFixture(
       named: "portable",
-      to: firstEnvironment.home.appending(
+      to: environment.home.appending(
         path: "dotfiles/keybindings",
         directoryHint: .isDirectory
       )
     )
-    let secondInputs = try copyFixture(
-      named: "portable",
-      to: secondEnvironment.home.appending(
-        path: "dotfiles/keybindings",
-        directoryHint: .isDirectory
+    let profile = portableInputs.appending(path: "profile.toml")
+    let inputsBefore = try filesystemSnapshot(at: portableInputs)
+    let runner = KeybindingsApplyCommandRunner(
+      lifecycle: KeybindingLifecycleController(
+        preflight: {},
+        restart: {},
+        reload: {},
+        verifyProcess: {}
       )
     )
-    let firstBefore = try filesystemSnapshot(at: firstInputs)
-    let secondBefore = try filesystemSnapshot(at: secondInputs)
 
-    let first = try jsonObject(
-      plan(
-        resources: firstResources,
-        profile: firstInputs.appending(path: "profile.toml"),
-        profileRequired: true,
-        environment: firstEnvironment
-      ).output
+    let applied = try runner.execute(
+      resourcesRoot: firstResources,
+      profileURL: profile,
+      profileRequired: true,
+      stateRoot: environment.stateRoot,
+      homeDirectory: environment.home,
+      json: true
     )
-    let second = try jsonObject(
-      plan(
-        resources: secondResources,
-        profile: secondInputs.appending(path: "profile.toml"),
-        profileRequired: true,
-        environment: secondEnvironment
-      ).output
+    let appliedReport = try jsonObject(applied.output)
+    let current = KeybindingGenerationInspector().inspect(stateRoot: environment.stateRoot)
+    let firstRendered = try String(
+      contentsOf: environment.stateRoot.appending(path: "keybindings/current/skhdrc"),
+      encoding: .utf8
     )
-    let firstBindings = try #require(first["bindings"] as? [[String: Any]])
-    let secondBindings = try #require(second["bindings"] as? [[String: Any]])
-    let firstDisabled = try #require(first["disabled_defaults"] as? [[String: Any]])
-    let secondDisabled = try #require(second["disabled_defaults"] as? [[String: Any]])
-    let firstRendered = try #require(first["rendered_skhdrc"] as? String)
-    let secondRendered = try #require(second["rendered_skhdrc"] as? String)
 
+    let update = try plan(
+      resources: secondResources,
+      profile: profile,
+      profileRequired: true,
+      environment: environment
+    )
+    let report = try jsonObject(update.output)
+    let bindings = try #require(report["bindings"] as? [[String: Any]])
+    let disabled = try #require(report["disabled_defaults"] as? [[String: Any]])
+    let generation = try #require(report["generation"] as? [String: Any])
+    let actions = try #require(report["actions"] as? [[String: Any]])
+    let secondRendered = try #require(report["rendered_skhdrc"] as? String)
+
+    #expect(applied.succeeded)
+    #expect(appliedReport["outcome"] as? String == "applied")
+    #expect(current.status == .current)
+    #expect(update.succeeded)
+    #expect(report["outcome"] as? String == "ready")
+    #expect(report["mutated"] as? Bool == false)
+    #expect(generation["status"] as? String == "current")
+    #expect(generation["generation_id"] as? String == current.generationID)
+    #expect(generation["current_input_digest"] as? String == current.inputDigest)
+    #expect(generation["current_rendered_digest"] as? String == current.renderedDigest)
+    #expect(actions.map { $0["id"] as? String } == ["publish_generation"])
+    #expect(bindings.map { $0["identity"] as? String } == ["alt-j", "cmd-b", "cmd-x"])
     #expect(
-      try binding("alt-j", in: firstBindings)["command"] as? String == "personal focus south")
+      try binding("alt-j", in: bindings)["command"] as? String == "personal focus south")
     #expect(
-      try binding("alt-j", in: secondBindings)["command"] as? String == "personal focus south")
+      try binding("alt-j", in: bindings)["command_source"] as? String == "user_replacement")
     #expect(
-      try binding("cmd-x", in: firstBindings)["command"] as? String == "personal open extra")
+      try binding("cmd-x", in: bindings)["command"] as? String == "personal open extra")
     #expect(
-      try binding("cmd-x", in: secondBindings)["command"] as? String == "personal open extra")
+      try binding("cmd-x", in: bindings)["command_source"] as? String == "user_addition")
     #expect(
-      try binding("cmd-b", in: firstBindings)["command"] as? String == "package open browser v1")
+      try binding("cmd-b", in: bindings)["command"] as? String == "package open browser v2")
     #expect(
-      try binding("cmd-b", in: secondBindings)["command"] as? String == "package open browser v2")
+      try binding("cmd-b", in: bindings)["command_source"] as? String == "packaged_default")
+    #expect(!bindings.contains { $0["identity"] as? String == "alt-k" })
+    #expect(disabled.map { $0["identity"] as? String } == ["alt-k"])
     #expect(
-      firstBindings.map { $0["identity"] as? String }
-        == secondBindings.map { $0["identity"] as? String })
-    #expect(!firstBindings.contains { $0["identity"] as? String == "alt-k" })
-    #expect(!secondBindings.contains { $0["identity"] as? String == "alt-k" })
-    #expect(
-      try binding("alt-k", in: firstDisabled)["command"] as? String == "package focus north v1")
-    #expect(
-      try binding("alt-k", in: secondDisabled)["command"] as? String == "package focus north v2")
+      try binding("alt-k", in: disabled)["command"] as? String == "package focus north v2")
     #expect(
       secondRendered
         == firstRendered.replacingOccurrences(
@@ -179,10 +188,9 @@ struct KeybindingPortabilityTests {
           with: "package open browser v2"
         )
     )
-    #expect(first["rendered_digest"] as? String != second["rendered_digest"] as? String)
-    #expect(first["proposed_input_digest"] as? String != second["proposed_input_digest"] as? String)
-    #expect(try filesystemSnapshot(at: firstInputs) == firstBefore)
-    #expect(try filesystemSnapshot(at: secondInputs) == secondBefore)
+    #expect(report["rendered_digest"] as? String != current.renderedDigest)
+    #expect(report["proposed_input_digest"] as? String != current.inputDigest)
+    #expect(try filesystemSnapshot(at: portableInputs) == inputsBefore)
   }
 
   @Test

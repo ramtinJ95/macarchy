@@ -15,6 +15,14 @@ temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/macarchy-keybindings-portabilit
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
 snapshot_source="$script_directory/keybindings-portability-snapshot.swift"
 snapshot_helper="$temporary_directory/keybindings-portability-snapshot"
+binary_directory=${binary:h}
+if [[ ${binary_directory:t} == "bin" \
+  && -f "${binary_directory:h}/share/macarchy/build-info.json" ]]
+then
+  packaged_resources="${binary_directory:h}/share/macarchy"
+else
+  packaged_resources="$repository_root/Keybindings"
+fi
 
 if [[ ! -x "$binary" ]]; then
   print -u2 "macarchy binary is not executable: $binary"
@@ -28,13 +36,19 @@ if [[ ! -f "$snapshot_source" ]]; then
   print -u2 "portability snapshot helper is missing: $snapshot_source"
   exit 66
 fi
+if [[ ! -d "$packaged_resources" ]]; then
+  print -u2 "packaged resources are missing: $packaged_resources"
+  exit 66
+fi
 
 xcrun swiftc "$snapshot_source" -o "$snapshot_helper"
 
 home="$temporary_directory/home"
 dotfiles="$home/dotfiles/keybindings"
 state_root="$home/.config/macarchy"
-mkdir -p "$dotfiles" "$temporary_directory/work"
+work="$home/work"
+runtime_tmp="$home/tmp"
+mkdir -p "$dotfiles" "$work" "$runtime_tmp"
 cp "$fixture/profile.toml" "$fixture/keybindings.skhdrc" \
   "$fixture/keybindings-metadata.toml" "$dotfiles/"
 
@@ -63,19 +77,19 @@ for index in {1..256}; do
   : > "$overflow_root/entry-$index"
 done
 assert_snapshot_rejected \
-  overflow "$overflow_root" "isolated HOME inventory exceeds 256 entries"
+  overflow "$overflow_root" "snapshot inventory exceeds 256 entries"
 
 fifo_root="$temporary_directory/snapshot-fifo"
 mkdir -p "$fifo_root"
 mkfifo "$fifo_root/entry"
 assert_snapshot_rejected \
-  fifo "$fifo_root" "not a pinned regular file or directory"
+  fifo "$fifo_root" "snapshot entry is not a pinned regular file or directory"
 
 symlink_root="$temporary_directory/snapshot-symlink"
 mkdir -p "$symlink_root"
 ln -s missing "$symlink_root/entry"
 assert_snapshot_rejected \
-  symlink "$symlink_root" "not a pinned regular file or directory"
+  symlink "$symlink_root" "snapshot entry is not a pinned regular file or directory"
 
 write_expected_identities() {
   cat > "$1" <<'EOF'
@@ -163,10 +177,11 @@ assert_untouched_packaged_binding() {
 }
 
 snapshot_home "$temporary_directory/home-before.txt" "$home"
-cd "$temporary_directory/work"
+snapshot_home "$temporary_directory/resources-before.txt" "$packaged_resources"
+cd "$work"
 
 for run in first second; do
-  HOME="$home" CFFIXED_USER_HOME="$home" \
+  HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
     "$binary" keybindings plan \
       --profile "$dotfiles/profile.toml" \
       --state-root "$state_root" \
@@ -175,7 +190,9 @@ done
 
 cmp "$temporary_directory/first.json" "$temporary_directory/second.json"
 snapshot_home "$temporary_directory/home-after.txt" "$home"
+snapshot_home "$temporary_directory/resources-after.txt" "$packaged_resources"
 cmp "$temporary_directory/home-before.txt" "$temporary_directory/home-after.txt"
+cmp "$temporary_directory/resources-before.txt" "$temporary_directory/resources-after.txt"
 
 [[ "$(/usr/bin/plutil -extract outcome raw -o - "$temporary_directory/first.json")" == "ready" ]]
 [[ "$(/usr/bin/plutil -extract mutated raw -o - "$temporary_directory/first.json")" == "false" ]]
