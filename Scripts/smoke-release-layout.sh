@@ -65,12 +65,11 @@ print -r -- "$themes" | grep -q '^tokyo-night'
 
 HOME="$temporary_directory/home" \
   CFFIXED_USER_HOME="$temporary_directory/home" \
-  "$binary" keybindings plan \
-  --state-root "$temporary_directory/home/.config/macarchy" \
-  --json > "$temporary_directory/keybindings-plan.json"
-grep -q '"outcome" : "ready"' "$temporary_directory/keybindings-plan.json"
-grep -q '"effective" : 48' "$temporary_directory/keybindings-plan.json"
-grep -q '"rendered_digest" : "sha256:' "$temporary_directory/keybindings-plan.json"
-grep -q '"mutated" : false' "$temporary_directory/keybindings-plan.json"
+  "$binary" keybindings list \
+  --skhd-config "$layout/share/macarchy/keybindings/defaults.skhdrc" \
+  --catalog "$layout/share/macarchy/keybindings/metadata.toml" \
+  --json > "$temporary_directory/keybindings-list.json"
+grep -q '"schema_version" : 1' "$temporary_directory/keybindings-list.json"
+[[ "$(grep -c '"identity" :' "$temporary_directory/keybindings-list.json")" == "48" ]]
 
 print "release layout smoke test passed"
