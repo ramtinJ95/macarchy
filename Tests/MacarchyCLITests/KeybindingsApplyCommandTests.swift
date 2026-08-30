@@ -317,10 +317,42 @@ struct KeybindingsApplyCommandTests {
     let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
     let linkText = "../../../dotfiles/skhdrc"
     try FileManager.default.createSymbolicLink(atPath: entry.path, withDestinationPath: linkText)
+    try setSymbolicLinkExtendedAttribute(
+      "com.macarchy.test.symlink",
+      value: "preserved",
+      at: entry
+    )
+    var originalMetadata = stat()
+    #expect(lstat(entry.path, &originalMetadata) == 0)
     let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+    let plannedProvider = KeybindingProviderInspector().inspect(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.stateRoot,
+      generation: KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
+    )
+    #expect(plannedProvider.status == .adoptionRequired)
+    #expect(plannedProvider.retainedOriginalRequirement == "exact_inode")
+    #expect(plannedProvider.retainedOriginalStatus == "will_retain")
 
     #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
     #expect(try Data(contentsOf: source) == sourceBytes)
+    let record = try fixture.keybindingOwnershipRecord()
+    let retained = try #require(record.retainedOriginalPath)
+    var retainedMetadata = stat()
+    #expect(lstat(retained, &retainedMetadata) == 0)
+    #expect(retainedMetadata.st_dev == originalMetadata.st_dev)
+    #expect(retainedMetadata.st_ino == originalMetadata.st_ino)
+    #expect(
+      try symbolicLinkExtendedAttribute("com.macarchy.test.symlink", at: URL(filePath: retained))
+        == "preserved"
+    )
+    let managedProvider = KeybindingProviderInspector().inspect(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.stateRoot,
+      generation: KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
+    )
+    #expect(managedProvider.status == .managed)
+    #expect(managedProvider.retainedOriginalStatus == "authenticated")
     _ = try runner.teardownLocked(
       stateRoot: fixture.stateRoot,
       homeDirectory: fixture.home,
@@ -329,6 +361,15 @@ struct KeybindingsApplyCommandTests {
 
     #expect(try FileManager.default.destinationOfSymbolicLink(atPath: entry.path) == linkText)
     #expect(try Data(contentsOf: source) == sourceBytes)
+    var restoredMetadata = stat()
+    #expect(lstat(entry.path, &restoredMetadata) == 0)
+    #expect(restoredMetadata.st_dev == originalMetadata.st_dev)
+    #expect(restoredMetadata.st_ino == originalMetadata.st_ino)
+    #expect(
+      try symbolicLinkExtendedAttribute("com.macarchy.test.symlink", at: entry) == "preserved"
+    )
+    // Restoring the retained inode also preserves symlink-own ACLs and other inode metadata
+    // that Foundation does not expose through a deterministic symlink-specific test API.
   }
 
   @Test
@@ -344,6 +385,8 @@ struct KeybindingsApplyCommandTests {
     try sourceBytes.write(to: sourceEntry)
     let linkText = "../../dotfiles/skhd"
     try FileManager.default.createSymbolicLink(atPath: skhd.path, withDestinationPath: linkText)
+    var originalLinkMetadata = stat()
+    #expect(lstat(skhd.path, &originalLinkMetadata) == 0)
     let lifecycle = LifecycleFixture()
     let runner = fixture.runner(lifecycle: lifecycle.controller)
 
@@ -352,6 +395,11 @@ struct KeybindingsApplyCommandTests {
     let record = try fixture.keybindingOwnershipRecord()
     #expect(record.originalKind == .directorySymbolicLink)
     #expect(record.backupPath == nil)
+    let retained = try #require(record.retainedOriginalPath)
+    var retainedMetadata = stat()
+    #expect(lstat(retained, &retainedMetadata) == 0)
+    #expect(retainedMetadata.st_dev == originalLinkMetadata.st_dev)
+    #expect(retainedMetadata.st_ino == originalLinkMetadata.st_ino)
     let backup = fixture.stateRoot.appending(path: "state/setup/backups/keybindings-skhdrc")
     var backupMetadata = stat()
     errno = 0
@@ -397,6 +445,10 @@ struct KeybindingsApplyCommandTests {
 
     #expect(try FileManager.default.destinationOfSymbolicLink(atPath: skhd.path) == linkText)
     #expect(try Data(contentsOf: sourceEntry) == sourceBytes)
+    var restoredLinkMetadata = stat()
+    #expect(lstat(skhd.path, &restoredLinkMetadata) == 0)
+    #expect(restoredLinkMetadata.st_dev == originalLinkMetadata.st_dev)
+    #expect(restoredLinkMetadata.st_ino == originalLinkMetadata.st_ino)
   }
 
   @Test
@@ -1399,12 +1451,15 @@ struct KeybindingsApplyCommandTests {
         atPath: skhd.appending(path: "skhdrc").path
       ) == KeybindingProviderInspector.managedTarget
     )
-    #expect(!FileManager.default.fileExists(atPath: claim.path))
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: claim.path)
+        == "../../dotfiles/skhd"
+    )
   }
 
   @Test
-  func directoryRestorationRecoversClaimAfterManagedLeafRemoval() throws {
-    enum Interrupted: Error { case afterLeafRemoval }
+  func directoryRestorationResumesAfterRetainedInodeSwap() throws {
+    enum Interrupted: Error { case afterSwap }
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let skhd = fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory)
@@ -1419,22 +1474,176 @@ struct KeybindingsApplyCommandTests {
       expectedEvidence: evidence,
       approvedEvidenceDigest: evidence.digest
     )
+    let record = try fixture.keybindingOwnershipRecord()
     let interrupted = KeybindingProviderTransaction(
       homeDirectory: fixture.home,
       faultInjector: { checkpoint in
-        if checkpoint == .directoryClaimEntryRemoved { throw Interrupted.afterLeafRemoval }
+        if checkpoint == .restoredOriginalPublished { throw Interrupted.afterSwap }
       }
     )
     #expect(throws: Interrupted.self) { try interrupted.restoreOriginalEntry() }
 
     try KeybindingProviderTransaction(homeDirectory: fixture.home).restoreOriginalEntry()
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).finalizeOriginalRestoration()
 
     #expect(try FileManager.default.destinationOfSymbolicLink(atPath: skhd.path) == linkText)
-    #expect(
-      !FileManager.default.fileExists(
-        atPath: fixture.home.appending(path: ".config/.skhd.macarchy-keybindings").path
-      )
+    #expect(!FileManager.default.fileExists(atPath: try #require(record.retainedOriginalPath)))
+  }
+
+  @Test
+  func retainedEntryClaimMissingOrForeignReplacementBlocksWithoutDeletion() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let source = fixture.root.appending(path: "external/skhdrc")
+    try FileManager.default.createDirectory(
+      at: source.deletingLastPathComponent(),
+      withIntermediateDirectories: true
     )
+    try Data("alt - x : retained source\n".utf8).write(to: source)
+    try FileManager.default.createSymbolicLink(atPath: entry.path, withDestinationPath: source.path)
+    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+    #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
+    let record = try fixture.keybindingOwnershipRecord()
+    let retained = URL(filePath: try #require(record.retainedOriginalPath))
+    try Data("alt - x : drifted source\n".utf8).write(to: source)
+    #expect(throws: SetupOwnershipError.self) {
+      _ = try runner.teardownLocked(
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        dryRun: true
+      )
+    }
+    try Data("alt - x : retained source\n".utf8).write(to: source)
+    try FileManager.default.removeItem(at: retained)
+
+    #expect(throws: SetupOwnershipError.self) {
+      _ = try runner.teardownLocked(
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        dryRun: true
+      )
+    }
+
+    try FileManager.default.createSymbolicLink(
+      atPath: retained.path,
+      withDestinationPath: "foreign"
+    )
+    #expect(throws: SetupOwnershipError.self) {
+      _ = try runner.teardownLocked(
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        dryRun: true
+      )
+    }
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: retained.path) == "foreign")
+  }
+
+  @Test
+  func symlinkAdoptionRestartFailureRollsBackRetainedOriginalInode() throws {
+    enum Injected: Error { case restart }
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let source = fixture.root.appending(path: "external/skhdrc")
+    try FileManager.default.createDirectory(
+      at: source.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data("alt - x : rollback source\n".utf8).write(to: source)
+    try FileManager.default.createSymbolicLink(atPath: entry.path, withDestinationPath: source.path)
+    var before = stat()
+    #expect(lstat(entry.path, &before) == 0)
+    let calls = Mutex(0)
+    let lifecycle = KeybindingLifecycleController(
+      restart: {
+        let attempt = calls.withLock { value -> Int in
+          value += 1
+          return value
+        }
+        if attempt == 1 { throw Injected.restart }
+      },
+      reload: {},
+      verifyProcess: {}
+    )
+
+    let execution = try fixture.execute(
+      runner: fixture.runner(lifecycle: lifecycle),
+      adopt: true,
+      json: true
+    )
+
+    #expect(!execution.succeeded)
+    var after = stat()
+    #expect(lstat(entry.path, &after) == 0)
+    #expect(after.st_dev == before.st_dev)
+    #expect(after.st_ino == before.st_ino)
+  }
+
+  @Test
+  func legacySymlinkOwnershipUsesExplicitNonExactCompatibilityRestoration() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let source = fixture.root.appending(path: "external/skhdrc")
+    try FileManager.default.createDirectory(
+      at: source.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data("alt - x : legacy source\n".utf8).write(to: source)
+    try FileManager.default.createSymbolicLink(atPath: entry.path, withDestinationPath: source.path)
+    var original = stat()
+    #expect(lstat(entry.path, &original) == 0)
+    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+    #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
+    let record = try fixture.keybindingOwnershipRecord()
+    try FileManager.default.removeItem(atPath: try #require(record.retainedOriginalPath))
+    let legacy = SetupOwnershipRecord(
+      id: record.id,
+      phase: record.phase,
+      kind: record.kind,
+      targetPath: record.targetPath,
+      backupPath: record.backupPath,
+      originalDigest: record.originalDigest,
+      installedDigest: record.installedDigest,
+      linkDestination: record.linkDestination,
+      originalKind: record.originalKind,
+      originalLinkDestination: record.originalLinkDestination,
+      originalDevice: record.originalDevice,
+      originalInode: record.originalInode,
+      originalSourceDigest: record.originalSourceDigest,
+      originalInventory: record.originalInventory,
+      retainedOriginalPath: nil,
+      claimNonce: record.claimNonce
+    )
+    try SetupOwnershipManager().persist(
+      records: [legacy],
+      context: SetupOwnershipManager.Context(homeDirectory: fixture.home)
+    )
+    let inspection = KeybindingProviderInspector().inspect(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.stateRoot,
+      generation: KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
+    )
+    #expect(inspection.status == .managed)
+    #expect(inspection.retainedOriginalStatus == "legacy_unavailable")
+    let preview = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: true
+    )
+    #expect(preview.message.contains("exact inode metadata unavailable"))
+    #expect(!preview.message.contains("exact prior skhd entry"))
+
+    _ = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: false
+    )
+    var restored = stat()
+    #expect(lstat(entry.path, &restored) == 0)
+    #expect(restored.st_ino != original.st_ino)
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: entry.path) == source.path)
   }
 
   @Test
@@ -3301,6 +3510,38 @@ struct KeybindingsApplyCommandTests {
 
   private func setExtendedAttribute(_ name: String, value: String, at url: URL) throws {
     try setExtendedAttribute(name, data: Data(value.utf8), at: url)
+  }
+
+  private func setSymbolicLinkExtendedAttribute(
+    _ name: String,
+    value: String,
+    at url: URL
+  ) throws {
+    let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_SYMLINK | O_CLOEXEC) }
+    guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    defer { Darwin.close(descriptor) }
+    let result = Data(value.utf8).withUnsafeBytes { bytes in
+      name.withCString {
+        Darwin.fsetxattr(descriptor, $0, bytes.baseAddress, bytes.count, 0, XATTR_CREATE)
+      }
+    }
+    guard result == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+  }
+
+  private func symbolicLinkExtendedAttribute(_ name: String, at url: URL) throws -> String {
+    let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_SYMLINK | O_CLOEXEC) }
+    guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    defer { Darwin.close(descriptor) }
+    let size = name.withCString { Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0) }
+    guard size >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    var data = Data(count: size)
+    let count = data.withUnsafeMutableBytes { bytes in
+      name.withCString {
+        Darwin.fgetxattr(descriptor, $0, bytes.baseAddress, bytes.count, 0, 0)
+      }
+    }
+    guard count == size else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    return String(decoding: data, as: UTF8.self)
   }
 
   private func setExtendedAttribute(_ name: String, data: Data, at url: URL) throws {

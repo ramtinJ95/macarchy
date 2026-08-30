@@ -167,8 +167,27 @@ struct KeybindingProviderTransaction: Sendable {
         record: record,
         recognizeIncompleteClaim: true
       )
-      guard [.managed, .original].contains(state), claim != .other else {
+      let retainedStateIsRecoverable =
+        !retainsOriginalSymlink(record)
+        || (state == .managed && claim == .original)
+        || (state == .original && claim == .managed)
+      guard
+        [.managed, .original].contains(state), claim != .other,
+        retainedStateIsRecoverable
+      else {
         throw SetupOwnershipError.ownershipDrift(directory)
+      }
+      if retainsOriginalSymlink(record) {
+        if state == .managed {
+          try preflightRetainedOriginalClaim(record)
+        } else {
+          try authenticateOriginalSymlinkAtPath(
+            record,
+            parentDescriptor: descriptor,
+            name: "skhd",
+            url: directory
+          )
+        }
       }
     case .absent, .regularFile, .symbolicLink:
       let descriptor = try PinnedFilesystem.openDirectory(at: directory)
@@ -183,8 +202,24 @@ struct KeybindingProviderTransaction: Sendable {
       let stateIsRecoverable =
         state == .managed || state == .original
         || (state == .missing && originalKind(record) == .absent)
-      guard stateIsRecoverable, claim != .other else {
+      let retainedStateIsRecoverable =
+        !retainsOriginalSymlink(record)
+        || (state == .managed && claim == .original)
+        || (state == .original && claim == .managed)
+      guard stateIsRecoverable, claim != .other, retainedStateIsRecoverable else {
         throw SetupOwnershipError.ownershipDrift(entry)
+      }
+      if retainsOriginalSymlink(record) {
+        if state == .managed {
+          try preflightRetainedOriginalClaim(record)
+        } else {
+          try authenticateOriginalSymlinkAtPath(
+            record,
+            parentDescriptor: descriptor,
+            name: "skhdrc",
+            url: entry
+          )
+        }
       }
       if originalKind(record) == .regularFile {
         _ = try validateBackupPublicationResidue(record, manager: manager)
@@ -206,6 +241,27 @@ struct KeybindingProviderTransaction: Sendable {
 
   func preflightManagedRestoration() throws {
     try preflightOriginalRestoration()
+  }
+
+  func preflightRetainedOriginalClaim(_ record: SetupOwnershipRecord) throws {
+    guard retainsOriginalSymlink(record) else { return }
+    let isDirectory = originalKind(record) == .directorySymbolicLink
+    let parentURL = isDirectory ? configurationDirectory : directory
+    let parent = try PinnedFilesystem.openDirectory(at: parentURL)
+    defer { Darwin.close(parent) }
+    let name = claimName(record, directory: isDirectory)
+    let url = parentURL.appending(path: name)
+    guard record.retainedOriginalPath == url.path else {
+      throw SetupOwnershipError.invalidManifest(
+        "retained keybinding original is not bound to its authenticated claim path"
+      )
+    }
+    try authenticateOriginalSymlinkAtPath(
+      record,
+      parentDescriptor: parent,
+      name: name,
+      url: url
+    )
   }
 
   func finalizeOriginalRestoration() throws {
@@ -705,8 +761,12 @@ struct KeybindingProviderTransaction: Sendable {
     }
     if state == .managed {
       if claimState == .original {
-        try removeOriginalItem(
-          parentDescriptor: descriptor, name: claim, record: record, url: entry)
+        if retainsOriginalSymlink(record) {
+          try preflightRetainedOriginalClaim(record)
+        } else {
+          try removeOriginalItem(
+            parentDescriptor: descriptor, name: claim, record: record, url: entry)
+        }
       }
       guard claimState == .missing || claimState == .original else {
         throw SetupOwnershipError.ownershipDrift(entry)
@@ -729,8 +789,12 @@ struct KeybindingProviderTransaction: Sendable {
         }
         try faultInjector(.providerClaimSwapped)
       }
-      try removeOriginalItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
+      if retainsOriginalSymlink(record) {
+        try preflightRetainedOriginalClaim(record)
+      } else {
+        try removeOriginalItem(
+          parentDescriptor: descriptor, name: claim, record: record, url: entry)
+      }
       return
     }
     guard state == .original || (state == .missing && originalKind(record) == .absent),
@@ -768,8 +832,12 @@ struct KeybindingProviderTransaction: Sendable {
           record: record
         ) == .original
       else { throw SetupOwnershipError.ownershipDrift(entry) }
-      try removeOriginalItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
+      if retainsOriginalSymlink(record) {
+        try preflightRetainedOriginalClaim(record)
+      } else {
+        try removeOriginalItem(
+          parentDescriptor: descriptor, name: claim, record: record, url: entry)
+      }
     }
   }
 
@@ -777,6 +845,11 @@ struct KeybindingProviderTransaction: Sendable {
     _ record: SetupOwnershipRecord,
     context: SetupOwnershipManager.Context
   ) throws {
+    if retainsOriginalSymlink(record) {
+      try restoreRetainedOriginalSymlink(record, directoryLevel: false)
+      try verifyOriginal(try ownershipRecord().0, context: context)
+      return
+    }
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
     let claim = claimName(record, directory: false)
@@ -894,8 +967,12 @@ struct KeybindingProviderTransaction: Sendable {
     }
     if state == .managed {
       if claimState == .original {
-        try removeOriginalItem(
-          parentDescriptor: descriptor, name: claim, record: record, url: directory)
+        if retainsOriginalSymlink(record) {
+          try preflightRetainedOriginalClaim(record)
+        } else {
+          try removeOriginalItem(
+            parentDescriptor: descriptor, name: claim, record: record, url: directory)
+        }
       }
       guard claimState == .missing || claimState == .original else {
         throw SetupOwnershipError.ownershipDrift(directory)
@@ -914,8 +991,12 @@ struct KeybindingProviderTransaction: Sendable {
         try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
       }
       try faultInjector(.providerClaimSwapped)
-      try removeOriginalItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: directory)
+      if retainsOriginalSymlink(record) {
+        try preflightRetainedOriginalClaim(record)
+      } else {
+        try removeOriginalItem(
+          parentDescriptor: descriptor, name: claim, record: record, url: directory)
+      }
       return
     }
     guard state == .original, claimState == .missing else {
@@ -940,11 +1021,19 @@ struct KeybindingProviderTransaction: Sendable {
         record: record
       ) == .original
     else { throw SetupOwnershipError.ownershipDrift(directory) }
-    try removeOriginalItem(
-      parentDescriptor: descriptor, name: claim, record: record, url: directory)
+    if retainsOriginalSymlink(record) {
+      try preflightRetainedOriginalClaim(record)
+    } else {
+      try removeOriginalItem(
+        parentDescriptor: descriptor, name: claim, record: record, url: directory)
+    }
   }
 
   private func restoreOriginalDirectory(_ record: SetupOwnershipRecord) throws {
+    if retainsOriginalSymlink(record) {
+      try restoreRetainedOriginalSymlink(record, directoryLevel: true)
+      return
+    }
     let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
     defer { Darwin.close(descriptor) }
     let claim = claimName(record, directory: true)
@@ -1022,6 +1111,12 @@ struct KeybindingProviderTransaction: Sendable {
       defer { Darwin.close(descriptor) }
       guard try directoryState(descriptor: descriptor, name: "skhd", record: record) == .original
       else { throw SetupOwnershipError.ownershipDrift(directory) }
+      try authenticateOriginalSymlinkAtPath(
+        record,
+        parentDescriptor: descriptor,
+        name: "skhd",
+        url: directory
+      )
     case .absent, .regularFile, .symbolicLink:
       let descriptor = try PinnedFilesystem.openDirectory(at: directory)
       defer { Darwin.close(descriptor) }
@@ -1029,7 +1124,124 @@ struct KeybindingProviderTransaction: Sendable {
       guard state == .original || (state == .missing && originalKind(record) == .absent) else {
         throw SetupOwnershipError.ownershipDrift(entry)
       }
+      if originalKind(record) == .symbolicLink {
+        try authenticateOriginalSymlinkAtPath(
+          record,
+          parentDescriptor: descriptor,
+          name: "skhdrc",
+          url: entry
+        )
+      }
     }
+  }
+
+  private func restoreRetainedOriginalSymlink(
+    _ record: SetupOwnershipRecord,
+    directoryLevel: Bool
+  ) throws {
+    let parentURL = directoryLevel ? configurationDirectory : directory
+    let liveName = directoryLevel ? "skhd" : "skhdrc"
+    let liveURL = directoryLevel ? directory : entry
+    let parent = try PinnedFilesystem.openDirectory(at: parentURL)
+    defer { Darwin.close(parent) }
+    let claim = claimName(record, directory: directoryLevel)
+    let liveState: ProviderItemState
+    if directoryLevel {
+      liveState = try directoryState(
+        descriptor: parent,
+        name: liveName,
+        record: record
+      )
+    } else {
+      liveState = try leafState(
+        descriptor: parent,
+        name: liveName,
+        record: record
+      )
+    }
+    var claimState: ProviderItemState
+    if directoryLevel {
+      claimState = try directoryState(
+        descriptor: parent,
+        name: claim,
+        record: record,
+        recognizeIncompleteClaim: true
+      )
+    } else {
+      claimState = try leafState(
+        descriptor: parent,
+        name: claim,
+        record: record,
+        recognizeIncompleteClaim: true
+      )
+    }
+    if liveState == .original, claimState == .incomplete {
+      if directoryLevel {
+        try removeManagedDirectory(
+          parentDescriptor: parent,
+          name: claim,
+          record: record
+        )
+      } else {
+        try removeMarkedItem(
+          parentDescriptor: parent,
+          name: claim,
+          record: record,
+          url: parentURL.appending(path: claim)
+        )
+      }
+      claimState = .missing
+    }
+    if liveState == .original, claimState == .missing {
+      let publication = try publishingName(claim, record: record)
+      if directoryLevel {
+        try removeManagedDirectory(
+          parentDescriptor: parent,
+          name: publication,
+          record: record
+        )
+      } else {
+        try removeMarkedItem(
+          parentDescriptor: parent,
+          name: publication,
+          record: record,
+          url: parentURL.appending(path: publication)
+        )
+      }
+      try authenticateOriginalSymlinkAtPath(
+        record,
+        parentDescriptor: parent,
+        name: liveName,
+        url: liveURL
+      )
+      return
+    }
+    if liveState == .managed, claimState == .original {
+      try preflightRetainedOriginalClaim(record)
+      try swap(descriptor: parent, first: liveName, second: claim, url: liveURL)
+      try faultInjector(.restoredOriginalPublished)
+    } else {
+      guard liveState == .original, claimState == .managed else {
+        throw SetupOwnershipError.ownershipDrift(liveURL)
+      }
+    }
+    try authenticateOriginalSymlinkAtPath(
+      record,
+      parentDescriptor: parent,
+      name: liveName,
+      url: liveURL
+    )
+    let managedState: ProviderItemState
+    if directoryLevel {
+      managedState = try directoryState(
+        descriptor: parent,
+        name: claim,
+        record: record
+      )
+    } else {
+      managedState = try leafState(descriptor: parent, name: claim, record: record)
+    }
+    guard managedState == .managed else { throw SetupOwnershipError.ownershipDrift(liveURL) }
   }
 
   private func leafState(
@@ -1938,6 +2150,11 @@ struct KeybindingProviderTransaction: Sendable {
     record.originalKind ?? .absent
   }
 
+  private func retainsOriginalSymlink(_ record: SetupOwnershipRecord) -> Bool {
+    record.retainedOriginalPath != nil
+      && [.symbolicLink, .directorySymbolicLink].contains(originalKind(record))
+  }
+
   private func originalLink(_ record: SetupOwnershipRecord) throws -> String {
     guard let destination = record.originalLinkDestination else {
       throw SetupOwnershipError.invalidManifest("keybinding adoption link text is missing")
@@ -2288,7 +2505,8 @@ struct KeybindingProviderTransaction: Sendable {
     sourceName: String,
     claimName: String,
     url: URL,
-    operation: () throws -> Void
+    operation: () throws -> Void,
+    emitSwapCheckpoint: Bool = true
   ) throws {
     guard let expectedDigest = record.originalSourceDigest else {
       if originalKind(record) == .absent {
@@ -2322,7 +2540,8 @@ struct KeybindingProviderTransaction: Sendable {
         sourceName: sourceName,
         claimName: claimName,
         url: url,
-        operation: operation
+        operation: operation,
+        emitSwapCheckpoint: emitSwapCheckpoint
       ) {
         let path = try PinnedFilesystem.metadata(
           parentDescriptor: parent,
@@ -2376,7 +2595,8 @@ struct KeybindingProviderTransaction: Sendable {
         sourceName: sourceName,
         claimName: claimName,
         url: url,
-        operation: operation
+        operation: operation,
+        emitSwapCheckpoint: emitSwapCheckpoint
       ) {
         var targetPathIdentity = stat()
         guard
@@ -2436,6 +2656,7 @@ struct KeybindingProviderTransaction: Sendable {
     claimName: String,
     url: URL,
     operation: () throws -> Void,
+    emitSwapCheckpoint: Bool = true,
     verifySource: () throws -> Void
   ) throws {
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: sourceName, url: url)
@@ -2465,7 +2686,7 @@ struct KeybindingProviderTransaction: Sendable {
     try verifyPath(sourceName)
     try operation()
     do {
-      try faultInjector(.sourceSwapCompleted)
+      if emitSwapCheckpoint { try faultInjector(.sourceSwapCompleted) }
       try verifySource()
       try verifyPath(claimName)
     } catch {
@@ -2520,6 +2741,28 @@ struct KeybindingProviderTransaction: Sendable {
     case .absent:
       throw SetupOwnershipError.ownershipDrift(url)
     }
+  }
+
+  private func authenticateOriginalSymlinkAtPath(
+    _ record: SetupOwnershipRecord,
+    parentDescriptor: Int32,
+    name: String,
+    url: URL
+  ) throws {
+    guard [.symbolicLink, .directorySymbolicLink].contains(originalKind(record)) else {
+      throw SetupOwnershipError.invalidManifest(
+        "retained keybinding original is not a symbolic link"
+      )
+    }
+    try withAuthenticatedOriginalSource(
+      record,
+      parentDescriptor: parentDescriptor,
+      sourceName: name,
+      claimName: name,
+      url: url,
+      operation: {},
+      emitSwapCheckpoint: false
+    )
   }
 
   private func finalizeRestoredOriginal(
@@ -2587,6 +2830,7 @@ struct KeybindingProviderTransaction: Sendable {
       originalInode: UInt64(metadata.st_ino),
       originalSourceDigest: record.originalSourceDigest,
       originalInventory: record.originalInventory,
+      retainedOriginalPath: record.retainedOriginalPath,
       claimNonce: record.claimNonce
     )
     try manager.save(record: updated, records: &records, context: context)
@@ -3129,7 +3373,21 @@ private struct OriginalEntry {
     manager: SetupOwnershipManager,
     context: SetupOwnershipManager.Context
   ) -> SetupOwnershipRecord {
-    SetupOwnershipRecord(
+    let nonce = UUID().uuidString.lowercased()
+    let retainedOriginalPath: String? =
+      switch kind {
+      case .symbolicLink:
+        entry.deletingLastPathComponent().appending(
+          path: ".skhdrc.macarchy-keybindings-\(nonce)"
+        ).path
+      case .directorySymbolicLink:
+        entry.deletingLastPathComponent().deletingLastPathComponent().appending(
+          path: ".skhd.macarchy-keybindings-\(nonce)"
+        ).path
+      case .absent, .regularFile:
+        nil
+      }
+    return SetupOwnershipRecord(
       id: KeybindingProviderInspector.ownershipID,
       phase: .prepared,
       kind: .symbolicLink,
@@ -3148,7 +3406,8 @@ private struct OriginalEntry {
       originalInode: fileInode,
       originalSourceDigest: kind == .absent ? nil : sourceDigest,
       originalInventory: kind == .absent ? nil : inventory,
-      claimNonce: UUID().uuidString.lowercased()
+      retainedOriginalPath: retainedOriginalPath,
+      claimNonce: nonce
     )
   }
 }
