@@ -356,6 +356,20 @@ extension SetupOwnershipManager {
     homeDirectory: URL,
     label: String
   ) throws {
+    try createPinnedSymbolicLink(
+      target: target,
+      destinationPath: destination.path,
+      homeDirectory: homeDirectory,
+      label: label
+    )
+  }
+
+  func createPinnedSymbolicLink(
+    target: URL,
+    destinationPath: String,
+    homeDirectory: URL,
+    label: String
+  ) throws {
     let parentDescriptor = try openPinnedParent(
       target: target,
       homeDirectory: homeDirectory,
@@ -370,7 +384,7 @@ extension SetupOwnershipManager {
     guard inspection != 0, errno == ENOENT else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
-    let created = destination.path.withCString { destinationPath in
+    let created = destinationPath.withCString { destinationPath in
       name.withCString { namePath in
         Darwin.symlinkat(destinationPath, parentDescriptor, namePath)
       }
@@ -378,7 +392,7 @@ extension SetupOwnershipManager {
     guard created == 0 else { throw posixError("create \(label) link", target) }
     guard
       try readPinnedSymbolicLink(parentDescriptor: parentDescriptor, name: name, url: target)
-        == destination.path
+        == destinationPath
     else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
@@ -389,6 +403,24 @@ extension SetupOwnershipManager {
     id: String,
     target: URL,
     destination: URL,
+    homeDirectory: URL,
+    label: String,
+    alreadyClaimed: Bool
+  ) throws {
+    try removePinnedSymbolicLink(
+      id: id,
+      target: target,
+      destinationPath: destination.path,
+      homeDirectory: homeDirectory,
+      label: label,
+      alreadyClaimed: alreadyClaimed
+    )
+  }
+
+  func removePinnedSymbolicLink(
+    id: String,
+    target: URL,
+    destinationPath: String,
     homeDirectory: URL,
     label: String,
     alreadyClaimed: Bool
@@ -425,7 +457,7 @@ extension SetupOwnershipManager {
         parentDescriptor: parentDescriptor,
         name: removalName,
         url: removalURL,
-        destination: destination.path
+        destination: destinationPath
       )
     } catch {
       if !alreadyClaimed {

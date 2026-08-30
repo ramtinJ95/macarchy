@@ -5,7 +5,7 @@ import ThemeCore
 struct Keybindings: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect configured skhd keybindings.",
-    subcommands: [Plan.self, List.self, Doctor.self, Show.self]
+    subcommands: [Plan.self, Apply.self, List.self, Doctor.self, Show.self]
   )
 
   struct Plan: ParsableCommand {
@@ -39,6 +39,60 @@ struct Keybindings: ParsableCommand {
         homeDirectory: home,
         json: json
       )
+      print(execution.output)
+      if !execution.succeeded {
+        throw ExitCode.failure
+      }
+    }
+  }
+
+  struct Apply: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Publish and activate managed skhd keybindings."
+    )
+
+    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
+    var profile: String?
+
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+    @Flag(help: "Inspect without publishing or activating keybindings.")
+    var dryRun = false
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    mutating func run() throws {
+      let home = FileManager.default.homeDirectoryForCurrentUser
+      let profileURL =
+        profile.map { URL(filePath: $0).standardizedFileURL }
+        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let stateRootURL = URL(
+        filePath: stateRoot,
+        directoryHint: .isDirectory
+      ).standardizedFileURL
+      let execution =
+        if dryRun {
+          try KeybindingsPlanCommandRunner.live.execute(
+            resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
+            profileURL: profileURL,
+            profileRequired: profile != nil,
+            stateRoot: stateRootURL,
+            homeDirectory: home,
+            json: json
+          )
+        } else {
+          try KeybindingsApplyCommandRunner.live.execute(
+            resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
+            profileURL: profileURL,
+            profileRequired: profile != nil,
+            stateRoot: stateRootURL,
+            homeDirectory: home,
+            json: json
+          )
+        }
       print(execution.output)
       if !execution.succeeded {
         throw ExitCode.failure

@@ -90,6 +90,7 @@ macarchy theme install <github-url> [--dry-run] [--json]
 macarchy theme status [--json]
 macarchy theme get slack
 macarchy keybindings plan [--profile <path>] [--state-root <path>] [--json]
+macarchy keybindings apply [--profile <path>] [--dry-run] [--json]
 macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
@@ -139,6 +140,15 @@ The plan reports replacement, addition, disablement, source attribution,
 deterministic effective bytes, current-generation state, and provider-entry
 ownership in human or JSON form. It never publishes a generation, changes
 `~/.config/skhd`, reloads skhd, or executes a configured command.
+
+`keybindings apply` consumes the same plan model. The first transactional path
+publishes and selects an immutable generation and claims an absent `skhdrc`
+inside an existing ordinary `~/.config/skhd` directory. Installing that entry
+restarts the incumbent skhd service once because skhd 0.3.9 does not rediscover
+a newly created preferred config path on reload; later same-entry generation
+updates use reload. A lifecycle or postcondition failure restores the prior
+pointer, entry, ownership record, and service path. Existing files and symlinks
+remain blocked for explicit adoption in the following M1 slice.
 
 `keybindings show` opens the same correlated rows in a short-lived searchable
 AppKit popup. The popup follows the active Macarchy theme, supports keyboard
