@@ -11,6 +11,92 @@ struct KeybindingsDoctorCommandRunner: Sendable {
   )
 
   func execute(
+    effectiveState: KeybindingEffectiveState,
+    json: Bool
+  ) throws -> (output: String, succeeded: Bool) {
+    var findings = effectiveState.configuration.diagnostics.map { diagnostic in
+      KeybindingsDoctorFinding(
+        id: "effective.\(diagnostic.code)",
+        status: diagnostic.severity == .error ? .failure : .warning,
+        message: diagnostic.message,
+        source: diagnostic.source,
+        identities: diagnostic.identity.map { [$0] },
+        line: diagnostic.line,
+        relatedLine: diagnostic.relatedLine
+      )
+    }
+
+    if let composition = effectiveState.configuration.composition, !composition.isBlocked {
+      let packaged = composition.bindings.count { $0.commandSource == .packagedDefault }
+      let replacements = composition.bindings.count { $0.commandSource == .userReplacement }
+      let additions = composition.bindings.count { $0.commandSource == .userAddition }
+      findings.append(
+        KeybindingsDoctorFinding(
+          id: "effective.compose",
+          status: .ok,
+          message: "Composed \(composition.bindings.count) effective bindings: "
+            + "\(packaged) packaged defaults, \(replacements) user replacements, "
+            + "and \(additions) user additions."
+        )
+      )
+      findings.append(
+        KeybindingsDoctorFinding(
+          id: "effective.disabled",
+          status: .ok,
+          message: "Disabled \(composition.disabledDefaults.count) packaged defaults.",
+          identities: composition.disabledDefaults.isEmpty
+            ? nil
+            : composition.disabledDefaults.map(\.binding.identity)
+        )
+      )
+    }
+
+    if effectiveState.generation.status == .invalid {
+      findings.append(
+        KeybindingsDoctorFinding(
+          id: "generation.effective",
+          status: .failure,
+          message: effectiveState.generation.message ?? "Current generation is invalid."
+        )
+      )
+    } else {
+      switch effectiveState.generationAgreement {
+      case .matches:
+        findings.append(
+          KeybindingsDoctorFinding(
+            id: "generation.effective",
+            status: .ok,
+            message: "The current generated configuration matches the effective inputs."
+          )
+        )
+      case .differs:
+        findings.append(
+          KeybindingsDoctorFinding(
+            id: "generation.effective",
+            status: .warning,
+            message: "The current generated configuration differs from the effective inputs."
+          )
+        )
+      case .missing:
+        findings.append(
+          KeybindingsDoctorFinding(
+            id: "generation.effective",
+            status: .warning,
+            message: "No current generated keybinding configuration exists."
+          )
+        )
+      case .invalid:
+        break
+      case .unavailable:
+        break
+      }
+    }
+
+    let report = KeybindingsDoctorReport(findings: findings)
+    return (try report.render(json: json), report.succeeded)
+  }
+
+  func execute(
     configurationURL: URL,
     catalogURL: URL,
     json: Bool
