@@ -92,8 +92,11 @@ macarchy theme get slack
 macarchy keybindings plan [--profile <path>] [--state-root <path>] [--json]
 macarchy keybindings apply [--profile <path>] [--adopt <evidence-digest>] [--dry-run] [--json]
 macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
+macarchy keybindings list --effective [--profile <path>] [--state-root <path>] [--json]
 macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
+macarchy keybindings doctor --effective [--profile <path>] [--state-root <path>] [--json]
 macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
+macarchy keybindings show --effective [--profile <path>] [--state-root <path>]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup [--dry-run] [--json]
@@ -109,16 +112,33 @@ Installed builds resolve resources relative to the executable, so commands do
 not depend on the current working directory. `--themes-root`, `--state-root`,
 and consumer-specific path options are available for development and testing.
 
-`keybindings list` parses enabled key-to-command bindings from the configured
-skhd file without executing them. It preserves chained shell commands as
-opaque display text, normalizes modifier order, ignores disabled lines, and
-returns explicit nonzero diagnostics for unsupported enabled syntax or
-duplicate effective chords. The default source is `~/.config/skhd/skhdrc`.
+`keybindings list`, `doctor`, and `show` preserve source-based inspection for
+externally managed skhd configuration. They parse enabled key-to-command
+bindings from the selected skhd file without executing them. List preserves
+chained shell commands as opaque display text, normalizes modifier order,
+ignores disabled lines, and returns explicit nonzero diagnostics for unsupported
+enabled syntax or duplicate effective chords. The default source is
+`~/.config/skhd/skhdrc`.
 Optional labels, categories, ordering, and search aliases come from the strict
 metadata-only `~/.config/macarchy/keybindings.toml` catalog. Catalog entries
 are keyed by normalized chord identity and cannot contain commands. The
-keybindings doctor warns about missing or stale metadata and parser/duplicate
-diagnostics, while unreadable or invalid inputs fail explicitly.
+source-based `keybindings doctor` warns about missing or stale metadata and
+parser/duplicate diagnostics, while unreadable or invalid inputs fail
+explicitly.
+
+Pass `--effective` to `keybindings list`, `doctor`, or `show` to inspect desired
+managed keybindings composed from packaged defaults and the portable profile,
+plus their agreement with the canonical generated state. This route is
+explicit so source-based inspection remains available before Macarchy adopts
+provider ownership. Its JSON reports use schema version 2 and the distinct
+`keybindings_list_effective` or `keybindings_doctor_effective` operation;
+legacy source reports retain their established schema-version-1 contracts.
+Effective list and popup rows follow metadata order with normalized identity as
+the tie-break, while generated `skhdrc` bytes retain deterministic identity
+order. Missing or differing generations are labeled as desired, not configured,
+and `doctor --effective` fails closed when interrupted-apply transaction
+evidence is present. Provider ownership and live runtime status remain a later
+integration boundary rather than being inferred here.
 
 `keybindings plan` is the read-only entry point for managed keybindings. It
 composes immutable packaged defaults with an optional sparse native override,
@@ -169,10 +189,12 @@ postcondition failure restores the prior pointer, entry, ownership record, and
 service path. Teardown verifies all restoration artifacts without mutation
 before restoring the exact supported prior state.
 
-`keybindings show` opens the same correlated rows in a short-lived searchable
-AppKit popup. The popup follows the active Macarchy theme, supports keyboard
-search and navigation, closes on Escape or focus loss, and remains strictly
-informational: selecting a row never executes its configured command.
+`keybindings show` opens source-correlated rows, or metadata-ordered desired
+rows with `--effective`, in a short-lived searchable AppKit popup. The popup
+visibly reports missing or drifted generated state, follows the active Macarchy
+theme, supports keyboard search and navigation, closes on Escape or focus loss,
+and remains strictly informational: selecting a row never executes its
+displayed command.
 
 `theme browse` opens a short-lived AppKit browser for every valid built-in and
 installed theme. Search and navigation change only the local generated palette
