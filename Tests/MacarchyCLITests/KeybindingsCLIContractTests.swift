@@ -82,6 +82,12 @@ struct KeybindingsCLIContractTests {
     #expect(effectiveStatusJSON["schema_version"] as? Int == 1)
     #expect(effectiveStatusJSON["operation"] as? String == "keybindings_status")
     #expect(effectiveStatusJSON["outcome"] as? String != nil)
+    let isolatedProvider = try #require(effectiveStatusJSON["provider"] as? [String: Any])
+    #expect(
+      (isolatedProvider["entry_point"] as? String)?.contains(
+        "macarchy-keybindings-cli-home-"
+      ) == true
+    )
   }
 
   @Test
