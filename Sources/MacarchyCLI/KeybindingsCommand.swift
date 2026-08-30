@@ -123,12 +123,15 @@ struct Keybindings: ParsableCommand {
 
     var profileRequired: Bool { profile != nil }
 
-    func validate() throws {
+    func validate(allowsSourceStateRoot: Bool) throws {
       if effective, skhdConfig != nil || catalog != nil {
         throw ValidationError("--skhd-config and --catalog cannot be used with --effective")
       }
       if !effective, profile != nil {
         throw ValidationError("--profile requires --effective")
+      }
+      if !effective, stateRoot != nil, !allowsSourceStateRoot {
+        throw ValidationError("--state-root requires --effective")
       }
     }
 
@@ -174,7 +177,7 @@ struct Keybindings: ParsableCommand {
     var json = false
 
     mutating func validate() throws {
-      try inspection.validate()
+      try inspection.validate(allowsSourceStateRoot: false)
     }
 
     mutating func run() throws {
@@ -210,7 +213,7 @@ struct Keybindings: ParsableCommand {
     var json = false
 
     mutating func validate() throws {
-      try inspection.validate()
+      try inspection.validate(allowsSourceStateRoot: false)
     }
 
     mutating func run() throws {
@@ -244,7 +247,7 @@ struct Keybindings: ParsableCommand {
     @OptionGroup var inspection: InspectionOptions
 
     mutating func validate() throws {
-      try inspection.validate()
+      try inspection.validate(allowsSourceStateRoot: true)
     }
 
     mutating func run() async throws {
