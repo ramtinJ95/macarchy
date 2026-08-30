@@ -110,11 +110,13 @@ struct KeybindingsApplyCommandRunner: Sendable {
       self.acceptanceFailure = acceptanceFailure
     }
 
-    func withAcceptanceManagedUpdateRollbackCheckpoint() -> Self {
+    func withAcceptanceManagedUpdateRollbackCheckpoint(
+      observer: @escaping @Sendable (String) -> Void = { _ in }
+    ) -> Self {
       Self(
         lifecycle: lifecycle,
         planner: planner,
-        acceptanceFailure: KeybindingAcceptanceFailureInjector()
+        acceptanceFailure: KeybindingAcceptanceFailureInjector(observer: observer)
       )
     }
   #endif
@@ -663,7 +665,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       )
 
       #if MACARCHY_ACCEPTANCE_TESTING
-        try acceptanceFailure?.failAfterVerifiedReload()
+        try acceptanceFailure?.failAfterVerifiedReload(generationID: selectedGenerationID)
       #endif
 
       let verified = try planner.prepare(
@@ -1217,6 +1219,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
 #if MACARCHY_ACCEPTANCE_TESTING
   private final class KeybindingAcceptanceFailureInjector: Sendable {
     private let armed = Mutex(true)
+    private let observer: @Sendable (String) -> Void
+
+    init(observer: @escaping @Sendable (String) -> Void = { _ in }) {
+      self.observer = observer
+    }
 
     func validate(
       operation: KeybindingApplyOperation,
@@ -1236,13 +1243,14 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
     }
 
-    func failAfterVerifiedReload() throws {
+    func failAfterVerifiedReload(generationID: String) throws {
       let shouldFail = armed.withLock { armed in
         guard armed else { return false }
         armed = false
         return true
       }
       guard shouldFail else { return }
+      observer(generationID)
       throw KeybindingsApplyError.postcondition(
         "acceptance checkpoint failed after verified managed update reload"
       )
