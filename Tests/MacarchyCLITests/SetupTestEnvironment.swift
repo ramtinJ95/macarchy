@@ -391,3 +391,31 @@ final class Fixture {
     try? FileManager.default.removeItem(at: root)
   }
 }
+
+func decode<Value: Decodable>(_ type: Value.Type, _ output: String) throws -> Value {
+  let decoder = JSONDecoder()
+  decoder.keyDecodingStrategy = .convertFromSnakeCase
+  return try decoder.decode(type, from: Data(output.utf8))
+}
+
+struct TeardownReport: Decodable {
+  let integrations: [IntegrationReport]
+}
+
+struct IntegrationReport: Decodable {
+  let id: String
+  let status: String
+  let target: String
+  let message: String
+  let mutationAttempted: Bool
+}
+
+struct OwnershipManifest: Decodable {
+  let schemaVersion: Int
+  let records: [OwnershipRecord]
+}
+
+struct OwnershipRecord: Decodable {
+  let id: String
+  let phase: String
+}

@@ -843,12 +843,6 @@ extension AgentTUISetupTests {
   }
 }
 
-private func decode<Value: Decodable>(_ type: Value.Type, _ output: String) throws -> Value {
-  let decoder = JSONDecoder()
-  decoder.keyDecodingStrategy = .convertFromSnakeCase
-  return try decoder.decode(type, from: Data(output.utf8))
-}
-
 private func expectOwnershipError(
   _ expected: SetupOwnershipError,
   operation: () throws -> Void
@@ -861,26 +855,4 @@ private func expectOwnershipError(
   } catch {
     Issue.record("Expected \(expected), got \(error)")
   }
-}
-
-private struct TeardownReport: Decodable {
-  let integrations: [IntegrationReport]
-}
-
-private struct IntegrationReport: Decodable {
-  let id: String
-  let status: String
-  let target: String
-  let message: String
-  let mutationAttempted: Bool
-}
-
-private struct OwnershipManifest: Decodable {
-  let schemaVersion: Int
-  let records: [OwnershipRecord]
-}
-
-private struct OwnershipRecord: Decodable {
-  let id: String
-  let phase: String
 }
