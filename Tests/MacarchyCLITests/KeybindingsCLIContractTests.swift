@@ -1,5 +1,8 @@
+import ArgumentParser
 import Foundation
 import Testing
+
+@testable import MacarchyCLI
 
 struct KeybindingsCLIContractTests {
   @Test
@@ -82,9 +85,29 @@ struct KeybindingsCLIContractTests {
     #expect(execution.error.contains("cannot be used with --effective"))
   }
 
+  @Test(arguments: ["list", "doctor"])
+  func productionCLIRejectsSourceStateRootForNonPopupCommands(_ command: String) throws {
+    let execution = try run([
+      "keybindings", command, "--state-root", "/tmp/macarchy-state",
+    ])
+
+    #expect(execution.status != 0)
+    #expect(execution.error.contains("--state-root requires --effective"))
+  }
+
+  @Test
+  func parserRetainsSourceStateRootForShowThemeSelection() throws {
+    let stateRoot = "/tmp/macarchy-popup-theme-state"
+
+    let command = try Keybindings.Show.parse(["--state-root", stateRoot])
+
+    #expect(!command.inspection.effective)
+    #expect(command.inspection.stateRoot == stateRoot)
+  }
+
   private func run(_ arguments: [String]) throws -> (status: Int32, output: String, error: String) {
     let process = Process()
-    process.executableURL = repositoryRoot.appending(path: ".build/debug/macarchy")
+    process.executableURL = productDirectory.appending(path: "macarchy")
     process.arguments = arguments
     process.currentDirectoryURL = repositoryRoot
     let standardOutput = Pipe()
@@ -112,4 +135,10 @@ struct KeybindingsCLIContractTests {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
   }
+
+  private var productDirectory: URL {
+    Bundle(for: KeybindingsCLIContractBundleToken.self).bundleURL.deletingLastPathComponent()
+  }
 }
+
+private final class KeybindingsCLIContractBundleToken: NSObject {}
