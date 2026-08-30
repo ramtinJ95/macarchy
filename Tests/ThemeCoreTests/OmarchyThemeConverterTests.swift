@@ -499,9 +499,7 @@ struct OmarchyThemeConverterTests {
     original: Data,
     update: (inout [String: Any]) throws -> Void
   ) throws -> ThemeDiagnostic {
-    var document = try #require(
-      JSONSerialization.jsonObject(with: original) as? [String: Any]
-    )
+    var document = try jsonObject(original)
     try update(&document)
     let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
     try data.write(to: package.packageURL.appending(path: "import.json"))
@@ -536,13 +534,13 @@ private final class ConversionFixture {
     try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
     pngData = try Data(
-      contentsOf: Self.repositoryRoot.appending(
+      contentsOf: repositoryRoot.appending(
         path: "Tests/Fixtures/Images/test-wallpaper.png"))
   }
 
   func addPalette() throws {
     try FileManager.default.copyItem(
-      at: Self.repositoryRoot.appending(
+      at: repositoryRoot.appending(
         path: "Tests/Fixtures/Omarchy/purple-dream/colors.toml"),
       to: checkout.appending(path: "colors.toml")
     )
@@ -605,10 +603,4 @@ private final class ConversionFixture {
     return output as Data
   }
 
-  private static var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
 }

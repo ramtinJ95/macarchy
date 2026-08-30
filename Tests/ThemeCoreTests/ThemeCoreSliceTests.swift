@@ -255,9 +255,7 @@ struct ThemeCoreSliceTests {
 
     let package = try ThemePackageLoader().load(packageURL: packageURL)
     let rendered = try PiAdapter.render(package: package)
-    let document = try #require(
-      JSONSerialization.jsonObject(with: Data(rendered.utf8)) as? [String: Any]
-    )
+    let document = try jsonObject(Data(rendered.utf8))
     let vars = try #require(document["vars"] as? [String: String])
     let colors = try #require(document["colors"] as? [String: String])
     let roleBackgrounds = [
@@ -623,13 +621,6 @@ struct ThemeCoreSliceTests {
     }
     #expect(diagnostic.location.line == 6)
     #expect(diagnostic.message == "Theme manifest tables must use bare names")
-  }
-
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
   }
 
   private func temporaryDirectory() throws -> URL {

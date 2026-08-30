@@ -323,9 +323,7 @@ extension AdapterContractTests {
         AdapterResult(adapterID: "b", requirement: .required, status: .applied),
       ]
     )
-    var object = try #require(
-      JSONSerialization.jsonObject(with: Data(contentsOf: statusURL)) as? [String: Any]
-    )
+    var object = try jsonObject(Data(contentsOf: statusURL))
     object["results"] = Array(try #require(object["results"] as? [[String: Any]]).reversed())
     try JSONSerialization.data(withJSONObject: object).write(to: statusURL)
     #expect(throws: ReconciliationStatusError.nondeterministicResultOrder) {
@@ -357,9 +355,7 @@ extension AdapterContractTests {
     )
     try expectInvalidActiveGeneration { try store.activeManifest() }
 
-    var object = try #require(
-      JSONSerialization.jsonObject(with: original) as? [String: Any]
-    )
+    var object = try jsonObject(original)
     object["manifest_schema_version"] = GenerationManifest.currentSchemaVersion + 1
     try JSONSerialization.data(withJSONObject: object).write(to: manifestURL)
     try FileManager.default.setAttributes(

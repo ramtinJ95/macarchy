@@ -140,21 +140,12 @@ struct RuntimeEnvironmentTests {
         == "Macarchy 0.4.3 (\(revision), macos-arm64, unmanaged)"
     )
     let json = try runner.execute(json: true)
-    let object = try #require(
-      JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
-    )
+    let object = try jsonObject(json)
     #expect(object["schema_version"] as? Int == 1)
     #expect(object["version"] as? String == "0.4.3")
     #expect(object["revision"] as? String == revision)
     #expect(object["platform"] as? String == "macos-arm64")
     #expect(object["installation"] as? String == "unmanaged")
-  }
-
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
   }
 
   private var revision: String {

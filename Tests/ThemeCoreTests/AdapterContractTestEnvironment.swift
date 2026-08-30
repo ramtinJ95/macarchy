@@ -8,13 +8,6 @@ import Testing
 struct AdapterContractTests {}
 
 extension AdapterContractTests {
-  var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
   func catppuccinPackage() throws -> ThemePackage {
     try ThemePackageLoader().load(
       packageURL: repositoryRoot.appending(

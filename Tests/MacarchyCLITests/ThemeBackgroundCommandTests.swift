@@ -212,12 +212,6 @@ struct ThemeBackgroundCommandTests {
     return (fixture.root, stateRoot, fixture.repository)
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
 }
 
 private enum BackgroundCommandTestError: Error {

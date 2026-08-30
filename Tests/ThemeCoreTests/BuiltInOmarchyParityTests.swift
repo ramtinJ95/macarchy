@@ -86,13 +86,6 @@ struct BuiltInOmarchyParityTests {
     )
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
   private func semanticValues(_ colors: SemanticColors) -> [String] {
     [
       colors.background, colors.surface, colors.overlay, colors.border,

@@ -193,13 +193,6 @@ struct OmarchyPaletteLoaderTests {
     #expect(oversizedDiagnostic.message.contains("1 MiB"))
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
   private var validMinimalPalette: String {
     """
     mode = "dark"

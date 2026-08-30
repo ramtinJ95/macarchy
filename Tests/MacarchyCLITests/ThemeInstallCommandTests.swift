@@ -47,9 +47,7 @@ struct ThemeInstallCommandTests {
     )
 
     #expect(!execution.succeeded)
-    let output = try #require(
-      JSONSerialization.jsonObject(with: Data(execution.output.utf8)) as? [String: Any]
-    )
+    let output = try jsonObject(execution.output)
     #expect(output["outcome"] as? String == "precommit_failure")
     #expect(output["installed"] as? Bool == false)
     #expect(output["committed"] as? Bool == false)
@@ -118,9 +116,7 @@ struct ThemeInstallCommandTests {
       dryRun: true,
       json: true
     )
-    let report = try #require(
-      JSONSerialization.jsonObject(with: Data(jsonExecution.output.utf8)) as? [String: Any]
-    )
+    let report = try jsonObject(jsonExecution.output)
     let conversion = try #require(report["conversion"] as? [String: Any])
     let reconciliation = try #require(report["reconciliation"] as? [[String: Any]])
     #expect(conversion["resolved_commit"] as? String == ThemeInstallFixture.newCommit)
@@ -163,9 +159,7 @@ struct ThemeInstallCommandTests {
     )
 
     #expect(execution.succeeded)
-    let report = try #require(
-      JSONSerialization.jsonObject(with: Data(execution.output.utf8)) as? [String: Any]
-    )
+    let report = try jsonObject(execution.output)
     #expect(report["committed"] as? Bool == true)
     #expect(
       report["slack_theme"] as? String
@@ -208,12 +202,12 @@ private struct ThemeInstallFixture {
     invalidCheckout = root.appending(path: "invalid-checkout", directoryHint: .isDirectory)
     staging = root.appending(path: "staging", directoryHint: .isDirectory)
     stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
-    builtInThemes = Self.repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
+    builtInThemes = repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: invalidCheckout, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
     try FileManager.default.copyItem(
-      at: Self.repositoryRoot.appending(path: "Tests/Fixtures/Omarchy/purple-dream/colors.toml"),
+      at: repositoryRoot.appending(path: "Tests/Fixtures/Omarchy/purple-dream/colors.toml"),
       to: checkout.appending(path: "colors.toml")
     )
     try FileManager.default.createDirectory(
@@ -221,7 +215,7 @@ private struct ThemeInstallFixture {
       withIntermediateDirectories: true
     )
     try FileManager.default.copyItem(
-      at: Self.repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png"),
+      at: repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png"),
       to: checkout.appending(path: "backgrounds/purple.png")
     )
     try "ignored".write(
@@ -352,12 +346,6 @@ private struct ThemeInstallFixture {
     )
   }
 
-  private static var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
 }
 
 private final class ProcessCallCounter: Sendable {

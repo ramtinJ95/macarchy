@@ -113,9 +113,7 @@ struct ThemeSetCommandTests {
       dryRun: false,
       json: true
     )
-    let object = try #require(
-      JSONSerialization.jsonObject(with: Data(json.output.utf8)) as? [String: Any]
-    )
+    let object = try jsonObject(json.output)
     #expect(
       object["slack_theme"] as? String
         == "#1e1e2e,#cba6f7,#a6e3a1,#f38ba8"
@@ -212,10 +210,7 @@ struct ThemeSetCommandTests {
       )
       #expect(execution.succeeded == succeeded)
       let suffix = json ? "json" : "txt"
-      let golden = try String(
-        contentsOf: fixturesRoot.appending(path: "theme-set-\(basename).\(suffix)"),
-        encoding: .utf8
-      )
+      let golden = try fixtureContents("CLI/theme-set-\(basename).\(suffix)")
       #expect(execution.output + "\n" == golden)
     }
   }
@@ -224,17 +219,6 @@ struct ThemeSetCommandTests {
     ThemeRepository(
       builtInRoot: repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
     )
-  }
-
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
-  private var fixturesRoot: URL {
-    repositoryRoot.appending(path: "Tests/Fixtures/CLI", directoryHint: .isDirectory)
   }
 
   private func wallpaperSignalFixture(filesRoot: URL) throws -> YabaiWallpaperSignal {

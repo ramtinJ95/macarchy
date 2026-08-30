@@ -270,9 +270,7 @@ struct ReconcileDoctorCommandTests {
       dryRun: false,
       json: true
     )
-    let object = try #require(
-      JSONSerialization.jsonObject(with: Data(json.output.utf8)) as? [String: Any]
-    )
+    let object = try jsonObject(json.output)
     #expect(object["outcome"] as? String == "persistence_failure")
     #expect((object["reconciliation"] as? [[String: Any]])?.count == 1)
   }
@@ -515,10 +513,7 @@ struct ReconcileDoctorCommandTests {
 
   private func expectGolden(_ output: String, basename: String, json: Bool) throws {
     let suffix = json ? "json" : "txt"
-    let golden = try String(
-      contentsOf: fixturesRoot.appending(path: "\(basename).\(suffix)"),
-      encoding: .utf8
-    )
+    let golden = try fixtureContents("CLI/\(basename).\(suffix)")
     #expect(output + "\n" == golden)
   }
 
@@ -530,12 +525,6 @@ struct ReconcileDoctorCommandTests {
     testConsumerPaths()
   }
 
-  private var fixturesRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Fixtures/CLI", directoryHint: .isDirectory)
-  }
 }
 
 private enum TestFailure: Error {

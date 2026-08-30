@@ -20,9 +20,7 @@ struct ActivationSliceTests {
     let manifestURL = root.appending(
       path: "generations/\(current.generationID)/manifest.json"
     )
-    var object = try #require(
-      JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
-    )
+    var object = try jsonObject(Data(contentsOf: manifestURL))
     object["manifest_schema_version"] = GenerationManifest.legacySchemaVersion
     object.removeValue(forKey: "theme_digest")
     object.removeValue(forKey: "background")
@@ -100,10 +98,8 @@ struct ActivationSliceTests {
       path: "generations/\(base.generationID)",
       directoryHint: .isDirectory
     )
-    var nullDigestObject = try #require(
-      JSONSerialization.jsonObject(
-        with: Data(contentsOf: generationURL.appending(path: "manifest.json"))
-      ) as? [String: Any]
+    var nullDigestObject = try jsonObject(
+      Data(contentsOf: generationURL.appending(path: "manifest.json"))
     )
     nullDigestObject["theme_digest"] = NSNull()
     let nullDigestData = try JSONSerialization.data(withJSONObject: nullDigestObject)
@@ -1156,8 +1152,7 @@ struct ActivationSliceTests {
     let manifestURL = root.appending(
       path: "generations/\(catppuccinGeneration.generationID)/manifest.json")
     let manifestData = try Data(contentsOf: manifestURL)
-    var manifestObject = try #require(
-      JSONSerialization.jsonObject(with: manifestData) as? [String: Any])
+    var manifestObject = try jsonObject(manifestData)
     manifestObject["unexpected"] = true
     var invalidManifest = try JSONSerialization.data(
       withJSONObject: manifestObject, options: [.prettyPrinted, .sortedKeys])
@@ -1181,13 +1176,6 @@ struct ActivationSliceTests {
       ) == "generations/\(tokyoGeneration.generationID)"
     )
     #expect(try generationIDs(at: root).count == 2)
-  }
-
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
   }
 
   private func catppuccinPackage() throws -> ThemePackage {
