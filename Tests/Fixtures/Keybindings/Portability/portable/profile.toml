@@ -1,0 +1,6 @@
+schema_version = 1
+
+[keybindings]
+override = "keybindings.skhdrc"
+metadata = "keybindings-metadata.toml"
+disabled = ["alt-k"]
