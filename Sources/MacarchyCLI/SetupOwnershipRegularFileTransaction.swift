@@ -817,8 +817,32 @@ extension SetupOwnershipManager {
         descriptor: descriptor,
         url: url,
         label: label
+      ),
+      accessControlList: accessControlList(
+        descriptor: descriptor,
+        url: url,
+        label: label
       )
     )
+  }
+
+  func accessControlList(
+    descriptor: Int32,
+    url: URL,
+    label: String
+  ) throws -> Data {
+    errno = 0
+    guard let acl = acl_get_fd_np(descriptor, ACL_TYPE_EXTENDED) else {
+      if errno == ENOENT { return Data() }
+      throw posixError("inspect pinned \(label) access control list", url)
+    }
+    defer { acl_free(UnsafeMutableRawPointer(acl)) }
+    var length: ssize_t = 0
+    guard let text = acl_to_text(acl, &length) else {
+      throw posixError("read pinned \(label) access control list", url)
+    }
+    defer { acl_free(UnsafeMutableRawPointer(text)) }
+    return Data(bytes: text, count: length)
   }
 
   func extendedAttributes(
@@ -978,8 +1002,13 @@ extension SetupOwnershipManager {
     let changedSeconds: Int64
     let changedNanoseconds: Int64
     let extendedAttributes: [String: Data]
+    let accessControlList: Data
 
-    init(metadata: stat, extendedAttributes: [String: Data]) {
+    init(
+      metadata: stat,
+      extendedAttributes: [String: Data],
+      accessControlList: Data
+    ) {
       device = UInt64(metadata.st_dev)
       inode = UInt64(metadata.st_ino)
       mode = UInt32(metadata.st_mode)
@@ -992,6 +1021,7 @@ extension SetupOwnershipManager {
       changedSeconds = Int64(metadata.st_ctimespec.tv_sec)
       changedNanoseconds = Int64(metadata.st_ctimespec.tv_nsec)
       self.extendedAttributes = extendedAttributes
+      self.accessControlList = accessControlList
     }
 
     func matchesDisplaced(_ other: Self) -> Bool {
@@ -1013,6 +1043,28 @@ extension SetupOwnershipManager {
         && modifiedSeconds == other.modifiedSeconds
         && modifiedNanoseconds == other.modifiedNanoseconds
         && extendedAttributes == other.extendedAttributes
+        && accessControlList == other.accessControlList
+    }
+
+    func restorableMetadataDigest(overridingMode: UInt16? = nil) -> String {
+      var data = Data()
+      func append(_ value: String) {
+        let bytes = Data(value.utf8)
+        data.append(Data("\(bytes.count):".utf8))
+        data.append(bytes)
+      }
+      append(String(overridingMode.map(UInt32.init) ?? (mode & 0o7777)))
+      append(String(owner))
+      append(String(group))
+      append(String(flags))
+      append(String(modifiedSeconds))
+      append(String(modifiedNanoseconds))
+      for name in extendedAttributes.keys.sorted() {
+        append(name)
+        append(extendedAttributes[name, default: Data()].base64EncodedString())
+      }
+      append(accessControlList.base64EncodedString())
+      return sha256Digest(data)
     }
   }
 }

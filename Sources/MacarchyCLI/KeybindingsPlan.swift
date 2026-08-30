@@ -423,6 +423,7 @@ private struct KeybindingsPlanReport: Encodable {
       "- provider expected target: \(provider.expectedTarget)",
       "- provider original target: \(provider.originalTarget ?? "none")",
       "- provider source: \(provider.source ?? "none")",
+      "- adoption evidence: \(provider.adoptionEvidenceDigest ?? "none")",
     ]
     if !bindings.isEmpty {
       lines.append("Effective bindings:")

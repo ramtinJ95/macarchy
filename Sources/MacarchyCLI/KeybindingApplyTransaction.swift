@@ -16,6 +16,8 @@ enum KeybindingApplyPhase: String, Codable, Sendable {
   case entryInstalled = "entry_installed"
   case entryRestored = "entry_restored"
   case activating
+  case restorationFinalizing = "restoration_finalizing"
+  case restorationFinalized = "restoration_finalized"
 }
 
 struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
@@ -139,7 +141,9 @@ struct KeybindingApplyTransactionStore: Sendable {
       )
     }
     if transaction.operation == .updateGeneration,
-      [.entryInstalled, .entryRestored].contains(transaction.phase)
+      [
+        .entryInstalled, .entryRestored, .restorationFinalizing, .restorationFinalized,
+      ].contains(transaction.phase)
     {
       throw KeybindingApplyTransactionError.invalid(
         "generation update cannot contain an entry-change phase"
@@ -151,6 +155,13 @@ struct KeybindingApplyTransactionStore: Sendable {
       throw KeybindingApplyTransactionError.invalid(
         "only teardown can contain an entry-restored phase"
       )
+    }
+    if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
+      guard transaction.phase != .entryRestored else {
+        throw KeybindingApplyTransactionError.invalid(
+          "entry installation cannot contain a teardown restoration phase"
+        )
+      }
     }
     if transaction.operation == .teardownEntry {
       guard

@@ -87,7 +87,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    adopt: Bool,
+    adopt: String?,
     dryRun: Bool
   ) throws -> SetupIntegrationResult {
     let execution =
@@ -137,6 +137,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
     if let pending = try transactionStore.read() {
       if dryRun {
+        try preflightRollback(
+          pending,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
         return SetupIntegrationResult(
           id: KeybindingProviderInspector.ownershipID,
           status: .planned,
@@ -153,11 +158,14 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
       if pending.operation == .teardownEntry,
-        try keybindingOwnershipRecord(homeDirectory: homeDirectory) == nil
+        [.restorationFinalizing, .restorationFinalized].contains(pending.phase)
       {
-        try KeybindingProviderTransaction(homeDirectory: homeDirectory)
-          .finalizeCompletedTeardownResidue()
-        try transactionStore.remove()
+        try completeTeardownFinalization(
+          pending,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          transactionStore: transactionStore
+        )
       } else {
         try rollback(
           pending,
@@ -193,6 +201,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
       record,
       context: SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     )
+    let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
+    try provider.preflightOriginalRestoration()
     do {
       try lifecycle.preflight()
     } catch {
@@ -219,7 +229,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
     )
     do {
       try transactionStore.write(transaction)
-      let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
       try provider.restoreOriginalEntry()
       transaction = transaction.withPhase(.entryRestored)
       try transactionStore.write(transaction)
@@ -227,7 +236,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
       try transactionStore.write(transaction)
       try perform(.restart)
       try lifecycle.verifyProcess()
+      transaction = transaction.withPhase(.restorationFinalizing)
+      try transactionStore.write(transaction)
       try provider.finalizeOriginalRestoration()
+      transaction = transaction.withPhase(.restorationFinalized)
+      try transactionStore.write(transaction)
       try transactionStore.remove()
       return SetupIntegrationResult(
         id: KeybindingProviderInspector.ownershipID,
@@ -269,7 +282,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    adopt: Bool = false,
+    adopt: String? = nil,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     do {
@@ -309,6 +322,15 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
       let eligibility = try eligibility(preparation, adopt: adopt)
       try lifecycle.preflight()
+      if eligibility.operation == .installEntry || eligibility.operation == .adoptEntry {
+        guard let evidence = preparation.provider.adoptionEvidence else {
+          throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
+        }
+        try KeybindingProviderTransaction(homeDirectory: homeDirectory).preflightInstall(
+          expectedEvidence: evidence,
+          approvedEvidenceDigest: adopt
+        )
+      }
       if preparation.outcome == "no_change" {
         try lifecycle.verifyProcess()
         let report = KeybindingsApplyReport(
@@ -346,7 +368,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    adopt: Bool = false,
+    adopt: String? = nil,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
@@ -403,7 +425,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    adopt: Bool,
+    adopt: String?,
     evidence: borrowing Mutex<KeybindingsApplyEvidence>
   ) throws -> KeybindingsApplyReport {
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
@@ -420,11 +442,14 @@ struct KeybindingsApplyCommandRunner: Sendable {
           }
         }
         if transaction.operation == .teardownEntry,
-          try keybindingOwnershipRecord(homeDirectory: homeDirectory) == nil
+          [.restorationFinalizing, .restorationFinalized].contains(transaction.phase)
         {
-          try KeybindingProviderTransaction(homeDirectory: homeDirectory)
-            .finalizeCompletedTeardownResidue()
-          try transactionStore.remove()
+          try completeTeardownFinalization(
+            transaction,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            transactionStore: transactionStore
+          )
         } else {
           try rollback(
             transaction,
@@ -456,6 +481,20 @@ struct KeybindingsApplyCommandRunner: Sendable {
       try lifecycle.preflight()
     } catch {
       throw KeybindingsApplyError.blocked(String(describing: error))
+    }
+    let providerEvidence = preparation.provider.adoptionEvidence
+    if eligibility.operation == .installEntry || eligibility.operation == .adoptEntry {
+      guard let providerEvidence else {
+        throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
+      }
+      do {
+        try KeybindingProviderTransaction(homeDirectory: homeDirectory).preflightInstall(
+          expectedEvidence: providerEvidence,
+          approvedEvidenceDigest: adopt
+        )
+      } catch {
+        throw KeybindingsApplyError.blocked(String(describing: error))
+      }
     }
     if preparation.outcome == "no_change" {
       try lifecycle.verifyProcess()
@@ -506,8 +545,12 @@ struct KeybindingsApplyCommandRunner: Sendable {
       try transactionStore.write(transaction)
 
       if operation == .installEntry || operation == .adoptEntry {
+        guard let providerEvidence else {
+          throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
+        }
         try KeybindingProviderTransaction(homeDirectory: homeDirectory).installEntry(
-          adopt: operation == .adoptEntry
+          expectedEvidence: providerEvidence,
+          approvedEvidenceDigest: adopt
         )
         transaction = transaction.withPhase(.entryInstalled)
         try transactionStore.write(transaction)
@@ -564,11 +607,12 @@ struct KeybindingsApplyCommandRunner: Sendable {
   }
 
   private func rollback(
-    _ transaction: KeybindingApplyTransaction,
+    _ originalTransaction: KeybindingApplyTransaction,
     stateRoot: URL,
     homeDirectory: URL,
     transactionStore: KeybindingApplyTransactionStore
   ) throws {
+    var transaction = originalTransaction
     let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
     var restoredOriginalOwnership = false
     if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
@@ -576,6 +620,13 @@ struct KeybindingsApplyCommandRunner: Sendable {
       let records = try SetupOwnershipManager().readRecords(context: context)
       if records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID }) {
         try provider.restoreOriginalEntry()
+        restoredOriginalOwnership = true
+      } else if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
+        try verifyFinalizedOriginalRestoration(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
         restoredOriginalOwnership = true
       } else if transaction.phase == .entryInstalled || transaction.phase == .activating {
         throw SetupOwnershipError.ownershipDrift(
@@ -606,7 +657,24 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
     }
     if restoredOriginalOwnership {
-      try provider.finalizeOriginalRestoration()
+      if transaction.phase != .restorationFinalizing
+        && transaction.phase != .restorationFinalized
+      {
+        transaction = transaction.withPhase(.restorationFinalizing)
+        try transactionStore.write(transaction)
+      }
+      if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
+        try provider.finalizeOriginalRestoration()
+      } else {
+        try verifyFinalizedOriginalRestoration(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+        try provider.finalizeCompletedTeardownResidue()
+      }
+      transaction = transaction.withPhase(.restorationFinalized)
+      try transactionStore.write(transaction)
     }
     let providerInspection = KeybindingProviderInspector().inspect(
       homeDirectory: homeDirectory,
@@ -672,9 +740,95 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
   }
 
+  private func preflightRollback(
+    _ transaction: KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
+    if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
+      if transaction.operation == .teardownEntry {
+        try provider.preflightManagedRestoration()
+      } else if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
+        try provider.preflightOriginalRestoration()
+      }
+    } else if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
+      try verifyFinalizedOriginalRestoration(
+        transaction,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+    } else if transaction.operation != .updateGeneration {
+      throw SetupOwnershipError.ownershipDrift(
+        homeDirectory.appending(path: ".config/skhd/skhdrc")
+      )
+    }
+    if transaction.phase == .activating {
+      try lifecycle.preflight()
+    }
+  }
+
+  private func verifyFinalizedOriginalRestoration(
+    _ transaction: KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    guard [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) else {
+      throw SetupOwnershipError.ownershipDrift(
+        homeDirectory.appending(path: ".config/skhd/skhdrc")
+      )
+    }
+    let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
+    let inspection = KeybindingProviderInspector().inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      generation: generation
+    )
+    guard
+      inspection.status == .adoptionRequired
+        || (inspection.status == .installRequired
+          && inspection.ownership == "ordinary_directory")
+    else {
+      throw SetupOwnershipError.ownershipDrift(URL(filePath: inspection.entryPoint))
+    }
+    try KeybindingProviderTransaction(homeDirectory: homeDirectory)
+      .preflightCompletedRestorationResidue()
+  }
+
+  private func completeTeardownFinalization(
+    _ transaction: KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    guard
+      transaction.operation == .teardownEntry,
+      [.restorationFinalizing, .restorationFinalized].contains(transaction.phase)
+    else {
+      throw SetupOwnershipError.ownershipDrift(
+        homeDirectory.appending(path: ".config/skhd/skhdrc")
+      )
+    }
+    let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
+    if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
+      try provider.finalizeOriginalRestoration()
+    } else {
+      try verifyFinalizedOriginalRestoration(
+        transaction,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+      try provider.finalizeCompletedTeardownResidue()
+    }
+    if transaction.phase != .restorationFinalized {
+      try transactionStore.write(transaction.withPhase(.restorationFinalized))
+    }
+    try transactionStore.remove()
+  }
+
   private func eligibility(
     _ preparation: KeybindingsPlanPreparation,
-    adopt: Bool
+    adopt: String?
   ) throws -> (operation: KeybindingApplyOperation, lifecycle: KeybindingLifecycleAction) {
     switch preparation.provider.status {
     case .managed:
@@ -685,12 +839,21 @@ struct KeybindingsApplyCommandRunner: Sendable {
       throw KeybindingsApplyError.blocked(
         "clean apply requires an existing ordinary ~/.config/skhd directory"
       )
-    case .adoptionRequired where adopt:
-      return (.adoptEntry, .restart)
     case .adoptionRequired:
-      throw KeybindingsApplyError.blocked(
-        "existing skhd configuration requires explicit adoption approval"
-      )
+      guard let expected = preparation.provider.adoptionEvidenceDigest else {
+        throw KeybindingsApplyError.blocked("adoption evidence is unavailable")
+      }
+      guard let adopt else {
+        throw KeybindingsApplyError.blocked(
+          "existing skhd configuration requires --adopt \(expected)"
+        )
+      }
+      guard adopt == expected else {
+        throw KeybindingsApplyError.blocked(
+          "--adopt evidence does not match the current preview; review \(expected)"
+        )
+      }
+      return (.adoptEntry, .restart)
     case .blocked:
       throw KeybindingsApplyError.blocked(preparation.provider.message)
     }
