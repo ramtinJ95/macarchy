@@ -39,6 +39,10 @@ struct KeybindingsShowTests {
     )
 
     #expect(content.rows.map(\.identity) == ["alt-k", "alt-j"])
+    #expect(content.heading == "Configured skhd Keybindings")
+    #expect(content.stateMessage.contains("configured bindings parsed"))
+    #expect(content.rowDescription == "configured shortcuts")
+    #expect(content.commandDescription == "Configured command")
     #expect(content.filteredRows(query: "NORTH").map(\.identity) == ["alt-k"])
     #expect(content.filteredRows(query: "focus below").map(\.identity) == ["alt-j"])
     #expect(content.filteredRows(query: "window upward").map(\.identity) == ["alt-k"])

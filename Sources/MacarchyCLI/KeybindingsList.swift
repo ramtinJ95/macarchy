@@ -84,7 +84,7 @@ struct KeybindingsListCommandRunner: Sendable {
 
 private struct EffectiveKeybindingsListReport: Encodable {
   let schemaVersion = 2
-  let operation = "keybindings_list"
+  let operation = "keybindings_list_effective"
   let profileStatus: String
   let generationStatus: String
   let generationAgreement: String
@@ -98,8 +98,8 @@ private struct EffectiveKeybindingsListReport: Encodable {
     generationStatus = state.generation.status.rawValue
     generationAgreement = state.generationAgreement.rawValue
     generationMessage = state.generation.message
-    bindings = state.attributedBindings.map(EffectiveKeybindingListRow.init)
-    disabledDefaults = state.disabledDefaults.map(DisabledKeybindingListRow.init)
+    bindings = state.presentedBindings.map(EffectiveKeybindingListRow.init)
+    disabledDefaults = state.presentedDisabledDefaults.map(DisabledKeybindingListRow.init)
     diagnostics = state.configuration.diagnostics.map(EffectiveKeybindingsListDiagnostic.init)
   }
 
@@ -135,7 +135,13 @@ private struct EffectiveKeybindingsListReport: Encodable {
     }
     if !disabledDefaults.isEmpty {
       lines.append("Disabled packaged defaults:")
-      lines.append(contentsOf: disabledDefaults.map { "- \($0.identity): \($0.command)" })
+      lines.append(
+        contentsOf: disabledDefaults.map {
+          "- \($0.identity): \($0.command)"
+            + " [command=\($0.commandSource), metadata=\($0.metadataSource)]"
+            + "\t\($0.metadata.category)\t\($0.metadata.label)"
+        }
+      )
     }
     if !diagnostics.isEmpty {
       lines.append("Diagnostics:")
@@ -168,6 +174,7 @@ private struct DisabledKeybindingListRow: Encodable {
   let chord: String
   let command: String
   let commandSource = "packaged_default"
+  let metadataSource = "packaged_default"
   let state = "disabled"
   let metadata: KeybindingMetadataReport
 

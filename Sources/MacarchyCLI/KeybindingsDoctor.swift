@@ -12,17 +12,43 @@ struct KeybindingsDoctorCommandRunner: Sendable {
 
   func execute(
     effectiveState: KeybindingEffectiveState,
+    stateRoot: URL,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     var findings = effectiveState.configuration.diagnostics.map { diagnostic in
       KeybindingsDoctorFinding(
-        id: "effective.\(diagnostic.code)",
+        id: effectiveFindingID(diagnostic),
         status: diagnostic.severity == .error ? .failure : .warning,
         message: diagnostic.message,
         source: diagnostic.source,
         identities: diagnostic.identity.map { [$0] },
         line: diagnostic.line,
         relatedLine: diagnostic.relatedLine
+      )
+    }
+
+    let transactionURL = stateRoot.appending(path: "keybindings/transaction.json")
+    do {
+      if let transaction = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read() {
+        findings.append(
+          KeybindingsDoctorFinding(
+            id: "transaction.recovery.\(transaction.operation.rawValue)."
+              + "\(transaction.phase.rawValue).\(transaction.generationID)",
+            status: .failure,
+            message: "Interrupted \(transaction.operation.rawValue) transaction is in "
+              + "phase \(transaction.phase.rawValue); recovery is required.",
+            source: transactionURL.path
+          )
+        )
+      }
+    } catch {
+      findings.append(
+        KeybindingsDoctorFinding(
+          id: "transaction.invalid",
+          status: .failure,
+          message: String(describing: error),
+          source: transactionURL.path
+        )
       )
     }
 
@@ -92,7 +118,12 @@ struct KeybindingsDoctorCommandRunner: Sendable {
       }
     }
 
-    let report = KeybindingsDoctorReport(findings: findings)
+    let report = KeybindingsDoctorReport(
+      schemaVersion: 2,
+      operation: "keybindings_doctor_effective",
+      heading: "Macarchy effective keybindings doctor:",
+      findings: findings
+    )
     return (try report.render(json: json), report.succeeded)
   }
 
@@ -106,6 +137,9 @@ struct KeybindingsDoctorCommandRunner: Sendable {
       parsed = SkhdConfigurationParser().parse(try read(configurationURL))
     } catch {
       let report = KeybindingsDoctorReport(
+        schemaVersion: 1,
+        operation: "keybindings_doctor",
+        heading: "Macarchy keybindings doctor:",
         findings: [
           KeybindingsDoctorFinding(
             id: "skhd.read",
@@ -159,7 +193,12 @@ struct KeybindingsDoctorCommandRunner: Sendable {
           source: catalogURL.path
         )
       )
-      let report = KeybindingsDoctorReport(findings: findings)
+      let report = KeybindingsDoctorReport(
+        schemaVersion: 1,
+        operation: "keybindings_doctor",
+        heading: "Macarchy keybindings doctor:",
+        findings: findings
+      )
       return (try report.render(json: json), report.succeeded)
     }
 
@@ -194,8 +233,20 @@ struct KeybindingsDoctorCommandRunner: Sendable {
       )
     )
 
-    let report = KeybindingsDoctorReport(findings: findings)
+    let report = KeybindingsDoctorReport(
+      schemaVersion: 1,
+      operation: "keybindings_doctor",
+      heading: "Macarchy keybindings doctor:",
+      findings: findings
+    )
     return (try report.render(json: json), report.succeeded)
+  }
+
+  private func effectiveFindingID(_ diagnostic: KeybindingCompositionDiagnostic) -> String {
+    let identity = diagnostic.identity ?? "none"
+    let sourceDigest = sha256Digest(Data(diagnostic.source.utf8)).prefix(12)
+    return "effective.\(diagnostic.code).\(identity).source-\(sourceDigest)."
+      + "line-\(diagnostic.line ?? 0)"
   }
 
   private func coverageFinding(
@@ -232,6 +283,9 @@ private struct KeybindingsDoctorFinding: Encodable {
 }
 
 private struct KeybindingsDoctorReport {
+  let schemaVersion: Int
+  let operation: String
+  let heading: String
   let findings: [KeybindingsDoctorFinding]
 
   var succeeded: Bool {
@@ -240,7 +294,13 @@ private struct KeybindingsDoctorReport {
 
   func render(json: Bool) throws -> String {
     if json {
-      return try renderJSON(KeybindingsDoctorJSONReport(findings: findings))
+      return try renderJSON(
+        KeybindingsDoctorJSONReport(
+          schemaVersion: schemaVersion,
+          operation: operation,
+          findings: findings
+        )
+      )
     }
     let renderedFindings = findings.map { finding in
       let location = finding.source.map { source in
@@ -255,19 +315,21 @@ private struct KeybindingsDoctorReport {
       }
       return line
     }
-    return (["Macarchy keybindings doctor:"] + renderedFindings + ["No changes made."])
+    return ([heading] + renderedFindings + ["No changes made."])
       .joined(separator: "\n")
   }
 }
 
 private struct KeybindingsDoctorJSONReport: Encodable {
-  let schemaVersion = 1
-  let operation = "keybindings_doctor"
+  let schemaVersion: Int
+  let operation: String
   let outcome: String
   let mutated = false
   let findings: [KeybindingsDoctorFinding]
 
-  init(findings: [KeybindingsDoctorFinding]) {
+  init(schemaVersion: Int, operation: String, findings: [KeybindingsDoctorFinding]) {
+    self.schemaVersion = schemaVersion
+    self.operation = operation
     outcome = findings.contains { $0.status == .failure } ? "unhealthy" : "healthy"
     self.findings = findings
   }

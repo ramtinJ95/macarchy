@@ -48,6 +48,10 @@ struct KeybindingsPopupRow: Sendable {
 struct KeybindingsPopupContent: Sendable {
   let rows: [KeybindingsPopupRow]
   let theme: NormalizedTheme
+  let heading: String
+  let stateMessage: String
+  let rowDescription: String
+  let commandDescription: String
 
   func filteredRows(query: String) -> [KeybindingsPopupRow] {
     let terms =
@@ -153,7 +157,11 @@ struct KeybindingsShowCommandLoader: Sendable {
     )
     return KeybindingsPopupContent(
       rows: correlation.bindings.map(KeybindingsPopupRow.init),
-      theme: theme
+      theme: theme,
+      heading: "Configured skhd Keybindings",
+      stateMessage: "Showing configured bindings parsed from the selected skhd source.",
+      rowDescription: "configured shortcuts",
+      commandDescription: "Configured command"
     )
   }
 
@@ -177,9 +185,32 @@ struct KeybindingsShowCommandLoader: Sendable {
     } catch {
       throw KeybindingsShowError.invalidActiveTheme(String(describing: error))
     }
+    let stateMessage: String
+    switch effectiveState.generationAgreement {
+    case .matches:
+      stateMessage =
+        "Desired bindings match the current generated configuration. "
+        + "Provider ownership and runtime state are not inspected."
+    case .missing:
+      stateMessage =
+        "Not configured: no current generated keybinding configuration exists. "
+        + "Showing desired bindings."
+    case .differs:
+      stateMessage =
+        "Drift detected: current generated keybindings differ from desired inputs. "
+        + "Showing desired bindings."
+    case .unavailable:
+      stateMessage = "Generated agreement is unavailable. Showing desired bindings."
+    case .invalid:
+      preconditionFailure("invalid generations are rejected before popup presentation")
+    }
     return KeybindingsPopupContent(
-      rows: effectiveState.attributedBindings.map(KeybindingsPopupRow.init),
-      theme: theme
+      rows: effectiveState.presentedBindings.map(KeybindingsPopupRow.init),
+      theme: theme,
+      heading: "Desired Managed Keybindings",
+      stateMessage: stateMessage,
+      rowDescription: "desired shortcuts",
+      commandDescription: "Desired command"
     )
   }
 }
@@ -281,7 +312,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
       backing: .buffered,
       defer: false
     )
-    window.title = Self.windowTitle
+    window.title = content.heading
     window.isReleasedWhenClosed = false
     window.level = .floating
     window.collectionBehavior = [.moveToActiveSpace, .transient, .fullScreenAuxiliary]
@@ -420,9 +451,14 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
     root.layer?.backgroundColor = background.cgColor
     window.contentView = root
 
-    let title = NSTextField(labelWithString: Self.windowTitle)
+    let title = NSTextField(labelWithString: content.heading)
     title.font = .systemFont(ofSize: 24, weight: .semibold)
     title.textColor = text
+
+    let stateLabel = NSTextField(wrappingLabelWithString: content.stateMessage)
+    stateLabel.font = .systemFont(ofSize: 12, weight: .medium)
+    stateLabel.textColor = content.theme.semantic.accent.nsColor
+    stateLabel.maximumNumberOfLines = 2
 
     countLabel.font = .systemFont(ofSize: 12)
     countLabel.textColor = muted
@@ -476,7 +512,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
     notice.textColor = content.theme.semantic.accent.nsColor
 
     let stack = NSStackView(views: [
-      title, countLabel, searchField, scrollView, commandLabel, notice,
+      title, stateLabel, countLabel, searchField, scrollView, commandLabel, notice,
     ])
     stack.orientation = .vertical
     stack.alignment = .leading
@@ -486,7 +522,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
     stack.setCustomSpacing(14, after: searchField)
     root.addSubview(stack)
 
-    for view in [title, countLabel, searchField, scrollView, commandLabel, notice] {
+    for view in [title, stateLabel, countLabel, searchField, scrollView, commandLabel, notice] {
       view.translatesAutoresizingMaskIntoConstraints = false
       NSLayoutConstraint.activate([
         view.leadingAnchor.constraint(equalTo: stack.leadingAnchor),
@@ -524,9 +560,10 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
 
   private func updateCount() {
     if visibleRows.count == content.rows.count {
-      countLabel.stringValue = "\(content.rows.count) configured shortcuts"
+      countLabel.stringValue = "\(content.rows.count) \(content.rowDescription)"
     } else {
-      countLabel.stringValue = "\(visibleRows.count) of \(content.rows.count) configured shortcuts"
+      countLabel.stringValue =
+        "\(visibleRows.count) of \(content.rows.count) \(content.rowDescription)"
     }
   }
 
@@ -566,7 +603,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
       row.metadataSource.map { "metadata=\($0)" },
     ].compactMap { $0 }
     let source = sources.isEmpty ? "" : " [\(sources.joined(separator: ", "))]"
-    commandLabel.stringValue = "Configured command\(source): \(command)"
+    commandLabel.stringValue = "\(content.commandDescription)\(source): \(command)"
     commandLabel.toolTip = command
   }
 

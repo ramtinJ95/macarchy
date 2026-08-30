@@ -105,23 +105,52 @@ struct Keybindings: ParsableCommand {
     }
   }
 
-  struct EffectiveOptions: ParsableArguments {
+  struct InspectionOptions: ParsableArguments {
+    @Flag(help: "Inspect desired managed keybindings and canonical generated state.")
+    var effective = false
+
+    @Option(help: "skhd configuration file for source-based inspection.")
+    var skhdConfig: String?
+
+    @Option(help: "Keybinding metadata catalog for source-based inspection.")
+    var catalog: String?
+
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
     var profile: String?
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot: String?
 
     var profileRequired: Bool { profile != nil }
+
+    func validate() throws {
+      if effective, skhdConfig != nil || catalog != nil {
+        throw ValidationError("--skhd-config and --catalog cannot be used with --effective")
+      }
+      if !effective, profile != nil {
+        throw ValidationError("--profile requires --effective")
+      }
+    }
 
     func profileURL(homeDirectory: URL) -> URL {
       profile.map { URL(filePath: $0).standardizedFileURL }
         ?? homeDirectory.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
     }
 
-    var stateRootURL: URL {
-      URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+    func stateRootURL(homeDirectory: URL) -> URL {
+      stateRoot.map { URL(filePath: $0, directoryHint: .isDirectory).standardizedFileURL }
+        ?? homeDirectory.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+        .standardizedFileURL
+    }
+
+    func skhdConfigurationURL(homeDirectory: URL) -> URL {
+      skhdConfig.map { URL(filePath: $0).standardizedFileURL }
+        ?? homeDirectory.appending(path: ".config/skhd/skhdrc").standardizedFileURL
+    }
+
+    func catalogURL(homeDirectory: URL) -> URL {
+      catalog.map { URL(filePath: $0).standardizedFileURL }
+        ?? homeDirectory.appending(path: ".config/macarchy/keybindings.toml").standardizedFileURL
     }
 
     func inspect(homeDirectory: URL) -> KeybindingEffectiveState {
@@ -129,27 +158,40 @@ struct Keybindings: ParsableCommand {
         resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
         profileURL: profileURL(homeDirectory: homeDirectory),
         profileRequired: profileRequired,
-        stateRoot: stateRootURL
+        stateRoot: stateRootURL(homeDirectory: homeDirectory)
       )
     }
   }
 
   struct List: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "List effective managed skhd bindings and their sources."
+      abstract: "List configured skhd bindings or explicitly inspect desired managed state."
     )
 
-    @OptionGroup var effective: EffectiveOptions
+    @OptionGroup var inspection: InspectionOptions
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
+    mutating func validate() throws {
+      try inspection.validate()
+    }
+
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let execution = try KeybindingsListCommandRunner.live.execute(
-        effectiveState: effective.inspect(homeDirectory: home),
-        json: json
-      )
+      let execution =
+        if inspection.effective {
+          try KeybindingsListCommandRunner.live.execute(
+            effectiveState: inspection.inspect(homeDirectory: home),
+            json: json
+          )
+        } else {
+          try KeybindingsListCommandRunner.live.execute(
+            configurationURL: inspection.skhdConfigurationURL(homeDirectory: home),
+            catalogURL: inspection.catalogURL(homeDirectory: home),
+            json: json
+          )
+        }
       print(execution.output)
       if !execution.succeeded {
         throw ExitCode.failure
@@ -159,20 +201,34 @@ struct Keybindings: ParsableCommand {
 
   struct Doctor: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Diagnose effective managed skhd inputs and generated state."
+      abstract: "Diagnose configured skhd sources or explicitly inspect desired managed state."
     )
 
-    @OptionGroup var effective: EffectiveOptions
+    @OptionGroup var inspection: InspectionOptions
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
+    mutating func validate() throws {
+      try inspection.validate()
+    }
+
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let execution = try KeybindingsDoctorCommandRunner.live.execute(
-        effectiveState: effective.inspect(homeDirectory: home),
-        json: json
-      )
+      let execution =
+        if inspection.effective {
+          try KeybindingsDoctorCommandRunner.live.execute(
+            effectiveState: inspection.inspect(homeDirectory: home),
+            stateRoot: inspection.stateRootURL(homeDirectory: home),
+            json: json
+          )
+        } else {
+          try KeybindingsDoctorCommandRunner.live.execute(
+            configurationURL: inspection.skhdConfigurationURL(homeDirectory: home),
+            catalogURL: inspection.catalogURL(homeDirectory: home),
+            json: json
+          )
+        }
       print(execution.output)
       if !execution.succeeded {
         throw ExitCode.failure
@@ -182,17 +238,31 @@ struct Keybindings: ParsableCommand {
 
   struct Show: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Show effective managed bindings in a searchable native popup."
+      abstract: "Show configured skhd bindings or desired managed bindings in a native popup."
     )
 
-    @OptionGroup var effective: EffectiveOptions
+    @OptionGroup var inspection: InspectionOptions
+
+    mutating func validate() throws {
+      try inspection.validate()
+    }
 
     mutating func run() async throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let content = try KeybindingsShowCommandLoader.live.load(
-        effectiveState: effective.inspect(homeDirectory: home),
-        stateRoot: effective.stateRootURL
-      )
+      let stateRoot = inspection.stateRootURL(homeDirectory: home)
+      let content =
+        if inspection.effective {
+          try KeybindingsShowCommandLoader.live.load(
+            effectiveState: inspection.inspect(homeDirectory: home),
+            stateRoot: stateRoot
+          )
+        } else {
+          try KeybindingsShowCommandLoader.live.load(
+            configurationURL: inspection.skhdConfigurationURL(homeDirectory: home),
+            catalogURL: inspection.catalogURL(homeDirectory: home),
+            stateRoot: stateRoot
+          )
+        }
       try await MainActor.run {
         let controller = try KeybindingsPopupWindowController(content: content)
         try controller.run()

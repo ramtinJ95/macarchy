@@ -36,8 +36,28 @@ package struct KeybindingEffectiveState: Equatable, Sendable {
     configuration.composition?.bindings ?? []
   }
 
+  /// Rows ordered for human presentation. The composition's identity order remains
+  /// authoritative for deterministic rendering and digest calculation.
+  package var presentedBindings: [EffectiveKeybinding] {
+    attributedBindings.sorted { lhs, rhs in
+      let lhsOrder = lhs.metadata?.order ?? Int.max
+      let rhsOrder = rhs.metadata?.order ?? Int.max
+      if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+      return lhs.binding.identity < rhs.binding.identity
+    }
+  }
+
   package var disabledDefaults: [DisabledPackagedKeybinding] {
     configuration.composition?.disabledDefaults ?? []
+  }
+
+  package var presentedDisabledDefaults: [DisabledPackagedKeybinding] {
+    disabledDefaults.sorted { lhs, rhs in
+      if lhs.metadata.order != rhs.metadata.order {
+        return lhs.metadata.order < rhs.metadata.order
+      }
+      return lhs.binding.identity < rhs.binding.identity
+    }
   }
 }
 
