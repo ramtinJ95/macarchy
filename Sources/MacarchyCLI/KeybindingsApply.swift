@@ -135,28 +135,17 @@ struct KeybindingsApplyCommandRunner: Sendable {
   ) throws -> SetupIntegrationResult {
     let target = homeDirectory.appending(path: ".config/skhd/skhdrc")
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
+    var recovered = false
+    var recoveryLifecycle = KeybindingLifecycleAction.none
     if let pending = try transactionStore.read() {
       if dryRun {
-        try preflightRollback(
+        return try previewTeardownAfterRecovery(
           pending,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory
         )
-        return SetupIntegrationResult(
-          id: KeybindingProviderInspector.ownershipID,
-          status: .planned,
-          target: target.path,
-          message:
-            "Would recover interrupted keybinding \(pending.operation.rawValue) before teardown; lifecycle="
-            + (pending.phase == .activating
-              ? (pending.operation == .updateGeneration ? "reload" : "restart") : "none"),
-          mutationAttempted: false,
-          lifecycle:
-            pending.phase == .activating
-            ? (pending.operation == .updateGeneration ? .reload : .restart)
-            : KeybindingLifecycleAction.none
-        )
       }
+      recoveryLifecycle = rollbackLifecycle(for: pending)
       if pending.operation == .teardownEntry,
         [.restorationFinalizing, .restorationFinalized].contains(pending.phase)
       {
@@ -167,6 +156,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
           transactionStore: transactionStore
         )
       } else {
+        try preflightRollback(
+          pending,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
         try rollback(
           pending,
           stateRoot: stateRoot,
@@ -174,6 +168,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
           transactionStore: transactionStore
         )
       }
+      recovered = true
     }
 
     guard let record = try keybindingOwnershipRecord(homeDirectory: homeDirectory) else {
@@ -181,8 +176,12 @@ struct KeybindingsApplyCommandRunner: Sendable {
         id: KeybindingProviderInspector.ownershipID,
         status: .none,
         target: target.path,
-        message: "No Macarchy-owned keybinding provider entry exists",
-        mutationAttempted: false
+        message:
+          recovered
+          ? "Recovered the interrupted keybinding transaction; no Macarchy-owned provider entry remains; recovery lifecycle=\(recoveryLifecycle.rawValue)"
+          : "No Macarchy-owned keybinding provider entry exists",
+        mutationAttempted: recovered,
+        lifecycle: recoveryLifecycle
       )
     }
     let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
@@ -246,12 +245,20 @@ struct KeybindingsApplyCommandRunner: Sendable {
         id: KeybindingProviderInspector.ownershipID,
         status: .removed,
         target: target.path,
-        message: "Restored the exact prior skhd entry; lifecycle=restart",
+        message:
+          recovered
+          ? "Recovered the interrupted keybinding transaction, then restored the exact prior skhd entry; recovery lifecycle=\(recoveryLifecycle.rawValue); teardown lifecycle=restart"
+          : "Restored the exact prior skhd entry; lifecycle=restart",
         mutationAttempted: true,
-        lifecycle: .restart
+        lifecycle: combinedLifecycle(recoveryLifecycle, .restart)
       )
     } catch {
       do {
+        try preflightRollback(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
         try rollback(
           transaction,
           stateRoot: stateRoot,
@@ -451,6 +458,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
             transactionStore: transactionStore
           )
         } else {
+          try preflightRollback(
+            transaction,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory
+          )
           try rollback(
             transaction,
             stateRoot: stateRoot,
@@ -587,6 +599,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
       )
     } catch {
       do {
+        try preflightRollback(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
         try rollback(
           transaction,
           stateRoot: stateRoot,
@@ -746,26 +763,147 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL
   ) throws {
     let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
-    if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
-      if transaction.operation == .teardownEntry {
-        try provider.preflightManagedRestoration()
-      } else if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
+    let ownershipRecord = try keybindingOwnershipRecord(homeDirectory: homeDirectory)
+    switch transaction.operation {
+    case .installEntry, .adoptEntry:
+      if ownershipRecord != nil {
         try provider.preflightOriginalRestoration()
+      } else if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
+        try verifyFinalizedOriginalRestoration(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+      } else if transaction.phase == .entryInstalled || transaction.phase == .activating {
+        throw SetupOwnershipError.ownershipDrift(
+          homeDirectory.appending(path: ".config/skhd/skhdrc")
+        )
+      } else {
+        try verifyUnclaimedOriginalProvider(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
       }
-    } else if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
-      try verifyFinalizedOriginalRestoration(
-        transaction,
+    case .teardownEntry:
+      guard ownershipRecord != nil else {
+        throw SetupOwnershipError.ownershipDrift(
+          homeDirectory.appending(path: ".config/skhd/skhdrc")
+        )
+      }
+      try provider.preflightManagedRestoration()
+    case .updateGeneration:
+      guard ownershipRecord != nil else {
+        throw SetupOwnershipError.ownershipDrift(
+          homeDirectory.appending(path: ".config/skhd/skhdrc")
+        )
+      }
+      let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
+      let inspection = KeybindingProviderInspector().inspect(
+        homeDirectory: homeDirectory,
         stateRoot: stateRoot,
-        homeDirectory: homeDirectory
+        generation: generation
       )
-    } else if transaction.operation != .updateGeneration {
-      throw SetupOwnershipError.ownershipDrift(
-        homeDirectory.appending(path: ".config/skhd/skhdrc")
-      )
+      guard inspection.status == .managed else {
+        throw SetupOwnershipError.ownershipDrift(URL(filePath: inspection.entryPoint))
+      }
     }
     if transaction.phase == .activating {
       try lifecycle.preflight()
     }
+  }
+
+  private func previewTeardownAfterRecovery(
+    _ transaction: KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws -> SetupIntegrationResult {
+    let target = homeDirectory.appending(path: ".config/skhd/skhdrc")
+    let recoveryLifecycle = rollbackLifecycle(for: transaction)
+    let finalizingTeardown =
+      transaction.operation == .teardownEntry
+      && [.restorationFinalizing, .restorationFinalized].contains(transaction.phase)
+    if finalizingTeardown {
+      if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
+        try KeybindingProviderTransaction(homeDirectory: homeDirectory)
+          .preflightOriginalRestoration()
+      } else {
+        try verifyFinalizedOriginalRestoration(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+      }
+    } else {
+      try preflightRollback(
+        transaction,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+    }
+
+    let teardownFollows =
+      !finalizingTeardown
+      && (transaction.operation == .updateGeneration || transaction.operation == .teardownEntry)
+    if teardownFollows {
+      try KeybindingProviderTransaction(homeDirectory: homeDirectory)
+        .preflightOriginalRestoration()
+      try lifecycle.preflight()
+    }
+    let teardownLifecycle: KeybindingLifecycleAction = teardownFollows ? .restart : .none
+    let message =
+      teardownFollows
+      ? "Would recover interrupted keybinding \(transaction.operation.rawValue), then restore the exact prior skhd entry; recovery lifecycle=\(recoveryLifecycle.rawValue); teardown lifecycle=restart"
+      : "Would recover interrupted keybinding \(transaction.operation.rawValue); no Macarchy-owned provider entry would remain; recovery lifecycle=\(recoveryLifecycle.rawValue); teardown lifecycle=none"
+    return SetupIntegrationResult(
+      id: KeybindingProviderInspector.ownershipID,
+      status: .planned,
+      target: target.path,
+      message: message,
+      mutationAttempted: false,
+      lifecycle: combinedLifecycle(recoveryLifecycle, teardownLifecycle)
+    )
+  }
+
+  private func verifyUnclaimedOriginalProvider(
+    _ transaction: KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
+    let inspection = KeybindingProviderInspector().inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      generation: generation
+    )
+    if transaction.operation == .installEntry {
+      guard
+        inspection.status == .installRequired,
+        inspection.ownership == "ordinary_directory"
+      else {
+        throw SetupOwnershipError.ownershipDrift(URL(filePath: inspection.entryPoint))
+      }
+    } else {
+      guard inspection.status == .adoptionRequired else {
+        throw SetupOwnershipError.ownershipDrift(URL(filePath: inspection.entryPoint))
+      }
+    }
+  }
+
+  private func rollbackLifecycle(
+    for transaction: KeybindingApplyTransaction
+  ) -> KeybindingLifecycleAction {
+    guard transaction.phase == .activating else { return .none }
+    return transaction.operation == .updateGeneration ? .reload : .restart
+  }
+
+  private func combinedLifecycle(
+    _ first: KeybindingLifecycleAction,
+    _ second: KeybindingLifecycleAction
+  ) -> KeybindingLifecycleAction {
+    if first == .restart || second == .restart { return .restart }
+    if first == .reload || second == .reload { return .reload }
+    return .none
   }
 
   private func verifyFinalizedOriginalRestoration(

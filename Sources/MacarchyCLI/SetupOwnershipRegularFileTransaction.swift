@@ -996,6 +996,7 @@ extension SetupOwnershipManager {
     let owner: UInt32
     let group: UInt32
     let flags: UInt32
+    let linkCount: UInt64
     let size: Int64
     let modifiedSeconds: Int64
     let modifiedNanoseconds: Int64
@@ -1015,6 +1016,7 @@ extension SetupOwnershipManager {
       owner = metadata.st_uid
       group = metadata.st_gid
       flags = metadata.st_flags
+      linkCount = UInt64(metadata.st_nlink)
       size = metadata.st_size
       modifiedSeconds = Int64(metadata.st_mtimespec.tv_sec)
       modifiedNanoseconds = Int64(metadata.st_mtimespec.tv_nsec)
