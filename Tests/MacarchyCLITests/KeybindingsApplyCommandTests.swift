@@ -344,13 +344,51 @@ struct KeybindingsApplyCommandTests {
     try sourceBytes.write(to: sourceEntry)
     let linkText = "../../dotfiles/skhd"
     try FileManager.default.createSymbolicLink(atPath: skhd.path, withDestinationPath: linkText)
-    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
 
     #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
     #expect(try Data(contentsOf: sourceEntry) == sourceBytes)
+    let record = try fixture.keybindingOwnershipRecord()
+    #expect(record.originalKind == .directorySymbolicLink)
+    #expect(record.backupPath == nil)
+    let backup = fixture.stateRoot.appending(path: "state/setup/backups/keybindings-skhdrc")
+    var backupMetadata = stat()
+    errno = 0
+    #expect(lstat(backup.path, &backupMetadata) == -1)
+    #expect(errno == ENOENT)
+    let ownership = fixture.stateRoot.appending(path: "state/setup/ownership.json")
+    let ownershipBeforeDryRun = try Data(contentsOf: ownership)
+    #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
     var metadata = stat()
     #expect(lstat(skhd.path, &metadata) == 0)
     #expect(metadata.st_mode & S_IFMT == S_IFDIR)
+    let callsBeforeDryRun = lifecycle.calls.withLock { $0 }
+
+    let preview = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: true
+    )
+
+    #expect(preview.status == .planned)
+    #expect(!preview.mutationAttempted)
+    #expect(preview.lifecycle == .restart)
+    #expect(try Data(contentsOf: ownership) == ownershipBeforeDryRun)
+    #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+    errno = 0
+    #expect(lstat(backup.path, &backupMetadata) == -1)
+    #expect(errno == ENOENT)
+    #expect(lstat(skhd.path, &metadata) == 0)
+    #expect(metadata.st_mode & S_IFMT == S_IFDIR)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: skhd.appending(path: "skhdrc").path
+      ) == KeybindingProviderInspector.managedTarget
+    )
+    #expect(try Data(contentsOf: sourceEntry) == sourceBytes)
+    #expect(lifecycle.calls.withLock { $0 } == callsBeforeDryRun + ["preflight"])
+
     _ = try runner.teardownLocked(
       stateRoot: fixture.stateRoot,
       homeDirectory: fixture.home,
