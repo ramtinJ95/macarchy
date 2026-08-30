@@ -522,7 +522,11 @@ struct KeybindingPortabilityTests {
     profileRequired: Bool,
     environment: IsolatedKeybindingEnvironment
   ) throws -> (output: String, succeeded: Bool) {
-    try KeybindingsPlanCommandRunner.live.execute(
+    try KeybindingsPlanCommandRunner(
+      effectiveInspector: KeybindingEffectiveBehaviorInspector(
+        processInspector: KeybindingProcessInspector { .testRunning }
+      )
+    ).execute(
       resourcesRoot: resources,
       profileURL: profile,
       profileRequired: profileRequired,
