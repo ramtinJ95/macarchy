@@ -244,23 +244,49 @@ assert_untouched_packaged_binding() {
   exit 1
 }
 
+run_plan() {
+  local destination=$1
+  shift
+  local exit_status
+  if HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+    "$binary" keybindings plan \
+      "$@" \
+      --state-root "$state_root" \
+      --json > "$destination"
+  then
+    exit_status=0
+  else
+    exit_status=$?
+  fi
+
+  local outcome
+  outcome=$(/usr/bin/plutil -extract outcome raw -o - "$destination")
+  if [[ "$exit_status" == "0" ]]; then
+    [[ "$outcome" == "ready" ]]
+    return
+  fi
+  if [[ "$exit_status" != "1" || "$outcome" != "blocked" ]]; then
+    print -u2 "keybinding plan failed outside the supported lifecycle boundary"
+    exit 1
+  fi
+  [[ "$(/usr/bin/plutil -extract process.status raw -o - "$destination")" \
+    == "not_running" ]]
+  [[ "$(/usr/bin/plutil -extract diagnostics raw -o - "$destination")" == "1" ]]
+  [[ "$(/usr/bin/plutil -extract diagnostics.0.code raw -o - "$destination")" \
+    == "skhd_process_prerequisite" ]]
+  [[ "$(/usr/bin/plutil -extract actions raw -o - "$destination")" == "0" ]]
+}
+
 snapshot_home "$temporary_directory/home-before.txt" "$home"
 snapshot_home "$temporary_directory/resources-before.txt" "$packaged_resources"
 cd "$work"
 
 for run in default-first default-second; do
-  HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
-    "$binary" keybindings plan \
-      --state-root "$state_root" \
-      --json > "$temporary_directory/$run.json"
+  run_plan "$temporary_directory/$run.json"
 done
 
 for run in first second; do
-  HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
-    "$binary" keybindings plan \
-      --profile "$dotfiles/profile.toml" \
-      --state-root "$state_root" \
-      --json > "$temporary_directory/$run.json"
+  run_plan "$temporary_directory/$run.json" --profile "$dotfiles/profile.toml"
 done
 
 cmp "$temporary_directory/default-first.json" "$temporary_directory/default-second.json"
@@ -270,13 +296,10 @@ snapshot_home "$temporary_directory/resources-after.txt" "$packaged_resources"
 cmp "$temporary_directory/home-before.txt" "$temporary_directory/home-after.txt"
 cmp "$temporary_directory/resources-before.txt" "$temporary_directory/resources-after.txt"
 
-[[ "$(/usr/bin/plutil -extract outcome raw -o - \
-  "$temporary_directory/default-first.json")" == "ready" ]]
 [[ "$(/usr/bin/plutil -extract mutated raw -o - \
   "$temporary_directory/default-first.json")" == "false" ]]
 [[ "$(/usr/bin/plutil -extract summary.effective raw -o - \
   "$temporary_directory/default-first.json")" == "48" ]]
-[[ "$(/usr/bin/plutil -extract outcome raw -o - "$temporary_directory/first.json")" == "ready" ]]
 [[ "$(/usr/bin/plutil -extract mutated raw -o - "$temporary_directory/first.json")" == "false" ]]
 [[ "$(/usr/bin/plutil -extract summary.effective raw -o - "$temporary_directory/first.json")" == "48" ]]
 [[ "$(/usr/bin/plutil -extract summary.packaged_defaults raw -o - "$temporary_directory/first.json")" == "48" ]]
