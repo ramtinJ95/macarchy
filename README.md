@@ -264,9 +264,31 @@ macarchy keybindings apply --profile /path/to/keybindings/profile.toml --dry-run
 macarchy keybindings apply --profile /path/to/keybindings/profile.toml
 ```
 
-The currently implemented apply path requires an existing ordinary
-`~/.config/skhd` directory with no `skhdrc`. An existing file, leaf symlink, or
-directory symlink remains blocked rather than being adopted implicitly.
+On an initial unclaimed install, apply claims an absent `skhdrc` only inside an
+existing ordinary `~/.config/skhd` directory. It does not require `--adopt`
+because no prior entry is displaced. Once that entry is managed, reapply keeps
+the provider path, publishes a changed generation when needed, and uses reload;
+it also does not require `--adopt`.
+
+An existing unclaimed regular file, leaf symlink, or eligible bounded
+directory-level symlink is never adopted implicitly. Review the plan's exact
+adoption delta and `provider.adoption_evidence_digest`, then pass that digest
+back unchanged:
+
+```sh
+REVIEWED_EVIDENCE_DIGEST='sha256:copy-the-exact-plan-value-here'
+macarchy keybindings apply \
+  --profile /path/to/keybindings/profile.toml \
+  --adopt "$REVIEWED_EVIDENCE_DIGEST" \
+  --dry-run
+macarchy keybindings apply \
+  --profile /path/to/keybindings/profile.toml \
+  --adopt "$REVIEWED_EVIDENCE_DIGEST"
+```
+
+Apply recaptures the evidence before replacement. If the entry kind, link
+text, source bytes, or bounded inventory changed after review, adoption blocks
+without publishing keybinding state and requires a new plan.
 
 To review a packaged-default update, save `keybindings plan --json` output
 before and after installing the updated package and diff the two files. The
