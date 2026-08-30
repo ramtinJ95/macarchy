@@ -61,6 +61,9 @@ struct Keybindings: ParsableCommand {
     @Flag(help: "Inspect without publishing or activating keybindings.")
     var dryRun = false
 
+    @Flag(help: "Approve replacement and exact restoration of a previewed existing skhd entry.")
+    var adopt = false
+
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
@@ -81,6 +84,7 @@ struct Keybindings: ParsableCommand {
             profileRequired: profile != nil,
             stateRoot: stateRootURL,
             homeDirectory: home,
+            adopt: adopt,
             json: json
           )
         } else {
@@ -90,6 +94,7 @@ struct Keybindings: ParsableCommand {
             profileRequired: profile != nil,
             stateRoot: stateRootURL,
             homeDirectory: home,
+            adopt: adopt,
             json: json
           )
         }

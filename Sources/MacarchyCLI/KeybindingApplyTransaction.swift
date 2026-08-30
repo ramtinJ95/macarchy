@@ -3,7 +3,9 @@ import Foundation
 import ThemeCore
 
 enum KeybindingApplyOperation: String, Codable, Sendable {
+  case adoptEntry = "adopt_entry"
   case installEntry = "install_entry"
+  case teardownEntry = "teardown_entry"
   case updateGeneration = "update_generation"
 }
 
@@ -12,6 +14,7 @@ enum KeybindingApplyPhase: String, Codable, Sendable {
   case staged
   case currentSelected = "current_selected"
   case entryInstalled = "entry_installed"
+  case entryRestored = "entry_restored"
   case activating
 }
 
@@ -136,11 +139,29 @@ struct KeybindingApplyTransactionStore: Sendable {
       )
     }
     if transaction.operation == .updateGeneration,
-      transaction.phase == .entryInstalled
+      [.entryInstalled, .entryRestored].contains(transaction.phase)
     {
       throw KeybindingApplyTransactionError.invalid(
-        "generation update cannot contain an entry-install phase"
+        "generation update cannot contain an entry-change phase"
       )
+    }
+    if transaction.operation != .teardownEntry,
+      transaction.phase == .entryRestored
+    {
+      throw KeybindingApplyTransactionError.invalid(
+        "only teardown can contain an entry-restored phase"
+      )
+    }
+    if transaction.operation == .teardownEntry {
+      guard
+        transaction.previousGenerationID == transaction.generationID,
+        !transaction.generationCreated,
+        ![.staging, .entryInstalled].contains(transaction.phase)
+      else {
+        throw KeybindingApplyTransactionError.invalid(
+          "teardown transaction generation or phase is invalid"
+        )
+      }
     }
     return transaction
   }
