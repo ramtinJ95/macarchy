@@ -1130,6 +1130,38 @@ struct KeybindingsApplyCommandTests {
   }
 
   @Test
+  func targetSourceRaceDuringDirectoryDisplacementSwapsProviderBack() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let skhd = fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory)
+    try FileManager.default.removeItem(at: skhd)
+    let source = fixture.root.appending(path: "dotfiles/skhd", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let sourceEntry = source.appending(path: "skhdrc")
+    try Data("alt - x : approved\n".utf8).write(to: sourceEntry)
+    let linkText = "../../dotfiles/skhd"
+    try FileManager.default.createSymbolicLink(atPath: skhd.path, withDestinationPath: linkText)
+    let evidence = try fixture.adoptionEvidence()
+    let transaction = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: { checkpoint in
+        if checkpoint == .sourceSwapCompleted {
+          try Data("alt - x : changed during swap\n".utf8).write(to: sourceEntry, options: .atomic)
+        }
+      }
+    )
+
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      try transaction.installEntry(
+        expectedEvidence: evidence,
+        approvedEvidenceDigest: evidence.digest
+      )
+    }
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: skhd.path) == linkText)
+  }
+
+  @Test
   func reservedMarkerCollisionBlocksBeforeAdoptionMutation() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
