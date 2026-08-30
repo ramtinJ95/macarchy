@@ -76,6 +76,19 @@ struct KeybindingProviderTransaction: Sendable {
     case (.missing, .matching(let destination)) where destination == target:
       alreadyClaimed = true
     case (.missing, .missing):
+      let parentDescriptor = try manager.openPinnedParent(
+        target: entry,
+        homeDirectory: homeDirectory,
+        label: "skhd entry"
+      )
+      defer { Darwin.close(parentDescriptor) }
+      guard fsync(parentDescriptor) == 0 else {
+        throw SetupOwnershipError.system(
+          "sync absent skhd entry",
+          entry.deletingLastPathComponent(),
+          String(cString: strerror(errno))
+        )
+      }
       records.removeAll { $0.id == KeybindingProviderInspector.ownershipID }
       try manager.persist(records: records, context: context)
       return

@@ -257,6 +257,92 @@ struct KeybindingsApplyCommandTests {
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .current)
   }
 
+  @Test
+  func previewModelsPendingRecoveryWithoutTrustingDirtyProviderState() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.stateRoot.appending(path: "keybindings", directoryHint: .isDirectory),
+      withIntermediateDirectories: true
+    )
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
+      KeybindingApplyTransaction(
+        operation: .installEntry,
+        phase: .activating,
+        generationID: "k-01234567-89ab-cdef-0123-456789abcdef",
+        previousGenerationID: nil,
+        generationCreated: true
+      )
+    )
+    let lifecycle = LifecycleFixture()
+
+    let execution = try fixture.runner(lifecycle: lifecycle.controller).preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let report = try jsonObject(execution.output)
+
+    #expect(execution.succeeded)
+    #expect(report["outcome"] as? String == "recovery_planned")
+    #expect(report["lifecycle"] as? String == "restart")
+    #expect(lifecycle.calls.withLock { $0 }.isEmpty)
+  }
+
+  @Test
+  func previewRejectsNoncanonicalStateRootLikeApply() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lifecycle = LifecycleFixture()
+
+    let execution = try fixture.runner(lifecycle: lifecycle.controller).preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.root.appending(path: "other-state", directoryHint: .isDirectory),
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let report = try jsonObject(execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(lifecycle.calls.withLock { $0 }.isEmpty)
+  }
+
+  @Test
+  func inconsistentTransactionCannotDeleteItsRestoredGeneration() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let keybindings = fixture.stateRoot.appending(
+      path: "keybindings",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: keybindings, withIntermediateDirectories: true)
+    let generation = "k-01234567-89ab-cdef-0123-456789abcdef"
+    try """
+    {
+      "generation_created": true,
+      "generation_id": "\(generation)",
+      "operation": "update_generation",
+      "phase": "activating",
+      "previous_generation_id": "\(generation)",
+      "schema_version": 1
+    }
+    """.write(
+      to: keybindings.appending(path: "transaction.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    #expect(throws: KeybindingApplyTransactionError.self) {
+      _ = try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read()
+    }
+  }
+
   private func jsonObject(_ output: String) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
   }

@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import ThemeCore
 
 enum KeybindingLifecycleAction: String, Encodable, Sendable {
@@ -95,7 +96,27 @@ struct KeybindingsApplyCommandRunner: Sendable {
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     do {
+      guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
+        throw KeybindingsApplyError.blocked(
+          "keybinding apply requires the canonical per-user state root"
+        )
+      }
       let pending = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read()
+      if let pending {
+        let lifecycleAction: KeybindingLifecycleAction =
+          pending.phase == .activating
+          ? (pending.operation == .installEntry ? .restart : .reload)
+          : .none
+        let report = KeybindingsApplyReport.success(
+          outcome: "recovery_planned",
+          mutated: false,
+          lifecycle: lifecycleAction,
+          generationID: pending.previousGenerationID,
+          message: "Would roll back interrupted \(pending.operation.rawValue) "
+            + "phase \(pending.phase.rawValue) before replanning apply."
+        )
+        return (try report.render(json: json), true)
+      }
       let preparation = try planner.prepare(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
@@ -111,7 +132,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
       let eligibility = try eligibility(preparation)
       try lifecycle.preflight()
-      if preparation.outcome == "no_change", pending == nil {
+      if preparation.outcome == "no_change" {
         try lifecycle.verifyProcess()
         let report = KeybindingsApplyReport.success(
           outcome: "no_change",
@@ -122,16 +143,12 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
         return (try report.render(json: json), true)
       }
-      let recovery =
-        pending.map {
-          " Would first recover \($0.operation.rawValue) phase \($0.phase.rawValue)."
-        } ?? ""
       let report = KeybindingsApplyReport.success(
         outcome: "planned",
         mutated: false,
         lifecycle: eligibility.lifecycle,
         generationID: preparation.generation.generationID,
-        message: "Would publish and activate managed keybindings.\(recovery)"
+        message: "Would publish and activate managed keybindings."
       )
       return (try report.render(json: json), true)
     } catch {
@@ -151,11 +168,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
-    let canonicalStateRoot = homeDirectory.appending(
-      path: ".config/macarchy",
-      directoryHint: .isDirectory
-    ).standardizedFileURL
-    guard stateRoot.standardizedFileURL == canonicalStateRoot else {
+    guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
       let report = KeybindingsApplyReport.failure(
         outcome: "blocked",
         message: "keybinding apply requires the canonical per-user state root"
@@ -163,6 +176,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       return (try report.render(json: json), false)
     }
 
+    let evidence = Mutex(KeybindingsApplyEvidence())
     do {
       let result = try ActivationLock(root: stateRoot).withLock {
         try applyLocked(
@@ -170,37 +184,32 @@ struct KeybindingsApplyCommandRunner: Sendable {
           profileURL: profileURL,
           profileRequired: profileRequired,
           stateRoot: stateRoot,
-          homeDirectory: homeDirectory
+          homeDirectory: homeDirectory,
+          evidence: evidence
         )
       }
       return (try result.render(json: json), result.succeeded)
     } catch {
       let outcome: String
-      let mutated: Bool
-      let lifecycleAction: KeybindingLifecycleAction
+      var observed = evidence.withLock { $0 }
       if error is KeybindingsRecoveryRequiredError {
         outcome = "recovery_required"
-        mutated = true
-        lifecycleAction = .none
+        observed.mutated = true
       } else if case .blocked = error as? KeybindingsApplyError {
         outcome = "blocked"
-        mutated = false
-        lifecycleAction = .none
       } else if let applyError = error as? KeybindingsApplyError,
         case .rolledBack(_, let action) = applyError
       {
         outcome = "failed"
-        mutated = true
-        lifecycleAction = action
+        observed.mutated = true
+        observed.lifecycle = action
       } else {
         outcome = "failed"
-        mutated = false
-        lifecycleAction = .none
       }
       let report = KeybindingsApplyReport.failure(
         outcome: outcome,
-        mutated: mutated,
-        lifecycle: lifecycleAction,
+        mutated: observed.mutated,
+        lifecycle: observed.lifecycle,
         message: String(describing: error)
       )
       return (try report.render(json: json), false)
@@ -212,12 +221,21 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
-    homeDirectory: URL
+    homeDirectory: URL,
+    evidence: borrowing Mutex<KeybindingsApplyEvidence>
   ) throws -> KeybindingsApplyReport {
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
     do {
       try KeybindingGenerationActivator(stateRoot: stateRoot).recoverResidue()
       if let transaction = try transactionStore.read() {
+        evidence.withLock {
+          $0.mutated = true
+          if transaction.phase == .activating {
+            $0.lifecycle = transaction.operation == .installEntry
+              ? KeybindingLifecycleAction.restart
+              : KeybindingLifecycleAction.reload
+          }
+        }
         try rollback(
           transaction,
           stateRoot: stateRoot,
@@ -263,31 +281,39 @@ struct KeybindingsApplyCommandRunner: Sendable {
     let lifecycleAction = eligibility.lifecycle
 
     let activator = KeybindingGenerationActivator(stateRoot: stateRoot)
-    var staged: StagedKeybindingGeneration?
     let needsGeneration =
       preparation.generation.status == .missing
       || preparation.generation.inputDigest != composition.inputDigest
       || preparation.generation.renderedDigest != composition.renderedDigest
-    if needsGeneration {
-      staged = try activator.stage(composition)
-    }
-    guard
-      let selectedGenerationID = staged?.manifest.generationID
-        ?? preparation.generation.generationID
-    else {
+    let selectedGenerationID =
+      needsGeneration
+      ? "k-\(UUID().uuidString.lowercased())"
+      : preparation.generation.generationID
+    guard let selectedGenerationID else {
       throw KeybindingsApplyError.blocked("no valid generation is available for provider apply")
     }
     var transaction = KeybindingApplyTransaction(
       operation: operation,
-      phase: .staged,
+      phase: needsGeneration ? .staging : .staged,
       generationID: selectedGenerationID,
       previousGenerationID: preparation.generation.generationID,
-      generationCreated: staged != nil
+      generationCreated: needsGeneration
     )
     do {
       try transactionStore.write(transaction)
-      try checkpoint(.staged)
-      if let staged { try activator.select(staged) }
+      if needsGeneration {
+        try checkpoint(.staging)
+        let staged = try activator.stage(
+          composition,
+          generationID: selectedGenerationID
+        )
+        transaction = transaction.withPhase(.staged)
+        try transactionStore.write(transaction)
+        try checkpoint(.staged)
+        try activator.select(staged)
+      } else {
+        try checkpoint(.staged)
+      }
       transaction = transaction.withPhase(.currentSelected)
       try transactionStore.write(transaction)
       try checkpoint(.currentSelected)
@@ -345,7 +371,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
       throw KeybindingsApplyError.rolledBack(
         String(describing: error),
-        lifecycleAction
+        transaction.phase == .activating ? lifecycleAction : .none
       )
     }
   }
@@ -401,6 +427,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
     }
     if transaction.generationCreated {
+      guard transaction.generationID != transaction.previousGenerationID else {
+        throw KeybindingsApplyError.postcondition(
+          "refusing to delete the generation restored by rollback"
+        )
+      }
       try activator.removeGeneration(transaction.generationID)
     }
     try transactionStore.remove()
@@ -437,6 +468,19 @@ struct KeybindingsApplyCommandRunner: Sendable {
       throw KeybindingsApplyError.blocked(preparation.provider.message)
     }
   }
+
+  private func isCanonicalStateRoot(_ stateRoot: URL, homeDirectory: URL) -> Bool {
+    stateRoot.standardizedFileURL
+      == homeDirectory.appending(
+        path: ".config/macarchy",
+        directoryHint: .isDirectory
+      ).standardizedFileURL
+  }
+}
+
+private struct KeybindingsApplyEvidence: Sendable {
+  var mutated = false
+  var lifecycle = KeybindingLifecycleAction.none
 }
 
 private struct KeybindingsApplyReport: Encodable {

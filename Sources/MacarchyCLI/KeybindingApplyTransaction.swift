@@ -8,6 +8,7 @@ enum KeybindingApplyOperation: String, Codable, Sendable {
 }
 
 enum KeybindingApplyPhase: String, Codable, Sendable {
+  case staging
   case staged
   case currentSelected = "current_selected"
   case entryPrepared = "entry_prepared"
@@ -114,11 +115,54 @@ struct KeybindingApplyTransactionStore: Sendable {
         "transaction previous generation identity is invalid"
       )
     }
+    if transaction.generationCreated,
+      transaction.previousGenerationID == transaction.generationID
+    {
+      throw KeybindingApplyTransactionError.invalid(
+        "a created generation cannot equal the previous generation"
+      )
+    }
+    if !transaction.generationCreated,
+      transaction.previousGenerationID != transaction.generationID
+    {
+      throw KeybindingApplyTransactionError.invalid(
+        "an existing generation must equal the previous generation"
+      )
+    }
+    if transaction.operation == .updateGeneration,
+      transaction.previousGenerationID == nil
+    {
+      throw KeybindingApplyTransactionError.invalid(
+        "generation update requires a previous generation"
+      )
+    }
+    if transaction.operation == .updateGeneration,
+      [.entryPrepared, .entryInstalled].contains(transaction.phase)
+    {
+      throw KeybindingApplyTransactionError.invalid(
+        "generation update cannot contain an entry-install phase"
+      )
+    }
     return transaction
   }
 
   func write(_ transaction: KeybindingApplyTransaction) throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
+    defer { Darwin.close(stateDescriptor) }
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: stateDescriptor,
+        name: "keybindings",
+        url: directory
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      descriptor = try PinnedFilesystem.createDirectory(
+        parentDescriptor: stateDescriptor,
+        name: "keybindings",
+        url: directory
+      )
+    }
     defer { Darwin.close(descriptor) }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
