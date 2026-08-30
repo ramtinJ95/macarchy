@@ -1,0 +1,3 @@
+alt - j : package focus south
+alt - k : package focus north
+cmd - b : package open browser v2

@@ -72,4 +72,6 @@ HOME="$temporary_directory/home" \
 grep -q '"schema_version" : 1' "$temporary_directory/keybindings-list.json"
 [[ "$(grep -c '"identity" :' "$temporary_directory/keybindings-list.json")" == "48" ]]
 
+"$script_directory/verify-keybindings-portability.sh" "$binary"
+
 print "release layout smoke test passed"

@@ -1,0 +1,15 @@
+schema_version = 1
+
+[[bindings]]
+identity = "alt-j"
+label = "Personal focus below"
+category = "Personal"
+order = 10
+aliases = ["replacement"]
+
+[[bindings]]
+identity = "cmd-x"
+label = "Open personal extra"
+category = "Personal"
+order = 20
+aliases = ["addition"]

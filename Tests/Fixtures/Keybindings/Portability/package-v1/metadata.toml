@@ -1,0 +1,19 @@
+schema_version = 1
+
+[[bindings]]
+identity = "alt-j"
+label = "Focus below"
+category = "Fixture"
+order = 10
+
+[[bindings]]
+identity = "alt-k"
+label = "Focus above"
+category = "Fixture"
+order = 20
+
+[[bindings]]
+identity = "cmd-b"
+label = "Open browser"
+category = "Fixture"
+order = 30
