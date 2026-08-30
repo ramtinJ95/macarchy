@@ -27,7 +27,10 @@ package struct KeybindingGenerationActivator: Sendable {
     self.faultInjector = faultInjector
   }
 
-  package func stage(_ composition: KeybindingComposition) throws -> StagedKeybindingGeneration {
+  package func stage(
+    _ composition: KeybindingComposition,
+    generationID requestedGenerationID: String? = nil
+  ) throws -> StagedKeybindingGeneration {
     guard
       !composition.isBlocked,
       let rendered = composition.renderedConfiguration,
@@ -36,7 +39,12 @@ package struct KeybindingGenerationActivator: Sendable {
     else {
       throw KeybindingGenerationActivationError.invalidComposition
     }
-    let generationID = "k-\(UUID().uuidString.lowercased())"
+    let generationID =
+      requestedGenerationID
+      ?? "k-\(UUID().uuidString.lowercased())"
+    guard KeybindingGenerationInspector.isGenerationID(generationID) else {
+      throw KeybindingGenerationActivationError.invalidGenerationIdentity
+    }
     let manifest = KeybindingGenerationManifest(
       generationID: generationID,
       inputDigest: inputDigest,
@@ -446,6 +454,7 @@ package struct KeybindingGenerationActivator: Sendable {
 
 package enum KeybindingGenerationActivationError: Error, CustomStringConvertible, Sendable {
   case invalidGenerationInventory
+  case invalidGenerationIdentity
   case invalidComposition
   case system(String, URL, Int32)
 
@@ -453,6 +462,8 @@ package enum KeybindingGenerationActivationError: Error, CustomStringConvertible
     switch self {
     case .invalidGenerationInventory:
       "keybinding generation inventory exceeds the supported bound"
+    case .invalidGenerationIdentity:
+      "keybinding generation identity is invalid"
     case .invalidComposition:
       "cannot activate a blocked or incomplete keybinding composition"
     case .system(let operation, let url, let code):
