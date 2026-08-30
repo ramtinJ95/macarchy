@@ -239,6 +239,40 @@ struct KeybindingProviderTransaction: Sendable {
     }
   }
 
+  func preflightOriginalRestorationFinalization() throws {
+    let (record, _, context) = try ownershipRecord()
+    guard retainsOriginalSymlink(record) else {
+      try preflightOriginalRestoration()
+      return
+    }
+    try requireLegacyClaimAbsent(for: record)
+    try verifyOriginal(record, context: context)
+    let isDirectory = originalKind(record) == .directorySymbolicLink
+    let parentURL = isDirectory ? configurationDirectory : directory
+    let parent = try PinnedFilesystem.openDirectory(at: parentURL)
+    defer { Darwin.close(parent) }
+    let claim = claimName(record, directory: isDirectory)
+    let claimState =
+      if isDirectory {
+        try directoryState(descriptor: parent, name: claim, record: record)
+      } else {
+        try leafState(descriptor: parent, name: claim, record: record)
+      }
+    let deletionResidueExists = try preflightProviderDeletionResidue(
+      parentDescriptor: parent,
+      name: claim,
+      record: record,
+      url: parentURL.appending(path: claim),
+      directory: isDirectory
+    )
+    guard
+      (claimState == .managed && !deletionResidueExists)
+        || (claimState == .missing)
+    else {
+      throw SetupOwnershipError.ownershipDrift(parentURL.appending(path: claim))
+    }
+  }
+
   func preflightManagedRestoration() throws {
     try preflightOriginalRestoration()
   }
@@ -383,6 +417,12 @@ struct KeybindingProviderTransaction: Sendable {
       url: directory
     )
     if directoryMetadata.st_mode & S_IFMT == S_IFLNK {
+      try KeybindingProviderInspector.requireAdoptableSymlink(
+        directoryMetadata,
+        parentDescriptor: configurationDescriptor,
+        name: "skhd",
+        url: directory
+      )
       let destination = try PinnedFilesystem.symlinkDestination(
         parentDescriptor: configurationDescriptor,
         name: "skhd",
@@ -518,6 +558,12 @@ struct KeybindingProviderTransaction: Sendable {
         pinnedRegularDescriptor: descriptor
       )
     case S_IFLNK:
+      try KeybindingProviderInspector.requireAdoptableSymlink(
+        metadata,
+        parentDescriptor: directoryDescriptor,
+        name: "skhdrc",
+        url: entry
+      )
       let destination = try PinnedFilesystem.symlinkDestination(
         parentDescriptor: directoryDescriptor,
         name: "skhdrc",
@@ -3079,6 +3125,57 @@ struct KeybindingProviderTransaction: Sendable {
         url: deletionURL
       )
     }
+  }
+
+  private func preflightProviderDeletionResidue(
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord,
+    url: URL,
+    directory: Bool
+  ) throws -> Bool {
+    let deletionName = try deletionName(name, record: record)
+    let deletionURL = url.deletingLastPathComponent().appending(path: deletionName)
+    guard
+      try itemExists(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL
+      )
+    else { return false }
+    guard
+      try claimMarkerMatches(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        record: record,
+        url: deletionURL
+      )
+    else { throw SetupOwnershipError.ownershipDrift(deletionURL) }
+    if directory {
+      let descriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL
+      )
+      defer { Darwin.close(descriptor) }
+      let inventory = try PinnedFilesystem.directoryEntries(
+        descriptor: descriptor,
+        url: deletionURL,
+        limit: 1
+      )
+      guard inventory.entries.isEmpty, !inventory.truncated else {
+        throw SetupOwnershipError.ownershipDrift(deletionURL)
+      }
+    } else {
+      guard
+        try leafState(
+          descriptor: parentDescriptor,
+          name: deletionName,
+          record: record
+        ) == .managed
+      else { throw SetupOwnershipError.ownershipDrift(deletionURL) }
+    }
+    return true
   }
 
   private func removePinnedItem(

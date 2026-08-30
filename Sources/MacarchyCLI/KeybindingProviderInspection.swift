@@ -184,6 +184,22 @@ struct KeybindingProviderInspector: Sendable {
       if claimed {
         return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
       }
+      do {
+        try Self.requireAdoptableSymlink(
+          directoryMetadata,
+          parentDescriptor: configurationDescriptor,
+          name: "skhd",
+          url: directory
+        )
+      } catch {
+        return result(
+          .blocked,
+          entry: entry,
+          expectedTarget: expectedTarget,
+          ownership: "directory_symlink",
+          message: "skhd directory symlink cannot be adopted: \(error)"
+        )
+      }
       return inspectDirectorySymlink(
         configurationDescriptor: configurationDescriptor,
         configurationDirectory: configurationDirectory,
@@ -418,6 +434,24 @@ struct KeybindingProviderInspector: Sendable {
     }
 
     if entryMetadata.st_mode & S_IFMT == S_IFLNK {
+      if !claimed {
+        do {
+          try Self.requireAdoptableSymlink(
+            entryMetadata,
+            parentDescriptor: directoryDescriptor,
+            name: "skhdrc",
+            url: entry
+          )
+        } catch {
+          return result(
+            .blocked,
+            entry: entry,
+            expectedTarget: expectedTarget,
+            ownership: "entry_symlink",
+            message: "skhd entry-point symlink cannot be adopted: \(error)"
+          )
+        }
+      }
       let target: String
       do {
         target = try PinnedFilesystem.symlinkDestination(
@@ -908,6 +942,52 @@ struct KeybindingProviderInspector: Sendable {
       )
     }
     return Data(value.prefix(count)) == Data(nonce.utf8)
+  }
+
+  static func requireAdoptableSymlink(
+    _ metadata: stat,
+    parentDescriptor: Int32,
+    name: String,
+    url: URL
+  ) throws {
+    guard metadata.st_mode & S_IFMT == S_IFLNK, metadata.st_nlink == 1 else {
+      throw KeybindingsApplyError.blocked(
+        "symbolic link must have exactly one filesystem link"
+      )
+    }
+    let descriptor = name.withCString {
+      Darwin.openat(parentDescriptor, $0, O_RDONLY | O_SYMLINK | O_CLOEXEC)
+    }
+    guard descriptor >= 0 else {
+      throw SetupOwnershipError.system(
+        "inspect adopted keybinding symlink",
+        url,
+        String(cString: strerror(errno))
+      )
+    }
+    defer { Darwin.close(descriptor) }
+    var pinned = stat()
+    guard
+      fstat(descriptor, &pinned) == 0,
+      pinned.st_dev == metadata.st_dev,
+      pinned.st_ino == metadata.st_ino,
+      pinned.st_mode & S_IFMT == S_IFLNK,
+      pinned.st_nlink == 1
+    else { throw SetupOwnershipError.ownershipDrift(url) }
+    let markerSize = claimMarkerAttribute.withCString {
+      Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0)
+    }
+    if markerSize < 0, errno == ENOATTR { return }
+    if markerSize >= 0 {
+      throw KeybindingsApplyError.blocked(
+        "symlink uses Macarchy's reserved claim-marker extended attribute"
+      )
+    }
+    throw SetupOwnershipError.system(
+      "inspect adopted keybinding symlink claim marker",
+      url,
+      String(cString: strerror(errno))
+    )
   }
 
   static func validateOwnershipRecord(
