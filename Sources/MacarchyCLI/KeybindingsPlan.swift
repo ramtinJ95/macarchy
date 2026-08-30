@@ -34,15 +34,20 @@ struct KeybindingsPlanCommandRunner: Sendable {
     homeDirectory: URL,
     ignoreTransaction: Bool = false
   ) throws -> KeybindingsPlanPreparation {
-    let defaultsURL = resourcesRoot.appending(path: "defaults.skhdrc")
-    let defaultMetadataURL = resourcesRoot.appending(path: "metadata.toml")
-    let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
+    let effectiveState = KeybindingEffectiveStateInspector().inspect(
+      resourcesRoot: resourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot
+    )
+    let effectiveConfiguration = effectiveState.configuration
+    let generation = effectiveState.generation
     let provider = KeybindingProviderInspector().inspect(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
       generation: generation
     )
-    var diagnostics: [KeybindingsPlanDiagnostic] = []
+    var diagnostics = effectiveConfiguration.diagnostics.map(KeybindingsPlanDiagnostic.init)
     if !ignoreTransaction {
       do {
         if let transaction = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read() {
@@ -66,120 +71,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       }
     }
 
-    let defaultsText: String?
-    do {
-      defaultsText = try readSkhdConfiguration(defaultsURL)
-    } catch {
-      defaultsText = nil
-      diagnostics.append(
-        .error(
-          code: "packaged_defaults_read_failed",
-          source: defaultsURL,
-          message: String(describing: error)
-        )
-      )
-    }
-
-    let defaultCatalog: SkhdKeybindingCatalog?
-    do {
-      let catalog = try SkhdKeybindingCatalogLoader().load(at: defaultMetadataURL)
-      if catalog.isPresent {
-        defaultCatalog = catalog
-      } else {
-        defaultCatalog = nil
-        diagnostics.append(
-          .error(
-            code: "packaged_metadata_missing",
-            source: defaultMetadataURL,
-            message: "packaged keybinding metadata is absent"
-          )
-        )
-      }
-    } catch {
-      defaultCatalog = nil
-      diagnostics.append(
-        .error(
-          code: "packaged_metadata_invalid",
-          source: defaultMetadataURL,
-          message: String(describing: error)
-        )
-      )
-    }
-
-    let profile: KeybindingProfile?
-    do {
-      profile = try KeybindingProfileLoader().load(at: profileURL, required: profileRequired)
-    } catch {
-      profile = nil
-      diagnostics.append(
-        .error(
-          code: "profile_invalid",
-          source: profileURL,
-          message: String(describing: error)
-        )
-      )
-    }
-
-    var overrideText: String?
-    var userCatalog: SkhdKeybindingCatalog?
-    if let profile {
-      if let overrideURL = profile.overrideURL {
-        do {
-          overrideText = try readSkhdConfiguration(overrideURL)
-        } catch {
-          diagnostics.append(
-            .error(
-              code: "override_read_failed",
-              source: overrideURL,
-              message: String(describing: error)
-            )
-          )
-        }
-      }
-      if let metadataURL = profile.metadataURL {
-        do {
-          let catalog = try SkhdKeybindingCatalogLoader().load(at: metadataURL)
-          if catalog.isPresent {
-            userCatalog = catalog
-          } else {
-            diagnostics.append(
-              .error(
-                code: "user_metadata_missing",
-                source: metadataURL,
-                message: "profile-selected metadata is absent"
-              )
-            )
-          }
-        } catch {
-          diagnostics.append(
-            .error(
-              code: "user_metadata_invalid",
-              source: metadataURL,
-              message: String(describing: error)
-            )
-          )
-        }
-      }
-    }
-
-    var composition: KeybindingComposition?
-    if diagnostics.allSatisfy({ $0.severity != "error" }),
-      let defaultsText,
-      let defaultCatalog,
-      let profile
-    {
-      let result = KeybindingComposer().compose(
-        defaultsText: defaultsText,
-        defaultsSource: defaultsURL,
-        defaultCatalog: defaultCatalog,
-        defaultMetadataSource: defaultMetadataURL,
-        profile: profile,
-        overrideText: overrideText,
-        userCatalog: userCatalog
-      )
-      composition = result
-      diagnostics.append(contentsOf: result.diagnostics.map(KeybindingsPlanDiagnostic.init))
-    }
+    let composition = effectiveConfiguration.composition
 
     if generation.status == .invalid {
       diagnostics.append(
@@ -225,23 +117,16 @@ struct KeybindingsPlanCommandRunner: Sendable {
       outcome = "ready"
     }
 
-    let profileStatus: String
-    if profile?.sourceURL != nil {
-      profileStatus = "loaded"
-    } else if profile == nil {
-      profileStatus = "invalid"
-    } else {
-      profileStatus = "absent_default"
-    }
+    let sources = effectiveConfiguration.sources
     let report = KeybindingsPlanReport(
       outcome: outcome,
       sources: KeybindingsPlanSources(
-        defaults: defaultsURL.path,
-        defaultMetadata: defaultMetadataURL.path,
-        profile: profileURL.path,
-        profileStatus: profileStatus,
-        override: profile?.overrideURL?.path,
-        userMetadata: profile?.metadataURL?.path
+        defaults: sources.defaultsURL.path,
+        defaultMetadata: sources.defaultMetadataURL.path,
+        profile: sources.profileURL.path,
+        profileStatus: sources.profileStatus,
+        override: sources.overrideURL?.path,
+        userMetadata: sources.userMetadataURL?.path
       ),
       summary: KeybindingsPlanSummary(composition),
       bindings: composition?.bindings.map(KeybindingsPlanBinding.init) ?? [],
