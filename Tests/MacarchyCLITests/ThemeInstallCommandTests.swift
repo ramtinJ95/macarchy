@@ -169,7 +169,7 @@ struct ThemeInstallCommandTests {
     #expect(report["committed"] as? Bool == true)
     #expect(
       report["slack_theme"] as? String
-        == "#1a0d2e,#1a0d2e,#8b9aff,#1a0d2e,#d4a5ff,#d4a5ff,#5ffbf1,#ff6ec7,#1a0d2e,#d4a5ff"
+        == "#1a0d2e,#8b9aff,#5ffbf1,#ff6ec7"
     )
     #expect(try fixture.installedCommit() == ThemeInstallFixture.newCommit)
     let reinstalled = try ThemePackageLoader().load(packageURL: fixture.installedPackage)

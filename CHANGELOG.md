@@ -7,6 +7,12 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Slack theme imports now contain the four colors accepted by the current
+  custom-theme UI: window background, selected items, presence indication, and
+  notification badges.
+
 ## [0.4.3] - 2026-08-29
 
 ### Fixed

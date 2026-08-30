@@ -24,7 +24,7 @@ struct ThemeGetCommandTests {
 
     #expect(
       payload
-        == "#1e1e2e,#313244,#cba6f7,#1e1e2e,#45475a,#cdd6f4,#a6e3a1,#f38ba8,#313244,#cdd6f4\n"
+        == "#1e1e2e,#cba6f7,#a6e3a1,#f38ba8\n"
     )
   }
 
