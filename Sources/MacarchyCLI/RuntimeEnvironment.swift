@@ -37,19 +37,16 @@ struct RuntimeEnvironment: Sendable {
   }
 
   var builtInThemesURL: URL {
-    let packaged = packagedResourceRoot.appending(path: "themes", directoryHint: .isDirectory)
-    if FileManager.default.fileExists(atPath: packagedBuildInformationURL.path) {
-      return packaged
-    }
-    if let developmentCheckoutURL {
-      return developmentCheckoutURL.appending(path: "Themes", directoryHint: .isDirectory)
-    }
-    return packaged
+    builtInResourceURL(packagedName: "themes", developmentName: "Themes")
   }
 
   var builtInKeybindingsURL: URL {
+    builtInResourceURL(packagedName: "keybindings", developmentName: "Keybindings")
+  }
+
+  private func builtInResourceURL(packagedName: String, developmentName: String) -> URL {
     let packaged = packagedResourceRoot.appending(
-      path: "keybindings",
+      path: packagedName,
       directoryHint: .isDirectory
     )
     if FileManager.default.fileExists(atPath: packagedBuildInformationURL.path) {
@@ -57,7 +54,7 @@ struct RuntimeEnvironment: Sendable {
     }
     if let developmentCheckoutURL {
       return developmentCheckoutURL.appending(
-        path: "Keybindings",
+        path: developmentName,
         directoryHint: .isDirectory
       )
     }
