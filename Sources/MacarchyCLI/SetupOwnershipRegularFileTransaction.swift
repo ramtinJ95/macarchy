@@ -810,7 +810,8 @@ extension SetupOwnershipManager {
   func regularFileSnapshot(
     descriptor: Int32,
     url: URL,
-    label: String
+    label: String,
+    excludingExtendedAttribute excludedAttribute: String? = nil
   ) throws -> RegularFileSnapshot {
     var metadata = stat()
     guard fstat(descriptor, &metadata) == 0 else {
@@ -821,7 +822,8 @@ extension SetupOwnershipManager {
       extendedAttributes: extendedAttributes(
         descriptor: descriptor,
         url: url,
-        label: label
+        label: label,
+        excluding: excludedAttribute
       ),
       accessControlList: accessControlList(
         descriptor: descriptor,
@@ -853,12 +855,14 @@ extension SetupOwnershipManager {
   func extendedAttributes(
     descriptor: Int32,
     url: URL,
-    label: String
+    label: String,
+    excluding excludedAttribute: String? = nil
   ) throws -> [String: Data] {
     let size = Darwin.flistxattr(descriptor, nil, 0, 0)
     guard size >= 0 else { throw posixError("list pinned \(label) attributes", url) }
     guard size > 0 else { return [:] }
-    guard size <= Self.maximumExtendedAttributeNameBytes else {
+    let excludedNameBytes = excludedAttribute.map { $0.utf8.count + 1 } ?? 0
+    guard size <= Self.maximumExtendedAttributeNameBytes + excludedNameBytes else {
       throw extendedAttributeLimitError(
         url: url,
         label: label,
@@ -871,7 +875,24 @@ extension SetupOwnershipManager {
 
     var attributes = [String: Data]()
     let bytes = names.prefix(count).map { UInt8(bitPattern: $0) }
-    let splitNames = bytes.split(separator: 0)
+    let splitNames = try bytes.split(separator: 0).filter { nameBytes in
+      guard let name = String(bytes: nameBytes, encoding: .utf8) else {
+        throw SetupOwnershipError.system(
+          "read pinned \(label) attribute names",
+          url,
+          "attribute name is not UTF-8"
+        )
+      }
+      return name != excludedAttribute
+    }
+    let includedNameBytes = splitNames.reduce(0) { $0 + $1.count + 1 }
+    guard includedNameBytes <= Self.maximumExtendedAttributeNameBytes else {
+      throw extendedAttributeLimitError(
+        url: url,
+        label: label,
+        reason: "attribute-name inventory exceeds \(Self.maximumExtendedAttributeNameBytes) bytes"
+      )
+    }
     guard splitNames.count <= Self.maximumExtendedAttributeCount else {
       throw extendedAttributeLimitError(
         url: url,
@@ -879,7 +900,7 @@ extension SetupOwnershipManager {
         reason: "attribute count exceeds \(Self.maximumExtendedAttributeCount)"
       )
     }
-    var aggregateSize = size
+    var aggregateSize = includedNameBytes
     for nameBytes in splitNames {
       guard let name = String(bytes: nameBytes, encoding: .utf8) else {
         throw SetupOwnershipError.system(

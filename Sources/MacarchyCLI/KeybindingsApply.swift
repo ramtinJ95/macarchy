@@ -254,6 +254,19 @@ struct KeybindingsApplyCommandRunner: Sendable {
         lifecycle: combinedLifecycle(recoveryLifecycle, .restart)
       )
     } catch {
+      if transaction.phase == .restorationFinalizing
+        || transaction.phase == .restorationFinalized
+      {
+        throw SetupOwnershipTransactionError(
+          KeybindingsRecoveryRequiredError(
+            cause: String(describing: error),
+            rollbackCause:
+              "the incumbent service already restarted on the restored entry; teardown finalization must resume"
+          ),
+          integrationID: KeybindingProviderInspector.ownershipID,
+          target: target
+        )
+      }
       do {
         try preflightRollback(
           transaction,
