@@ -54,14 +54,6 @@ struct KeybindingProcessInspection: Encodable, Equatable, Sendable {
   let executablePath: String?
   let arguments: [String]
 
-  static let running = KeybindingProcessInspection(
-    status: .running,
-    message: "The current user's supported skhd process is running.",
-    processID: nil,
-    executablePath: nil,
-    arguments: []
-  )
-
   static let notRunning = KeybindingProcessInspection(
     status: .notRunning,
     message: "No skhd process is running for the current user.",
@@ -79,6 +71,11 @@ struct KeybindingProcessSnapshot: Equatable, Sendable {
 
 struct KeybindingProcessInspector: Sendable {
   let inspect: @Sendable () -> KeybindingProcessInspection
+
+  static var supportedExecutablePath: String {
+    URL(filePath: "/opt/homebrew/bin/skhd")
+      .resolvingSymlinksInPath().standardizedFileURL.path
+  }
 
   init(inspect: @escaping @Sendable () -> KeybindingProcessInspection) {
     self.inspect = inspect
@@ -100,8 +97,7 @@ struct KeybindingProcessInspector: Sendable {
         }
         return validated(
           processIDs: processIDs,
-          expectedExecutable: URL(filePath: "/opt/homebrew/bin/skhd")
-            .resolvingSymlinksInPath().standardizedFileURL.path,
+          expectedExecutable: supportedExecutablePath,
           snapshot: processSnapshot
         )
       case 1:
@@ -133,6 +129,15 @@ struct KeybindingProcessInspector: Sendable {
     snapshot: (Int32) throws -> KeybindingProcessSnapshot
   ) -> KeybindingProcessInspection {
     guard !processIDs.isEmpty else { return .notRunning }
+    guard processIDs.allSatisfy({ $0 > 0 }) else {
+      return KeybindingProcessInspection(
+        status: .unavailable,
+        message: "skhd process evidence contains an invalid process identity.",
+        processID: nil,
+        executablePath: nil,
+        arguments: []
+      )
+    }
     do {
       let snapshots = try processIDs.sorted().map(snapshot)
       guard snapshots.count == 1, let observed = snapshots.first else {
@@ -144,9 +149,16 @@ struct KeybindingProcessInspector: Sendable {
           arguments: []
         )
       }
-      let executable = URL(filePath: observed.executablePath)
-        .resolvingSymlinksInPath().standardizedFileURL.path
-      guard executable == expectedExecutable else {
+      guard observed.processID == processIDs[0] else {
+        return KeybindingProcessInspection(
+          status: .unavailable,
+          message: "UID-scoped skhd process identity changed during inspection.",
+          processID: nil,
+          executablePath: nil,
+          arguments: []
+        )
+      }
+      guard observed.executablePath == expectedExecutable else {
         return KeybindingProcessInspection(
           status: .unsupported,
           message: "UID-scoped skhd PID \(observed.processID) uses unsupported executable "
@@ -154,6 +166,15 @@ struct KeybindingProcessInspector: Sendable {
           processID: observed.processID,
           executablePath: observed.executablePath,
           arguments: observed.arguments
+        )
+      }
+      guard !observed.arguments.isEmpty else {
+        return KeybindingProcessInspection(
+          status: .unavailable,
+          message: "UID-scoped skhd PID \(observed.processID) has no inspectable arguments.",
+          processID: observed.processID,
+          executablePath: observed.executablePath,
+          arguments: []
         )
       }
       let explicitConfiguration = observed.arguments.dropFirst().contains {

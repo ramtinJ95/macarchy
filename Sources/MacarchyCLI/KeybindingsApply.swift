@@ -21,7 +21,7 @@ struct KeybindingLifecycleController: Sendable {
     restart: @escaping @Sendable () throws -> Void,
     reload: @escaping @Sendable () throws -> Void,
     verifyProcess: @escaping @Sendable () throws -> Void,
-    inspectProcess: @escaping @Sendable () -> KeybindingProcessInspection = { .running }
+    inspectProcess: @escaping @Sendable () -> KeybindingProcessInspection = { .notRunning }
   ) {
     self.preflight = preflight
     self.restart = restart
@@ -81,10 +81,16 @@ struct KeybindingsApplyCommandRunner: Sendable {
 
   init(
     lifecycle: KeybindingLifecycleController,
-    planner: KeybindingsPlanCommandRunner = .live
+    planner: KeybindingsPlanCommandRunner? = nil
   ) {
     self.lifecycle = lifecycle
-    self.planner = planner
+    self.planner =
+      planner
+      ?? KeybindingsPlanCommandRunner(
+        effectiveInspector: KeybindingEffectiveBehaviorInspector(
+          processInspector: KeybindingProcessInspector(inspect: lifecycle.inspectProcess)
+        )
+      )
   }
 
   func setupIntegration(
@@ -833,7 +839,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       )
     }
     try KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).write(
-      KeybindingLifecycleEvidence(
+      try KeybindingLifecycleEvidence(
         generationID: generationID,
         providerEntryPoint: provider.entryPoint,
         providerTarget: provider.expectedTarget,

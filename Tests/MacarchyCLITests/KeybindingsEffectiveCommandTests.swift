@@ -189,7 +189,8 @@ struct KeybindingsEffectiveCommandTests {
         preflight: {},
         restart: {},
         reload: {},
-        verifyProcess: {}
+        verifyProcess: {},
+        inspectProcess: { .testRunning }
       )
     ).preview(
       resourcesRoot: fixture.resources,
@@ -433,6 +434,126 @@ struct KeybindingsEffectiveCommandTests {
   }
 
   @Test
+  func lifecycleEvidenceReadRejectsMissingOrInvalidProcessIdentity() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    _ = try fixture.applyRunner().execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let evidence = try #require(fixture.inspect().lifecycleEvidence.evidence)
+    let encoded = try JSONEncoder().encode(evidence)
+    let base = try #require(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    var missingProcessID = base
+    missingProcessID.removeValue(forKey: "process_id")
+    var missingExecutable = base
+    missingExecutable.removeValue(forKey: "executable_path")
+    var missingArguments = base
+    missingArguments.removeValue(forKey: "arguments")
+    var zeroProcessID = base
+    zeroProcessID["process_id"] = 0
+    var unsupportedExecutable = base
+    unsupportedExecutable["executable_path"] = "/unsupported/skhd"
+    var emptyArguments = base
+    emptyArguments["arguments"] = []
+    let lifecycle = fixture.stateRoot.appending(path: "keybindings/lifecycle.json")
+
+    for malformed in [
+      missingProcessID,
+      missingExecutable,
+      missingArguments,
+      zeroProcessID,
+      unsupportedExecutable,
+      emptyArguments,
+    ] {
+      try JSONSerialization.data(withJSONObject: malformed, options: [.sortedKeys]).write(
+        to: lifecycle,
+        options: .atomic
+      )
+      let behavior = fixture.inspect()
+      #expect(behavior.status == .blocked)
+      #expect(behavior.lifecycleEvidence.status == .invalid)
+    }
+  }
+
+  @Test
+  func lifecycleEvidenceWriteRejectsInvalidProcessValues() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    _ = try fixture.applyRunner().execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let evidence = try #require(fixture.inspect().lifecycleEvidence.evidence)
+    let encoded = try JSONEncoder().encode(evidence)
+    let base = try #require(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    var zeroProcessID = base
+    zeroProcessID["process_id"] = 0
+    var unsupportedExecutable = base
+    unsupportedExecutable["executable_path"] = "/unsupported/skhd"
+    var emptyArguments = base
+    emptyArguments["arguments"] = []
+    let store = KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot)
+
+    for malformed in [zeroProcessID, unsupportedExecutable, emptyArguments] {
+      let decoded = try JSONDecoder().decode(
+        KeybindingLifecycleEvidence.self,
+        from: JSONSerialization.data(withJSONObject: malformed, options: [.sortedKeys])
+      )
+      #expect(throws: KeybindingApplyTransactionError.self) {
+        try store.write(decoded)
+      }
+    }
+  }
+
+  @Test
+  func lifecycleEvidenceRequiresExactProcessIdentityAndArguments() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    _ = try fixture.applyRunner().execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let evidence = try #require(fixture.inspect().lifecycleEvidence.evidence)
+    let encoded = try JSONEncoder().encode(evidence)
+    let base = try #require(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    var differentProcessID = base
+    differentProcessID["process_id"] = evidence.processID + 1
+    var differentArguments = base
+    differentArguments["arguments"] = ["skhd", "--verbose"]
+    let store = KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot)
+
+    for stale in [differentProcessID, differentArguments] {
+      let decoded = try JSONDecoder().decode(
+        KeybindingLifecycleEvidence.self,
+        from: JSONSerialization.data(withJSONObject: stale, options: [.sortedKeys])
+      )
+      try store.write(decoded)
+      let behavior = fixture.inspect()
+      #expect(behavior.status == .drifted)
+      #expect(behavior.lifecycleEvidence.status == .stale)
+    }
+  }
+
+  @Test
   func managedStoppedProcessBlocksPlanInsteadOfReportingNoChange() throws {
     let fixture = try EffectiveCommandFixture()
     defer { fixture.remove() }
@@ -466,14 +587,15 @@ struct KeybindingsEffectiveCommandTests {
     let inspector = KeybindingProcessInspector {
       observations.withLock { count in
         count += 1
-        return count <= 2 ? .running : .notRunning
+        return count <= 2 ? .testRunning : .notRunning
       }
     }
     let runner = KeybindingsApplyCommandRunner(
       lifecycle: KeybindingLifecycleController(
         restart: {},
         reload: {},
-        verifyProcess: {}
+        verifyProcess: {},
+        inspectProcess: { .testRunning }
       ),
       planner: KeybindingsPlanCommandRunner(
         effectiveInspector: KeybindingEffectiveBehaviorInspector(processInspector: inspector)
@@ -505,7 +627,7 @@ struct KeybindingsEffectiveCommandTests {
     let inspector = KeybindingProcessInspector {
       observations.withLock { count in
         count += 1
-        return count.isMultiple(of: 2) ? .notRunning : .running
+        return count.isMultiple(of: 2) ? .notRunning : .testRunning
       }
     }
 
@@ -557,10 +679,22 @@ struct KeybindingsEffectiveCommandTests {
         )
       }
     )
+    let missingArguments = KeybindingProcessInspector.validated(
+      processIDs: [42],
+      expectedExecutable: expected,
+      snapshot: { id in
+        KeybindingProcessSnapshot(
+          processID: id,
+          executablePath: expected,
+          arguments: []
+        )
+      }
+    )
 
     #expect(supported.status == .running)
     #expect(wrongExecutable.status == .unsupported)
     #expect(explicitConfig.status == .unsupported)
+    #expect(missingArguments.status == .unavailable)
   }
 
   @Test
@@ -652,7 +786,7 @@ private struct EffectiveCommandFixture {
   }
 
   func inspect(
-    process: KeybindingProcessInspection = .running
+    process: KeybindingProcessInspection = .testRunning
   ) -> KeybindingEffectiveBehavior {
     KeybindingEffectiveBehaviorInspector(
       processInspector: KeybindingProcessInspector { process }
@@ -666,7 +800,7 @@ private struct EffectiveCommandFixture {
   }
 
   func planner(
-    process: KeybindingProcessInspection = .running
+    process: KeybindingProcessInspection = .testRunning
   ) -> KeybindingsPlanCommandRunner {
     KeybindingsPlanCommandRunner(
       effectiveInspector: KeybindingEffectiveBehaviorInspector(
@@ -676,14 +810,15 @@ private struct EffectiveCommandFixture {
   }
 
   func applyRunner(
-    process: KeybindingProcessInspection = .running
+    process: KeybindingProcessInspection = .testRunning
   ) -> KeybindingsApplyCommandRunner {
     KeybindingsApplyCommandRunner(
       lifecycle: KeybindingLifecycleController(
         preflight: {},
         restart: {},
         reload: {},
-        verifyProcess: {}
+        verifyProcess: {},
+        inspectProcess: { process }
       ),
       planner: planner(process: process)
     )
@@ -802,4 +937,14 @@ private struct EffectiveCommandFixture {
         """
     }
   }
+}
+
+extension KeybindingProcessInspection {
+  static let testRunning = KeybindingProcessInspection(
+    status: .running,
+    message: "The test skhd process is running.",
+    processID: 42,
+    executablePath: KeybindingProcessInspector.supportedExecutablePath,
+    arguments: ["skhd"]
+  )
 }

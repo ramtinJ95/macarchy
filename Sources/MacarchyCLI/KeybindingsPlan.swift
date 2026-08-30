@@ -97,7 +97,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
         )
       )
     }
-    if provider.status == .managed {
+    if provider.status != .blocked {
       switch effectiveState.process.status {
       case .running:
         break
@@ -110,6 +110,8 @@ struct KeybindingsPlanCommandRunner: Sendable {
           )
         )
       }
+    }
+    if provider.status == .managed {
       if effectiveState.lifecycleEvidence.status == .invalid {
         diagnostics.append(
           .error(

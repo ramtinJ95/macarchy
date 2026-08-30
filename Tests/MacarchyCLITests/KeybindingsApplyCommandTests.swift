@@ -529,12 +529,12 @@ struct KeybindingsApplyCommandTests {
       approvedEvidenceDigest: nil
     )
     try KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).write(
-      KeybindingLifecycleEvidence(
+      try KeybindingLifecycleEvidence(
         generationID: staged.manifest.generationID,
         providerEntryPoint: fixture.home.appending(path: ".config/skhd/skhdrc").path,
         providerTarget: KeybindingProviderInspector.managedTarget,
         action: .restart,
-        process: .running
+        process: .testRunning
       )
     )
     try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
@@ -572,7 +572,7 @@ struct KeybindingsApplyCommandTests {
       KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).inspect(
         generation: finalGeneration,
         provider: finalProvider,
-        process: .running
+        process: .testRunning
       ).status == .matched
     )
   }
@@ -2932,7 +2932,8 @@ private final class LifecycleFixture: Sendable {
       preflight: { self.calls.withLock { $0.append("preflight") } },
       restart: { self.calls.withLock { $0.append("restart") } },
       reload: { self.calls.withLock { $0.append("reload") } },
-      verifyProcess: { self.calls.withLock { $0.append("verify") } }
+      verifyProcess: { self.calls.withLock { $0.append("verify") } },
+      inspectProcess: { .testRunning }
     )
   }
 }
@@ -2976,7 +2977,15 @@ private struct KeybindingsApplyFixture {
   }
 
   func runner(lifecycle: KeybindingLifecycleController) -> KeybindingsApplyCommandRunner {
-    KeybindingsApplyCommandRunner(lifecycle: lifecycle)
+    KeybindingsApplyCommandRunner(
+      lifecycle: KeybindingLifecycleController(
+        preflight: lifecycle.preflight,
+        restart: lifecycle.restart,
+        reload: lifecycle.reload,
+        verifyProcess: lifecycle.verifyProcess,
+        inspectProcess: { .testRunning }
+      )
+    )
   }
 
   func installLegacyCleanEntry() throws -> URL {
