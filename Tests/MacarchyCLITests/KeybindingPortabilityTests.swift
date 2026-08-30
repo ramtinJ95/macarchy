@@ -123,7 +123,8 @@ struct KeybindingPortabilityTests {
         preflight: { lifecycleCalls.withLock { $0.append("preflight") } },
         restart: { lifecycleCalls.withLock { $0.append("restart") } },
         reload: { lifecycleCalls.withLock { $0.append("reload") } },
-        verifyProcess: { lifecycleCalls.withLock { $0.append("verify") } }
+        verifyProcess: { lifecycleCalls.withLock { $0.append("verify") } },
+        inspectProcess: { .testRunning }
       )
     )
 
@@ -342,7 +343,8 @@ struct KeybindingPortabilityTests {
       preflight: {},
       restart: {},
       reload: {},
-      verifyProcess: {}
+      verifyProcess: {},
+      inspectProcess: { .testRunning }
     )
     let runner = KeybindingsApplyCommandRunner(lifecycle: lifecycle)
     let firstApplied = try runner.execute(
