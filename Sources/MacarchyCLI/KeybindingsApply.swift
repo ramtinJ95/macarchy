@@ -952,7 +952,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
     switch transaction.operation {
     case .installEntry, .adoptEntry:
       if ownershipRecord != nil {
-        try provider.preflightOriginalRestoration()
+        if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
+          try provider.preflightOriginalRestorationFinalization()
+        } else {
+          try provider.preflightOriginalRestoration()
+        }
       } else if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
         try verifyFinalizedOriginalRestoration(
           transaction,
@@ -1009,7 +1013,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     if finalizingTeardown {
       if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
         try KeybindingProviderTransaction(homeDirectory: homeDirectory)
-          .preflightOriginalRestoration()
+          .preflightOriginalRestorationFinalization()
       } else {
         try verifyFinalizedOriginalRestoration(
           transaction,
@@ -1039,7 +1043,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     if finalizingTeardown {
       if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
         try KeybindingProviderTransaction(homeDirectory: homeDirectory)
-          .preflightOriginalRestoration()
+          .preflightOriginalRestorationFinalization()
       } else {
         try verifyFinalizedOriginalRestoration(
           transaction,
@@ -1162,6 +1166,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
     let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
     if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
+      try provider.preflightOriginalRestorationFinalization()
       try provider.finalizeOriginalRestoration()
     } else {
       try verifyFinalizedOriginalRestoration(

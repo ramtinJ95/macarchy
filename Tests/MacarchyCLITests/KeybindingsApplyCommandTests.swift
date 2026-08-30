@@ -1491,6 +1491,32 @@ struct KeybindingsApplyCommandTests {
   }
 
   @Test
+  func publicApplyRecoversSymlinkFinalizationDeletionAndPostRemovalCheckpoints() throws {
+    for directoryLevel in [false, true] {
+      for checkpoint in SymlinkFinalizationCheckpoint.allCases {
+        try exerciseSymlinkFinalizationRecovery(
+          directoryLevel: directoryLevel,
+          checkpoint: checkpoint,
+          throughApply: true
+        )
+      }
+    }
+  }
+
+  @Test
+  func publicTeardownRecoversSymlinkFinalizationDeletionAndPostRemovalCheckpoints() throws {
+    for directoryLevel in [false, true] {
+      for checkpoint in SymlinkFinalizationCheckpoint.allCases {
+        try exerciseSymlinkFinalizationRecovery(
+          directoryLevel: directoryLevel,
+          checkpoint: checkpoint,
+          throughApply: false
+        )
+      }
+    }
+  }
+
+  @Test
   func retainedEntryClaimMissingOrForeignReplacementBlocksWithoutDeletion() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1895,6 +1921,16 @@ struct KeybindingsApplyCommandTests {
   }
 
   @Test
+  func oversizedReservedMarkerOnEntrySymlinkBlocksPreviewAndApplyWithoutMutation() throws {
+    try assertOversizedReservedSymlinkMarkerBlocks(directoryLevel: false)
+  }
+
+  @Test
+  func oversizedReservedMarkerOnDirectorySymlinkBlocksPreviewAndApplyWithoutMutation() throws {
+    try assertOversizedReservedSymlinkMarkerBlocks(directoryLevel: true)
+  }
+
+  @Test
   func backupDeletionInterruptionRetainsAuthenticatedRecordAndResumes() throws {
     enum Interrupted: Error { case afterBackupRemoval }
     let fixture = try KeybindingsApplyFixture()
@@ -2171,6 +2207,16 @@ struct KeybindingsApplyCommandTests {
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing
     )
     #expect(try Data(contentsOf: sibling) == Data("alt - x : hard linked\n".utf8))
+  }
+
+  @Test
+  func multiplyLinkedEntrySymlinkIsRejectedBeforePreviewOrApply() throws {
+    try assertMultiplyLinkedSymlinkBlocks(directoryLevel: false)
+  }
+
+  @Test
+  func multiplyLinkedDirectorySymlinkIsRejectedBeforePreviewOrApply() throws {
+    try assertMultiplyLinkedSymlinkBlocks(directoryLevel: true)
   }
 
   @Test
@@ -3504,6 +3550,305 @@ struct KeybindingsApplyCommandTests {
     )
   }
 
+  private enum SymlinkFinalizationCheckpoint: CaseIterable {
+    case deletionPublished
+    case postRemoval
+  }
+
+  private enum SymlinkFinalizationInterruption: Error {
+    case injected
+  }
+
+  private func exerciseSymlinkFinalizationRecovery(
+    directoryLevel: Bool,
+    checkpoint: SymlinkFinalizationCheckpoint,
+    throughApply: Bool
+  ) throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let providerURL: URL
+    if directoryLevel {
+      providerURL = fixture.home.appending(path: ".config/skhd")
+      try FileManager.default.removeItem(at: providerURL)
+      let source = fixture.root.appending(path: "dotfiles/skhd")
+      try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+      try Data("alt - x : directory finalization\n".utf8).write(
+        to: source.appending(path: "skhdrc")
+      )
+      try FileManager.default.createSymbolicLink(
+        atPath: providerURL.path,
+        withDestinationPath: source.path
+      )
+    } else {
+      providerURL = fixture.home.appending(path: ".config/skhd/skhdrc")
+      let source = fixture.root.appending(path: "dotfiles/skhdrc")
+      try FileManager.default.createDirectory(
+        at: source.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try Data("alt - x : entry finalization\n".utf8).write(to: source)
+      try FileManager.default.createSymbolicLink(
+        atPath: providerURL.path,
+        withDestinationPath: source.path
+      )
+    }
+    var originalMetadata = stat()
+    #expect(lstat(providerURL.path, &originalMetadata) == 0)
+    let evidence = try fixture.adoptionEvidence()
+    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+    #expect(
+      try fixture.execute(
+        runner: runner,
+        adoptionEvidence: evidence.digest,
+        json: true
+      ).succeeded
+    )
+    let record = try fixture.keybindingOwnershipRecord()
+    let nonce = try #require(record.claimNonce)
+    let retained = URL(filePath: try #require(record.retainedOriginalPath))
+    let deletionResidue = retained.deletingLastPathComponent().appending(
+      path: ".\(retained.lastPathComponent).deleting-\(nonce)"
+    )
+    let generationID = try #require(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID
+    )
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
+      KeybindingApplyTransaction(
+        operation: .teardownEntry,
+        phase: .restorationFinalizing,
+        generationID: generationID,
+        previousGenerationID: generationID,
+        generationCreated: false
+      )
+    )
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).restoreOriginalEntry()
+    let publishedCount = Mutex(0)
+    let interrupted = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: { observed in
+        switch checkpoint {
+        case .deletionPublished where observed == .deletionCandidatePublished:
+          let shouldInterrupt = publishedCount.withLock { count in
+            count += 1
+            return count == (directoryLevel ? 2 : 1)
+          }
+          if shouldInterrupt { throw SymlinkFinalizationInterruption.injected }
+        case .postRemoval where observed == .backupRemoved:
+          throw SymlinkFinalizationInterruption.injected
+        default:
+          break
+        }
+      }
+    )
+    #expect(throws: SymlinkFinalizationInterruption.self) {
+      try interrupted.finalizeOriginalRestoration()
+    }
+    var restoredMetadata = stat()
+    #expect(lstat(providerURL.path, &restoredMetadata) == 0)
+    #expect(restoredMetadata.st_dev == originalMetadata.st_dev)
+    #expect(restoredMetadata.st_ino == originalMetadata.st_ino)
+    #expect(
+      FileManager.default.fileExists(atPath: deletionResidue.path)
+        == (checkpoint == .deletionPublished)
+    )
+    #expect(!FileManager.default.fileExists(atPath: retained.path))
+
+    if throughApply {
+      let recovered = try fixture.execute(
+        runner: runner,
+        adoptionEvidence: evidence.digest,
+        json: true
+      )
+      #expect(recovered.succeeded)
+      let reapplied = try fixture.keybindingOwnershipRecord()
+      var retainedMetadata = stat()
+      let reappliedRetainedPath = try #require(reapplied.retainedOriginalPath)
+      #expect(lstat(reappliedRetainedPath, &retainedMetadata) == 0)
+      #expect(retainedMetadata.st_dev == originalMetadata.st_dev)
+      #expect(retainedMetadata.st_ino == originalMetadata.st_ino)
+    } else {
+      let recovered = try runner.teardownLocked(
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        dryRun: false
+      )
+      #expect(recovered.status == .none)
+      #expect(lstat(providerURL.path, &restoredMetadata) == 0)
+      #expect(restoredMetadata.st_dev == originalMetadata.st_dev)
+      #expect(restoredMetadata.st_ino == originalMetadata.st_ino)
+      #expect(
+        try SetupOwnershipManager().readRecords(
+          context: SetupOwnershipManager.Context(homeDirectory: fixture.home)
+        ).isEmpty
+      )
+    }
+    #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+    #expect(!FileManager.default.fileExists(atPath: deletionResidue.path))
+  }
+
+  private func assertMultiplyLinkedSymlinkBlocks(directoryLevel: Bool) throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let symlink: URL
+    let alias: URL
+    if directoryLevel {
+      symlink = fixture.home.appending(path: ".config/skhd")
+      alias = fixture.home.appending(path: ".config/skhd-alias")
+      try FileManager.default.removeItem(at: symlink)
+      let source = fixture.root.appending(path: "dotfiles/skhd")
+      try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+      try Data("alt - x : directory hard link\n".utf8).write(
+        to: source.appending(path: "skhdrc")
+      )
+      try FileManager.default.createSymbolicLink(
+        atPath: symlink.path,
+        withDestinationPath: source.path
+      )
+    } else {
+      symlink = fixture.home.appending(path: ".config/skhd/skhdrc")
+      alias = fixture.home.appending(path: ".config/skhd/skhdrc-alias")
+      let source = fixture.root.appending(path: "dotfiles/skhdrc")
+      try FileManager.default.createDirectory(
+        at: source.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try Data("alt - x : entry hard link\n".utf8).write(to: source)
+      try FileManager.default.createSymbolicLink(
+        atPath: symlink.path,
+        withDestinationPath: source.path
+      )
+    }
+    let reviewedEvidence = try fixture.adoptionEvidence()
+    let linked = symlink.path.withCString { source in
+      alias.path.withCString { destination in
+        Darwin.linkat(AT_FDCWD, source, AT_FDCWD, destination, 0)
+      }
+    }
+    #expect(linked == 0)
+    var before = stat()
+    #expect(lstat(symlink.path, &before) == 0)
+    #expect(before.st_nlink == 2)
+    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+
+    let preview = try runner.preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    #expect(!preview.succeeded)
+    #expect(throws: (any Error).self) {
+      try KeybindingProviderTransaction(homeDirectory: fixture.home).preflightInstall(
+        expectedEvidence: reviewedEvidence,
+        approvedEvidenceDigest: reviewedEvidence.digest
+      )
+    }
+    let applied = try fixture.execute(
+      runner: runner,
+      adoptionEvidence: reviewedEvidence.digest,
+      json: true
+    )
+    #expect(!applied.succeeded)
+    #expect(try jsonObject(applied.output)["mutated"] as? Bool == false)
+    var after = stat()
+    #expect(lstat(symlink.path, &after) == 0)
+    #expect(after.st_ino == before.st_ino)
+    #expect(after.st_nlink == 2)
+    #expect(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing
+    )
+    #expect(
+      try SetupOwnershipManager().readRecords(
+        context: SetupOwnershipManager.Context(homeDirectory: fixture.home)
+      ).isEmpty
+    )
+  }
+
+  private func assertOversizedReservedSymlinkMarkerBlocks(directoryLevel: Bool) throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let symlink: URL
+    if directoryLevel {
+      symlink = fixture.home.appending(path: ".config/skhd")
+      try FileManager.default.removeItem(at: symlink)
+      let source = fixture.root.appending(path: "dotfiles/skhd")
+      try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+      try Data("alt - x : directory marker\n".utf8).write(
+        to: source.appending(path: "skhdrc")
+      )
+      try FileManager.default.createSymbolicLink(
+        atPath: symlink.path,
+        withDestinationPath: source.path
+      )
+    } else {
+      symlink = fixture.home.appending(path: ".config/skhd/skhdrc")
+      let source = fixture.root.appending(path: "dotfiles/skhdrc")
+      try FileManager.default.createDirectory(
+        at: source.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try Data("alt - x : entry marker\n".utf8).write(to: source)
+      try FileManager.default.createSymbolicLink(
+        atPath: symlink.path,
+        withDestinationPath: source.path
+      )
+    }
+    let reviewedEvidence = try fixture.adoptionEvidence()
+    let marker = Data(
+      repeating: 0x61,
+      count: SetupOwnershipManager.maximumExtendedAttributeValueSize + 1
+    )
+    try setSymbolicLinkExtendedAttribute(
+      KeybindingProviderInspector.claimMarkerAttribute,
+      data: marker,
+      at: symlink
+    )
+    var before = stat()
+    #expect(lstat(symlink.path, &before) == 0)
+    let runner = fixture.runner(lifecycle: LifecycleFixture().controller)
+    let preview = try runner.preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    #expect(!preview.succeeded)
+    #expect(throws: (any Error).self) {
+      try KeybindingProviderTransaction(homeDirectory: fixture.home).preflightInstall(
+        expectedEvidence: reviewedEvidence,
+        approvedEvidenceDigest: reviewedEvidence.digest
+      )
+    }
+    let applied = try fixture.execute(
+      runner: runner,
+      adoptionEvidence: reviewedEvidence.digest,
+      json: true
+    )
+    #expect(!applied.succeeded)
+    #expect(try jsonObject(applied.output)["mutated"] as? Bool == false)
+    var after = stat()
+    #expect(lstat(symlink.path, &after) == 0)
+    #expect(after.st_ino == before.st_ino)
+    #expect(
+      try symbolicLinkExtendedAttributeSize(
+        KeybindingProviderInspector.claimMarkerAttribute,
+        at: symlink
+      ) == marker.count
+    )
+    #expect(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing
+    )
+    #expect(
+      try SetupOwnershipManager().readRecords(
+        context: SetupOwnershipManager.Context(homeDirectory: fixture.home)
+      ).isEmpty
+    )
+  }
+
   private func jsonObject(_ output: String) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
   }
@@ -3517,10 +3862,18 @@ struct KeybindingsApplyCommandTests {
     value: String,
     at url: URL
   ) throws {
+    try setSymbolicLinkExtendedAttribute(name, data: Data(value.utf8), at: url)
+  }
+
+  private func setSymbolicLinkExtendedAttribute(
+    _ name: String,
+    data: Data,
+    at url: URL
+  ) throws {
     let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_SYMLINK | O_CLOEXEC) }
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer { Darwin.close(descriptor) }
-    let result = Data(value.utf8).withUnsafeBytes { bytes in
+    let result = data.withUnsafeBytes { bytes in
       name.withCString {
         Darwin.fsetxattr(descriptor, $0, bytes.baseAddress, bytes.count, 0, XATTR_CREATE)
       }
@@ -3542,6 +3895,15 @@ struct KeybindingsApplyCommandTests {
     }
     guard count == size else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     return String(decoding: data, as: UTF8.self)
+  }
+
+  private func symbolicLinkExtendedAttributeSize(_ name: String, at url: URL) throws -> Int {
+    let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_SYMLINK | O_CLOEXEC) }
+    guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    defer { Darwin.close(descriptor) }
+    let size = name.withCString { Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0) }
+    guard size >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    return size
   }
 
   private func setExtendedAttribute(_ name: String, data: Data, at url: URL) throws {
