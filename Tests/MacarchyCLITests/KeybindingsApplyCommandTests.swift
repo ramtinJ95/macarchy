@@ -8,6 +8,43 @@ import Testing
 
 struct KeybindingsApplyCommandTests {
   @Test
+  func reviewedLegacyFallbackAdoptionNeverMutatesFallbackAndTeardownRevealsIt() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let fallback = fixture.home.appending(path: ".skhdrc")
+    let original = Data("alt - x : fallback stays external\n".utf8)
+    try original.write(to: fallback)
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+
+    let refused = try fixture.execute(runner: runner, adopt: false, json: true)
+    #expect(!refused.succeeded)
+    #expect(try Data(contentsOf: fallback) == original)
+
+    let applied = try fixture.execute(runner: runner, adopt: true, json: true)
+    #expect(applied.succeeded)
+    #expect(try Data(contentsOf: fallback) == original)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(
+        atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path
+      ) == KeybindingProviderInspector.managedTarget
+    )
+
+    let teardown = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      dryRun: false
+    )
+    #expect(teardown.status == .removed)
+    #expect(try Data(contentsOf: fallback) == original)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path
+      )
+    )
+  }
+
+  @Test
   func cleanEntryApplyRestartsVerifiesAndBecomesIdempotent() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -491,6 +528,15 @@ struct KeybindingsApplyCommandTests {
       ),
       approvedEvidenceDigest: nil
     )
+    try KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).write(
+      KeybindingLifecycleEvidence(
+        generationID: staged.manifest.generationID,
+        providerEntryPoint: fixture.home.appending(path: ".config/skhd/skhdrc").path,
+        providerTarget: KeybindingProviderInspector.managedTarget,
+        action: .restart,
+        process: .running
+      )
+    )
     try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
       KeybindingApplyTransaction(
         operation: .installEntry,
@@ -515,6 +561,20 @@ struct KeybindingsApplyCommandTests {
     #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
     #expect(
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .current)
+    let finalGeneration = KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
+    #expect(finalGeneration.generationID != staged.manifest.generationID)
+    let finalProvider = KeybindingProviderInspector().inspect(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.stateRoot,
+      generation: finalGeneration
+    )
+    #expect(
+      KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).inspect(
+        generation: finalGeneration,
+        provider: finalProvider,
+        process: .running
+      ).status == .matched
+    )
   }
 
   @Test

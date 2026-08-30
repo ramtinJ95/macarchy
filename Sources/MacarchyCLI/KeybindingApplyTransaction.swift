@@ -234,3 +234,212 @@ enum KeybindingApplyTransactionError: Error, CustomStringConvertible, Sendable {
     }
   }
 }
+
+struct KeybindingLifecycleEvidence: Codable, Equatable, Sendable {
+  static let currentSchemaVersion = 1
+
+  let schemaVersion: Int
+  let generationID: String
+  let providerEntryPoint: String
+  let providerTarget: String
+  let action: KeybindingLifecycleAction
+  let processID: Int32?
+  let executablePath: String?
+  let arguments: [String]
+
+  init(
+    generationID: String,
+    providerEntryPoint: String,
+    providerTarget: String,
+    action: KeybindingLifecycleAction,
+    process: KeybindingProcessInspection
+  ) {
+    schemaVersion = Self.currentSchemaVersion
+    self.generationID = generationID
+    self.providerEntryPoint = providerEntryPoint
+    self.providerTarget = providerTarget
+    self.action = action
+    processID = process.processID
+    executablePath = process.executablePath
+    arguments = process.arguments
+  }
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case schemaVersion = "schema_version"
+    case generationID = "generation_id"
+    case providerEntryPoint = "provider_entry_point"
+    case providerTarget = "provider_target"
+    case action
+    case processID = "process_id"
+    case executablePath = "executable_path"
+    case arguments
+  }
+}
+
+enum KeybindingLifecycleEvidenceStatus: String, Encodable, Sendable {
+  case matched
+  case missing
+  case stale
+  case invalid
+}
+
+struct KeybindingLifecycleEvidenceInspection: Encodable, Equatable, Sendable {
+  let status: KeybindingLifecycleEvidenceStatus
+  let evidence: KeybindingLifecycleEvidence?
+  let message: String
+}
+
+struct KeybindingLifecycleEvidenceStore: Sendable {
+  let stateRoot: URL
+
+  private var directory: URL {
+    stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+  }
+
+  private var file: URL { directory.appending(path: "lifecycle.json") }
+
+  func inspect(
+    generation: KeybindingGenerationInspection,
+    provider: KeybindingProviderInspection,
+    process: KeybindingProcessInspection
+  ) -> KeybindingLifecycleEvidenceInspection {
+    do {
+      guard let evidence = try read() else {
+        return KeybindingLifecycleEvidenceInspection(
+          status: .missing,
+          evidence: nil,
+          message: "No successful skhd lifecycle evidence has been recorded."
+        )
+      }
+      guard
+        generation.status == .current,
+        evidence.generationID == generation.generationID,
+        evidence.providerEntryPoint == provider.entryPoint,
+        evidence.providerTarget == provider.expectedTarget,
+        evidence.processID == nil || evidence.processID == process.processID,
+        evidence.executablePath == nil || evidence.executablePath == process.executablePath,
+        evidence.arguments.isEmpty || evidence.arguments == process.arguments
+      else {
+        return KeybindingLifecycleEvidenceInspection(
+          status: .stale,
+          evidence: evidence,
+          message: "Recorded skhd lifecycle evidence belongs to different canonical provider state."
+        )
+      }
+      return KeybindingLifecycleEvidenceInspection(
+        status: .matched,
+        evidence: evidence,
+        message:
+          "The recorded \(evidence.action.rawValue) succeeded for generation "
+          + "\(evidence.generationID) with observable process evidence."
+      )
+    } catch {
+      return KeybindingLifecycleEvidenceInspection(
+        status: .invalid,
+        evidence: nil,
+        message: "skhd lifecycle evidence is invalid: \(error)"
+      )
+    }
+  }
+
+  func write(_ evidence: KeybindingLifecycleEvidence) throws {
+    guard
+      evidence.schemaVersion == KeybindingLifecycleEvidence.currentSchemaVersion,
+      KeybindingGenerationInspector.isGenerationID(evidence.generationID),
+      evidence.action != .none,
+      !evidence.providerEntryPoint.isEmpty,
+      !evidence.providerTarget.isEmpty
+    else {
+      throw KeybindingApplyTransactionError.invalid("lifecycle evidence is incomplete")
+    }
+    let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
+    defer { Darwin.close(stateDescriptor) }
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: stateDescriptor,
+        name: "keybindings",
+        url: directory
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      descriptor = try PinnedFilesystem.createDirectory(
+        parentDescriptor: stateDescriptor,
+        name: "keybindings",
+        url: directory
+      )
+    }
+    defer { Darwin.close(descriptor) }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try PinnedFilesystem.replaceRegularFileAtomically(
+      parentDescriptor: descriptor,
+      name: "lifecycle.json",
+      url: file,
+      data: try encoder.encode(evidence),
+      mode: 0o600
+    )
+  }
+
+  func remove() throws {
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    defer { Darwin.close(descriptor) }
+    let removed = "lifecycle.json".withCString { Darwin.unlinkat(descriptor, $0, 0) }
+    guard removed == 0 || errno == ENOENT else {
+      throw KeybindingApplyTransactionError.system("remove lifecycle evidence", file, errno)
+    }
+    guard fsync(descriptor) == 0 else {
+      throw KeybindingApplyTransactionError.system(
+        "sync lifecycle evidence removal",
+        directory,
+        errno
+      )
+    }
+  }
+
+  private func read() throws -> KeybindingLifecycleEvidence? {
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
+    defer { Darwin.close(descriptor) }
+    let data: Data
+    do {
+      data = try PinnedFilesystem.readRegularFile(
+        parentDescriptor: descriptor,
+        name: "lifecycle.json",
+        url: file,
+        maximumSize: 16_384
+      ).data
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      throw KeybindingApplyTransactionError.invalid("lifecycle evidence root must be an object")
+    }
+    let allowed = Set(KeybindingLifecycleEvidence.CodingKeys.allCases.map(\.stringValue))
+    let required = allowed.subtracting(["process_id", "executable_path"])
+    guard Set(object.keys).isSubset(of: allowed), Set(object.keys).isSuperset(of: required) else {
+      throw KeybindingApplyTransactionError.invalid(
+        "lifecycle evidence fields are incomplete or unknown"
+      )
+    }
+    let evidence = try JSONDecoder().decode(KeybindingLifecycleEvidence.self, from: data)
+    guard
+      evidence.schemaVersion == KeybindingLifecycleEvidence.currentSchemaVersion,
+      KeybindingGenerationInspector.isGenerationID(evidence.generationID),
+      evidence.action != .none,
+      !evidence.providerEntryPoint.isEmpty,
+      !evidence.providerTarget.isEmpty
+    else {
+      throw KeybindingApplyTransactionError.invalid("lifecycle evidence values are invalid")
+    }
+    return evidence
+  }
+}

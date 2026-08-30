@@ -13,6 +13,7 @@ struct KeybindingAdoptionEvidence: Equatable, Sendable {
   enum Kind: String, Sendable {
     case absent
     case directorySymbolicLink = "directory_symbolic_link"
+    case legacyFallback = "legacy_fallback"
     case regularFile = "regular_file"
     case symbolicLink = "symbolic_link"
   }
@@ -94,13 +95,14 @@ struct KeybindingProviderInspector: Sendable {
         url: configurationDirectory
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return result(
-        .installRequired,
+      return inspectMissingPreferredEntry(
+        homeDescriptor: homeDescriptor,
+        home: home,
         entry: entry,
         expectedTarget: expectedTarget,
-        ownership: "absent",
-        message: "skhd configuration directory and entry point are absent",
-        adoptionEvidence: Self.absentEvidence
+        installOwnership: "absent",
+        installMessage: "skhd configuration directory and entry point are absent",
+        fallbackCanBeAdopted: false
       )
     } catch {
       return result(
@@ -154,13 +156,14 @@ struct KeybindingProviderInspector: Sendable {
       if claimed {
         return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
       }
-      return result(
-        .installRequired,
+      return inspectMissingPreferredEntry(
+        homeDescriptor: homeDescriptor,
+        home: home,
         entry: entry,
         expectedTarget: expectedTarget,
-        ownership: "absent",
-        message: "skhd configuration directory and entry point are absent",
-        adoptionEvidence: Self.absentEvidence
+        installOwnership: "absent",
+        installMessage: "skhd configuration directory and entry point are absent",
+        fallbackCanBeAdopted: false
       )
     } catch {
       return result(
@@ -187,6 +190,7 @@ struct KeybindingProviderInspector: Sendable {
     case S_IFDIR:
       return inspectEntry(
         configurationDescriptor: configurationDescriptor,
+        home: home,
         directory: directory,
         entry: entry,
         expectedTarget: expectedTarget,
@@ -336,6 +340,7 @@ struct KeybindingProviderInspector: Sendable {
 
   private func inspectEntry(
     configurationDescriptor: Int32,
+    home: URL,
     directory: URL,
     entry: URL,
     expectedTarget: String,
@@ -373,13 +378,27 @@ struct KeybindingProviderInspector: Sendable {
       if claimed {
         return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
       }
-      return result(
-        .installRequired,
+      let homeDescriptor: Int32
+      do {
+        homeDescriptor = try PinnedFilesystem.openDirectory(at: home)
+      } catch {
+        return result(
+          .blocked,
+          entry: entry,
+          expectedTarget: expectedTarget,
+          ownership: "unsafe_ancestor",
+          message: "cannot reopen the selected home to inspect ~/.skhdrc: \(error)"
+        )
+      }
+      defer { Darwin.close(homeDescriptor) }
+      return inspectMissingPreferredEntry(
+        homeDescriptor: homeDescriptor,
+        home: home,
         entry: entry,
         expectedTarget: expectedTarget,
-        ownership: "ordinary_directory",
-        message: "skhd entry point is absent",
-        adoptionEvidence: Self.absentEvidence
+        installOwnership: "ordinary_directory",
+        installMessage: "skhd entry point is absent",
+        fallbackCanBeAdopted: true
       )
     } catch {
       return result(
@@ -571,6 +590,120 @@ struct KeybindingProviderInspector: Sendable {
         operation: "decode configuration as UTF-8", url: resolvedURL, code: EILSEQ)
     }
     return (resolvedURL, text, file.data)
+  }
+
+  func legacyFallbackEvidence(homeDirectory: URL) throws -> KeybindingAdoptionEvidence {
+    let home = homeDirectory.standardizedFileURL
+    let descriptor = try PinnedFilesystem.openDirectory(at: home)
+    defer { Darwin.close(descriptor) }
+    let fallback = home.appending(path: ".skhdrc")
+    let metadata = try PinnedFilesystem.metadata(
+      parentDescriptor: descriptor,
+      name: ".skhdrc",
+      url: fallback
+    )
+    guard metadata.st_mode & S_IFMT == S_IFREG || metadata.st_mode & S_IFMT == S_IFLNK else {
+      throw PinnedFilesystemError(
+        operation: "reject unsupported fallback configuration item",
+        url: fallback,
+        code: EINVAL
+      )
+    }
+    let source = try sourceConfiguration(
+      parentDescriptor: descriptor,
+      parentURL: home,
+      name: ".skhdrc"
+    )
+    let destination =
+      metadata.st_mode & S_IFMT == S_IFLNK
+      ? try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: descriptor,
+        name: ".skhdrc",
+        url: fallback
+      ) : nil
+    return KeybindingAdoptionEvidence(
+      kind: .legacyFallback,
+      linkDestination: destination,
+      contentDigest: sha256Digest(source.data),
+      inventory: []
+    )
+  }
+
+  private func inspectMissingPreferredEntry(
+    homeDescriptor: Int32,
+    home: URL,
+    entry: URL,
+    expectedTarget: String,
+    installOwnership: String,
+    installMessage: String,
+    fallbackCanBeAdopted: Bool
+  ) -> KeybindingProviderInspection {
+    let fallback = home.appending(path: ".skhdrc")
+    do {
+      _ = try PinnedFilesystem.metadata(
+        parentDescriptor: homeDescriptor,
+        name: ".skhdrc",
+        url: fallback
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return result(
+        .installRequired,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: installOwnership,
+        message: installMessage,
+        adoptionEvidence: Self.absentEvidence
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "legacy_fallback_conflict",
+        message: "cannot inspect fallback ~/.skhdrc without following the preferred path: \(error)"
+      )
+    }
+
+    guard fallbackCanBeAdopted else {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "legacy_fallback_requires_directory",
+        source: fallback,
+        message: "fallback ~/.skhdrc exists; create and review an ordinary ~/.config/skhd "
+          + "directory before Macarchy can install a preferred entry without shadowing it"
+      )
+    }
+    do {
+      let source = try sourceConfiguration(
+        parentDescriptor: homeDescriptor,
+        parentURL: home,
+        name: ".skhdrc"
+      )
+      let evidence = try legacyFallbackEvidence(homeDirectory: home)
+      return result(
+        .adoptionRequired,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "legacy_fallback",
+        source: source.url,
+        originalTarget: evidence.linkDestination,
+        message: "fallback ~/.skhdrc is authoritative until reviewed adoption installs the "
+          + "preferred managed entry; the fallback remains untouched for teardown",
+        sourceConfiguration: source.text,
+        adoptionEvidence: evidence
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "legacy_fallback_conflict",
+        source: fallback,
+        message: "fallback ~/.skhdrc is not a bounded supported file or symlink: \(error)"
+      )
+    }
   }
 
   private func expectedTarget(home: URL, stateRoot: URL) -> String {

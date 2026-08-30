@@ -44,7 +44,8 @@ struct KeybindingsPlanCommandRunner: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        homeDirectory: homeDirectory
+        homeDirectory: homeDirectory,
+        ignoreTransaction: ignoreTransaction
       )
     let effectiveConfiguration = effectiveState.configuration
     let generation = effectiveState.generation
@@ -96,6 +97,29 @@ struct KeybindingsPlanCommandRunner: Sendable {
         )
       )
     }
+    if provider.status == .managed {
+      switch effectiveState.process.status {
+      case .running:
+        break
+      case .notRunning, .unsupported, .unavailable:
+        diagnostics.append(
+          .error(
+            code: "skhd_process_prerequisite",
+            source: URL(filePath: provider.entryPoint),
+            message: effectiveState.process.message
+          )
+        )
+      }
+      if effectiveState.lifecycleEvidence.status == .invalid {
+        diagnostics.append(
+          .error(
+            code: "skhd_lifecycle_evidence_invalid",
+            source: stateRoot.appending(path: "keybindings/lifecycle.json"),
+            message: effectiveState.lifecycleEvidence.message
+          )
+        )
+      }
+    }
 
     let adoptionDelta = adoptionDelta(
       provider: provider,
@@ -109,6 +133,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     let actions = plannedActions(
       generation: generation,
       provider: provider,
+      lifecycleEvidence: effectiveState.lifecycleEvidence,
       renderedDigest: renderedDigest,
       inputDigest: proposedInputDigest,
       isBlocked: diagnostics.contains { $0.severity == "error" }
@@ -116,7 +141,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     let outcome: String
     if diagnostics.contains(where: { $0.severity == "error" }) {
       outcome = "blocked"
-    } else if actions.isEmpty {
+    } else if effectiveState.status == .converged, actions.isEmpty {
       outcome = "no_change"
     } else {
       outcome = "ready"
@@ -146,6 +171,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       effectiveStatusMessage: effectiveState.statusMessage,
       transaction: effectiveState.transaction,
       process: effectiveState.process,
+      lifecycleEvidence: effectiveState.lifecycleEvidence,
       adoptionDelta: adoptionDelta,
       actions: actions,
       diagnostics: diagnostics.sorted(by: KeybindingsPlanDiagnostic.order)
@@ -164,6 +190,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
   private func plannedActions(
     generation: KeybindingGenerationInspection,
     provider: KeybindingProviderInspection,
+    lifecycleEvidence: KeybindingLifecycleEvidenceInspection,
     renderedDigest: String?,
     inputDigest: String?,
     isBlocked: Bool
@@ -185,7 +212,18 @@ struct KeybindingsPlanCommandRunner: Sendable {
     }
     switch provider.status {
     case .managed:
-      break
+      if generation.status == .current,
+        generation.renderedDigest == renderedDigest,
+        generation.inputDigest == inputDigest,
+        lifecycleEvidence.status != .matched
+      {
+        actions.append(
+          KeybindingsPlanAction(
+            id: "reload_provider",
+            message: "Reload skhd and record lifecycle success for the current generation."
+          )
+        )
+      }
     case .installRequired:
       actions.append(
         KeybindingsPlanAction(
@@ -296,6 +334,7 @@ private struct KeybindingsPlanReport: Encodable {
   let effectiveStatusMessage: String
   let transaction: KeybindingTransactionInspection
   let process: KeybindingProcessInspection
+  let lifecycleEvidence: KeybindingLifecycleEvidenceInspection
   let adoptionDelta: KeybindingsAdoptionDelta?
   let actions: [KeybindingsPlanAction]
   let diagnostics: [KeybindingsPlanDiagnostic]
@@ -325,6 +364,8 @@ private struct KeybindingsPlanReport: Encodable {
       "- effective state [\(effectiveStatus.rawValue)]: \(effectiveStatusMessage)",
       "- transaction [\(transaction.status.rawValue)]: \(transaction.message)",
       "- process [\(process.status.rawValue)]: \(process.message)",
+      "- lifecycle evidence [\(lifecycleEvidence.status.rawValue)]: "
+        + lifecycleEvidence.message,
       "- provider entry point: \(provider.entryPoint)",
       "- provider expected target: \(provider.expectedTarget)",
       "- provider original target: \(provider.originalTarget ?? "none")",

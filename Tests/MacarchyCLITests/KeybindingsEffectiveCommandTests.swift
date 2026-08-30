@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import MacarchyCLI
@@ -362,6 +363,231 @@ struct KeybindingsEffectiveCommandTests {
     #expect(Set(syntaxIDs).count == 2)
     #expect(syntaxIDs.contains { $0.hasSuffix("line-1") })
     #expect(syntaxIDs.contains { $0.hasSuffix("line-2") })
+  }
+
+  @Test
+  func successfulApplyPersistsGenerationCorrelatedLifecycleEvidence() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    let runner = fixture.applyRunner()
+    let applied = try runner.execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+
+    #expect(applied.succeeded)
+    #expect(fixture.inspect().lifecycleEvidence.status == .matched)
+
+    try KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).remove()
+    let legacy = fixture.inspect()
+    #expect(legacy.status == .drifted)
+    #expect(legacy.lifecycleEvidence.status == .missing)
+    let preview = try runner.preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    #expect(preview.succeeded)
+    #expect(try fixture.json(preview.output)["lifecycle"] as? String == "reload")
+
+    let repaired = try runner.execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    #expect(repaired.succeeded)
+    #expect(fixture.inspect().status == .converged)
+  }
+
+  @Test
+  func corruptLifecycleEvidenceBlocksConvergence() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    _ = try fixture.applyRunner().execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    try Data("{}".utf8).write(
+      to: fixture.stateRoot.appending(path: "keybindings/lifecycle.json"),
+      options: .atomic
+    )
+
+    let behavior = fixture.inspect()
+
+    #expect(behavior.status == .blocked)
+    #expect(behavior.lifecycleEvidence.status == .invalid)
+  }
+
+  @Test
+  func managedStoppedProcessBlocksPlanInsteadOfReportingNoChange() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    _ = try fixture.applyRunner().execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+
+    let plan = try fixture.planner(process: .notRunning).execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+
+    #expect(!plan.succeeded)
+    #expect(try fixture.json(plan.output)["outcome"] as? String == "blocked")
+  }
+
+  @Test
+  func applyPostconditionRequiresConvergedEffectiveBehaviorBeforeCleanup() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    let observations = Mutex(0)
+    let inspector = KeybindingProcessInspector {
+      observations.withLock { count in
+        count += 1
+        return count <= 2 ? .running : .notRunning
+      }
+    }
+    let runner = KeybindingsApplyCommandRunner(
+      lifecycle: KeybindingLifecycleController(
+        restart: {},
+        reload: {},
+        verifyProcess: {}
+      ),
+      planner: KeybindingsPlanCommandRunner(
+        effectiveInspector: KeybindingEffectiveBehaviorInspector(processInspector: inspector)
+      )
+    )
+
+    let execution = try runner.execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+
+    #expect(!execution.succeeded)
+    #expect(try fixture.json(execution.output)["outcome"] as? String == "failed")
+    #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+    #expect(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing
+    )
+  }
+
+  @Test
+  func changingObservationFailsClosedAfterBoundedInspectionRetries() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    let observations = Mutex(0)
+    let inspector = KeybindingProcessInspector {
+      observations.withLock { count in
+        count += 1
+        return count.isMultiple(of: 2) ? .notRunning : .running
+      }
+    }
+
+    let behavior = KeybindingEffectiveBehaviorInspector(processInspector: inspector).inspect(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home
+    )
+
+    #expect(behavior.status == .blocked)
+    #expect(behavior.statusMessage.contains("changed during bounded inspection"))
+  }
+
+  @Test
+  func processInspectionValidatesExecutableIdentityAndConfigSelection() {
+    let expected = "/supported/skhd"
+    let supported = KeybindingProcessInspector.validated(
+      processIDs: [42],
+      expectedExecutable: expected,
+      snapshot: { id in
+        KeybindingProcessSnapshot(
+          processID: id,
+          executablePath: expected,
+          arguments: ["skhd"]
+        )
+      }
+    )
+    let wrongExecutable = KeybindingProcessInspector.validated(
+      processIDs: [42],
+      expectedExecutable: expected,
+      snapshot: { id in
+        KeybindingProcessSnapshot(
+          processID: id,
+          executablePath: "/unsupported/skhd",
+          arguments: ["skhd"]
+        )
+      }
+    )
+    let explicitConfig = KeybindingProcessInspector.validated(
+      processIDs: [42],
+      expectedExecutable: expected,
+      snapshot: { id in
+        KeybindingProcessSnapshot(
+          processID: id,
+          executablePath: expected,
+          arguments: ["skhd", "-c", "/tmp/external.skhdrc"]
+        )
+      }
+    )
+
+    #expect(supported.status == .running)
+    #expect(wrongExecutable.status == .unsupported)
+    #expect(explicitConfig.status == .unsupported)
+  }
+
+  @Test
+  func statusExitSemanticsAreZeroOnlyForConverged() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    let base = fixture.inspect()
+    let statuses: [KeybindingEffectiveStatus] = [
+      .clean, .converged, .drifted, .externallyManaged, .blocked, .recoveryRequired,
+    ]
+
+    for status in statuses {
+      let behavior = KeybindingEffectiveBehavior(
+        desired: base.desired,
+        provider: base.provider,
+        transaction: base.transaction,
+        process: base.process,
+        lifecycleEvidence: base.lifecycleEvidence,
+        status: status,
+        statusMessage: status.rawValue
+      )
+      let execution = try KeybindingsStatusCommandRunner().execute(
+        behavior: behavior,
+        json: true
+      )
+      #expect(execution.succeeded == (status == .converged))
+    }
   }
 }
 

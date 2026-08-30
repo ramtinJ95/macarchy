@@ -152,6 +152,8 @@ struct KeybindingsDoctorCommandRunner: Sendable {
         .ok
       case .notRunning:
         .warning
+      case .unsupported:
+        .failure
       case .unavailable:
         .failure
       }

@@ -43,26 +43,46 @@ struct KeybindingTransactionInspection: Encodable, Sendable {
 enum KeybindingProcessStatus: String, Encodable, Sendable {
   case running
   case notRunning = "not_running"
+  case unsupported
   case unavailable
 }
 
 struct KeybindingProcessInspection: Encodable, Equatable, Sendable {
   let status: KeybindingProcessStatus
   let message: String
+  let processID: Int32?
+  let executablePath: String?
+  let arguments: [String]
 
   static let running = KeybindingProcessInspection(
     status: .running,
-    message: "The current user's skhd process is running."
+    message: "The current user's supported skhd process is running.",
+    processID: nil,
+    executablePath: nil,
+    arguments: []
   )
 
   static let notRunning = KeybindingProcessInspection(
     status: .notRunning,
-    message: "No skhd process is running for the current user."
+    message: "No skhd process is running for the current user.",
+    processID: nil,
+    executablePath: nil,
+    arguments: []
   )
+}
+
+struct KeybindingProcessSnapshot: Equatable, Sendable {
+  let processID: Int32
+  let executablePath: String
+  let arguments: [String]
 }
 
 struct KeybindingProcessInspector: Sendable {
   let inspect: @Sendable () -> KeybindingProcessInspection
+
+  init(inspect: @escaping @Sendable () -> KeybindingProcessInspection) {
+    self.inspect = inspect
+  }
 
   static let live = KeybindingProcessInspector {
     do {
@@ -75,22 +95,143 @@ struct KeybindingProcessInspector: Sendable {
       )
       switch result.terminationStatus {
       case 0:
-        return .running
+        let processIDs = result.output.split(whereSeparator: \.isNewline).compactMap {
+          Int32($0.trimmingCharacters(in: .whitespaces))
+        }
+        return validated(
+          processIDs: processIDs,
+          expectedExecutable: URL(filePath: "/opt/homebrew/bin/skhd")
+            .resolvingSymlinksInPath().standardizedFileURL.path,
+          snapshot: processSnapshot
+        )
       case 1:
         return .notRunning
       default:
         return KeybindingProcessInspection(
           status: .unavailable,
           message: "skhd process evidence is unavailable (pgrep status "
-            + "\(result.terminationStatus))."
+            + "\(result.terminationStatus)).",
+          processID: nil,
+          executablePath: nil,
+          arguments: []
         )
       }
     } catch {
       return KeybindingProcessInspection(
         status: .unavailable,
-        message: "skhd process evidence is unavailable: \(error)"
+        message: "skhd process evidence is unavailable: \(error)",
+        processID: nil,
+        executablePath: nil,
+        arguments: []
       )
     }
+  }
+
+  static func validated(
+    processIDs: [Int32],
+    expectedExecutable: String,
+    snapshot: (Int32) throws -> KeybindingProcessSnapshot
+  ) -> KeybindingProcessInspection {
+    guard !processIDs.isEmpty else { return .notRunning }
+    do {
+      let snapshots = try processIDs.sorted().map(snapshot)
+      guard snapshots.count == 1, let observed = snapshots.first else {
+        return KeybindingProcessInspection(
+          status: .unsupported,
+          message: "Expected exactly one UID-scoped skhd process; found \(snapshots.count).",
+          processID: nil,
+          executablePath: nil,
+          arguments: []
+        )
+      }
+      let executable = URL(filePath: observed.executablePath)
+        .resolvingSymlinksInPath().standardizedFileURL.path
+      guard executable == expectedExecutable else {
+        return KeybindingProcessInspection(
+          status: .unsupported,
+          message: "UID-scoped skhd PID \(observed.processID) uses unsupported executable "
+            + "\(observed.executablePath).",
+          processID: observed.processID,
+          executablePath: observed.executablePath,
+          arguments: observed.arguments
+        )
+      }
+      let explicitConfiguration = observed.arguments.dropFirst().contains {
+        $0 == "-c" || $0.hasPrefix("-c") || $0 == "--config" || $0.hasPrefix("--config=")
+      }
+      guard !explicitConfiguration else {
+        return KeybindingProcessInspection(
+          status: .unsupported,
+          message: "UID-scoped skhd PID \(observed.processID) selects an explicit config with -c; "
+            + "Macarchy cannot prove the managed provider entry is authoritative.",
+          processID: observed.processID,
+          executablePath: observed.executablePath,
+          arguments: observed.arguments
+        )
+      }
+      return KeybindingProcessInspection(
+        status: .running,
+        message: "UID-scoped skhd PID \(observed.processID) uses the supported executable "
+          + "without an explicit config argument.",
+        processID: observed.processID,
+        executablePath: observed.executablePath,
+        arguments: observed.arguments
+      )
+    } catch {
+      return KeybindingProcessInspection(
+        status: .unavailable,
+        message: "Cannot inspect UID-scoped skhd process identity and arguments: \(error)",
+        processID: nil,
+        executablePath: nil,
+        arguments: []
+      )
+    }
+  }
+
+  private static func processSnapshot(_ processID: Int32) throws -> KeybindingProcessSnapshot {
+    var pathBuffer = [CChar](repeating: 0, count: 4_096)
+    let pathLength = proc_pidpath(processID, &pathBuffer, UInt32(pathBuffer.count))
+    guard pathLength > 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .ESRCH)
+    }
+    let executablePath = String(
+      decoding: pathBuffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)),
+      as: UTF8.self
+    )
+
+    var argumentsSize = 0
+    var mib = [CTL_KERN, KERN_PROCARGS2, processID]
+    guard sysctl(&mib, u_int(mib.count), nil, &argumentsSize, nil, 0) == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
+    }
+    var bytes = [UInt8](repeating: 0, count: argumentsSize)
+    guard
+      sysctl(&mib, u_int(mib.count), &bytes, &argumentsSize, nil, 0) == 0,
+      argumentsSize >= MemoryLayout<Int32>.size
+    else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EINVAL)
+    }
+    let count = bytes.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
+    guard count > 0 else { throw POSIXError(.EINVAL) }
+    var cursor = MemoryLayout<Int32>.size
+    while cursor < argumentsSize, bytes[cursor] != 0 { cursor += 1 }
+    while cursor < argumentsSize, bytes[cursor] == 0 { cursor += 1 }
+    var arguments: [String] = []
+    while cursor < argumentsSize, arguments.count < Int(count) {
+      let start = cursor
+      while cursor < argumentsSize, bytes[cursor] != 0 { cursor += 1 }
+      guard cursor > start,
+        let argument = String(data: Data(bytes[start..<cursor]), encoding: .utf8)
+      else { throw POSIXError(.EILSEQ) }
+      arguments.append(argument)
+      while cursor < argumentsSize, bytes[cursor] == 0 { cursor += 1 }
+    }
+    guard arguments.count == Int(count) else { throw POSIXError(.EINVAL) }
+    return KeybindingProcessSnapshot(
+      processID: processID,
+      executablePath: executablePath,
+      arguments: arguments
+    )
   }
 }
 
@@ -99,6 +240,7 @@ struct KeybindingEffectiveBehavior: Sendable {
   let provider: KeybindingProviderInspection
   let transaction: KeybindingTransactionInspection
   let process: KeybindingProcessInspection
+  let lifecycleEvidence: KeybindingLifecycleEvidenceInspection
   let status: KeybindingEffectiveStatus
   let statusMessage: String
 
@@ -121,8 +263,44 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
-    homeDirectory: URL
+    homeDirectory: URL,
+    ignoreTransaction: Bool = false
   ) -> KeybindingEffectiveBehavior {
+    var previous: InspectedState?
+    for _ in 0..<3 {
+      let observed = inspectOnce(
+        resourcesRoot: resourcesRoot,
+        profileURL: profileURL,
+        profileRequired: profileRequired,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        ignoreTransaction: ignoreTransaction
+      )
+      if let previous, previous.identity == observed.identity { return observed.behavior }
+      previous = observed
+    }
+    guard let previous else { preconditionFailure("inspection retry count must be positive") }
+    let behavior = previous.behavior
+    return KeybindingEffectiveBehavior(
+      desired: behavior.desired,
+      provider: behavior.provider,
+      transaction: behavior.transaction,
+      process: behavior.process,
+      lifecycleEvidence: behavior.lifecycleEvidence,
+      status: .blocked,
+      statusMessage:
+        "Canonical keybinding state changed during bounded inspection; retry after mutation stops."
+    )
+  }
+
+  private func inspectOnce(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    ignoreTransaction: Bool
+  ) -> InspectedState {
     let desired = KeybindingEffectiveStateInspector().inspect(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
@@ -134,22 +312,30 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
       stateRoot: stateRoot,
       generation: desired.generation
     )
-    let transaction = inspectTransaction(stateRoot: stateRoot)
+    let transaction = ignoreTransaction ? .clear : inspectTransaction(stateRoot: stateRoot)
     let process = processInspector.inspect()
+    let lifecycleEvidence = KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).inspect(
+      generation: desired.generation,
+      provider: provider,
+      process: process
+    )
     let classification = classify(
       desired: desired,
       provider: provider,
       transaction: transaction,
-      process: process
+      process: process,
+      lifecycleEvidence: lifecycleEvidence
     )
-    return KeybindingEffectiveBehavior(
+    let behavior = KeybindingEffectiveBehavior(
       desired: desired,
       provider: provider,
       transaction: transaction,
       process: process,
+      lifecycleEvidence: lifecycleEvidence,
       status: classification.status,
       statusMessage: classification.message
     )
+    return InspectedState(behavior: behavior, identity: InspectionIdentity(behavior))
   }
 
   private func inspectTransaction(stateRoot: URL) -> KeybindingTransactionInspection {
@@ -182,7 +368,8 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
     desired: KeybindingEffectiveState,
     provider: KeybindingProviderInspection,
     transaction: KeybindingTransactionInspection,
-    process: KeybindingProcessInspection
+    process: KeybindingProcessInspection,
+    lifecycleEvidence: KeybindingLifecycleEvidenceInspection
   ) -> (status: KeybindingEffectiveStatus, message: String) {
     switch transaction.status {
     case .pending:
@@ -229,17 +416,67 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
       }
       switch process.status {
       case .running:
-        return (
-          .converged,
-          "Effective inputs, generated bytes, provider ownership, and process evidence agree."
-        )
+        break
       case .notRunning:
         return (.drifted, process.message)
+      case .unsupported:
+        return (.blocked, process.message)
       case .unavailable:
         return (.blocked, process.message)
+      }
+      switch lifecycleEvidence.status {
+      case .matched:
+        return (
+          .converged,
+          "Effective inputs, generated bytes, provider ownership, lifecycle command evidence, "
+            + "and process evidence agree. Runtime binding equivalence remains unobservable."
+        )
+      case .missing, .stale:
+        return (.drifted, lifecycleEvidence.message)
+      case .invalid:
+        return (.blocked, lifecycleEvidence.message)
       }
     case .blocked:
       preconditionFailure("blocked providers are classified before the provider switch")
     }
+  }
+}
+
+private struct InspectedState {
+  let behavior: KeybindingEffectiveBehavior
+  let identity: InspectionIdentity
+}
+
+private struct InspectionIdentity: Equatable {
+  let configurationDigest: String?
+  let generationStatus: KeybindingGenerationStatus
+  let generationID: String?
+  let generationInputDigest: String?
+  let generationRenderedDigest: String?
+  let providerStatus: KeybindingProviderStatus
+  let providerOwnership: String
+  let providerEvidenceDigest: String?
+  let transactionStatus: KeybindingTransactionStatus
+  let transactionOperation: String?
+  let transactionPhase: String?
+  let transactionGenerationID: String?
+  let process: KeybindingProcessInspection
+  let lifecycleEvidence: KeybindingLifecycleEvidenceInspection
+
+  init(_ behavior: KeybindingEffectiveBehavior) {
+    configurationDigest = behavior.configuration.composition?.inputDigest
+    generationStatus = behavior.generation.status
+    generationID = behavior.generation.generationID
+    generationInputDigest = behavior.generation.inputDigest
+    generationRenderedDigest = behavior.generation.renderedDigest
+    providerStatus = behavior.provider.status
+    providerOwnership = behavior.provider.ownership
+    providerEvidenceDigest = behavior.provider.adoptionEvidenceDigest
+    transactionStatus = behavior.transaction.status
+    transactionOperation = behavior.transaction.operation
+    transactionPhase = behavior.transaction.phase
+    transactionGenerationID = behavior.transaction.generationID
+    process = behavior.process
+    lifecycleEvidence = behavior.lifecycleEvidence
   }
 }
