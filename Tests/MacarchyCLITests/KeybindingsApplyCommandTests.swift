@@ -610,7 +610,7 @@ struct KeybindingsApplyCommandTests {
   }
 
   @Test
-  func previewModelsPendingRecoveryWithoutTrustingDirtyProviderState() throws {
+  func previewPreflightsPendingRecoveryAndRejectsDirtyProviderState() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     try FileManager.default.createDirectory(
@@ -638,9 +638,9 @@ struct KeybindingsApplyCommandTests {
     )
     let report = try jsonObject(execution.output)
 
-    #expect(execution.succeeded)
-    #expect(report["outcome"] as? String == "recovery_planned")
-    #expect(report["lifecycle"] as? String == "restart")
+    #expect(!execution.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(report["lifecycle"] as? String == "none")
     #expect(lifecycle.calls.withLock { $0 }.isEmpty)
   }
 
@@ -859,7 +859,7 @@ struct KeybindingsApplyCommandTests {
   }
 
   @Test
-  func directoryAdoptionRecoversAuthenticatedEmptyConstructionClaim() throws {
+  func directoryAdoptionRecoversAtomicallyPublishedConstructionClaim() throws {
     enum Interrupted: Error { case afterDirectoryCreate }
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -889,7 +889,7 @@ struct KeybindingsApplyCommandTests {
     let claim = fixture.home.appending(
       path: ".config/.skhd.macarchy-keybindings-\(try #require(record.claimNonce))"
     )
-    #expect(try FileManager.default.contentsOfDirectory(atPath: claim.path).isEmpty)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: claim.path) == ["skhdrc"])
 
     try KeybindingProviderTransaction(homeDirectory: fixture.home).installEntry(
       expectedEvidence: evidence,
@@ -961,7 +961,8 @@ struct KeybindingsApplyCommandTests {
     #expect(throws: Interrupted.self) { try interrupted.restoreOriginalEntry() }
     let record = try fixture.keybindingOwnershipRecord()
     let claim = fixture.home.appending(
-      path: ".config/skhd/.skhdrc.macarchy-keybindings-\(try #require(record.claimNonce))"
+      path:
+        ".config/skhd/.skhdrc.macarchy-keybindings-\(try #require(record.claimNonce)).publishing"
     )
     #expect(FileManager.default.fileExists(atPath: claim.path))
 
@@ -992,7 +993,8 @@ struct KeybindingsApplyCommandTests {
     #expect(throws: Interrupted.self) { try interrupted.restoreOriginalEntry() }
     let record = try fixture.keybindingOwnershipRecord()
     let claim = fixture.home.appending(
-      path: ".config/skhd/.skhdrc.macarchy-keybindings-\(try #require(record.claimNonce))"
+      path:
+        ".config/skhd/.skhdrc.macarchy-keybindings-\(try #require(record.claimNonce)).publishing"
     )
     try FileManager.default.removeItem(at: claim)
     let foreign = Data("foreign replacement".utf8)
@@ -1007,6 +1009,255 @@ struct KeybindingsApplyCommandTests {
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
         == KeybindingProviderInspector.managedTarget
     )
+  }
+
+  @Test
+  func regularDisplacementPinsOriginalAndSwapsBackForeignSameByteReplacement() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let original = Data("alt - x : pinned race\n".utf8)
+    try original.write(to: entry)
+    let evidence = try fixture.adoptionEvidence()
+    var before = stat()
+    #expect(lstat(entry.path, &before) == 0)
+    let transaction = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: { checkpoint in
+        if checkpoint == .regularOriginalPinned { try original.write(to: entry, options: .atomic) }
+      }
+    )
+
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      try transaction.installEntry(
+        expectedEvidence: evidence,
+        approvedEvidenceDigest: evidence.digest
+      )
+    }
+
+    var after = stat()
+    #expect(lstat(entry.path, &after) == 0)
+    #expect(after.st_ino != before.st_ino)
+    #expect(try Data(contentsOf: entry) == original)
+  }
+
+  @Test
+  func interruptedPostSwapClaimIsDurablyRecovered() throws {
+    enum Interrupted: Error { case afterSwap }
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    try Data("alt - x : crash after swap\n".utf8).write(to: entry)
+    let evidence = try fixture.adoptionEvidence()
+    let interrupted = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: { if $0 == .providerClaimSwapped { throw Interrupted.afterSwap } }
+    )
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      try interrupted.installEntry(
+        expectedEvidence: evidence,
+        approvedEvidenceDigest: evidence.digest
+      )
+    }
+
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).installEntry(
+      expectedEvidence: evidence,
+      approvedEvidenceDigest: evidence.digest
+    )
+
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
+        == KeybindingProviderInspector.managedTarget
+    )
+  }
+
+  @Test
+  func restoredMarkerRemovalRecoversFromRecordedIdentity() throws {
+    enum Interrupted: Error { case beforeMarkerRemoval }
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let original = Data("alt - x : marker recovery\n".utf8)
+    try original.write(to: entry)
+    let evidence = try fixture.adoptionEvidence()
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).installEntry(
+      expectedEvidence: evidence,
+      approvedEvidenceDigest: evidence.digest
+    )
+    let interrupted = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: {
+        if $0 == .restoredIdentityRecorded { throw Interrupted.beforeMarkerRemoval }
+      }
+    )
+    #expect(throws: Interrupted.self) { try interrupted.restoreOriginalEntry() }
+
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).restoreOriginalEntry()
+
+    #expect(try Data(contentsOf: entry) == original)
+  }
+
+  @Test
+  func targetSourceRaceBlocksBeforeDirectorySymlinkDisplacement() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let skhd = fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory)
+    try FileManager.default.removeItem(at: skhd)
+    let source = fixture.root.appending(path: "dotfiles/skhd", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let sourceEntry = source.appending(path: "skhdrc")
+    try Data("alt - x : reviewed source\n".utf8).write(to: sourceEntry)
+    let linkText = "../../dotfiles/skhd"
+    try FileManager.default.createSymbolicLink(atPath: skhd.path, withDestinationPath: linkText)
+    let evidence = try fixture.adoptionEvidence()
+    let transaction = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: { checkpoint in
+        if checkpoint == .providerClaimReady {
+          try Data("alt - x : raced source\n".utf8).write(to: sourceEntry, options: .atomic)
+        }
+      }
+    )
+
+    #expect(throws: SetupOwnershipTransactionError.self) {
+      try transaction.installEntry(
+        expectedEvidence: evidence,
+        approvedEvidenceDigest: evidence.digest
+      )
+    }
+
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: skhd.path) == linkText)
+  }
+
+  @Test
+  func reservedMarkerCollisionBlocksBeforeAdoptionMutation() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    try Data("alt - x : marker collision\n".utf8).write(to: entry)
+    try setExtendedAttribute(
+      KeybindingProviderInspector.claimMarkerAttribute,
+      value: "foreign",
+      at: entry
+    )
+
+    let execution = try fixture.execute(
+      runner: fixture.runner(lifecycle: LifecycleFixture().controller),
+      adoptionEvidence: try fixture.adoptionDigest(),
+      json: true
+    )
+
+    #expect(!execution.succeeded)
+    #expect(
+      try SetupOwnershipManager().readRecords(
+        context: SetupOwnershipManager.Context(homeDirectory: fixture.home)
+      ).isEmpty)
+    #expect(try Data(contentsOf: entry) == Data("alt - x : marker collision\n".utf8))
+  }
+
+  @Test
+  func backupDeletionInterruptionRetainsAuthenticatedRecordAndResumes() throws {
+    enum Interrupted: Error { case afterBackupRemoval }
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    let original = Data("alt - x : backup deletion crash\n".utf8)
+    try original.write(to: entry)
+    let evidence = try fixture.adoptionEvidence()
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).installEntry(
+      expectedEvidence: evidence,
+      approvedEvidenceDigest: evidence.digest
+    )
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).restoreOriginalEntry()
+    let interrupted = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: { if $0 == .backupRemoved { throw Interrupted.afterBackupRemoval } }
+    )
+
+    #expect(throws: Interrupted.self) { try interrupted.finalizeOriginalRestoration() }
+    #expect(try fixture.keybindingOwnershipRecord().phase == .teardownPrepared)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: fixture.stateRoot.appending(path: "state/setup/backups/keybindings-skhdrc").path
+      )
+    )
+
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).finalizeOriginalRestoration()
+    #expect(try Data(contentsOf: entry) == original)
+    #expect(
+      try SetupOwnershipManager().readRecords(
+        context: SetupOwnershipManager.Context(homeDirectory: fixture.home)
+      ).isEmpty)
+  }
+
+  @Test
+  func lateHardLinkOnRestoredClaimBlocksBeforeSwap() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
+    try Data("alt - x : restoration link race\n".utf8).write(to: entry)
+    let evidence = try fixture.adoptionEvidence()
+    try KeybindingProviderTransaction(homeDirectory: fixture.home).installEntry(
+      expectedEvidence: evidence,
+      approvedEvidenceDigest: evidence.digest
+    )
+    let record = try fixture.keybindingOwnershipRecord()
+    let publication = fixture.home.appending(
+      path:
+        ".config/skhd/.skhdrc.macarchy-keybindings-\(try #require(record.claimNonce)).publishing"
+    )
+    let alias = fixture.root.appending(path: "restored-claim-alias")
+    let raced = Mutex(false)
+    let transaction = KeybindingProviderTransaction(
+      homeDirectory: fixture.home,
+      faultInjector: { checkpoint in
+        if checkpoint == .regularRestorationClaimMetadataCopied {
+          #expect(link(publication.path, alias.path) == 0)
+          raced.withLock { $0 = true }
+        }
+      }
+    )
+
+    #expect(throws: SetupOwnershipError.self) { try transaction.restoreOriginalEntry() }
+    #expect(raced.withLock { $0 })
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
+        == KeybindingProviderInspector.managedTarget
+    )
+  }
+
+  @Test
+  func validPendingRecoveryPreviewRunsLifecyclePreflight() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+    #expect(try fixture.execute(runner: runner, json: true).succeeded)
+    let generationID = try #require(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID
+    )
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
+      KeybindingApplyTransaction(
+        operation: .updateGeneration,
+        phase: .activating,
+        generationID: generationID,
+        previousGenerationID: generationID,
+        generationCreated: false
+      )
+    )
+    lifecycle.calls.withLock { $0.removeAll() }
+
+    let execution = try runner.preview(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home,
+      json: true
+    )
+
+    #expect(execution.succeeded)
+    #expect(lifecycle.calls.withLock { $0 } == ["preflight"])
   }
 
   @Test

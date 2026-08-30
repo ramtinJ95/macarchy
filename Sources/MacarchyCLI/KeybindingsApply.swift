@@ -99,7 +99,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
           adopt: adopt,
-          json: true
+          json: true,
+          preflightLifecycle: false
         )
       } else {
         try execute(
@@ -290,7 +291,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     adopt: String? = nil,
-    json: Bool
+    json: Bool,
+    preflightLifecycle: Bool = true
   ) throws -> (output: String, succeeded: Bool) {
     do {
       guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
@@ -300,6 +302,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
       let pending = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read()
       if let pending {
+        try preflightRecovery(
+          pending,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
         let lifecycleAction: KeybindingLifecycleAction =
           pending.phase == .activating
           ? (pending.operation == .updateGeneration ? .reload : .restart)
@@ -328,7 +335,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
       let eligibility = try eligibility(preparation, adopt: adopt)
-      try lifecycle.preflight()
+      if preflightLifecycle { try lifecycle.preflight() }
       if eligibility.operation == .installEntry || eligibility.operation == .adoptEntry {
         guard let evidence = preparation.provider.adoptionEvidence else {
           throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
@@ -339,7 +346,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
       if preparation.outcome == "no_change" {
-        try lifecycle.verifyProcess()
+        if preflightLifecycle { try lifecycle.verifyProcess() }
         let report = KeybindingsApplyReport(
           outcome: "no_change",
           mutated: false,
@@ -448,6 +455,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
               : KeybindingLifecycleAction.restart
           }
         }
+        try preflightRecovery(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
         if transaction.operation == .teardownEntry,
           [.restorationFinalizing, .restorationFinalized].contains(transaction.phase)
         {
@@ -458,11 +470,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
             transactionStore: transactionStore
           )
         } else {
-          try preflightRollback(
-            transaction,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory
-          )
           try rollback(
             transaction,
             stateRoot: stateRoot,
@@ -544,18 +551,15 @@ struct KeybindingsApplyCommandRunner: Sendable {
     )
     do {
       try transactionStore.write(transaction)
+      var stagedGeneration: StagedKeybindingGeneration?
       if needsGeneration {
-        let staged = try activator.stage(
+        stagedGeneration = try activator.stage(
           composition,
           generationID: selectedGenerationID
         )
         transaction = transaction.withPhase(.staged)
         try transactionStore.write(transaction)
-        try activator.select(staged)
       }
-      transaction = transaction.withPhase(.currentSelected)
-      try transactionStore.write(transaction)
-
       if operation == .installEntry || operation == .adoptEntry {
         guard let providerEvidence else {
           throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
@@ -567,6 +571,9 @@ struct KeybindingsApplyCommandRunner: Sendable {
         transaction = transaction.withPhase(.entryInstalled)
         try transactionStore.write(transaction)
       }
+      if let stagedGeneration { try activator.select(stagedGeneration) }
+      transaction = transaction.withPhase(.currentSelected)
+      try transactionStore.write(transaction)
 
       transaction = transaction.withPhase(.activating)
       try transactionStore.write(transaction)
@@ -810,6 +817,34 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
     if transaction.phase == .activating {
       try lifecycle.preflight()
+    }
+  }
+
+  private func preflightRecovery(
+    _ transaction: KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    let finalizingTeardown =
+      transaction.operation == .teardownEntry
+      && [.restorationFinalizing, .restorationFinalized].contains(transaction.phase)
+    if finalizingTeardown {
+      if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
+        try KeybindingProviderTransaction(homeDirectory: homeDirectory)
+          .preflightOriginalRestoration()
+      } else {
+        try verifyFinalizedOriginalRestoration(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+      }
+    } else {
+      try preflightRollback(
+        transaction,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
     }
   }
 

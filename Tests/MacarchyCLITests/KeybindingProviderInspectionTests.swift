@@ -87,11 +87,34 @@ struct KeybindingProviderInspectionTests {
       directoryHint: .isDirectory
     )
     try writeOwnershipClaim(stateRoot: stateRoot, entry: entry)
+    try markClaim(entry)
 
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .managed)
     #expect(inspection.ownership == "manifest_claimed_symlink")
+  }
+
+  @Test
+  func matchingClaimedLinkWithoutOwnershipMarkerIsDrift() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory, withIntermediateDirectories: true)
+    let entry = fixture.skhdDirectory.appending(path: "skhdrc")
+    try FileManager.default.createSymbolicLink(
+      atPath: entry.path,
+      withDestinationPath: KeybindingProviderInspector.managedTarget
+    )
+    try writeOwnershipClaim(
+      stateRoot: fixture.home.appending(path: ".config/macarchy"),
+      entry: entry
+    )
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "ownership_drift")
   }
 
   @Test
@@ -260,6 +283,19 @@ struct KeybindingProviderInspectionTests {
     try encoder.encode(SetupOwnershipManifest(records: [record] + additionalRecords)).write(
       to: setup.appending(path: "ownership.json")
     )
+  }
+
+  private func markClaim(_ entry: URL) throws {
+    let descriptor = entry.path.withCString { Darwin.open($0, O_RDONLY | O_SYMLINK | O_CLOEXEC) }
+    guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    defer { Darwin.close(descriptor) }
+    let value = Data("01234567-89ab-cdef-0123-456789abcdef".utf8)
+    let result = value.withUnsafeBytes { bytes in
+      KeybindingProviderInspector.claimMarkerAttribute.withCString {
+        Darwin.fsetxattr(descriptor, $0, bytes.baseAddress, bytes.count, 0, XATTR_CREATE)
+      }
+    }
+    guard result == 0 else { throw POSIXError(.EIO) }
   }
 
   private func fixtureHome() throws -> (

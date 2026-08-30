@@ -51,6 +51,8 @@ extension SetupOwnershipManager {
       record.originalMetadataDigest == nil,
       record.originalDevice == nil,
       record.originalInode == nil,
+      record.originalSourceDigest == nil,
+      record.originalInventory == nil,
       record.claimNonce == nil
     else {
       throw SetupOwnershipError.invalidManifest(
@@ -226,6 +228,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let originalMetadataDigest: String?
   let originalDevice: UInt64?
   let originalInode: UInt64?
+  let originalSourceDigest: String?
+  let originalInventory: [String]?
   let claimNonce: String?
 
   var applied: SetupOwnershipRecord {
@@ -245,6 +249,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
       originalMetadataDigest: originalMetadataDigest,
       originalDevice: originalDevice,
       originalInode: originalInode,
+      originalSourceDigest: originalSourceDigest,
+      originalInventory: originalInventory,
       claimNonce: claimNonce
     )
   }
@@ -265,6 +271,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case originalMetadataDigest = "original_metadata_digest"
     case originalDevice = "original_device"
     case originalInode = "original_inode"
+    case originalSourceDigest = "original_source_digest"
+    case originalInventory = "original_inventory"
     case claimNonce = "claim_nonce"
   }
 
@@ -284,6 +292,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     originalMetadataDigest: String? = nil,
     originalDevice: UInt64? = nil,
     originalInode: UInt64? = nil,
+    originalSourceDigest: String? = nil,
+    originalInventory: [String]? = nil,
     claimNonce: String? = nil
   ) {
     self.id = id
@@ -301,6 +311,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     self.originalMetadataDigest = originalMetadataDigest
     self.originalDevice = originalDevice
     self.originalInode = originalInode
+    self.originalSourceDigest = originalSourceDigest
+    self.originalInventory = originalInventory
     self.claimNonce = claimNonce
   }
 
