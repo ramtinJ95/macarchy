@@ -90,7 +90,7 @@ macarchy theme install <github-url> [--dry-run] [--json]
 macarchy theme status [--json]
 macarchy theme get slack
 macarchy keybindings plan [--profile <path>] [--state-root <path>] [--json]
-macarchy keybindings apply [--profile <path>] [--dry-run] [--json]
+macarchy keybindings apply [--profile <path>] [--adopt <evidence-digest>] [--dry-run] [--json]
 macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
@@ -141,14 +141,28 @@ deterministic effective bytes, current-generation state, and provider-entry
 ownership in human or JSON form. It never publishes a generation, changes
 `~/.config/skhd`, reloads skhd, or executes a configured command.
 
-`keybindings apply` consumes the same plan model. The first transactional path
-publishes and selects an immutable generation and claims an absent `skhdrc`
-inside an existing ordinary `~/.config/skhd` directory. Installing that entry
-restarts the incumbent skhd service once because skhd 0.3.9 does not rediscover
-a newly created preferred config path on reload; later same-entry generation
-updates use reload. A lifecycle or postcondition failure restores the prior
-pointer, entry, ownership record, and service path. Existing files and symlinks
-remain blocked for explicit adoption in the following M1 slice.
+`keybindings apply` consumes the same plan model. It publishes and selects an
+immutable generation and claims `~/.config/skhd/skhdrc` transactionally.
+Existing regular files, entry symlinks, and bounded directory-level symlinks
+require `--adopt <evidence-digest>`, where the digest is copied from the
+reviewed plan. The digest authenticates the previewed entry kind, exact link
+text, source bytes, and bounded inventory; any mismatch blocks before
+keybinding state mutates.
+
+Regular-file adoption restores exact bytes plus the authenticated restorable
+metadata contract: permissions, owner, group, flags, modification time,
+extended attributes, and ACL. Access, change, and creation times are not part
+of that contract because reads and safe inode replacement necessarily change
+them. Backups and deterministic filesystem claims remain private,
+descriptor-relative recovery evidence. Multiply linked regular entries are
+not eligible for adoption.
+
+Installing or adopting the entry restarts the incumbent skhd service once
+because skhd 0.3.9 does not rediscover a newly created preferred config path on
+reload; later same-entry generation updates use reload. A lifecycle or
+postcondition failure restores the prior pointer, entry, ownership record, and
+service path. Teardown verifies all restoration artifacts without mutation
+before restoring the exact supported prior state.
 
 `keybindings show` opens the same correlated rows in a short-lived searchable
 AppKit popup. The popup follows the active Macarchy theme, supports keyboard
