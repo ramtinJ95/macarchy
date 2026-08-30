@@ -76,6 +76,9 @@ struct KeybindingLifecycleController: Sendable {
 struct KeybindingsApplyCommandRunner: Sendable {
   let lifecycle: KeybindingLifecycleController
   let planner: KeybindingsPlanCommandRunner
+  #if MACARCHY_ACCEPTANCE_TESTING
+    private let acceptanceFailure: KeybindingAcceptanceFailureInjector?
+  #endif
 
   static let live = KeybindingsApplyCommandRunner(lifecycle: .live, planner: .live)
 
@@ -91,7 +94,30 @@ struct KeybindingsApplyCommandRunner: Sendable {
           processInspector: KeybindingProcessInspector(inspect: lifecycle.inspectProcess)
         )
       )
+    #if MACARCHY_ACCEPTANCE_TESTING
+      acceptanceFailure = nil
+    #endif
   }
+
+  #if MACARCHY_ACCEPTANCE_TESTING
+    private init(
+      lifecycle: KeybindingLifecycleController,
+      planner: KeybindingsPlanCommandRunner,
+      acceptanceFailure: KeybindingAcceptanceFailureInjector
+    ) {
+      self.lifecycle = lifecycle
+      self.planner = planner
+      self.acceptanceFailure = acceptanceFailure
+    }
+
+    func withAcceptanceManagedUpdateRollbackCheckpoint() -> Self {
+      Self(
+        lifecycle: lifecycle,
+        planner: planner,
+        acceptanceFailure: KeybindingAcceptanceFailureInjector()
+      )
+    }
+  #endif
 
   func setupIntegration(
     resourcesRoot: URL,
@@ -432,7 +458,20 @@ struct KeybindingsApplyCommandRunner: Sendable {
     let evidence = Mutex(KeybindingsApplyEvidence())
     do {
       let result = try ActivationLock(root: stateRoot).withLock {
-        try applyLocked(
+        #if MACARCHY_ACCEPTANCE_TESTING
+          if let acceptanceFailure {
+            try preflightAcceptanceFailure(
+              acceptanceFailure,
+              resourcesRoot: resourcesRoot,
+              profileURL: profileURL,
+              profileRequired: profileRequired,
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              adopt: adopt
+            )
+          }
+        #endif
+        return try applyLocked(
           resourcesRoot: resourcesRoot,
           profileURL: profileURL,
           profileRequired: profileRequired,
@@ -622,6 +661,10 @@ struct KeybindingsApplyCommandRunner: Sendable {
         stateRoot: stateRoot,
         homeDirectory: homeDirectory
       )
+
+      #if MACARCHY_ACCEPTANCE_TESTING
+        try acceptanceFailure?.failAfterVerifiedReload()
+      #endif
 
       let verified = try planner.prepare(
         resourcesRoot: resourcesRoot,
@@ -1126,6 +1169,42 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
   }
 
+  #if MACARCHY_ACCEPTANCE_TESTING
+    private func preflightAcceptanceFailure(
+      _ failure: KeybindingAcceptanceFailureInjector,
+      resourcesRoot: URL,
+      profileURL: URL,
+      profileRequired: Bool,
+      stateRoot: URL,
+      homeDirectory: URL,
+      adopt: String?
+    ) throws {
+      let preparation = try planner.prepare(
+        resourcesRoot: resourcesRoot,
+        profileURL: profileURL,
+        profileRequired: profileRequired,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+      guard preparation.outcome != "blocked", let composition = preparation.composition else {
+        throw KeybindingsApplyError.blocked(
+          preparation.blockingMessages.joined(separator: "; ")
+        )
+      }
+      let eligibility = try eligibility(preparation, adopt: adopt)
+      let publishesGeneration =
+        preparation.generation.status == .missing
+        || preparation.generation.inputDigest != composition.inputDigest
+        || preparation.generation.renderedDigest != composition.renderedDigest
+      try failure.validate(
+        operation: eligibility.operation,
+        lifecycle: eligibility.lifecycle,
+        publishesGeneration: publishesGeneration,
+        outcome: preparation.outcome
+      )
+    }
+  #endif
+
   private func isCanonicalStateRoot(_ stateRoot: URL, homeDirectory: URL) -> Bool {
     stateRoot.standardizedFileURL
       == homeDirectory.appending(
@@ -1134,6 +1213,42 @@ struct KeybindingsApplyCommandRunner: Sendable {
       ).standardizedFileURL
   }
 }
+
+#if MACARCHY_ACCEPTANCE_TESTING
+  private final class KeybindingAcceptanceFailureInjector: Sendable {
+    private let armed = Mutex(true)
+
+    func validate(
+      operation: KeybindingApplyOperation,
+      lifecycle: KeybindingLifecycleAction,
+      publishesGeneration: Bool,
+      outcome: String
+    ) throws {
+      guard
+        operation == .updateGeneration,
+        lifecycle == .reload,
+        publishesGeneration,
+        outcome == "ready"
+      else {
+        throw KeybindingsApplyError.blocked(
+          "the acceptance rollback checkpoint requires one managed generation update with reload"
+        )
+      }
+    }
+
+    func failAfterVerifiedReload() throws {
+      let shouldFail = armed.withLock { armed in
+        guard armed else { return false }
+        armed = false
+        return true
+      }
+      guard shouldFail else { return }
+      throw KeybindingsApplyError.postcondition(
+        "acceptance checkpoint failed after verified managed update reload"
+      )
+    }
+  }
+#endif
 
 private struct KeybindingsApplyEvidence: Sendable {
   var mutated = false

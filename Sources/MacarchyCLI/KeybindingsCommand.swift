@@ -64,8 +64,26 @@ struct Keybindings: ParsableCommand {
     @Option(help: "Exact adoption evidence digest from the reviewed keybindings plan.")
     var adopt: String?
 
+    #if MACARCHY_ACCEPTANCE_TESTING
+      @Flag(
+        name: .customLong("acceptance-fail-after-managed-update-reload"),
+        help: "Inject the bounded M1 managed-update rollback checkpoint."
+      )
+      var acceptanceFailAfterManagedUpdateReload = false
+    #endif
+
     @Flag(help: "Emit machine-readable output.")
     var json = false
+
+    #if MACARCHY_ACCEPTANCE_TESTING
+      mutating func validate() throws {
+        if acceptanceFailAfterManagedUpdateReload, dryRun {
+          throw ValidationError(
+            "--acceptance-fail-after-managed-update-reload cannot be used with --dry-run"
+          )
+        }
+      }
+    #endif
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
@@ -76,9 +94,17 @@ struct Keybindings: ParsableCommand {
         filePath: stateRoot,
         directoryHint: .isDirectory
       ).standardizedFileURL
+      #if MACARCHY_ACCEPTANCE_TESTING
+        let runner =
+          acceptanceFailAfterManagedUpdateReload
+          ? KeybindingsApplyCommandRunner.live.withAcceptanceManagedUpdateRollbackCheckpoint()
+          : KeybindingsApplyCommandRunner.live
+      #else
+        let runner = KeybindingsApplyCommandRunner.live
+      #endif
       let execution =
         if dryRun {
-          try KeybindingsApplyCommandRunner.live.preview(
+          try runner.preview(
             resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
             profileURL: profileURL,
             profileRequired: profile != nil,
@@ -88,7 +114,7 @@ struct Keybindings: ParsableCommand {
             json: json
           )
         } else {
-          try KeybindingsApplyCommandRunner.live.execute(
+          try runner.execute(
             resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
             profileURL: profileURL,
             profileRequired: profile != nil,

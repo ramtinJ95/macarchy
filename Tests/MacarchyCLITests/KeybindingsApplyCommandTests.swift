@@ -1,3 +1,4 @@
+import ArgumentParser
 import Darwin
 import Foundation
 import Synchronization
@@ -503,6 +504,160 @@ struct KeybindingsApplyCommandTests {
     )
     #expect(generations.count == 2)
   }
+
+  @Test
+  func ordinaryParserDoesNotExposeAcceptanceRollbackFlag() throws {
+    let arguments = [
+      "keybindings", "apply", "--acceptance-fail-after-managed-update-reload",
+    ]
+    #if MACARCHY_ACCEPTANCE_TESTING
+      _ = try Macarchy.parseAsRoot(arguments)
+      #expect(throws: (any Error).self) {
+        _ = try Macarchy.parseAsRoot(["teardown"] + arguments.suffix(1))
+      }
+      #expect(throws: (any Error).self) {
+        _ = try Macarchy.parseAsRoot(arguments + ["--dry-run"])
+      }
+    #else
+      #expect(throws: (any Error).self) {
+        _ = try Macarchy.parseAsRoot(arguments)
+      }
+    #endif
+  }
+
+  #if MACARCHY_ACCEPTANCE_TESTING
+    @Test
+    func acceptanceCheckpointRollsBackManagedUpdateOnceAndCleansEvidence() throws {
+      let fixture = try KeybindingsApplyFixture()
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      let lifecycle = LifecycleFixture()
+      let runner = fixture.runner(lifecycle: lifecycle.controller)
+      #expect(try fixture.execute(runner: runner, json: true).succeeded)
+      let baseGeneration = try #require(
+        KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID
+      )
+      lifecycle.calls.withLock { $0.removeAll() }
+      try "alt - j : acceptance update\n".write(
+        to: fixture.resources.appending(path: "defaults.skhdrc"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+      let execution = try runner.withAcceptanceManagedUpdateRollbackCheckpoint().execute(
+        resourcesRoot: fixture.resources,
+        profileURL: fixture.profile,
+        profileRequired: false,
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        json: true
+      )
+      let report = try jsonObject(execution.output)
+
+      #expect(!execution.succeeded)
+      #expect(report["outcome"] as? String == "failed")
+      #expect(report["mutated"] as? Bool == true)
+      #expect(report["lifecycle"] as? String == "reload")
+      #expect(
+        lifecycle.calls.withLock { $0 }
+          == ["preflight", "reload", "verify", "preflight", "reload", "verify"]
+      )
+      #expect(
+        execution.output.components(
+          separatedBy: "acceptance checkpoint failed after verified managed update reload"
+        ).count == 2
+      )
+      let restored = KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
+      #expect(restored.generationID == baseGeneration)
+      let provider = KeybindingProviderInspector().inspect(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.stateRoot,
+        generation: restored
+      )
+      #expect(provider.status == .managed)
+      #expect(
+        KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).inspect(
+          generation: restored,
+          provider: provider,
+          process: .testRunning
+        ).status == .matched
+      )
+      #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+      let generations = try FileManager.default.contentsOfDirectory(
+        atPath: fixture.stateRoot.appending(path: "keybindings/generations").path
+      )
+      #expect(generations == [baseGeneration])
+    }
+
+    @Test
+    func acceptanceCheckpointBlocksEveryUnsupportedApplyBeforeMutation() throws {
+      let clean = try KeybindingsApplyFixture()
+      defer { try? FileManager.default.removeItem(at: clean.root) }
+      let cleanLifecycle = LifecycleFixture()
+      let cleanExecution = try clean.runner(lifecycle: cleanLifecycle.controller)
+        .withAcceptanceManagedUpdateRollbackCheckpoint().execute(
+          resourcesRoot: clean.resources,
+          profileURL: clean.profile,
+          profileRequired: false,
+          stateRoot: clean.stateRoot,
+          homeDirectory: clean.home,
+          json: true
+        )
+      #expect(!cleanExecution.succeeded)
+      #expect(cleanLifecycle.calls.withLock { $0 }.isEmpty)
+      #expect(
+        KeybindingGenerationInspector().inspect(stateRoot: clean.stateRoot).status == .missing)
+      #expect(try KeybindingApplyTransactionStore(stateRoot: clean.stateRoot).read() == nil)
+
+      let adoption = try KeybindingsApplyFixture()
+      defer { try? FileManager.default.removeItem(at: adoption.root) }
+      let adoptionEntry = adoption.home.appending(path: ".config/skhd/skhdrc")
+      let adoptionBytes = Data("alt - x : external\n".utf8)
+      try adoptionBytes.write(to: adoptionEntry)
+      let adoptionLifecycle = LifecycleFixture()
+      let adoptionExecution = try adoption.runner(lifecycle: adoptionLifecycle.controller)
+        .withAcceptanceManagedUpdateRollbackCheckpoint().execute(
+          resourcesRoot: adoption.resources,
+          profileURL: adoption.profile,
+          profileRequired: false,
+          stateRoot: adoption.stateRoot,
+          homeDirectory: adoption.home,
+          adopt: try adoption.adoptionDigest(),
+          json: true
+        )
+      #expect(!adoptionExecution.succeeded)
+      #expect(adoptionLifecycle.calls.withLock { $0 }.isEmpty)
+      #expect(try Data(contentsOf: adoptionEntry) == adoptionBytes)
+      #expect(
+        KeybindingGenerationInspector().inspect(stateRoot: adoption.stateRoot).status == .missing)
+      #expect(try KeybindingApplyTransactionStore(stateRoot: adoption.stateRoot).read() == nil)
+
+      let converged = try KeybindingsApplyFixture()
+      defer { try? FileManager.default.removeItem(at: converged.root) }
+      let convergedLifecycle = LifecycleFixture()
+      let convergedRunner = converged.runner(lifecycle: convergedLifecycle.controller)
+      #expect(try converged.execute(runner: convergedRunner, json: true).succeeded)
+      let convergedGeneration = try #require(
+        KeybindingGenerationInspector().inspect(stateRoot: converged.stateRoot).generationID
+      )
+      convergedLifecycle.calls.withLock { $0.removeAll() }
+      let convergedExecution = try convergedRunner.withAcceptanceManagedUpdateRollbackCheckpoint()
+        .execute(
+          resourcesRoot: converged.resources,
+          profileURL: converged.profile,
+          profileRequired: false,
+          stateRoot: converged.stateRoot,
+          homeDirectory: converged.home,
+          json: true
+        )
+      #expect(!convergedExecution.succeeded)
+      #expect(convergedLifecycle.calls.withLock { $0 }.isEmpty)
+      #expect(
+        KeybindingGenerationInspector().inspect(stateRoot: converged.stateRoot).generationID
+          == convergedGeneration
+      )
+      #expect(try KeybindingApplyTransactionStore(stateRoot: converged.stateRoot).read() == nil)
+    }
+  #endif
 
   @Test
   func interruptedActivatingInstallRollsBackBeforeAFreshApply() throws {
