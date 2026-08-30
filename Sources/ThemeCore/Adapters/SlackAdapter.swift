@@ -1,11 +1,9 @@
-public struct SlackAdapter: Sendable {
+public enum SlackAdapter: Sendable {
   public static let id = "slack"
   package static let outputPath = "generated/slack.txt"
   package static let rendererVersion = 2
   package static let importInstructions =
     "Slack: Preferences > Appearance > Custom theme > Theme colors > Import theme."
-
-  public init() {}
 
   package static func render(package: ThemePackage) -> String {
     let semantic = package.semantic

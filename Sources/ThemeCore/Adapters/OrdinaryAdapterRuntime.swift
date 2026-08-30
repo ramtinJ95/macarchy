@@ -13,11 +13,10 @@ struct OrdinaryAdapterRuntime: Sendable {
         message: readyMessage
       )
     } catch {
-      let failure = preflightFailure(for: error)
       return AdapterInspection(
         adapterID: adapterID,
         requirement: requirement,
-        status: failure.inspectionStatus,
+        status: isIntegrationDrift(error) ? .drifted : .failed,
         message: String(describing: error)
       )
     }
@@ -30,9 +29,8 @@ struct OrdinaryAdapterRuntime: Sendable {
       do {
         try preflight()
       } catch {
-        let failure = preflightFailure(for: error)
         return AdapterOutcome(
-          status: failure.adapterStatus,
+          status: isIntegrationDrift(error) ? .drifted : .failed,
           message: String(describing: error)
         )
       }
@@ -40,31 +38,4 @@ struct OrdinaryAdapterRuntime: Sendable {
     }
   }
 
-  private func preflightFailure(for error: any Error) -> OrdinaryAdapterPreflightFailure {
-    isIntegrationDrift(error) ? .drifted : .failed
-  }
-}
-
-private enum OrdinaryAdapterPreflightFailure {
-  // A preflight failure cannot be represented as ready, unsupported, or an update-policy result.
-  case drifted
-  case failed
-
-  var inspectionStatus: AdapterInspectionStatus {
-    switch self {
-    case .drifted:
-      .drifted
-    case .failed:
-      .failed
-    }
-  }
-
-  var adapterStatus: AdapterStatus {
-    switch self {
-    case .drifted:
-      .drifted
-    case .failed:
-      .failed
-    }
-  }
 }
