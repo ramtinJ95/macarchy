@@ -101,7 +101,7 @@ struct ThemeSetCommandTests {
     #expect(text.output.contains("Slack theme requires manual import"))
     #expect(
       text.output.contains(
-        "#1e1e2e,#313244,#cba6f7,#1e1e2e,#45475a,#cdd6f4,#a6e3a1,#f38ba8,#313244,#cdd6f4"
+        "#1e1e2e,#cba6f7,#a6e3a1,#f38ba8"
       )
     )
 
@@ -118,7 +118,7 @@ struct ThemeSetCommandTests {
     )
     #expect(
       object["slack_theme"] as? String
-        == "#1e1e2e,#313244,#cba6f7,#1e1e2e,#45475a,#cdd6f4,#a6e3a1,#f38ba8,#313244,#cdd6f4"
+        == "#1e1e2e,#cba6f7,#a6e3a1,#f38ba8"
     )
   }
 
