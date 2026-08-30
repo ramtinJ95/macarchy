@@ -77,15 +77,9 @@ struct KeybindingLifecycleController: Sendable {
 }
 
 struct KeybindingsApplyCommandRunner: Sendable {
-  let planner: KeybindingsPlanCommandRunner
   let lifecycle: KeybindingLifecycleController
-  let checkpoint: @Sendable (KeybindingApplyPhase) throws -> Void
 
-  static let live = KeybindingsApplyCommandRunner(
-    planner: .live,
-    lifecycle: .live,
-    checkpoint: { _ in }
-  )
+  static let live = KeybindingsApplyCommandRunner(lifecycle: .live)
 
   func preview(
     resourcesRoot: URL,
@@ -107,7 +101,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
           pending.phase == .activating
           ? (pending.operation == .installEntry ? .restart : .reload)
           : .none
-        let report = KeybindingsApplyReport.success(
+        let report = KeybindingsApplyReport(
           outcome: "recovery_planned",
           mutated: false,
           lifecycle: lifecycleAction,
@@ -117,7 +111,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
         return (try report.render(json: json), true)
       }
-      let preparation = try planner.prepare(
+      let preparation = try KeybindingsPlanCommandRunner.live.prepare(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,
@@ -134,7 +128,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       try lifecycle.preflight()
       if preparation.outcome == "no_change" {
         try lifecycle.verifyProcess()
-        let report = KeybindingsApplyReport.success(
+        let report = KeybindingsApplyReport(
           outcome: "no_change",
           mutated: false,
           lifecycle: .none,
@@ -143,7 +137,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
         return (try report.render(json: json), true)
       }
-      let report = KeybindingsApplyReport.success(
+      let report = KeybindingsApplyReport(
         outcome: "planned",
         mutated: false,
         lifecycle: eligibility.lifecycle,
@@ -192,18 +186,17 @@ struct KeybindingsApplyCommandRunner: Sendable {
     } catch {
       let outcome: String
       var observed = evidence.withLock { $0 }
-      if error is KeybindingsRecoveryRequiredError {
+      switch error {
+      case is KeybindingsRecoveryRequiredError:
         outcome = "recovery_required"
         observed.mutated = true
-      } else if case .blocked = error as? KeybindingsApplyError {
+      case KeybindingsApplyError.blocked:
         outcome = "blocked"
-      } else if let applyError = error as? KeybindingsApplyError,
-        case .rolledBack(_, let action) = applyError
-      {
+      case KeybindingsApplyError.rolledBack(_, let action):
         outcome = "failed"
         observed.mutated = true
         observed.lifecycle = action
-      } else {
+      default:
         outcome = "failed"
       }
       let report = KeybindingsApplyReport.failure(
@@ -251,7 +244,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       )
     }
 
-    let preparation = try planner.prepare(
+    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
       profileRequired: profileRequired,
@@ -270,7 +263,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     if preparation.outcome == "no_change" {
       try lifecycle.verifyProcess()
       let observed = evidence.withLock { $0 }
-      return .success(
+      return KeybindingsApplyReport(
         outcome: "no_change",
         mutated: observed.mutated,
         lifecycle: observed.lifecycle,
@@ -304,36 +297,29 @@ struct KeybindingsApplyCommandRunner: Sendable {
     do {
       try transactionStore.write(transaction)
       if needsGeneration {
-        try checkpoint(.staging)
         let staged = try activator.stage(
           composition,
           generationID: selectedGenerationID
         )
         transaction = transaction.withPhase(.staged)
         try transactionStore.write(transaction)
-        try checkpoint(.staged)
         try activator.select(staged)
-      } else {
-        try checkpoint(.staged)
       }
       transaction = transaction.withPhase(.currentSelected)
       try transactionStore.write(transaction)
-      try checkpoint(.currentSelected)
 
       if operation == .installEntry {
         try KeybindingProviderTransaction(homeDirectory: homeDirectory).installEntry()
         transaction = transaction.withPhase(.entryInstalled)
         try transactionStore.write(transaction)
-        try checkpoint(.entryInstalled)
       }
 
       transaction = transaction.withPhase(.activating)
       try transactionStore.write(transaction)
-      try checkpoint(.activating)
       try perform(lifecycleAction)
       try lifecycle.verifyProcess()
 
-      let verified = try planner.prepare(
+      let verified = try KeybindingsPlanCommandRunner.live.prepare(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,
@@ -350,7 +336,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       if let previous = transaction.previousGenerationID { retained.insert(previous) }
       try activator.retainGenerations(retained)
       try transactionStore.remove()
-      return .success(
+      return KeybindingsApplyReport(
         outcome: "applied",
         mutated: true,
         lifecycle: lifecycleAction,
@@ -495,22 +481,6 @@ private struct KeybindingsApplyReport: Encodable {
   let message: String
 
   var succeeded: Bool { outcome == "applied" || outcome == "no_change" }
-
-  static func success(
-    outcome: String,
-    mutated: Bool,
-    lifecycle: KeybindingLifecycleAction,
-    generationID: String?,
-    message: String
-  ) -> Self {
-    Self(
-      outcome: outcome,
-      mutated: mutated,
-      lifecycle: lifecycle,
-      generationID: generationID,
-      message: message
-    )
-  }
 
   static func failure(
     outcome: String,

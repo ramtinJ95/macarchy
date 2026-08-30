@@ -101,15 +101,16 @@ package struct KeybindingProfileLoader: Sendable {
       )
     }
 
-    let options = document.keybindings ?? KeybindingsDocument()
-    guard options.disabled.count <= 1_024 else {
+    let options = document.keybindings
+    let disabled = options?.disabled ?? []
+    guard disabled.count <= 1_024 else {
       throw KeybindingProfileError.invalid(source, "disabled contains more than 1024 identities")
     }
-    guard Set(options.disabled).count == options.disabled.count else {
+    guard Set(disabled).count == disabled.count else {
       throw KeybindingProfileError.invalid(source, "disabled identities must be unique")
     }
     let parser = SkhdConfigurationParser()
-    if let identity = options.disabled.first(where: { !parser.isCanonicalIdentity($0) }) {
+    if let identity = disabled.first(where: { !parser.isCanonicalIdentity($0) }) {
       throw KeybindingProfileError.invalid(
         source,
         "disabled identity '\(identity)' is not a normalized skhd chord"
@@ -119,13 +120,13 @@ package struct KeybindingProfileLoader: Sendable {
     let base = (resolvedSource ?? source).standardizedFileURL.deletingLastPathComponent()
     return KeybindingProfile(
       sourceURL: source.standardizedFileURL,
-      overrideURL: try options.override.map {
+      overrideURL: try options?.override.map {
         try Self.resolvePortablePath($0, field: "keybindings.override", base: base, source: source)
       },
-      metadataURL: try options.metadata.map {
+      metadataURL: try options?.metadata.map {
         try Self.resolvePortablePath($0, field: "keybindings.metadata", base: base, source: source)
       },
-      disabledIdentities: options.disabled
+      disabledIdentities: disabled
     )
   }
 
@@ -167,22 +168,5 @@ private struct ProfileDocument: Decodable {
 private struct KeybindingsDocument: Decodable {
   let override: String?
   let metadata: String?
-  let disabled: [String]
-
-  init(override: String? = nil, metadata: String? = nil, disabled: [String] = []) {
-    self.override = override
-    self.metadata = metadata
-    self.disabled = disabled
-  }
-
-  enum CodingKeys: CodingKey {
-    case override, metadata, disabled
-  }
-
-  init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    override = try container.decodeIfPresent(String.self, forKey: .override)
-    metadata = try container.decodeIfPresent(String.self, forKey: .metadata)
-    disabled = try container.decodeIfPresent([String].self, forKey: .disabled) ?? []
-  }
+  let disabled: [String]?
 }

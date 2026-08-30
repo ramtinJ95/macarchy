@@ -2,26 +2,7 @@ import Foundation
 import ThemeCore
 
 struct KeybindingsPlanCommandRunner: Sendable {
-  let read: @Sendable (URL) throws -> String
-  let loadProfile: @Sendable (URL, Bool) throws -> KeybindingProfile
-  let loadCatalog: @Sendable (URL) throws -> SkhdKeybindingCatalog
-  let inspectGeneration: @Sendable (URL) -> KeybindingGenerationInspection
-  let inspectProvider:
-    @Sendable (URL, URL, KeybindingGenerationInspection) -> KeybindingProviderInspection
-
-  static let live = KeybindingsPlanCommandRunner(
-    read: readSkhdConfiguration,
-    loadProfile: { try KeybindingProfileLoader().load(at: $0, required: $1) },
-    loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },
-    inspectGeneration: { KeybindingGenerationInspector().inspect(stateRoot: $0) },
-    inspectProvider: {
-      KeybindingProviderInspector().inspect(
-        homeDirectory: $0,
-        stateRoot: $1,
-        generation: $2
-      )
-    }
-  )
+  static let live = KeybindingsPlanCommandRunner()
 
   func execute(
     resourcesRoot: URL,
@@ -55,8 +36,12 @@ struct KeybindingsPlanCommandRunner: Sendable {
   ) throws -> KeybindingsPlanPreparation {
     let defaultsURL = resourcesRoot.appending(path: "defaults.skhdrc")
     let defaultMetadataURL = resourcesRoot.appending(path: "metadata.toml")
-    let generation = inspectGeneration(stateRoot)
-    let provider = inspectProvider(homeDirectory, stateRoot, generation)
+    let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
+    let provider = KeybindingProviderInspector().inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      generation: generation
+    )
     var diagnostics: [KeybindingsPlanDiagnostic] = []
     if !ignoreTransaction {
       do {
@@ -83,7 +68,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
 
     let defaultsText: String?
     do {
-      defaultsText = try read(defaultsURL)
+      defaultsText = try readSkhdConfiguration(defaultsURL)
     } catch {
       defaultsText = nil
       diagnostics.append(
@@ -97,7 +82,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
 
     let defaultCatalog: SkhdKeybindingCatalog?
     do {
-      let catalog = try loadCatalog(defaultMetadataURL)
+      let catalog = try SkhdKeybindingCatalogLoader().load(at: defaultMetadataURL)
       if catalog.isPresent {
         defaultCatalog = catalog
       } else {
@@ -123,7 +108,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
 
     let profile: KeybindingProfile?
     do {
-      profile = try loadProfile(profileURL, profileRequired)
+      profile = try KeybindingProfileLoader().load(at: profileURL, required: profileRequired)
     } catch {
       profile = nil
       diagnostics.append(
@@ -140,7 +125,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     if let profile {
       if let overrideURL = profile.overrideURL {
         do {
-          overrideText = try read(overrideURL)
+          overrideText = try readSkhdConfiguration(overrideURL)
         } catch {
           diagnostics.append(
             .error(
@@ -153,7 +138,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       }
       if let metadataURL = profile.metadataURL {
         do {
-          let catalog = try loadCatalog(metadataURL)
+          let catalog = try SkhdKeybindingCatalogLoader().load(at: metadataURL)
           if catalog.isPresent {
             userCatalog = catalog
           } else {

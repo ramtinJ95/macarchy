@@ -330,10 +330,9 @@ struct KeybindingsPlanCommandTests {
   private func execute(
     _ fixture: PlanFixture,
     json: Bool,
-    profileRequired: Bool,
-    using selectedRunner: KeybindingsPlanCommandRunner? = nil
+    profileRequired: Bool
   ) throws -> (output: String, succeeded: Bool) {
-    try (selectedRunner ?? runner).execute(
+    try runner.execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: profileRequired,

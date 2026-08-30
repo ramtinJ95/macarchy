@@ -5,17 +5,13 @@ import ThemeCore
 struct KeybindingProviderTransaction: Sendable {
   let homeDirectory: URL
 
-  private var manager: SetupOwnershipManager { SetupOwnershipManager() }
-  private var context: SetupOwnershipManager.Context {
-    SetupOwnershipManager.Context(homeDirectory: homeDirectory)
-  }
   private var entry: URL {
     homeDirectory.appending(path: ".config/skhd/skhdrc")
   }
 
   func installEntry() throws {
-    let manager = manager
-    let context = context
+    let manager = SetupOwnershipManager()
+    let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     var records = try manager.readRecords(context: context)
     guard !records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID }) else {
       throw SetupOwnershipError.ownershipDrift(entry)
@@ -50,8 +46,8 @@ struct KeybindingProviderTransaction: Sendable {
   }
 
   func removeInstalledEntry() throws {
-    let manager = manager
-    let context = context
+    let manager = SetupOwnershipManager()
+    let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     var records = try manager.readRecords(context: context)
     guard let record = records.first(where: { $0.id == KeybindingProviderInspector.ownershipID })
     else { return }
