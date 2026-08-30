@@ -83,13 +83,14 @@ struct KeybindingProviderInspector: Sendable {
     }
     defer { Darwin.close(configurationDescriptor) }
 
-    let ownershipClaim = entryOwnershipClaim(
+    let claimed: Bool
+    switch entryOwnershipClaim(
       homeDirectory: home,
       stateRoot: stateRoot,
       entry: entry,
       expectedTarget: expectedTarget
-    )
-    if case .invalid(let message) = ownershipClaim {
+    ) {
+    case .invalid(let message):
       return result(
         .blocked,
         entry: entry,
@@ -97,8 +98,7 @@ struct KeybindingProviderInspector: Sendable {
         ownership: "invalid_ownership_evidence",
         message: message
       )
-    }
-    if case .prepared = ownershipClaim {
+    case .prepared:
       return result(
         .blocked,
         entry: entry,
@@ -106,6 +106,10 @@ struct KeybindingProviderInspector: Sendable {
         ownership: "recovery_required",
         message: "keybinding entry ownership transaction is prepared but incomplete"
       )
+    case .claimed:
+      claimed = true
+    case .unclaimed:
+      claimed = false
     }
 
     let directoryMetadata: stat
@@ -116,7 +120,7 @@ struct KeybindingProviderInspector: Sendable {
         url: directory
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      if case .claimed = ownershipClaim {
+      if claimed {
         return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
       }
       return result(
@@ -138,7 +142,7 @@ struct KeybindingProviderInspector: Sendable {
 
     switch directoryMetadata.st_mode & S_IFMT {
     case S_IFLNK:
-      if case .claimed = ownershipClaim {
+      if claimed {
         return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
       }
       return inspectDirectorySymlink(
@@ -156,10 +160,10 @@ struct KeybindingProviderInspector: Sendable {
         expectedTarget: expectedTarget,
         stateRoot: stateRoot,
         generation: generation,
-        ownershipClaim: ownershipClaim
+        claimed: claimed
       )
     default:
-      if case .claimed = ownershipClaim {
+      if claimed {
         return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
       }
       return result(
@@ -279,7 +283,7 @@ struct KeybindingProviderInspector: Sendable {
     expectedTarget: String,
     stateRoot: URL,
     generation: KeybindingGenerationInspection,
-    ownershipClaim: EntryOwnershipClaim
+    claimed: Bool
   ) -> KeybindingProviderInspection {
     let directoryDescriptor: Int32
     do {
@@ -307,7 +311,7 @@ struct KeybindingProviderInspector: Sendable {
         url: entry
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      if case .claimed = ownershipClaim {
+      if claimed {
         return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
       }
       return result(
@@ -345,8 +349,7 @@ struct KeybindingProviderInspector: Sendable {
         )
       }
       if target == expectedTarget {
-        switch ownershipClaim {
-        case .claimed:
+        if claimed {
           return result(
             .managed,
             entry: entry,
@@ -355,46 +358,27 @@ struct KeybindingProviderInspector: Sendable {
             originalTarget: target,
             message: "ownership manifest claims the matching entry-point link"
           )
-        case .unclaimed:
-          guard generation.status == .current, let configuration = generation.configuration else {
-            return result(
-              .blocked,
-              entry: entry,
-              expectedTarget: expectedTarget,
-              ownership: "matching_unclaimed_unreadable",
-              originalTarget: target,
-              message: "matching unclaimed link has no valid current generation to preview"
-            )
-          }
-          return result(
-            .adoptionRequired,
-            entry: entry,
-            expectedTarget: expectedTarget,
-            ownership: "matching_unclaimed_symlink",
-            source: stateRoot.appending(path: "keybindings/current/skhdrc"),
-            originalTarget: target,
-            message: "entry-point link matches the plan but has no Macarchy ownership evidence",
-            sourceConfiguration: configuration
-          )
-        case .prepared:
+        }
+        guard generation.status == .current, let configuration = generation.configuration else {
           return result(
             .blocked,
             entry: entry,
             expectedTarget: expectedTarget,
-            ownership: "recovery_required",
+            ownership: "matching_unclaimed_unreadable",
             originalTarget: target,
-            message: "keybinding entry ownership transaction is prepared but incomplete"
-          )
-        case .invalid(let message):
-          return result(
-            .blocked,
-            entry: entry,
-            expectedTarget: expectedTarget,
-            ownership: "invalid_ownership_evidence",
-            originalTarget: target,
-            message: message
+            message: "matching unclaimed link has no valid current generation to preview"
           )
         }
+        return result(
+          .adoptionRequired,
+          entry: entry,
+          expectedTarget: expectedTarget,
+          ownership: "matching_unclaimed_symlink",
+          source: stateRoot.appending(path: "keybindings/current/skhdrc"),
+          originalTarget: target,
+          message: "entry-point link matches the plan but has no Macarchy ownership evidence",
+          sourceConfiguration: configuration
+        )
       }
       if target == Self.managedTarget, expectedTarget != Self.managedTarget {
         return result(
@@ -408,7 +392,7 @@ struct KeybindingProviderInspector: Sendable {
       }
     }
 
-    if case .claimed = ownershipClaim {
+    if claimed {
       return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
     }
 

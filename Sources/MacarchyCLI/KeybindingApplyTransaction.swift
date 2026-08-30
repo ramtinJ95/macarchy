@@ -11,7 +11,6 @@ enum KeybindingApplyPhase: String, Codable, Sendable {
   case staging
   case staged
   case currentSelected = "current_selected"
-  case entryPrepared = "entry_prepared"
   case entryInstalled = "entry_installed"
   case activating
 }
@@ -137,7 +136,7 @@ struct KeybindingApplyTransactionStore: Sendable {
       )
     }
     if transaction.operation == .updateGeneration,
-      [.entryPrepared, .entryInstalled].contains(transaction.phase)
+      transaction.phase == .entryInstalled
     {
       throw KeybindingApplyTransactionError.invalid(
         "generation update cannot contain an entry-install phase"

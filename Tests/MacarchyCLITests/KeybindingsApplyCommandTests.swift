@@ -489,11 +489,7 @@ private struct KeybindingsApplyFixture {
   }
 
   func runner(lifecycle: KeybindingLifecycleController) -> KeybindingsApplyCommandRunner {
-    KeybindingsApplyCommandRunner(
-      planner: .live,
-      lifecycle: lifecycle,
-      checkpoint: { _ in }
-    )
+    KeybindingsApplyCommandRunner(lifecycle: lifecycle)
   }
 
   func execute(
