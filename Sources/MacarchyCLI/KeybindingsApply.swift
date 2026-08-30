@@ -14,17 +14,20 @@ struct KeybindingLifecycleController: Sendable {
   let restart: @Sendable () throws -> Void
   let reload: @Sendable () throws -> Void
   let verifyProcess: @Sendable () throws -> Void
+  let inspectProcess: @Sendable () -> KeybindingProcessInspection
 
   init(
     preflight: @escaping @Sendable () throws -> Void = {},
     restart: @escaping @Sendable () throws -> Void,
     reload: @escaping @Sendable () throws -> Void,
-    verifyProcess: @escaping @Sendable () throws -> Void
+    verifyProcess: @escaping @Sendable () throws -> Void,
+    inspectProcess: @escaping @Sendable () -> KeybindingProcessInspection = { .running }
   ) {
     self.preflight = preflight
     self.restart = restart
     self.reload = reload
     self.verifyProcess = verifyProcess
+    self.inspectProcess = inspectProcess
   }
 
   static let live = KeybindingLifecycleController(
@@ -33,29 +36,23 @@ struct KeybindingLifecycleController: Sendable {
       guard FileManager.default.isExecutableFile(atPath: executable) else {
         throw KeybindingsApplyError.lifecycle("supported skhd is unavailable at \(executable)")
       }
-      try verifyCurrentUserProcess()
+      try requireSupportedProcess()
     },
     restart: { try runSkhd(["--restart-service"]) },
     reload: { try runSkhd(["--reload"]) },
-    verifyProcess: { try verifyCurrentUserProcess() }
+    verifyProcess: { try requireSupportedProcess() },
+    inspectProcess: KeybindingProcessInspector.live.inspect
   )
 
-  private static func verifyCurrentUserProcess() throws {
-    var last = ProcessResult(terminationStatus: -1, output: "")
+  private static func requireSupportedProcess() throws {
+    var last = KeybindingProcessInspection.notRunning
     for _ in 0..<20 {
-      last = try ProcessRunner.live.run(
-        ProcessRequest(
-          executableURL: URL(filePath: "/usr/bin/pgrep"),
-          arguments: ["-u", String(getuid()), "-x", "skhd"],
-          timeout: 1
-        )
-      )
-      if last.terminationStatus == 0 { return }
+      last = KeybindingProcessInspector.live.inspect()
+      if last.status == .running { return }
+      if last.status == .unsupported || last.status == .unavailable { break }
       Thread.sleep(forTimeInterval: 0.1)
     }
-    throw KeybindingsApplyError.lifecycle(
-      "skhd process did not become available (status \(last.terminationStatus))"
-    )
+    throw KeybindingsApplyError.lifecycle(last.message)
   }
 
   private static func runSkhd(_ arguments: [String]) throws {
@@ -245,6 +242,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       try transactionStore.write(transaction)
       try perform(.restart)
       try lifecycle.verifyProcess()
+      try KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).remove()
       transaction = transaction.withPhase(.restorationFinalizing)
       try transactionStore.write(transaction)
       try provider.finalizeOriginalRestoration()
@@ -612,6 +610,13 @@ struct KeybindingsApplyCommandRunner: Sendable {
       try perform(lifecycleAction)
       try lifecycle.verifyProcess()
 
+      try persistLifecycleEvidence(
+        action: lifecycleAction,
+        generationID: selectedGenerationID,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+
       let verified = try planner.prepare(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
@@ -620,9 +625,10 @@ struct KeybindingsApplyCommandRunner: Sendable {
         homeDirectory: homeDirectory,
         ignoreTransaction: true
       )
-      guard verified.outcome == "no_change" else {
+      guard verified.effectiveBehavior.status == .converged else {
         throw KeybindingsApplyError.postcondition(
-          "postcondition remained \(verified.outcome): \(verified.provider.message)"
+          "effective behavior remained \(verified.effectiveBehavior.status.rawValue): "
+            + verified.effectiveBehavior.statusMessage
         )
       }
       var retained = Set([selectedGenerationID])
@@ -765,6 +771,18 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
     }
+    if transaction.phase == .activating {
+      if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
+        try KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).remove()
+      } else if let generationID = restored.generationID {
+        try persistLifecycleEvidence(
+          action: transaction.operation == .updateGeneration ? .reload : .restart,
+          generationID: generationID,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+      }
+    }
     if transaction.generationCreated {
       guard transaction.generationID != transaction.previousGenerationID else {
         throw KeybindingsApplyError.postcondition(
@@ -785,6 +803,44 @@ struct KeybindingsApplyCommandRunner: Sendable {
     case .restart:
       try lifecycle.restart()
     }
+  }
+
+  private func persistLifecycleEvidence(
+    action: KeybindingLifecycleAction,
+    generationID: String,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    guard action != .none else {
+      throw KeybindingsApplyError.postcondition("no lifecycle action can produce success evidence")
+    }
+    let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
+    let provider = KeybindingProviderInspector().inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      generation: generation
+    )
+    let process = lifecycle.inspectProcess()
+    guard
+      generation.status == .current,
+      generation.generationID == generationID,
+      provider.status == .managed,
+      process.status == .running
+    else {
+      throw KeybindingsApplyError.postcondition(
+        "cannot correlate lifecycle success to the selected generation, managed entry, and "
+          + "supported process"
+      )
+    }
+    try KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).write(
+      KeybindingLifecycleEvidence(
+        generationID: generationID,
+        providerEntryPoint: provider.entryPoint,
+        providerTarget: provider.expectedTarget,
+        action: action,
+        process: process
+      )
+    )
   }
 
   private func keybindingOwnershipRecord(

@@ -510,17 +510,37 @@ struct KeybindingProviderTransaction: Sendable {
     guard !records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID }) else {
       throw SetupOwnershipError.ownershipDrift(entry)
     }
+    if expectedEvidence.kind == .legacyFallback {
+      let observedFallback = try KeybindingProviderInspector().legacyFallbackEvidence(
+        homeDirectory: homeDirectory
+      )
+      guard observedFallback == expectedEvidence else {
+        throw KeybindingsApplyError.blocked(
+          "fallback ~/.skhdrc adoption evidence changed after preview; review the new plan"
+        )
+      }
+    }
     let original = try captureOriginal(manager: manager)
     var returned = false
     defer {
       if !returned { original.closePinnedDescriptor() }
     }
-    guard original.evidence == expectedEvidence else {
+    guard
+      expectedEvidence.kind == .legacyFallback
+        ? original.kind == .absent
+        : original.evidence == expectedEvidence
+    else {
       throw KeybindingsApplyError.blocked(
         "skhd adoption evidence changed after preview; review the new plan"
       )
     }
-    if original.kind == .absent {
+    if expectedEvidence.kind == .legacyFallback {
+      guard approvedEvidenceDigest == expectedEvidence.digest else {
+        throw KeybindingsApplyError.blocked(
+          "--adopt must equal the exact fallback adoption evidence digest from the reviewed plan"
+        )
+      }
+    } else if original.kind == .absent {
       guard approvedEvidenceDigest == nil else {
         throw KeybindingsApplyError.blocked("clean installation does not accept adoption evidence")
       }

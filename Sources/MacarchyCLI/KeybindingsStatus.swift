@@ -20,6 +20,7 @@ private struct KeybindingsStatusReport: Encodable {
   let provider: KeybindingProviderInspection
   let transaction: KeybindingTransactionInspection
   let process: KeybindingProcessInspection
+  let lifecycleEvidence: KeybindingLifecycleEvidenceInspection
   let diagnostics: [KeybindingsStatusDiagnostic]
 
   init(_ behavior: KeybindingEffectiveBehavior) {
@@ -29,6 +30,7 @@ private struct KeybindingsStatusReport: Encodable {
     provider = behavior.provider
     transaction = behavior.transaction
     process = behavior.process
+    lifecycleEvidence = behavior.lifecycleEvidence
     diagnostics = behavior.configuration.diagnostics.map(KeybindingsStatusDiagnostic.init)
   }
 
@@ -44,6 +46,8 @@ private struct KeybindingsStatusReport: Encodable {
       "- provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
       "- transaction [\(transaction.status.rawValue)]: \(transaction.message)",
       "- process [\(process.status.rawValue)]: \(process.message)",
+      "- lifecycle evidence [\(lifecycleEvidence.status.rawValue)]: "
+        + lifecycleEvidence.message,
       "- runtime equivalence: unobservable; skhd exposes no complete in-memory binding query",
     ]
     if !diagnostics.isEmpty {

@@ -8,6 +8,49 @@ struct KeybindingProviderInspectionTests {
   private let inspector = KeybindingProviderInspector()
 
   @Test
+  func legacyFallbackRequiresReviewedAdoptionWhenPreferredEntryIsAbsent() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory,
+      withIntermediateDirectories: true
+    )
+    let fallback = fixture.home.appending(path: ".skhdrc")
+    try "alt - j : fallback command\n".write(
+      to: fallback,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .adoptionRequired)
+    #expect(inspection.ownership == "legacy_fallback")
+    #expect(inspection.source == fallback.path)
+    #expect(inspection.sourceConfiguration == "alt - j : fallback command\n")
+    #expect(inspection.adoptionEvidenceDigest != nil)
+  }
+
+  @Test
+  func unsupportedLegacyFallbackBlocksRatherThanBecomingACleanInstall() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory,
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: fixture.home.appending(path: ".skhdrc"),
+      withIntermediateDirectories: true
+    )
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "legacy_fallback_conflict")
+  }
+
+  @Test
   func directorySymlinkWithOnlySkhdrcIsEligibleForAdoption() throws {
     let fixture = try fixtureHome()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

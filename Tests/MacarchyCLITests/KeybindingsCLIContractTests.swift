@@ -73,6 +73,7 @@ struct KeybindingsCLIContractTests {
 
     #expect(effectiveList.status == 0)
     #expect(effectiveDoctor.status == 0)
+    #expect(effectiveStatus.status != 0)
     #expect(effectiveListJSON["schema_version"] as? Int == 2)
     #expect(effectiveListJSON["operation"] as? String == "keybindings_list_effective")
     #expect(effectiveListJSON["source"] == nil)
@@ -114,10 +115,22 @@ struct KeybindingsCLIContractTests {
   }
 
   private func run(_ arguments: [String]) throws -> (status: Int32, output: String, error: String) {
+    let isolatedHome = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-keybindings-cli-home-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: isolatedHome, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: isolatedHome) }
     let process = Process()
     process.executableURL = productDirectory.appending(path: "macarchy")
     process.arguments = arguments
     process.currentDirectoryURL = repositoryRoot
+    process.environment = ProcessInfo.processInfo.environment.merging([
+      "CFFIXED_USER_HOME": isolatedHome.path,
+      "HOME": isolatedHome.path,
+      "MACARCHY_DISABLE_UPDATE_CHECKS": "1",
+      "XDG_CONFIG_HOME": isolatedHome.appending(path: ".config").path,
+    ]) { _, isolated in isolated }
     let standardOutput = Pipe()
     let standardError = Pipe()
     process.standardOutput = standardOutput

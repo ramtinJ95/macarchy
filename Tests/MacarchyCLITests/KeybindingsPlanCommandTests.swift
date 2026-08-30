@@ -106,7 +106,7 @@ struct KeybindingsPlanCommandTests {
   }
 
   @Test
-  func validMatchingGenerationAndManagedEntryAreANoOp() throws {
+  func matchingManagedLegacyStateWithoutLifecycleEvidencePlansReload() throws {
     let fixture = try planFixture()
     var generation: URL?
     defer {
@@ -143,8 +143,9 @@ struct KeybindingsPlanCommandTests {
     let execution = try execute(fixture, json: false, profileRequired: false)
 
     #expect(execution.succeeded)
-    #expect(execution.output.contains("Macarchy keybindings plan [no_change]:"))
-    #expect(execution.output.contains("Actions: none"))
+    #expect(execution.output.contains("Macarchy keybindings plan [ready]:"))
+    #expect(execution.output.contains("reload_provider"))
+    #expect(execution.output.contains("lifecycle evidence [missing]"))
     #expect(execution.output.hasSuffix("No changes made."))
   }
 
