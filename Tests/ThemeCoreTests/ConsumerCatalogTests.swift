@@ -53,17 +53,21 @@ struct ConsumerCatalogTests {
 
     let invalidSetup = ConsumerCatalogEntry(
       id: ConsumerID(rawValue: "fixture-generated"),
-      mode: .generatedPalette,
+      mode: .manual,
       setupManaged: true
     )
     #expect(throws: ConsumerCatalogError.invalidSetupParticipation("fixture-generated")) {
       _ = try ConsumerCatalog(entries: [invalidSetup])
     }
 
-    func renderedEntry(_ id: String, rendererID: String) -> ConsumerCatalogEntry {
+    func renderedEntry(
+      _ id: String,
+      kind: RuntimeAdapterKind,
+      rendererID: String
+    ) -> ConsumerCatalogEntry {
       ConsumerCatalogEntry(
         id: ConsumerID(rawValue: id),
-        mode: .generatedPalette,
+        mode: .runtime(kind, requirement: .required),
         renderer: ConsumerRendererRegistration(
           id: rendererID,
           version: 1,
@@ -78,54 +82,10 @@ struct ConsumerCatalogTests {
     ) {
       _ = try ConsumerCatalog(
         entries: [
-          renderedEntry("fixture-one", rendererID: "fixture-one"),
-          renderedEntry("fixture-two", rendererID: "fixture-two"),
+          renderedEntry("fixture-one", kind: .atuin, rendererID: "fixture-one"),
+          renderedEntry("fixture-two", kind: .bat, rendererID: "fixture-two"),
         ]
       )
     }
-  }
-
-  @Test
-  func generatedPaletteConsumerExtendsRenderingThroughOneCatalogEntry() throws {
-    let path = "generated/fixture-palette.txt"
-    let fixture = ConsumerCatalogEntry(
-      id: ConsumerID(rawValue: "fixture-palette"),
-      mode: .generatedPalette,
-      renderer: ConsumerRendererRegistration(
-        id: "fixture-palette",
-        version: 1,
-        artifacts: [RenderedArtifactMetadata(path: path)]
-      ) { package, generationID, _ in
-        [
-          ConsumerRenderedOutput(
-            path: path,
-            string: "\(package.id) \(generationID) \(package.semantic.accent.rawValue)\n"
-          )
-        ]
-      }
-    )
-    let catalog = try ConsumerCatalog(entries: ConsumerCatalog.shared.entries + [fixture])
-    let repositoryRoot = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(
-        path: "Themes/catppuccin-mocha",
-        directoryHint: .isDirectory
-      )
-    )
-
-    let rendered = try ThemeRenderer(catalog: catalog).render(
-      package: package,
-      generationID: "fixture-generation"
-    )
-
-    #expect(
-      String(decoding: try #require(rendered.artifact(atPath: path)).data, as: UTF8.self)
-        == "catppuccin-mocha fixture-generation #cba6f7\n"
-    )
-    #expect(try ThemeRenderer.validatedArtifactMetadata()[path] == nil)
-    #expect(try ThemeRenderer.validatedArtifactMetadata(catalog: catalog)[path] != nil)
   }
 }

@@ -48,7 +48,6 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
 package enum ConsumerMode: Sendable {
   case runtime(RuntimeAdapterKind, requirement: AdapterRequirement)
   case manual
-  case generatedPalette
 
   package var requirement: AdapterRequirement? {
     guard case .runtime(_, let requirement) = self else { return nil }
@@ -62,7 +61,7 @@ package enum ConsumerMode: Sendable {
 
   fileprivate var requiresRenderer: Bool {
     switch self {
-    case .manual, .generatedPalette:
+    case .manual:
       true
     case .runtime:
       false
@@ -239,7 +238,7 @@ package struct ConsumerCatalog: Sendable {
     var runtimeKinds = Set<RuntimeAdapterKind>()
 
     for entry in entries {
-      guard Self.isValidID(entry.id.rawValue) else {
+      guard ThemeSchema.isThemeID(entry.id.rawValue) else {
         throw ConsumerCatalogError.invalidConsumerID(entry.id.rawValue)
       }
       guard consumerIDs.insert(entry.id).inserted else {
@@ -288,7 +287,9 @@ package struct ConsumerCatalog: Sendable {
         }
         continue
       }
-      guard renderer.version > 0, Self.isValidID(renderer.id), !renderer.artifacts.isEmpty else {
+      guard renderer.version > 0, ThemeSchema.isThemeID(renderer.id),
+        !renderer.artifacts.isEmpty
+      else {
         throw ConsumerCatalogError.invalidRenderer(entry.id.rawValue)
       }
       guard rendererIDs.insert(renderer.id).inserted else {
@@ -356,14 +357,6 @@ package struct ConsumerCatalog: Sendable {
 
   package func manualPayloadTarget(id: String) -> ConsumerManualPayloadTarget? {
     manualPayloadTargets.first { $0.id == id }
-  }
-
-  private static func isValidID(_ value: String) -> Bool {
-    guard !value.isEmpty, value.first?.isLetter == true, value == value.lowercased() else {
-      return false
-    }
-    return value.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber || $0 == "-") }
-      && !value.hasSuffix("-") && !value.contains("--")
   }
 
   private static let productionEntries: [ConsumerCatalogEntry] = [
