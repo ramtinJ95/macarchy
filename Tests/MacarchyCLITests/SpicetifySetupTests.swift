@@ -610,11 +610,7 @@ private final class SpicetifySetupFixture: @unchecked Sendable {
   ) throws -> [SetupIntegrationResult] {
     let context = SetupOwnershipManager.Context(homeDirectory: home)
     var records = try manager.readRecords(context: context)
-    return try manager.setupSpicetifyIntegrations(
-      context: context,
-      dryRun: dryRun,
-      records: &records
-    )
+    return try spicetifyPlan(manager: manager, context: context).setup(dryRun, &records)
   }
 
   func teardown(
@@ -623,10 +619,20 @@ private final class SpicetifySetupFixture: @unchecked Sendable {
   ) throws -> [SetupIntegrationResult] {
     let context = SetupOwnershipManager.Context(homeDirectory: home)
     var records = try manager.readRecords(context: context)
-    return try manager.teardownSpicetifyIntegrations(
-      context: context,
-      dryRun: dryRun,
-      records: &records
+    return try spicetifyPlan(manager: manager, context: context).teardown(
+      dryRun,
+      &records
+    )
+  }
+
+  private func spicetifyPlan(
+    manager: SetupOwnershipManager,
+    context: SetupOwnershipManager.Context
+  ) throws -> ConsumerSetupPlan {
+    try #require(
+      manager.consumerSetupPlans(context: context).first {
+        $0.consumerID == .spicetify
+      }
     )
   }
 
