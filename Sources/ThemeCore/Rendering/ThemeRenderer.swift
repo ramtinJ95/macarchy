@@ -96,7 +96,6 @@ public struct ThemeRenderer: Sendable {
   }
 
   public func write(_ rendered: RenderedTheme, to outputRoot: URL) throws {
-    try rendered.validateDataSizes()
     for artifact in rendered.artifacts {
       let output = outputRoot.appending(path: artifact.path)
       try FileManager.default.createDirectory(
