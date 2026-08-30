@@ -258,6 +258,95 @@ struct KeybindingsApplyCommandTests {
   }
 
   @Test
+  func interruptedStagingBeforeGenerationDirectoryRecoversAndApplies() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
+      KeybindingApplyTransaction(
+        operation: .installEntry,
+        phase: .staging,
+        generationID: "k-01234567-89ab-cdef-0123-456789abcdef",
+        previousGenerationID: nil,
+        generationCreated: true
+      )
+    )
+    let generations = fixture.stateRoot.appending(
+      path: "keybindings/generations",
+      directoryHint: .isDirectory
+    )
+    #expect(!FileManager.default.fileExists(atPath: generations.path))
+    let lifecycle = LifecycleFixture()
+
+    let execution = try fixture.execute(
+      runner: fixture.runner(lifecycle: lifecycle.controller),
+      json: true
+    )
+    let report = try jsonObject(execution.output)
+
+    #expect(execution.succeeded)
+    #expect(report["outcome"] as? String == "applied")
+    #expect(report["mutated"] as? Bool == true)
+    #expect(lifecycle.calls.withLock { $0 } == ["preflight", "restart", "verify"])
+    #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+  }
+
+  @Test
+  func interruptedActivatingUpdateReportsRecoveryWhenRestoredStateNeedsNoChange() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+    #expect(try fixture.execute(runner: runner, json: true).succeeded)
+    lifecycle.calls.withLock { $0.removeAll() }
+
+    let defaults = fixture.resources.appending(path: "defaults.skhdrc")
+    let originalDefaults = try String(contentsOf: defaults, encoding: .utf8)
+    let previousGenerationID = try #require(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID
+    )
+    try "alt - j : interrupted command\n".write(
+      to: defaults,
+      atomically: true,
+      encoding: .utf8
+    )
+    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.stateRoot,
+      homeDirectory: fixture.home
+    )
+    let composition = try #require(preparation.composition)
+    let activator = KeybindingGenerationActivator(stateRoot: fixture.stateRoot)
+    let interrupted = try activator.stage(composition)
+    try activator.select(interrupted)
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
+      KeybindingApplyTransaction(
+        operation: .updateGeneration,
+        phase: .activating,
+        generationID: interrupted.manifest.generationID,
+        previousGenerationID: previousGenerationID,
+        generationCreated: true
+      )
+    )
+    try originalDefaults.write(to: defaults, atomically: true, encoding: .utf8)
+
+    let execution = try fixture.execute(runner: runner, json: true)
+    let report = try jsonObject(execution.output)
+
+    #expect(execution.succeeded)
+    #expect(report["outcome"] as? String == "no_change")
+    #expect(report["mutated"] as? Bool == true)
+    #expect(report["lifecycle"] as? String == "reload")
+    #expect(lifecycle.calls.withLock { $0 } == ["reload", "verify", "preflight", "verify"])
+    #expect(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID
+        == previousGenerationID
+    )
+    #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
+  }
+
+  @Test
   func previewModelsPendingRecoveryWithoutTrustingDirtyProviderState() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

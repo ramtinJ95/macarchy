@@ -231,7 +231,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
         evidence.withLock {
           $0.mutated = true
           if transaction.phase == .activating {
-            $0.lifecycle = transaction.operation == .installEntry
+            $0.lifecycle =
+              transaction.operation == .installEntry
               ? KeybindingLifecycleAction.restart
               : KeybindingLifecycleAction.reload
           }
@@ -268,10 +269,11 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
     if preparation.outcome == "no_change" {
       try lifecycle.verifyProcess()
+      let observed = evidence.withLock { $0 }
       return .success(
         outcome: "no_change",
-        mutated: false,
-        lifecycle: .none,
+        mutated: observed.mutated,
+        lifecycle: observed.lifecycle,
         generationID: preparation.generation.generationID,
         message: "Keybindings are already converged."
       )

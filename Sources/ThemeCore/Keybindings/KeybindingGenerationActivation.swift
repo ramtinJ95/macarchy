@@ -240,7 +240,12 @@ package struct KeybindingGenerationActivator: Sendable {
       path: "keybindings/generations",
       directoryHint: .isDirectory
     )
-    let descriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
     defer { Darwin.close(descriptor) }
     do {
       try removeDirectory(
