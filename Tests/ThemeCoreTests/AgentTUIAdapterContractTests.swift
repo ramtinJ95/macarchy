@@ -34,9 +34,7 @@ extension AdapterContractTests {
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == destination.path)
 
-    let document = try #require(
-      JSONSerialization.jsonObject(with: Data(contentsOf: destination)) as? [String: Any]
-    )
+    let document = try jsonObject(Data(contentsOf: destination))
     #expect(document["name"] as? String == PiAdapter.themeName)
     let colors = try #require(document["colors"] as? [String: String])
     #expect(colors["accent"] == "accent")

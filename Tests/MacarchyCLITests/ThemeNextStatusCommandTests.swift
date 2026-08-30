@@ -253,10 +253,7 @@ struct ThemeNextStatusCommandTests {
       )
       #expect(execution.succeeded == succeeded)
       let suffix = json ? "json" : "txt"
-      let golden = try String(
-        contentsOf: fixturesRoot.appending(path: "theme-status-\(basename).\(suffix)"),
-        encoding: .utf8
-      )
+      let golden = try fixtureContents("CLI/theme-status-\(basename).\(suffix)")
       #expect(execution.output + "\n" == golden)
     }
   }
@@ -267,16 +264,6 @@ struct ThemeNextStatusCommandTests {
     )
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
-  private var fixturesRoot: URL {
-    repositoryRoot.appending(path: "Tests/Fixtures/CLI", directoryHint: .isDirectory)
-  }
 }
 
 private enum TestError: Error, CustomStringConvertible {

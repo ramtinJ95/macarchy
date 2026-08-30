@@ -452,12 +452,6 @@ struct UpdateAwarenessTests {
     )
   }
 
-  private func jsonObject(_ value: String) throws -> [String: Any] {
-    try #require(
-      JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any]
-    )
-  }
-
   private func temporaryRoot() throws -> URL {
     let root = URL(filePath: #filePath)
       .deletingLastPathComponent()

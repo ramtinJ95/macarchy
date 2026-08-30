@@ -169,13 +169,6 @@ struct BackgroundInventoryTests {
     #expect(unsupportedDiagnostic.message.contains("unsupported image extension"))
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
   private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-background-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
