@@ -12,6 +12,38 @@ private struct SnapshotEntry: Encodable {
   let type: String
   let mode: UInt16
   let digest: String?
+  let device: UInt64
+  let inode: UInt64
+  let modifiedSeconds: Int64
+  let modifiedNanoseconds: Int64
+  let changedSeconds: Int64
+  let changedNanoseconds: Int64
+
+  init(path: String, type: String, mode: UInt16, digest: String?, metadata: stat) {
+    self.path = path
+    self.type = type
+    self.mode = mode
+    self.digest = digest
+    device = UInt64(metadata.st_dev)
+    inode = UInt64(metadata.st_ino)
+    modifiedSeconds = Int64(metadata.st_mtimespec.tv_sec)
+    modifiedNanoseconds = Int64(metadata.st_mtimespec.tv_nsec)
+    changedSeconds = Int64(metadata.st_ctimespec.tv_sec)
+    changedNanoseconds = Int64(metadata.st_ctimespec.tv_nsec)
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case path
+    case type
+    case mode
+    case digest
+    case device
+    case inode
+    case modifiedSeconds = "modified_seconds"
+    case modifiedNanoseconds = "modified_nanoseconds"
+    case changedSeconds = "changed_seconds"
+    case changedNanoseconds = "changed_nanoseconds"
+  }
 }
 
 private enum SnapshotError: Error, CustomStringConvertible {
@@ -75,7 +107,15 @@ private struct Snapshot {
     let mode = UInt16(initial.st_mode & 0o7777)
     switch initial.st_mode & S_IFMT {
     case S_IFDIR:
-      entries.append(SnapshotEntry(path: path, type: "directory", mode: mode, digest: nil))
+      entries.append(
+        SnapshotEntry(
+          path: path,
+          type: "directory",
+          mode: mode,
+          digest: nil,
+          metadata: initial
+        )
+      )
       guard depth < maximumDepth else {
         if try directoryHasEntry(descriptor: descriptor, path: path) {
           throw SnapshotError.tooDeep(path)
@@ -86,7 +126,15 @@ private struct Snapshot {
     case S_IFREG:
       let data = try readRegularFile(descriptor: descriptor, path: path, metadata: initial)
       let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-      entries.append(SnapshotEntry(path: path, type: "regular", mode: mode, digest: digest))
+      entries.append(
+        SnapshotEntry(
+          path: path,
+          type: "regular",
+          mode: mode,
+          digest: digest,
+          metadata: initial
+        )
+      )
     default:
       throw SnapshotError.unsafeEntry(path)
     }
