@@ -44,7 +44,11 @@ extension SetupOwnershipManager {
       try KeybindingProviderInspector.validateOwnershipRecord(record, context: context)
       return
     }
-    guard record.originalKind == nil, record.originalLinkDestination == nil else {
+    guard
+      record.originalKind == nil,
+      record.originalLinkDestination == nil,
+      record.originalFileMode == nil
+    else {
       throw SetupOwnershipError.invalidManifest(
         "non-keybinding integration \(record.id) contains keybinding adoption evidence"
       )
@@ -214,6 +218,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let replacementDigest: String?
   let originalKind: OriginalKind?
   let originalLinkDestination: String?
+  let originalFileMode: UInt16?
 
   var applied: SetupOwnershipRecord {
     SetupOwnershipRecord(
@@ -227,7 +232,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
       linkDestination: linkDestination,
       replacementDigest: nil,
       originalKind: originalKind,
-      originalLinkDestination: originalLinkDestination
+      originalLinkDestination: originalLinkDestination,
+      originalFileMode: originalFileMode
     )
   }
 
@@ -243,6 +249,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case replacementDigest = "replacement_digest"
     case originalKind = "original_kind"
     case originalLinkDestination = "original_link_destination"
+    case originalFileMode = "original_file_mode"
   }
 
   init(
@@ -256,7 +263,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
     linkDestination: String?,
     replacementDigest: String? = nil,
     originalKind: OriginalKind? = nil,
-    originalLinkDestination: String? = nil
+    originalLinkDestination: String? = nil,
+    originalFileMode: UInt16? = nil
   ) {
     self.id = id
     self.phase = phase
@@ -269,6 +277,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     self.replacementDigest = replacementDigest
     self.originalKind = originalKind
     self.originalLinkDestination = originalLinkDestination
+    self.originalFileMode = originalFileMode
   }
 
 }

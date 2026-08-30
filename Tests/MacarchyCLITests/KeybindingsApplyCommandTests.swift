@@ -78,6 +78,10 @@ struct KeybindingsApplyCommandTests {
     let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
     let original = Data("alt - x : exact external bytes\n".utf8)
     try original.write(to: entry)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o640],
+      ofItemAtPath: entry.path
+    )
     let lifecycle = LifecycleFixture()
     let runner = fixture.runner(lifecycle: lifecycle.controller)
 
@@ -110,6 +114,8 @@ struct KeybindingsApplyCommandTests {
     #expect(teardown.status == .removed)
     #expect(teardown.mutationAttempted)
     #expect(try Data(contentsOf: entry) == original)
+    let restoredAttributes = try FileManager.default.attributesOfItem(atPath: entry.path)
+    #expect(restoredAttributes[.posixPermissions] as? Int == 0o640)
     #expect(
       lifecycle.calls.withLock { $0 } == [
         "preflight", "preflight", "restart", "verify", "preflight", "restart", "verify",

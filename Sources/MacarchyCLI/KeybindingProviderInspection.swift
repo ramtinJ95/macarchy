@@ -585,7 +585,8 @@ struct KeybindingProviderInspector: Sendable {
       guard
         record.backupPath == nil,
         record.originalDigest == nil,
-        record.originalLinkDestination == nil
+        record.originalLinkDestination == nil,
+        record.originalFileMode == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "absent keybinding entry ownership contains adoption evidence"
@@ -599,7 +600,8 @@ struct KeybindingProviderInspector: Sendable {
       guard
         record.backupPath == manager.relativePath(backup, below: context.stateRoot),
         record.originalDigest != nil,
-        record.originalLinkDestination == nil
+        record.originalLinkDestination == nil,
+        record.originalFileMode != nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "regular-file keybinding adoption evidence is incomplete"
@@ -609,7 +611,8 @@ struct KeybindingProviderInspector: Sendable {
       guard
         record.backupPath == nil,
         let destination = record.originalLinkDestination,
-        record.originalDigest == sha256Digest(Data(destination.utf8))
+        record.originalDigest == sha256Digest(Data(destination.utf8)),
+        record.originalFileMode == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "symbolic-link keybinding adoption evidence is incomplete"
