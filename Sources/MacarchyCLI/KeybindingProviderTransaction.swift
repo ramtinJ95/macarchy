@@ -15,11 +15,14 @@ enum KeybindingProviderCheckpoint: Equatable, Sendable {
   case providerClaimSwapped
   case sourceSwapCompleted
   case regularOriginalPinned
+  case providerPublicationAuthenticated
   case restoredOriginalPublished
   case restoredIdentityRecorded
   case backupRemoved
   case managedEntryClaimedForRemoval
   case deletionSourcePinned
+  case deletionCandidatePublished
+  case deletionCandidateAuthenticated
   case providerReplaced
   case originalRestored
 }
@@ -207,7 +210,7 @@ struct KeybindingProviderTransaction: Sendable {
     try verifyOriginal(record, context: context)
     let manager = SetupOwnershipManager()
     if originalKind(record) == .regularFile {
-      if try backupExists() {
+      if try backupExists() || backupDeletionResidueExists(record) {
         record = record.withPhase(.teardownPrepared)
         try manager.save(record: record, records: &records, context: context)
         try removeAuthenticatedBackup(record, manager: manager)
@@ -220,6 +223,7 @@ struct KeybindingProviderTransaction: Sendable {
         }
       }
     }
+    try removeAuthenticatedProviderResidues(record)
     try faultInjector(.backupRemoved)
     records.removeAll { $0.id == KeybindingProviderInspector.ownershipID }
     try manager.persist(records: records, context: context)
@@ -501,12 +505,6 @@ struct KeybindingProviderTransaction: Sendable {
     }
     defer { Darwin.close(parent) }
     try requireAbsent(parentDescriptor: parent, name: name, url: url)
-    let publishing = publishingName(name)
-    try requireAbsent(
-      parentDescriptor: parent,
-      name: publishing,
-      url: url.deletingLastPathComponent().appending(path: publishing)
-    )
   }
 
   private func requireLegacyClaimAbsent(for record: SetupOwnershipRecord) throws {
@@ -601,11 +599,16 @@ struct KeybindingProviderTransaction: Sendable {
       if originalKind(record) == .regularFile {
         try displacePinnedRegularOriginal(record, descriptor: descriptor, claim: claim)
       } else {
-        try withAuthenticatedOriginalSource(record) {
+        try withAuthenticatedOriginalSource(
+          record,
+          parentDescriptor: descriptor,
+          sourceName: "skhdrc",
+          claimName: claim,
+          url: entry
+        ) {
           try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
         }
         try faultInjector(.providerClaimSwapped)
-        try verifyDisplacedOriginal(record, parentDescriptor: descriptor, name: claim, url: entry)
       }
       try removeOriginalItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
@@ -628,7 +631,13 @@ struct KeybindingProviderTransaction: Sendable {
       if originalKind(record) == .regularFile {
         try displacePinnedRegularOriginal(record, descriptor: descriptor, claim: claim)
       } else {
-        try withAuthenticatedOriginalSource(record) {
+        try withAuthenticatedOriginalSource(
+          record,
+          parentDescriptor: descriptor,
+          sourceName: "skhdrc",
+          claimName: claim,
+          url: entry
+        ) {
           try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
         }
         try faultInjector(.providerClaimSwapped)
@@ -763,11 +772,16 @@ struct KeybindingProviderTransaction: Sendable {
     }
     if state == .original, claimState == .managed {
       try faultInjector(.providerClaimReady)
-      try withAuthenticatedOriginalSource(record) {
+      try withAuthenticatedOriginalSource(
+        record,
+        parentDescriptor: descriptor,
+        sourceName: "skhd",
+        claimName: claim,
+        url: directory
+      ) {
         try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
       }
       try faultInjector(.providerClaimSwapped)
-      try verifyDisplacedOriginal(record, parentDescriptor: descriptor, name: claim, url: directory)
       try removeOriginalItem(
         parentDescriptor: descriptor, name: claim, record: record, url: directory)
       return
@@ -777,7 +791,13 @@ struct KeybindingProviderTransaction: Sendable {
     }
     try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
     try faultInjector(.providerClaimReady)
-    try withAuthenticatedOriginalSource(record) {
+    try withAuthenticatedOriginalSource(
+      record,
+      parentDescriptor: descriptor,
+      sourceName: "skhd",
+      claimName: claim,
+      url: directory
+    ) {
       try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
     }
     try faultInjector(.providerClaimSwapped)
@@ -986,7 +1006,7 @@ struct KeybindingProviderTransaction: Sendable {
     record: SetupOwnershipRecord
   ) throws {
     let url = configurationDirectory.appending(path: name, directoryHint: .isDirectory)
-    let publicationName = publishingName(name)
+    let publicationName = try publishingName(name, record: record)
     let publicationURL = configurationDirectory.appending(
       path: publicationName,
       directoryHint: .isDirectory
@@ -1029,6 +1049,7 @@ struct KeybindingProviderTransaction: Sendable {
         record: record,
         url: publicationURL
       )
+      try faultInjector(.providerPublicationAuthenticated)
     } else {
       guard
         try claimMarkerMatches(
@@ -1202,6 +1223,7 @@ struct KeybindingProviderTransaction: Sendable {
     )
     guard
       file.permissions == 0o600,
+      snapshot.linkCount == 1,
       sha256Digest(file.data) == record.originalDigest,
       snapshot.restorableMetadataDigest(overridingMode: try originalMode(record))
         == record.originalMetadataDigest
@@ -1287,7 +1309,7 @@ struct KeybindingProviderTransaction: Sendable {
   ) throws {
     let manager = SetupOwnershipManager()
     let stored = try readOriginalBackup(record, manager: manager)
-    let publicationName = publishingName(name)
+    let publicationName = try publishingName(name, record: record)
     let claimURL = directory.appending(path: name)
     let publicationURL = directory.appending(path: publicationName)
     if try authenticatedPublicationExists(
@@ -1386,14 +1408,13 @@ struct KeybindingProviderTransaction: Sendable {
     let restoredSnapshot = try manager.regularFileSnapshot(
       descriptor: claim,
       url: publicationURL,
-      label: "restored skhd entry"
+      label: "restored skhd entry",
+      excludingExtendedAttribute: Self.claimMarkerAttribute
     )
     guard
       restoredSnapshot.mode & 0o7777 == UInt32(try originalMode(record)),
       restoredSnapshot.linkCount == 1,
-      restoredSnapshot.restorableMetadataDigest(
-        excludingExtendedAttribute: Self.claimMarkerAttribute
-      ) == record.originalMetadataDigest
+      restoredSnapshot.restorableMetadataDigest() == record.originalMetadataDigest
     else {
       throw SetupOwnershipError.ownershipDrift(entry)
     }
@@ -1407,48 +1428,58 @@ struct KeybindingProviderTransaction: Sendable {
     record: SetupOwnershipRecord
   ) throws {
     let url = configurationDirectory.appending(path: name, directoryHint: .isDirectory)
-    let descriptor = try PinnedFilesystem.openDirectory(
-      parentDescriptor: parentDescriptor,
-      name: name,
-      url: url
-    )
-    defer { Darwin.close(descriptor) }
-    guard
-      try claimMarkerMatches(descriptor: descriptor, record: record, url: url)
-    else { throw SetupOwnershipError.ownershipDrift(url) }
-    let inventory = try PinnedFilesystem.directoryEntries(
-      descriptor: descriptor,
-      url: url,
-      limit: 2
-    )
-    guard !inventory.truncated else {
-      throw SetupOwnershipError.ownershipDrift(url)
-    }
-    if inventory.entries == ["skhdrc"] {
+    if try itemExists(parentDescriptor: parentDescriptor, name: name, url: url) {
+      let descriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url
+      )
+      defer { Darwin.close(descriptor) }
       guard
-        try leafState(
-          descriptor: descriptor,
-          name: "skhdrc",
-          record: record
-        ) == .managed
-      else {
-        throw SetupOwnershipError.ownershipDrift(url)
-      }
+        try claimMarkerMatches(descriptor: descriptor, record: record, url: url)
+      else { throw SetupOwnershipError.ownershipDrift(url) }
+      let nestedPublication = try publishingName("skhdrc", record: record)
       try removeMarkedItem(
         parentDescriptor: descriptor,
-        name: "skhdrc",
+        name: nestedPublication,
         record: record,
-        url: url.appending(path: "skhdrc")
+        url: url.appending(path: nestedPublication)
       )
-      try faultInjector(.directoryClaimEntryRemoved)
-    } else if !inventory.entries.isEmpty {
-      throw SetupOwnershipError.ownershipDrift(url)
+      let inventory = try PinnedFilesystem.directoryEntries(
+        descriptor: descriptor,
+        url: url,
+        limit: 2
+      )
+      guard !inventory.truncated else {
+        throw SetupOwnershipError.ownershipDrift(url)
+      }
+      if inventory.entries == ["skhdrc"] {
+        guard
+          try leafState(
+            descriptor: descriptor,
+            name: "skhdrc",
+            record: record
+          ) == .managed
+        else {
+          throw SetupOwnershipError.ownershipDrift(url)
+        }
+        try removeMarkedItem(
+          parentDescriptor: descriptor,
+          name: "skhdrc",
+          record: record,
+          url: url.appending(path: "skhdrc")
+        )
+        try faultInjector(.directoryClaimEntryRemoved)
+      } else if !inventory.entries.isEmpty {
+        throw SetupOwnershipError.ownershipDrift(url)
+      }
     }
     try removePinnedItem(
       parentDescriptor: parentDescriptor,
       name: name,
       url: url,
-      directory: true
+      directory: true,
+      record: record
     ) { deletionName, deletionURL in
       let deletionDescriptor = try PinnedFilesystem.openDirectory(
         parentDescriptor: parentDescriptor,
@@ -1501,7 +1532,8 @@ struct KeybindingProviderTransaction: Sendable {
       try removePinnedItem(
         parentDescriptor: descriptor,
         name: "skhdrc",
-        url: entry
+        url: entry,
+        record: record
       ) { name, url in
         try verifyLegacyManagedLink(
           parentDescriptor: descriptor,
@@ -1666,6 +1698,49 @@ struct KeybindingProviderTransaction: Sendable {
     }
   }
 
+  private func backupDeletionResidueExists(_ record: SetupOwnershipRecord) throws -> Bool {
+    let parent: Int32
+    do {
+      parent = try openBackupDirectory(create: false)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return false
+    }
+    defer { Darwin.close(parent) }
+    let name = try deletionName(backup.lastPathComponent, record: record)
+    return try itemExists(
+      parentDescriptor: parent,
+      name: name,
+      url: backup.deletingLastPathComponent().appending(path: name)
+    )
+  }
+
+  private func removeAuthenticatedProviderResidues(_ record: SetupOwnershipRecord) throws {
+    let isDirectory = originalKind(record) == .directorySymbolicLink
+    let claim = claimName(record, directory: isDirectory)
+    let publication = try publishingName(claim, record: record)
+    if isDirectory {
+      let parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
+      defer { Darwin.close(parent) }
+      try removeManagedDirectory(parentDescriptor: parent, name: publication, record: record)
+      try removeManagedDirectory(parentDescriptor: parent, name: claim, record: record)
+    } else {
+      let parent = try PinnedFilesystem.openDirectory(at: directory)
+      defer { Darwin.close(parent) }
+      try removeMarkedItem(
+        parentDescriptor: parent,
+        name: publication,
+        record: record,
+        url: directory.appending(path: publication)
+      )
+      try removeMarkedItem(
+        parentDescriptor: parent,
+        name: claim,
+        record: record,
+        url: directory.appending(path: claim)
+      )
+    }
+  }
+
   private func removeAuthenticatedBackup(
     _ record: SetupOwnershipRecord,
     manager: SetupOwnershipManager
@@ -1675,7 +1750,8 @@ struct KeybindingProviderTransaction: Sendable {
     try removePinnedItem(
       parentDescriptor: parent,
       name: backup.lastPathComponent,
-      url: backup
+      url: backup,
+      record: record
     ) { deletionName, deletionURL in
       let descriptor = try manager.openPinnedRegularFile(
         parentDescriptor: parent,
@@ -1744,7 +1820,7 @@ struct KeybindingProviderTransaction: Sendable {
     url: URL,
     record: SetupOwnershipRecord
   ) throws {
-    let publicationName = publishingName(name)
+    let publicationName = try publishingName(name, record: record)
     let publicationURL = url.deletingLastPathComponent().appending(path: publicationName)
     if try authenticatedPublicationExists(
       parentDescriptor: descriptor,
@@ -1765,11 +1841,12 @@ struct KeybindingProviderTransaction: Sendable {
       record: record,
       url: publicationURL
     )
+    try faultInjector(.providerPublicationAuthenticated)
     try publish(parentDescriptor: descriptor, from: publicationName, to: name, url: url)
   }
 
-  private func publishingName(_ name: String) -> String {
-    "\(name).publishing"
+  private func publishingName(_ name: String, record: SetupOwnershipRecord) throws -> String {
+    "\(name).publishing-\(try residueNonce(record))"
   }
 
   private func authenticatedPublicationExists(
@@ -1849,11 +1926,10 @@ struct KeybindingProviderTransaction: Sendable {
     let snapshot = try manager.regularFileSnapshot(
       descriptor: descriptor,
       url: url,
-      label: "skhd original"
-    )
-    let metadataDigest = snapshot.restorableMetadataDigest(
+      label: "skhd original",
       excludingExtendedAttribute: allowMarker ? Self.claimMarkerAttribute : nil
     )
+    let metadataDigest = snapshot.restorableMetadataDigest()
     return sha256Digest(data) == record.originalDigest
       && (allowMarker
         || (snapshot.device == record.originalDevice && snapshot.inode == record.originalInode))
@@ -1864,6 +1940,10 @@ struct KeybindingProviderTransaction: Sendable {
 
   private func withAuthenticatedOriginalSource(
     _ record: SetupOwnershipRecord,
+    parentDescriptor: Int32,
+    sourceName: String,
+    claimName: String,
+    url: URL,
     operation: () throws -> Void
   ) throws {
     guard let expectedDigest = record.originalSourceDigest else {
@@ -1892,7 +1972,14 @@ struct KeybindingProviderTransaction: Sendable {
       defer { Darwin.close(source) }
       var identity = stat()
       guard fstat(source, &identity) == 0 else { throw posixError("pin skhd source", target) }
-      try performSourceAuthenticatedSwap(operation) {
+      try performPinnedOriginalSwap(
+        record,
+        parentDescriptor: parentDescriptor,
+        sourceName: sourceName,
+        claimName: claimName,
+        url: url,
+        operation: operation
+      ) {
         let path = try PinnedFilesystem.metadata(
           parentDescriptor: parent,
           name: target.lastPathComponent,
@@ -1939,7 +2026,14 @@ struct KeybindingProviderTransaction: Sendable {
       guard fstat(source, &sourceIdentity) == 0 else {
         throw posixError("pin directory skhd source", sourceURL)
       }
-      try performSourceAuthenticatedSwap(operation) {
+      try performPinnedOriginalSwap(
+        record,
+        parentDescriptor: parentDescriptor,
+        sourceName: sourceName,
+        claimName: claimName,
+        url: url,
+        operation: operation
+      ) {
         var targetPathIdentity = stat()
         guard
           lstat(target.path, &targetPathIdentity) == 0,
@@ -1991,18 +2085,49 @@ struct KeybindingProviderTransaction: Sendable {
     }
   }
 
-  private func performSourceAuthenticatedSwap(
-    _ operation: () throws -> Void,
-    verify: () throws -> Void
+  private func performPinnedOriginalSwap(
+    _ record: SetupOwnershipRecord,
+    parentDescriptor: Int32,
+    sourceName: String,
+    claimName: String,
+    url: URL,
+    operation: () throws -> Void,
+    verifySource: () throws -> Void
   ) throws {
-    try verify()
+    let pinned = try openClaim(parentDescriptor: parentDescriptor, name: sourceName, url: url)
+    defer { Darwin.close(pinned) }
+    var identity = stat()
+    guard fstat(pinned, &identity) == 0 else { throw posixError("pin provider source", url) }
+    func verifyPath(_ name: String) throws {
+      let path = try PinnedFilesystem.metadata(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url.deletingLastPathComponent().appending(path: name)
+      )
+      guard
+        path.st_dev == identity.st_dev,
+        path.st_ino == identity.st_ino,
+        path.st_mode & S_IFMT == identity.st_mode & S_IFMT,
+        path.st_nlink == 1
+      else { throw SetupOwnershipError.ownershipDrift(url) }
+      try verifyDisplacedOriginal(
+        record,
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url
+      )
+    }
+    try verifySource()
+    try verifyPath(sourceName)
     try operation()
     do {
       try faultInjector(.sourceSwapCompleted)
-      try verify()
+      try verifySource()
+      try verifyPath(claimName)
     } catch {
       do {
         try operation()
+        try verifyPath(sourceName)
       } catch let rollbackError {
         throw SetupOwnershipError.system(
           "restore provider path after source authentication failed",
@@ -2078,14 +2203,13 @@ struct KeybindingProviderTransaction: Sendable {
       let snapshot = try manager.regularFileSnapshot(
         descriptor: descriptor,
         url: url,
-        label: "restored skhd entry"
+        label: "restored skhd entry",
+        excludingExtendedAttribute: Self.claimMarkerAttribute
       )
       guard
         sha256Digest(data) == record.originalDigest,
         snapshot.linkCount == 1,
-        snapshot.restorableMetadataDigest(
-          excludingExtendedAttribute: Self.claimMarkerAttribute
-        ) == record.originalMetadataDigest
+        snapshot.restorableMetadataDigest() == record.originalMetadataDigest
       else { throw SetupOwnershipError.ownershipDrift(url) }
     } else {
       let destination = try PinnedFilesystem.symlinkDestination(
@@ -2280,7 +2404,12 @@ struct KeybindingProviderTransaction: Sendable {
     record: SetupOwnershipRecord,
     url: URL
   ) throws {
-    try removePinnedItem(parentDescriptor: parentDescriptor, name: name, url: url) {
+    try removePinnedItem(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url,
+      record: record
+    ) {
       deletionName, deletionURL in
       guard
         try claimMarkerMatches(
@@ -2299,7 +2428,12 @@ struct KeybindingProviderTransaction: Sendable {
     record: SetupOwnershipRecord,
     url: URL
   ) throws {
-    try removePinnedItem(parentDescriptor: parentDescriptor, name: name, url: url) {
+    try removePinnedItem(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url,
+      record: record
+    ) {
       deletionName, deletionURL in
       try verifyDisplacedOriginal(
         record,
@@ -2315,8 +2449,21 @@ struct KeybindingProviderTransaction: Sendable {
     name: String,
     url: URL,
     directory: Bool = false,
+    record: SetupOwnershipRecord,
     authenticate: (String, URL) throws -> Void
   ) throws {
+    let deletionName = try deletionName(name, record: record)
+    let deletionURL = url.deletingLastPathComponent().appending(path: deletionName)
+    if try itemExists(parentDescriptor: parentDescriptor, name: deletionName, url: deletionURL) {
+      try deletePinnedCandidate(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL,
+        directory: directory,
+        authenticate: authenticate
+      )
+    }
+    guard try itemExists(parentDescriptor: parentDescriptor, name: name, url: url) else { return }
     try authenticate(name, url)
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
     defer { Darwin.close(pinned) }
@@ -2324,8 +2471,6 @@ struct KeybindingProviderTransaction: Sendable {
     guard fstat(pinned, &identity) == 0 else { throw posixError("pin deletion source", url) }
     try faultInjector(.deletionSourcePinned)
 
-    let deletionName = ".\(name).deleting-\(UUID().uuidString.lowercased())"
-    let deletionURL = url.deletingLastPathComponent().appending(path: deletionName)
     let moved = name.withCString { source in
       deletionName.withCString { destination in
         Darwin.renameatx_np(
@@ -2339,6 +2484,7 @@ struct KeybindingProviderTransaction: Sendable {
     }
     guard moved == 0 else { throw posixError("claim keybinding item for deletion", url) }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
+    try faultInjector(.deletionCandidatePublished)
     do {
       let movedMetadata = try PinnedFilesystem.metadata(
         parentDescriptor: parentDescriptor,
@@ -2351,6 +2497,14 @@ struct KeybindingProviderTransaction: Sendable {
         movedMetadata.st_mode & S_IFMT == identity.st_mode & S_IFMT
       else { throw SetupOwnershipError.ownershipDrift(url) }
       try authenticate(deletionName, deletionURL)
+      try deletePinnedCandidate(
+        parentDescriptor: parentDescriptor,
+        name: deletionName,
+        url: deletionURL,
+        directory: directory,
+        expectedIdentity: identity,
+        authenticate: authenticate
+      )
     } catch {
       let restored = deletionName.withCString { source in
         name.withCString { destination in
@@ -2373,11 +2527,65 @@ struct KeybindingProviderTransaction: Sendable {
         "\(error); candidate preserved after restore failed: \(String(cString: strerror(errno)))"
       )
     }
+  }
+
+  private func deletePinnedCandidate(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    directory: Bool,
+    expectedIdentity: stat? = nil,
+    authenticate: (String, URL) throws -> Void
+  ) throws {
+    let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
+    defer { Darwin.close(pinned) }
+    var identity = stat()
+    guard fstat(pinned, &identity) == 0 else { throw posixError("pin deletion candidate", url) }
+    if let expectedIdentity {
+      guard
+        identity.st_dev == expectedIdentity.st_dev,
+        identity.st_ino == expectedIdentity.st_ino,
+        identity.st_mode & S_IFMT == expectedIdentity.st_mode & S_IFMT
+      else { throw SetupOwnershipError.ownershipDrift(url) }
+    }
+    try authenticate(name, url)
+    try faultInjector(.deletionCandidateAuthenticated)
+    let path = try PinnedFilesystem.metadata(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url
+    )
+    guard
+      path.st_dev == identity.st_dev,
+      path.st_ino == identity.st_ino,
+      path.st_mode & S_IFMT == identity.st_mode & S_IFMT
+    else { throw SetupOwnershipError.ownershipDrift(url) }
     let flags = directory ? AT_REMOVEDIR : 0
-    guard deletionName.withCString({ Darwin.unlinkat(parentDescriptor, $0, flags) }) == 0 else {
-      throw posixError("remove authenticated keybinding item", deletionURL)
+    guard name.withCString({ Darwin.unlinkat(parentDescriptor, $0, flags) }) == 0 else {
+      throw posixError("remove authenticated keybinding item", url)
     }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
+  }
+
+  private func deletionName(_ name: String, record: SetupOwnershipRecord) throws -> String {
+    ".\(name).deleting-\(try residueNonce(record))"
+  }
+
+  private func residueNonce(_ record: SetupOwnershipRecord) throws -> String {
+    if let nonce = record.claimNonce { return nonce }
+    if KeybindingProviderInspector.isLegacyCleanInstallRecord(record) {
+      return "legacy-clean-install"
+    }
+    throw SetupOwnershipError.invalidManifest("keybinding claim nonce is missing")
+  }
+
+  private func itemExists(parentDescriptor: Int32, name: String, url: URL) throws -> Bool {
+    do {
+      _ = try PinnedFilesystem.metadata(parentDescriptor: parentDescriptor, name: name, url: url)
+      return true
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return false
+    }
   }
 
   private func rename(descriptor: Int32, from: String, to: String, url: URL) throws {
