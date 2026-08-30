@@ -158,9 +158,29 @@ silently treated as converged.
 `keybindings plan` is the read-only entry point for managed keybindings. It
 composes immutable packaged defaults with an optional sparse native override,
 explicit disabled default identities, and an optional metadata-only overlay.
-The default portable profile is `~/.config/macarchy/profile.toml`; an absent
-default profile means packaged defaults, while an explicit missing `--profile`
-is an error. Relative input paths resolve beside the resolved profile source:
+The default portable profile is `~/.config/macarchy/profile.toml`. To use only
+the packaged defaults, leave that file absent and inspect the exact effective
+bytes:
+
+```sh
+macarchy keybindings plan
+macarchy keybindings plan --json
+```
+
+An explicit missing `--profile` is an error. For sparse customization, keep the
+profile and its referenced files together in the portable source you control:
+
+```text
+keybindings/
+  profile.toml
+  keybindings.skhdrc
+  keybindings-metadata.toml
+```
+
+Relative input paths resolve beside the resolved profile source, including
+when the default profile path is a symlink into that directory. A profile can
+replace one default, disable another, and add a binding without copying the
+untouched packaged inventory:
 
 ```toml
 schema_version = 1
@@ -168,7 +188,31 @@ schema_version = 1
 [keybindings]
 override = "keybindings.skhdrc"
 metadata = "keybindings-metadata.toml"
-disabled = ["alt+shift-m"]
+disabled = ["alt-k"]
+```
+
+```text
+alt - j : yabai -m window --focus recent
+cmd - x : open -a 'Example'
+```
+
+The override is strict native skhd syntax. A matching normalized chord replaces
+the packaged command; a new chord adds one. Do not both disable and override
+the same identity. Unknown disables, duplicate chords, and unsupported enabled
+syntax block the plan before mutation.
+
+Metadata is optional and never contains commands. Each user record is complete
+and either replaces packaged display metadata or describes a user addition:
+
+```toml
+schema_version = 1
+
+[[bindings]]
+identity = "cmd-x"
+label = "Open Example"
+category = "Applications"
+order = 10
+aliases = ["sample"]
 ```
 
 The plan reports replacement, addition, disablement, source attribution,
@@ -210,6 +254,37 @@ service path. Inspection retries a bounded before/after canonical snapshot and
 fails closed if transaction, generation, provider, lifecycle, or process
 identity changes during inspection. Teardown verifies all restoration
 artifacts without mutation before restoring the exact supported prior state.
+
+Preview before applying. These commands use the same composition path; only the
+last command publishes state:
+
+```sh
+macarchy keybindings plan --profile /path/to/keybindings/profile.toml
+macarchy keybindings apply --profile /path/to/keybindings/profile.toml --dry-run
+macarchy keybindings apply --profile /path/to/keybindings/profile.toml
+```
+
+The currently implemented apply path requires an existing ordinary
+`~/.config/skhd` directory with no `skhdrc`. An existing file, leaf symlink, or
+directory symlink remains blocked rather than being adopted implicitly.
+
+To review a packaged-default update, save `keybindings plan --json` output
+before and after installing the updated package and diff the two files. The
+plan shows inherited command and digest changes while leaving `profile.toml`,
+the native override, and metadata overlay untouched.
+
+Portable inputs and generated state have separate ownership boundaries:
+
+```text
+portable source (user-owned)              runtime state (Macarchy-owned)
+profile.toml                               ~/.config/macarchy/keybindings/
+keybindings.skhdrc                           current -> generations/k-<id>
+keybindings-metadata.toml                    generations/k-<id>/skhdrc
+```
+
+Do not copy a generated `skhdrc`, generation manifest, `current` link, or
+transaction evidence into dotfiles, and do not edit generated files. Edit the
+portable profile, override, or metadata and plan again instead.
 
 `keybindings show` opens source-correlated rows, or metadata-ordered attributed
 managed rows with `--effective`, in a short-lived searchable AppKit popup. The
