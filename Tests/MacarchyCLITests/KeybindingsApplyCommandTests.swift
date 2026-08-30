@@ -542,8 +542,32 @@ struct KeybindingsApplyCommandTests {
         atomically: true,
         encoding: .utf8
       )
+      let checkpoint = Mutex<AcceptanceCheckpointObservation?>(nil)
 
-      let execution = try runner.withAcceptanceManagedUpdateRollbackCheckpoint().execute(
+      let execution = try runner.withAcceptanceManagedUpdateRollbackCheckpoint { generationID in
+        let generation = KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
+        let provider = KeybindingProviderInspector().inspect(
+          homeDirectory: fixture.home,
+          stateRoot: fixture.stateRoot,
+          generation: generation
+        )
+        let transaction = try? KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read()
+        let lifecycleURL = fixture.stateRoot.appending(path: "keybindings/lifecycle.json")
+        checkpoint.withLock {
+          $0 = AcceptanceCheckpointObservation(
+            selectedGenerationID: generationID,
+            currentGenerationID: generation.generationID,
+            transactionGenerationID: transaction?.generationID,
+            transactionPhase: transaction?.phase,
+            lifecycleEvidenceExists: FileManager.default.fileExists(atPath: lifecycleURL.path),
+            lifecycleStatus: KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).inspect(
+              generation: generation,
+              provider: provider,
+              process: .testRunning
+            ).status
+          )
+        }
+      }.execute(
         resourcesRoot: fixture.resources,
         profileURL: fixture.profile,
         profileRequired: false,
@@ -552,6 +576,7 @@ struct KeybindingsApplyCommandTests {
         json: true
       )
       let report = try jsonObject(execution.output)
+      let observedCheckpoint = try #require(checkpoint.withLock { $0 })
 
       #expect(!execution.succeeded)
       #expect(report["outcome"] as? String == "failed")
@@ -566,6 +591,16 @@ struct KeybindingsApplyCommandTests {
           separatedBy: "acceptance checkpoint failed after verified managed update reload"
         ).count == 2
       )
+      #expect(observedCheckpoint.selectedGenerationID != baseGeneration)
+      #expect(
+        observedCheckpoint.currentGenerationID == observedCheckpoint.selectedGenerationID
+      )
+      #expect(
+        observedCheckpoint.transactionGenerationID == observedCheckpoint.selectedGenerationID
+      )
+      #expect(observedCheckpoint.transactionPhase == .activating)
+      #expect(observedCheckpoint.lifecycleEvidenceExists)
+      #expect(observedCheckpoint.lifecycleStatus == .matched)
       let restored = KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
       #expect(restored.generationID == baseGeneration)
       let provider = KeybindingProviderInspector().inspect(
@@ -656,6 +691,84 @@ struct KeybindingsApplyCommandTests {
           == convergedGeneration
       )
       #expect(try KeybindingApplyTransactionStore(stateRoot: converged.stateRoot).read() == nil)
+    }
+
+    @Test
+    func acceptanceCheckpointBlocksPendingActivatingUpdateWithoutTouchingEvidence() throws {
+      let fixture = try KeybindingsApplyFixture()
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      let lifecycle = LifecycleFixture()
+      let runner = fixture.runner(lifecycle: lifecycle.controller)
+      #expect(try fixture.execute(runner: runner, json: true).succeeded)
+      let previousGenerationID = try #require(
+        KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID
+      )
+
+      try "alt - j : pending acceptance update\n".write(
+        to: fixture.resources.appending(path: "defaults.skhdrc"),
+        atomically: true,
+        encoding: .utf8
+      )
+      let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+        resourcesRoot: fixture.resources,
+        profileURL: fixture.profile,
+        profileRequired: false,
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home
+      )
+      let composition = try #require(preparation.composition)
+      let activator = KeybindingGenerationActivator(stateRoot: fixture.stateRoot)
+      let pendingGeneration = try activator.stage(composition)
+      try activator.select(pendingGeneration)
+      let pending = KeybindingApplyTransaction(
+        operation: .updateGeneration,
+        phase: .activating,
+        generationID: pendingGeneration.manifest.generationID,
+        previousGenerationID: previousGenerationID,
+        generationCreated: true
+      )
+      let transactionStore = KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot)
+      try transactionStore.write(pending)
+      try KeybindingLifecycleEvidenceStore(stateRoot: fixture.stateRoot).write(
+        try KeybindingLifecycleEvidence(
+          generationID: pending.generationID,
+          providerEntryPoint: fixture.home.appending(path: ".config/skhd/skhdrc").path,
+          providerTarget: KeybindingProviderInspector.managedTarget,
+          action: .reload,
+          process: .testRunning
+        )
+      )
+      let currentURL = fixture.stateRoot.appending(path: "keybindings/current")
+      let transactionURL = fixture.stateRoot.appending(path: "keybindings/transaction.json")
+      let lifecycleURL = fixture.stateRoot.appending(path: "keybindings/lifecycle.json")
+      let currentBefore = try FileManager.default.destinationOfSymbolicLink(
+        atPath: currentURL.path
+      )
+      let transactionBefore = try Data(contentsOf: transactionURL)
+      let lifecycleBefore = try Data(contentsOf: lifecycleURL)
+      lifecycle.calls.withLock { $0.removeAll() }
+
+      let execution = try runner.withAcceptanceManagedUpdateRollbackCheckpoint().execute(
+        resourcesRoot: fixture.resources,
+        profileURL: fixture.profile,
+        profileRequired: false,
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        json: true
+      )
+      let report = try jsonObject(execution.output)
+
+      #expect(!execution.succeeded)
+      #expect(report["outcome"] as? String == "blocked")
+      #expect(report["mutated"] as? Bool == false)
+      #expect(lifecycle.calls.withLock { $0 }.isEmpty)
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: currentURL.path)
+          == currentBefore
+      )
+      #expect(try Data(contentsOf: transactionURL) == transactionBefore)
+      #expect(try Data(contentsOf: lifecycleURL) == lifecycleBefore)
+      #expect(try transactionStore.read() == pending)
     }
   #endif
 
@@ -3092,6 +3205,17 @@ private final class LifecycleFixture: Sendable {
     )
   }
 }
+
+#if MACARCHY_ACCEPTANCE_TESTING
+  private struct AcceptanceCheckpointObservation: Sendable {
+    let selectedGenerationID: String
+    let currentGenerationID: String?
+    let transactionGenerationID: String?
+    let transactionPhase: KeybindingApplyPhase?
+    let lifecycleEvidenceExists: Bool
+    let lifecycleStatus: KeybindingLifecycleEvidenceStatus
+  }
+#endif
 
 private struct KeybindingsApplyFixture {
   let root: URL
