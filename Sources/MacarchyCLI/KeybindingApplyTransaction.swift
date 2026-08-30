@@ -243,8 +243,8 @@ struct KeybindingLifecycleEvidence: Codable, Equatable, Sendable {
   let providerEntryPoint: String
   let providerTarget: String
   let action: KeybindingLifecycleAction
-  let processID: Int32?
-  let executablePath: String?
+  let processID: Int32
+  let executablePath: String
   let arguments: [String]
 
   init(
@@ -253,14 +253,23 @@ struct KeybindingLifecycleEvidence: Codable, Equatable, Sendable {
     providerTarget: String,
     action: KeybindingLifecycleAction,
     process: KeybindingProcessInspection
-  ) {
+  ) throws {
+    guard
+      process.status == .running,
+      let processID = process.processID,
+      let executablePath = process.executablePath
+    else {
+      throw KeybindingApplyTransactionError.invalid(
+        "lifecycle evidence requires complete running process evidence"
+      )
+    }
     schemaVersion = Self.currentSchemaVersion
     self.generationID = generationID
     self.providerEntryPoint = providerEntryPoint
     self.providerTarget = providerTarget
     self.action = action
-    processID = process.processID
-    executablePath = process.executablePath
+    self.processID = processID
+    self.executablePath = executablePath
     arguments = process.arguments
   }
 
@@ -316,9 +325,10 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
         evidence.generationID == generation.generationID,
         evidence.providerEntryPoint == provider.entryPoint,
         evidence.providerTarget == provider.expectedTarget,
-        evidence.processID == nil || evidence.processID == process.processID,
-        evidence.executablePath == nil || evidence.executablePath == process.executablePath,
-        evidence.arguments.isEmpty || evidence.arguments == process.arguments
+        process.status == .running,
+        evidence.processID == process.processID,
+        evidence.executablePath == process.executablePath,
+        evidence.arguments == process.arguments
       else {
         return KeybindingLifecycleEvidenceInspection(
           status: .stale,
@@ -348,7 +358,10 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
       KeybindingGenerationInspector.isGenerationID(evidence.generationID),
       evidence.action != .none,
       !evidence.providerEntryPoint.isEmpty,
-      !evidence.providerTarget.isEmpty
+      !evidence.providerTarget.isEmpty,
+      evidence.processID > 0,
+      evidence.executablePath == KeybindingProcessInspector.supportedExecutablePath,
+      !evidence.arguments.isEmpty
     else {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence is incomplete")
     }
@@ -424,8 +437,7 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence root must be an object")
     }
     let allowed = Set(KeybindingLifecycleEvidence.CodingKeys.allCases.map(\.stringValue))
-    let required = allowed.subtracting(["process_id", "executable_path"])
-    guard Set(object.keys).isSubset(of: allowed), Set(object.keys).isSuperset(of: required) else {
+    guard Set(object.keys) == allowed else {
       throw KeybindingApplyTransactionError.invalid(
         "lifecycle evidence fields are incomplete or unknown"
       )
@@ -436,7 +448,10 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
       KeybindingGenerationInspector.isGenerationID(evidence.generationID),
       evidence.action != .none,
       !evidence.providerEntryPoint.isEmpty,
-      !evidence.providerTarget.isEmpty
+      !evidence.providerTarget.isEmpty,
+      evidence.processID > 0,
+      evidence.executablePath == KeybindingProcessInspector.supportedExecutablePath,
+      !evidence.arguments.isEmpty
     else {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence values are invalid")
     }

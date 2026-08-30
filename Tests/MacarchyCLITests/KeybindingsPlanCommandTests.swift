@@ -5,7 +5,11 @@ import Testing
 @testable import ThemeCore
 
 struct KeybindingsPlanCommandTests {
-  private let runner = KeybindingsPlanCommandRunner.live
+  private let runner = KeybindingsPlanCommandRunner(
+    effectiveInspector: KeybindingEffectiveBehaviorInspector(
+      processInspector: KeybindingProcessInspector { .testRunning }
+    )
+  )
 
   @Test
   func packagedDefaultsProduceAReadOnlyLiveOwnershipPlan() throws {
@@ -223,6 +227,74 @@ struct KeybindingsPlanCommandTests {
   }
 
   @Test
+  func cleanAndAdoptionPlansRequireSupportedRunningSkhd() throws {
+    let supportedPath = KeybindingProcessInspector.supportedExecutablePath
+    let unsupportedExecutable = KeybindingProcessInspector.validated(
+      processIDs: [42],
+      expectedExecutable: supportedPath,
+      snapshot: { id in
+        KeybindingProcessSnapshot(
+          processID: id,
+          executablePath: "/unsupported/skhd",
+          arguments: ["skhd"]
+        )
+      }
+    )
+    let explicitConfiguration = KeybindingProcessInspector.validated(
+      processIDs: [42],
+      expectedExecutable: supportedPath,
+      snapshot: { id in
+        KeybindingProcessSnapshot(
+          processID: id,
+          executablePath: supportedPath,
+          arguments: ["skhd", "-c", "/tmp/external.skhdrc"]
+        )
+      }
+    )
+    let processCases = [
+      KeybindingProcessInspection.notRunning,
+      unsupportedExecutable,
+      explicitConfiguration,
+    ]
+
+    for adoptionRequired in [false, true] {
+      for process in processCases {
+        let fixture = try planFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let skhdDirectory = fixture.home.appending(
+          path: ".config/skhd",
+          directoryHint: .isDirectory
+        )
+        try FileManager.default.createDirectory(
+          at: skhdDirectory,
+          withIntermediateDirectories: true
+        )
+        if adoptionRequired {
+          try "alt - j : existing\n".write(
+            to: skhdDirectory.appending(path: "skhdrc"),
+            atomically: true,
+            encoding: .utf8
+          )
+        }
+
+        let execution = try execute(
+          fixture,
+          json: true,
+          profileRequired: false,
+          process: process
+        )
+        let report = try jsonObject(execution.output)
+        let diagnostics = try #require(report["diagnostics"] as? [[String: Any]])
+
+        #expect(!execution.succeeded)
+        #expect(report["outcome"] as? String == "blocked")
+        #expect((report["actions"] as? [Any])?.isEmpty == true)
+        #expect(diagnostics.contains { $0["code"] as? String == "skhd_process_prerequisite" })
+      }
+    }
+  }
+
+  @Test
   func matchingUnclaimedLinkUsesCurrentGenerationForAdoptionDelta() throws {
     let fixture = try planFixture()
     var generation: URL?
@@ -331,9 +403,15 @@ struct KeybindingsPlanCommandTests {
   private func execute(
     _ fixture: PlanFixture,
     json: Bool,
-    profileRequired: Bool
+    profileRequired: Bool,
+    process: KeybindingProcessInspection = .testRunning
   ) throws -> (output: String, succeeded: Bool) {
-    try runner.execute(
+    let runner = KeybindingsPlanCommandRunner(
+      effectiveInspector: KeybindingEffectiveBehaviorInspector(
+        processInspector: KeybindingProcessInspector { process }
+      )
+    )
+    return try runner.execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: profileRequired,
