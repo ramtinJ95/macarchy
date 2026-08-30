@@ -448,7 +448,9 @@ struct KeybindingsPlanCommandTests {
       backupPath: nil,
       originalDigest: nil,
       installedDigest: sha256Digest(Data(target.utf8)),
-      linkDestination: target
+      linkDestination: target,
+      originalKind: .absent,
+      claimNonce: "01234567-89ab-cdef-0123-456789abcdef"
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

@@ -642,7 +642,8 @@ struct KeybindingProviderInspector: Sendable {
       record.targetPath == target.path,
       record.installedDigest == sha256Digest(Data(expectedTarget.utf8)),
       record.linkDestination == expectedTarget,
-      record.replacementDigest == nil
+      record.replacementDigest == nil,
+      validClaimNonce(record.claimNonce)
     else {
       throw SetupOwnershipError.invalidManifest(
         "keybinding entry ownership record does not match the managed provider link"
@@ -655,7 +656,9 @@ struct KeybindingProviderInspector: Sendable {
         record.originalDigest == nil,
         record.originalLinkDestination == nil,
         record.originalFileMode == nil,
-        record.originalMetadataDigest == nil
+        record.originalMetadataDigest == nil,
+        record.originalDevice == nil,
+        record.originalInode == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "absent keybinding entry ownership contains adoption evidence"
@@ -671,7 +674,9 @@ struct KeybindingProviderInspector: Sendable {
         record.originalDigest != nil,
         record.originalLinkDestination == nil,
         record.originalFileMode != nil,
-        record.originalMetadataDigest != nil
+        record.originalMetadataDigest != nil,
+        record.originalDevice != nil,
+        record.originalInode != nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "regular-file keybinding adoption evidence is incomplete"
@@ -683,13 +688,20 @@ struct KeybindingProviderInspector: Sendable {
         let destination = record.originalLinkDestination,
         record.originalDigest == sha256Digest(Data(destination.utf8)),
         record.originalFileMode == nil,
-        record.originalMetadataDigest == nil
+        record.originalMetadataDigest == nil,
+        record.originalDevice == nil,
+        record.originalInode == nil
       else {
         throw SetupOwnershipError.invalidManifest(
           "symbolic-link keybinding adoption evidence is incomplete"
         )
       }
     }
+  }
+
+  private static func validClaimNonce(_ value: String?) -> Bool {
+    guard let value, let parsed = UUID(uuidString: value) else { return false }
+    return parsed.uuidString.lowercased() == value
   }
 
   private func ownershipDrift(
