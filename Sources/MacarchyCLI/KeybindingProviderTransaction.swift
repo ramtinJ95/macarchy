@@ -13,6 +13,7 @@ enum KeybindingProviderCheckpoint: Equatable, Sendable {
   case regularRestorationClaimMetadataCopied
   case providerClaimReady
   case providerClaimSwapped
+  case sourceSwapCompleted
   case regularOriginalPinned
   case restoredOriginalPublished
   case restoredIdentityRecorded
@@ -568,11 +569,12 @@ struct KeybindingProviderTransaction: Sendable {
     }
     if state == .original, claimState == .managed {
       try faultInjector(.providerClaimReady)
-      try verifyOriginalSource(record)
       if originalKind(record) == .regularFile {
         try displacePinnedRegularOriginal(record, descriptor: descriptor, claim: claim)
       } else {
-        try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
+        try withAuthenticatedOriginalSource(record) {
+          try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
+        }
         try faultInjector(.providerClaimSwapped)
         try verifyDisplacedOriginal(record, parentDescriptor: descriptor, name: claim, url: entry)
       }
@@ -593,11 +595,12 @@ struct KeybindingProviderTransaction: Sendable {
       try rename(descriptor: descriptor, from: claim, to: "skhdrc", url: entry)
     } else {
       try faultInjector(.providerClaimReady)
-      try verifyOriginalSource(record)
       if originalKind(record) == .regularFile {
         try displacePinnedRegularOriginal(record, descriptor: descriptor, claim: claim)
       } else {
-        try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
+        try withAuthenticatedOriginalSource(record) {
+          try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
+        }
         try faultInjector(.providerClaimSwapped)
       }
       guard
@@ -719,8 +722,9 @@ struct KeybindingProviderTransaction: Sendable {
     }
     if state == .original, claimState == .managed {
       try faultInjector(.providerClaimReady)
-      try verifyOriginalSource(record)
-      try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
+      try withAuthenticatedOriginalSource(record) {
+        try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
+      }
       try faultInjector(.providerClaimSwapped)
       try verifyDisplacedOriginal(record, parentDescriptor: descriptor, name: claim, url: directory)
       try unlink(descriptor: descriptor, name: claim, url: directory)
@@ -731,8 +735,9 @@ struct KeybindingProviderTransaction: Sendable {
     }
     try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
     try faultInjector(.providerClaimReady)
-    try verifyOriginalSource(record)
-    try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
+    try withAuthenticatedOriginalSource(record) {
+      try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
+    }
     try faultInjector(.providerClaimSwapped)
     guard
       try directoryState(
@@ -1667,58 +1672,155 @@ struct KeybindingProviderTransaction: Sendable {
       && metadataDigest == record.originalMetadataDigest
   }
 
-  private func verifyOriginalSource(_ record: SetupOwnershipRecord) throws {
+  private func withAuthenticatedOriginalSource(
+    _ record: SetupOwnershipRecord,
+    operation: () throws -> Void
+  ) throws {
     guard let expectedDigest = record.originalSourceDigest else {
-      if originalKind(record) == .absent { return }
+      if originalKind(record) == .absent {
+        try operation()
+        return
+      }
       throw SetupOwnershipError.invalidManifest("keybinding source digest is missing")
     }
     switch originalKind(record) {
     case .absent:
-      return
+      try operation()
     case .regularFile:
-      return
+      try operation()
     case .symbolicLink:
       let target = Self.resolveSymlink(try originalLink(record), relativeTo: directory)
-      let file = try PinnedFilesystem.readRegularFile(
-        at: target,
-        maximumSize: SetupOwnershipManager.maximumConfigurationSize
+      let parent = try PinnedFilesystem.openDirectory(at: target.deletingLastPathComponent())
+      defer { Darwin.close(parent) }
+      let manager = SetupOwnershipManager()
+      let source = try manager.openPinnedRegularFile(
+        parentDescriptor: parent,
+        name: target.lastPathComponent,
+        url: target,
+        label: "adopted skhd source"
       )
-      var metadata = stat()
-      guard
-        lstat(target.path, &metadata) == 0,
-        metadata.st_mode & S_IFMT == S_IFREG,
-        metadata.st_nlink == 1,
-        sha256Digest(file.data) == expectedDigest
-      else { throw SetupOwnershipError.ownershipDrift(target) }
+      defer { Darwin.close(source) }
+      var identity = stat()
+      guard fstat(source, &identity) == 0 else { throw posixError("pin skhd source", target) }
+      try performSourceAuthenticatedSwap(operation) {
+        let path = try PinnedFilesystem.metadata(
+          parentDescriptor: parent,
+          name: target.lastPathComponent,
+          url: target
+        )
+        guard lseek(source, 0, SEEK_SET) == 0 else {
+          throw posixError("rewind adopted skhd source", target)
+        }
+        let file = try manager.readPinnedRegularFile(
+          descriptor: source,
+          url: target,
+          label: "adopted skhd source"
+        )
+        let snapshot = try manager.regularFileSnapshot(
+          descriptor: source,
+          url: target,
+          label: "adopted skhd source"
+        )
+        guard
+          UInt64(path.st_dev) == UInt64(identity.st_dev),
+          UInt64(path.st_ino) == UInt64(identity.st_ino),
+          snapshot.linkCount == 1,
+          sha256Digest(file.data) == expectedDigest
+        else { throw SetupOwnershipError.ownershipDrift(target) }
+      }
     case .directorySymbolicLink:
       let target = Self.resolveSymlink(try originalLink(record), relativeTo: configurationDirectory)
       let descriptor = try PinnedFilesystem.openDirectory(at: target)
       defer { Darwin.close(descriptor) }
-      let inventory = try PinnedFilesystem.directoryEntries(
-        descriptor: descriptor,
-        url: target,
-        limit: 2
-      )
-      guard inventory.entries == record.originalInventory, !inventory.truncated else {
-        throw SetupOwnershipError.ownershipDrift(target)
+      var directoryIdentity = stat()
+      guard fstat(descriptor, &directoryIdentity) == 0 else {
+        throw posixError("pin skhd source directory", target)
       }
-      let source = target.appending(path: "skhdrc")
-      let metadata = try PinnedFilesystem.metadata(
+      let sourceURL = target.appending(path: "skhdrc")
+      let manager = SetupOwnershipManager()
+      let source = try manager.openPinnedRegularFile(
         parentDescriptor: descriptor,
         name: "skhdrc",
-        url: source
+        url: sourceURL,
+        label: "adopted directory skhd source"
       )
-      let file = try PinnedFilesystem.readRegularFile(
-        parentDescriptor: descriptor,
-        name: "skhdrc",
-        url: source,
-        maximumSize: SetupOwnershipManager.maximumConfigurationSize
-      )
-      guard
-        metadata.st_mode & S_IFMT == S_IFREG,
-        metadata.st_nlink == 1,
-        sha256Digest(file.data) == expectedDigest
-      else { throw SetupOwnershipError.ownershipDrift(source) }
+      defer { Darwin.close(source) }
+      var sourceIdentity = stat()
+      guard fstat(source, &sourceIdentity) == 0 else {
+        throw posixError("pin directory skhd source", sourceURL)
+      }
+      try performSourceAuthenticatedSwap(operation) {
+        var targetPathIdentity = stat()
+        guard
+          lstat(target.path, &targetPathIdentity) == 0,
+          targetPathIdentity.st_mode & S_IFMT == S_IFDIR,
+          targetPathIdentity.st_dev == directoryIdentity.st_dev,
+          targetPathIdentity.st_ino == directoryIdentity.st_ino
+        else { throw SetupOwnershipError.ownershipDrift(target) }
+        guard lseek(descriptor, 0, SEEK_SET) == 0 else {
+          throw posixError("rewind adopted skhd source directory", target)
+        }
+        let inventory = try PinnedFilesystem.directoryEntries(
+          descriptor: descriptor,
+          url: target,
+          limit: 2
+        )
+        let path = try PinnedFilesystem.metadata(
+          parentDescriptor: descriptor,
+          name: "skhdrc",
+          url: sourceURL
+        )
+        guard lseek(source, 0, SEEK_SET) == 0 else {
+          throw posixError("rewind directory skhd source", sourceURL)
+        }
+        let file = try manager.readPinnedRegularFile(
+          descriptor: source,
+          url: sourceURL,
+          label: "adopted directory skhd source"
+        )
+        let snapshot = try manager.regularFileSnapshot(
+          descriptor: source,
+          url: sourceURL,
+          label: "adopted directory skhd source"
+        )
+        guard inventory.entries == record.originalInventory, !inventory.truncated else {
+          throw SetupOwnershipError.ownershipDrift(target)
+        }
+        guard path.st_dev == sourceIdentity.st_dev, path.st_ino == sourceIdentity.st_ino else {
+          throw SetupOwnershipError.ownershipDrift(sourceURL)
+        }
+        guard snapshot.linkCount == 1 else { throw SetupOwnershipError.ownershipDrift(sourceURL) }
+        guard sha256Digest(file.data) == expectedDigest else {
+          throw SetupOwnershipError.invalidConfiguration(
+            KeybindingProviderInspector.ownershipID,
+            sourceURL,
+            "source digest changed during displacement"
+          )
+        }
+      }
+    }
+  }
+
+  private func performSourceAuthenticatedSwap(
+    _ operation: () throws -> Void,
+    verify: () throws -> Void
+  ) throws {
+    try verify()
+    try operation()
+    do {
+      try faultInjector(.sourceSwapCompleted)
+      try verify()
+    } catch {
+      do {
+        try operation()
+      } catch let rollbackError {
+        throw SetupOwnershipError.system(
+          "restore provider path after source authentication failed",
+          entry,
+          "\(error); swap-back also failed: \(rollbackError)"
+        )
+      }
+      throw error
     }
   }
 
