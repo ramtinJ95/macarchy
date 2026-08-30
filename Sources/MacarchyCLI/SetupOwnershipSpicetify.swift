@@ -2,21 +2,6 @@ import Foundation
 import ThemeCore
 
 extension SetupOwnershipManager {
-  func setupSpicetifyIntegrations(
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> [SetupIntegrationResult] {
-    guard
-      let plan = consumerSetupPlans(context: context).first(where: {
-        $0.consumerID == .spicetify
-      })
-    else {
-      preconditionFailure("Spicetify setup plan is missing")
-    }
-    return try plan.setup(dryRun, &records)
-  }
-
   func withSpicetifySetupGroup(
     context: Context,
     dryRun: Bool,
@@ -79,21 +64,6 @@ extension SetupOwnershipManager {
       return false
     }
     return true
-  }
-
-  func teardownSpicetifyIntegrations(
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> [SetupIntegrationResult] {
-    guard
-      let plan = consumerSetupPlans(context: context).first(where: {
-        $0.consumerID == .spicetify
-      })
-    else {
-      preconditionFailure("Spicetify setup plan is missing")
-    }
-    return try plan.teardown(dryRun, &records)
   }
 
   func withSpicetifyTeardownGroup(

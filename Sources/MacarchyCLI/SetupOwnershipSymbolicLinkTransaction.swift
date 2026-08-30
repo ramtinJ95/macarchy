@@ -356,20 +356,6 @@ extension SetupOwnershipManager {
     homeDirectory: URL,
     label: String
   ) throws {
-    try createPinnedSymbolicLink(
-      target: target,
-      destinationPath: destination.path,
-      homeDirectory: homeDirectory,
-      label: label
-    )
-  }
-
-  func createPinnedSymbolicLink(
-    target: URL,
-    destinationPath: String,
-    homeDirectory: URL,
-    label: String
-  ) throws {
     let parentDescriptor = try openPinnedParent(
       target: target,
       homeDirectory: homeDirectory,
@@ -384,6 +370,7 @@ extension SetupOwnershipManager {
     guard inspection != 0, errno == ENOENT else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
+    let destinationPath = destination.path
     let created = destinationPath.withCString { destinationPath in
       name.withCString { namePath in
         Darwin.symlinkat(destinationPath, parentDescriptor, namePath)
@@ -407,24 +394,6 @@ extension SetupOwnershipManager {
     label: String,
     alreadyClaimed: Bool
   ) throws {
-    try removePinnedSymbolicLink(
-      id: id,
-      target: target,
-      destinationPath: destination.path,
-      homeDirectory: homeDirectory,
-      label: label,
-      alreadyClaimed: alreadyClaimed
-    )
-  }
-
-  func removePinnedSymbolicLink(
-    id: String,
-    target: URL,
-    destinationPath: String,
-    homeDirectory: URL,
-    label: String,
-    alreadyClaimed: Bool
-  ) throws {
     let parentDescriptor = try openPinnedParent(
       target: target,
       homeDirectory: homeDirectory,
@@ -434,6 +403,7 @@ extension SetupOwnershipManager {
     let name = target.lastPathComponent
     let removalURL = themeLinkRemovalURL(id: id, target: target)
     let removalName = removalURL.lastPathComponent
+    let destinationPath = destination.path
     if !alreadyClaimed {
       let claimed = name.withCString { source in
         removalName.withCString { claimed in
