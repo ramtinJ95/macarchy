@@ -11,6 +11,8 @@ struct KeybindingsPopupRow: Sendable {
   let category: String
   let command: String
   let aliases: [String]
+  let commandSource: String?
+  let metadataSource: String?
 
   init(_ presented: SkhdPresentedBinding) {
     identity = presented.binding.identity
@@ -19,6 +21,19 @@ struct KeybindingsPopupRow: Sendable {
     category = presented.metadata?.category ?? "Uncatalogued"
     command = presented.binding.command
     aliases = presented.metadata?.aliases ?? []
+    commandSource = nil
+    metadataSource = nil
+  }
+
+  init(_ effective: EffectiveKeybinding) {
+    identity = effective.binding.identity
+    chord = effective.binding.chord
+    label = effective.metadata?.label ?? effective.binding.command
+    category = effective.metadata?.category ?? "Uncatalogued"
+    command = effective.binding.command
+    aliases = effective.metadata?.aliases ?? []
+    commandSource = effective.commandSource.rawValue
+    metadataSource = effective.metadataSource?.rawValue
   }
 
   fileprivate func matches(_ terms: [String]) -> Bool {
@@ -51,6 +66,8 @@ enum KeybindingsShowError: Error, CustomStringConvertible, Sendable {
   case cannotReadConfiguration(URL, String)
   case invalidConfiguration(URL, [SkhdDiagnostic])
   case invalidCatalog(URL, String)
+  case invalidEffectiveConfiguration([KeybindingCompositionDiagnostic])
+  case invalidGeneratedConfiguration(String)
   case invalidActiveTheme(String)
   case cannotActivateAccessoryApplication
   case noActiveDisplay
@@ -66,6 +83,13 @@ enum KeybindingsShowError: Error, CustomStringConvertible, Sendable {
       }.joined(separator: "\n")
     case .invalidCatalog(let source, let reason):
       "Cannot load keybinding catalog at \(source.path): \(reason)"
+    case .invalidEffectiveConfiguration(let diagnostics):
+      diagnostics.map { diagnostic in
+        let location = diagnostic.line.map { "\(diagnostic.source):\($0)" } ?? diagnostic.source
+        return "\(location): \(diagnostic.message)"
+      }.joined(separator: "\n")
+    case .invalidGeneratedConfiguration(let reason):
+      "Cannot inspect the current generated keybindings: \(reason)"
     case .invalidActiveTheme(let reason):
       "Cannot load the active Macarchy theme: \(reason)"
     case .cannotActivateAccessoryApplication:
@@ -129,6 +153,32 @@ struct KeybindingsShowCommandLoader: Sendable {
     )
     return KeybindingsPopupContent(
       rows: correlation.bindings.map(KeybindingsPopupRow.init),
+      theme: theme
+    )
+  }
+
+  func load(
+    effectiveState: KeybindingEffectiveState,
+    stateRoot: URL
+  ) throws -> KeybindingsPopupContent {
+    guard !effectiveState.configuration.isBlocked else {
+      throw KeybindingsShowError.invalidEffectiveConfiguration(
+        effectiveState.configuration.diagnostics
+      )
+    }
+    guard effectiveState.generation.status != .invalid else {
+      throw KeybindingsShowError.invalidGeneratedConfiguration(
+        effectiveState.generation.message ?? "current generation is invalid"
+      )
+    }
+    let theme: NormalizedTheme
+    do {
+      theme = try loadTheme(stateRoot)
+    } catch {
+      throw KeybindingsShowError.invalidActiveTheme(String(describing: error))
+    }
+    return KeybindingsPopupContent(
+      rows: effectiveState.attributedBindings.map(KeybindingsPopupRow.init),
       theme: theme
     )
   }
@@ -510,7 +560,13 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
       return
     }
     let command = visibleRows[tableView.selectedRow].command
-    commandLabel.stringValue = "Configured command: \(command)"
+    let row = visibleRows[tableView.selectedRow]
+    let sources = [
+      row.commandSource.map { "command=\($0)" },
+      row.metadataSource.map { "metadata=\($0)" },
+    ].compactMap { $0 }
+    let source = sources.isEmpty ? "" : " [\(sources.joined(separator: ", "))]"
+    commandLabel.stringValue = "Configured command\(source): \(command)"
     commandLabel.toolTip = command
   }
 

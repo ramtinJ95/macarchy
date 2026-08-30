@@ -19,6 +19,14 @@ struct KeybindingsListCommandRunner: Sendable {
   )
 
   func execute(
+    effectiveState: KeybindingEffectiveState,
+    json: Bool
+  ) throws -> (output: String, succeeded: Bool) {
+    let report = EffectiveKeybindingsListReport(effectiveState)
+    return (try report.render(json: json), report.succeeded)
+  }
+
+  func execute(
     configurationURL: URL,
     catalogURL: URL,
     json: Bool
@@ -71,6 +79,128 @@ struct KeybindingsListCommandRunner: Sendable {
       diagnostics: diagnostics
     )
     return (try report.render(json: json), report.succeeded)
+  }
+}
+
+private struct EffectiveKeybindingsListReport: Encodable {
+  let schemaVersion = 2
+  let operation = "keybindings_list"
+  let profileStatus: String
+  let generationStatus: String
+  let generationAgreement: String
+  let generationMessage: String?
+  let bindings: [EffectiveKeybindingListRow]
+  let disabledDefaults: [DisabledKeybindingListRow]
+  let diagnostics: [EffectiveKeybindingsListDiagnostic]
+
+  init(_ state: KeybindingEffectiveState) {
+    profileStatus = state.configuration.sources.profileStatus
+    generationStatus = state.generation.status.rawValue
+    generationAgreement = state.generationAgreement.rawValue
+    generationMessage = state.generation.message
+    bindings = state.attributedBindings.map(EffectiveKeybindingListRow.init)
+    disabledDefaults = state.disabledDefaults.map(DisabledKeybindingListRow.init)
+    diagnostics = state.configuration.diagnostics.map(EffectiveKeybindingsListDiagnostic.init)
+  }
+
+  var succeeded: Bool {
+    !diagnostics.contains { $0.severity == "error" }
+      && generationStatus != KeybindingGenerationStatus.invalid.rawValue
+  }
+
+  func render(json: Bool) throws -> String {
+    if json { return try renderJSON(self) }
+
+    var lines = [
+      "Macarchy effective keybindings [generation \(generationAgreement)]:"
+    ]
+    if let generationMessage {
+      lines.append("Generation diagnostic: \(generationMessage)")
+    }
+    lines.append(
+      contentsOf: bindings.map { binding in
+        var source = binding.commandSource
+        if let metadataSource = binding.metadataSource {
+          source += ", metadata=\(metadataSource)"
+        }
+        var line = "\(binding.chord)\t\(binding.command)\t[\(source)]"
+        if let metadata = binding.metadata {
+          line += "\t\(metadata.category)\t\(metadata.label)"
+        }
+        return line
+      }
+    )
+    if bindings.isEmpty {
+      lines.append("No effective keybindings.")
+    }
+    if !disabledDefaults.isEmpty {
+      lines.append("Disabled packaged defaults:")
+      lines.append(contentsOf: disabledDefaults.map { "- \($0.identity): \($0.command)" })
+    }
+    if !diagnostics.isEmpty {
+      lines.append("Diagnostics:")
+      lines.append(contentsOf: diagnostics.map(\.humanDescription))
+    }
+    return lines.joined(separator: "\n")
+  }
+}
+
+private struct EffectiveKeybindingListRow: Encodable {
+  let identity: String
+  let chord: String
+  let command: String
+  let commandSource: String
+  let metadataSource: String?
+  let metadata: KeybindingMetadataReport?
+
+  init(_ effective: EffectiveKeybinding) {
+    identity = effective.binding.identity
+    chord = effective.binding.chord
+    command = effective.binding.command
+    commandSource = effective.commandSource.rawValue
+    metadataSource = effective.metadataSource?.rawValue
+    metadata = effective.metadata.map(KeybindingMetadataReport.init)
+  }
+}
+
+private struct DisabledKeybindingListRow: Encodable {
+  let identity: String
+  let chord: String
+  let command: String
+  let commandSource = "packaged_default"
+  let state = "disabled"
+  let metadata: KeybindingMetadataReport
+
+  init(_ disabled: DisabledPackagedKeybinding) {
+    identity = disabled.binding.identity
+    chord = disabled.binding.chord
+    command = disabled.binding.command
+    metadata = KeybindingMetadataReport(disabled.metadata)
+  }
+}
+
+private struct EffectiveKeybindingsListDiagnostic: Encodable {
+  let code: String
+  let severity: String
+  let source: String
+  let line: Int?
+  let relatedLine: Int?
+  let identity: String?
+  let message: String
+
+  init(_ diagnostic: KeybindingCompositionDiagnostic) {
+    code = diagnostic.code
+    severity = diagnostic.severity.rawValue
+    source = diagnostic.source
+    line = diagnostic.line
+    relatedLine = diagnostic.relatedLine
+    identity = diagnostic.identity
+    message = diagnostic.message
+  }
+
+  var humanDescription: String {
+    let location = line.map { "\(source):\($0)" } ?? source
+    return "\(location): \(severity) [\(code)]: \(message)"
   }
 }
 
