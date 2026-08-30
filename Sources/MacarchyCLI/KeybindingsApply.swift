@@ -562,24 +562,26 @@ struct KeybindingsApplyCommandRunner: Sendable {
       )
     }
 
-    let preparation = try planner.prepare(
+    var preparation = try planner.prepare(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
       profileRequired: profileRequired,
       stateRoot: stateRoot,
       homeDirectory: homeDirectory
     )
-    guard preparation.outcome != "blocked", let composition = preparation.composition else {
+    guard preparation.outcome != "blocked", var composition = preparation.composition else {
       throw KeybindingsApplyError.blocked(preparation.blockingMessages.joined(separator: "; "))
     }
-    let eligibility = try eligibility(preparation, adopt: adopt)
+    var eligibilityDecision = try eligibility(preparation, adopt: adopt)
     do {
       try lifecycle.preflight()
     } catch {
       throw KeybindingsApplyError.blocked(String(describing: error))
     }
     let providerEvidence = preparation.provider.adoptionEvidence
-    if eligibility.operation == .installEntry || eligibility.operation == .adoptEntry {
+    if eligibilityDecision.operation == .installEntry
+      || eligibilityDecision.operation == .adoptEntry
+    {
       guard let providerEvidence else {
         throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
       }
@@ -592,6 +594,33 @@ struct KeybindingsApplyCommandRunner: Sendable {
         throw KeybindingsApplyError.blocked(String(describing: error))
       }
     }
+
+    #if MACARCHY_ACCEPTANCE_TESTING
+      if let acceptanceFailure {
+        preparation = try planner.prepare(
+          resourcesRoot: resourcesRoot,
+          profileURL: profileURL,
+          profileRequired: profileRequired,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+        guard preparation.outcome != "blocked", let finalComposition = preparation.composition
+        else {
+          throw KeybindingsApplyError.blocked(
+            preparation.blockingMessages.joined(separator: "; ")
+          )
+        }
+        composition = finalComposition
+        eligibilityDecision = try eligibility(preparation, adopt: adopt)
+        try validateAcceptanceFailure(
+          acceptanceFailure,
+          preparation: preparation,
+          composition: composition,
+          eligibility: eligibilityDecision
+        )
+      }
+    #endif
+
     if preparation.outcome == "no_change" {
       try lifecycle.verifyProcess()
       let observed = evidence.withLock { $0 }
@@ -604,8 +633,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
       )
     }
 
-    let operation = eligibility.operation
-    let lifecycleAction = eligibility.lifecycle
+    let operation = eligibilityDecision.operation
+    let lifecycleAction = eligibilityDecision.lifecycle
 
     let activator = KeybindingGenerationActivator(stateRoot: stateRoot)
     let needsGeneration =
@@ -1194,6 +1223,20 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
       let eligibility = try eligibility(preparation, adopt: adopt)
+      try validateAcceptanceFailure(
+        failure,
+        preparation: preparation,
+        composition: composition,
+        eligibility: eligibility
+      )
+    }
+
+    private func validateAcceptanceFailure(
+      _ failure: KeybindingAcceptanceFailureInjector,
+      preparation: KeybindingsPlanPreparation,
+      composition: KeybindingComposition,
+      eligibility: (operation: KeybindingApplyOperation, lifecycle: KeybindingLifecycleAction)
+    ) throws {
       let publishesGeneration =
         preparation.generation.status == .missing
         || preparation.generation.inputDigest != composition.inputDigest
@@ -1202,7 +1245,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
         operation: eligibility.operation,
         lifecycle: eligibility.lifecycle,
         publishesGeneration: publishesGeneration,
-        outcome: preparation.outcome
+        outcome: preparation.outcome,
+        providerStatus: preparation.provider.status
       )
     }
   #endif
@@ -1229,13 +1273,15 @@ struct KeybindingsApplyCommandRunner: Sendable {
       operation: KeybindingApplyOperation,
       lifecycle: KeybindingLifecycleAction,
       publishesGeneration: Bool,
-      outcome: String
+      outcome: String,
+      providerStatus: KeybindingProviderStatus
     ) throws {
       guard
         operation == .updateGeneration,
         lifecycle == .reload,
         publishesGeneration,
-        outcome == "ready"
+        outcome == "ready",
+        providerStatus == .managed
       else {
         throw KeybindingsApplyError.blocked(
           "the acceptance rollback checkpoint requires one managed generation update with reload"
