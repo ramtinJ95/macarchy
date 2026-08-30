@@ -282,7 +282,7 @@ private enum ThemeInstallReport {
           "Installed package: unchanged (would \(replacing ? "replace" : "install")).",
           "Canonical state: unchanged (dry run).",
           "Consumer reconciliation preview:",
-        ] + reconciliation.map(renderInstallAdapterResult) + [
+        ] + reconciliation.map(renderAdapterResult) + [
           "No persistent Macarchy state written; no consumer processes run."
         ]).joined(separator: "\n")
     case .activation(let conversion, let replaced, let activation, let transactionError):
@@ -399,13 +399,6 @@ private func conversionSummary(_ conversion: OmarchyThemeConversionReport) -> St
         ? "none" : conversion.warnings.map(\.rawValue).joined(separator: ", "))
   )
   return lines.joined(separator: "\n")
-}
-
-private func renderInstallAdapterResult(_ result: AdapterResult) -> String {
-  let message = result.message.map { ": \($0)" } ?? ""
-  return
-    "- \(result.adapterID) [\(result.requirement.rawValue)]: "
-    + "\(result.status.rawValue)\(message)"
 }
 
 private struct ThemeInstallJSONReport: Encodable {
