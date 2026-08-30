@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Testing
 
 @testable import MacarchyCLI
@@ -90,7 +91,7 @@ struct KeybindingPortabilityTests {
   }
 
   @Test
-  func packagedUpdateChangesOnlyUntouchedEffectiveBehaviorWithoutRewritingInputs() throws {
+  func managedReapplyPublishesOnlyUpdatedInheritedBehaviorWithoutRewritingInputs() throws {
     let environment = try isolatedEnvironment(createSkhdDirectory: true)
     defer { try? FileManager.default.removeItem(at: environment.root) }
     let firstResources = try copyFixture(
@@ -116,21 +117,31 @@ struct KeybindingPortabilityTests {
     )
     let profile = portableInputs.appending(path: "profile.toml")
     let inputsBefore = try filesystemSnapshot(at: portableInputs)
+    let lifecycleCalls = Mutex<[String]>([])
     let runner = KeybindingsApplyCommandRunner(
       lifecycle: KeybindingLifecycleController(
-        preflight: {},
-        restart: {},
-        reload: {},
-        verifyProcess: {}
+        preflight: { lifecycleCalls.withLock { $0.append("preflight") } },
+        restart: { lifecycleCalls.withLock { $0.append("restart") } },
+        reload: { lifecycleCalls.withLock { $0.append("reload") } },
+        verifyProcess: { lifecycleCalls.withLock { $0.append("verify") } }
       )
     )
 
+    let initialPlan = try plan(
+      resources: firstResources,
+      profile: profile,
+      profileRequired: true,
+      environment: environment
+    )
+    let initialPlanReport = try jsonObject(initialPlan.output)
+    let initialProvider = try #require(initialPlanReport["provider"] as? [String: Any])
     let applied = try runner.execute(
       resourcesRoot: firstResources,
       profileURL: profile,
       profileRequired: true,
       stateRoot: environment.stateRoot,
       homeDirectory: environment.home,
+      adopt: nil,
       json: true
     )
     let appliedReport = try jsonObject(applied.output)
@@ -150,11 +161,36 @@ struct KeybindingPortabilityTests {
     let bindings = try #require(report["bindings"] as? [[String: Any]])
     let disabled = try #require(report["disabled_defaults"] as? [[String: Any]])
     let generation = try #require(report["generation"] as? [String: Any])
+    let updateProvider = try #require(report["provider"] as? [String: Any])
     let actions = try #require(report["actions"] as? [[String: Any]])
     let secondRendered = try #require(report["rendered_skhdrc"] as? String)
+    let reapplied = try runner.execute(
+      resourcesRoot: secondResources,
+      profileURL: profile,
+      profileRequired: true,
+      stateRoot: environment.stateRoot,
+      homeDirectory: environment.home,
+      adopt: nil,
+      json: true
+    )
+    let reappliedReport = try jsonObject(reapplied.output)
+    let updatedCurrent = KeybindingGenerationInspector().inspect(stateRoot: environment.stateRoot)
+    let updatedRendered = try String(
+      contentsOf: environment.stateRoot.appending(path: "keybindings/current/skhdrc"),
+      encoding: .utf8
+    )
+    let managedProvider = KeybindingProviderInspector().inspect(
+      homeDirectory: environment.home,
+      stateRoot: environment.stateRoot,
+      generation: updatedCurrent
+    )
 
+    #expect(initialPlan.succeeded)
+    #expect(initialProvider["status"] as? String == "install_required")
+    #expect(initialProvider["ownership"] as? String == "ordinary_directory")
     #expect(applied.succeeded)
     #expect(appliedReport["outcome"] as? String == "applied")
+    #expect(appliedReport["lifecycle"] as? String == "restart")
     #expect(current.status == .current)
     #expect(update.succeeded)
     #expect(report["outcome"] as? String == "ready")
@@ -163,6 +199,8 @@ struct KeybindingPortabilityTests {
     #expect(generation["generation_id"] as? String == current.generationID)
     #expect(generation["current_input_digest"] as? String == current.inputDigest)
     #expect(generation["current_rendered_digest"] as? String == current.renderedDigest)
+    #expect(updateProvider["status"] as? String == "managed")
+    #expect(updateProvider["adoption_evidence_digest"] == nil)
     #expect(actions.map { $0["id"] as? String } == ["publish_generation"])
     #expect(bindings.map { $0["identity"] as? String } == ["alt-j", "cmd-b", "cmd-x"])
     #expect(
@@ -190,6 +228,19 @@ struct KeybindingPortabilityTests {
     )
     #expect(report["rendered_digest"] as? String != current.renderedDigest)
     #expect(report["proposed_input_digest"] as? String != current.inputDigest)
+    #expect(reapplied.succeeded)
+    #expect(reappliedReport["outcome"] as? String == "applied")
+    #expect(reappliedReport["lifecycle"] as? String == "reload")
+    #expect(updatedCurrent.status == .current)
+    #expect(updatedCurrent.inputDigest == report["proposed_input_digest"] as? String)
+    #expect(updatedCurrent.renderedDigest == report["rendered_digest"] as? String)
+    #expect(updatedRendered == secondRendered)
+    #expect(managedProvider.status == .managed)
+    #expect(managedProvider.adoptionEvidenceDigest == nil)
+    #expect(
+      lifecycleCalls.withLock { $0 }
+        == ["preflight", "restart", "verify", "preflight", "reload", "verify"]
+    )
     #expect(try filesystemSnapshot(at: portableInputs) == inputsBefore)
   }
 
