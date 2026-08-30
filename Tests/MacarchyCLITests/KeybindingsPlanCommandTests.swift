@@ -300,6 +300,33 @@ struct KeybindingsPlanCommandTests {
     }
   }
 
+  @Test
+  func pendingApplyTransactionBlocksOrdinaryPlanning() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.stateRoot.appending(path: "keybindings", directoryHint: .isDirectory),
+      withIntermediateDirectories: true
+    )
+    try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).write(
+      KeybindingApplyTransaction(
+        operation: .installEntry,
+        phase: .currentSelected,
+        generationID: "k-01234567-89ab-cdef-0123-456789abcdef",
+        previousGenerationID: nil,
+        generationCreated: true
+      )
+    )
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let diagnostics = try #require(report["diagnostics"] as? [[String: Any]])
+
+    #expect(!execution.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(diagnostics.contains { $0["code"] as? String == "keybinding_recovery_required" })
+  }
+
   private func execute(
     _ fixture: PlanFixture,
     json: Bool,

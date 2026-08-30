@@ -98,6 +98,15 @@ struct KeybindingProviderInspector: Sendable {
         message: message
       )
     }
+    if case .prepared = ownershipClaim {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "recovery_required",
+        message: "keybinding entry ownership transaction is prepared but incomplete"
+      )
+    }
 
     let directoryMetadata: stat
     do {
@@ -367,6 +376,15 @@ struct KeybindingProviderInspector: Sendable {
             message: "entry-point link matches the plan but has no Macarchy ownership evidence",
             sourceConfiguration: configuration
           )
+        case .prepared:
+          return result(
+            .blocked,
+            entry: entry,
+            expectedTarget: expectedTarget,
+            ownership: "recovery_required",
+            originalTarget: target,
+            message: "keybinding entry ownership transaction is prepared but incomplete"
+          )
         case .invalid(let message):
           return result(
             .blocked,
@@ -537,7 +555,7 @@ struct KeybindingProviderInspector: Sendable {
     guard record.targetPath == entry.path, record.linkDestination == expectedTarget else {
       return .invalid("keybinding entry ownership record does not match the selected paths")
     }
-    return .claimed
+    return record.phase == .applied ? .claimed : .prepared
   }
 
   static func validateOwnershipRecord(
@@ -547,7 +565,7 @@ struct KeybindingProviderInspector: Sendable {
     let target = context.homeDirectory.appending(path: ".config/skhd/skhdrc")
     let expectedTarget = Self.managedTarget
     guard
-      record.phase == .applied,
+      [.prepared, .applied].contains(record.phase),
       record.kind == .symbolicLink,
       record.targetPath == target.path,
       record.backupPath == nil,
@@ -607,6 +625,7 @@ struct KeybindingProviderInspector: Sendable {
 
 private enum EntryOwnershipClaim {
   case claimed
+  case prepared
   case unclaimed
   case invalid(String)
 }

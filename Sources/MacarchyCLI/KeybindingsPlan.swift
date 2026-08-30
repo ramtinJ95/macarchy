@@ -31,11 +31,55 @@ struct KeybindingsPlanCommandRunner: Sendable {
     homeDirectory: URL,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
+    let preparation = try prepare(
+      resourcesRoot: resourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      ignoreTransaction: false
+    )
+    return (
+      try preparation.report.render(json: json),
+      preparation.outcome != "blocked"
+    )
+  }
+
+  func prepare(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    ignoreTransaction: Bool = false
+  ) throws -> KeybindingsPlanPreparation {
     let defaultsURL = resourcesRoot.appending(path: "defaults.skhdrc")
     let defaultMetadataURL = resourcesRoot.appending(path: "metadata.toml")
     let generation = inspectGeneration(stateRoot)
     let provider = inspectProvider(homeDirectory, stateRoot, generation)
     var diagnostics: [KeybindingsPlanDiagnostic] = []
+    if !ignoreTransaction {
+      do {
+        if let transaction = try KeybindingApplyTransactionStore(stateRoot: stateRoot).read() {
+          diagnostics.append(
+            .error(
+              code: "keybinding_recovery_required",
+              source: stateRoot.appending(path: "keybindings/transaction.json"),
+              message: "interrupted \(transaction.operation.rawValue) transaction is in "
+                + "phase \(transaction.phase.rawValue)"
+            )
+          )
+        }
+      } catch {
+        diagnostics.append(
+          .error(
+            code: "keybinding_transaction_invalid",
+            source: stateRoot.appending(path: "keybindings/transaction.json"),
+            message: String(describing: error)
+          )
+        )
+      }
+    }
 
     let defaultsText: String?
     do {
@@ -226,7 +270,13 @@ struct KeybindingsPlanCommandRunner: Sendable {
       actions: actions,
       diagnostics: diagnostics.sorted(by: KeybindingsPlanDiagnostic.order)
     )
-    return (try report.render(json: json), outcome != "blocked")
+    return KeybindingsPlanPreparation(
+      outcome: outcome,
+      composition: composition,
+      generation: generation,
+      provider: provider,
+      report: report
+    )
   }
 
   private func plannedActions(
@@ -333,6 +383,14 @@ struct KeybindingsPlanCommandRunner: Sendable {
       changed: changed
     )
   }
+}
+
+struct KeybindingsPlanPreparation {
+  let outcome: String
+  let composition: KeybindingComposition?
+  let generation: KeybindingGenerationInspection
+  let provider: KeybindingProviderInspection
+  fileprivate let report: KeybindingsPlanReport
 }
 
 private struct KeybindingsPlanReport: Encodable {
