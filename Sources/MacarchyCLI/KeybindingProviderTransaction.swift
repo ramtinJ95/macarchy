@@ -33,7 +33,7 @@ enum KeybindingProviderCheckpoint: Equatable, Sendable {
 }
 
 struct KeybindingProviderTransaction: Sendable {
-  private static let claimMarkerAttribute = KeybindingProviderInspector.claimMarkerAttribute
+  private static let claimMarkerAttribute = KeybindingProviderPrimitives.claimMarkerAttribute
   private static let unsupportedRestorationFlags =
     UInt32(UF_IMMUTABLE) | UInt32(UF_APPEND) | UInt32(UF_DATAVAULT)
     | UInt32(SF_IMMUTABLE) | UInt32(SF_APPEND) | UInt32(SF_RESTRICTED) | UInt32(SF_NOUNLINK)
@@ -428,7 +428,10 @@ struct KeybindingProviderTransaction: Sendable {
         name: "skhd",
         url: directory
       )
-      let target = Self.resolveSymlink(destination, relativeTo: configurationDirectory)
+      let target = KeybindingProviderPrimitives.resolveSymlink(
+        destination,
+        relativeTo: configurationDirectory
+      )
       let targetDescriptor = try PinnedFilesystem.openDirectory(at: target)
       defer { Darwin.close(targetDescriptor) }
       let inventory = try PinnedFilesystem.directoryEntries(
@@ -569,7 +572,10 @@ struct KeybindingProviderTransaction: Sendable {
         name: "skhdrc",
         url: entry
       )
-      let resolved = Self.resolveSymlink(destination, relativeTo: directory)
+      let resolved = KeybindingProviderPrimitives.resolveSymlink(
+        destination,
+        relativeTo: directory
+      )
       var resolvedMetadata = stat()
       guard
         lstat(resolved.path, &resolvedMetadata) == 0,
@@ -2173,12 +2179,17 @@ struct KeybindingProviderTransaction: Sendable {
     }
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
     defer { Darwin.close(pinned) }
-    let markerSize = Self.claimMarkerAttribute.withCString {
-      Darwin.fgetxattr(pinned, $0, nil, 0, 0, 0)
+    do {
+      guard try !KeybindingProviderPrimitives.claimMarkerExists(descriptor: pinned) else {
+        throw SetupOwnershipError.ownershipDrift(url)
+      }
+    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
+      throw posixError(
+        "inspect legacy keybinding ownership marker",
+        url,
+        code: failure.code
+      )
     }
-    if markerSize < 0, errno == ENOATTR { return }
-    guard markerSize < 0 else { throw SetupOwnershipError.ownershipDrift(url) }
-    throw posixError("inspect legacy keybinding ownership marker", url)
   }
 
   private func requireLegacyEntryAbsent() throws {
@@ -2567,7 +2578,10 @@ struct KeybindingProviderTransaction: Sendable {
     case .regularFile:
       try operation()
     case .symbolicLink:
-      let target = Self.resolveSymlink(try originalLink(record), relativeTo: directory)
+      let target = KeybindingProviderPrimitives.resolveSymlink(
+        try originalLink(record),
+        relativeTo: directory
+      )
       let parent = try PinnedFilesystem.openDirectory(at: target.deletingLastPathComponent())
       defer { Darwin.close(parent) }
       let manager = SetupOwnershipManager()
@@ -2615,7 +2629,10 @@ struct KeybindingProviderTransaction: Sendable {
         else { throw SetupOwnershipError.ownershipDrift(target) }
       }
     case .directorySymbolicLink:
-      let target = Self.resolveSymlink(try originalLink(record), relativeTo: configurationDirectory)
+      let target = KeybindingProviderPrimitives.resolveSymlink(
+        try originalLink(record),
+        relativeTo: configurationDirectory
+      )
       let descriptor = try PinnedFilesystem.openDirectory(at: target)
       defer { Darwin.close(descriptor) }
       var directoryIdentity = stat()
@@ -2913,13 +2930,14 @@ struct KeybindingProviderTransaction: Sendable {
     guard let nonce = record.claimNonce else {
       throw SetupOwnershipError.invalidManifest("keybinding claim nonce is missing")
     }
-    var value = [UInt8](repeating: 0, count: 64)
-    let count = Self.claimMarkerAttribute.withCString {
-      Darwin.fgetxattr(descriptor, $0, &value, value.count, 0, 0)
+    do {
+      return try KeybindingProviderPrimitives.claimMarkerMatches(
+        descriptor: descriptor,
+        nonce: nonce
+      )
+    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
+      throw posixError("read keybinding claim marker", url, code: failure.code)
     }
-    if count < 0, errno == ENOATTR { return false }
-    guard count >= 0 else { throw posixError("read keybinding claim marker", url) }
-    return Data(value.prefix(count)) == Data(nonce.utf8)
   }
 
   private func markClaim(
@@ -2953,12 +2971,14 @@ struct KeybindingProviderTransaction: Sendable {
     guard let nonce = record.claimNonce else {
       throw SetupOwnershipError.invalidManifest("keybinding claim nonce is missing")
     }
-    let result = Data(nonce.utf8).withUnsafeBytes { value in
-      Self.claimMarkerAttribute.withCString {
-        Darwin.fsetxattr(descriptor, $0, value.baseAddress, value.count, 0, XATTR_CREATE)
-      }
+    do {
+      try KeybindingProviderPrimitives.createClaimMarker(
+        descriptor: descriptor,
+        nonce: nonce
+      )
+    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
+      throw posixError("authenticate keybinding claim", url, code: failure.code)
     }
-    guard result == 0 else { throw posixError("authenticate keybinding claim", url) }
     guard fsync(descriptor) == 0 else { throw posixError("sync keybinding claim", url) }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
@@ -2994,10 +3014,11 @@ struct KeybindingProviderTransaction: Sendable {
     guard try claimMarkerMatches(descriptor: descriptor, record: record, url: url) else {
       throw SetupOwnershipError.ownershipDrift(url)
     }
-    let result = Self.claimMarkerAttribute.withCString {
-      Darwin.fremovexattr(descriptor, $0, 0)
+    do {
+      try KeybindingProviderPrimitives.removeClaimMarker(descriptor: descriptor)
+    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
+      throw posixError("remove keybinding claim marker", url, code: failure.code)
     }
-    guard result == 0 else { throw posixError("remove keybinding claim marker", url) }
     guard fsync(descriptor) == 0 else { throw posixError("sync keybinding claim", url) }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
@@ -3399,11 +3420,12 @@ struct KeybindingProviderTransaction: Sendable {
     .system(operation, url, String(cString: strerror(errno)))
   }
 
-  private static func resolveSymlink(_ destination: String, relativeTo parent: URL) -> URL {
-    if NSString(string: destination).isAbsolutePath {
-      return URL(filePath: destination).standardizedFileURL
-    }
-    return parent.appending(path: destination).standardizedFileURL
+  private func posixError(
+    _ operation: String,
+    _ url: URL,
+    code: Int32
+  ) -> SetupOwnershipError {
+    .system(operation, url, String(cString: strerror(code)))
   }
 }
 
