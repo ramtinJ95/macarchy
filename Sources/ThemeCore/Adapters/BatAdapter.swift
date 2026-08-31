@@ -52,7 +52,7 @@ package struct BatAdapter: Sendable {
     try themeLink.validate()
 
     let configuration = try readConfiguration()
-    guard Self.containsLine(Self.themeDirective, in: configuration) else {
+    guard containsExactLine(Self.themeDirective, in: configuration) else {
       throw BatAdapterError.missingThemeDirective(Self.themeDirective)
     }
   }
@@ -112,12 +112,6 @@ package struct BatAdapter: Sendable {
       true
     default:
       false
-    }
-  }
-
-  private static func containsLine(_ expected: String, in text: String) -> Bool {
-    text.split(separator: "\n").contains { line in
-      line.trimmingCharacters(in: .whitespaces) == expected
     }
   }
 }

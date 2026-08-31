@@ -90,17 +90,17 @@ struct SketchyBarAdapter: Sendable {
     }
 
     let entry = try readConfigurationText(configurationURL)
-    guard Self.containsLine(Self.initImport, in: entry) else {
+    guard containsExactLine(Self.initImport, in: entry) else {
       throw SketchyBarAdapterError.missingInitImport(Self.initImport)
     }
 
     let configuration = try readConfigurationText(initURL)
-    guard Self.containsLine(Self.readyMarkerDeclaration, in: configuration) else {
+    guard containsExactLine(Self.readyMarkerDeclaration, in: configuration) else {
       throw SketchyBarAdapterError.missingReadyMarker(Self.readyMarkerDeclaration)
     }
 
     let colors = try readConfigurationText(colorsURL)
-    guard Self.containsLine(paletteImport, in: colors) else {
+    guard containsExactLine(paletteImport, in: colors) else {
       throw SketchyBarAdapterError.missingPaletteImport(paletteImport)
     }
   }
@@ -348,12 +348,6 @@ struct SketchyBarAdapter: Sendable {
       .replacingOccurrences(of: "\r", with: "\\r")
       .replacingOccurrences(of: "\t", with: "\\t")
     return "\"\(escaped)\""
-  }
-
-  private static func containsLine(_ expected: String, in text: String) -> Bool {
-    text.split(separator: "\n").contains { line in
-      line.trimmingCharacters(in: .whitespaces) == expected
-    }
   }
 }
 
