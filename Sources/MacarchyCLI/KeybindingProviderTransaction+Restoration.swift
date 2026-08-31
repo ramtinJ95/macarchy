@@ -433,7 +433,7 @@ extension KeybindingProviderTransaction {
     }
   }
 
-  func restoreRetainedOriginalSymlink(
+  private func restoreRetainedOriginalSymlink(
     _ record: SetupOwnershipRecord,
     directoryLevel: Bool
   ) throws {
@@ -649,7 +649,7 @@ extension KeybindingProviderTransaction {
     return target == KeybindingProviderInspector.managedTarget ? .managed : .other
   }
 
-  func createManagedDirectory(
+  private func createManagedDirectory(
     parentDescriptor: Int32,
     name: String,
     record: SetupOwnershipRecord
@@ -744,7 +744,7 @@ extension KeybindingProviderTransaction {
     }
   }
 
-  func displacePinnedRegularOriginal(
+  private func displacePinnedRegularOriginal(
     _ record: SetupOwnershipRecord,
     descriptor: Int32,
     claim: String
@@ -813,7 +813,7 @@ extension KeybindingProviderTransaction {
     }
   }
 
-  func restoreRegularFileClaim(
+  private func restoreRegularFileClaim(
     _ record: SetupOwnershipRecord,
     descriptor: Int32,
     name: String
