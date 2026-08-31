@@ -232,18 +232,13 @@ package struct YaziAdapter: Sendable {
   }
 
   private func readThemeConfiguration() throws -> String {
-    let data: Data
     do {
-      data = try BoundedRegularFile.read(at: themeConfigurationURL).data
+      return try BoundedRegularFile.readUTF8(at: themeConfigurationURL)
     } catch BoundedRegularFileError.tooLarge {
       throw YaziAdapterError.configurationTooLarge(themeConfigurationURL)
     } catch {
       throw YaziAdapterError.cannotReadConfiguration(themeConfigurationURL)
     }
-    guard let configuration = String(data: data, encoding: .utf8) else {
-      throw YaziAdapterError.cannotReadConfiguration(themeConfigurationURL)
-    }
-    return configuration
   }
 
   private static func selectsFlavor(in configuration: String) -> Bool {

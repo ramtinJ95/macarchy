@@ -210,18 +210,13 @@ package struct EzaAdapter: Sendable {
   }
 
   private func readShellConfiguration() throws -> String {
-    let data: Data
     do {
-      data = try BoundedRegularFile.read(at: shellConfigurationURL).data
+      return try BoundedRegularFile.readUTF8(at: shellConfigurationURL)
     } catch BoundedRegularFileError.tooLarge {
       throw EzaAdapterError.configurationTooLarge(shellConfigurationURL)
     } catch {
       throw EzaAdapterError.cannotReadShellConfiguration(shellConfigurationURL)
     }
-    guard let shell = String(data: data, encoding: .utf8) else {
-      throw EzaAdapterError.cannotReadShellConfiguration(shellConfigurationURL)
-    }
-    return shell
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

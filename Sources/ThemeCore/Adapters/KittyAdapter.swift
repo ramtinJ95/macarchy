@@ -31,7 +31,6 @@ enum KittyAdapterError: Error, CustomStringConvertible, Sendable {
 }
 
 struct KittyAdapter: Sendable {
-  private static let maximumConfigurationSize = 1_048_576
   private static let killallURL = URL(filePath: "/usr/bin/killall")
   static let id = "kitty"
   static let bridgePath = "state/adapters/kitty.conf"
@@ -48,35 +47,16 @@ struct KittyAdapter: Sendable {
   }
 
   func preflight() throws {
-    let values: URLResourceValues
+    let resolvedConfigurationURL = configurationURL.resolvingSymlinksInPath()
+    let configuration: String
     do {
-      values = try configurationURL.resourceValues(forKeys: [.isRegularFileKey])
-    } catch {
-      throw KittyAdapterError.cannotReadConfiguration(configurationURL)
-    }
-    guard values.isRegularFile == true else {
-      throw KittyAdapterError.cannotReadConfiguration(configurationURL)
-    }
-
-    let data: Data
-    do {
-      let handle = try FileHandle(forReadingFrom: configurationURL)
-      defer { try? handle.close() }
-      data = try handle.read(upToCount: Self.maximumConfigurationSize + 1) ?? Data()
-    } catch {
-      throw KittyAdapterError.cannotReadConfiguration(configurationURL)
-    }
-    guard data.count <= Self.maximumConfigurationSize else {
+      configuration = try BoundedRegularFile.readUTF8(at: resolvedConfigurationURL)
+    } catch BoundedRegularFileError.tooLarge {
       throw KittyAdapterError.configurationTooLarge(configurationURL)
-    }
-    guard let configuration = String(data: data, encoding: .utf8) else {
+    } catch {
       throw KittyAdapterError.cannotReadConfiguration(configurationURL)
     }
-    guard
-      configuration.split(separator: "\n").contains(where: { line in
-        line.trimmingCharacters(in: .whitespaces) == includeDirective
-      })
-    else {
+    guard containsExactLine(includeDirective, in: configuration) else {
       throw KittyAdapterError.missingInclude(includeDirective)
     }
   }

@@ -14,11 +14,16 @@ extension AdapterContractTests {
     }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let includeDirective = "include \(root.path)/state/adapters/kitty.conf"
+    let configurationSourceURL = root.appending(path: "kitty-source.conf")
     let configurationURL = root.appending(path: "kitty.conf")
     try "\(includeDirective)\n".write(
-      to: configurationURL,
+      to: configurationSourceURL,
       atomically: true,
       encoding: .utf8
+    )
+    try FileManager.default.createSymbolicLink(
+      at: configurationURL,
+      withDestinationURL: configurationSourceURL
     )
     let bridgeURL = root.appending(path: KittyAdapter.bridgePath)
     try FileManager.default.createDirectory(

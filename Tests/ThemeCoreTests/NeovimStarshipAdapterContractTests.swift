@@ -117,6 +117,14 @@ extension AdapterContractTests {
       encoding: .utf8
     )
     #expect(neovim.inspection().status == .drifted)
+
+    let neovimConfiguration = neovimPlugins.appending(path: "colorscheme.lua")
+    try Data([0xff]).write(to: neovimConfiguration)
+    #expect(throws: NeovimAdapterError.self) { try neovim.preflight() }
+    #expect(
+      neovim.inspection().message
+        == "Cannot read Neovim theme configuration at \(neovimConfiguration.path)"
+    )
   }
 
   @Test
