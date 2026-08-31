@@ -120,7 +120,7 @@ extension AdapterContractTests {
   }
 
   @Test
-  func neovimRuntimeInspectionExposesRejectedActivePalette() throws {
+  func neovimRuntimeInspectionExposesRejectedActivePalette() async throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -153,6 +153,9 @@ extension AdapterContractTests {
     let runtime = adapter.inspection(includeRuntimeChecks: true)
     #expect(runtime.status == .failed)
     #expect(runtime.message == "Aether palette mismatch")
+    let reconciliation = try await adapter.reconciliation().run()
+    #expect(reconciliation.status == .failed)
+    #expect(reconciliation.message == "Aether palette mismatch")
 
     try "return {}\n".write(
       to: neovimDirectory.appending(path: "lua/config/macarchy-theme.lua"),

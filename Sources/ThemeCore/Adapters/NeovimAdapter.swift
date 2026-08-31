@@ -71,6 +71,15 @@ package struct NeovimAdapter: Sendable {
     )
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      adapterID: Self.id,
+      requirement: .required,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func preflight() throws {
     guard controlIsAvailable() else {
       throw NeovimAdapterError.controlUnavailable(executableURL)
@@ -135,16 +144,7 @@ package struct NeovimAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
-      do {
-        try preflight()
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
-
+    runtime.reconciliation {
       do {
         try preflightActiveSupport()
         try validateRuntime()
