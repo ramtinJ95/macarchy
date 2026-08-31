@@ -66,11 +66,7 @@ struct YabaiWallpaperSignal: Sendable {
     guard let configuration = String(data: data, encoding: .utf8) else {
       throw YabaiWallpaperSignalError.cannotReadConfiguration(configurationURL)
     }
-    guard
-      configuration.split(separator: "\n").contains(where: { line in
-        line.trimmingCharacters(in: .whitespaces) == directive
-      })
-    else {
+    guard containsExactLine(directive, in: configuration) else {
       throw YabaiWallpaperSignalError.missingDirective(directive)
     }
   }

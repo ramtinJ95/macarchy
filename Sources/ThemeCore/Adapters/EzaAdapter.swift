@@ -53,7 +53,7 @@ package struct EzaAdapter: Sendable {
 
     let shell = try readShellConfiguration()
     let directive = Self.environmentDirective(configurationDirectoryURL: configurationDirectoryURL)
-    guard Self.containsLine(directive, in: shell) else {
+    guard containsExactLine(directive, in: shell) else {
       throw EzaAdapterError.missingEnvironmentDirective(directive)
     }
   }
@@ -225,12 +225,6 @@ package struct EzaAdapter: Sendable {
       true
     default:
       false
-    }
-  }
-
-  private static func containsLine(_ expected: String, in text: String) -> Bool {
-    text.split(separator: "\n").contains { line in
-      line.trimmingCharacters(in: .whitespaces) == expected
     }
   }
 }

@@ -124,7 +124,7 @@ struct NeovimStarshipSetupTests {
   }
 
   @Test
-  func watcherLineRecognitionMatchesTheAdapterForCRLF() throws {
+  func watcherLineRecognitionRejectsCRLFConsistently() throws {
     let fixture = try Fixture(configuration: "", externalNeovimStarship: false)
     defer { fixture.remove() }
     try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
@@ -135,10 +135,15 @@ struct NeovimStarshipSetupTests {
     try fixture.createExternalNeovimThemeLink()
     try fixture.createExternalTwoHopStarshipLink()
 
-    let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-
-    #expect(NeovimAdapter.containsIntegrationDirective(in: watcher))
-    #expect(results[12..<16].allSatisfy { $0.status == .external })
+    #expect(
+      throws: SetupOwnershipError.missingExternalDirective(
+        "neovim.watcher",
+        fixture.neovimWatcherConfiguration
+      )
+    ) {
+      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
+    }
+    #expect(!NeovimAdapter.containsIntegrationDirective(in: watcher))
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 

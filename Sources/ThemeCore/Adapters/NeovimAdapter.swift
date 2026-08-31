@@ -285,9 +285,7 @@ package struct NeovimAdapter: Sendable {
   }
 
   private static func contains(directive: String, in text: String) -> Bool {
-    text.components(separatedBy: .newlines).contains {
-      $0.trimmingCharacters(in: .whitespaces) == directive
-    }
+    containsExactLine(directive, in: text)
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {
