@@ -83,12 +83,11 @@ extension SetupOwnershipTests {
         homeDirectory: fixture.home,
         dryRun: false
       )
-      #expect(
-        resumed.map(\.status)
-          == [.external, .owned, .owned, .external, .owned]
-          + Array(repeating: .external, count: 19)
-          + Array(repeating: .disabled, count: 2)
-      )
+      var resumedStatuses = externalFixtureStatuses
+      for id in ["bat.selector", "bat.theme-link", "eza.theme-link"] {
+        resumedStatuses[id] = .owned
+      }
+      expectStatuses(resumed, resumedStatuses)
       #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
       #expect(try fixture.linkDestination(fixture.ezaThemeLink) == fixture.ezaThemeDestination.path)
@@ -113,12 +112,11 @@ extension SetupOwnershipTests {
         homeDirectory: fixture.home,
         dryRun: false
       )
-      #expect(
-        resumed.map(\.status)
-          == [.external, .external, .owned, .external, .owned]
-          + Array(repeating: .external, count: 19)
-          + Array(repeating: .disabled, count: 2)
-      )
+      var resumedStatuses = externalFixtureStatuses
+      for id in ["bat.theme-link", "eza.theme-link"] {
+        resumedStatuses[id] = .owned
+      }
+      expectStatuses(resumed, resumedStatuses)
       #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     }
 
@@ -137,21 +135,19 @@ extension SetupOwnershipTests {
     try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
 
     let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    #expect(
-      resumed.map(\.status)
-        == [.external, .external, .owned, .external, .external]
-        + Array(repeating: .external, count: 19)
-        + Array(repeating: .disabled, count: 2)
-    )
+    var resumedStatuses = externalFixtureStatuses
+    resumedStatuses["bat.theme-link"] = .owned
+    expectStatuses(resumed, resumedStatuses)
     #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
 
     try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
     let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
-    #expect(
-      teardown.map(\.status)
-        == [.none, .none, .removed, .none, .none] + Array(repeating: .none, count: 21)
-    )
+    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
+      SetupIntegrationResult.Status.none
+    }
+    teardownStatuses["bat.theme-link"] = .removed
+    expectStatuses(teardown, teardownStatuses)
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
   }
 
@@ -544,7 +540,7 @@ extension SetupOwnershipTests {
     ).execute(homeDirectory: fixture.home, dryRun: false, json: true)
     let report = try decode(TeardownReport.self, execution.output)
     #expect(!execution.succeeded)
-    #expect(report.integrations.map(\.status) == ["failed"])
+    expectStatuses(report.integrations, ["kitty.include": "failed"])
     #expect(report.integrations.first?.message == expected.description)
     #expect(report.integrations.first?.mutationAttempted == false)
     let human = try TeardownCommandRunner(
@@ -658,7 +654,7 @@ extension SetupOwnershipTests {
     ).execute(homeDirectory: fixture.home, dryRun: true, json: true)
     let report = try decode(TeardownReport.self, execution.output)
     #expect(!execution.succeeded)
-    #expect(report.integrations.map(\.status) == ["failed"])
+    expectStatuses(report.integrations, ["kitty.include": "failed"])
     #expect(report.integrations.first?.message == expected.description)
     #expect(report.integrations.first?.mutationAttempted == false)
     #expect(try fixture.configuration().contains(fixture.includeDirective))
@@ -743,12 +739,9 @@ extension BtopYaziAtuinSetupTests {
     }
     let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(
-      resumed[5..<12].map(\.status)
-        == [.external, .external, .owned, .external, .external, .external, .external]
-    )
-    #expect(resumed[12..<24].allSatisfy { $0.status == .external })
-    #expect(resumed.suffix(2).allSatisfy { $0.status == .disabled })
+    var resumedStatuses = externalFixtureStatuses
+    resumedStatuses["yazi.selector"] = .owned
+    expectStatuses(resumed, resumedStatuses)
     #expect(
       try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
         == "[flavor]\ndark = \"macarchy-current\"\nlight = \"default\"\n"
@@ -799,10 +792,10 @@ extension NeovimStarshipSetupTests {
       homeDirectory: neovim.home,
       dryRun: false
     )
-    #expect(
-      resumedNeovim[12..<16].map(\.status)
-        == [.external, .owned, .external, .owned]
-    )
+    var resumedNeovimStatuses = externalFixtureStatuses
+    resumedNeovimStatuses["neovim.theme-link"] = .owned
+    resumedNeovimStatuses["starship.configuration-link"] = .owned
+    expectStatuses(resumedNeovim, resumedNeovimStatuses)
 
     let starship = try Fixture(configuration: "", externalNeovimStarship: false)
     defer { starship.remove() }
@@ -820,10 +813,9 @@ extension NeovimStarshipSetupTests {
       homeDirectory: starship.home,
       dryRun: false
     )
-    #expect(
-      resumedStarship[12..<16].map(\.status)
-        == [.external, .external, .external, .owned]
-    )
+    var resumedStarshipStatuses = externalFixtureStatuses
+    resumedStarshipStatuses["starship.configuration-link"] = .owned
+    expectStatuses(resumedStarship, resumedStarshipStatuses)
   }
 
   @Test

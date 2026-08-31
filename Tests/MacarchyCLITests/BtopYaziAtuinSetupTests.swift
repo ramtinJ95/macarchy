@@ -17,39 +17,8 @@ struct BtopYaziAtuinSetupTests {
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(
-      results.map(\.id)
-        == [
-          "kitty.include",
-          "bat.selector",
-          "bat.theme-link",
-          "eza.environment",
-          "eza.theme-link",
-          "btop.selector",
-          "btop.theme-link",
-          "yazi.selector",
-          "yazi.flavor-link",
-          "yazi.syntax-link",
-          "atuin.selector",
-          "atuin.theme-link",
-          "neovim.watcher",
-          "neovim.theme-link",
-          "starship.behavior",
-          "starship.configuration-link",
-          "pi.selector",
-          "pi.theme-link",
-          "herdr.selector",
-          "tuicr.selector",
-          "tuicr.theme-link",
-          "tuicr.syntax-link",
-          "codex.selector",
-          "codex.theme-link",
-          "spicetify.selectors",
-          "spicetify.color-link",
-        ]
-    )
-    #expect(results.prefix(24).allSatisfy { $0.status == .external && !$0.mutationAttempted })
-    #expect(results.suffix(2).allSatisfy { $0.status == .disabled && !$0.mutationAttempted })
+    expectStatuses(results, externalFixtureStatuses)
+    #expect(!results.contains { $0.mutationAttempted })
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
@@ -64,24 +33,26 @@ struct BtopYaziAtuinSetupTests {
     try fixture.createLocalBtopYaziAtuinConfigurations(btop: btop, yazi: yazi, atuin: atuin)
 
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
-    #expect(preview.prefix(5).allSatisfy { $0.status == .external })
-    #expect(
-      preview[5..<12].map(\.status)
-        == [.external, .planned, .planned, .planned, .planned, .planned, .planned]
-    )
-    #expect(preview[12..<24].allSatisfy { $0.status == .external })
-    #expect(preview.suffix(2).allSatisfy { $0.status == .disabled })
+    var previewStatuses = externalFixtureStatuses
+    for id in [
+      "btop.theme-link", "yazi.selector", "yazi.flavor-link", "yazi.syntax-link",
+      "atuin.selector", "atuin.theme-link",
+    ] {
+      previewStatuses[id] = .planned
+    }
+    expectStatuses(preview, previewStatuses)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(setup.prefix(5).allSatisfy { $0.status == .external })
-    #expect(
-      setup[5..<12].map(\.status)
-        == [.external, .owned, .owned, .owned, .owned, .owned, .owned]
-    )
-    #expect(setup[12..<24].allSatisfy { $0.status == .external })
-    #expect(setup.suffix(2).allSatisfy { $0.status == .disabled })
+    var setupStatuses = externalFixtureStatuses
+    for id in [
+      "btop.theme-link", "yazi.selector", "yazi.flavor-link", "yazi.syntax-link",
+      "atuin.selector", "atuin.theme-link",
+    ] {
+      setupStatuses[id] = .owned
+    }
+    expectStatuses(setup, setupStatuses)
     #expect(try String(contentsOf: fixture.btopConfiguration, encoding: .utf8) == btop)
     #expect(
       try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
@@ -103,12 +74,16 @@ struct BtopYaziAtuinSetupTests {
 
     let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(teardown.prefix(5).allSatisfy { $0.status == .none })
-    #expect(
-      teardown[5..<12].map(\.status)
-        == [.none, .removed, .removed, .removed, .removed, .removed, .removed]
-    )
-    #expect(teardown.dropFirst(12).allSatisfy { $0.status == .none })
+    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
+      SetupIntegrationResult.Status.none
+    }
+    for id in [
+      "btop.theme-link", "yazi.selector", "yazi.flavor-link", "yazi.syntax-link",
+      "atuin.selector", "atuin.theme-link",
+    ] {
+      teardownStatuses[id] = .removed
+    }
+    expectStatuses(teardown, teardownStatuses)
     #expect(try String(contentsOf: fixture.btopConfiguration, encoding: .utf8) == btop)
     #expect(try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8) == yazi)
     #expect(try String(contentsOf: fixture.atuinConfiguration, encoding: .utf8) == atuin)

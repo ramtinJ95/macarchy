@@ -5,6 +5,100 @@ import Testing
 @testable import MacarchyCLI
 @testable import ThemeCore
 
+let allIntegrationIDs = [
+  "kitty.include",
+  "bat.selector",
+  "bat.theme-link",
+  "eza.environment",
+  "eza.theme-link",
+  "btop.selector",
+  "btop.theme-link",
+  "yazi.selector",
+  "yazi.flavor-link",
+  "yazi.syntax-link",
+  "atuin.selector",
+  "atuin.theme-link",
+  "neovim.watcher",
+  "neovim.theme-link",
+  "starship.behavior",
+  "starship.configuration-link",
+  "pi.selector",
+  "pi.theme-link",
+  "herdr.selector",
+  "tuicr.selector",
+  "tuicr.theme-link",
+  "tuicr.syntax-link",
+  "codex.selector",
+  "codex.theme-link",
+  "spicetify.selectors",
+  "spicetify.color-link",
+]
+
+let externalFixtureStatuses: [String: SetupIntegrationResult.Status] = [
+  "kitty.include": .external,
+  "bat.selector": .external,
+  "bat.theme-link": .external,
+  "eza.environment": .external,
+  "eza.theme-link": .external,
+  "btop.selector": .external,
+  "btop.theme-link": .external,
+  "yazi.selector": .external,
+  "yazi.flavor-link": .external,
+  "yazi.syntax-link": .external,
+  "atuin.selector": .external,
+  "atuin.theme-link": .external,
+  "neovim.watcher": .external,
+  "neovim.theme-link": .external,
+  "starship.behavior": .external,
+  "starship.configuration-link": .external,
+  "pi.selector": .external,
+  "pi.theme-link": .external,
+  "herdr.selector": .external,
+  "tuicr.selector": .external,
+  "tuicr.theme-link": .external,
+  "tuicr.syntax-link": .external,
+  "codex.selector": .external,
+  "codex.theme-link": .external,
+  "spicetify.selectors": .disabled,
+  "spicetify.color-link": .disabled,
+]
+
+protocol IntegrationStatusResult {
+  associatedtype IntegrationStatus: Equatable
+
+  var id: String { get }
+  var status: IntegrationStatus { get }
+}
+
+extension SetupIntegrationResult: IntegrationStatusResult {
+  typealias IntegrationStatus = Status
+}
+
+func expectStatuses<Result: IntegrationStatusResult>(
+  _ results: [Result],
+  _ expectedByID: [String: Result.IntegrationStatus]
+) {
+  let actualIDs = results.map(\.id)
+  let actualIDSet = Set(actualIDs)
+  let expectedIDSet = Set(expectedByID.keys)
+  let duplicateIDs = Dictionary(grouping: actualIDs, by: { $0 })
+    .filter { $0.value.count > 1 }.keys.sorted()
+  let missingIDs = expectedIDSet.subtracting(actualIDSet).sorted()
+  let unexpectedIDs = actualIDSet.subtracting(expectedIDSet).sorted()
+
+  #expect(duplicateIDs.isEmpty, "Duplicate integration IDs: \(duplicateIDs)")
+  #expect(missingIDs.isEmpty, "Missing integration IDs: \(missingIDs)")
+  #expect(unexpectedIDs.isEmpty, "Unexpected integration IDs: \(unexpectedIDs)")
+
+  for id in expectedByID.keys.sorted() {
+    guard
+      let result = results.first(where: { $0.id == id }),
+      let expectedStatus = expectedByID[id]
+    else { continue }
+    #expect(result.status == expectedStatus, "Unexpected status for \(id)")
+  }
+}
+
 enum FixtureError: Error {
   case interrupted
 }
@@ -408,6 +502,10 @@ struct IntegrationReport: Decodable {
   let target: String
   let message: String
   let mutationAttempted: Bool
+}
+
+extension IntegrationReport: IntegrationStatusResult {
+  typealias IntegrationStatus = String
 }
 
 struct OwnershipManifest: Decodable {
