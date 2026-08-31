@@ -311,30 +311,27 @@ extension AdapterContractTests {
       }
     }
 
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
-    _ = try testActivator(root: root).activate(package: package)
-    let configuration = root.appending(path: "herdr/config.toml")
-    try FileManager.default.createDirectory(
-      at: configuration.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try "[theme]\nname = \"catppuccin\"\n[theme.custom]\naccent = \"#ffffff\"\n".write(
-      to: configuration, atomically: true, encoding: .utf8)
-    let adapter = HerdrAdapter(
-      root: root,
-      configurationURL: configuration,
-      executableURL: HerdrAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
-      processRunner: .live
-    )
+    try withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
+      _ = try testActivator(root: root).activate(package: package)
+      let configuration = root.appending(path: "herdr/config.toml")
+      try FileManager.default.createDirectory(
+        at: configuration.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try "[theme]\nname = \"catppuccin\"\n[theme.custom]\naccent = \"#ffffff\"\n".write(
+        to: configuration, atomically: true, encoding: .utf8)
+      let adapter = HerdrAdapter(
+        root: root,
+        configurationURL: configuration,
+        executableURL: HerdrAdapter.liveExecutableURL,
+        controlIsAvailable: { true },
+        processRunner: .live
+      )
 
-    #expect(throws: HerdrAdapterError.self) {
-      try adapter.preflight(package: package)
+      #expect(throws: HerdrAdapterError.self) {
+        try adapter.preflight(package: package)
+      }
+      #expect(adapter.inspection().status == .drifted)
     }
-    #expect(adapter.inspection().status == .drifted)
   }
 
   @Test

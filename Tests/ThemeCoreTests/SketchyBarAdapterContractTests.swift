@@ -168,78 +168,72 @@ extension AdapterContractTests {
 
   @Test
   func sketchyBarStopsPollingWhenTheSettleWindowIsExhausted() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let configuration = try Self.sketchyBarConfiguration(root: root)
-    _ = try testActivator(root: root).activate(package: catppuccinPackage())
-    let queryCount = Mutex(0)
-    let settleCount = Mutex(0)
-    let adapter = SketchyBarAdapter(
-      root: root,
-      configurationURL: configuration,
-      executableURL: SketchyBarAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
-      processRunner: ProcessRunner { request in
-        if request.arguments == ["--query", "bar"] {
-          queryCount.withLock { $0 += 1 }
-          return ProcessResult(
-            terminationStatus: 0,
-            output: #"{"drawing":"off","color":"0x44000000","items":[]}"#
-          )
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let configuration = try Self.sketchyBarConfiguration(root: root)
+      _ = try testActivator(root: root).activate(package: catppuccinPackage())
+      let queryCount = Mutex(0)
+      let settleCount = Mutex(0)
+      let adapter = SketchyBarAdapter(
+        root: root,
+        configurationURL: configuration,
+        executableURL: SketchyBarAdapter.liveExecutableURL,
+        controlIsAvailable: { true },
+        processRunner: ProcessRunner { request in
+          if request.arguments == ["--query", "bar"] {
+            queryCount.withLock { $0 += 1 }
+            return ProcessResult(
+              terminationStatus: 0,
+              output: #"{"drawing":"off","color":"0x44000000","items":[]}"#
+            )
+          }
+          return ProcessResult(terminationStatus: 0, output: "")
+        },
+        waitForSettle: { settleCount.withLock { $0 += 1 } },
+        waitForPresentation: {
+          Issue.record("Presentation wait must not run for drift")
         }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
-      waitForSettle: { settleCount.withLock { $0 += 1 } },
-      waitForPresentation: {
-        Issue.record("Presentation wait must not run for drift")
-      }
-    )
+      )
 
-    let outcome = try await adapter.reconciliation().run()
+      let outcome = try await adapter.reconciliation().run()
 
-    #expect(outcome.status == .drifted)
-    #expect(queryCount.withLock { $0 } == 11)
-    #expect(settleCount.withLock { $0 } == 10)
+      #expect(outcome.status == .drifted)
+      #expect(queryCount.withLock { $0 } == 11)
+      #expect(settleCount.withLock { $0 } == 10)
+    }
   }
 
   @Test
   func sketchyBarRetriesQueryTimeoutsButFailsWhenTheWholeWindowTimesOut() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let configuration = try Self.sketchyBarConfiguration(root: root)
-    _ = try testActivator(root: root).activate(package: catppuccinPackage())
-    let queryCount = Mutex(0)
-    let settleCount = Mutex(0)
-    let adapter = SketchyBarAdapter(
-      root: root,
-      configurationURL: configuration,
-      executableURL: SketchyBarAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
-      processRunner: ProcessRunner { request in
-        if request.arguments == ["--query", "bar"] {
-          queryCount.withLock { $0 += 1 }
-          throw ProcessRunnerError.timedOut(SketchyBarAdapter.liveExecutableURL, 0.1)
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let configuration = try Self.sketchyBarConfiguration(root: root)
+      _ = try testActivator(root: root).activate(package: catppuccinPackage())
+      let queryCount = Mutex(0)
+      let settleCount = Mutex(0)
+      let adapter = SketchyBarAdapter(
+        root: root,
+        configurationURL: configuration,
+        executableURL: SketchyBarAdapter.liveExecutableURL,
+        controlIsAvailable: { true },
+        processRunner: ProcessRunner { request in
+          if request.arguments == ["--query", "bar"] {
+            queryCount.withLock { $0 += 1 }
+            throw ProcessRunnerError.timedOut(SketchyBarAdapter.liveExecutableURL, 0.1)
+          }
+          return ProcessResult(terminationStatus: 0, output: "")
+        },
+        waitForSettle: { settleCount.withLock { $0 += 1 } },
+        waitForPresentation: {
+          Issue.record("Presentation wait must not run without an observed state")
         }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
-      waitForSettle: { settleCount.withLock { $0 += 1 } },
-      waitForPresentation: {
-        Issue.record("Presentation wait must not run without an observed state")
-      }
-    )
+      )
 
-    let outcome = try await adapter.reconciliation().run()
+      let outcome = try await adapter.reconciliation().run()
 
-    #expect(outcome.status == .failed)
-    #expect(outcome.message?.contains("timed out through the bounded settle window") == true)
-    #expect(queryCount.withLock { $0 } == 11)
-    #expect(settleCount.withLock { $0 } == 10)
+      #expect(outcome.status == .failed)
+      #expect(outcome.message?.contains("timed out through the bounded settle window") == true)
+      #expect(queryCount.withLock { $0 } == 11)
+      #expect(settleCount.withLock { $0 } == 10)
+    }
   }
 
   @Test

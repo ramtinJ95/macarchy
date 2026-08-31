@@ -334,42 +334,39 @@ struct ActivationSliceTests {
 
   @Test
   func activationGeneratesImportedHerdrAndNeovimPalettes() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let package = try packageWithoutNamedThemeMappings(at: root)
+    try withTemporaryRoot(named: "macarchy-activation-tests") { root in
+      let package = try packageWithoutNamedThemeMappings(at: root)
 
-    let manifest = try testActivator(root: root).activate(package: package)
-    let generation = root.appending(path: "generations/\(manifest.generationID)")
-    let capabilities = try JSONDecoder().decode(
-      GeneratedThemeCapabilities.self,
-      from: Data(contentsOf: generation.appending(path: ThemeRenderer.capabilitiesOutputPath))
-    )
-
-    #expect(try capabilities.validated().unsupportedAdapters.isEmpty)
-    let herdr = try JSONDecoder().decode(
-      GeneratedHerdrTheme.self,
-      from: Data(contentsOf: generation.appending(path: HerdrAdapter.outputPath))
-    ).validated()
-    #expect(herdr.name == "catppuccin")
-    #expect(Set(herdr.custom.keys) == HerdrAdapter.customKeySet)
-    let neovim = try String(
-      contentsOf: generation.appending(path: NeovimAdapter.outputPath),
-      encoding: .utf8
-    )
-    #expect(neovim.contains("colorscheme = \"\(NeovimAdapter.importedColorscheme)\""))
-    #expect(neovim.contains("theme_id = \"\(package.id)\""))
-    #expect(neovim.contains("accent = \"\(package.semantic.accent.rawValue)\""))
-    #expect(
-      try Set(manifest.artifacts.keys).isSuperset(
-        of: ThemeRenderer.requiredOutputPaths(rendererVersions: manifest.rendererVersions)
+      let manifest = try testActivator(root: root).activate(package: package)
+      let generation = root.appending(path: "generations/\(manifest.generationID)")
+      let capabilities = try JSONDecoder().decode(
+        GeneratedThemeCapabilities.self,
+        from: Data(contentsOf: generation.appending(path: ThemeRenderer.capabilitiesOutputPath))
       )
-    )
-    #expect(
-      try ReconciliationStatusStore(root: root).activeManifest().generationID
-        == manifest.generationID)
+
+      #expect(try capabilities.validated().unsupportedAdapters.isEmpty)
+      let herdr = try JSONDecoder().decode(
+        GeneratedHerdrTheme.self,
+        from: Data(contentsOf: generation.appending(path: HerdrAdapter.outputPath))
+      ).validated()
+      #expect(herdr.name == "catppuccin")
+      #expect(Set(herdr.custom.keys) == HerdrAdapter.customKeySet)
+      let neovim = try String(
+        contentsOf: generation.appending(path: NeovimAdapter.outputPath),
+        encoding: .utf8
+      )
+      #expect(neovim.contains("colorscheme = \"\(NeovimAdapter.importedColorscheme)\""))
+      #expect(neovim.contains("theme_id = \"\(package.id)\""))
+      #expect(neovim.contains("accent = \"\(package.semantic.accent.rawValue)\""))
+      #expect(
+        try Set(manifest.artifacts.keys).isSuperset(
+          of: ThemeRenderer.requiredOutputPaths(rendererVersions: manifest.rendererVersions)
+        )
+      )
+      #expect(
+        try ReconciliationStatusStore(root: root).activeManifest().generationID
+          == manifest.generationID)
+    }
   }
 
   @Test
@@ -827,40 +824,37 @@ struct ActivationSliceTests {
 
   @Test
   func conditionalActivationRejectsASupersededGenerationBeforeWork() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let requested = try catppuccinPackage()
-    let original = try testActivator(root: root).activate(package: requested)
-    let active = try testActivator(root: root).activate(package: tokyoNightPackage())
-    let conditional = ThemeActivator(
-      root: root,
-      faultInjector: { _ in
-        Issue.record("A failed generation condition must stop before activation work")
-      }
-    )
-
-    #expect(
-      throws: ThemeActivationError.activeGenerationChanged(
-        expected: original.generationID,
-        active: active.generationID
-      )
-    ) {
-      _ = try conditional.activate(
-        package: requested,
-        expectedActiveGenerationID: original.generationID,
-        preparedBackground: {
-          try preparedBackground(package: requested, data: requested.defaultBackgroundData)
+    try withTemporaryRoot(named: "macarchy-activation-tests") { root in
+      let requested = try catppuccinPackage()
+      let original = try testActivator(root: root).activate(package: requested)
+      let active = try testActivator(root: root).activate(package: tokyoNightPackage())
+      let conditional = ThemeActivator(
+        root: root,
+        faultInjector: { _ in
+          Issue.record("A failed generation condition must stop before activation work")
         }
       )
+
+      #expect(
+        throws: ThemeActivationError.activeGenerationChanged(
+          expected: original.generationID,
+          active: active.generationID
+        )
+      ) {
+        _ = try conditional.activate(
+          package: requested,
+          expectedActiveGenerationID: original.generationID,
+          preparedBackground: {
+            try preparedBackground(package: requested, data: requested.defaultBackgroundData)
+          }
+        )
+      }
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path
+        ) == "generations/\(active.generationID)"
+      )
     }
-    #expect(
-      try FileManager.default.destinationOfSymbolicLink(
-        atPath: root.appending(path: "current").path
-      ) == "generations/\(active.generationID)"
-    )
   }
 
   @Test
@@ -1106,33 +1100,30 @@ struct ActivationSliceTests {
 
   @Test
   func corruptMatchingGenerationFailsWithoutChangingCurrent() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let catppuccin = try catppuccinPackage()
-    let catppuccinGeneration = try testActivator(root: root).activate(package: catppuccin)
-    let tokyoGeneration = try testActivator(root: root).activate(package: tokyoNightPackage())
+    try withTemporaryRoot(named: "macarchy-activation-tests") { root in
+      let catppuccin = try catppuccinPackage()
+      let catppuccinGeneration = try testActivator(root: root).activate(package: catppuccin)
+      let tokyoGeneration = try testActivator(root: root).activate(package: tokyoNightPackage())
 
-    let corruptedTheme = root.appending(
-      path: "generations/\(catppuccinGeneration.generationID)/theme.json")
-    try overwriteReadOnlyFile(corruptedTheme, with: Data("corrupt\n".utf8))
+      let corruptedTheme = root.appending(
+        path: "generations/\(catppuccinGeneration.generationID)/theme.json")
+      try overwriteReadOnlyFile(corruptedTheme, with: Data("corrupt\n".utf8))
 
-    let error = try activationError {
-      _ = try testActivator(root: root).activate(package: catppuccin)
+      let error = try activationError {
+        _ = try testActivator(root: root).activate(package: catppuccin)
+      }
+      guard case .corruptGeneration(let id, let reason) = error else {
+        throw TestError.expectedCorruptGeneration
+      }
+      #expect(id == catppuccinGeneration.generationID)
+      #expect(reason == "artifact digest does not match theme.json")
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path
+        ) == "generations/\(tokyoGeneration.generationID)"
+      )
+      #expect(try generationIDs(at: root).count == 2)
     }
-    guard case .corruptGeneration(let id, let reason) = error else {
-      throw TestError.expectedCorruptGeneration
-    }
-    #expect(id == catppuccinGeneration.generationID)
-    #expect(reason == "artifact digest does not match theme.json")
-    #expect(
-      try FileManager.default.destinationOfSymbolicLink(
-        atPath: root.appending(path: "current").path
-      ) == "generations/\(tokyoGeneration.generationID)"
-    )
-    #expect(try generationIDs(at: root).count == 2)
   }
 
   @Test
