@@ -27,37 +27,32 @@ extension SetupOwnershipTests {
     }
     #expect(created == 0)
     let manager = SetupOwnershipManager()
-
-    do {
-      _ = try manager.readPinnedSymbolicLink(
+    #expect(
+      throws: SetupOwnershipError.system(
+        "read pinned theme link",
+        invalidURL,
+        "destination is not UTF-8"
+      )
+    ) {
+      try manager.readPinnedSymbolicLink(
         parentDescriptor: parentDescriptor,
         name: "invalid",
         url: invalidURL
       )
-      Issue.record("Expected the non-UTF-8 destination to be rejected")
-    } catch let error as SetupOwnershipError {
-      #expect(
-        error
-          == .system("read pinned theme link", invalidURL, "destination is not UTF-8")
-      )
     }
 
     let missingURL = root.appending(path: "missing")
-    do {
-      _ = try manager.readPinnedSymbolicLink(
+    #expect(
+      throws: SetupOwnershipError.system(
+        "read pinned theme link",
+        missingURL,
+        String(cString: strerror(ENOENT))
+      )
+    ) {
+      try manager.readPinnedSymbolicLink(
         parentDescriptor: parentDescriptor,
         name: "missing",
         url: missingURL
-      )
-      Issue.record("Expected the missing symlink read to fail")
-    } catch let error as SetupOwnershipError {
-      #expect(
-        error
-          == .system(
-            "read pinned theme link",
-            missingURL,
-            String(cString: strerror(ENOENT))
-          )
       )
     }
   }
