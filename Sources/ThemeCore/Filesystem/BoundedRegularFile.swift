@@ -19,6 +19,17 @@ package struct BoundedRegularFile {
     return try read(descriptor: descriptor, maximumSize: maximumSize)
   }
 
+  package static func readUTF8(
+    at url: URL,
+    maximumSize: Int = maximumSize
+  ) throws -> String {
+    let file = try read(at: url, maximumSize: maximumSize)
+    guard let text = String(data: file.data, encoding: .utf8) else {
+      throw BoundedRegularFileError.invalidUTF8
+    }
+    return text
+  }
+
   package static func read(descriptor: Int32, maximumSize: Int = maximumSize) throws -> Self {
     var metadata = stat()
     guard fstat(descriptor, &metadata) == 0 else {
@@ -53,12 +64,15 @@ package struct BoundedRegularFile {
 }
 
 package enum BoundedRegularFileError: Error, CustomStringConvertible, Equatable, Sendable {
+  case invalidUTF8
   case notRegular
   case system(operation: String, code: Int32)
   case tooLarge(Int)
 
   package var description: String {
     switch self {
+    case .invalidUTF8:
+      "is not valid UTF-8"
     case .notRegular:
       "not a regular file"
     case .system(let operation, let code):

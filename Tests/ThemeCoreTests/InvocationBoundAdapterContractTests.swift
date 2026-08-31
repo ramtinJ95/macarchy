@@ -82,6 +82,25 @@ extension AdapterContractTests {
     )
     #expect(eza.inspection().status == .drifted)
     #expect(eza.inspection().message?.contains("must point to") == true)
+
+    try FileManager.default.removeItem(at: ezaTheme)
+    try FileManager.default.createSymbolicLink(
+      at: ezaTheme,
+      withDestinationURL: root.appending(path: "current/\(EzaAdapter.outputPath)")
+    )
+
+    try Data([0xff]).write(to: paths.shellConfigurationURL)
+    #expect(throws: EzaAdapterError.self) { try eza.preflight() }
+    #expect(
+      eza.inspection().message
+        == "Cannot read shell configuration at \(paths.shellConfigurationURL.path)"
+    )
+    let batConfiguration = paths.batConfigurationDirectoryURL.appending(path: "config")
+    try Data([0xff]).write(to: batConfiguration)
+    #expect(throws: BatAdapterError.self) { try bat.preflight() }
+    #expect(
+      bat.inspection().message == "Cannot read bat configuration at \(batConfiguration.path)"
+    )
   }
 
   @Test

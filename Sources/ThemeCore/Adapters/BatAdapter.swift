@@ -97,18 +97,13 @@ package struct BatAdapter: Sendable {
   }
 
   private func readConfiguration() throws -> String {
-    let data: Data
     do {
-      data = try BoundedRegularFile.read(at: configurationURL).data
+      return try BoundedRegularFile.readUTF8(at: configurationURL)
     } catch BoundedRegularFileError.tooLarge {
       throw BatAdapterError.configurationTooLarge(configurationURL)
     } catch {
       throw BatAdapterError.cannotReadConfiguration(configurationURL)
     }
-    guard let configuration = String(data: data, encoding: .utf8) else {
-      throw BatAdapterError.cannotReadConfiguration(configurationURL)
-    }
-    return configuration
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {
