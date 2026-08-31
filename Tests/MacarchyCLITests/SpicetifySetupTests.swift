@@ -15,8 +15,11 @@ struct SpicetifySetupTests {
 
     let setup = try fixture.setup(dryRun: false)
 
-    #expect(setup.map(\.id) == ["spicetify.selectors", "spicetify.color-link"])
-    #expect(setup.allSatisfy { $0.status == .disabled && $0.succeeded })
+    expectStatuses(
+      setup,
+      ["spicetify.selectors": .disabled, "spicetify.color-link": .disabled]
+    )
+    #expect(setup.allSatisfy { $0.succeeded })
     #expect(setup.allSatisfy { !$0.mutationAttempted })
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(
@@ -26,7 +29,10 @@ struct SpicetifySetupTests {
     )
 
     let teardown = try fixture.teardown(dryRun: false)
-    #expect(teardown.map(\.status) == [.none, .none])
+    expectStatuses(
+      teardown,
+      ["spicetify.selectors": .none, "spicetify.color-link": .none]
+    )
     #expect(
       !FileManager.default.fileExists(
         atPath: fixture.stateRoot.appending(path: "run/spicetify.lock").path
@@ -78,7 +84,10 @@ struct SpicetifySetupTests {
       dryRun: false
     )
 
-    #expect(setup.suffix(2).map(\.status) == [.owned, .owned])
+    var setupStatuses = externalFixtureStatuses
+    setupStatuses["spicetify.selectors"] = .owned
+    setupStatuses["spicetify.color-link"] = .owned
+    expectStatuses(setup, setupStatuses)
     #expect(
       try FileManager.default.destinationOfSymbolicLink(
         atPath: context.spicetifyColorLink.path
@@ -91,7 +100,12 @@ struct SpicetifySetupTests {
       dryRun: false
     )
 
-    #expect(teardown.suffix(2).map(\.status) == [.removed, .removed])
+    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
+      SetupIntegrationResult.Status.none
+    }
+    teardownStatuses["spicetify.selectors"] = .removed
+    teardownStatuses["spicetify.color-link"] = .removed
+    expectStatuses(teardown, teardownStatuses)
     #expect(try Data(contentsOf: context.spicetifyConfiguration) == original)
     #expect(try Data(contentsOf: userCSS) == css)
     #expect(throws: (any Error).self) {
@@ -128,8 +142,11 @@ struct SpicetifySetupTests {
 
     let results = try fixture.setup(dryRun: false)
 
-    #expect(results.map(\.id) == ["spicetify.selectors", "spicetify.color-link"])
-    #expect(results.allSatisfy { $0.status == .external && !$0.mutationAttempted })
+    expectStatuses(
+      results,
+      ["spicetify.selectors": .external, "spicetify.color-link": .external]
+    )
+    #expect(!results.contains { $0.mutationAttempted })
     #expect(try Data(contentsOf: fixture.configuration) == configuration)
     #expect(try Data(contentsOf: fixture.userCSS) == css)
     #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
@@ -148,7 +165,10 @@ struct SpicetifySetupTests {
 
     let preview = try fixture.setup(dryRun: true)
 
-    #expect(preview.map(\.status) == [.planned, .planned])
+    expectStatuses(
+      preview,
+      ["spicetify.selectors": .planned, "spicetify.color-link": .planned]
+    )
     #expect(try Data(contentsOf: fixture.configuration) == original)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(throws: (any Error).self) {
@@ -162,7 +182,10 @@ struct SpicetifySetupTests {
         .appending("\r\n[Backup]\r\nversion = 1.2.3\r\n").utf8
     )
 
-    #expect(setup.map(\.status) == [.owned, .owned])
+    expectStatuses(
+      setup,
+      ["spicetify.selectors": .owned, "spicetify.color-link": .owned]
+    )
     #expect(setup.allSatisfy { $0.mutationAttempted })
     #expect(try Data(contentsOf: fixture.configuration) == expected)
     #expect(try Data(contentsOf: fixture.userCSS) == css)
@@ -182,12 +205,18 @@ struct SpicetifySetupTests {
     )
 
     let repeated = try fixture.setup(dryRun: false)
-    #expect(repeated.map(\.status) == [.owned, .owned])
+    expectStatuses(
+      repeated,
+      ["spicetify.selectors": .owned, "spicetify.color-link": .owned]
+    )
     #expect(repeated.allSatisfy { !$0.mutationAttempted })
 
     let teardown = try fixture.teardown(dryRun: false)
 
-    #expect(teardown.map(\.status) == [.removed, .removed])
+    expectStatuses(
+      teardown,
+      ["spicetify.selectors": .removed, "spicetify.color-link": .removed]
+    )
     #expect(try Data(contentsOf: fixture.configuration) == original)
     #expect(try Data(contentsOf: fixture.userCSS) == css)
     #expect(throws: (any Error).self) {
@@ -225,7 +254,10 @@ struct SpicetifySetupTests {
 
     let repeated = try fixture.setup(dryRun: false)
 
-    #expect(repeated.map(\.status) == [.owned, .external])
+    expectStatuses(
+      repeated,
+      ["spicetify.selectors": .owned, "spicetify.color-link": .external]
+    )
     #expect(repeated.allSatisfy { !$0.mutationAttempted })
     #expect(try Data(contentsOf: fixture.configuration) == providerRewrite)
 
@@ -243,7 +275,10 @@ struct SpicetifySetupTests {
 
       """.utf8
     )
-    #expect(teardown.map(\.status) == [.removed, .none])
+    expectStatuses(
+      teardown,
+      ["spicetify.selectors": .removed, "spicetify.color-link": .none]
+    )
     #expect(try Data(contentsOf: fixture.configuration) == expected)
   }
 
@@ -346,7 +381,10 @@ struct SpicetifySetupTests {
       }
       let resumed = try fixture.teardown(dryRun: false)
 
-      #expect(resumed.map(\.status) == [.removed, .none])
+      expectStatuses(
+        resumed,
+        ["spicetify.selectors": .removed, "spicetify.color-link": .none]
+      )
       #expect(
         try String(contentsOf: fixture.configuration, encoding: .utf8)
           == "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 0\n"
@@ -379,9 +417,15 @@ struct SpicetifySetupTests {
 
     let resumed = try fixture.setup(dryRun: false)
 
-    #expect(resumed.map(\.status) == [.owned, .external])
+    expectStatuses(
+      resumed,
+      ["spicetify.selectors": .owned, "spicetify.color-link": .external]
+    )
     let teardown = try fixture.teardown(dryRun: false)
-    #expect(teardown.map(\.status) == [.removed, .none])
+    expectStatuses(
+      teardown,
+      ["spicetify.selectors": .removed, "spicetify.color-link": .none]
+    )
     #expect(try Data(contentsOf: fixture.configuration) == original)
     #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
   }
@@ -438,7 +482,10 @@ struct SpicetifySetupTests {
 
     let setup = try fixture.setup(dryRun: false)
 
-    #expect(setup.map(\.status) == [.owned, .external])
+    expectStatuses(
+      setup,
+      ["spicetify.selectors": .owned, "spicetify.color-link": .external]
+    )
     #expect(
       try String(contentsOf: fixture.configuration, encoding: .utf8)
         == """
@@ -455,7 +502,10 @@ struct SpicetifySetupTests {
     #expect(try Data(contentsOf: fixture.userCSS) == css)
 
     let teardown = try fixture.teardown(dryRun: false)
-    #expect(teardown.map(\.status) == [.removed, .none])
+    expectStatuses(
+      teardown,
+      ["spicetify.selectors": .removed, "spicetify.color-link": .none]
+    )
     #expect(try Data(contentsOf: fixture.configuration) == original)
     #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
   }
@@ -476,15 +526,23 @@ struct SpicetifySetupTests {
 
     let results = SetupOwnershipManager.failureResults(error, homeDirectory: fixture.home)
 
-    #expect(results.map(\.id) == ["spicetify.selectors", "spicetify.color-link"])
-    #expect(results.map(\.status) == [.failed, .owned])
-    #expect(results.map(\.mutationAttempted) == [false, true])
-    #expect(results.first?.target == fixture.configuration.path)
+    expectStatuses(
+      results,
+      ["spicetify.selectors": .failed, "spicetify.color-link": .owned]
+    )
+    #expect(
+      results.first { $0.id == "spicetify.selectors" }?.mutationAttempted == false
+    )
+    #expect(results.first { $0.id == "spicetify.color-link" }?.mutationAttempted == true)
+    #expect(results.first { $0.id == "spicetify.selectors" }?.target == fixture.configuration.path)
     #expect(try Data(contentsOf: fixture.configuration) == original)
     #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
 
     let teardown = try fixture.teardown(dryRun: false)
-    #expect(teardown.map(\.status) == [.none, .removed])
+    expectStatuses(
+      teardown,
+      ["spicetify.selectors": .none, "spicetify.color-link": .removed]
+    )
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 

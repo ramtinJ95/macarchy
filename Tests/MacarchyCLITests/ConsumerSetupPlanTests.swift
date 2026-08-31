@@ -6,35 +6,6 @@ import Testing
 
 @Suite(.serialized)
 struct ConsumerSetupPlanTests {
-  private let integrationIDs = [
-    "kitty.include",
-    "bat.selector",
-    "bat.theme-link",
-    "eza.environment",
-    "eza.theme-link",
-    "btop.selector",
-    "btop.theme-link",
-    "yazi.selector",
-    "yazi.flavor-link",
-    "yazi.syntax-link",
-    "atuin.selector",
-    "atuin.theme-link",
-    "neovim.watcher",
-    "neovim.theme-link",
-    "starship.behavior",
-    "starship.configuration-link",
-    "pi.selector",
-    "pi.theme-link",
-    "herdr.selector",
-    "tuicr.selector",
-    "tuicr.theme-link",
-    "tuicr.syntax-link",
-    "codex.selector",
-    "codex.theme-link",
-    "spicetify.selectors",
-    "spicetify.color-link",
-  ]
-
   private let setupDispatchIDs = [
     "kitty.include",
     "bat.selector", "bat.theme-link",
@@ -180,8 +151,8 @@ struct ConsumerSetupPlanTests {
           "pi", "herdr", "tuicr", "codex", "spicetify",
         ]
     )
-    #expect(steps.map(\.id) == integrationIDs)
-    #expect(Set(steps.map(\.id)).count == integrationIDs.count)
+    #expect(steps.map(\.id) == allIntegrationIDs)
+    #expect(Set(steps.map(\.id)).count == allIntegrationIDs.count)
     #expect(steps.allSatisfy { $0.affectedPaths.first == $0.target })
     let plannedPathToID = Dictionary(
       uniqueKeysWithValues: steps.flatMap { step in
@@ -218,8 +189,8 @@ struct ConsumerSetupPlanTests {
     let setup = try manager.setup(homeDirectory: fixture.home, dryRun: true)
     let teardown = try manager.teardown(homeDirectory: fixture.home, dryRun: true)
 
-    #expect(setup.map(\.id) == integrationIDs)
-    #expect(teardown.map(\.id) == integrationIDs)
+    #expect(setup.map(\.id) == allIntegrationIDs)
+    #expect(teardown.map(\.id) == allIntegrationIDs)
   }
 
   @Test
@@ -308,7 +279,7 @@ struct ConsumerSetupPlanTests {
 
     let results = SetupOwnershipManager.failureResults(error, homeDirectory: fixture.home)
 
-    #expect(results.map(\.id) == Array(integrationIDs.prefix(7)))
+    #expect(results.map(\.id) == Array(allIntegrationIDs.prefix(7)))
     #expect(
       results.map(\.status)
         == [.owned, .external, .external, .external, .external, .external, .failed]
@@ -352,7 +323,7 @@ struct ConsumerSetupPlanTests {
       dryRun: false
     )
 
-    #expect(resumed.map(\.id) == integrationIDs)
+    #expect(resumed.map(\.id) == allIntegrationIDs)
     #expect(resumed.first?.status == .owned)
     #expect(resumed.first?.mutationAttempted == true)
     #expect(try fixture.configuration() == "font_size 13\n\(fixture.includeDirective)\n")

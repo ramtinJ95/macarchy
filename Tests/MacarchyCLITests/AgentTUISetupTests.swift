@@ -7,16 +7,6 @@ import Testing
 
 @Suite(.serialized)
 struct AgentTUISetupTests {
-  private let integrationIDs = [
-    "pi.selector",
-    "pi.theme-link",
-    "herdr.selector",
-    "tuicr.selector",
-    "tuicr.theme-link",
-    "tuicr.syntax-link",
-    "codex.selector",
-    "codex.theme-link",
-  ]
   private let ownedIntegrationIDs = [
     "pi.selector",
     "pi.theme-link",
@@ -34,10 +24,9 @@ struct AgentTUISetupTests {
     try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    let agentResults = Array(results.dropLast(2).suffix(integrationIDs.count))
 
-    #expect(agentResults.map(\.id) == integrationIDs)
-    #expect(agentResults.allSatisfy { $0.status == .external && !$0.mutationAttempted })
+    expectStatuses(results, externalFixtureStatuses)
+    #expect(!results.contains { $0.mutationAttempted })
     #expect(try fixture.linkDestination(fixture.piThemeLink) == fixture.piThemeDestination.path)
     #expect(
       try fixture.linkDestination(fixture.tuicrThemeLink)
@@ -63,11 +52,11 @@ struct AgentTUISetupTests {
     try fixture.createLocalAgentTUIConfigurations(pi: pi, tuicr: tuicr, codex: codex)
 
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
-    #expect(preview.prefix(12).allSatisfy { $0.status == .external })
-    #expect(
-      preview.dropLast(2).suffix(8).map(\.status)
-        == [.planned, .planned, .external, .planned, .planned, .planned, .planned, .planned]
-    )
+    var previewStatuses = externalFixtureStatuses
+    for id in ownedIntegrationIDs {
+      previewStatuses[id] = .planned
+    }
+    expectStatuses(preview, previewStatuses)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
@@ -77,13 +66,13 @@ struct AgentTUISetupTests {
     )
     let records = try #require(manifest["records"] as? [[String: Any]])
 
-    #expect(setup.prefix(12).allSatisfy { $0.status == .external })
+    var setupStatuses = externalFixtureStatuses
+    for id in ownedIntegrationIDs {
+      setupStatuses[id] = .owned
+    }
+    expectStatuses(setup, setupStatuses)
     #expect(
-      setup.dropLast(2).suffix(8).map(\.status)
-        == [.owned, .owned, .external, .owned, .owned, .owned, .owned, .owned]
-    )
-    #expect(
-      setup.dropLast(2).suffix(8).filter { $0.id != "herdr.selector" }.allSatisfy {
+      setup.filter { ownedIntegrationIDs.contains($0.id) }.allSatisfy {
         $0.mutationAttempted
       }
     )
@@ -121,22 +110,22 @@ struct AgentTUISetupTests {
       "{\n  \"lastChangelogVersion\": \"9.9.9\",\n  \"theme\": \"macarchy-current\",\n  \"provider\": \"anthropic\"\n}\n"
     try Data(providerRewrite.utf8).write(to: fixture.piConfiguration, options: .atomic)
     let repeated = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    expectStatuses(repeated, setupStatuses)
     #expect(
-      repeated.dropLast(2).suffix(8).map(\.status)
-        == [.owned, .owned, .external, .owned, .owned, .owned, .owned, .owned]
-    )
-    #expect(!repeated.dropLast(2).suffix(8).contains { $0.mutationAttempted })
+      !repeated.filter { ownedIntegrationIDs.contains($0.id) }.contains { $0.mutationAttempted })
 
     let teardown = try SetupOwnershipManager().teardown(
       homeDirectory: fixture.home,
       dryRun: false
     )
 
-    #expect(teardown.prefix(12).allSatisfy { $0.status == .none })
-    #expect(
-      teardown.dropLast(2).suffix(8).map(\.status)
-        == [.removed, .removed, .none, .removed, .removed, .removed, .removed, .removed]
-    )
+    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
+      SetupIntegrationResult.Status.none
+    }
+    for id in ownedIntegrationIDs {
+      teardownStatuses[id] = .removed
+    }
+    expectStatuses(teardown, teardownStatuses)
     #expect(
       try String(contentsOf: fixture.piConfiguration, encoding: .utf8)
         == "{\n  \"lastChangelogVersion\": \"9.9.9\",\n  \"provider\": \"anthropic\"\n}\n"

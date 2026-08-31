@@ -33,10 +33,7 @@ struct SetupOwnershipTests {
       dryRun: false
     )
 
-    #expect(
-      results.map(\.status)
-        == Array(repeating: .external, count: 24) + Array(repeating: .disabled, count: 2)
-    )
+    expectStatuses(results, externalFixtureStatuses)
     #expect(!results.contains { $0.mutationAttempted })
     #expect(try fixture.configuration() == original)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -78,10 +75,7 @@ struct SetupOwnershipTests {
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
 
-    #expect(
-      results.map(\.status)
-        == Array(repeating: .external, count: 24) + Array(repeating: .disabled, count: 2)
-    )
+    expectStatuses(results, externalFixtureStatuses)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(try fixture.batConfigurationText() == "\(fixture.batDirective)\n")
     #expect(try fixture.shellConfigurationText() == "\(fixture.ezaDirective)\n")
@@ -111,8 +105,7 @@ struct SetupOwnershipTests {
 
     #expect(!execution.succeeded)
     #expect(report.outcome == "integration_failed")
-    #expect(report.integrations.map(\.id) == ["bat.selector"])
-    #expect(report.integrations.map(\.status) == ["failed"])
+    expectStatuses(report.integrations, ["bat.selector": "failed"])
     #expect(report.integrations.first?.target == fixture.batConfiguration.path)
     #expect(report.integrations.first?.mutationAttempted == false)
     #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
@@ -142,12 +135,13 @@ struct SetupOwnershipTests {
     #expect(!execution.succeeded)
     #expect(report.outcome == "integration_failed")
     #expect(report.mutationAttempted)
-    #expect(
-      report.integrations.map(\.id)
-        == ["kitty.include", "bat.selector", "bat.theme-link"]
+    expectStatuses(
+      report.integrations,
+      ["kitty.include": "external", "bat.selector": "owned", "bat.theme-link": "failed"]
     )
-    #expect(report.integrations.map(\.status) == ["external", "owned", "failed"])
-    #expect(report.integrations.map(\.mutationAttempted) == [false, true, false])
+    #expect(report.integrations.first { $0.id == "kitty.include" }?.mutationAttempted == false)
+    #expect(report.integrations.first { $0.id == "bat.selector" }?.mutationAttempted == true)
+    #expect(report.integrations.first { $0.id == "bat.theme-link" }?.mutationAttempted == false)
     #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
     #expect(try String(contentsOf: fixture.batThemeLink, encoding: .utf8) == "user-owned theme\n")
     #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -170,12 +164,11 @@ struct SetupOwnershipTests {
     try Data("cache".utf8).write(to: cacheSentinel)
 
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
-    #expect(
-      preview.map(\.status)
-        == [.external, .planned, .planned, .planned, .planned]
-        + Array(repeating: .external, count: 19)
-        + Array(repeating: .disabled, count: 2)
-    )
+    var previewStatuses = externalFixtureStatuses
+    for id in ["bat.selector", "bat.theme-link", "eza.environment", "eza.theme-link"] {
+      previewStatuses[id] = .planned
+    }
+    expectStatuses(preview, previewStatuses)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
@@ -184,12 +177,11 @@ struct SetupOwnershipTests {
       String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
     )
 
-    #expect(
-      setup.map(\.status)
-        == [.external, .owned, .owned, .owned, .owned]
-        + Array(repeating: .external, count: 19)
-        + Array(repeating: .disabled, count: 2)
-    )
+    var setupStatuses = externalFixtureStatuses
+    for id in ["bat.selector", "bat.theme-link", "eza.environment", "eza.theme-link"] {
+      setupStatuses[id] = .owned
+    }
+    expectStatuses(setup, setupStatuses)
     #expect(manifest.schemaVersion == 1)
     #expect(
       manifest.records.map(\.id)
@@ -214,11 +206,13 @@ struct SetupOwnershipTests {
       dryRun: false
     )
 
-    #expect(
-      teardown.map(\.status)
-        == [.none, .removed, .removed, .removed, .removed]
-        + Array(repeating: .none, count: 21)
-    )
+    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
+      SetupIntegrationResult.Status.none
+    }
+    for id in ["bat.selector", "bat.theme-link", "eza.environment", "eza.theme-link"] {
+      teardownStatuses[id] = .removed
+    }
+    expectStatuses(teardown, teardownStatuses)
     #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
     #expect(try fixture.shellConfigurationText() == "export EDITOR=nvim\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeLink.path))
@@ -263,41 +257,16 @@ struct SetupOwnershipTests {
     let report = try decode(TeardownReport.self, execution.output)
 
     #expect(!execution.succeeded)
+    var reportStatuses = externalFixtureStatuses.mapValues { _ in "none" }
+    for id in ["kitty.include", "bat.selector", "bat.theme-link"] {
+      reportStatuses.removeValue(forKey: id)
+    }
+    reportStatuses["eza.environment"] = "failed"
+    reportStatuses["eza.theme-link"] = "removed"
+    expectStatuses(report.integrations, reportStatuses)
     #expect(
-      report.integrations.map(\.id)
-        == [
-          "eza.environment",
-          "eza.theme-link",
-          "btop.selector",
-          "btop.theme-link",
-          "yazi.selector",
-          "yazi.flavor-link",
-          "yazi.syntax-link",
-          "atuin.selector",
-          "atuin.theme-link",
-          "neovim.watcher",
-          "neovim.theme-link",
-          "starship.behavior",
-          "starship.configuration-link",
-          "pi.selector",
-          "pi.theme-link",
-          "herdr.selector",
-          "tuicr.selector",
-          "tuicr.theme-link",
-          "tuicr.syntax-link",
-          "codex.selector",
-          "codex.theme-link",
-          "spicetify.selectors",
-          "spicetify.color-link",
-        ]
-    )
-    #expect(
-      report.integrations.map(\.status)
-        == ["failed", "removed"] + Array(repeating: "none", count: 21)
-    )
-    #expect(
-      report.integrations.map(\.mutationAttempted)
-        == [true, true] + Array(repeating: false, count: 21)
+      Set(report.integrations.filter(\.mutationAttempted).map(\.id))
+        == Set(["eza.environment", "eza.theme-link"])
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.ezaThemeLink.path))
     #expect(try fixture.shellConfigurationText() == "concurrent shell edit\n")
@@ -347,14 +316,11 @@ struct SetupOwnershipTests {
 
     #expect(setup.succeeded)
     #expect(setupJSON["integration"] == nil)
-    #expect((setupJSON["integrations"] as? [[String: Any]])?.count == 26)
     #expect(setupReport.outcome == "ready")
     #expect(setupReport.mutationAttempted)
-    #expect(
-      setupReport.integrations.map(\.status)
-        == ["owned"] + Array(repeating: "external", count: 23)
-        + Array(repeating: "disabled", count: 2)
-    )
+    var setupReportStatuses = externalFixtureStatuses.mapValues { $0.rawValue }
+    setupReportStatuses["kitty.include"] = "owned"
+    expectStatuses(setupReport.integrations, setupReportStatuses)
     #expect(manifest.schemaVersion == 1)
     #expect(manifest.records.map(\.phase) == ["applied"])
     #expect(try fixture.configuration() == "font_size 13\n\(fixture.includeDirective)\n")
@@ -374,10 +340,9 @@ struct SetupOwnershipTests {
       ownershipManager: SetupOwnershipManager()
     ).execute(homeDirectory: fixture.home, dryRun: true, json: true)
     let teardownPreview = try decode(TeardownReport.self, teardownDryRun.output)
-    #expect(
-      teardownPreview.integrations.map(\.status)
-        == ["planned"] + Array(repeating: "none", count: 25)
-    )
+    var teardownPreviewStatuses = externalFixtureStatuses.mapValues { _ in "none" }
+    teardownPreviewStatuses["kitty.include"] = "planned"
+    expectStatuses(teardownPreview.integrations, teardownPreviewStatuses)
     #expect(try fixture.configuration().contains(fixture.includeDirective))
 
     let teardown = try TeardownCommandRunner(
@@ -390,11 +355,9 @@ struct SetupOwnershipTests {
 
     #expect(teardown.succeeded)
     #expect(teardownJSON["integration"] == nil)
-    #expect((teardownJSON["integrations"] as? [[String: Any]])?.count == 26)
-    #expect(
-      teardownReport.integrations.map(\.status)
-        == ["removed"] + Array(repeating: "none", count: 25)
-    )
+    var teardownReportStatuses = externalFixtureStatuses.mapValues { _ in "none" }
+    teardownReportStatuses["kitty.include"] = "removed"
+    expectStatuses(teardownReport.integrations, teardownReportStatuses)
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(try fixture.permissions() == 0o600)
     #expect(try fixture.extendedAttribute(name: "io.github.macarchy.test") == "preserve")
@@ -448,7 +411,7 @@ struct SetupOwnershipTests {
     let report = try decode(SetupReport.self, execution.output)
     #expect(!execution.succeeded)
     #expect(report.outcome == "integration_failed")
-    #expect(report.integrations.map(\.status) == ["failed"])
+    expectStatuses(report.integrations, ["kitty.include": "failed"])
     #expect(report.integrations.first?.message == expected.description)
     #expect(report.integrations.first?.mutationAttempted == false)
     #expect(try fixture.configuration() == "font_size 13\n")

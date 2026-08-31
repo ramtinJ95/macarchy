@@ -18,18 +18,9 @@ struct NeovimStarshipSetupTests {
     try Data("existing generated bridge\n".utf8).write(to: fixture.starshipBridge)
 
     let results = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    let group = Array(results[12..<16])
 
-    #expect(
-      group.map(\.id)
-        == [
-          "neovim.watcher",
-          "neovim.theme-link",
-          "starship.behavior",
-          "starship.configuration-link",
-        ]
-    )
-    #expect(group.allSatisfy { $0.status == .external && !$0.mutationAttempted })
+    expectStatuses(results, externalFixtureStatuses)
+    #expect(!results.contains { $0.mutationAttempted })
     #expect(
       try fixture.linkDestination(fixture.starshipConfigurationLink)
         == fixture.starshipFirstHopDestination
@@ -57,10 +48,10 @@ struct NeovimStarshipSetupTests {
     let behavior = try Data(contentsOf: fixture.starshipBehavior)
 
     let preview = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
-    #expect(
-      preview[12..<16].map(\.status)
-        == [.external, .planned, .external, .planned]
-    )
+    var previewStatuses = externalFixtureStatuses
+    previewStatuses["neovim.theme-link"] = .planned
+    previewStatuses["starship.configuration-link"] = .planned
+    expectStatuses(preview, previewStatuses)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
     let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
@@ -69,10 +60,10 @@ struct NeovimStarshipSetupTests {
       from: Data(contentsOf: fixture.manifest)
     )
 
-    #expect(
-      setup[12..<16].map(\.status)
-        == [.external, .owned, .external, .owned]
-    )
+    var setupStatuses = externalFixtureStatuses
+    setupStatuses["neovim.theme-link"] = .owned
+    setupStatuses["starship.configuration-link"] = .owned
+    expectStatuses(setup, setupStatuses)
     #expect(
       manifest.records.map(\.id)
         == ["neovim.theme-link", "starship.configuration-link"]
@@ -94,7 +85,12 @@ struct NeovimStarshipSetupTests {
       dryRun: false
     )
 
-    #expect(teardown[12..<16].map(\.status) == [.none, .removed, .none, .removed])
+    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
+      SetupIntegrationResult.Status.none
+    }
+    teardownStatuses["neovim.theme-link"] = .removed
+    teardownStatuses["starship.configuration-link"] = .removed
+    expectStatuses(teardown, teardownStatuses)
     #expect(!FileManager.default.fileExists(atPath: fixture.neovimThemeLink.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.starshipConfigurationLink.path))
     #expect(try Data(contentsOf: fixture.neovimWatcherConfiguration) == watcher)
