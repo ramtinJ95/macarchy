@@ -158,6 +158,31 @@ and explicitly accepted. At that boundary:
 
 ## Verification and repository hygiene
 
+- Treat the project plan's acceptance gate as both the required scope and the
+  default ceiling for verification. Before implementation, map each gate item
+  to the smallest automated or supported-machine check that can prove it.
+- Default to one substantive verification pass per observable behavior and one
+  rerun of the affected checks after a fix. Any further cycle requires a new
+  concrete failure, a load-bearing assumption invalidated by evidence, or an
+  explicit user request.
+- Reuse repository tests, fixtures, status/doctor commands, and established
+  release checks. Do not build bespoke evidence harnesses, duplicate the same
+  proof across fresh clones or machines, or hash every unchanged artifact when
+  the gate does not require that provenance.
+- When a check fails, fix the defect and rerun the narrowest path that could be
+  affected. Restart the entire acceptance sequence only when the defect could
+  have invalidated earlier results.
+- Stop when the gate has passed. Record relevant out-of-scope discoveries for a
+  later milestone instead of remediating them, installing unrelated tools, or
+  adding "while we are here" validation.
+- Escalate beyond this budget only for a concrete security, data-loss,
+  irreversible-mutation, unknown-ownership, or release-provenance risk. State
+  the specific risk and why existing evidence is insufficient before adding
+  work; do not silently turn local configuration validation into adversarial
+  every-syscall qualification.
+- Keep acceptance evidence concise and decision-relevant. Routine command
+  transcripts, repeated before/after inventories, and redundant manifests do
+  not become requirements merely because they can be collected.
 - Add focused tests with implementation changes and run the narrowest relevant
   checks before broader suites.
 - Record runtime-dependent claims as observations until tested on the supported
