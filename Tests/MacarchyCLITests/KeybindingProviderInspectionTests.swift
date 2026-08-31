@@ -94,6 +94,71 @@ struct KeybindingProviderInspectionTests {
   }
 
   @Test
+  func regularEntryPreservesRegularFileAdoptionClassification() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory,
+      withIntermediateDirectories: true
+    )
+    let entry = fixture.skhdDirectory.appending(path: "skhdrc")
+    try "alt - j : regular command\n".write(to: entry, atomically: true, encoding: .utf8)
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .adoptionRequired)
+    #expect(inspection.ownership == "regular_file")
+    #expect(inspection.source == entry.path)
+    #expect(inspection.originalTarget == nil)
+    #expect(inspection.retainedOriginalRequirement == nil)
+    #expect(inspection.adoptionEvidence?.kind == .regularFile)
+  }
+
+  @Test
+  func nonmatchingEntrySymlinkPreservesSymlinkAdoptionClassification() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory,
+      withIntermediateDirectories: true
+    )
+    let source = fixture.skhdDirectory.appending(path: "custom.skhdrc")
+    try "alt - j : linked command\n".write(to: source, atomically: true, encoding: .utf8)
+    let entry = fixture.skhdDirectory.appending(path: "skhdrc")
+    try FileManager.default.createSymbolicLink(
+      atPath: entry.path,
+      withDestinationPath: "custom.skhdrc"
+    )
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .adoptionRequired)
+    #expect(inspection.ownership == "entry_symlink")
+    #expect(inspection.source == source.path)
+    #expect(inspection.originalTarget == "custom.skhdrc")
+    #expect(inspection.retainedOriginalRequirement == "exact_inode")
+    #expect(inspection.retainedOriginalStatus == "will_retain")
+    #expect(inspection.adoptionEvidence?.kind == .symbolicLink)
+  }
+
+  @Test
+  func unsupportedEntryPreservesConflictClassification() throws {
+    let fixture = try fixtureHome()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.skhdDirectory.appending(path: "skhdrc"),
+      withIntermediateDirectories: true
+    )
+
+    let inspection = inspect(fixture)
+
+    #expect(inspection.status == .blocked)
+    #expect(inspection.ownership == "conflict")
+    #expect(
+      inspection.message.hasPrefix("existing skhd entry point is not a bounded regular file: "))
+  }
+
+  @Test
   func matchingEntryLinkWithoutReadableGenerationBlocksAdoptionPreview() throws {
     let fixture = try fixtureHome()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
