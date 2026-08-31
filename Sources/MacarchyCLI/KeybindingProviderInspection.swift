@@ -91,6 +91,29 @@ struct KeybindingProviderInspector: Sendable {
     }
     defer { Darwin.close(homeDescriptor) }
 
+    return inspectConfigurationDirectory(
+      homeDescriptor: homeDescriptor,
+      home: home,
+      stateRoot: stateRoot,
+      configurationDirectory: configurationDirectory,
+      directory: directory,
+      entry: entry,
+      expectedTarget: expectedTarget,
+      generation: generation
+    )
+  }
+
+  private func inspectConfigurationDirectory(
+    homeDescriptor: Int32,
+    home: URL,
+    stateRoot: URL,
+    configurationDirectory: URL,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String,
+    generation: KeybindingGenerationInspection
+  ) -> KeybindingProviderInspection {
+
     let configurationDescriptor: Int32
     do {
       configurationDescriptor = try PinnedFilesystem.openDirectory(
@@ -181,34 +204,17 @@ struct KeybindingProviderInspector: Sendable {
 
     switch directoryMetadata.st_mode & S_IFMT {
     case S_IFLNK:
-      if claimed {
-        return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
-      }
-      do {
-        try Self.requireAdoptableSymlink(
-          directoryMetadata,
-          parentDescriptor: configurationDescriptor,
-          name: "skhd",
-          url: directory
-        )
-      } catch {
-        return result(
-          .blocked,
-          entry: entry,
-          expectedTarget: expectedTarget,
-          ownership: "directory_symlink",
-          message: "skhd directory symlink cannot be adopted: \(error)"
-        )
-      }
-      return inspectDirectorySymlink(
+      return inspectDirectorySymlinkState(
+        metadata: directoryMetadata,
         configurationDescriptor: configurationDescriptor,
         configurationDirectory: configurationDirectory,
         directory: directory,
         entry: entry,
-        expectedTarget: expectedTarget
+        expectedTarget: expectedTarget,
+        claimed: claimed
       )
     case S_IFDIR:
-      return inspectEntry(
+      return inspectOrdinaryDirectoryEntry(
         configurationDescriptor: configurationDescriptor,
         home: home,
         directory: directory,
@@ -230,6 +236,43 @@ struct KeybindingProviderInspector: Sendable {
         message: "~/.config/skhd is neither a directory nor a symbolic link"
       )
     }
+  }
+
+  private func inspectDirectorySymlinkState(
+    metadata: stat,
+    configurationDescriptor: Int32,
+    configurationDirectory: URL,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String,
+    claimed: Bool
+  ) -> KeybindingProviderInspection {
+    if claimed {
+      return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+    }
+    do {
+      try Self.requireAdoptableSymlink(
+        metadata,
+        parentDescriptor: configurationDescriptor,
+        name: "skhd",
+        url: directory
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "directory_symlink",
+        message: "skhd directory symlink cannot be adopted: \(error)"
+      )
+    }
+    return inspectDirectorySymlink(
+      configurationDescriptor: configurationDescriptor,
+      configurationDirectory: configurationDirectory,
+      directory: directory,
+      entry: entry,
+      expectedTarget: expectedTarget
+    )
   }
 
   private func inspectDirectorySymlink(
@@ -361,7 +404,7 @@ struct KeybindingProviderInspector: Sendable {
     }
   }
 
-  private func inspectEntry(
+  private func inspectOrdinaryDirectoryEntry(
     configurationDescriptor: Int32,
     home: URL,
     directory: URL,
@@ -398,30 +441,11 @@ struct KeybindingProviderInspector: Sendable {
         url: entry
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      if claimed {
-        return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
-      }
-      let homeDescriptor: Int32
-      do {
-        homeDescriptor = try PinnedFilesystem.openDirectory(at: home)
-      } catch {
-        return result(
-          .blocked,
-          entry: entry,
-          expectedTarget: expectedTarget,
-          ownership: "unsafe_ancestor",
-          message: "cannot reopen the selected home to inspect ~/.skhdrc: \(error)"
-        )
-      }
-      defer { Darwin.close(homeDescriptor) }
-      return inspectMissingPreferredEntry(
-        homeDescriptor: homeDescriptor,
+      return inspectMissingEntry(
         home: home,
         entry: entry,
         expectedTarget: expectedTarget,
-        installOwnership: "ordinary_directory",
-        installMessage: "skhd entry point is absent",
-        fallbackCanBeAdopted: true
+        claimed: claimed
       )
     } catch {
       return result(
@@ -433,28 +457,84 @@ struct KeybindingProviderInspector: Sendable {
       )
     }
 
-    if entryMetadata.st_mode & S_IFMT == S_IFLNK {
-      if !claimed {
-        do {
-          try Self.requireAdoptableSymlink(
-            entryMetadata,
-            parentDescriptor: directoryDescriptor,
-            name: "skhdrc",
-            url: entry
-          )
-        } catch {
-          return result(
-            .blocked,
-            entry: entry,
-            expectedTarget: expectedTarget,
-            ownership: "entry_symlink",
-            message: "skhd entry-point symlink cannot be adopted: \(error)"
-          )
-        }
-      }
-      let target: String
+    switch entryMetadata.st_mode & S_IFMT {
+    case S_IFLNK:
+      return inspectEntrySymlink(
+        metadata: entryMetadata,
+        directoryDescriptor: directoryDescriptor,
+        directory: directory,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        stateRoot: stateRoot,
+        generation: generation,
+        ownershipRecord: ownershipRecord
+      )
+    case S_IFREG:
+      return inspectRegularEntry(
+        directoryDescriptor: directoryDescriptor,
+        directory: directory,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownershipRecord: ownershipRecord
+      )
+    default:
+      return inspectUnsupportedEntry(
+        directoryDescriptor: directoryDescriptor,
+        directory: directory,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownershipRecord: ownershipRecord
+      )
+    }
+  }
+
+  private func inspectMissingEntry(
+    home: URL,
+    entry: URL,
+    expectedTarget: String,
+    claimed: Bool
+  ) -> KeybindingProviderInspection {
+    if claimed {
+      return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+    }
+    let homeDescriptor: Int32
+    do {
+      homeDescriptor = try PinnedFilesystem.openDirectory(at: home)
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "unsafe_ancestor",
+        message: "cannot reopen the selected home to inspect ~/.skhdrc: \(error)"
+      )
+    }
+    defer { Darwin.close(homeDescriptor) }
+    return inspectMissingPreferredEntry(
+      homeDescriptor: homeDescriptor,
+      home: home,
+      entry: entry,
+      expectedTarget: expectedTarget,
+      installOwnership: "ordinary_directory",
+      installMessage: "skhd entry point is absent",
+      fallbackCanBeAdopted: true
+    )
+  }
+
+  private func inspectEntrySymlink(
+    metadata: stat,
+    directoryDescriptor: Int32,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String,
+    stateRoot: URL,
+    generation: KeybindingGenerationInspection,
+    ownershipRecord: SetupOwnershipRecord?
+  ) -> KeybindingProviderInspection {
+    if ownershipRecord == nil {
       do {
-        target = try PinnedFilesystem.symlinkDestination(
+        try Self.requireAdoptableSymlink(
+          metadata,
           parentDescriptor: directoryDescriptor,
           name: "skhdrc",
           url: entry
@@ -465,103 +545,235 @@ struct KeybindingProviderInspector: Sendable {
           entry: entry,
           expectedTarget: expectedTarget,
           ownership: "entry_symlink",
-          message: "cannot read skhd entry-point symlink: \(error)"
-        )
-      }
-      if target == expectedTarget {
-        if let ownershipRecord {
-          do {
-            try validateManagedOwnershipMarkers(
-              directoryDescriptor: directoryDescriptor,
-              entry: entry,
-              record: ownershipRecord
-            )
-          } catch {
-            guard ownershipRecord.retainedOriginalPath != nil else {
-              return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
-            }
-            return result(
-              .blocked,
-              entry: entry,
-              expectedTarget: expectedTarget,
-              ownership: "retained_original_drift",
-              message:
-                "the authenticated retained-original claim is missing, drifted, or no longer bound to its persisted path",
-              retainedOriginalRequirement: "exact_inode",
-              retainedOriginalStatus: "drifted"
-            )
-          }
-          let legacySymlink =
-            ownershipRecord.retainedOriginalPath == nil
-            && [.symbolicLink, .directorySymbolicLink].contains(
-              ownershipRecord.originalKind ?? .absent
-            )
-          let exactRestoration = legacySymlink || ownershipRecord.retainedOriginalPath != nil
-          let retainedStatus: String?
-          if ownershipRecord.retainedOriginalPath != nil {
-            retainedStatus = "authenticated"
-          } else {
-            retainedStatus = legacySymlink ? "legacy_unavailable" : nil
-          }
-          return result(
-            .managed,
-            entry: entry,
-            expectedTarget: expectedTarget,
-            ownership: legacySymlink
-              ? "manifest_claimed_symlink_legacy_restore" : "manifest_claimed_symlink",
-            originalTarget: target,
-            message: legacySymlink
-              ? "legacy ownership predates retained-original claims; teardown can safely "
-                + "recreate the reviewed link text but cannot claim exact symlink inode metadata"
-              : "ownership manifest claims the matching entry-point link",
-            retainedOriginalRequirement: exactRestoration ? "exact_inode" : nil,
-            retainedOriginalStatus: retainedStatus
-          )
-        }
-        guard generation.status == .current, let configuration = generation.configuration else {
-          return result(
-            .blocked,
-            entry: entry,
-            expectedTarget: expectedTarget,
-            ownership: "matching_unclaimed_unreadable",
-            originalTarget: target,
-            message: "matching unclaimed link has no valid current generation to preview"
-          )
-        }
-        return result(
-          .adoptionRequired,
-          entry: entry,
-          expectedTarget: expectedTarget,
-          ownership: "matching_unclaimed_symlink",
-          source: stateRoot.appending(path: "keybindings/current/skhdrc"),
-          originalTarget: target,
-          message: "entry-point link matches the plan but has no Macarchy ownership evidence",
-          sourceConfiguration: configuration,
-          retainedOriginalRequirement: "exact_inode",
-          retainedOriginalStatus: "will_retain",
-          adoptionEvidence: KeybindingAdoptionEvidence(
-            kind: .symbolicLink,
-            linkDestination: target,
-            contentDigest: sha256Digest(Data(configuration.utf8)),
-            inventory: []
-          )
-        )
-      }
-      if target == Self.managedTarget, expectedTarget != Self.managedTarget {
-        return result(
-          .blocked,
-          entry: entry,
-          expectedTarget: expectedTarget,
-          ownership: "state_root_mismatch",
-          originalTarget: target,
-          message: "entry-point link targets the canonical state root, not the selected state root"
+          message: "skhd entry-point symlink cannot be adopted: \(error)"
         )
       }
     }
 
-    if claimed {
+    let target: String
+    do {
+      target = try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: directoryDescriptor,
+        name: "skhdrc",
+        url: entry
+      )
+    } catch {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "entry_symlink",
+        message: "cannot read skhd entry-point symlink: \(error)"
+      )
+    }
+    if target == expectedTarget {
+      return inspectMatchingEntrySymlink(
+        directoryDescriptor: directoryDescriptor,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        stateRoot: stateRoot,
+        generation: generation,
+        ownershipRecord: ownershipRecord,
+        target: target
+      )
+    }
+    if target == Self.managedTarget, expectedTarget != Self.managedTarget {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "state_root_mismatch",
+        originalTarget: target,
+        message: "entry-point link targets the canonical state root, not the selected state root"
+      )
+    }
+    if ownershipRecord != nil {
       return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
     }
+
+    return inspectAdoptableEntrySymlink(
+      directoryDescriptor: directoryDescriptor,
+      directory: directory,
+      entry: entry,
+      expectedTarget: expectedTarget
+    )
+  }
+
+  private func inspectMatchingEntrySymlink(
+    directoryDescriptor: Int32,
+    entry: URL,
+    expectedTarget: String,
+    stateRoot: URL,
+    generation: KeybindingGenerationInspection,
+    ownershipRecord: SetupOwnershipRecord?,
+    target: String
+  ) -> KeybindingProviderInspection {
+    if let ownershipRecord {
+      do {
+        try validateManagedOwnershipMarkers(
+          directoryDescriptor: directoryDescriptor,
+          entry: entry,
+          record: ownershipRecord
+        )
+      } catch {
+        guard ownershipRecord.retainedOriginalPath != nil else {
+          return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+        }
+        return result(
+          .blocked,
+          entry: entry,
+          expectedTarget: expectedTarget,
+          ownership: "retained_original_drift",
+          message:
+            "the authenticated retained-original claim is missing, drifted, or no longer bound to its persisted path",
+          retainedOriginalRequirement: "exact_inode",
+          retainedOriginalStatus: "drifted"
+        )
+      }
+      let legacySymlink =
+        ownershipRecord.retainedOriginalPath == nil
+        && [.symbolicLink, .directorySymbolicLink].contains(
+          ownershipRecord.originalKind ?? .absent
+        )
+      let exactRestoration = legacySymlink || ownershipRecord.retainedOriginalPath != nil
+      let retainedStatus: String?
+      if ownershipRecord.retainedOriginalPath != nil {
+        retainedStatus = "authenticated"
+      } else {
+        retainedStatus = legacySymlink ? "legacy_unavailable" : nil
+      }
+      return result(
+        .managed,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: legacySymlink
+          ? "manifest_claimed_symlink_legacy_restore" : "manifest_claimed_symlink",
+        originalTarget: target,
+        message: legacySymlink
+          ? "legacy ownership predates retained-original claims; teardown can safely "
+            + "recreate the reviewed link text but cannot claim exact symlink inode metadata"
+          : "ownership manifest claims the matching entry-point link",
+        retainedOriginalRequirement: exactRestoration ? "exact_inode" : nil,
+        retainedOriginalStatus: retainedStatus
+      )
+    }
+    guard generation.status == .current, let configuration = generation.configuration else {
+      return result(
+        .blocked,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "matching_unclaimed_unreadable",
+        originalTarget: target,
+        message: "matching unclaimed link has no valid current generation to preview"
+      )
+    }
+    return result(
+      .adoptionRequired,
+      entry: entry,
+      expectedTarget: expectedTarget,
+      ownership: "matching_unclaimed_symlink",
+      source: stateRoot.appending(path: "keybindings/current/skhdrc"),
+      originalTarget: target,
+      message: "entry-point link matches the plan but has no Macarchy ownership evidence",
+      sourceConfiguration: configuration,
+      retainedOriginalRequirement: "exact_inode",
+      retainedOriginalStatus: "will_retain",
+      adoptionEvidence: KeybindingAdoptionEvidence(
+        kind: .symbolicLink,
+        linkDestination: target,
+        contentDigest: sha256Digest(Data(configuration.utf8)),
+        inventory: []
+      )
+    )
+  }
+
+  private func inspectAdoptableEntrySymlink(
+    directoryDescriptor: Int32,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String
+  ) -> KeybindingProviderInspection {
+    do {
+      let source = try sourceConfiguration(
+        parentDescriptor: directoryDescriptor,
+        parentURL: directory,
+        name: "skhdrc"
+      )
+      let target = try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: directoryDescriptor,
+        name: "skhdrc",
+        url: entry
+      )
+      return result(
+        .adoptionRequired,
+        entry: entry,
+        expectedTarget: expectedTarget,
+        ownership: "entry_symlink",
+        source: source.url,
+        originalTarget: target,
+        message:
+          "existing skhd entry-point symlink requires explicit adoption; its exact inode will be retained as an authenticated claim until teardown",
+        sourceConfiguration: source.text,
+        retainedOriginalRequirement: "exact_inode",
+        retainedOriginalStatus: "will_retain",
+        adoptionEvidence: KeybindingAdoptionEvidence(
+          kind: .symbolicLink,
+          linkDestination: target,
+          contentDigest: sha256Digest(source.data),
+          inventory: []
+        )
+      )
+    } catch {
+      return unsupportedEntryResult(entry: entry, expectedTarget: expectedTarget, error: error)
+    }
+  }
+
+  private func inspectRegularEntry(
+    directoryDescriptor: Int32,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String,
+    ownershipRecord: SetupOwnershipRecord?
+  ) -> KeybindingProviderInspection {
+    if ownershipRecord != nil {
+      return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+    }
+
+    return inspectAdoptableRegularEntry(
+      directoryDescriptor: directoryDescriptor,
+      directory: directory,
+      entry: entry,
+      expectedTarget: expectedTarget
+    )
+  }
+
+  private func inspectUnsupportedEntry(
+    directoryDescriptor: Int32,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String,
+    ownershipRecord: SetupOwnershipRecord?
+  ) -> KeybindingProviderInspection {
+    if ownershipRecord != nil {
+      return ownershipDrift(entry: entry, expectedTarget: expectedTarget)
+    }
+
+    // Preserve the second no-follow observation made by the original state machine.
+    // A concurrent replacement can become an adoptable regular entry before this read.
+    return inspectAdoptableRegularEntry(
+      directoryDescriptor: directoryDescriptor,
+      directory: directory,
+      entry: entry,
+      expectedTarget: expectedTarget
+    )
+  }
+
+  private func inspectAdoptableRegularEntry(
+    directoryDescriptor: Int32,
+    directory: URL,
+    entry: URL,
+    expectedTarget: String
+  ) -> KeybindingProviderInspection {
 
     do {
       let source = try sourceConfiguration(
@@ -569,42 +781,38 @@ struct KeybindingProviderInspector: Sendable {
         parentURL: directory,
         name: "skhdrc"
       )
-      let target =
-        entryMetadata.st_mode & S_IFMT == S_IFLNK
-        ? try PinnedFilesystem.symlinkDestination(
-          parentDescriptor: directoryDescriptor,
-          name: "skhdrc",
-          url: entry
-        ) : nil
       return result(
         .adoptionRequired,
         entry: entry,
         expectedTarget: expectedTarget,
-        ownership: target == nil ? "regular_file" : "entry_symlink",
+        ownership: "regular_file",
         source: source.url,
-        originalTarget: target,
-        message: target == nil
-          ? "existing skhd entry point requires explicit adoption"
-          : "existing skhd entry-point symlink requires explicit adoption; its exact inode will be retained as an authenticated claim until teardown",
+        message: "existing skhd entry point requires explicit adoption",
         sourceConfiguration: source.text,
-        retainedOriginalRequirement: target == nil ? nil : "exact_inode",
-        retainedOriginalStatus: target == nil ? nil : "will_retain",
         adoptionEvidence: KeybindingAdoptionEvidence(
-          kind: target == nil ? .regularFile : .symbolicLink,
-          linkDestination: target,
+          kind: .regularFile,
+          linkDestination: nil,
           contentDigest: sha256Digest(source.data),
           inventory: []
         )
       )
     } catch {
-      return result(
-        .blocked,
-        entry: entry,
-        expectedTarget: expectedTarget,
-        ownership: "conflict",
-        message: "existing skhd entry point is not a bounded regular file: \(error)"
-      )
+      return unsupportedEntryResult(entry: entry, expectedTarget: expectedTarget, error: error)
     }
+  }
+
+  private func unsupportedEntryResult(
+    entry: URL,
+    expectedTarget: String,
+    error: Error
+  ) -> KeybindingProviderInspection {
+    result(
+      .blocked,
+      entry: entry,
+      expectedTarget: expectedTarget,
+      ownership: "conflict",
+      message: "existing skhd entry point is not a bounded regular file: \(error)"
+    )
   }
 
   private func sourceConfiguration(
