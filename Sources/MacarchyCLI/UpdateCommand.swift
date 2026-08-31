@@ -12,7 +12,7 @@ struct Update: ParsableCommand {
   mutating func run() throws {
     let root = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/macarchy", directoryHint: .isDirectory)
-    let execution = try HomebrewUpdateLock(root: root).withLock {
+    let execution = try StateFileLock(root: root, identity: .homebrewUpdate).withLock {
       try HomebrewUpdateRunner.live.execute(stateRoot: root)
     }
     print(execution.output)

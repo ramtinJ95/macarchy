@@ -1,6 +1,4 @@
-import Darwin
 import Foundation
-import Synchronization
 
 struct UpdateCheckExecution: Sendable {
   let cache: UpdateCacheDocument
@@ -17,7 +15,7 @@ struct UpdateChecker: Sendable {
   let cacheStore: UpdateCacheStore
   let httpClient: UpdateHTTPClient
   let now: @Sendable () -> Date
-  let lock: UpdateCheckLock
+  let lock: StateFileLock
 
   init(
     root: URL,
@@ -27,7 +25,7 @@ struct UpdateChecker: Sendable {
     cacheStore = UpdateCacheStore(root: root)
     self.httpClient = httpClient
     self.now = now
-    lock = UpdateCheckLock(root: root)
+    lock = StateFileLock(root: root, identity: .updateCheck)
   }
 
   func check(ifStaleOnly: Bool) -> UpdateCheckExecution {
@@ -272,49 +270,6 @@ enum UpdateCheckError: Error, CustomStringConvertible, Equatable, Sendable {
       "GitHub returned 304 without a valid cached release check"
     case .responseTooLarge:
       "GitHub release response exceeded the 256 KiB limit"
-    }
-  }
-}
-
-struct UpdateCheckLock: Sendable {
-  private static let processMutex = Mutex<Void>(())
-  private let root: URL
-
-  init(root: URL) {
-    self.root = root.standardizedFileURL
-  }
-
-  func withLock<Value>(_ operation: () throws -> Value) throws -> Value {
-    try Self.processMutex.withLock { _ in
-      let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
-      try FileManager.default.createDirectory(
-        at: runDirectory,
-        withIntermediateDirectories: true
-      )
-      let lockURL = runDirectory.appending(path: "update-check.lock")
-      let descriptor = lockURL.path.withCString {
-        Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-      }
-      guard descriptor >= 0 else {
-        throw UpdateCheckLockError.system("open", errno)
-      }
-      defer { Darwin.close(descriptor) }
-      while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
-        if errno == EINTR { continue }
-        throw UpdateCheckLockError.system("acquire", errno)
-      }
-      return try operation()
-    }
-  }
-}
-
-enum UpdateCheckLockError: Error, CustomStringConvertible, Equatable, Sendable {
-  case system(String, Int32)
-
-  var description: String {
-    switch self {
-    case .system(let operation, let code):
-      "Cannot \(operation) update-check lock (errno \(code)): \(String(cString: strerror(code)))"
     }
   }
 }
