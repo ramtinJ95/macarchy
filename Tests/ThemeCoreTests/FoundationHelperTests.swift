@@ -17,15 +17,20 @@ struct FoundationHelperTests {
     let parent = try PinnedFilesystem.openDirectory(at: root)
     defer { Darwin.close(parent) }
     let childURL = root.appending(path: "child", directoryHint: .isDirectory)
-    let created = try PinnedFilesystem.openOrCreateChildDirectory(
-      parentDescriptor: parent,
-      name: "child",
-      url: childURL,
-      mode: 0o700
-    )
+    let created = try {
+      let previousUmask = Darwin.umask(0)
+      defer { Darwin.umask(previousUmask) }
+      return try PinnedFilesystem.openOrCreateChildDirectory(
+        parentDescriptor: parent,
+        name: "child",
+        url: childURL,
+        mode: 0o700
+      )
+    }()
     defer { Darwin.close(created) }
     var createdMetadata = stat()
     #expect(fstat(created, &createdMetadata) == 0)
+    #expect(createdMetadata.st_mode & 0o777 == 0o700)
 
     let reopened = try PinnedFilesystem.openOrCreateChildDirectory(
       parentDescriptor: parent,
