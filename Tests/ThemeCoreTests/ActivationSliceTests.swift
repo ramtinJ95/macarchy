@@ -11,38 +11,35 @@ import Testing
 struct ActivationSliceTests {
   @Test
   func schemaOneActiveGenerationRemainsReadableAcrossBackgroundManifestUpgrade() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let current = try testActivator(root: root).activate(package: catppuccinPackage())
-    let manifestURL = root.appending(
-      path: "generations/\(current.generationID)/manifest.json"
-    )
-    var object = try jsonObject(Data(contentsOf: manifestURL))
-    object["manifest_schema_version"] = GenerationManifest.legacySchemaVersion
-    object.removeValue(forKey: "theme_digest")
-    object.removeValue(forKey: "background")
-    var data = try JSONSerialization.data(
-      withJSONObject: object,
-      options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    )
-    data.append(0x0a)
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o644],
-      ofItemAtPath: manifestURL.path
-    )
-    try data.write(to: manifestURL)
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o444],
-      ofItemAtPath: manifestURL.path
-    )
+    try withTemporaryRoot(named: "macarchy-activation-tests") { root in
+      let current = try testActivator(root: root).activate(package: catppuccinPackage())
+      let manifestURL = root.appending(
+        path: "generations/\(current.generationID)/manifest.json"
+      )
+      var object = try jsonObject(Data(contentsOf: manifestURL))
+      object["manifest_schema_version"] = GenerationManifest.legacySchemaVersion
+      object.removeValue(forKey: "theme_digest")
+      object.removeValue(forKey: "background")
+      var data = try JSONSerialization.data(
+        withJSONObject: object,
+        options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+      )
+      data.append(0x0a)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o644],
+        ofItemAtPath: manifestURL.path
+      )
+      try data.write(to: manifestURL)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o444],
+        ofItemAtPath: manifestURL.path
+      )
 
-    let legacy = try ReconciliationStatusStore(root: root).activeManifest()
-    #expect(legacy.manifestSchemaVersion == GenerationManifest.legacySchemaVersion)
-    #expect(legacy.themeDigest.isEmpty)
-    #expect(legacy.background == nil)
+      let legacy = try ReconciliationStatusStore(root: root).activeManifest()
+      #expect(legacy.manifestSchemaVersion == GenerationManifest.legacySchemaVersion)
+      #expect(legacy.themeDigest.isEmpty)
+      #expect(legacy.background == nil)
+    }
   }
 
   @Test
@@ -1348,23 +1345,6 @@ struct ActivationSliceTests {
         path: "macarchy-activation-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
-  }
-
-  private func makeWritableForRemoval(_ root: URL) {
-    guard
-      let enumerator = FileManager.default.enumerator(
-        at: root, includingPropertiesForKeys: [.isDirectoryKey])
-    else { return }
-    var directories = [root]
-    for case let item as URL in enumerator {
-      if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-        directories.append(item)
-      }
-    }
-    for directory in directories.reversed() {
-      try? FileManager.default.setAttributes(
-        [.posixPermissions: 0o700], ofItemAtPath: directory.path)
-    }
   }
 
   private enum InjectedFault: Error {
