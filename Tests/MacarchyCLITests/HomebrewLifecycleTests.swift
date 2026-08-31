@@ -291,8 +291,10 @@ struct HomebrewLifecycleTests {
     )
 
     try lock.withLock {
+      let unrelatedStarted = DispatchSemaphore(value: 0)
       let unrelatedEntered = DispatchSemaphore(value: 0)
       queue.async {
+        unrelatedStarted.signal()
         do {
           _ = try StateFileLock(root: root, identity: .updateCheck).withLock {
             unrelatedEntered.signal()
@@ -301,7 +303,8 @@ struct HomebrewLifecycleTests {
           failures.withLock { $0.append(String(describing: error)) }
         }
       }
-      #expect(unrelatedEntered.wait(timeout: .now() + 2) == .success)
+      unrelatedStarted.wait()
+      #expect(unrelatedEntered.wait(timeout: .now() + 10) == .success)
 
       queue.async {
         defer { secondDone.signal() }
