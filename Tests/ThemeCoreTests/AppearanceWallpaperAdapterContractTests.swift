@@ -310,82 +310,76 @@ extension AdapterContractTests {
 
   @Test
   func macOSAppearancePreflightFailurePreservesThePreviousGeneration() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
-    let processCalls = Mutex(0)
-    let coordinator = ThemeActivationCoordinator(
-      root: root,
-      consumerPaths: try Self.consumerPaths(
-        root: root, kittyConfigurationURL: configurationURL,
-        sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { _ in
-        processCalls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
-      wallpaperControl: Self.wallpaperControl(),
-      wallpaperSignal: try Self.wallpaperSignal(root: root),
-      appearanceControlIsAvailable: { false }
-    )
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+      let configurationURL = root.appending(path: "kitty.conf")
+      try "include \(root.path)/state/adapters/kitty.conf\n".write(
+        to: configurationURL,
+        atomically: true,
+        encoding: .utf8
+      )
+      let processCalls = Mutex(0)
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: try Self.consumerPaths(
+          root: root, kittyConfigurationURL: configurationURL,
+          sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
+        processRunner: ProcessRunner { _ in
+          processCalls.withLock { $0 += 1 }
+          return ProcessResult(terminationStatus: 0, output: "")
+        },
+        wallpaperControl: Self.wallpaperControl(),
+        wallpaperSignal: try Self.wallpaperSignal(root: root),
+        appearanceControlIsAvailable: { false }
+      )
 
-    await #expect(throws: MacOSAppearanceAdapterError.self) {
-      _ = try await coordinator.activate(package: catppuccinPackage())
-    }
+      await #expect(throws: MacOSAppearanceAdapterError.self) {
+        _ = try await coordinator.activate(package: catppuccinPackage())
+      }
 
-    #expect(processCalls.withLock { $0 } == 0)
-    #expect(
-      try FileManager.default.destinationOfSymbolicLink(
-        atPath: root.appending(path: "current").path
-      ) == "generations/\(previous.generationID)"
-    )
+      #expect(processCalls.withLock { $0 } == 0)
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path
+        ) == "generations/\(previous.generationID)"
+      )
+    }
   }
 
   @Test
   func wallpaperPreflightFailurePreservesThePreviousGeneration() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
-    let processCalls = Mutex(0)
-    let coordinator = ThemeActivationCoordinator(
-      root: root,
-      consumerPaths: try Self.consumerPaths(
-        root: root, kittyConfigurationURL: configurationURL,
-        sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { _ in
-        processCalls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
-      wallpaperControl: WallpaperControl(inspect: { [] }, set: { _, _ in }),
-      wallpaperSignal: try Self.wallpaperSignal(root: root)
-    )
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+      let configurationURL = root.appending(path: "kitty.conf")
+      try "include \(root.path)/state/adapters/kitty.conf\n".write(
+        to: configurationURL,
+        atomically: true,
+        encoding: .utf8
+      )
+      let processCalls = Mutex(0)
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: try Self.consumerPaths(
+          root: root, kittyConfigurationURL: configurationURL,
+          sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
+        processRunner: ProcessRunner { _ in
+          processCalls.withLock { $0 += 1 }
+          return ProcessResult(terminationStatus: 0, output: "")
+        },
+        wallpaperControl: WallpaperControl(inspect: { [] }, set: { _, _ in }),
+        wallpaperSignal: try Self.wallpaperSignal(root: root)
+      )
 
-    await #expect(throws: WallpaperAdapterError.noDisplays) {
-      _ = try await coordinator.activate(package: catppuccinPackage())
+      await #expect(throws: WallpaperAdapterError.noDisplays) {
+        _ = try await coordinator.activate(package: catppuccinPackage())
+      }
+      #expect(processCalls.withLock { $0 } == 0)
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path
+        ) == "generations/\(previous.generationID)"
+      )
     }
-    #expect(processCalls.withLock { $0 } == 0)
-    #expect(
-      try FileManager.default.destinationOfSymbolicLink(
-        atPath: root.appending(path: "current").path
-      ) == "generations/\(previous.generationID)"
-    )
   }
 
   @Test

@@ -235,34 +235,31 @@ extension AdapterContractTests {
 
   @Test
   func statusCannotOverrideOrConcealTheActiveGeneration() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let store = ReconciliationStatusStore(root: root)
-    let catppuccin = try testActivator(root: root).activate(package: catppuccinPackage())
-    let record = try store.persist(
-      manifest: catppuccin,
-      results: [AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)]
-    )
-
-    let tokyoNight = try testActivator(root: root).activate(package: tokyoNightPackage())
-    #expect(
-      try store.read()
-        == .stale(activeGenerationID: tokyoNight.generationID, record: record)
-    )
-
-    #expect(
-      throws: ReconciliationStatusError.generationChanged(
-        expected: catppuccin.generationID,
-        active: tokyoNight.generationID
-      )
-    ) {
-      _ = try store.persist(
+    try withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let store = ReconciliationStatusStore(root: root)
+      let catppuccin = try testActivator(root: root).activate(package: catppuccinPackage())
+      let record = try store.persist(
         manifest: catppuccin,
-        results: [AdapterResult(adapterID: "kitty", requirement: .required, status: .failed)]
+        results: [AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)]
       )
+
+      let tokyoNight = try testActivator(root: root).activate(package: tokyoNightPackage())
+      #expect(
+        try store.read()
+          == .stale(activeGenerationID: tokyoNight.generationID, record: record)
+      )
+
+      #expect(
+        throws: ReconciliationStatusError.generationChanged(
+          expected: catppuccin.generationID,
+          active: tokyoNight.generationID
+        )
+      ) {
+        _ = try store.persist(
+          manifest: catppuccin,
+          results: [AdapterResult(adapterID: "kitty", requirement: .required, status: .failed)]
+        )
+      }
     }
   }
 

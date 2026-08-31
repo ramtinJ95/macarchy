@@ -330,35 +330,32 @@ extension AdapterContractTests {
 
   @Test
   func cancellationBeforeActivationDoesNotCommit() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
-    let coordinator = ThemeActivationCoordinator(
-      root: root,
-      consumerPaths: try Self.consumerPaths(
-        root: root, kittyConfigurationURL: configurationURL,
-        sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
-      wallpaperControl: Self.wallpaperControl(),
-      wallpaperSignal: try Self.wallpaperSignal(root: root)
-    )
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let configurationURL = root.appending(path: "kitty.conf")
+      try "include \(root.path)/state/adapters/kitty.conf\n".write(
+        to: configurationURL,
+        atomically: true,
+        encoding: .utf8
+      )
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: try Self.consumerPaths(
+          root: root, kittyConfigurationURL: configurationURL,
+          sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
+        processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+        wallpaperControl: Self.wallpaperControl(),
+        wallpaperSignal: try Self.wallpaperSignal(root: root)
+      )
 
-    let activation = Task {
-      withUnsafeCurrentTask { $0?.cancel() }
-      return try await coordinator.activate(package: catppuccinPackage())
+      let activation = Task {
+        withUnsafeCurrentTask { $0?.cancel() }
+        return try await coordinator.activate(package: catppuccinPackage())
+      }
+      await #expect(throws: CancellationError.self) {
+        _ = try await activation.value
+      }
+      #expect(!FileManager.default.fileExists(atPath: root.appending(path: "current").path))
     }
-    await #expect(throws: CancellationError.self) {
-      _ = try await activation.value
-    }
-    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "current").path))
   }
 
   @Test
@@ -410,40 +407,37 @@ extension AdapterContractTests {
 
   @Test
   func selectedReconciliationRejectsInvalidIDsBeforeProcessesOrStatusWrites() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
-    let processCalls = Mutex(0)
-    let coordinator = ThemeActivationCoordinator(
-      root: root,
-      consumerPaths: try Self.consumerPaths(
-        root: root, kittyConfigurationURL: configurationURL,
-        sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { _ in
-        processCalls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
-      wallpaperControl: Self.wallpaperControl(),
-      wallpaperSignal: try Self.wallpaperSignal(root: root)
-    )
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let configurationURL = root.appending(path: "kitty.conf")
+      try "include \(root.path)/state/adapters/kitty.conf\n".write(
+        to: configurationURL,
+        atomically: true,
+        encoding: .utf8
+      )
+      let processCalls = Mutex(0)
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: try Self.consumerPaths(
+          root: root, kittyConfigurationURL: configurationURL,
+          sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
+        processRunner: ProcessRunner { _ in
+          processCalls.withLock { $0 += 1 }
+          return ProcessResult(terminationStatus: 0, output: "")
+        },
+        wallpaperControl: Self.wallpaperControl(),
+        wallpaperSignal: try Self.wallpaperSignal(root: root)
+      )
 
-    await #expect(throws: AdapterSelectionError.unknown("tmux")) {
-      _ = try await coordinator.reconcile(adapterIDs: ["tmux"])
-    }
-    await #expect(throws: AdapterSelectionError.duplicate("kitty")) {
-      _ = try await coordinator.reconcile(adapterIDs: ["kitty", "kitty"])
-    }
+      await #expect(throws: AdapterSelectionError.unknown("tmux")) {
+        _ = try await coordinator.reconcile(adapterIDs: ["tmux"])
+      }
+      await #expect(throws: AdapterSelectionError.duplicate("kitty")) {
+        _ = try await coordinator.reconcile(adapterIDs: ["kitty", "kitty"])
+      }
 
-    #expect(processCalls.withLock { $0 } == 0)
-    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "state").path))
+      #expect(processCalls.withLock { $0 } == 0)
+      #expect(!FileManager.default.fileExists(atPath: root.appending(path: "state").path))
+    }
   }
 
   @Test
