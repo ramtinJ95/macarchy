@@ -53,11 +53,11 @@ struct KeybindingProviderTransaction: Sendable {
     homeDirectory.appending(path: ".config", directoryHint: .isDirectory)
   }
 
-  private var directory: URL {
+  var directory: URL {
     configurationDirectory.appending(path: "skhd", directoryHint: .isDirectory)
   }
 
-  private var entry: URL {
+  var entry: URL {
     directory.appending(path: "skhdrc")
   }
 
@@ -744,7 +744,7 @@ struct KeybindingProviderTransaction: Sendable {
     try requireAbsent(parentDescriptor: parent, name: name, url: url)
   }
 
-  private func requireAbsent(parentDescriptor: Int32, name: String, url: URL) throws {
+  func requireAbsent(parentDescriptor: Int32, name: String, url: URL) throws {
     do {
       _ = try PinnedFilesystem.metadata(
         parentDescriptor: parentDescriptor,
@@ -2018,189 +2018,8 @@ struct KeybindingProviderTransaction: Sendable {
     }
   }
 
-  private func preflightLegacyCleanInstall(_ record: SetupOwnershipRecord) throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    defer { Darwin.close(descriptor) }
-    try requireAbsent(
-      parentDescriptor: descriptor,
-      name: ".skhdrc.macarchy-keybindings",
-      url: directory.appending(path: ".skhdrc.macarchy-keybindings")
-    )
-    _ = try legacyRestorationResidueExists(parentDescriptor: descriptor, record: record)
-    do {
-      try verifyLegacyManagedLink(
-        parentDescriptor: descriptor,
-        name: "skhdrc",
-        record: record,
-        url: entry
-      )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
-  }
-
-  private func removeLegacyManagedEntry(_ record: SetupOwnershipRecord) throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    defer { Darwin.close(descriptor) }
-    try removeLegacyRestorationResidue(parentDescriptor: descriptor, record: record)
-    do {
-      try removePinnedItem(
-        parentDescriptor: descriptor,
-        name: "skhdrc",
-        url: entry,
-        record: record
-      ) { name, url in
-        try verifyLegacyManagedLink(
-          parentDescriptor: descriptor,
-          name: name,
-          record: record,
-          url: url
-        )
-      }
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
-  }
-
-  private func restoreLegacyManagedEntry(_ record: SetupOwnershipRecord) throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    defer { Darwin.close(descriptor) }
-    let publicationName = legacyRestorationName
-    let publicationURL = directory.appending(path: publicationName)
-    let residueExists = try legacyRestorationResidueExists(
-      parentDescriptor: descriptor,
-      record: record
-    )
-    do {
-      try verifyLegacyManagedLink(
-        parentDescriptor: descriptor,
-        name: "skhdrc",
-        record: record,
-        url: entry
-      )
-      if residueExists {
-        try removeLegacyRestorationResidue(parentDescriptor: descriptor, record: record)
-      }
-      return
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      if !residueExists {
-        let created = KeybindingProviderInspector.managedTarget.withCString { destination in
-          publicationName.withCString { Darwin.symlinkat(destination, descriptor, $0) }
-        }
-        guard created == 0 else {
-          throw posixError("create legacy keybinding provider link", publicationURL)
-        }
-        try faultInjector(.legacyRestorationPublicationCreated)
-        try verifyLegacyManagedLink(
-          parentDescriptor: descriptor,
-          name: publicationName,
-          record: record,
-          url: publicationURL
-        )
-      }
-      try publish(
-        parentDescriptor: descriptor,
-        from: publicationName,
-        to: "skhdrc",
-        url: entry
-      )
-    }
-  }
-
-  private var legacyRestorationName: String {
+  var legacyRestorationName: String {
     ".skhdrc.macarchy-legacy-restoration"
-  }
-
-  private func legacyRestorationResidueExists(
-    parentDescriptor: Int32,
-    record: SetupOwnershipRecord
-  ) throws -> Bool {
-    let url = directory.appending(path: legacyRestorationName)
-    guard
-      try itemExists(
-        parentDescriptor: parentDescriptor,
-        name: legacyRestorationName,
-        url: url
-      )
-    else { return false }
-    try verifyLegacyManagedLink(
-      parentDescriptor: parentDescriptor,
-      name: legacyRestorationName,
-      record: record,
-      url: url
-    )
-    return true
-  }
-
-  private func removeLegacyRestorationResidue(
-    parentDescriptor: Int32,
-    record: SetupOwnershipRecord
-  ) throws {
-    let url = directory.appending(path: legacyRestorationName)
-    try removePinnedItem(
-      parentDescriptor: parentDescriptor,
-      name: legacyRestorationName,
-      url: url,
-      record: record
-    ) { name, candidate in
-      try verifyLegacyManagedLink(
-        parentDescriptor: parentDescriptor,
-        name: name,
-        record: record,
-        url: candidate
-      )
-    }
-  }
-
-  private func verifyLegacyManagedLink(
-    parentDescriptor: Int32,
-    name: String,
-    record: SetupOwnershipRecord,
-    url: URL
-  ) throws {
-    guard KeybindingProviderInspector.isLegacyCleanInstallRecord(record) else {
-      throw SetupOwnershipError.invalidManifest("legacy keybinding ownership shape changed")
-    }
-    let metadata = try PinnedFilesystem.metadata(
-      parentDescriptor: parentDescriptor,
-      name: name,
-      url: url
-    )
-    guard metadata.st_mode & S_IFMT == S_IFLNK, metadata.st_nlink == 1 else {
-      throw SetupOwnershipError.ownershipDrift(url)
-    }
-    let destination = try PinnedFilesystem.symlinkDestination(
-      parentDescriptor: parentDescriptor,
-      name: name,
-      url: url
-    )
-    guard destination == KeybindingProviderInspector.managedTarget else {
-      throw SetupOwnershipError.ownershipDrift(url)
-    }
-    let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
-    defer { Darwin.close(pinned) }
-    do {
-      guard try !KeybindingProviderPrimitives.claimMarkerExists(descriptor: pinned) else {
-        throw SetupOwnershipError.ownershipDrift(url)
-      }
-    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw posixError(
-        "inspect legacy keybinding ownership marker",
-        url,
-        code: failure.code
-      )
-    }
-  }
-
-  private func requireLegacyEntryAbsent() throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    defer { Darwin.close(descriptor) }
-    try requireAbsent(parentDescriptor: descriptor, name: "skhdrc", url: entry)
-    try requireAbsent(
-      parentDescriptor: descriptor,
-      name: legacyRestorationName,
-      url: directory.appending(path: legacyRestorationName)
-    )
   }
 
   private func originalKind(_ record: SetupOwnershipRecord) -> SetupOwnershipRecord.OriginalKind {
@@ -2489,7 +2308,7 @@ struct KeybindingProviderTransaction: Sendable {
     return true
   }
 
-  private func publish(
+  func publish(
     parentDescriptor: Int32,
     from source: String,
     to destination: String,
@@ -3023,7 +2842,7 @@ struct KeybindingProviderTransaction: Sendable {
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
 
-  private func openClaim(parentDescriptor: Int32, name: String, url: URL) throws -> Int32 {
+  func openClaim(parentDescriptor: Int32, name: String, url: URL) throws -> Int32 {
     let metadata = try PinnedFilesystem.metadata(
       parentDescriptor: parentDescriptor,
       name: name,
@@ -3199,7 +3018,7 @@ struct KeybindingProviderTransaction: Sendable {
     return true
   }
 
-  private func removePinnedItem(
+  func removePinnedItem(
     parentDescriptor: Int32,
     name: String,
     url: URL,
@@ -3359,7 +3178,7 @@ struct KeybindingProviderTransaction: Sendable {
     throw SetupOwnershipError.invalidManifest("keybinding claim nonce is missing")
   }
 
-  private func itemExists(parentDescriptor: Int32, name: String, url: URL) throws -> Bool {
+  func itemExists(parentDescriptor: Int32, name: String, url: URL) throws -> Bool {
     do {
       _ = try PinnedFilesystem.metadata(parentDescriptor: parentDescriptor, name: name, url: url)
       return true
@@ -3416,11 +3235,11 @@ struct KeybindingProviderTransaction: Sendable {
     guard fsync(descriptor) == 0 else { throw posixError("sync keybinding provider", url) }
   }
 
-  private func posixError(_ operation: String, _ url: URL) -> SetupOwnershipError {
+  func posixError(_ operation: String, _ url: URL) -> SetupOwnershipError {
     .system(operation, url, String(cString: strerror(errno)))
   }
 
-  private func posixError(
+  func posixError(
     _ operation: String,
     _ url: URL,
     code: Int32
