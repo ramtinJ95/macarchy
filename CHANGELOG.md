@@ -7,11 +7,32 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-31
+
+### Added
+
+- Added portable managed keybindings composed from immutable curated defaults,
+  explicit disabled chords, and sparse native skhd command and metadata
+  overrides, without copying packaged defaults into user configuration.
+- Added shared `keybindings plan`, `apply`, `status`, effective list/doctor, and
+  setup behavior with immutable generated state, reviewed adoption of existing
+  skhd entries, live lifecycle evidence, crash recovery, rollback, and exact
+  teardown restoration.
+- Added source-attributed effective keybinding rows and convergence states to
+  the searchable popup while preserving source-based inspection for externally
+  managed skhd configuration.
+
 ### Fixed
 
 - Slack theme imports now contain the four colors accepted by the current
   custom-theme UI: window background, selected items, presence indication, and
   notification badges.
+- Theme and keybinding generations now publish their owner-writable root before
+  sealing it, preserving atomic immutable publication on macOS 26 versions that
+  reject renaming a mode-0555 directory.
+- `keybindings show` now opens before the first theme activation using a
+  deterministic bundled appearance; malformed canonical theme state still
+  fails explicitly.
 
 ## [0.4.3] - 2026-08-29
 
@@ -243,7 +264,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ramtinJ95/macarchy/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/ramtinJ95/macarchy/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/ramtinJ95/macarchy/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ramtinJ95/macarchy/compare/v0.4.0...v0.4.1
