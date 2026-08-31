@@ -1,3 +1,4 @@
+import Darwin
 import Dispatch
 import Foundation
 import Synchronization
@@ -7,6 +8,60 @@ import Testing
 @testable import ThemeCore
 
 extension SetupOwnershipTests {
+  @Test
+  func pinnedThemeLinkReadPreservesSetupErrors() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-pinned-theme-link-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let parentDescriptor = try PinnedFilesystem.openDirectory(at: root)
+    defer { Darwin.close(parentDescriptor) }
+    let invalidURL = root.appending(path: "invalid")
+    let invalidDestination: [CChar] = [-1, 0]
+    let created = invalidDestination.withUnsafeBufferPointer { destination in
+      "invalid".withCString {
+        Darwin.symlinkat(destination.baseAddress!, parentDescriptor, $0)
+      }
+    }
+    #expect(created == 0)
+    let manager = SetupOwnershipManager()
+
+    do {
+      _ = try manager.readPinnedSymbolicLink(
+        parentDescriptor: parentDescriptor,
+        name: "invalid",
+        url: invalidURL
+      )
+      Issue.record("Expected the non-UTF-8 destination to be rejected")
+    } catch let error as SetupOwnershipError {
+      #expect(
+        error
+          == .system("read pinned theme link", invalidURL, "destination is not UTF-8")
+      )
+    }
+
+    let missingURL = root.appending(path: "missing")
+    do {
+      _ = try manager.readPinnedSymbolicLink(
+        parentDescriptor: parentDescriptor,
+        name: "missing",
+        url: missingURL
+      )
+      Issue.record("Expected the missing symlink read to fail")
+    } catch let error as SetupOwnershipError {
+      #expect(
+        error
+          == .system(
+            "read pinned theme link",
+            missingURL,
+            String(cString: strerror(ENOENT))
+          )
+      )
+    }
+  }
+
   @Test
   func batAndEzaTransactionsResumeFileAndLinkBoundaries() throws {
     for checkpoint in [

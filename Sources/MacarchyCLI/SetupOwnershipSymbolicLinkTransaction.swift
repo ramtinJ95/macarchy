@@ -550,15 +550,21 @@ extension SetupOwnershipManager {
     name: String,
     url: URL
   ) throws -> String {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = name.withCString {
-      Darwin.readlinkat(parentDescriptor, $0, &buffer, buffer.count - 1)
+    do {
+      return try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url
+      )
+    } catch let error as PinnedFilesystemError {
+      if error.operation == "decode pinned symlink" {
+        throw SetupOwnershipError.system(
+          "read pinned theme link",
+          url,
+          "destination is not UTF-8"
+        )
+      }
+      throw posixError("read pinned theme link", url, code: error.code)
     }
-    guard count >= 0 else { throw posixError("read pinned theme link", url) }
-    let bytes = buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }
-    guard let destination = String(bytes: bytes, encoding: .utf8) else {
-      throw SetupOwnershipError.system("read pinned theme link", url, "destination is not UTF-8")
-    }
-    return destination
   }
 }
