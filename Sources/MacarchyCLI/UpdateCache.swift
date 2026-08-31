@@ -139,26 +139,13 @@ struct UpdateCacheStore: Sendable {
   }
 
   func write(_ document: UpdateCacheDocument) throws {
-    let directory = cacheURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    encoder.keyEncodingStrategy = .convertToSnakeCase
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    let data = try encoder.encode(document)
-    guard data.count <= BoundedRegularFile.maximumSize else {
-      throw UpdateCacheError.tooLarge
-    }
-    let temporary = directory.appending(path: ".check-\(UUID().uuidString).tmp")
-    defer { try? FileManager.default.removeItem(at: temporary) }
-    try data.write(to: temporary, options: .withoutOverwriting)
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o600],
-      ofItemAtPath: temporary.path
+    try writeBoundedEvidenceJSON(
+      document,
+      to: cacheURL,
+      temporaryPrefix: ".check-",
+      tooLargeError: UpdateCacheError.tooLarge,
+      replaceError: UpdateCacheError.replaceFailed
     )
-    if rename(temporary.path, cacheURL.path) != 0 {
-      throw UpdateCacheError.replaceFailed(errno)
-    }
   }
 }
 

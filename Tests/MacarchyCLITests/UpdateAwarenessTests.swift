@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Synchronization
 import Testing
@@ -59,6 +60,40 @@ struct UpdateAwarenessTests {
     }
     #expect(cache.lastSuccess?.release?.version == "0.2.0")
     #expect(cache.lastSuccess?.etag == #""release-etag""#)
+    let cacheStore = UpdateCacheStore(root: root)
+    let firstPersistedBytes = try Data(contentsOf: cacheStore.cacheURL)
+    try cacheStore.write(cache)
+    #expect(try Data(contentsOf: cacheStore.cacheURL) == firstPersistedBytes)
+    let permissions = try #require(
+      FileManager.default.attributesOfItem(atPath: cacheStore.cacheURL.path)[.posixPermissions]
+        as? NSNumber
+    )
+    #expect(permissions.intValue == 0o600)
+  }
+
+  @Test
+  func updateCheckLockRejectsASymlinkWithoutFollowingIt() throws {
+    let root = try temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
+    let target = root.appending(path: "lock-target")
+    let lockURL = runDirectory.appending(path: "update-check.lock")
+    try Data().write(to: target)
+    try FileManager.default.createSymbolicLink(at: lockURL, withDestinationURL: target)
+
+    do {
+      try StateFileLock(root: root, identity: .updateCheck).withLock {}
+      Issue.record("Expected the symlinked update-check lock to be rejected")
+    } catch let error as StateFileLockError {
+      #expect(error == .system(.updateCheck, "open", ELOOP))
+      #expect(
+        error.description
+          == "Cannot open update-check lock (errno \(ELOOP)): "
+          + String(cString: strerror(ELOOP))
+      )
+    }
+    #expect(try Data(contentsOf: target).isEmpty)
   }
 
   @Test
@@ -195,6 +230,22 @@ struct UpdateAwarenessTests {
     #expect(cache.lastAttempt.outcome == .failure)
     #expect(cache.lastAttempt.error?.contains("ETag validator exceeded") == true)
     #expect(cache.lastSuccess == nil)
+  }
+
+  @Test
+  func updateCachePreservesItsExactSizeError() throws {
+    let root = try temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let checkedAt = Date(timeIntervalSince1970: 1_800_000_000)
+    let oversized = successfulCache(
+      checkedAt: checkedAt,
+      version: "0.2.0",
+      etag: String(repeating: "x", count: BoundedRegularFile.maximumSize)
+    )
+
+    #expect(throws: UpdateCacheError.tooLarge) {
+      try UpdateCacheStore(root: root).write(oversized)
+    }
   }
 
   @Test

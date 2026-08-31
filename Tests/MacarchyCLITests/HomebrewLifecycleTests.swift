@@ -274,13 +274,13 @@ struct HomebrewLifecycleTests {
   }
 
   @Test
-  func lifecycleLockSerializesOneRootAndRejectsASymlink() throws {
+  func lifecycleLockSerializesOnlyItsIdentityAndRejectsASymlink() throws {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-homebrew-lock-\(UUID().uuidString)",
       directoryHint: .isDirectory
     )
     defer { try? FileManager.default.removeItem(at: root) }
-    let lock = HomebrewUpdateLock(root: root)
+    let lock = StateFileLock(root: root, identity: .homebrewUpdate)
     let secondStarted = DispatchSemaphore(value: 0)
     let secondEntered = DispatchSemaphore(value: 0)
     let secondDone = DispatchSemaphore(value: 0)
@@ -291,6 +291,18 @@ struct HomebrewLifecycleTests {
     )
 
     try lock.withLock {
+      let unrelatedEntered = DispatchSemaphore(value: 0)
+      queue.async {
+        do {
+          _ = try StateFileLock(root: root, identity: .updateCheck).withLock {
+            unrelatedEntered.signal()
+          }
+        } catch {
+          failures.withLock { $0.append(String(describing: error)) }
+        }
+      }
+      #expect(unrelatedEntered.wait(timeout: .now() + 2) == .success)
+
       queue.async {
         defer { secondDone.signal() }
         secondStarted.signal()
@@ -307,13 +319,18 @@ struct HomebrewLifecycleTests {
     }
     secondDone.wait()
     #expect(failures.withLock { $0 }.isEmpty)
+    #expect(
+      FileManager.default.fileExists(
+        atPath: root.appending(path: "run/update-check.lock").path
+      )
+    )
 
     let lockURL = root.appending(path: "run/homebrew-update.lock")
     try FileManager.default.removeItem(at: lockURL)
     let target = root.appending(path: "lock-target")
     try Data().write(to: target)
     try FileManager.default.createSymbolicLink(at: lockURL, withDestinationURL: target)
-    #expect(throws: HomebrewUpdateLockError.self) {
+    #expect(throws: StateFileLockError.self) {
       try lock.withLock {}
     }
   }
@@ -344,6 +361,8 @@ struct HomebrewLifecycleTests {
 
     try store.write(started)
     try store.write(failed)
+    let firstPersistedBytes = try Data(contentsOf: store.evidenceURL)
+    try store.write(failed)
 
     let persisted = try #require(
       JSONSerialization.jsonObject(with: Data(contentsOf: store.evidenceURL))
@@ -360,6 +379,18 @@ struct HomebrewLifecycleTests {
     #expect(persisted["outcome"] as? String == "verification_failed")
     #expect(persisted["error"] as? String == "missing resource")
     #expect(permissions == 0o600)
+    #expect(try Data(contentsOf: store.evidenceURL) == firstPersistedBytes)
+
+    let oversized = HomebrewUpgradeEvidence(
+      attemptedAt: attemptedAt,
+      installedVersion: "0.1.0",
+      targetVersion: "0.2.0",
+      outcome: .verificationFailed,
+      error: String(repeating: "x", count: BoundedRegularFile.maximumSize)
+    )
+    #expect(throws: HomebrewUpgradeEvidenceError.tooLarge) {
+      try store.write(oversized)
+    }
   }
 
   @Test
