@@ -145,7 +145,7 @@ package struct AtuinAdapter: Sendable {
       table: selectionTable,
       key: selectionKey
     )
-    return selection.tableHeaderCount == 1 && selection.values == ["\"\(themeName)\""]
+    return selection.selectsExactly("\"\(themeName)\"")
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

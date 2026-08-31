@@ -247,7 +247,7 @@ package struct YaziAdapter: Sendable {
       table: selectionTable,
       key: selectionKey
     )
-    return selection.tableHeaderCount == 1 && selection.values == ["\"\(flavorName)\""]
+    return selection.selectsExactly("\"\(flavorName)\"")
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {
