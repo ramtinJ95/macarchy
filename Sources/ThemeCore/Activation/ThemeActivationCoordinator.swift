@@ -81,141 +81,22 @@ package struct ThemeActivationCoordinator: Sendable {
     consumerPaths: ThemeConsumerPaths
   ) {
     let root = root.standardizedFileURL
-    let statusStore = ReconciliationStatusStore(root: root)
-    self.root = root
-    activator = ThemeActivator(root: root)
-    backgroundPreferences = BackgroundPreferenceStore(root: root)
-    appearance = .live(root: root)
-    atuin = AtuinAdapter(
+    let appearance = MacOSAppearanceAdapter.live(root: root)
+    let controlIsAvailable: @Sendable (URL) -> Bool = {
+      FileManager.default.isExecutableFile(atPath: $0.path)
+    }
+    self.init(
       root: root,
-      configurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
-      executableURL: AtuinAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: AtuinAdapter.liveExecutableURL.path)
+      consumerPaths: consumerPaths,
+      processRunner: .live,
+      wallpaperControl: .live,
+      wallpaperSignal: .personal(),
+      currentAppearance: appearance.currentAppearance,
+      appearanceControlIsAvailable: appearance.controlIsAvailable,
+      sketchyBarControlIsAvailable: {
+        controlIsAvailable(SketchyBarAdapter.liveExecutableURL)
       },
-      processRunner: .live
-    )
-    bat = BatAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
-      cacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
-      executableURL: BatAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: BatAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    btop = BtopAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.btopConfigurationDirectoryURL,
-      executableURL: BtopAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: BtopAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    codex = CodexAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
-      executableURL: CodexAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: CodexAdapter.liveExecutableURL.path)
-      }
-    )
-    configurationStore = MacarchyConfigurationStore(root: root)
-    eza = EzaAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
-      shellConfigurationURL: consumerPaths.shellConfigurationURL,
-      executableURL: EzaAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: EzaAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    herdr = HerdrAdapter(
-      root: root,
-      configurationURL: consumerPaths.herdrConfigurationURL,
-      executableURL: HerdrAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: HerdrAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    kitty = KittyAdapter(
-      root: root,
-      configurationURL: consumerPaths.kittyConfigurationURL,
-      includeDirective: Self.kittyIncludeDirective(root: root),
-      processRunner: .live
-    )
-    neovim = NeovimAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
-      executableURL: NeovimAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: NeovimAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    pi = PiAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
-      executableURL: PiAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: PiAdapter.liveExecutableURL.path)
-      }
-    )
-    processRunner = .live
-    reconciler = ThemeReconciler(statusStore: statusStore)
-    sketchyBar = SketchyBarAdapter(
-      root: root,
-      configurationURL: consumerPaths.sketchyBarConfigurationURL,
-      executableURL: SketchyBarAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: SketchyBarAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    spicetify = SpicetifyAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL,
-      executableURL: SpicetifyAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: SpicetifyAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    starship = StarshipAdapter(
-      root: root,
-      configurationURL: consumerPaths.starshipConfigurationURL,
-      behaviorURL: consumerPaths.starshipBehaviorURL,
-      executableURL: StarshipAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: StarshipAdapter.liveExecutableURL.path)
-      },
-      processRunner: .live
-    )
-    self.statusStore = statusStore
-    tuicr = TuicrAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
-      executableURL: TuicrAdapter.liveExecutableURL,
-      controlIsAvailable: {
-        FileManager.default.isExecutableFile(atPath: TuicrAdapter.liveExecutableURL.path)
-      }
-    )
-    wallpaper = WallpaperAdapter(root: root, control: .live)
-    wallpaperSignal = .personal()
-    yazi = YaziAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.yaziConfigurationDirectoryURL,
-      executableURL: YaziAdapter.liveExecutableURL,
-      controlURL: YaziAdapter.liveControlURL,
-      controlsAreAvailable: {
-        FileManager.default.isExecutableFile(atPath: YaziAdapter.liveExecutableURL.path)
-          && FileManager.default.isExecutableFile(atPath: YaziAdapter.liveControlURL.path)
-      },
-      processRunner: .live
+      controlIsAvailable: controlIsAvailable
     )
   }
 
@@ -228,6 +109,7 @@ package struct ThemeActivationCoordinator: Sendable {
     currentAppearance: @escaping @Sendable () throws -> ThemeAppearance = { .dark },
     appearanceControlIsAvailable: @escaping @Sendable () -> Bool = { true },
     sketchyBarControlIsAvailable: @escaping @Sendable () -> Bool = { true },
+    controlIsAvailable: @escaping @Sendable (URL) -> Bool = { _ in true },
     faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void = { _ in },
     onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
     postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in }
@@ -252,7 +134,7 @@ package struct ThemeActivationCoordinator: Sendable {
       root: root,
       configurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
       executableURL: AtuinAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(AtuinAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     bat = BatAdapter(
@@ -260,21 +142,21 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
       cacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
       executableURL: BatAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(BatAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     btop = BtopAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.btopConfigurationDirectoryURL,
       executableURL: BtopAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(BtopAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     codex = CodexAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
       executableURL: CodexAdapter.liveExecutableURL,
-      controlIsAvailable: { true }
+      controlIsAvailable: { controlIsAvailable(CodexAdapter.liveExecutableURL) }
     )
     configurationStore = MacarchyConfigurationStore(root: root)
     eza = EzaAdapter(
@@ -282,14 +164,14 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
       shellConfigurationURL: consumerPaths.shellConfigurationURL,
       executableURL: EzaAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(EzaAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     herdr = HerdrAdapter(
       root: root,
       configurationURL: consumerPaths.herdrConfigurationURL,
       executableURL: HerdrAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(HerdrAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     kitty = KittyAdapter(
@@ -302,14 +184,14 @@ package struct ThemeActivationCoordinator: Sendable {
       root: root,
       configurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
       executableURL: NeovimAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(NeovimAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     pi = PiAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
       executableURL: PiAdapter.liveExecutableURL,
-      controlIsAvailable: { true }
+      controlIsAvailable: { controlIsAvailable(PiAdapter.liveExecutableURL) }
     )
     self.processRunner = processRunner
     reconciler = ThemeReconciler(statusStore: statusStore)
@@ -324,7 +206,7 @@ package struct ThemeActivationCoordinator: Sendable {
       root: root,
       configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL,
       executableURL: SpicetifyAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(SpicetifyAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     starship = StarshipAdapter(
@@ -332,7 +214,7 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationURL: consumerPaths.starshipConfigurationURL,
       behaviorURL: consumerPaths.starshipBehaviorURL,
       executableURL: StarshipAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
+      controlIsAvailable: { controlIsAvailable(StarshipAdapter.liveExecutableURL) },
       processRunner: processRunner
     )
     self.statusStore = statusStore
@@ -340,7 +222,7 @@ package struct ThemeActivationCoordinator: Sendable {
       root: root,
       configurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
       executableURL: TuicrAdapter.liveExecutableURL,
-      controlIsAvailable: { true }
+      controlIsAvailable: { controlIsAvailable(TuicrAdapter.liveExecutableURL) }
     )
     wallpaper = WallpaperAdapter(root: root, control: wallpaperControl)
     self.wallpaperSignal = wallpaperSignal
@@ -349,7 +231,10 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationDirectoryURL: consumerPaths.yaziConfigurationDirectoryURL,
       executableURL: YaziAdapter.liveExecutableURL,
       controlURL: YaziAdapter.liveControlURL,
-      controlsAreAvailable: { true },
+      controlsAreAvailable: {
+        controlIsAvailable(YaziAdapter.liveExecutableURL)
+          && controlIsAvailable(YaziAdapter.liveControlURL)
+      },
       processRunner: processRunner
     )
   }
