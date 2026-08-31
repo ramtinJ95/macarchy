@@ -162,13 +162,11 @@ package struct BtopAdapter: Sendable {
   }
 
   private func readConfiguration() throws -> String {
-    do {
-      return try BoundedRegularFile.readUTF8(at: configurationURL)
-    } catch BoundedRegularFileError.tooLarge {
-      throw BtopAdapterError.configurationTooLarge(configurationURL)
-    } catch {
-      throw BtopAdapterError.cannotReadConfiguration(configurationURL)
-    }
+    try AdapterConfigurationFile.readUTF8(
+      at: configurationURL,
+      tooLarge: BtopAdapterError.configurationTooLarge(configurationURL),
+      unreadable: BtopAdapterError.cannotReadConfiguration(configurationURL)
+    )
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

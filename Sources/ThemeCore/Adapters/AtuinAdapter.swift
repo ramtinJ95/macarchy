@@ -130,13 +130,11 @@ package struct AtuinAdapter: Sendable {
 
   private func readConfiguration() throws -> String {
     let resolvedURL = configurationURL.resolvingSymlinksInPath()
-    do {
-      return try BoundedRegularFile.readUTF8(at: resolvedURL)
-    } catch BoundedRegularFileError.tooLarge {
-      throw AtuinAdapterError.configurationTooLarge(configurationURL)
-    } catch {
-      throw AtuinAdapterError.cannotReadConfiguration(configurationURL)
-    }
+    return try AdapterConfigurationFile.readUTF8(
+      at: resolvedURL,
+      tooLarge: AtuinAdapterError.configurationTooLarge(configurationURL),
+      unreadable: AtuinAdapterError.cannotReadConfiguration(configurationURL)
+    )
   }
 
   private static func selectsTheme(in configuration: String) -> Bool {

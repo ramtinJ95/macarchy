@@ -180,20 +180,11 @@ struct KeybindingApplyTransactionStore: Sendable {
   func write(_ transaction: KeybindingApplyTransaction) throws {
     let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
     defer { Darwin.close(stateDescriptor) }
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(
-        parentDescriptor: stateDescriptor,
-        name: "keybindings",
-        url: directory
-      )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      descriptor = try PinnedFilesystem.createDirectory(
-        parentDescriptor: stateDescriptor,
-        name: "keybindings",
-        url: directory
-      )
-    }
+    let descriptor = try PinnedFilesystem.openOrCreateChildDirectory(
+      parentDescriptor: stateDescriptor,
+      name: "keybindings",
+      url: directory
+    )
     defer { Darwin.close(descriptor) }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -367,20 +358,11 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
     }
     let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
     defer { Darwin.close(stateDescriptor) }
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(
-        parentDescriptor: stateDescriptor,
-        name: "keybindings",
-        url: directory
-      )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      descriptor = try PinnedFilesystem.createDirectory(
-        parentDescriptor: stateDescriptor,
-        name: "keybindings",
-        url: directory
-      )
-    }
+    let descriptor = try PinnedFilesystem.openOrCreateChildDirectory(
+      parentDescriptor: stateDescriptor,
+      name: "keybindings",
+      url: directory
+    )
     defer { Darwin.close(descriptor) }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

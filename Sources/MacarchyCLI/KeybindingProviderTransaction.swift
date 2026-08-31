@@ -2400,18 +2400,18 @@ struct KeybindingProviderTransaction: Sendable {
     for component in components {
       currentURL.append(path: component, directoryHint: .isDirectory)
       let next: Int32
-      do {
-        next = try PinnedFilesystem.openDirectory(
-          parentDescriptor: parent,
-          name: component,
-          url: currentURL
-        )
-      } catch let error as PinnedFilesystemError where error.code == ENOENT && create {
-        next = try PinnedFilesystem.createDirectory(
+      if create {
+        next = try PinnedFilesystem.openOrCreateChildDirectory(
           parentDescriptor: parent,
           name: component,
           url: currentURL,
           mode: 0o700
+        )
+      } else {
+        next = try PinnedFilesystem.openDirectory(
+          parentDescriptor: parent,
+          name: component,
+          url: currentURL
         )
       }
       Darwin.close(parent)
