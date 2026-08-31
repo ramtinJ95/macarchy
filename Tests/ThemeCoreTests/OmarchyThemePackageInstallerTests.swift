@@ -153,6 +153,18 @@ struct OmarchyThemePackageInstallerTests {
     }
     _ = await enteredIterator.next()
 
+    let spicetifyEntered = Mutex(false)
+    let spicetify = Task.detached { @Sendable in
+      try await SpicetifyLock(root: fixture.root).withLock {
+        await Task.yield()
+        spicetifyEntered.withLock { $0 = true }
+      }
+    }
+    for _ in 0..<100 where !spicetifyEntered.withLock({ $0 }) {
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    let spicetifyEnteredWhilePackageLocked = spicetifyEntered.withLock { $0 }
+
     let second = Task.detached {
       try await lock.withLock {
         state.values.withLock { state in
@@ -168,7 +180,9 @@ struct OmarchyThemePackageInstallerTests {
 
     state.values.withLock { $0.releaseFirst = true }
     try await first.value
+    try await spicetify.value
     try await second.value
+    #expect(spicetifyEnteredWhilePackageLocked)
     #expect(state.values.withLock { $0.entered } == 2)
     #expect(state.values.withLock { $0.maximumActive } == 1)
   }

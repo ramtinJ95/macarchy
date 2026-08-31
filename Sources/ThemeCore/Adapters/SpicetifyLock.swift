@@ -1,5 +1,4 @@
 import Darwin
-import Dispatch
 import Foundation
 
 enum SpicetifyLockError: Error, CustomStringConvertible, Sendable {
@@ -17,7 +16,11 @@ enum SpicetifyLockError: Error, CustomStringConvertible, Sendable {
 }
 
 package struct SpicetifyLock: Sendable {
-  private static let processSemaphore = DispatchSemaphore(value: 1)
+  private static let lock = ProcessScopedFileLock(
+    filename: "spicetify.lock",
+    cannotCreateRunDirectory: SpicetifyLockError.createRunDirectory,
+    operationError: SpicetifyLockError.operation
+  )
 
   private let root: URL
 
@@ -28,52 +31,12 @@ package struct SpicetifyLock: Sendable {
   package func withLock<Result>(
     _ operation: () throws -> Result
   ) throws -> Result {
-    Self.processSemaphore.wait()
-    defer { Self.processSemaphore.signal() }
-    let descriptor = try acquireFileLock()
-    defer { Darwin.close(descriptor) }
-    return try operation()
+    try Self.lock.withLock(root: root, operation)
   }
 
   package func withLock<Result: Sendable>(
     _ operation: @Sendable () async throws -> Result
   ) async throws -> Result {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global(qos: .utility).async {
-        Self.processSemaphore.wait()
-        continuation.resume()
-      }
-    }
-    defer { Self.processSemaphore.signal() }
-    try Task.checkCancellation()
-    let descriptor = try acquireFileLock()
-    defer { Darwin.close(descriptor) }
-    return try await operation()
-  }
-
-  private func acquireFileLock() throws -> Int32 {
-    let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
-    do {
-      try FileManager.default.createDirectory(
-        at: runDirectory,
-        withIntermediateDirectories: true
-      )
-    } catch {
-      throw SpicetifyLockError.createRunDirectory(runDirectory, String(describing: error))
-    }
-    let lockURL = runDirectory.appending(path: "spicetify.lock")
-    let descriptor = lockURL.path.withCString {
-      Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-    }
-    guard descriptor >= 0 else {
-      throw SpicetifyLockError.operation("open", code: errno)
-    }
-    while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
-      if errno == EINTR { continue }
-      let code = errno
-      Darwin.close(descriptor)
-      throw SpicetifyLockError.operation("acquire", code: code)
-    }
-    return descriptor
+    try await Self.lock.withLock(root: root, operation)
   }
 }

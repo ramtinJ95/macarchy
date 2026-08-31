@@ -1,5 +1,4 @@
 import Darwin
-import Dispatch
 import Foundation
 
 package enum OmarchyThemePackageInstallationError: Error, CustomStringConvertible, Equatable,
@@ -36,7 +35,15 @@ package enum OmarchyThemePackageInstallationError: Error, CustomStringConvertibl
 }
 
 package struct ThemePackageLock: Sendable {
-  private static let processSemaphore = DispatchSemaphore(value: 1)
+  private static let lock = ProcessScopedFileLock(
+    filename: "theme-package.lock",
+    cannotCreateRunDirectory: { directory, cause in
+      OmarchyThemePackageInstallationError.lockDirectory(
+        "cannot create \(directory.path): \(cause)"
+      )
+    },
+    operationError: { OmarchyThemePackageInstallationError.lock(operation: $0, code: $1) }
+  )
   private let root: URL
 
   package init(root: URL) {
@@ -46,49 +53,7 @@ package struct ThemePackageLock: Sendable {
   package func withLock<Output: Sendable>(
     _ operation: @escaping @Sendable () async throws -> Output
   ) async throws -> Output {
-    await withCheckedContinuation { continuation in
-      DispatchQueue.global(qos: .utility).async {
-        Self.processSemaphore.wait()
-        continuation.resume()
-      }
-    }
-    defer { Self.processSemaphore.signal() }
-    try Task.checkCancellation()
-    let descriptor = try acquire()
-    defer { Darwin.close(descriptor) }
-    return try await operation()
-  }
-
-  private func acquire() throws -> Int32 {
-    let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
-    do {
-      try FileManager.default.createDirectory(
-        at: runDirectory,
-        withIntermediateDirectories: true
-      )
-    } catch {
-      throw OmarchyThemePackageInstallationError.lockDirectory(
-        "cannot create \(runDirectory.path): \(error)"
-      )
-    }
-    let lockURL = runDirectory.appending(path: "theme-package.lock")
-
-    let descriptor = lockURL.path.withCString {
-      Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-    }
-    guard descriptor >= 0 else {
-      throw OmarchyThemePackageInstallationError.lock(operation: "open", code: errno)
-    }
-    while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
-      if errno == EINTR { continue }
-      let code = errno
-      Darwin.close(descriptor)
-      throw OmarchyThemePackageInstallationError.lock(
-        operation: "acquire",
-        code: code
-      )
-    }
-    return descriptor
+    try await Self.lock.withLock(root: root, operation)
   }
 }
 
