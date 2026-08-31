@@ -186,29 +186,12 @@ struct KeybindingsApplyCommandRunner: Sendable {
           homeDirectory: homeDirectory
         )
       }
-      recoveryLifecycle = rollbackLifecycle(for: pending)
-      if pending.operation == .teardownEntry,
-        [.restorationFinalizing, .restorationFinalized].contains(pending.phase)
-      {
-        try completeTeardownFinalization(
-          pending,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          transactionStore: transactionStore
-        )
-      } else {
-        try preflightRollback(
-          pending,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory
-        )
-        try rollback(
-          pending,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          transactionStore: transactionStore
-        )
-      }
+      recoveryLifecycle = try recoverForTeardown(
+        pending,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        transactionStore: transactionStore
+      )
       recovered = true
     }
 
@@ -225,46 +208,19 @@ struct KeybindingsApplyCommandRunner: Sendable {
         lifecycle: recoveryLifecycle
       )
     }
-    let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
-    guard generation.status == .current, let generationID = generation.generationID else {
-      throw SetupOwnershipError.ownershipDrift(target)
-    }
-    let providerInspection = KeybindingProviderInspector().inspect(
-      homeDirectory: homeDirectory,
+    let preparation = try prepareTeardown(
+      record: record,
       stateRoot: stateRoot,
-      generation: generation
+      homeDirectory: homeDirectory,
+      target: target
     )
-    guard providerInspection.status == .managed else {
-      throw SetupOwnershipError.ownershipDrift(target)
-    }
-    try KeybindingProviderInspector.validateOwnershipRecord(
-      record,
-      context: SetupOwnershipManager.Context(homeDirectory: homeDirectory)
-    )
-    let usesLegacySymlinkRestoration =
-      record.retainedOriginalPath == nil
-      && [.symbolicLink, .directorySymbolicLink].contains(record.originalKind ?? .absent)
-    let restorationDescription: String
-    if usesLegacySymlinkRestoration {
-      restorationDescription =
-        "the reviewed prior skhd symlink text (legacy record; exact inode metadata unavailable)"
-    } else {
-      restorationDescription = "the exact prior skhd entry"
-    }
-    let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
-    try provider.preflightOriginalRestoration()
-    do {
-      try lifecycle.preflight()
-    } catch {
-      throw KeybindingsApplyError.blocked(String(describing: error))
-    }
     if dryRun {
       return SetupIntegrationResult(
         id: KeybindingProviderInspector.ownershipID,
         status: .planned,
         target: target.path,
         message:
-          "Would restore \(restorationDescription) and restart the incumbent service; lifecycle=restart",
+          "Would restore \(preparation.restorationDescription) and restart the incumbent service; lifecycle=restart",
         mutationAttempted: false,
         lifecycle: .restart
       )
@@ -273,34 +229,34 @@ struct KeybindingsApplyCommandRunner: Sendable {
     var transaction = KeybindingApplyTransaction(
       operation: .teardownEntry,
       phase: .staged,
-      generationID: generationID,
-      previousGenerationID: generationID,
+      generationID: preparation.generationID,
+      previousGenerationID: preparation.generationID,
       generationCreated: false
     )
     do {
-      try transactionStore.write(transaction)
-      try provider.restoreOriginalEntry()
-      transaction = transaction.withPhase(.entryRestored)
-      try transactionStore.write(transaction)
-      transaction = transaction.withPhase(.activating)
-      try transactionStore.write(transaction)
-      try perform(.restart)
-      try lifecycle.verifyProcess()
-      try KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).remove()
-      transaction = transaction.withPhase(.restorationFinalizing)
-      try transactionStore.write(transaction)
-      try provider.finalizeOriginalRestoration()
-      transaction = transaction.withPhase(.restorationFinalized)
-      try transactionStore.write(transaction)
-      try transactionStore.remove()
+      try restoreTeardownEntry(
+        preparation.provider,
+        transaction: &transaction,
+        transactionStore: transactionStore
+      )
+      try activateRestoredTeardownEntry(
+        transaction: &transaction,
+        stateRoot: stateRoot,
+        transactionStore: transactionStore
+      )
+      try finalizeTeardown(
+        preparation.provider,
+        transaction: &transaction,
+        transactionStore: transactionStore
+      )
       return SetupIntegrationResult(
         id: KeybindingProviderInspector.ownershipID,
         status: .removed,
         target: target.path,
         message:
           recovered
-          ? "Recovered the interrupted keybinding transaction, then restored \(restorationDescription); recovery lifecycle=\(recoveryLifecycle.rawValue); teardown lifecycle=restart"
-          : "Restored \(restorationDescription); lifecycle=restart",
+          ? "Recovered the interrupted keybinding transaction, then restored \(preparation.restorationDescription); recovery lifecycle=\(recoveryLifecycle.rawValue); teardown lifecycle=restart"
+          : "Restored \(preparation.restorationDescription); lifecycle=restart",
         mutationAttempted: true,
         lifecycle: combinedLifecycle(recoveryLifecycle, .restart)
       )
@@ -346,6 +302,117 @@ struct KeybindingsApplyCommandRunner: Sendable {
         target: target
       )
     }
+  }
+
+  private func recoverForTeardown(
+    _ pending: KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws -> KeybindingLifecycleAction {
+    let recoveryLifecycle = rollbackLifecycle(for: pending)
+    if pending.operation == .teardownEntry,
+      [.restorationFinalizing, .restorationFinalized].contains(pending.phase)
+    {
+      try completeTeardownFinalization(
+        pending,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        transactionStore: transactionStore
+      )
+    } else {
+      try preflightRollback(
+        pending,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+      try rollback(
+        pending,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        transactionStore: transactionStore
+      )
+    }
+    return recoveryLifecycle
+  }
+
+  private func prepareTeardown(
+    record: SetupOwnershipRecord,
+    stateRoot: URL,
+    homeDirectory: URL,
+    target: URL
+  ) throws -> PreparedKeybindingsTeardown {
+    let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
+    guard generation.status == .current, let generationID = generation.generationID else {
+      throw SetupOwnershipError.ownershipDrift(target)
+    }
+    let providerInspection = KeybindingProviderInspector().inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      generation: generation
+    )
+    guard providerInspection.status == .managed else {
+      throw SetupOwnershipError.ownershipDrift(target)
+    }
+    try KeybindingProviderInspector.validateOwnershipRecord(
+      record,
+      context: SetupOwnershipManager.Context(homeDirectory: homeDirectory)
+    )
+    let usesLegacySymlinkRestoration =
+      record.retainedOriginalPath == nil
+      && [.symbolicLink, .directorySymbolicLink].contains(record.originalKind ?? .absent)
+    let restorationDescription =
+      usesLegacySymlinkRestoration
+      ? "the reviewed prior skhd symlink text (legacy record; exact inode metadata unavailable)"
+      : "the exact prior skhd entry"
+    let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
+    try provider.preflightOriginalRestoration()
+    do {
+      try lifecycle.preflight()
+    } catch {
+      throw KeybindingsApplyError.blocked(String(describing: error))
+    }
+    return PreparedKeybindingsTeardown(
+      generationID: generationID,
+      restorationDescription: restorationDescription,
+      provider: provider
+    )
+  }
+
+  private func restoreTeardownEntry(
+    _ provider: KeybindingProviderTransaction,
+    transaction: inout KeybindingApplyTransaction,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    try transactionStore.write(transaction)
+    try provider.restoreOriginalEntry()
+    transaction = transaction.withPhase(.entryRestored)
+    try transactionStore.write(transaction)
+  }
+
+  private func activateRestoredTeardownEntry(
+    transaction: inout KeybindingApplyTransaction,
+    stateRoot: URL,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    transaction = transaction.withPhase(.activating)
+    try transactionStore.write(transaction)
+    try perform(.restart)
+    try lifecycle.verifyProcess()
+    try KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).remove()
+  }
+
+  private func finalizeTeardown(
+    _ provider: KeybindingProviderTransaction,
+    transaction: inout KeybindingApplyTransaction,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    transaction = transaction.withPhase(.restorationFinalizing)
+    try transactionStore.write(transaction)
+    try provider.finalizeOriginalRestoration()
+    transaction = transaction.withPhase(.restorationFinalized)
+    try transactionStore.write(transaction)
+    try transactionStore.remove()
   }
 
   func preview(
@@ -530,40 +597,163 @@ struct KeybindingsApplyCommandRunner: Sendable {
     evidence: borrowing Mutex<KeybindingsApplyEvidence>
   ) throws -> KeybindingsApplyReport {
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
+    try recoverInterruptedApply(
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      transactionStore: transactionStore,
+      evidence: evidence
+    )
+    let prepared = try prepareApply(
+      resourcesRoot: resourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      adopt: adopt
+    )
+
+    if prepared.preparation.outcome == "no_change" {
+      try lifecycle.verifyProcess()
+      let observed = evidence.withLock { $0 }
+      return KeybindingsApplyReport(
+        outcome: "no_change",
+        mutated: observed.mutated,
+        lifecycle: observed.lifecycle,
+        generationID: prepared.preparation.generation.generationID,
+        message: "Keybindings are already converged."
+      )
+    }
+
+    let activator = KeybindingGenerationActivator(stateRoot: stateRoot)
+    let needsGeneration =
+      prepared.preparation.generation.status == .missing
+      || prepared.preparation.generation.inputDigest != prepared.composition.inputDigest
+      || prepared.preparation.generation.renderedDigest != prepared.composition.renderedDigest
+    let selectedGenerationID =
+      needsGeneration
+      ? "k-\(UUID().uuidString.lowercased())"
+      : prepared.preparation.generation.generationID
+    guard let selectedGenerationID else {
+      throw KeybindingsApplyError.blocked("no valid generation is available for provider apply")
+    }
+    var transaction = KeybindingApplyTransaction(
+      operation: prepared.eligibility.operation,
+      phase: needsGeneration ? .staging : .staged,
+      generationID: selectedGenerationID,
+      previousGenerationID: prepared.preparation.generation.generationID,
+      generationCreated: needsGeneration
+    )
     do {
-      try KeybindingGenerationActivator(stateRoot: stateRoot).recoverResidue()
-      if let transaction = try transactionStore.read() {
-        evidence.withLock {
-          $0.mutated = true
-          if transaction.phase == .activating {
-            $0.lifecycle =
-              transaction.operation == .updateGeneration
-              ? KeybindingLifecycleAction.reload
-              : KeybindingLifecycleAction.restart
-          }
-        }
-        try preflightRecovery(
+      let stagedGeneration = try stageApplyGeneration(
+        prepared.composition,
+        generationID: selectedGenerationID,
+        activator: activator,
+        transaction: &transaction,
+        transactionStore: transactionStore
+      )
+      try installApplyProviderEntry(
+        operation: prepared.eligibility.operation,
+        providerEvidence: prepared.providerEvidence,
+        approvedEvidenceDigest: adopt,
+        homeDirectory: homeDirectory,
+        transaction: &transaction,
+        transactionStore: transactionStore
+      )
+      try activateApply(
+        stagedGeneration: stagedGeneration,
+        selectedGenerationID: selectedGenerationID,
+        lifecycleAction: prepared.eligibility.lifecycle,
+        activator: activator,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        transaction: &transaction,
+        transactionStore: transactionStore
+      )
+      try verifyAppliedBehavior(
+        resourcesRoot: resourcesRoot,
+        profileURL: profileURL,
+        profileRequired: profileRequired,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+      try finalizeApply(
+        selectedGenerationID: selectedGenerationID,
+        transaction: transaction,
+        activator: activator,
+        transactionStore: transactionStore
+      )
+      return KeybindingsApplyReport(
+        outcome: "applied",
+        mutated: true,
+        lifecycle: prepared.eligibility.lifecycle,
+        generationID: selectedGenerationID,
+        message: "Published and activated managed keybindings."
+      )
+    } catch {
+      do {
+        try preflightRollback(
           transaction,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory
         )
-        if transaction.operation == .teardownEntry,
-          [.restorationFinalizing, .restorationFinalized].contains(transaction.phase)
-        {
-          try completeTeardownFinalization(
-            transaction,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            transactionStore: transactionStore
-          )
-        } else {
-          try rollback(
-            transaction,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            transactionStore: transactionStore
-          )
+        try rollback(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          transactionStore: transactionStore
+        )
+      } catch let rollbackError {
+        throw KeybindingsRecoveryRequiredError(
+          cause: String(describing: error),
+          rollbackCause: String(describing: rollbackError)
+        )
+      }
+      throw KeybindingsApplyError.rolledBack(
+        String(describing: error),
+        transaction.phase == .activating ? prepared.eligibility.lifecycle : .none
+      )
+    }
+  }
+
+  private func recoverInterruptedApply(
+    stateRoot: URL,
+    homeDirectory: URL,
+    transactionStore: KeybindingApplyTransactionStore,
+    evidence: borrowing Mutex<KeybindingsApplyEvidence>
+  ) throws {
+    do {
+      try KeybindingGenerationActivator(stateRoot: stateRoot).recoverResidue()
+      guard let transaction = try transactionStore.read() else { return }
+      evidence.withLock {
+        $0.mutated = true
+        if transaction.phase == .activating {
+          $0.lifecycle =
+            transaction.operation == .updateGeneration
+            ? KeybindingLifecycleAction.reload
+            : KeybindingLifecycleAction.restart
         }
+      }
+      try preflightRecovery(
+        transaction,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+      if transaction.operation == .teardownEntry,
+        [.restorationFinalizing, .restorationFinalized].contains(transaction.phase)
+      {
+        try completeTeardownFinalization(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          transactionStore: transactionStore
+        )
+      } else {
+        try rollback(
+          transaction,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          transactionStore: transactionStore
+        )
       }
     } catch {
       throw KeybindingsRecoveryRequiredError(
@@ -571,7 +761,16 @@ struct KeybindingsApplyCommandRunner: Sendable {
         rollbackCause: String(describing: error)
       )
     }
+  }
 
+  private func prepareApply(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    adopt: String?
+  ) throws -> PreparedKeybindingsApply {
     var preparation = try planner.prepare(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
@@ -631,131 +830,110 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
     #endif
 
-    if preparation.outcome == "no_change" {
-      try lifecycle.verifyProcess()
-      let observed = evidence.withLock { $0 }
-      return KeybindingsApplyReport(
-        outcome: "no_change",
-        mutated: observed.mutated,
-        lifecycle: observed.lifecycle,
-        generationID: preparation.generation.generationID,
-        message: "Keybindings are already converged."
-      )
-    }
-
-    let operation = eligibilityDecision.operation
-    let lifecycleAction = eligibilityDecision.lifecycle
-
-    let activator = KeybindingGenerationActivator(stateRoot: stateRoot)
-    let needsGeneration =
-      preparation.generation.status == .missing
-      || preparation.generation.inputDigest != composition.inputDigest
-      || preparation.generation.renderedDigest != composition.renderedDigest
-    let selectedGenerationID =
-      needsGeneration
-      ? "k-\(UUID().uuidString.lowercased())"
-      : preparation.generation.generationID
-    guard let selectedGenerationID else {
-      throw KeybindingsApplyError.blocked("no valid generation is available for provider apply")
-    }
-    var transaction = KeybindingApplyTransaction(
-      operation: operation,
-      phase: needsGeneration ? .staging : .staged,
-      generationID: selectedGenerationID,
-      previousGenerationID: preparation.generation.generationID,
-      generationCreated: needsGeneration
+    return PreparedKeybindingsApply(
+      preparation: preparation,
+      composition: composition,
+      eligibility: eligibilityDecision,
+      providerEvidence: providerEvidence
     )
-    do {
-      try transactionStore.write(transaction)
-      var stagedGeneration: StagedKeybindingGeneration?
-      if needsGeneration {
-        stagedGeneration = try activator.stage(
-          composition,
-          generationID: selectedGenerationID
-        )
-        transaction = transaction.withPhase(.staged)
-        try transactionStore.write(transaction)
-      }
-      if operation == .installEntry || operation == .adoptEntry {
-        guard let providerEvidence else {
-          throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
-        }
-        try KeybindingProviderTransaction(homeDirectory: homeDirectory).installEntry(
-          expectedEvidence: providerEvidence,
-          approvedEvidenceDigest: adopt
-        )
-        transaction = transaction.withPhase(.entryInstalled)
-        try transactionStore.write(transaction)
-      }
-      if let stagedGeneration { try activator.select(stagedGeneration) }
-      transaction = transaction.withPhase(.currentSelected)
-      try transactionStore.write(transaction)
+  }
 
-      transaction = transaction.withPhase(.activating)
-      try transactionStore.write(transaction)
-      try perform(lifecycleAction)
-      try lifecycle.verifyProcess()
+  private func stageApplyGeneration(
+    _ composition: KeybindingComposition,
+    generationID: String,
+    activator: KeybindingGenerationActivator,
+    transaction: inout KeybindingApplyTransaction,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws -> StagedKeybindingGeneration? {
+    try transactionStore.write(transaction)
+    guard transaction.generationCreated else { return nil }
+    let stagedGeneration = try activator.stage(composition, generationID: generationID)
+    transaction = transaction.withPhase(.staged)
+    try transactionStore.write(transaction)
+    return stagedGeneration
+  }
 
-      try persistLifecycleEvidence(
-        action: lifecycleAction,
-        generationID: selectedGenerationID,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory
-      )
+  private func installApplyProviderEntry(
+    operation: KeybindingApplyOperation,
+    providerEvidence: KeybindingAdoptionEvidence?,
+    approvedEvidenceDigest: String?,
+    homeDirectory: URL,
+    transaction: inout KeybindingApplyTransaction,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    guard operation == .installEntry || operation == .adoptEntry else { return }
+    guard let providerEvidence else {
+      throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
+    }
+    try KeybindingProviderTransaction(homeDirectory: homeDirectory).installEntry(
+      expectedEvidence: providerEvidence,
+      approvedEvidenceDigest: approvedEvidenceDigest
+    )
+    transaction = transaction.withPhase(.entryInstalled)
+    try transactionStore.write(transaction)
+  }
 
-      #if MACARCHY_ACCEPTANCE_TESTING
-        try acceptanceFailure?.failAfterVerifiedReload(generationID: selectedGenerationID)
-      #endif
+  private func activateApply(
+    stagedGeneration: StagedKeybindingGeneration?,
+    selectedGenerationID: String,
+    lifecycleAction: KeybindingLifecycleAction,
+    activator: KeybindingGenerationActivator,
+    stateRoot: URL,
+    homeDirectory: URL,
+    transaction: inout KeybindingApplyTransaction,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    if let stagedGeneration { try activator.select(stagedGeneration) }
+    transaction = transaction.withPhase(.currentSelected)
+    try transactionStore.write(transaction)
+    transaction = transaction.withPhase(.activating)
+    try transactionStore.write(transaction)
+    try perform(lifecycleAction)
+    try lifecycle.verifyProcess()
+    try persistLifecycleEvidence(
+      action: lifecycleAction,
+      generationID: selectedGenerationID,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory
+    )
+    #if MACARCHY_ACCEPTANCE_TESTING
+      try acceptanceFailure?.failAfterVerifiedReload(generationID: selectedGenerationID)
+    #endif
+  }
 
-      let verified = try planner.prepare(
-        resourcesRoot: resourcesRoot,
-        profileURL: profileURL,
-        profileRequired: profileRequired,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory,
-        ignoreTransaction: true
-      )
-      guard verified.effectiveBehavior.status == .converged else {
-        throw KeybindingsApplyError.postcondition(
-          "effective behavior remained \(verified.effectiveBehavior.status.rawValue): "
-            + verified.effectiveBehavior.statusMessage
-        )
-      }
-      var retained = Set([selectedGenerationID])
-      if let previous = transaction.previousGenerationID { retained.insert(previous) }
-      try activator.retainGenerations(retained)
-      try transactionStore.remove()
-      return KeybindingsApplyReport(
-        outcome: "applied",
-        mutated: true,
-        lifecycle: lifecycleAction,
-        generationID: selectedGenerationID,
-        message: "Published and activated managed keybindings."
-      )
-    } catch {
-      do {
-        try preflightRollback(
-          transaction,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory
-        )
-        try rollback(
-          transaction,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          transactionStore: transactionStore
-        )
-      } catch let rollbackError {
-        throw KeybindingsRecoveryRequiredError(
-          cause: String(describing: error),
-          rollbackCause: String(describing: rollbackError)
-        )
-      }
-      throw KeybindingsApplyError.rolledBack(
-        String(describing: error),
-        transaction.phase == .activating ? lifecycleAction : .none
+  private func verifyAppliedBehavior(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    let verified = try planner.prepare(
+      resourcesRoot: resourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      ignoreTransaction: true
+    )
+    guard verified.effectiveBehavior.status == .converged else {
+      throw KeybindingsApplyError.postcondition(
+        "effective behavior remained \(verified.effectiveBehavior.status.rawValue): "
+          + verified.effectiveBehavior.statusMessage
       )
     }
+  }
+
+  private func finalizeApply(
+    selectedGenerationID: String,
+    transaction: KeybindingApplyTransaction,
+    activator: KeybindingGenerationActivator,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    var retained = Set([selectedGenerationID])
+    if let previous = transaction.previousGenerationID { retained.insert(previous) }
+    try activator.retainGenerations(retained)
+    try transactionStore.remove()
   }
 
   private func rollback(
@@ -766,20 +944,63 @@ struct KeybindingsApplyCommandRunner: Sendable {
   ) throws {
     var transaction = originalTransaction
     let provider = KeybindingProviderTransaction(homeDirectory: homeDirectory)
-    var restoredOriginalOwnership = false
+    let restoredOriginalOwnership = try restoreRollbackProvider(
+      transaction,
+      provider: provider,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory
+    )
+    let activator = KeybindingGenerationActivator(stateRoot: stateRoot)
+    try activator.restoreCurrent(generationID: transaction.previousGenerationID)
+    try reactivateRollbackIfNeeded(transaction)
+    let restored = try verifyRollbackGeneration(transaction, stateRoot: stateRoot)
+    if restoredOriginalOwnership {
+      try finalizeRollbackOriginalRestoration(
+        provider,
+        transaction: &transaction,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        transactionStore: transactionStore
+      )
+    }
+    try verifyRollbackProvider(
+      transaction,
+      restoredGeneration: restored,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory
+    )
+    try persistRollbackLifecycleEvidence(
+      transaction,
+      restoredGeneration: restored,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory
+    )
+    try removeRolledBackGeneration(
+      transaction,
+      activator: activator
+    )
+    try transactionStore.remove()
+  }
+
+  private func restoreRollbackProvider(
+    _ transaction: KeybindingApplyTransaction,
+    provider: KeybindingProviderTransaction,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws -> Bool {
     if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
       let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
       let records = try SetupOwnershipManager().readRecords(context: context)
       if records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID }) {
         try provider.restoreOriginalEntry()
-        restoredOriginalOwnership = true
+        return true
       } else if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
         try verifyFinalizedOriginalRestoration(
           transaction,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory
         )
-        restoredOriginalOwnership = true
+        return true
       } else if transaction.phase == .entryInstalled || transaction.phase == .activating {
         throw SetupOwnershipError.ownershipDrift(
           homeDirectory.appending(path: ".config/skhd/skhdrc")
@@ -788,12 +1009,22 @@ struct KeybindingsApplyCommandRunner: Sendable {
     } else if transaction.operation == .teardownEntry {
       try provider.restoreManagedEntry()
     }
-    let activator = KeybindingGenerationActivator(stateRoot: stateRoot)
-    try activator.restoreCurrent(generationID: transaction.previousGenerationID)
+    return false
+  }
+
+  private func reactivateRollbackIfNeeded(
+    _ transaction: KeybindingApplyTransaction
+  ) throws {
     if transaction.phase == .activating {
       try perform(transaction.operation == .updateGeneration ? .reload : .restart)
       try lifecycle.verifyProcess()
     }
+  }
+
+  private func verifyRollbackGeneration(
+    _ transaction: KeybindingApplyTransaction,
+    stateRoot: URL
+  ) throws -> KeybindingGenerationInspection {
     let restored = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
     if let previous = transaction.previousGenerationID {
       guard restored.status == .current, restored.generationID == previous else {
@@ -808,30 +1039,46 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
     }
-    if restoredOriginalOwnership {
-      if transaction.phase != .restorationFinalizing
-        && transaction.phase != .restorationFinalized
-      {
-        transaction = transaction.withPhase(.restorationFinalizing)
-        try transactionStore.write(transaction)
-      }
-      if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
-        try provider.finalizeOriginalRestoration()
-      } else {
-        try verifyFinalizedOriginalRestoration(
-          transaction,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory
-        )
-        try provider.finalizeCompletedTeardownResidue()
-      }
-      transaction = transaction.withPhase(.restorationFinalized)
+    return restored
+  }
+
+  private func finalizeRollbackOriginalRestoration(
+    _ provider: KeybindingProviderTransaction,
+    transaction: inout KeybindingApplyTransaction,
+    stateRoot: URL,
+    homeDirectory: URL,
+    transactionStore: KeybindingApplyTransactionStore
+  ) throws {
+    if transaction.phase != .restorationFinalizing
+      && transaction.phase != .restorationFinalized
+    {
+      transaction = transaction.withPhase(.restorationFinalizing)
       try transactionStore.write(transaction)
     }
+    if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
+      try provider.finalizeOriginalRestoration()
+    } else {
+      try verifyFinalizedOriginalRestoration(
+        transaction,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory
+      )
+      try provider.finalizeCompletedTeardownResidue()
+    }
+    transaction = transaction.withPhase(.restorationFinalized)
+    try transactionStore.write(transaction)
+  }
+
+  private func verifyRollbackProvider(
+    _ transaction: KeybindingApplyTransaction,
+    restoredGeneration: KeybindingGenerationInspection,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
     let providerInspection = KeybindingProviderInspector().inspect(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
-      generation: restored
+      generation: restoredGeneration
     )
     if transaction.operation == .installEntry {
       guard
@@ -861,10 +1108,18 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
     }
+  }
+
+  private func persistRollbackLifecycleEvidence(
+    _ transaction: KeybindingApplyTransaction,
+    restoredGeneration: KeybindingGenerationInspection,
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
     if transaction.phase == .activating {
       if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
         try KeybindingLifecycleEvidenceStore(stateRoot: stateRoot).remove()
-      } else if let generationID = restored.generationID {
+      } else if let generationID = restoredGeneration.generationID {
         try persistLifecycleEvidence(
           action: transaction.operation == .updateGeneration ? .reload : .restart,
           generationID: generationID,
@@ -873,6 +1128,12 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
     }
+  }
+
+  private func removeRolledBackGeneration(
+    _ transaction: KeybindingApplyTransaction,
+    activator: KeybindingGenerationActivator
+  ) throws {
     if transaction.generationCreated {
       guard transaction.generationID != transaction.previousGenerationID else {
         throw KeybindingsApplyError.postcondition(
@@ -881,7 +1142,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
       try activator.removeGeneration(transaction.generationID)
     }
-    try transactionStore.remove()
   }
 
   private func perform(_ action: KeybindingLifecycleAction) throws {
@@ -1185,12 +1445,12 @@ struct KeybindingsApplyCommandRunner: Sendable {
   private func eligibility(
     _ preparation: KeybindingsPlanPreparation,
     adopt: String?
-  ) throws -> (operation: KeybindingApplyOperation, lifecycle: KeybindingLifecycleAction) {
+  ) throws -> KeybindingsApplyEligibility {
     switch preparation.provider.status {
     case .managed:
-      return (.updateGeneration, .reload)
+      return KeybindingsApplyEligibility(operation: .updateGeneration, lifecycle: .reload)
     case .installRequired where preparation.provider.ownership == "ordinary_directory":
-      return (.installEntry, .restart)
+      return KeybindingsApplyEligibility(operation: .installEntry, lifecycle: .restart)
     case .installRequired:
       throw KeybindingsApplyError.blocked(
         "clean apply requires an existing ordinary ~/.config/skhd directory"
@@ -1209,7 +1469,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
           "--adopt evidence does not match the current preview; review \(expected)"
         )
       }
-      return (.adoptEntry, .restart)
+      return KeybindingsApplyEligibility(operation: .adoptEntry, lifecycle: .restart)
     case .blocked:
       throw KeybindingsApplyError.blocked(preparation.provider.message)
     }
@@ -1250,7 +1510,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       _ failure: KeybindingAcceptanceFailureInjector,
       preparation: KeybindingsPlanPreparation,
       composition: KeybindingComposition,
-      eligibility: (operation: KeybindingApplyOperation, lifecycle: KeybindingLifecycleAction)
+      eligibility: KeybindingsApplyEligibility
     ) throws {
       let publishesGeneration =
         preparation.generation.status == .missing
@@ -1322,6 +1582,24 @@ struct KeybindingsApplyCommandRunner: Sendable {
 private struct KeybindingsApplyEvidence: Sendable {
   var mutated = false
   var lifecycle = KeybindingLifecycleAction.none
+}
+
+private struct PreparedKeybindingsApply {
+  let preparation: KeybindingsPlanPreparation
+  let composition: KeybindingComposition
+  let eligibility: KeybindingsApplyEligibility
+  let providerEvidence: KeybindingAdoptionEvidence?
+}
+
+private struct KeybindingsApplyEligibility {
+  let operation: KeybindingApplyOperation
+  let lifecycle: KeybindingLifecycleAction
+}
+
+private struct PreparedKeybindingsTeardown {
+  let generationID: String
+  let restorationDescription: String
+  let provider: KeybindingProviderTransaction
 }
 
 private struct KeybindingsApplyReport: Encodable {
