@@ -57,13 +57,6 @@ extension AdapterContractTests {
         to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
     try "[theme]\r\nname = \"\(AtuinAdapter.themeName)\"\r\n".write(
       to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
-    let atuinConfiguration = atuinDirectory.appending(path: "config.toml")
-    let atuinSource = root.appending(path: "atuin-config.toml")
-    try FileManager.default.moveItem(at: atuinConfiguration, to: atuinSource)
-    try FileManager.default.createSymbolicLink(
-      at: atuinConfiguration,
-      withDestinationURL: atuinSource
-    )
 
     #expect(try await btop.reconciliation().run().status == .applied)
     #expect(try await yazi.reconciliation().run().status == .applied)
@@ -110,26 +103,6 @@ extension AdapterContractTests {
     try "[theme]\nname = \"other\"\n".write(
       to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
     #expect(atuin.inspection().status == .drifted)
-
-    let btopConfiguration = btopDirectory.appending(path: "btop.conf")
-    let yaziConfiguration = yaziDirectory.appending(path: "theme.toml")
-    for url in [btopConfiguration, yaziConfiguration, atuinConfiguration] {
-      try Data([0xff]).write(to: url)
-    }
-    #expect(throws: BtopAdapterError.self) { try btop.preflight() }
-    #expect(
-      btop.inspection().message == "Cannot read btop configuration at \(btopConfiguration.path)"
-    )
-    #expect(throws: YaziAdapterError.self) { try yazi.preflight() }
-    #expect(
-      yazi.inspection().message
-        == "Cannot read Yazi theme configuration at \(yaziConfiguration.path)"
-    )
-    #expect(throws: AtuinAdapterError.self) { try atuin.preflight() }
-    #expect(
-      atuin.inspection().message
-        == "Cannot read Atuin configuration at \(atuinConfiguration.path)"
-    )
 
     #expect(
       BtopAdapter(

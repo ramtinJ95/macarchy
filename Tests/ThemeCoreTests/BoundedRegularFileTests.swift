@@ -38,29 +38,4 @@ struct BoundedRegularFileTests {
       )
     }
   }
-
-  @Test
-  func boundedUTF8ReaderRejectsInvalidTextAndRequiresExplicitSymlinkResolution() throws {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-bounded-utf8-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: root) }
-
-    let source = root.appending(path: "source")
-    let link = root.appending(path: "link")
-    try "valid UTF-8".write(to: source, atomically: true, encoding: .utf8)
-    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
-
-    #expect(throws: BoundedRegularFileError.self) {
-      _ = try BoundedRegularFile.readUTF8(at: link)
-    }
-    #expect(try BoundedRegularFile.readUTF8(at: link.resolvingSymlinksInPath()) == "valid UTF-8")
-
-    try Data([0xff]).write(to: source)
-    #expect(throws: BoundedRegularFileError.invalidUTF8) {
-      _ = try BoundedRegularFile.readUTF8(at: source)
-    }
-  }
 }

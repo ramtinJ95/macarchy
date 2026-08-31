@@ -55,6 +55,17 @@ extension AdapterContractTests {
     #expect(values.isSymbolicLink != true)
     #expect(adapter.inspection().status == .ready)
 
+    try Data([0xff]).write(to: configurationSourceURL)
+    #expect(
+      adapter.inspection().message
+        == "Cannot read Kitty configuration at \(configurationURL.path)"
+    )
+    try Data(count: BoundedRegularFile.maximumSize + 1).write(to: configurationSourceURL)
+    #expect(
+      adapter.inspection().message
+        == "Kitty configuration at \(configurationURL.path) exceeds 1 MiB"
+    )
+
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o000],
       ofItemAtPath: bridgeURL.path
