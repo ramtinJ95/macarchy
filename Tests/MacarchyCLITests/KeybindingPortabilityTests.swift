@@ -735,9 +735,6 @@ struct KeybindingPortabilityTests {
       .deletingLastPathComponent()
   }
 
-  private func jsonObject(_ output: String) throws -> [String: Any] {
-    try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-  }
 }
 
 private struct IsolatedKeybindingEnvironment {

@@ -451,34 +451,11 @@ final class Fixture {
   }
 
   func setExtendedAttribute(name: String, value: String) throws {
-    let data = Data(value.utf8)
-    let result = data.withUnsafeBytes { bytes in
-      kittyConfiguration.path.withCString { path in
-        name.withCString { attribute in
-          Darwin.setxattr(path, attribute, bytes.baseAddress, bytes.count, 0, 0)
-        }
-      }
-    }
-    guard result == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    try MacarchyCLITests.setExtendedAttribute(name, value: value, at: kittyConfiguration)
   }
 
   func extendedAttribute(name: String) throws -> String {
-    let size = kittyConfiguration.path.withCString { path in
-      name.withCString { attribute in
-        Darwin.getxattr(path, attribute, nil, 0, 0, 0)
-      }
-    }
-    guard size >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-    var data = Data(count: size)
-    let count = data.withUnsafeMutableBytes { bytes in
-      kittyConfiguration.path.withCString { path in
-        name.withCString { attribute in
-          Darwin.getxattr(path, attribute, bytes.baseAddress, bytes.count, 0, 0)
-        }
-      }
-    }
-    guard count == size else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-    return String(decoding: data, as: UTF8.self)
+    try MacarchyCLITests.extendedAttribute(name, at: kittyConfiguration)
   }
 
   func remove() {
