@@ -1,8 +1,7 @@
-import Darwin
 import Foundation
 import TOMLDecoder
 
-enum StarshipAdapterError: Error, CustomStringConvertible, Sendable {
+enum StarshipAdapterError: AdapterBridgeFileError, CustomStringConvertible, Sendable {
   case behaviorOwnsTheme(URL)
   case bridgeDoesNotMatch(URL)
   case bridgeIsNotRegularFile(URL)
@@ -56,6 +55,10 @@ package struct StarshipAdapter: Sendable {
     root.appending(path: Self.bridgePath)
   }
 
+  private var bridge: AdapterBridgeFile<StarshipAdapterError> {
+    AdapterBridgeFile(url: bridgeURL)
+  }
+
   func preflight() throws {
     guard controlIsAvailable() else {
       throw StarshipAdapterError.controlUnavailable(executableURL)
@@ -70,7 +73,7 @@ package struct StarshipAdapter: Sendable {
       do {
         try ActivationLock(root: root).withLock {
           let desired = try desiredConfiguration()
-          guard try readBridge() == desired else {
+          guard try bridge.read() == desired else {
             throw StarshipAdapterError.bridgeDoesNotMatch(bridgeURL)
           }
         }
@@ -104,7 +107,7 @@ package struct StarshipAdapter: Sendable {
           )
         }
         do {
-          try publishBridge(desiredConfiguration())
+          try bridge.publish(desiredConfiguration())
         } catch {
           return AdapterOutcome(status: .failed, message: String(describing: error))
         }
@@ -234,37 +237,6 @@ package struct StarshipAdapter: Sendable {
       return URL(filePath: destination).standardizedFileURL
     }
     return link.deletingLastPathComponent().appending(path: destination).standardizedFileURL
-  }
-
-  private func readBridge() throws -> Data {
-    do {
-      return try BoundedRegularFile.read(at: bridgeURL).data
-    } catch BoundedRegularFileError.notRegular {
-      throw StarshipAdapterError.bridgeIsNotRegularFile(bridgeURL)
-    } catch BoundedRegularFileError.system(operation: "open", code: ELOOP) {
-      throw StarshipAdapterError.bridgeIsNotRegularFile(bridgeURL)
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT),
-      BoundedRegularFileError.tooLarge
-    {
-      throw StarshipAdapterError.bridgeDoesNotMatch(bridgeURL)
-    } catch {
-      throw StarshipAdapterError.cannotReadBridge(bridgeURL, String(describing: error))
-    }
-  }
-
-  private func publishBridge(_ data: Data) throws {
-    do {
-      try FileManager.default.createDirectory(
-        at: bridgeURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
-      )
-      try data.write(to: bridgeURL, options: .atomic)
-    } catch {
-      throw StarshipAdapterError.cannotPublishBridge(bridgeURL, String(describing: error))
-    }
-    guard try readBridge() == data else {
-      throw StarshipAdapterError.bridgeDoesNotMatch(bridgeURL)
-    }
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {
