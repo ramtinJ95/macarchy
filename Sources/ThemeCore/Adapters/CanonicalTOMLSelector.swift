@@ -12,6 +12,10 @@ package struct CanonicalTOMLSelector {
     self.init(configuration: configuration, selectionTable: nil, key: key)
   }
 
+  package func selectsExactly(_ value: String) -> Bool {
+    tableHeaderCount == 1 && values == [value]
+  }
+
   private init(configuration: String, selectionTable: String?, key: String) {
     var arrayDepth = 0
     var multilineQuote: TOMLMultilineQuote?
