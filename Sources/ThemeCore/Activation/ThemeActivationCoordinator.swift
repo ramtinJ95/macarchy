@@ -287,9 +287,11 @@ package struct ThemeActivationCoordinator: Sendable {
 
       do {
         let adapters = configuredAdapters(
-          desiredAppearance: package.appearance,
-          desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
-          unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+          context: AdapterResolutionContext(
+            desiredAppearance: package.appearance,
+            desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+            unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+          )
         )
         let plan = backgroundOnlyReconciliationPlan(
           requestedBackgroundID: requestedBackgroundID,
@@ -322,9 +324,11 @@ package struct ThemeActivationCoordinator: Sendable {
     try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
     let adapters = configuredAdapters(
-      desiredAppearance: try activeAppearance(manifest: manifest),
-      desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
-      unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+      context: AdapterResolutionContext(
+        desiredAppearance: try activeAppearance(manifest: manifest),
+        desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+        unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+      )
     )
     let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
@@ -344,18 +348,14 @@ package struct ThemeActivationCoordinator: Sendable {
     includeRuntimeChecks: Bool = false
   ) throws -> [AdapterInspection] {
     try validateSelection(adapterIDs)
-    let appearanceInspection: AdapterInspection
-    let wallpaperInspection: AdapterInspection
-    var unsupportedAdapterIDs = Set<String>()
+    var context = AdapterResolutionContext(includeRuntimeChecks: includeRuntimeChecks)
     do {
       let manifest = try statusStore.activeManifest()
-      unsupportedAdapterIDs = try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+      context.unsupportedAdapterIDs = try unsupportedNamedThemeAdapterIDs(manifest: manifest)
       do {
-        appearanceInspection = appearance.inspection(
-          desiredAppearance: try activeAppearance(manifest: manifest)
-        )
+        context.desiredAppearance = try activeAppearance(manifest: manifest)
       } catch {
-        appearanceInspection = AdapterInspection(
+        context.appearanceInspectionOverride = AdapterInspection(
           adapterID: MacOSAppearanceAdapter.id,
           requirement: .required,
           status: .failed,
@@ -363,26 +363,18 @@ package struct ThemeActivationCoordinator: Sendable {
         )
       }
       let wallpaperURL = activeWallpaperURL(manifest: manifest)
-      wallpaperInspection = inspectWallpaper(
-        desiredWallpaperURL: wallpaperURL,
-        intentionallyUnmanaged: wallpaperURL == nil,
-        includeRuntimeChecks: includeRuntimeChecks
-      )
+      context.desiredWallpaperURL = wallpaperURL
+      context.wallpaperIntentionallyUnmanaged = wallpaperURL == nil
     } catch ReconciliationStatusError.noActiveGeneration {
-      appearanceInspection = appearance.inspection(desiredAppearance: nil)
-      wallpaperInspection = inspectWallpaper(
-        desiredWallpaperURL: nil,
-        intentionallyUnmanaged: false,
-        includeRuntimeChecks: includeRuntimeChecks
-      )
+      context.wallpaperIntentionallyUnmanaged = false
     } catch {
-      appearanceInspection = AdapterInspection(
+      context.appearanceInspectionOverride = AdapterInspection(
         adapterID: MacOSAppearanceAdapter.id,
         requirement: .required,
         status: .failed,
         message: "Cannot inspect active theme appearance: \(error)"
       )
-      wallpaperInspection = AdapterInspection(
+      context.wallpaperInspectionOverride = AdapterInspection(
         adapterID: WallpaperAdapter.id,
         requirement: .required,
         status: .failed,
@@ -390,21 +382,7 @@ package struct ThemeActivationCoordinator: Sendable {
       )
     }
     let selectedIDs = Set(adapterIDs)
-    return configuredAdapters(
-      desiredAppearance: nil,
-      desiredWallpaperURL: nil,
-      unsupportedAdapterIDs: unsupportedAdapterIDs,
-      includeRuntimeChecks: includeRuntimeChecks
-    ).map { adapter in
-      switch adapter.id {
-      case MacOSAppearanceAdapter.id:
-        appearanceInspection
-      case WallpaperAdapter.id:
-        wallpaperInspection
-      default:
-        adapter.inspection()
-      }
-    }.filter {
+    return configuredAdapters(context: context).map { $0.inspection() }.filter {
       adapterIDs.isEmpty || selectedIDs.contains($0.adapterID)
     }
   }
@@ -415,9 +393,10 @@ package struct ThemeActivationCoordinator: Sendable {
     try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
     let adapters = configuredAdapters(
-      desiredAppearance: nil,
-      desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
-      unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+      context: AdapterResolutionContext(
+        desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+        unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
+      )
     )
     let selected = selectedAdapters(adapterIDs, from: adapters)
     let plan = try reconciliationPlan(
@@ -470,35 +449,25 @@ package struct ThemeActivationCoordinator: Sendable {
     }
   }
 
-  private func configuredAdapters(
-    desiredAppearance: ThemeAppearance?,
-    desiredWallpaperURL: URL?,
-    unsupportedAdapterIDs: Set<String>,
-    includeRuntimeChecks: Bool = false
-  ) -> [ConfiguredAdapter] {
+  private func configuredAdapters(context: AdapterResolutionContext) -> [ConfiguredAdapter] {
     ConsumerCatalog.shared.runtimeEntries.map { entry in
-      configuredAdapter(
-        entry,
-        desiredAppearance: desiredAppearance,
-        desiredWallpaperURL: desiredWallpaperURL,
-        unsupportedAdapterIDs: unsupportedAdapterIDs,
-        includeRuntimeChecks: includeRuntimeChecks
-      )
+      configuredAdapter(entry, context: context)
     }
   }
 
   private func configuredAdapter(
     _ entry: ConsumerCatalogEntry,
-    desiredAppearance: ThemeAppearance?,
-    desiredWallpaperURL: URL?,
-    unsupportedAdapterIDs: Set<String>,
-    includeRuntimeChecks: Bool
+    context: AdapterResolutionContext
   ) -> ConfiguredAdapter {
     switch entry.mode.runtimeKind! {
     case .macOSAppearance:
       return ConfiguredAdapter(
         entry: entry,
-        inspection: { appearance.inspection(desiredAppearance: desiredAppearance) },
+        preflight: { _ in _ = try appearance.preflight() },
+        inspection: {
+          context.appearanceInspectionOverride
+            ?? appearance.inspection(desiredAppearance: context.desiredAppearance)
+        },
         reconciliation: {
           appearance.reconciliation {
             let manifest = try statusStore.activeManifest()
@@ -508,64 +477,120 @@ package struct ThemeActivationCoordinator: Sendable {
       )
     case .atuin:
       return ConfiguredAdapter(
-        entry: entry, inspection: atuin.inspection, reconciliation: atuin.reconciliation)
+        entry: entry,
+        preflight: { _ in try atuin.preflight() },
+        inspection: atuin.inspection,
+        reconciliation: atuin.reconciliation
+      )
     case .bat:
       return ConfiguredAdapter(
-        entry: entry, inspection: bat.inspection, reconciliation: bat.reconciliation)
+        entry: entry,
+        preflight: { _ in try bat.preflight() },
+        inspection: bat.inspection,
+        reconciliation: bat.reconciliation
+      )
     case .btop:
       return ConfiguredAdapter(
-        entry: entry, inspection: btop.inspection, reconciliation: btop.reconciliation)
+        entry: entry,
+        preflight: { _ in try btop.preflight() },
+        inspection: btop.inspection,
+        reconciliation: btop.reconciliation
+      )
     case .codex:
       return ConfiguredAdapter(
-        entry: entry, inspection: codex.inspection, reconciliation: codex.reconciliation)
+        entry: entry,
+        preflight: { _ in try codex.preflight() },
+        inspection: codex.inspection,
+        reconciliation: codex.reconciliation
+      )
     case .eza:
       return ConfiguredAdapter(
-        entry: entry, inspection: eza.inspection, reconciliation: eza.reconciliation)
+        entry: entry,
+        preflight: { _ in try eza.preflight() },
+        inspection: eza.inspection,
+        reconciliation: eza.reconciliation
+      )
     case .herdr:
       return configuredNamedThemeAdapter(
         entry: entry,
-        unsupportedAdapterIDs: unsupportedAdapterIDs,
+        unsupportedAdapterIDs: context.unsupportedAdapterIDs,
+        preflight: { context in try herdr.preflight(package: context.package) },
         inspection: herdr.inspection,
         reconciliation: herdr.reconciliation
       )
     case .kitty:
       return ConfiguredAdapter(
-        entry: entry, inspection: kitty.inspection, reconciliation: kitty.reconciliation)
+        entry: entry,
+        preflight: { _ in try kitty.preflight() },
+        inspection: kitty.inspection,
+        reconciliation: kitty.reconciliation
+      )
     case .neovim:
       return configuredNamedThemeAdapter(
         entry: entry,
-        unsupportedAdapterIDs: unsupportedAdapterIDs,
-        inspection: { neovim.inspection(includeRuntimeChecks: includeRuntimeChecks) },
+        unsupportedAdapterIDs: context.unsupportedAdapterIDs,
+        preflight: { context in try neovim.preflight(package: context.package) },
+        inspection: {
+          neovim.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+        },
         reconciliation: neovim.reconciliation
       )
     case .pi:
       return ConfiguredAdapter(
-        entry: entry, inspection: pi.inspection, reconciliation: pi.reconciliation)
+        entry: entry,
+        preflight: { _ in try pi.preflight() },
+        inspection: pi.inspection,
+        reconciliation: pi.reconciliation
+      )
     case .sketchyBar:
       return ConfiguredAdapter(
         entry: entry,
-        inspection: { sketchyBar.inspection(includeRuntimeChecks: includeRuntimeChecks) },
+        preflight: { _ in try sketchyBar.preflight() },
+        inspection: {
+          sketchyBar.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+        },
         reconciliation: sketchyBar.reconciliation
       )
     case .spicetify:
       return ConfiguredAdapter(
-        entry: entry, inspection: spicetify.inspection, reconciliation: spicetify.reconciliation)
+        entry: entry,
+        preflight: { _ in },
+        inspection: spicetify.inspection,
+        reconciliation: spicetify.reconciliation
+      )
     case .starship:
       return ConfiguredAdapter(
-        entry: entry, inspection: starship.inspection, reconciliation: starship.reconciliation)
+        entry: entry,
+        preflight: { _ in try starship.preflight() },
+        inspection: starship.inspection,
+        reconciliation: starship.reconciliation
+      )
     case .tuicr:
       return ConfiguredAdapter(
-        entry: entry, inspection: tuicr.inspection, reconciliation: tuicr.reconciliation)
+        entry: entry,
+        preflight: { _ in try tuicr.preflight() },
+        inspection: tuicr.inspection,
+        reconciliation: tuicr.reconciliation
+      )
     case .wallpaper:
       return ConfiguredAdapter(
         entry: entry,
+        preflight: { preflightContext in
+          guard preflightContext.hasSelectedWallpaper else { return }
+          _ = try wallpaper.preflight()
+          try wallpaperSignal.preflight()
+        },
         inspection: {
-          inspectWallpaper(
-            desiredWallpaperURL: desiredWallpaperURL,
-            intentionallyUnmanaged: (try? statusStore.activeManifest()).map {
-              activeWallpaperURL(manifest: $0) == nil
-            } ?? false,
-            includeRuntimeChecks: includeRuntimeChecks
+          if let inspection = context.wallpaperInspectionOverride {
+            return inspection
+          }
+          return inspectWallpaper(
+            desiredWallpaperURL: context.desiredWallpaperURL,
+            intentionallyUnmanaged: context.wallpaperIntentionallyUnmanaged
+              ?? ((try? statusStore.activeManifest()).map {
+                activeWallpaperURL(manifest: $0) == nil
+              } ?? false),
+            includeRuntimeChecks: context.includeRuntimeChecks
           )
         },
         reconciliation: {
@@ -579,7 +604,11 @@ package struct ThemeActivationCoordinator: Sendable {
       )
     case .yazi:
       return ConfiguredAdapter(
-        entry: entry, inspection: yazi.inspection, reconciliation: yazi.reconciliation)
+        entry: entry,
+        preflight: { _ in try yazi.preflight() },
+        inspection: yazi.inspection,
+        reconciliation: yazi.reconciliation
+      )
     }
   }
 
@@ -632,44 +661,12 @@ package struct ThemeActivationCoordinator: Sendable {
       requestedBackgroundID: requestedBackgroundID,
       preferences: preferences
     )
-    for entry in ConsumerCatalog.shared.runtimeEntries {
-      switch entry.mode.runtimeKind! {
-      case .macOSAppearance:
-        _ = try appearance.preflight()
-      case .atuin:
-        try atuin.preflight()
-      case .bat:
-        try bat.preflight()
-      case .btop:
-        try btop.preflight()
-      case .codex:
-        try codex.preflight()
-      case .eza:
-        try eza.preflight()
-      case .herdr:
-        try herdr.preflight(package: package)
-      case .kitty:
-        try kitty.preflight()
-      case .neovim:
-        try neovim.preflight(package: package)
-      case .pi:
-        try pi.preflight()
-      case .sketchyBar:
-        try sketchyBar.preflight()
-      case .spicetify:
-        break
-      case .starship:
-        try starship.preflight()
-      case .tuicr:
-        try tuicr.preflight()
-      case .wallpaper:
-        if background.selection != nil {
-          _ = try wallpaper.preflight()
-          try wallpaperSignal.preflight()
-        }
-      case .yazi:
-        try yazi.preflight()
-      }
+    let preflightContext = AdapterPreflightContext(
+      package: package,
+      hasSelectedWallpaper: background.selection != nil
+    )
+    for adapter in configuredAdapters(context: AdapterResolutionContext()) {
+      try adapter.preflight(preflightContext)
     }
     return background
   }
@@ -848,6 +845,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private func configuredNamedThemeAdapter(
     entry: ConsumerCatalogEntry,
     unsupportedAdapterIDs: Set<String>,
+    preflight: @escaping @Sendable (AdapterPreflightContext) throws -> Void,
     inspection: @escaping @Sendable () -> AdapterInspection,
     reconciliation: @escaping @Sendable () -> AdapterReconciliation
   ) -> ConfiguredAdapter {
@@ -855,12 +853,14 @@ package struct ThemeActivationCoordinator: Sendable {
     guard unsupportedAdapterIDs.contains(id) else {
       return ConfiguredAdapter(
         entry: entry,
+        preflight: preflight,
         inspection: inspection,
         reconciliation: reconciliation
       )
     }
     return ConfiguredAdapter(
       entry: entry,
+      preflight: preflight,
       inspection: {
         AdapterInspection(
           adapterID: id,
@@ -894,22 +894,44 @@ private struct PreviousReconciliationEvidence: Sendable {
   let record: ReconciliationRecord?
 }
 
+private struct AdapterResolutionContext: Sendable {
+  var desiredAppearance: ThemeAppearance? = nil
+  var desiredWallpaperURL: URL? = nil
+  var unsupportedAdapterIDs = Set<String>()
+  var includeRuntimeChecks = false
+  var appearanceInspectionOverride: AdapterInspection?
+  var wallpaperInspectionOverride: AdapterInspection?
+  var wallpaperIntentionallyUnmanaged: Bool?
+}
+
+private struct AdapterPreflightContext: Sendable {
+  let package: ThemePackage
+  let hasSelectedWallpaper: Bool
+}
+
 private struct ConfiguredAdapter: Sendable {
   let entry: ConsumerCatalogEntry
+  private let runPreflight: @Sendable (AdapterPreflightContext) throws -> Void
   private let inspect: @Sendable () -> AdapterInspection
   private let reconcile: @Sendable () -> AdapterReconciliation
 
   init(
     entry: ConsumerCatalogEntry,
+    preflight: @escaping @Sendable (AdapterPreflightContext) throws -> Void,
     inspection: @escaping @Sendable () -> AdapterInspection,
     reconciliation: @escaping @Sendable () -> AdapterReconciliation
   ) {
     self.entry = entry
+    runPreflight = preflight
     inspect = inspection
     reconcile = reconciliation
   }
 
   var id: String { entry.id.rawValue }
+
+  func preflight(_ context: AdapterPreflightContext) throws {
+    try runPreflight(context)
+  }
 
   func inspection() -> AdapterInspection {
     let inspection = inspect()

@@ -5,6 +5,35 @@ import Testing
 
 struct ConsumerCatalogTests {
   @Test
+  func runtimeAdapterInventoryPreservesResolutionOrderAndRequirements() {
+    let inventory = ConsumerCatalog.shared.runtimeEntries.map { entry in
+      "\(entry.id.rawValue):\(entry.mode.requirement!.rawValue)"
+    }
+
+    #expect(
+      inventory
+        == [
+          "macos-appearance:required",
+          "atuin:required",
+          "bat:required",
+          "btop:required",
+          "codex:required",
+          "eza:required",
+          "herdr:required",
+          "kitty:required",
+          "neovim:required",
+          "pi:required",
+          "sketchybar:required",
+          "spicetify:optional",
+          "starship:required",
+          "tuicr:required",
+          "wallpaper:required",
+          "yazi:required",
+        ]
+    )
+  }
+
+  @Test
   func productionCatalogDerivesRuntimeRendererAndArtifactInventories() throws {
     let catalog = ConsumerCatalog.shared
 
