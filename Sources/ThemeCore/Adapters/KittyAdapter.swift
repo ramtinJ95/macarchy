@@ -1,7 +1,6 @@
-import Darwin
 import Foundation
 
-enum KittyAdapterError: Error, CustomStringConvertible, Sendable {
+enum KittyAdapterError: AdapterBridgeFileError, CustomStringConvertible, Sendable {
   case cannotReadConfiguration(URL)
   case configurationTooLarge(URL)
   case missingInclude(String)
@@ -46,6 +45,10 @@ struct KittyAdapter: Sendable {
     root.appending(path: Self.bridgePath)
   }
 
+  private var bridge: AdapterBridgeFile<KittyAdapterError> {
+    AdapterBridgeFile(url: bridgeURL)
+  }
+
   func preflight() throws {
     let resolvedConfigurationURL = configurationURL.resolvingSymlinksInPath()
     let configuration: String
@@ -67,8 +70,7 @@ struct KittyAdapter: Sendable {
       do {
         try ActivationLock(root: root).withLock {
           let desired = try activeConfiguration()
-          let bridge = try readBridge()
-          guard bridge == desired else {
+          guard try bridge.read() == desired else {
             throw KittyAdapterError.bridgeDoesNotMatch(bridgeURL)
           }
         }
@@ -107,7 +109,7 @@ struct KittyAdapter: Sendable {
 
         let desired = try activeConfiguration()
         do {
-          try publishBridge(desired)
+          try bridge.publish(desired)
         } catch {
           return AdapterOutcome(status: .failed, message: String(describing: error))
         }
@@ -148,38 +150,6 @@ struct KittyAdapter: Sendable {
         path: "generations/\(manifest.generationID)/\(Self.outputPath)"
       )
     ).data
-  }
-
-  private func readBridge() throws -> Data {
-    do {
-      return try BoundedRegularFile.read(at: bridgeURL).data
-    } catch BoundedRegularFileError.notRegular {
-      throw KittyAdapterError.bridgeIsNotRegularFile(bridgeURL)
-    } catch BoundedRegularFileError.system(operation: "open", code: ELOOP) {
-      throw KittyAdapterError.bridgeIsNotRegularFile(bridgeURL)
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT),
-      BoundedRegularFileError.tooLarge
-    {
-      throw KittyAdapterError.bridgeDoesNotMatch(bridgeURL)
-    } catch {
-      throw KittyAdapterError.cannotReadBridge(bridgeURL, String(describing: error))
-    }
-  }
-
-  private func publishBridge(_ data: Data) throws {
-    let parent = bridgeURL.deletingLastPathComponent()
-    do {
-      try FileManager.default.createDirectory(
-        at: parent,
-        withIntermediateDirectories: true
-      )
-      try data.write(to: bridgeURL, options: .atomic)
-    } catch {
-      throw KittyAdapterError.cannotPublishBridge(bridgeURL, String(describing: error))
-    }
-    guard try readBridge() == data else {
-      throw KittyAdapterError.bridgeDoesNotMatch(bridgeURL)
-    }
   }
 
   static func render(package: ThemePackage) -> String {
