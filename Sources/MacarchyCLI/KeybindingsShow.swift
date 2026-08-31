@@ -109,11 +109,20 @@ struct KeybindingsShowCommandLoader: Sendable {
   let loadCatalog: @Sendable (URL) throws -> SkhdKeybindingCatalog
   let loadTheme: @Sendable (URL) throws -> NormalizedTheme
 
-  static let live = KeybindingsShowCommandLoader(
-    read: readSkhdConfiguration,
-    loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },
-    loadTheme: loadActiveTheme
-  )
+  static let live = with(runtime: .live)
+
+  static func with(runtime: RuntimeEnvironment) -> KeybindingsShowCommandLoader {
+    KeybindingsShowCommandLoader(
+      read: readSkhdConfiguration,
+      loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },
+      loadTheme: {
+        try loadKeybindingsPopupTheme(
+          stateRoot: $0,
+          bundledThemesRoot: runtime.builtInThemesURL
+        )
+      }
+    )
+  }
 
   func load(
     configurationURL: URL,
@@ -256,6 +265,23 @@ private func loadActiveTheme(stateRoot: URL) throws -> NormalizedTheme {
     )
   }
   return theme
+}
+
+private func loadKeybindingsPopupTheme(
+  stateRoot: URL,
+  bundledThemesRoot: URL
+) throws -> NormalizedTheme {
+  do {
+    return try loadActiveTheme(stateRoot: stateRoot)
+  } catch ReconciliationStatusError.noActiveGeneration {
+    let package = try ThemePackageLoader().load(
+      packageURL: bundledThemesRoot.appending(
+        path: "catppuccin-mocha",
+        directoryHint: .isDirectory
+      )
+    )
+    return NormalizedTheme(package: package, generationID: "popup-default")
+  }
 }
 
 @MainActor
