@@ -60,7 +60,7 @@ struct KeybindingProviderInspection: Encodable, Sendable {
 struct KeybindingProviderInspector: Sendable {
   static let managedTarget = "../macarchy/keybindings/current/skhdrc"
   static let ownershipID = "keybindings.skhd-entry"
-  static let claimMarkerAttribute = "io.github.ramtinj95.macarchy.keybinding-claim"
+  static let claimMarkerAttribute = KeybindingProviderPrimitives.claimMarkerAttribute
 
   func inspect(
     homeDirectory: URL,
@@ -255,7 +255,7 @@ struct KeybindingProviderInspector: Sendable {
         message: "cannot read skhd directory symlink: \(error)"
       )
     }
-    let targetDirectory = Self.resolveSymlink(
+    let targetDirectory = KeybindingProviderPrimitives.resolveSymlink(
       target,
       relativeTo: configurationDirectory
     )
@@ -641,7 +641,10 @@ struct KeybindingProviderInspector: Sendable {
         name: name,
         url: sourceURL
       )
-      resolvedURL = Self.resolveSymlink(destination, relativeTo: parentURL)
+      resolvedURL = KeybindingProviderPrimitives.resolveSymlink(
+        destination,
+        relativeTo: parentURL
+      )
       var resolvedMetadata = stat()
       guard
         lstat(resolvedURL.path, &resolvedMetadata) == 0,
@@ -910,18 +913,15 @@ struct KeybindingProviderInspector: Sendable {
       throw SetupOwnershipError.ownershipDrift(URL(filePath: record.targetPath))
     }
     defer { Darwin.close(descriptor) }
-    let count = claimMarkerAttribute.withCString {
-      Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0)
-    }
-    if count < 0, errno == ENOATTR { return true }
-    guard count >= 0 else {
+    do {
+      return try !KeybindingProviderPrimitives.claimMarkerExists(descriptor: descriptor)
+    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
       throw SetupOwnershipError.system(
         "inspect legacy keybinding ownership marker",
         URL(filePath: record.targetPath),
-        String(cString: strerror(errno))
+        String(cString: strerror(failure.code))
       )
     }
-    return false
   }
 
   private static func markerMatches(
@@ -929,19 +929,18 @@ struct KeybindingProviderInspector: Sendable {
     record: SetupOwnershipRecord
   ) throws -> Bool {
     guard let nonce = record.claimNonce else { return false }
-    var value = [UInt8](repeating: 0, count: 64)
-    let count = claimMarkerAttribute.withCString {
-      Darwin.fgetxattr(descriptor, $0, &value, value.count, 0, 0)
-    }
-    if count < 0, errno == ENOATTR { return false }
-    guard count >= 0 else {
+    do {
+      return try KeybindingProviderPrimitives.claimMarkerMatches(
+        descriptor: descriptor,
+        nonce: nonce
+      )
+    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
       throw SetupOwnershipError.system(
         "read keybinding ownership marker",
         URL(filePath: record.targetPath),
-        String(cString: strerror(errno))
+        String(cString: strerror(failure.code))
       )
     }
-    return Data(value.prefix(count)) == Data(nonce.utf8)
   }
 
   static func requireAdoptableSymlink(
@@ -974,20 +973,20 @@ struct KeybindingProviderInspector: Sendable {
       pinned.st_mode & S_IFMT == S_IFLNK,
       pinned.st_nlink == 1
     else { throw SetupOwnershipError.ownershipDrift(url) }
-    let markerSize = claimMarkerAttribute.withCString {
-      Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0)
-    }
-    if markerSize < 0, errno == ENOATTR { return }
-    if markerSize >= 0 {
+    do {
+      guard try KeybindingProviderPrimitives.claimMarkerExists(descriptor: descriptor) else {
+        return
+      }
       throw KeybindingsApplyError.blocked(
         "symlink uses Macarchy's reserved claim-marker extended attribute"
       )
+    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
+      throw SetupOwnershipError.system(
+        "inspect adopted keybinding symlink claim marker",
+        url,
+        String(cString: strerror(failure.code))
+      )
     }
-    throw SetupOwnershipError.system(
-      "inspect adopted keybinding symlink claim marker",
-      url,
-      String(cString: strerror(errno))
-    )
   }
 
   static func validateOwnershipRecord(
@@ -1118,13 +1117,6 @@ struct KeybindingProviderInspector: Sendable {
       ownership: "ownership_drift",
       message: "ownership manifest claims the skhd entry point, but filesystem state differs"
     )
-  }
-
-  private static func resolveSymlink(_ destination: String, relativeTo parent: URL) -> URL {
-    if NSString(string: destination).isAbsolutePath {
-      return URL(filePath: destination).standardizedFileURL
-    }
-    return parent.appending(path: destination).standardizedFileURL
   }
 
   private static let absentEvidence = KeybindingAdoptionEvidence(
