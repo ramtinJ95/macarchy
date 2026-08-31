@@ -54,27 +54,6 @@ extension AdapterContractTests {
     return url
   }
 
-  func makeWritableForRemoval(_ root: URL) {
-    guard
-      let enumerator = FileManager.default.enumerator(
-        at: root,
-        includingPropertiesForKeys: [.isDirectoryKey]
-      )
-    else { return }
-    var directories = [root]
-    for case let item as URL in enumerator {
-      if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-        directories.append(item)
-      }
-    }
-    for directory in directories.reversed() {
-      try? FileManager.default.setAttributes(
-        [.posixPermissions: 0o700],
-        ofItemAtPath: directory.path
-      )
-    }
-  }
-
   static func appearanceScript(dark: Bool) -> String {
     "tell application \"System Events\" to tell appearance preferences to set dark mode to \(dark)"
   }

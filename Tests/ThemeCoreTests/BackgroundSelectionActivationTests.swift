@@ -114,42 +114,39 @@ extension AdapterContractTests {
 
   @Test
   func zeroBackgroundActivationLeavesWallpaperUntouchedAndReportsItDisabled() async throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
-    let package = try packageWithoutBackgrounds(root: root)
-    let requests = BackgroundRequestLog()
-    let wallpaperInspections = Mutex(0)
-    let consumerPaths = try backgroundConsumerPaths(root: root)
-    let coordinator = try backgroundCoordinator(
-      root: root,
-      consumerPaths: consumerPaths,
-      requests: requests,
-      wallpaperControl: WallpaperControl(
-        inspect: {
-          wallpaperInspections.withLock { $0 += 1 }
-          throw WallpaperAdapterError.noDisplays
-        },
-        set: { _, _ in Issue.record("Zero-background activation tried to set wallpaper") }
-      )
-    )
-
-    let result = try await coordinator.activate(package: package)
-
-    #expect(result.manifest.background == nil)
-    #expect(result.manifest.artifacts[WallpaperAdapter.outputPath] == nil)
-    #expect(wallpaperInspections.withLock { $0 } == 0)
-    #expect(
-      result.reconciliation.results.first { $0.adapterID == WallpaperAdapter.id }
-        == AdapterResult(
-          adapterID: WallpaperAdapter.id,
-          requirement: .required,
-          status: .disabled,
-          message: "This theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let package = try packageWithoutBackgrounds(root: root)
+      let requests = BackgroundRequestLog()
+      let wallpaperInspections = Mutex(0)
+      let consumerPaths = try backgroundConsumerPaths(root: root)
+      let coordinator = try backgroundCoordinator(
+        root: root,
+        consumerPaths: consumerPaths,
+        requests: requests,
+        wallpaperControl: WallpaperControl(
+          inspect: {
+            wallpaperInspections.withLock { $0 += 1 }
+            throw WallpaperAdapterError.noDisplays
+          },
+          set: { _, _ in Issue.record("Zero-background activation tried to set wallpaper") }
         )
-    )
+      )
+
+      let result = try await coordinator.activate(package: package)
+
+      #expect(result.manifest.background == nil)
+      #expect(result.manifest.artifacts[WallpaperAdapter.outputPath] == nil)
+      #expect(wallpaperInspections.withLock { $0 } == 0)
+      #expect(
+        result.reconciliation.results.first { $0.adapterID == WallpaperAdapter.id }
+          == AdapterResult(
+            adapterID: WallpaperAdapter.id,
+            requirement: .required,
+            status: .disabled,
+            message: "This theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
+          )
+      )
+    }
   }
 
   private func packageWithSecondBackground(root: URL) throws -> ThemePackage {
