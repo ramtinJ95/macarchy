@@ -438,6 +438,7 @@ struct ActivationSliceTests {
       .inputDigested,
       .outputsRendered,
       .generationWritten,
+      .generationPublished,
       .generationSealed,
       .generationCommitted,
       .currentPointerReady,
@@ -605,6 +606,22 @@ struct ActivationSliceTests {
         == original.generationID)
     #expect(try !transactionResidue(at: precommitRoot).isEmpty)
     #expect(try externalProcessCanAcquireLock(at: precommitRoot))
+    try runCrashProbe(root: precommitRoot, checkpoint: "generationPublished")
+    #expect(
+      try ReconciliationStatusStore(root: precommitRoot).activeManifest().generationID
+        == original.generationID)
+    let interruptedPublications = try FileManager.default.contentsOfDirectory(
+      at: precommitRoot.appending(path: "generations", directoryHint: .isDirectory),
+      includingPropertiesForKeys: nil
+    ).filter { generation in
+      var metadata = stat()
+      return generation.lastPathComponent != original.generationID
+        && isGenerationID(generation.lastPathComponent)
+        && lstat(generation.path, &metadata) == 0
+        && metadata.st_mode & S_IFMT == S_IFDIR
+        && metadata.st_mode & 0o222 != 0
+    }
+    #expect(interruptedPublications.count == 1)
     let pointer = precommitRoot.appending(
       path: ".current-g-\(UUID().uuidString.lowercased())-\(UUID().uuidString.lowercased())"
     )
