@@ -50,6 +50,67 @@ struct KeybindingsEffectiveCommandTests {
   }
 
   @Test
+  func convergedManagedPopupUsesBundledAppearanceWithoutAnActiveTheme() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    #expect(
+      try fixture.applyRunner().execute(
+        resourcesRoot: fixture.resources,
+        profileURL: fixture.profile,
+        profileRequired: true,
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        json: true
+      ).succeeded
+    )
+
+    let state = fixture.inspect()
+    let popup = try fixture.popupLoader().load(
+      effectiveState: state,
+      stateRoot: fixture.stateRoot
+    )
+
+    #expect(state.status == .converged)
+    #expect(
+      !FileManager.default.fileExists(atPath: fixture.stateRoot.appending(path: "current").path))
+    #expect(popup.heading == "Managed Keybindings")
+    #expect(popup.theme.themeID == "catppuccin-mocha")
+    #expect(popup.theme.generationID == "popup-default")
+  }
+
+  @Test
+  func convergedManagedPopupStillRejectsMalformedExistingThemeState() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    #expect(
+      try fixture.applyRunner().execute(
+        resourcesRoot: fixture.resources,
+        profileURL: fixture.profile,
+        profileRequired: true,
+        stateRoot: fixture.stateRoot,
+        homeDirectory: fixture.home,
+        json: true
+      ).succeeded
+    )
+    try Data("not a symlink".utf8).write(
+      to: fixture.stateRoot.appending(path: "current")
+    )
+
+    do {
+      _ = try fixture.popupLoader().load(
+        effectiveState: fixture.inspect(),
+        stateRoot: fixture.stateRoot
+      )
+      Issue.record("Expected malformed existing theme state to prevent popup presentation")
+    } catch {
+      #expect(
+        String(describing: error)
+          == "Cannot load the active Macarchy theme: Invalid active generation: current is not a symbolic link"
+      )
+    }
+  }
+
+  @Test
   func managedInputDriftAgreesAcrossInspectionPlanApplyAndStatus() throws {
     let fixture = try EffectiveCommandFixture()
     defer { fixture.remove() }
@@ -879,6 +940,14 @@ private struct EffectiveCommandFixture {
       loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },
       loadTheme: { _ in try theme() }
     ).load(effectiveState: state, stateRoot: stateRoot)
+  }
+
+  func popupLoader() -> KeybindingsShowCommandLoader {
+    KeybindingsShowCommandLoader.with(
+      runtime: RuntimeEnvironment(
+        executableURL: repositoryRoot.appending(path: ".build/debug/macarchy")
+      )
+    )
   }
 
   func publish(configuration: String, inputDigest: String, renderedDigest: String) throws {
