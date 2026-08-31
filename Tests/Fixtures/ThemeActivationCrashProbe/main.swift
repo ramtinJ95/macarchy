@@ -10,6 +10,8 @@ let checkpoint: ActivationCheckpoint
 switch CommandLine.arguments[2] {
 case "generationWritten":
   checkpoint = .generationWritten
+case "generationPublished":
+  checkpoint = .generationPublished
 case "currentReplaced":
   checkpoint = .currentReplaced
 default:

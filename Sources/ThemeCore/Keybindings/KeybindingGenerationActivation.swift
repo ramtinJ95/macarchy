@@ -4,6 +4,7 @@ import Foundation
 package enum KeybindingGenerationCheckpoint: Equatable, Sendable {
   case stagingCreated
   case generationWritten
+  case generationPublished
   case generationSealed
   case generationCommitted
   case currentReady
@@ -81,14 +82,16 @@ package struct KeybindingGenerationActivator: Sendable {
       name: stagingName,
       url: stagingURL
     )
-    var removeStaging = true
+    var removeUncommittedGeneration = true
+    var cleanupName = stagingName
+    var cleanupURL = stagingURL
     defer {
       Darwin.close(stagingDescriptor)
-      if removeStaging {
+      if removeUncommittedGeneration {
         try? removeDirectory(
           parentDescriptor: generationsDescriptor,
-          name: stagingName,
-          url: stagingURL,
+          name: cleanupName,
+          url: cleanupURL,
           allowPartial: true
         )
       }
@@ -109,40 +112,21 @@ package struct KeybindingGenerationActivator: Sendable {
       mode: 0o444
     )
     try faultInjector(.generationWritten)
-    guard fchmod(stagingDescriptor, 0o555) == 0, fsync(stagingDescriptor) == 0 else {
-      throw KeybindingGenerationActivationError.system(
-        "seal staging generation",
-        stagingURL,
-        errno
-      )
-    }
-    try faultInjector(.generationSealed)
-    let committed = stagingName.withCString { source in
-      generationID.withCString { destination in
-        Darwin.renameatx_np(
-          generationsDescriptor,
-          source,
-          generationsDescriptor,
-          destination,
-          UInt32(RENAME_EXCL)
-        )
+    try PinnedFilesystem.publishDirectoryAtomicallyAndSeal(
+      parentDescriptor: generationsDescriptor,
+      directoryDescriptor: stagingDescriptor,
+      sourceName: stagingName,
+      destinationName: generationID,
+      sourceURL: stagingURL,
+      destinationURL: generationURL,
+      didPublish: {
+        cleanupName = generationID
+        cleanupURL = generationURL
+        try faultInjector(.generationPublished)
       }
-    }
-    guard committed == 0 else {
-      throw KeybindingGenerationActivationError.system(
-        "commit generation",
-        generationURL,
-        errno
-      )
-    }
-    guard fsync(generationsDescriptor) == 0 else {
-      throw KeybindingGenerationActivationError.system(
-        "sync committed generation",
-        generationsRoot,
-        errno
-      )
-    }
-    removeStaging = false
+    )
+    try faultInjector(.generationSealed)
+    removeUncommittedGeneration = false
     try faultInjector(.generationCommitted)
     return StagedKeybindingGeneration(manifest: manifest, generationURL: generationURL)
   }

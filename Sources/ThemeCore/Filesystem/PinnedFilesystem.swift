@@ -83,6 +83,128 @@ package enum PinnedFilesystem {
     return try openDirectory(parentDescriptor: parentDescriptor, name: name, url: url)
   }
 
+  package static func publishDirectoryAtomicallyAndSeal(
+    parentDescriptor: Int32,
+    directoryDescriptor: Int32,
+    sourceName: String,
+    destinationName: String,
+    sourceURL: URL,
+    destinationURL: URL,
+    didPublish: () throws -> Void = {}
+  ) throws {
+    var pinned = stat()
+    guard fstat(directoryDescriptor, &pinned) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "inspect prepared directory",
+        url: sourceURL,
+        code: errno
+      )
+    }
+    let source = try metadata(
+      parentDescriptor: parentDescriptor,
+      name: sourceName,
+      url: sourceURL
+    )
+    guard
+      pinned.st_mode & S_IFMT == S_IFDIR,
+      source.st_mode & S_IFMT == S_IFDIR,
+      pinned.st_dev == source.st_dev,
+      pinned.st_ino == source.st_ino
+    else {
+      throw PinnedFilesystemError(
+        operation: "bind prepared directory",
+        url: sourceURL,
+        code: ESTALE
+      )
+    }
+    guard pinned.st_mode & 0o200 != 0 else {
+      throw PinnedFilesystemError(
+        operation: "publish non-writable prepared directory",
+        url: sourceURL,
+        code: EACCES
+      )
+    }
+
+    let published = sourceName.withCString { sourcePath in
+      destinationName.withCString { destinationPath in
+        Darwin.renameatx_np(
+          parentDescriptor,
+          sourcePath,
+          parentDescriptor,
+          destinationPath,
+          UInt32(RENAME_EXCL)
+        )
+      }
+    }
+    guard published == 0 else {
+      throw PinnedFilesystemError(
+        operation: "publish prepared directory",
+        url: destinationURL,
+        code: errno
+      )
+    }
+
+    let destination = try metadata(
+      parentDescriptor: parentDescriptor,
+      name: destinationName,
+      url: destinationURL
+    )
+    guard
+      destination.st_mode & S_IFMT == S_IFDIR,
+      pinned.st_dev == destination.st_dev,
+      pinned.st_ino == destination.st_ino
+    else {
+      throw PinnedFilesystemError(
+        operation: "bind published directory",
+        url: destinationURL,
+        code: ESTALE
+      )
+    }
+    try didPublish()
+
+    guard fchmod(directoryDescriptor, 0o555) == 0, fsync(directoryDescriptor) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "seal published directory",
+        url: destinationURL,
+        code: errno
+      )
+    }
+    var sealed = stat()
+    guard fstat(directoryDescriptor, &sealed) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "inspect sealed directory",
+        url: destinationURL,
+        code: errno
+      )
+    }
+    let sealedDestination = try metadata(
+      parentDescriptor: parentDescriptor,
+      name: destinationName,
+      url: destinationURL
+    )
+    guard
+      sealed.st_dev == pinned.st_dev,
+      sealed.st_ino == pinned.st_ino,
+      sealedDestination.st_dev == pinned.st_dev,
+      sealedDestination.st_ino == pinned.st_ino,
+      sealed.st_mode & 0o222 == 0,
+      sealedDestination.st_mode & 0o222 == 0
+    else {
+      throw PinnedFilesystemError(
+        operation: "verify sealed directory",
+        url: destinationURL,
+        code: ESTALE
+      )
+    }
+    guard fsync(parentDescriptor) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "sync published directory parent",
+        url: destinationURL,
+        code: errno
+      )
+    }
+  }
+
   package static func metadata(
     parentDescriptor: Int32,
     name: String,

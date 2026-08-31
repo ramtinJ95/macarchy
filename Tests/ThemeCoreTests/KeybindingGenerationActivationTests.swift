@@ -28,6 +28,54 @@ struct KeybindingGenerationActivationTests {
   }
 
   @Test
+  func publishesWritableStagingBeforeSealingTheFinalGeneration() throws {
+    struct InvalidPublicationOrder: Error {}
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let generations = root.appending(
+      path: "keybindings/generations",
+      directoryHint: .isDirectory
+    )
+    let activator = KeybindingGenerationActivator(
+      stateRoot: root,
+      faultInjector: { checkpoint in
+        guard checkpoint == .generationPublished || checkpoint == .generationSealed else {
+          return
+        }
+        let entries = try FileManager.default.contentsOfDirectory(atPath: generations.path)
+        guard
+          entries.count == 1,
+          let generationID = entries.first,
+          KeybindingGenerationInspector.isGenerationID(generationID),
+          !entries.contains(where: { $0.hasPrefix(".staging-") })
+        else {
+          throw InvalidPublicationOrder()
+        }
+        let attributes = try FileManager.default.attributesOfItem(
+          atPath: generations.appending(path: generationID).path
+        )
+        guard let permissions = attributes[.posixPermissions] as? NSNumber else {
+          throw InvalidPublicationOrder()
+        }
+        if checkpoint == .generationPublished, permissions.intValue & 0o200 == 0 {
+          throw InvalidPublicationOrder()
+        }
+        if checkpoint == .generationSealed, permissions.intValue & 0o222 != 0 {
+          throw InvalidPublicationOrder()
+        }
+      }
+    )
+
+    let staged = try activator.stage(try composition())
+    let attributes = try FileManager.default.attributesOfItem(
+      atPath: staged.generationURL.path
+    )
+    let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+    #expect(permissions.intValue & 0o222 == 0)
+    try activator.removeGeneration(staged.manifest.generationID)
+  }
+
+  @Test
   func pointerFailureLeavesAValidUnselectedGenerationAndNoTemporaryPointer() throws {
     struct Injected: Error {}
     let root = try temporaryDirectory()

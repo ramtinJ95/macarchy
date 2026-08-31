@@ -75,6 +75,7 @@ package enum ActivationCheckpoint: Sendable {
   case inputDigested
   case outputsRendered
   case generationWritten
+  case generationPublished
   case generationSealed
   case generationCommitted
   case currentPointerReady
@@ -288,11 +289,21 @@ public struct ThemeActivator: Sendable {
     let generationURL = generationsRoot.appending(path: generationID, directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: false)
 
-    var shouldRemoveStaging = true
+    let generationsDescriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)
+    defer { Darwin.close(generationsDescriptor) }
+    let stagingDescriptor = try PinnedFilesystem.openDirectory(
+      parentDescriptor: generationsDescriptor,
+      name: stagingURL.lastPathComponent,
+      url: stagingURL
+    )
+    defer { Darwin.close(stagingDescriptor) }
+
+    var shouldRemoveUncommittedGeneration = true
+    var cleanupURL = stagingURL
     defer {
-      if shouldRemoveStaging {
-        makeWritableForRemoval(stagingURL)
-        try? FileManager.default.removeItem(at: stagingURL)
+      if shouldRemoveUncommittedGeneration {
+        makeWritableForRemoval(cleanupURL)
+        try? FileManager.default.removeItem(at: cleanupURL)
       }
     }
 
@@ -300,10 +311,21 @@ public struct ThemeActivator: Sendable {
     try manifestData.write(to: stagingURL.appending(path: "manifest.json"), options: [.atomic])
     try faultInjector(.generationWritten)
 
-    try makeReadOnly(stagingURL, artifactPaths: rendered.artifacts.map(\.path))
+    try makeContentsReadOnly(stagingURL, artifactPaths: rendered.artifacts.map(\.path))
+    try PinnedFilesystem.publishDirectoryAtomicallyAndSeal(
+      parentDescriptor: generationsDescriptor,
+      directoryDescriptor: stagingDescriptor,
+      sourceName: stagingURL.lastPathComponent,
+      destinationName: generationID,
+      sourceURL: stagingURL,
+      destinationURL: generationURL,
+      didPublish: {
+        cleanupURL = generationURL
+        try faultInjector(.generationPublished)
+      }
+    )
     try faultInjector(.generationSealed)
-    try FileManager.default.moveItem(at: stagingURL, to: generationURL)
-    shouldRemoveStaging = false
+    shouldRemoveUncommittedGeneration = false
     try faultInjector(.generationCommitted)
 
     try replaceCurrent(with: generationID)
@@ -338,6 +360,7 @@ public struct ThemeActivator: Sendable {
 
   private func recoverInterruptedActivation() throws -> [URL] {
     let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
+    let activeGenerationID = currentGenerationID()
     var trashURLs = [URL]()
     if FileManager.default.fileExists(atPath: generationsRoot.path) {
       for item in try FileManager.default.contentsOfDirectory(
@@ -345,6 +368,11 @@ public struct ThemeActivator: Sendable {
         includingPropertiesForKeys: nil
       ) {
         if isStagingName(item.lastPathComponent), isRealDirectory(item) {
+          makeWritableForRemoval(item)
+          try FileManager.default.removeItem(at: item)
+        } else if item.lastPathComponent != activeGenerationID,
+          isRecoverablePublishedGeneration(item)
+        {
           makeWritableForRemoval(item)
           try FileManager.default.removeItem(at: item)
         } else if isTrashName(item.lastPathComponent), isRealDirectory(item) {
@@ -403,7 +431,7 @@ public struct ThemeActivator: Sendable {
         directoryHint: .isDirectory
       )
       do {
-        try FileManager.default.moveItem(at: generation.url, to: trashURL)
+        try moveGenerationToTrash(generation.url, trashURL: trashURL)
         trashURLs.append(trashURL)
       } catch {
         return (trashURLs, String(describing: error))
@@ -437,6 +465,113 @@ public struct ThemeActivator: Sendable {
     return (url, modified)
   }
 
+  private func moveGenerationToTrash(_ generationURL: URL, trashURL: URL) throws {
+    let generationsRoot = generationURL.deletingLastPathComponent()
+    let generationsDescriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)
+    defer { Darwin.close(generationsDescriptor) }
+    let generationDescriptor = try PinnedFilesystem.openDirectory(
+      parentDescriptor: generationsDescriptor,
+      name: generationURL.lastPathComponent,
+      url: generationURL
+    )
+    defer { Darwin.close(generationDescriptor) }
+    var pinned = stat()
+    guard fstat(generationDescriptor, &pinned) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "inspect collectible generation",
+        url: generationURL,
+        code: errno
+      )
+    }
+    let path = try PinnedFilesystem.metadata(
+      parentDescriptor: generationsDescriptor,
+      name: generationURL.lastPathComponent,
+      url: generationURL
+    )
+    guard
+      pinned.st_dev == path.st_dev,
+      pinned.st_ino == path.st_ino,
+      pinned.st_mode & 0o222 == 0
+    else {
+      throw PinnedFilesystemError(
+        operation: "bind collectible generation",
+        url: generationURL,
+        code: ESTALE
+      )
+    }
+    guard fchmod(generationDescriptor, 0o755) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "prepare collectible generation",
+        url: generationURL,
+        code: errno
+      )
+    }
+    var restoreReadOnly = true
+    defer {
+      if restoreReadOnly {
+        _ = fchmod(generationDescriptor, 0o555)
+        _ = fsync(generationDescriptor)
+      }
+    }
+    guard fsync(generationDescriptor) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "sync collectible generation",
+        url: generationURL,
+        code: errno
+      )
+    }
+    let preparedPath = try PinnedFilesystem.metadata(
+      parentDescriptor: generationsDescriptor,
+      name: generationURL.lastPathComponent,
+      url: generationURL
+    )
+    guard pinned.st_dev == preparedPath.st_dev, pinned.st_ino == preparedPath.st_ino else {
+      throw PinnedFilesystemError(
+        operation: "rebind collectible generation",
+        url: generationURL,
+        code: ESTALE
+      )
+    }
+    let moved = generationURL.lastPathComponent.withCString { source in
+      trashURL.lastPathComponent.withCString { destination in
+        Darwin.renameatx_np(
+          generationsDescriptor,
+          source,
+          generationsDescriptor,
+          destination,
+          UInt32(RENAME_EXCL)
+        )
+      }
+    }
+    guard moved == 0 else {
+      throw PinnedFilesystemError(
+        operation: "publish collectible generation trash",
+        url: trashURL,
+        code: errno
+      )
+    }
+    let trash = try PinnedFilesystem.metadata(
+      parentDescriptor: generationsDescriptor,
+      name: trashURL.lastPathComponent,
+      url: trashURL
+    )
+    guard pinned.st_dev == trash.st_dev, pinned.st_ino == trash.st_ino else {
+      throw PinnedFilesystemError(
+        operation: "bind collectible generation trash",
+        url: trashURL,
+        code: ESTALE
+      )
+    }
+    restoreReadOnly = false
+    guard fsync(generationsDescriptor) == 0 else {
+      throw PinnedFilesystemError(
+        operation: "sync collectible generation trash",
+        url: trashURL,
+        code: errno
+      )
+    }
+  }
+
   private func isStagingName(_ name: String) -> Bool {
     name.hasPrefix(".staging-") && isGenerationID(String(name.dropFirst(9)))
   }
@@ -465,6 +600,75 @@ public struct ThemeActivator: Sendable {
   private func isRealDirectory(_ url: URL) -> Bool {
     var metadata = stat()
     return lstat(url.path, &metadata) == 0 && metadata.st_mode & S_IFMT == S_IFDIR
+  }
+
+  private func isRecoverablePublishedGeneration(_ url: URL) -> Bool {
+    guard isGenerationID(url.lastPathComponent) else { return false }
+    var metadata = stat()
+    guard
+      lstat(url.path, &metadata) == 0,
+      metadata.st_mode & S_IFMT == S_IFDIR,
+      metadata.st_mode & 0o222 != 0,
+      let manifestFile = safelyReadManifest(at: url.appending(path: "manifest.json")),
+      manifestFile.permissions & 0o222 == 0,
+      let object = manifestObject(in: manifestFile.data),
+      Set(object.keys) == GenerationManifest.encodedKeys,
+      let manifest = try? JSONDecoder().decode(GenerationManifest.self, from: manifestFile.data),
+      manifest.generationID == url.lastPathComponent,
+      (try? manifest.validateArtifacts(
+        at: url,
+        requireReadOnlyGenerationDirectory: false
+      )) != nil,
+      hasExactGenerationInventory(manifest, at: url)
+    else { return false }
+    return true
+  }
+
+  private func hasExactGenerationInventory(
+    _ manifest: GenerationManifest,
+    at url: URL
+  ) -> Bool {
+    var rootEntries = Set(["manifest.json"])
+    rootEntries.formUnion(
+      manifest.artifacts.keys.map {
+        String($0.split(separator: "/", maxSplits: 1)[0])
+      })
+    let generatedEntries = Set(
+      manifest.artifacts.keys.compactMap { path -> String? in
+        let components = path.split(separator: "/", maxSplits: 1)
+        return components.count == 2 && components[0] == "generated"
+          ? String(components[1])
+          : nil
+      }
+    )
+    do {
+      let generationDescriptor = try PinnedFilesystem.openDirectory(at: url)
+      defer { Darwin.close(generationDescriptor) }
+      let rootInventory = try PinnedFilesystem.directoryEntries(
+        descriptor: generationDescriptor,
+        url: url,
+        limit: rootEntries.count
+      )
+      guard !rootInventory.truncated, Set(rootInventory.entries) == rootEntries else {
+        return false
+      }
+      let generatedURL = url.appending(path: "generated", directoryHint: .isDirectory)
+      let generatedDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: generationDescriptor,
+        name: "generated",
+        url: generatedURL
+      )
+      defer { Darwin.close(generatedDescriptor) }
+      let generatedInventory = try PinnedFilesystem.directoryEntries(
+        descriptor: generatedDescriptor,
+        url: generatedURL,
+        limit: generatedEntries.count
+      )
+      return !generatedInventory.truncated
+        && Set(generatedInventory.entries) == generatedEntries
+    } catch {
+      return false
+    }
   }
 
   private func isSymbolicLink(_ url: URL) -> Bool {
@@ -705,7 +909,7 @@ public struct ThemeActivator: Sendable {
     }
   }
 
-  private func makeReadOnly(
+  private func makeContentsReadOnly(
     _ generationURL: URL,
     artifactPaths: [String]
   ) throws {
@@ -717,8 +921,6 @@ public struct ThemeActivator: Sendable {
       try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: file.path)
     }
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: generated.path)
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o555], ofItemAtPath: generationURL.path)
   }
 
   private func makeWritableForRemoval(_ generationURL: URL) {

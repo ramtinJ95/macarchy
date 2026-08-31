@@ -103,7 +103,10 @@ struct GenerationIntegrityError: Error, CustomStringConvertible, Sendable {
 }
 
 extension GenerationManifest {
-  func validateArtifacts(at generationURL: URL) throws {
+  func validateArtifacts(
+    at generationURL: URL,
+    requireReadOnlyGenerationDirectory: Bool = true
+  ) throws {
     let metadata: [String: RenderedArtifactMetadata]
     do {
       metadata = try ThemeRenderer.validatedArtifactMetadata()
@@ -140,7 +143,11 @@ extension GenerationManifest {
         "background identity and wallpaper artifact presence disagree"
       )
     }
-    try requireReadOnlyDirectory(generationURL, name: generationURL.lastPathComponent)
+    if requireReadOnlyGenerationDirectory {
+      try requireReadOnlyDirectory(generationURL, name: generationURL.lastPathComponent)
+    } else {
+      try requireDirectory(generationURL, name: generationURL.lastPathComponent)
+    }
     try requireReadOnlyDirectory(
       generationURL.appending(path: "generated", directoryHint: .isDirectory),
       name: "generated"
@@ -179,6 +186,15 @@ extension GenerationManifest {
   }
 
   private func requireReadOnlyDirectory(_ url: URL, name: String) throws {
+    let metadata = try directoryMetadata(url, name: name)
+    try requireIntegrity(metadata.st_mode & 0o222 == 0, "\(name) is writable")
+  }
+
+  private func requireDirectory(_ url: URL, name: String) throws {
+    _ = try directoryMetadata(url, name: name)
+  }
+
+  private func directoryMetadata(_ url: URL, name: String) throws -> stat {
     var metadata = stat()
     guard lstat(url.path, &metadata) == 0 else {
       let code = errno
@@ -187,7 +203,7 @@ extension GenerationManifest {
       )
     }
     try requireIntegrity(metadata.st_mode & S_IFMT == S_IFDIR, "\(name) is not a directory")
-    try requireIntegrity(metadata.st_mode & 0o222 == 0, "\(name) is writable")
+    return metadata
   }
 
   private func requireIntegrity(_ condition: @autoclosure () -> Bool, _ reason: String) throws {
