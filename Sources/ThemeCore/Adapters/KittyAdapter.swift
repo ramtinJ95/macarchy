@@ -51,14 +51,11 @@ struct KittyAdapter: Sendable {
 
   func preflight() throws {
     let resolvedConfigurationURL = configurationURL.resolvingSymlinksInPath()
-    let configuration: String
-    do {
-      configuration = try BoundedRegularFile.readUTF8(at: resolvedConfigurationURL)
-    } catch BoundedRegularFileError.tooLarge {
-      throw KittyAdapterError.configurationTooLarge(configurationURL)
-    } catch {
-      throw KittyAdapterError.cannotReadConfiguration(configurationURL)
-    }
+    let configuration = try AdapterConfigurationFile.readUTF8(
+      at: resolvedConfigurationURL,
+      tooLarge: KittyAdapterError.configurationTooLarge(configurationURL),
+      unreadable: KittyAdapterError.cannotReadConfiguration(configurationURL)
+    )
     guard containsExactLine(includeDirective, in: configuration) else {
       throw KittyAdapterError.missingInclude(includeDirective)
     }

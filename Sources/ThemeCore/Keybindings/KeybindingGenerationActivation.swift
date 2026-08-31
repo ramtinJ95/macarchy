@@ -65,13 +65,13 @@ package struct KeybindingGenerationActivator: Sendable {
 
     let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
     defer { Darwin.close(stateDescriptor) }
-    let keybindingsDescriptor = try existingOrCreateDirectory(
+    let keybindingsDescriptor = try PinnedFilesystem.openOrCreateChildDirectory(
       parentDescriptor: stateDescriptor,
       name: "keybindings",
       url: keybindingsRoot
     )
     defer { Darwin.close(keybindingsDescriptor) }
-    let generationsDescriptor = try existingOrCreateDirectory(
+    let generationsDescriptor = try PinnedFilesystem.openOrCreateChildDirectory(
       parentDescriptor: keybindingsDescriptor,
       name: "generations",
       url: generationsRoot
@@ -346,26 +346,6 @@ package struct KeybindingGenerationActivator: Sendable {
         parentDescriptor: descriptor,
         name: name,
         url: generationsRoot.appending(path: name, directoryHint: .isDirectory)
-      )
-    }
-  }
-
-  private func existingOrCreateDirectory(
-    parentDescriptor: Int32,
-    name: String,
-    url: URL
-  ) throws -> Int32 {
-    do {
-      return try PinnedFilesystem.openDirectory(
-        parentDescriptor: parentDescriptor,
-        name: name,
-        url: url
-      )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return try PinnedFilesystem.createDirectory(
-        parentDescriptor: parentDescriptor,
-        name: name,
-        url: url
       )
     }
   }

@@ -97,13 +97,11 @@ package struct BatAdapter: Sendable {
   }
 
   private func readConfiguration() throws -> String {
-    do {
-      return try BoundedRegularFile.readUTF8(at: configurationURL)
-    } catch BoundedRegularFileError.tooLarge {
-      throw BatAdapterError.configurationTooLarge(configurationURL)
-    } catch {
-      throw BatAdapterError.cannotReadConfiguration(configurationURL)
-    }
+    try AdapterConfigurationFile.readUTF8(
+      at: configurationURL,
+      tooLarge: BatAdapterError.configurationTooLarge(configurationURL),
+      unreadable: BatAdapterError.cannotReadConfiguration(configurationURL)
+    )
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

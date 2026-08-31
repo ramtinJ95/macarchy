@@ -113,17 +113,19 @@ extension SetupOwnershipManager {
       let stateRootDescriptor = try PinnedFilesystem.openDirectory(at: context.stateRoot)
       defer { Darwin.close(stateRootDescriptor) }
       let stateDirectory = context.stateRoot.appending(path: "state", directoryHint: .isDirectory)
-      let stateDescriptor = try openOrCreateManifestDirectory(
+      let stateDescriptor = try PinnedFilesystem.openOrCreateChildDirectory(
         parentDescriptor: stateRootDescriptor,
         name: "state",
-        url: stateDirectory
+        url: stateDirectory,
+        mode: 0o700
       )
       defer { Darwin.close(stateDescriptor) }
       let setupDirectory = stateDirectory.appending(path: "setup", directoryHint: .isDirectory)
-      let setupDescriptor = try openOrCreateManifestDirectory(
+      let setupDescriptor = try PinnedFilesystem.openOrCreateChildDirectory(
         parentDescriptor: stateDescriptor,
         name: "setup",
-        url: setupDirectory
+        url: setupDirectory,
+        mode: 0o700
       )
       defer { Darwin.close(setupDescriptor) }
       if records.isEmpty {
@@ -154,26 +156,6 @@ extension SetupOwnershipManager {
     }
   }
 
-  private func openOrCreateManifestDirectory(
-    parentDescriptor: Int32,
-    name: String,
-    url: URL
-  ) throws -> Int32 {
-    do {
-      return try PinnedFilesystem.openDirectory(
-        parentDescriptor: parentDescriptor,
-        name: name,
-        url: url
-      )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return try PinnedFilesystem.createDirectory(
-        parentDescriptor: parentDescriptor,
-        name: name,
-        url: url,
-        mode: 0o700
-      )
-    }
-  }
 }
 
 struct SetupOwnershipManifest: Codable {

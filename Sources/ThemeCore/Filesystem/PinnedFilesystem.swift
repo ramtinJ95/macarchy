@@ -83,6 +83,28 @@ package enum PinnedFilesystem {
     return try openDirectory(parentDescriptor: parentDescriptor, name: name, url: url)
   }
 
+  package static func openOrCreateChildDirectory(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    mode: mode_t = 0o755
+  ) throws -> Int32 {
+    do {
+      return try openDirectory(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return try createDirectory(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: url,
+        mode: mode
+      )
+    }
+  }
+
   package static func publishDirectoryAtomicallyAndSeal(
     parentDescriptor: Int32,
     directoryDescriptor: Int32,

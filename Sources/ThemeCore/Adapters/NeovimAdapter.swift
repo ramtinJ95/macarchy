@@ -271,13 +271,11 @@ package struct NeovimAdapter: Sendable {
   }
 
   private func readConfiguration(at url: URL) throws -> String {
-    do {
-      return try BoundedRegularFile.readUTF8(at: url)
-    } catch BoundedRegularFileError.tooLarge {
-      throw NeovimAdapterError.configurationTooLarge(url)
-    } catch {
-      throw NeovimAdapterError.cannotReadConfiguration(url)
-    }
+    try AdapterConfigurationFile.readUTF8(
+      at: url,
+      tooLarge: NeovimAdapterError.configurationTooLarge(url),
+      unreadable: NeovimAdapterError.cannotReadConfiguration(url)
+    )
   }
 
   package static func containsIntegrationDirective(in text: String) -> Bool {
