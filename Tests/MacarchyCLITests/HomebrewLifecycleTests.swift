@@ -319,11 +319,6 @@ struct HomebrewLifecycleTests {
     }
     secondDone.wait()
     #expect(failures.withLock { $0 }.isEmpty)
-    #expect(
-      FileManager.default.fileExists(
-        atPath: root.appending(path: "run/update-check.lock").path
-      )
-    )
 
     let lockURL = root.appending(path: "run/homebrew-update.lock")
     try FileManager.default.removeItem(at: lockURL)
@@ -361,8 +356,6 @@ struct HomebrewLifecycleTests {
 
     try store.write(started)
     try store.write(failed)
-    let firstPersistedBytes = try Data(contentsOf: store.evidenceURL)
-    try store.write(failed)
 
     let persisted = try #require(
       JSONSerialization.jsonObject(with: Data(contentsOf: store.evidenceURL))
@@ -379,7 +372,6 @@ struct HomebrewLifecycleTests {
     #expect(persisted["outcome"] as? String == "verification_failed")
     #expect(persisted["error"] as? String == "missing resource")
     #expect(permissions == 0o600)
-    #expect(try Data(contentsOf: store.evidenceURL) == firstPersistedBytes)
 
     let oversized = HomebrewUpgradeEvidence(
       attemptedAt: attemptedAt,

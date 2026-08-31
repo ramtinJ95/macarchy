@@ -3,31 +3,22 @@ import Dispatch
 import Foundation
 
 struct StateFileLock: Sendable {
-  enum Identity: Equatable, Sendable {
-    case updateCheck
-    case homebrewUpdate
+  struct Identity: Sendable {
+    fileprivate let filename: String
+    fileprivate let displayName: String
+    fileprivate let processSemaphore: DispatchSemaphore
 
-    fileprivate var filename: String {
-      switch self {
-      case .updateCheck:
-        "update-check.lock"
-      case .homebrewUpdate:
-        "homebrew-update.lock"
-      }
-    }
-
-    fileprivate var displayName: String {
-      switch self {
-      case .updateCheck:
-        "update-check"
-      case .homebrewUpdate:
-        "Homebrew update"
-      }
-    }
+    static let updateCheck = Self(
+      filename: "update-check.lock",
+      displayName: "update-check",
+      processSemaphore: DispatchSemaphore(value: 1)
+    )
+    static let homebrewUpdate = Self(
+      filename: "homebrew-update.lock",
+      displayName: "Homebrew update",
+      processSemaphore: DispatchSemaphore(value: 1)
+    )
   }
-
-  private static let updateCheckProcessSemaphore = DispatchSemaphore(value: 1)
-  private static let homebrewUpdateProcessSemaphore = DispatchSemaphore(value: 1)
 
   private let root: URL
   private let identity: Identity
@@ -38,15 +29,8 @@ struct StateFileLock: Sendable {
   }
 
   func withLock<Value>(_ operation: () throws -> Value) throws -> Value {
-    let processSemaphore: DispatchSemaphore
-    switch identity {
-    case .updateCheck:
-      processSemaphore = Self.updateCheckProcessSemaphore
-    case .homebrewUpdate:
-      processSemaphore = Self.homebrewUpdateProcessSemaphore
-    }
-    processSemaphore.wait()
-    defer { processSemaphore.signal() }
+    identity.processSemaphore.wait()
+    defer { identity.processSemaphore.signal() }
     return try withFileLock(operation)
   }
 
@@ -72,7 +56,7 @@ struct StateFileLock: Sendable {
   }
 }
 
-enum StateFileLockError: Error, CustomStringConvertible, Equatable, Sendable {
+enum StateFileLockError: Error, CustomStringConvertible, Sendable {
   case system(StateFileLock.Identity, String, Int32)
 
   var description: String {
