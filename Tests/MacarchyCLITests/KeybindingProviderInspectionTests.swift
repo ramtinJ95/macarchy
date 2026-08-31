@@ -329,16 +329,11 @@ struct KeybindingProviderInspectionTests {
   }
 
   private func markClaim(_ entry: URL) throws {
-    let descriptor = entry.path.withCString { Darwin.open($0, O_RDONLY | O_SYMLINK | O_CLOEXEC) }
-    guard descriptor >= 0 else { throw POSIXError(.EIO) }
-    defer { Darwin.close(descriptor) }
-    let value = Data("01234567-89ab-cdef-0123-456789abcdef".utf8)
-    let result = value.withUnsafeBytes { bytes in
-      KeybindingProviderInspector.claimMarkerAttribute.withCString {
-        Darwin.fsetxattr(descriptor, $0, bytes.baseAddress, bytes.count, 0, XATTR_CREATE)
-      }
-    }
-    guard result == 0 else { throw POSIXError(.EIO) }
+    try setSymbolicLinkExtendedAttribute(
+      KeybindingProviderInspector.claimMarkerAttribute,
+      value: "01234567-89ab-cdef-0123-456789abcdef",
+      at: entry
+    )
   }
 
   private func fixtureHome() throws -> (
