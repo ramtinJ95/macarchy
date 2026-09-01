@@ -1,6 +1,11 @@
 import Foundation
 import ThemeCore
 
+enum DesktopPlanScope: Sendable {
+  case allProviders
+  case yabaiOnly
+}
+
 struct DesktopPlanCommandRunner: Sendable {
   static let live = DesktopPlanCommandRunner()
 
@@ -10,7 +15,8 @@ struct DesktopPlanCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    json: Bool
+    json: Bool,
+    scope: DesktopPlanScope = .allProviders
   ) throws -> (output: String, succeeded: Bool) {
     var diagnostics: [DesktopPlanDiagnostic] = []
     let profile: PortableProfile?
@@ -27,11 +33,12 @@ struct DesktopPlanCommandRunner: Sendable {
       )
     }
 
-    let enabled = profile?.desktop.provider == .yabaiSkhd
-    var composition: YabaiComposition?
-    if let profile, enabled {
+    let yabaiEnabled = profile?.desktop.provider == .yabaiSkhd
+    let sketchyBarEnabled = scope == .allProviders && profile?.topBar == .sketchybar
+    var yabaiComposition: YabaiComposition?
+    if let profile, yabaiEnabled {
       do {
-        composition = try YabaiConfigurationComposer().compose(
+        yabaiComposition = try YabaiConfigurationComposer().compose(
           defaultsURL: resourcesRoot.appending(path: "yabai/defaults.toml"),
           profile: profile
         )
@@ -48,41 +55,127 @@ struct DesktopPlanCommandRunner: Sendable {
         )
       }
     }
+    var sketchyBarComposition: SketchyBarComposition?
+    if let profile, sketchyBarEnabled {
+      do {
+        sketchyBarComposition = try SketchyBarConfigurationComposer().compose(
+          defaultsURL: resourcesRoot.appending(path: "sketchybar/defaults.toml"),
+          profile: profile,
+          stateRoot: stateRoot
+        )
+      } catch {
+        let source =
+          (error as? SketchyBarConfigurationError)?.sourceURL
+          ?? resourcesRoot.appending(path: "sketchybar/defaults.toml")
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "sketchybar_configuration_invalid",
+            source: source.path,
+            message: String(describing: error)
+          )
+        )
+      }
+    }
 
-    let generation = YabaiGenerationInspector(stateRoot: stateRoot).inspect()
-    if enabled, generation.status == .invalid {
+    let yabaiGeneration = YabaiGenerationInspector(stateRoot: stateRoot).inspect()
+    if yabaiEnabled, yabaiGeneration.status == .invalid {
       diagnostics.append(
         DesktopPlanDiagnostic(
           code: "yabai_generation_invalid",
           source: stateRoot.appending(path: "desktop/yabai/current").path,
-          message: generation.message
+          message: yabaiGeneration.message
         )
       )
     }
-    let provider = YabaiProviderPlanInspector().inspect(
+    let yabaiProvider = YabaiProviderPlanInspector().inspect(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
-      enabled: enabled,
+      enabled: yabaiEnabled,
       transactionPending: YabaiTransactionStore(stateRoot: stateRoot).exists
     )
-    if enabled, provider.status == .blocked || provider.status == .recoveryRequired {
+    if yabaiEnabled,
+      yabaiProvider.status == .blocked || yabaiProvider.status == .recoveryRequired
+    {
       diagnostics.append(
         DesktopPlanDiagnostic(
           code: "yabai_provider_blocked",
-          source: provider.entryPoint,
-          message: provider.message
+          source: yabaiProvider.entryPoint,
+          message: yabaiProvider.message
+        )
+      )
+    }
+    let sketchyBarGeneration = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
+    if sketchyBarEnabled, sketchyBarGeneration.status == .invalid {
+      diagnostics.append(
+        DesktopPlanDiagnostic(
+          code: "sketchybar_generation_invalid",
+          source: stateRoot.appending(path: "desktop/sketchybar/current").path,
+          message: sketchyBarGeneration.message
+        )
+      )
+    }
+    let sketchyBarProvider = SketchyBarProviderPlanInspector().inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      enabled: sketchyBarEnabled,
+      generation: sketchyBarGeneration
+    )
+    if sketchyBarEnabled, sketchyBarProvider.status == .blocked {
+      diagnostics.append(
+        DesktopPlanDiagnostic(
+          code: "sketchybar_provider_blocked",
+          source: sketchyBarProvider.entryPoint,
+          message: sketchyBarProvider.message
+        )
+      )
+    }
+    let sketchyBarPalette = SketchyBarPalettePlanInspector().inspect(
+      stateRoot: stateRoot,
+      enabled: sketchyBarEnabled
+    )
+    if sketchyBarPalette.status == .invalid {
+      diagnostics.append(
+        DesktopPlanDiagnostic(
+          code: "sketchybar_theme_palette_invalid",
+          source: stateRoot.appending(path: "current").path,
+          message: sketchyBarPalette.message
         )
       )
     }
     let blocked = !diagnostics.isEmpty
-    let actions = plannedActions(
-      enabled: enabled,
-      provider: provider,
-      composition: composition,
-      generation: generation,
-      blocked: blocked
-    )
+    let actions =
+      yabaiActions(
+        enabled: yabaiEnabled,
+        provider: yabaiProvider,
+        composition: yabaiComposition,
+        generation: yabaiGeneration,
+        blocked: blocked
+      )
+      + sketchyBarActions(
+        enabled: sketchyBarEnabled,
+        provider: sketchyBarProvider,
+        composition: sketchyBarComposition,
+        generation: sketchyBarGeneration,
+        palette: sketchyBarPalette,
+        blocked: blocked
+      )
     let outcome = blocked ? "blocked" : actions.isEmpty ? "no_change" : "ready"
+    let sketchyBarReport =
+      scope == .allProviders
+      ? DesktopSketchyBarPlanReport(
+        packagedDefaults: resourcesRoot.appending(path: "sketchybar/defaults.toml").path,
+        settings: sketchyBarComposition?.settings,
+        spaceModule: sketchyBarComposition?.spaceModule.rawValue,
+        renderedArtifacts: sketchyBarComposition.map {
+          Dictionary(uniqueKeysWithValues: $0.artifacts.map { ($0.path, $0.contents) })
+        },
+        renderedDigest: sketchyBarComposition?.renderedDigest,
+        proposedInputDigest: sketchyBarComposition?.inputDigest,
+        currentGenerationID: sketchyBarGeneration.generationID,
+        currentGenerationStatus: sketchyBarGeneration.status.rawValue,
+        provider: sketchyBarProvider,
+        themePalette: sketchyBarPalette
+      ) : nil
     let report = DesktopPlanReport(
       outcome: outcome,
       profile: profileURL.path,
@@ -91,22 +184,23 @@ struct DesktopPlanCommandRunner: Sendable {
       desktopProvider: profile?.desktop.provider.rawValue,
       topBarProvider: profile?.topBar.rawValue,
       packagedDefaults: resourcesRoot.appending(path: "yabai/defaults.toml").path,
-      hook: composition?.hookURL?.path,
-      hookDigest: composition?.hookDigest,
-      settings: composition?.settings,
-      renderedYabairc: composition?.renderedConfiguration,
-      renderedDigest: composition?.renderedDigest,
-      proposedInputDigest: composition?.inputDigest,
-      currentGenerationID: generation.generationID,
-      currentGenerationStatus: generation.status.rawValue,
-      provider: provider,
+      hook: yabaiComposition?.hookURL?.path,
+      hookDigest: yabaiComposition?.hookDigest,
+      settings: yabaiComposition?.settings,
+      renderedYabairc: yabaiComposition?.renderedConfiguration,
+      renderedDigest: yabaiComposition?.renderedDigest,
+      proposedInputDigest: yabaiComposition?.inputDigest,
+      currentGenerationID: yabaiGeneration.generationID,
+      currentGenerationStatus: yabaiGeneration.status.rawValue,
+      provider: yabaiProvider,
+      sketchyBar: sketchyBarReport,
       actions: actions,
       diagnostics: diagnostics
     )
     return (try report.render(json: json), !blocked)
   }
 
-  private func plannedActions(
+  private func yabaiActions(
     enabled: Bool,
     provider: YabaiProviderPlanInspection,
     composition: YabaiComposition?,
@@ -168,6 +262,72 @@ struct DesktopPlanCommandRunner: Sendable {
     )
     return actions
   }
+
+  private func sketchyBarActions(
+    enabled: Bool,
+    provider: SketchyBarProviderPlanInspection,
+    composition: SketchyBarComposition?,
+    generation: SketchyBarGenerationInspection,
+    palette: SketchyBarPalettePlanInspection,
+    blocked: Bool
+  ) -> [DesktopPlanAction] {
+    guard !blocked else { return [] }
+    guard enabled else { return [] }
+    guard let composition else { return [] }
+    let generationAgrees =
+      generation.status == .current
+      && generation.manifest?.inputDigest == composition.inputDigest
+      && generation.manifest?.renderedDigest == composition.renderedDigest
+    if provider.status == .managed, generationAgrees, palette.status == .current { return [] }
+    var actions: [DesktopPlanAction] = []
+    if palette.status == .unavailable || palette.status == .refreshRequired {
+      actions.append(
+        DesktopPlanAction(
+          id: "activate_sketchybar_theme_palette",
+          message: palette.status == .unavailable
+            ? "Activate a canonical theme to publish the managed SketchyBar shell palette."
+            : "Reactivate the current theme to publish the managed SketchyBar shell palette."
+        )
+      )
+    }
+    if !generationAgrees {
+      actions.append(
+        DesktopPlanAction(
+          id: "publish_sketchybar_generation",
+          message: "Publish deterministic managed SketchyBar configuration."
+        )
+      )
+    }
+    switch provider.status {
+    case .installRequired:
+      actions.append(
+        DesktopPlanAction(
+          id: "install_sketchybar_entry",
+          message: "Install the managed sketchybarrc provider entry."
+        )
+      )
+    case .adoptionRequired:
+      actions.append(
+        DesktopPlanAction(
+          id: provider.ownership == "directory_symlink"
+            ? "adopt_sketchybar_directory_symlink"
+            : "adopt_sketchybarrc_entry",
+          message: "Adopt the existing \(provider.ownership) after explicit approval."
+        )
+      )
+    case .managed:
+      break
+    case .disabled, .externallyManaged, .blocked:
+      break
+    }
+    actions.append(
+      DesktopPlanAction(
+        id: "reload_sketchybar_service",
+        message: "Reload SketchyBar and verify its palette, items, and ready marker."
+      )
+    )
+    return actions
+  }
 }
 
 private struct DesktopPlanReport: Encodable {
@@ -189,6 +349,7 @@ private struct DesktopPlanReport: Encodable {
   let currentGenerationID: String?
   let currentGenerationStatus: String
   let provider: YabaiProviderPlanInspection
+  let sketchyBar: DesktopSketchyBarPlanReport?
   let actions: [DesktopPlanAction]
   let diagnostics: [DesktopPlanDiagnostic]
 
@@ -214,6 +375,9 @@ private struct DesktopPlanReport: Encodable {
       "- provider source: \(provider.source ?? "none")",
       "- adoption evidence digest: \(provider.adoptionEvidenceDigest ?? "none")",
     ]
+    if let sketchyBar {
+      lines += sketchyBar.humanLines
+    }
     lines.append(actions.isEmpty ? "Actions: none" : "Actions:")
     lines += actions.map { "- \($0.id): \($0.message)" }
     if !diagnostics.isEmpty {
@@ -223,6 +387,14 @@ private struct DesktopPlanReport: Encodable {
     if let renderedYabairc {
       lines.append(
         "Rendered yabairc:\n--- begin exact bytes ---\n\(renderedYabairc)"
+          + "--- end exact bytes ---"
+      )
+    }
+    for (path, contents) in (sketchyBar?.renderedArtifacts ?? [:]).sorted(by: {
+      $0.key < $1.key
+    }) {
+      lines.append(
+        "Rendered SketchyBar \(path):\n--- begin exact bytes ---\n\(contents)"
           + "--- end exact bytes ---"
       )
     }
@@ -249,8 +421,53 @@ private struct DesktopPlanReport: Encodable {
     case currentGenerationID = "current_generation_id"
     case currentGenerationStatus = "current_generation_status"
     case provider
+    case sketchyBar = "sketchybar"
     case actions
     case diagnostics
+  }
+}
+
+private struct DesktopSketchyBarPlanReport: Encodable {
+  let packagedDefaults: String
+  let settings: SketchyBarSettings?
+  let spaceModule: String?
+  let renderedArtifacts: [String: String]?
+  let renderedDigest: String?
+  let proposedInputDigest: String?
+  let currentGenerationID: String?
+  let currentGenerationStatus: String
+  let provider: SketchyBarProviderPlanInspection
+  let themePalette: SketchyBarPalettePlanInspection
+
+  var humanLines: [String] {
+    [
+      "- packaged SketchyBar defaults: \(packagedDefaults)",
+      "- SketchyBar Space module: \(spaceModule ?? "unavailable")",
+      "- SketchyBar proposed input digest: \(proposedInputDigest ?? "unavailable")",
+      "- SketchyBar rendered digest: \(renderedDigest ?? "unavailable")",
+      "- SketchyBar current generation [\(currentGenerationStatus)]: "
+        + (currentGenerationID ?? "none"),
+      "- SketchyBar provider [\(provider.status.rawValue), \(provider.ownership)]: "
+        + provider.message,
+      "- SketchyBar provider entry point: \(provider.entryPoint)",
+      "- SketchyBar provider original target: \(provider.originalTarget ?? "none")",
+      "- SketchyBar provider source: \(provider.source ?? "none")",
+      "- SketchyBar adoption evidence digest: \(provider.adoptionEvidenceDigest ?? "none")",
+      "- SketchyBar theme palette [\(themePalette.status.rawValue)]: \(themePalette.message)",
+    ]
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case packagedDefaults = "packaged_defaults"
+    case settings
+    case spaceModule = "space_module"
+    case renderedArtifacts = "rendered_artifacts"
+    case renderedDigest = "rendered_digest"
+    case proposedInputDigest = "proposed_input_digest"
+    case currentGenerationID = "current_generation_id"
+    case currentGenerationStatus = "current_generation_status"
+    case provider
+    case themePalette = "theme_palette"
   }
 }
 

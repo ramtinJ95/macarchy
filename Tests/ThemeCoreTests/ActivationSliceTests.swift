@@ -289,7 +289,7 @@ struct ActivationSliceTests {
         == [
           "atuin": 1, "bat": 1, "btop": 1, "capabilities": 1, "eza": 1, "herdr": 3,
           "kitty": 2,
-          "neovim": 4, "normalized_theme": 1, "pi": 4, "sketchybar": 1,
+          "neovim": 4, "normalized_theme": 1, "pi": 4, "sketchybar": 2,
           "slack": 2, "spicetify": 1, "starship": 1, "tuicr": 1, "wallpaper": 1,
           "yazi": 1,
         ]
@@ -303,7 +303,8 @@ struct ActivationSliceTests {
           "generated/capabilities.json", "generated/eza.yml", "generated/herdr.txt",
           "generated/kitty.conf",
           "generated/neovim.lua", "generated/pi.json", "generated/sketchybar.lua",
-          "generated/slack.txt", "generated/spicetify.ini", "generated/starship.toml",
+          "generated/sketchybar.sh", "generated/slack.txt", "generated/spicetify.ini",
+          "generated/starship.toml",
           "generated/tuicr.toml", "generated/wallpaper.png", "generated/yazi-flavor.toml",
           "generated/yazi.tmTheme", "theme.json",
         ]

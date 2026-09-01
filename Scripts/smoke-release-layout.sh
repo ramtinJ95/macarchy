@@ -28,6 +28,7 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/macarchy/keybindings/defaults.skhdrc" ]]
 [[ -f "$layout/share/macarchy/keybindings/metadata.toml" ]]
 [[ -f "$layout/share/macarchy/desktop/yabai/defaults.toml" ]]
+[[ -f "$layout/share/macarchy/desktop/sketchybar/defaults.toml" ]]
 [[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]

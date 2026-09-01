@@ -9,7 +9,7 @@ struct Desktop: ParsableCommand {
 
   struct Plan: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Plan managed yabai desktop configuration without making changes."
+      abstract: "Plan managed desktop provider configuration without making changes."
     )
 
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
@@ -80,7 +80,8 @@ struct Desktop: ParsableCommand {
             profileRequired: profile != nil,
             stateRoot: stateRootURL,
             homeDirectory: home,
-            json: json
+            json: json,
+            scope: .yabaiOnly
           )
         } else {
           try DesktopApplyCommandRunner.live.execute(

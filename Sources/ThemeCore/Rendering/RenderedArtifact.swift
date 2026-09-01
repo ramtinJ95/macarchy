@@ -227,6 +227,7 @@ package struct VersionGatedRendererIdentity: Equatable, Hashable, Sendable {
 
   package static let herdr = VersionGatedRendererIdentity(id: HerdrAdapter.id)
   package static let neovim = VersionGatedRendererIdentity(id: NeovimAdapter.id)
+  package static let sketchyBar = VersionGatedRendererIdentity(id: SketchyBarAdapter.id)
   package static let slack = VersionGatedRendererIdentity(id: SlackAdapter.id)
 }
 
