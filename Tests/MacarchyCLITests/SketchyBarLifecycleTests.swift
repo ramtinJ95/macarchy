@@ -199,7 +199,11 @@ struct SketchyBarLifecycleTests {
     for runtime in malformed {
       #expect(throws: SketchyBarDesktopError.self) {
         try store.write(
-          SketchyBarLifecycleEvidence(generationID: generationID, runtime: runtime)
+          SketchyBarLifecycleEvidence(
+            generationID: generationID,
+            runtime: runtime,
+            coreRuntime: Self.coreRuntime
+          )
         )
       }
     }
@@ -211,6 +215,15 @@ struct SketchyBarLifecycleTests {
     processID: 123,
     executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
     serviceLabel: SketchyBarHomebrewService.serviceLabel
+  )
+
+  private static let coreRuntime = SketchyBarCoreRuntimeInspection(
+    status: .converged,
+    message: "converged",
+    themeGenerationID: "g-00000000-0000-0000-0000-000000000000",
+    barColor: "0xf01e1e2e",
+    items: ["macarchy.clock", "macarchy.spaces.unavailable", "macarchy.theme.ready"],
+    clockLabelPresent: true
   )
 }
 

@@ -89,10 +89,10 @@ package struct ProcessRunner: Sendable {
   }
 }
 
-enum ProcessRunnerError: Error, CustomStringConvertible, Equatable, Sendable {
+package enum ProcessRunnerError: Error, CustomStringConvertible, Equatable, Sendable {
   case timedOut(URL, TimeInterval)
 
-  var description: String {
+  package var description: String {
     switch self {
     case .timedOut(let executableURL, let timeout):
       "Process \(executableURL.path) exceeded its \(timeout)-second timeout"

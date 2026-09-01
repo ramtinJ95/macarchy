@@ -145,17 +145,20 @@ struct SketchyBarProviderTransaction: Sendable {
   let homeDirectory: URL
   let stateRoot: URL
   let lifecycle: SketchyBarLifecycleController
+  let coreRuntime: SketchyBarCoreRuntimeController
   let faultInjector: @Sendable (SketchyBarTransactionCheckpoint) throws -> Void
 
   init(
     homeDirectory: URL,
     stateRoot: URL,
     lifecycle: SketchyBarLifecycleController,
+    coreRuntime: SketchyBarCoreRuntimeController? = nil,
     faultInjector: @escaping @Sendable (SketchyBarTransactionCheckpoint) throws -> Void = { _ in }
   ) {
     self.homeDirectory = homeDirectory.standardizedFileURL
     self.stateRoot = stateRoot.standardizedFileURL
     self.lifecycle = lifecycle
+    self.coreRuntime = coreRuntime ?? .live(stateRoot: stateRoot)
     self.faultInjector = faultInjector
   }
 
@@ -238,9 +241,12 @@ struct SketchyBarProviderTransaction: Sendable {
       createdConfigurationDirectory: createdConfigurationDirectory,
       priorServiceRunning: previousOwnership?.priorServiceRunning ?? serviceWasRunning
     )
+    let currentCoreRuntime = serviceWasRunning ? coreRuntime.inspect(composition) : nil
     if generationAgrees,
       previousOwnership == ownership,
       previousLifecycle?.generationID == generationID,
+      previousLifecycle?.coreRuntime == currentCoreRuntime,
+      currentCoreRuntime?.status == .converged,
       serviceWasRunning
     {
       return SketchyBarFilesystemConvergenceResult(
@@ -306,11 +312,19 @@ struct SketchyBarProviderTransaction: Sendable {
       guard runtime.status == .running else {
         throw SketchyBarDesktopError.lifecycle(runtime.message)
       }
+      let verifiedCoreRuntime = coreRuntime.settle(composition)
+      guard verifiedCoreRuntime.status == .converged else {
+        throw SketchyBarDesktopError.lifecycle(verifiedCoreRuntime.message)
+      }
       transaction.phase = .serviceChanged
       try transactionStore.write(transaction)
       try faultInjector(.serviceChanged)
       try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).write(
-        SketchyBarLifecycleEvidence(generationID: generationID, runtime: runtime)
+        SketchyBarLifecycleEvidence(
+          generationID: generationID,
+          runtime: runtime,
+          coreRuntime: verifiedCoreRuntime
+        )
       )
       try transactionStore.remove()
       return SketchyBarFilesystemConvergenceResult(generationID: generationID, changed: true)
