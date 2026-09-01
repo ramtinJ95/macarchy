@@ -238,8 +238,13 @@ struct DesktopPlanCommandTests {
         )
       )
     )
+    try """
+    schema_version = 1
+    [top_bar]
+    provider = "disabled"
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
 
-    let execution = try execute(fixture, json: true, profileRequired: false)
+    let execution = try execute(fixture, json: true, profileRequired: true)
     let report = try jsonObject(execution.output)
     let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
     let provider = try #require(sketchyBar["provider"] as? [String: Any])
@@ -482,6 +487,7 @@ struct DesktopPlanCommandTests {
       serviceLabel: SketchyBarHomebrewService.serviceLabel
     )
     return SketchyBarLifecycleController(
+      inspect: { runtime },
       preflight: { false },
       reload: { _ in runtime },
       start: { runtime },

@@ -4,16 +4,26 @@ import ThemeCore
 
 struct DesktopApplyCommandRunner: Sendable {
   let lifecycle: YabaiLifecycleController
+  let sketchyBarLifecycle: SketchyBarLifecycleController
+  let sketchyBarCoreRuntime: SketchyBarCoreRuntimeController?
   let faultInjector: @Sendable (YabaiTransactionCheckpoint) throws -> Void
+  let sketchyBarFaultInjector: @Sendable (SketchyBarTransactionCheckpoint) throws -> Void
 
   static let live = DesktopApplyCommandRunner(lifecycle: .live)
 
   init(
     lifecycle: YabaiLifecycleController,
-    faultInjector: @escaping @Sendable (YabaiTransactionCheckpoint) throws -> Void = { _ in }
+    sketchyBarLifecycle: SketchyBarLifecycleController = .live,
+    sketchyBarCoreRuntime: SketchyBarCoreRuntimeController? = nil,
+    faultInjector: @escaping @Sendable (YabaiTransactionCheckpoint) throws -> Void = { _ in },
+    sketchyBarFaultInjector: @escaping @Sendable (SketchyBarTransactionCheckpoint) throws -> Void =
+      { _ in }
   ) {
     self.lifecycle = lifecycle
+    self.sketchyBarLifecycle = sketchyBarLifecycle
+    self.sketchyBarCoreRuntime = sketchyBarCoreRuntime
     self.faultInjector = faultInjector
+    self.sketchyBarFaultInjector = sketchyBarFaultInjector
   }
 
   func execute(
@@ -23,68 +33,160 @@ struct DesktopApplyCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     adopt: String?,
+    sketchyBarAdopt: String? = nil,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
-    let desired: DesktopDesiredYabaiState
+    let desired: DesktopDesiredState
     do {
-      desired = try DesktopDesiredYabaiState.load(
+      desired = try DesktopDesiredState.load(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
-        profileRequired: profileRequired
+        profileRequired: profileRequired,
+        stateRoot: stateRoot
       )
     } catch {
       return try result(
         outcome: "blocked",
         mutated: false,
-        generationID: nil,
-        lifecycle: "none",
+        yabai: nil,
+        sketchyBar: nil,
         message: String(describing: error),
         json: json,
         succeeded: false
       )
     }
+    var yabaiBeforeFailure: ApplyResult?
+    var sketchyBarBeforeFailure: ApplyResult?
     do {
-      let result = try ActivationLock(root: stateRoot).withLock {
-        if let composition = desired.composition {
-          try applyLocked(
-            composition: composition,
+      let results = try ActivationLock(root: stateRoot).withLock {
+        if desired.sketchyBarComposition != nil {
+          let palette = SketchyBarPalettePlanInspector().inspect(
             stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            adopt: adopt
+            enabled: true
           )
-        } else {
-          try DesktopTeardownCommandRunner(
-            lifecycle: lifecycle,
-            faultInjector: faultInjector
-          ).teardownLocked(
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            dryRun: false
-          )
+          guard palette.status == .current else {
+            throw DesktopApplyBlockedError(reason: palette.message)
+          }
         }
+        let yabai =
+          if let composition = desired.yabaiComposition {
+            try applyLocked(
+              composition: composition,
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              adopt: adopt
+            )
+          } else {
+            try DesktopTeardownCommandRunner(
+              lifecycle: lifecycle,
+              sketchyBarLifecycle: sketchyBarLifecycle,
+              sketchyBarCoreRuntime: sketchyBarCoreRuntime,
+              faultInjector: faultInjector
+            ).teardownLocked(
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              dryRun: false
+            )
+          }
+        yabaiBeforeFailure = yabai
+        let sketchyBar = try applySketchyBarLocked(
+          composition: desired.sketchyBarComposition,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          adopt: sketchyBarAdopt
+        )
+        sketchyBarBeforeFailure = sketchyBar
+        return (yabai, sketchyBar)
       }
+      let changed = results.0.changed || results.1.changed
+      let recovered = results.1.lifecycle == "recovery"
       return try self.result(
-        outcome: result.changed ? "applied" : "no_change",
-        mutated: result.changed,
-        generationID: result.generationID,
-        lifecycle: result.lifecycle,
-        message: result.message,
+        outcome: recovered ? "recovered" : changed ? "applied" : "no_change",
+        mutated: changed,
+        yabai: results.0,
+        sketchyBar: results.1,
+        message: recovered
+          ? "interrupted state was recovered; run desktop apply again"
+          : changed ? "desktop provider state changed" : "desktop providers are converged",
         json: json,
-        succeeded: true
+        succeeded: !recovered
+      )
+    } catch let error as DesktopApplyBlockedError {
+      return try result(
+        outcome: "blocked",
+        mutated: false,
+        yabai: nil,
+        sketchyBar: nil,
+        message: error.reason,
+        json: json,
+        succeeded: false
       )
     } catch is YabaiInterruptionError {
       throw YabaiInterruptionError.injected
+    } catch is SketchyBarInterruptionError {
+      throw SketchyBarInterruptionError.injected
     } catch {
       return try result(
         outcome: "failed",
-        mutated: YabaiTransactionStore(stateRoot: stateRoot).exists,
-        generationID: nil,
-        lifecycle: "failed",
-        message: String(describing: error),
+        mutated: yabaiBeforeFailure?.changed == true || sketchyBarBeforeFailure?.changed == true
+          || YabaiTransactionStore(stateRoot: stateRoot).exists
+          || SketchyBarTransactionStore(stateRoot: stateRoot).exists,
+        yabai: yabaiBeforeFailure,
+        sketchyBar: sketchyBarBeforeFailure,
+        message: yabaiBeforeFailure?.changed == true || sketchyBarBeforeFailure?.changed == true
+          ? "a prior desktop provider changed before a later provider failed; inspect status before retrying: \(error)"
+          : String(describing: error),
         json: json,
         succeeded: false
       )
     }
+  }
+
+  private func applySketchyBarLocked(
+    composition: SketchyBarComposition?,
+    stateRoot: URL,
+    homeDirectory: URL,
+    adopt: String?
+  ) throws -> ApplyResult {
+    let transaction = SketchyBarProviderTransaction(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      lifecycle: sketchyBarLifecycle,
+      coreRuntime: sketchyBarCoreRuntime ?? .live(stateRoot: stateRoot),
+      faultInjector: sketchyBarFaultInjector
+    )
+    if let recovered = try transaction.recoverPendingLocked() {
+      return ApplyResult(
+        changed: true,
+        generationID: recovered.generationID,
+        lifecycle: "recovery",
+        message:
+          "recovered interrupted SketchyBar \(recovered.operation.rawValue); run desktop apply again to converge the requested state"
+      )
+    }
+    guard let composition else {
+      let outcome = try transaction.teardownLocked(dryRun: false)
+      return ApplyResult(
+        changed: outcome.changed,
+        generationID: outcome.generationID,
+        lifecycle: outcome.changed ? "restore" : "none",
+        message: outcome.changed
+          ? "restored the prior SketchyBar provider and service state"
+          : "no Macarchy-owned SketchyBar provider exists"
+      )
+    }
+    let outcome = try transaction.convergeLocked(
+      composition: composition,
+      adoptionEvidenceDigest: adopt
+    )
+    return ApplyResult(
+      changed: outcome.changed,
+      generationID: outcome.generationID,
+      lifecycle: outcome.changed ? "reload_or_start" : "none",
+      message: outcome.changed
+        ? "managed SketchyBar provider and runtime converged"
+        : "managed SketchyBar provider and runtime are already converged"
+    )
   }
 
   private func applyLocked(
@@ -259,8 +361,8 @@ struct DesktopApplyCommandRunner: Sendable {
   private func result(
     outcome: String,
     mutated: Bool,
-    generationID: String?,
-    lifecycle: String,
+    yabai: ApplyResult?,
+    sketchyBar: ApplyResult?,
     message: String,
     json: Bool,
     succeeded: Bool
@@ -269,8 +371,8 @@ struct DesktopApplyCommandRunner: Sendable {
       operation: "desktop_apply",
       outcome: outcome,
       mutated: mutated,
-      generationID: generationID,
-      lifecycle: lifecycle,
+      yabai: yabai,
+      sketchyBar: sketchyBar,
       message: message
     )
     return (try report.render(json: json), succeeded)
@@ -279,16 +381,26 @@ struct DesktopApplyCommandRunner: Sendable {
 
 struct DesktopTeardownCommandRunner: Sendable {
   let lifecycle: YabaiLifecycleController
+  let sketchyBarLifecycle: SketchyBarLifecycleController
+  let sketchyBarCoreRuntime: SketchyBarCoreRuntimeController?
   let faultInjector: @Sendable (YabaiTransactionCheckpoint) throws -> Void
+  let sketchyBarFaultInjector: @Sendable (SketchyBarTransactionCheckpoint) throws -> Void
 
   static let live = DesktopTeardownCommandRunner(lifecycle: .live)
 
   init(
     lifecycle: YabaiLifecycleController,
-    faultInjector: @escaping @Sendable (YabaiTransactionCheckpoint) throws -> Void = { _ in }
+    sketchyBarLifecycle: SketchyBarLifecycleController = .live,
+    sketchyBarCoreRuntime: SketchyBarCoreRuntimeController? = nil,
+    faultInjector: @escaping @Sendable (YabaiTransactionCheckpoint) throws -> Void = { _ in },
+    sketchyBarFaultInjector: @escaping @Sendable (SketchyBarTransactionCheckpoint) throws -> Void =
+      { _ in }
   ) {
     self.lifecycle = lifecycle
+    self.sketchyBarLifecycle = sketchyBarLifecycle
+    self.sketchyBarCoreRuntime = sketchyBarCoreRuntime
     self.faultInjector = faultInjector
+    self.sketchyBarFaultInjector = sketchyBarFaultInjector
   }
 
   func execute(
@@ -297,33 +409,74 @@ struct DesktopTeardownCommandRunner: Sendable {
     dryRun: Bool,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
+    var sketchyBarBeforeFailure: ApplyResult?
     do {
-      let outcome = try ActivationLock(root: stateRoot).withLock {
-        try teardownLocked(
+      let outcomes = try ActivationLock(root: stateRoot).withLock {
+        let transaction = SketchyBarProviderTransaction(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot,
+          lifecycle: sketchyBarLifecycle,
+          coreRuntime: sketchyBarCoreRuntime ?? .live(stateRoot: stateRoot),
+          faultInjector: sketchyBarFaultInjector
+        )
+        let sketchyBar: ApplyResult
+        if !dryRun, let recovered = try transaction.recoverPendingLocked() {
+          sketchyBar = ApplyResult(
+            changed: true,
+            generationID: recovered.generationID,
+            lifecycle: "recovery",
+            message: "recovered interrupted SketchyBar \(recovered.operation.rawValue)"
+          )
+        } else {
+          let outcome = try transaction.teardownLocked(dryRun: dryRun)
+          sketchyBar = ApplyResult(
+            changed: outcome.changed,
+            generationID: outcome.generationID,
+            lifecycle: outcome.changed ? "restore" : "none",
+            message: outcome.changed
+              ? "restore the prior SketchyBar provider and service state"
+              : "no Macarchy-owned SketchyBar provider exists"
+          )
+        }
+        sketchyBarBeforeFailure = sketchyBar
+        let yabai = try teardownLocked(
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
           dryRun: dryRun
         )
+        return (yabai, sketchyBar)
       }
+      let changed = outcomes.0.changed || outcomes.1.changed
+      let recovered = outcomes.1.lifecycle == "recovery"
       let report = DesktopMutationReport(
         operation: "desktop_teardown",
-        outcome: outcome.changed ? (dryRun ? "planned" : "removed") : "no_change",
-        mutated: outcome.changed && !dryRun,
-        generationID: outcome.generationID,
-        lifecycle: outcome.lifecycle,
-        message: outcome.message
+        outcome: recovered
+          ? "recovered" : changed ? (dryRun ? "planned" : "removed") : "no_change",
+        mutated: changed && !dryRun,
+        yabai: outcomes.0,
+        sketchyBar: outcomes.1,
+        message: recovered
+          ? "interrupted state was recovered; run desktop teardown again"
+          : changed ? "desktop provider teardown changed state" : "no managed providers exist"
       )
-      return (try report.render(json: json), true)
+      return (try report.render(json: json), !recovered)
     } catch is YabaiInterruptionError {
       throw YabaiInterruptionError.injected
+    } catch is SketchyBarInterruptionError {
+      throw SketchyBarInterruptionError.injected
     } catch {
       let report = DesktopMutationReport(
         operation: "desktop_teardown",
         outcome: "failed",
-        mutated: YabaiTransactionStore(stateRoot: stateRoot).exists,
-        generationID: nil,
-        lifecycle: "failed",
-        message: String(describing: error)
+        mutated: !dryRun
+          && (sketchyBarBeforeFailure?.changed == true
+            || YabaiTransactionStore(stateRoot: stateRoot).exists
+            || SketchyBarTransactionStore(stateRoot: stateRoot).exists),
+        yabai: nil,
+        sketchyBar: sketchyBarBeforeFailure,
+        message: sketchyBarBeforeFailure?.changed == true
+          ? "SketchyBar teardown completed before a later provider failed; inspect status before retrying: \(error)"
+          : String(describing: error)
       )
       return (try report.render(json: json), false)
     }
@@ -411,17 +564,23 @@ struct DesktopTeardownCommandRunner: Sendable {
   }
 }
 
-struct DesktopDesiredYabaiState: Sendable {
+private struct DesktopApplyBlockedError: Error {
+  let reason: String
+}
+
+struct DesktopDesiredState: Sendable {
   let profile: PortableProfile
-  let composition: YabaiComposition?
+  let yabaiComposition: YabaiComposition?
+  let sketchyBarComposition: SketchyBarComposition?
 
   static func load(
     resourcesRoot: URL,
     profileURL: URL,
-    profileRequired: Bool
+    profileRequired: Bool,
+    stateRoot: URL
   ) throws -> Self {
     let profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
-    let composition: YabaiComposition? =
+    let yabaiComposition: YabaiComposition? =
       if profile.desktop.provider == .yabaiSkhd {
         try YabaiConfigurationComposer().compose(
           defaultsURL: resourcesRoot.appending(path: "yabai/defaults.toml"),
@@ -430,41 +589,67 @@ struct DesktopDesiredYabaiState: Sendable {
       } else {
         nil
       }
-    return Self(profile: profile, composition: composition)
+    let sketchyBarComposition: SketchyBarComposition? =
+      if profile.topBar == .sketchybar {
+        try SketchyBarConfigurationComposer().compose(
+          defaultsURL: resourcesRoot.appending(path: "sketchybar/defaults.toml"),
+          profile: profile,
+          stateRoot: stateRoot
+        )
+      } else {
+        nil
+      }
+    return Self(
+      profile: profile,
+      yabaiComposition: yabaiComposition,
+      sketchyBarComposition: sketchyBarComposition
+    )
   }
 }
 
-private struct ApplyResult {
+private struct ApplyResult: Encodable {
   let changed: Bool
   let generationID: String?
   let lifecycle: String
   let message: String
+
+  enum CodingKeys: String, CodingKey {
+    case changed
+    case generationID = "generation_id"
+    case lifecycle, message
+  }
 }
 
 private struct DesktopMutationReport: Encodable {
-  let schemaVersion = 1
+  let schemaVersion = 2
   let operation: String
   let outcome: String
   let mutated: Bool
-  let generationID: String?
-  let lifecycle: String
+  let yabai: ApplyResult?
+  let sketchyBar: ApplyResult?
   let message: String
 
   func render(json: Bool) throws -> String {
     if json { return try renderJSON(self) }
-    return [
+    var lines = [
       "Macarchy \(operation.replacingOccurrences(of: "_", with: " ")) [\(outcome)]:",
-      "- generation: \(generationID ?? "none")",
-      "- lifecycle: \(lifecycle)",
       "- mutated: \(mutated ? "yes" : "no")",
       "- \(message)",
-    ].joined(separator: "\n")
+    ]
+    if let yabai { lines.append(providerLine("yabai", yabai)) }
+    if let sketchyBar { lines.append(providerLine("SketchyBar", sketchyBar)) }
+    return lines.joined(separator: "\n")
+  }
+
+  private func providerLine(_ name: String, _ result: ApplyResult) -> String {
+    "- \(name) [\(result.changed ? "changed" : "no_change"), \(result.lifecycle)]: \(result.generationID ?? "none"); \(result.message)"
   }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case operation, outcome, mutated
-    case generationID = "generation_id"
-    case lifecycle, message
+    case yabai
+    case sketchyBar = "sketchybar"
+    case message
   }
 }

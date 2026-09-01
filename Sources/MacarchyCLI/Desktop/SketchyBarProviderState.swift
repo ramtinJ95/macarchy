@@ -304,9 +304,6 @@ struct SketchyBarProviderPlanInspector: Sendable {
           generation: generation
         )
       }
-      if !enabled {
-        return inspectDisabled(directory: directory, entry: entry)
-      }
       if managedEntryTarget(directory: directory, entry: entry)
         == Self.managedTarget(homeDirectory: homeDirectory, stateRoot: stateRoot)
       {
@@ -316,6 +313,9 @@ struct SketchyBarProviderPlanInspector: Sendable {
           entry: entry,
           message: "SketchyBar points at Macarchy state without an ownership record"
         )
+      }
+      if !enabled {
+        return inspectDisabled(directory: directory, entry: entry)
       }
       let evidence = try captureUnowned(directory: directory, entry: entry)
       switch evidence.kind {

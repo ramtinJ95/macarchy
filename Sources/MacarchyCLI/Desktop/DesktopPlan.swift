@@ -104,46 +104,66 @@ struct DesktopPlanCommandRunner: Sendable {
         )
       )
     }
-    let sketchyBarGeneration = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
-    if sketchyBarEnabled, sketchyBarGeneration.status == .invalid {
-      diagnostics.append(
-        DesktopPlanDiagnostic(
-          code: "sketchybar_generation_invalid",
-          source: stateRoot.appending(path: "desktop/sketchybar/current").path,
-          message: sketchyBarGeneration.message
+    let sketchyBarGeneration: SketchyBarGenerationInspection
+    let sketchyBarProvider: SketchyBarProviderPlanInspection
+    let sketchyBarPalette: SketchyBarPalettePlanInspection
+    if scope == .allProviders {
+      sketchyBarGeneration = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
+      if sketchyBarEnabled, sketchyBarGeneration.status == .invalid {
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "sketchybar_generation_invalid",
+            source: stateRoot.appending(path: "desktop/sketchybar/current").path,
+            message: sketchyBarGeneration.message
+          )
         )
+      }
+      sketchyBarProvider = SketchyBarProviderPlanInspector().inspect(
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        enabled: sketchyBarEnabled,
+        generation: sketchyBarGeneration,
+        transactionPending: SketchyBarTransactionStore(stateRoot: stateRoot).exists
       )
-    }
-    let sketchyBarProvider = SketchyBarProviderPlanInspector().inspect(
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot,
-      enabled: sketchyBarEnabled,
-      generation: sketchyBarGeneration,
-      transactionPending: SketchyBarTransactionStore(stateRoot: stateRoot).exists
-    )
-    if scope == .allProviders,
-      sketchyBarProvider.status == .blocked
+      if sketchyBarProvider.status == .blocked
         || sketchyBarProvider.status == .recoveryRequired
-    {
-      diagnostics.append(
-        DesktopPlanDiagnostic(
-          code: "sketchybar_provider_blocked",
-          source: sketchyBarProvider.entryPoint,
-          message: sketchyBarProvider.message
+      {
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "sketchybar_provider_blocked",
+            source: sketchyBarProvider.entryPoint,
+            message: sketchyBarProvider.message
+          )
         )
+      }
+      sketchyBarPalette = SketchyBarPalettePlanInspector().inspect(
+        stateRoot: stateRoot,
+        enabled: sketchyBarEnabled
       )
-    }
-    let sketchyBarPalette = SketchyBarPalettePlanInspector().inspect(
-      stateRoot: stateRoot,
-      enabled: sketchyBarEnabled
-    )
-    if sketchyBarPalette.status == .invalid {
-      diagnostics.append(
-        DesktopPlanDiagnostic(
-          code: "sketchybar_theme_palette_invalid",
-          source: stateRoot.appending(path: "current").path,
-          message: sketchyBarPalette.message
+      if sketchyBarPalette.status == .invalid {
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "sketchybar_theme_palette_invalid",
+            source: stateRoot.appending(path: "current").path,
+            message: sketchyBarPalette.message
+          )
         )
+      }
+    } else {
+      sketchyBarGeneration = .missing
+      sketchyBarProvider = SketchyBarProviderPlanInspection(
+        status: .disabled,
+        ownership: "not_inspected",
+        entryPoint: homeDirectory.appending(path: ".config/sketchybar/sketchybarrc").path,
+        originalTarget: nil,
+        source: nil,
+        message: "SketchyBar is outside this plan scope",
+        adoptionEvidenceDigest: nil
+      )
+      sketchyBarPalette = SketchyBarPalettePlanInspection(
+        status: .disabled,
+        generationID: nil,
+        message: "SketchyBar is outside this plan scope"
       )
     }
     let blocked = !diagnostics.isEmpty

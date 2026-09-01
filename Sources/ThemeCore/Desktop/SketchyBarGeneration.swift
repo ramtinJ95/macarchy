@@ -101,92 +101,8 @@ package struct SketchyBarGenerationInspector: Sendable {
     guard Self.isGenerationID(generationID), !generationID.contains("/") else {
       return invalid("current target has an invalid generation identity")
     }
-    let generation = providerRoot.appending(path: target, directoryHint: .isDirectory)
     do {
-      let generationDescriptor = try PinnedFilesystem.openDirectory(at: generation)
-      defer { Darwin.close(generationDescriptor) }
-      try inspectDirectory(
-        descriptor: generationDescriptor,
-        permissions: 0o555,
-        label: "generation root"
-      )
-      let rootInventory = try PinnedFilesystem.directoryEntries(
-        descriptor: generationDescriptor,
-        url: generation,
-        limit: 3
-      )
-      guard
-        !rootInventory.truncated,
-        rootInventory.entries == ["manifest.json", "plugins", "sketchybarrc"]
-      else {
-        throw SketchyBarGenerationError.invalid("generation root inventory is unexpected")
-      }
-      let plugins = generation.appending(path: "plugins", directoryHint: .isDirectory)
-      let pluginsDescriptor = try PinnedFilesystem.openDirectory(
-        parentDescriptor: generationDescriptor,
-        name: "plugins",
-        url: plugins
-      )
-      defer { Darwin.close(pluginsDescriptor) }
-      try inspectDirectory(
-        descriptor: pluginsDescriptor,
-        permissions: 0o555,
-        label: "plugins directory"
-      )
-      let pluginInventory = try PinnedFilesystem.directoryEntries(
-        descriptor: pluginsDescriptor,
-        url: plugins,
-        limit: 2
-      )
-      guard
-        !pluginInventory.truncated,
-        pluginInventory.entries == ["clock.sh", "space-indexes.sh"]
-      else {
-        throw SketchyBarGenerationError.invalid("plugin inventory is unexpected")
-      }
-
-      let manifestFile = try PinnedFilesystem.readRegularFile(
-        parentDescriptor: generationDescriptor,
-        name: "manifest.json",
-        url: generation.appending(path: "manifest.json"),
-        maximumSize: 16_384
-      )
-      guard manifestFile.permissions == 0o444 else {
-        throw SketchyBarGenerationError.invalid("manifest is not read-only")
-      }
-      let manifest = try JSONDecoder().decode(
-        SketchyBarGenerationManifest.self,
-        from: manifestFile.data
-      )
-      guard
-        manifest.schemaVersion == SketchyBarGenerationManifest.schemaVersion,
-        manifest.rendererVersion == SketchyBarGenerationManifest.rendererVersion,
-        manifest.generationID == generationID,
-        manifest.inputDigest.hasPrefix("sha256:"),
-        manifest.renderedDigest.hasPrefix("sha256:"),
-        manifest.artifacts.keys.sorted() == Self.artifactPaths
-      else {
-        throw SketchyBarGenerationError.invalid("manifest identity or inventory is invalid")
-      }
-      for path in Self.artifactPaths {
-        let components = path.split(separator: "/")
-        let parentDescriptor = components.count == 1 ? generationDescriptor : pluginsDescriptor
-        let name = String(components.last!)
-        let artifact = try PinnedFilesystem.readRegularFile(
-          parentDescriptor: parentDescriptor,
-          name: name,
-          url: generation.appending(path: path)
-        )
-        guard artifact.permissions == 0o555 else {
-          throw SketchyBarGenerationError.invalid("\(path) is not read-only and executable")
-        }
-        guard sha256Digest(artifact.data) == manifest.artifacts[path] else {
-          throw SketchyBarGenerationError.invalid("\(path) digest does not match its manifest")
-        }
-      }
-      guard sketchyBarArtifactDigest(manifest.artifacts) == manifest.renderedDigest else {
-        throw SketchyBarGenerationError.invalid("rendered digest does not match its artifacts")
-      }
+      let manifest = try validatedManifest(generationID)
       return SketchyBarGenerationInspection(
         status: .current,
         generationID: generationID,
@@ -198,10 +114,111 @@ package struct SketchyBarGenerationInspector: Sendable {
     }
   }
 
+  fileprivate func validateGeneration(_ generationID: String) throws {
+    guard Self.isGenerationID(generationID) else {
+      throw SketchyBarGenerationError.invalid("generation identity is invalid")
+    }
+    _ = try validatedManifest(generationID)
+  }
+
   package static func isGenerationID(_ value: String) -> Bool {
     guard value.hasPrefix("s-") else { return false }
     let nonce = String(value.dropFirst(2))
     return nonce == nonce.lowercased() && UUID(uuidString: nonce) != nil
+  }
+
+  private func validatedManifest(
+    _ generationID: String
+  ) throws -> SketchyBarGenerationManifest {
+    let generation = stateRoot.appending(
+      path: "desktop/sketchybar/generations/\(generationID)",
+      directoryHint: .isDirectory
+    )
+    let generationDescriptor = try PinnedFilesystem.openDirectory(at: generation)
+    defer { Darwin.close(generationDescriptor) }
+    try inspectDirectory(
+      descriptor: generationDescriptor,
+      permissions: 0o555,
+      label: "generation root"
+    )
+    let rootInventory = try PinnedFilesystem.directoryEntries(
+      descriptor: generationDescriptor,
+      url: generation,
+      limit: 3
+    )
+    guard
+      !rootInventory.truncated,
+      rootInventory.entries == ["manifest.json", "plugins", "sketchybarrc"]
+    else {
+      throw SketchyBarGenerationError.invalid("generation root inventory is unexpected")
+    }
+    let plugins = generation.appending(path: "plugins", directoryHint: .isDirectory)
+    let pluginsDescriptor = try PinnedFilesystem.openDirectory(
+      parentDescriptor: generationDescriptor,
+      name: "plugins",
+      url: plugins
+    )
+    defer { Darwin.close(pluginsDescriptor) }
+    try inspectDirectory(
+      descriptor: pluginsDescriptor,
+      permissions: 0o555,
+      label: "plugins directory"
+    )
+    let pluginInventory = try PinnedFilesystem.directoryEntries(
+      descriptor: pluginsDescriptor,
+      url: plugins,
+      limit: 2
+    )
+    guard
+      !pluginInventory.truncated,
+      pluginInventory.entries == ["clock.sh", "space-indexes.sh"]
+    else {
+      throw SketchyBarGenerationError.invalid("plugin inventory is unexpected")
+    }
+
+    let manifestFile = try PinnedFilesystem.readRegularFile(
+      parentDescriptor: generationDescriptor,
+      name: "manifest.json",
+      url: generation.appending(path: "manifest.json"),
+      maximumSize: 16_384
+    )
+    guard manifestFile.permissions == 0o444 else {
+      throw SketchyBarGenerationError.invalid("manifest is not read-only")
+    }
+    let manifest = try JSONDecoder().decode(
+      SketchyBarGenerationManifest.self,
+      from: manifestFile.data
+    )
+    guard
+      manifest.schemaVersion == SketchyBarGenerationManifest.schemaVersion,
+      manifest.rendererVersion == SketchyBarGenerationManifest.rendererVersion,
+      manifest.generationID == generationID,
+      manifest.inputDigest.hasPrefix("sha256:"),
+      manifest.renderedDigest.hasPrefix("sha256:"),
+      manifest.artifacts.keys.sorted() == Self.artifactPaths
+    else {
+      throw SketchyBarGenerationError.invalid("manifest identity or inventory is invalid")
+    }
+    for path in Self.artifactPaths {
+      let components = path.split(separator: "/")
+      let parentDescriptor = components.count == 1 ? generationDescriptor : pluginsDescriptor
+      let name = String(components.last!)
+      let artifact = try PinnedFilesystem.readRegularFile(
+        parentDescriptor: parentDescriptor,
+        name: name,
+        url: generation.appending(path: path)
+      )
+      guard artifact.permissions == 0o555 else {
+        throw SketchyBarGenerationError.invalid("\(path) is not read-only and executable")
+      }
+      guard sha256Digest(artifact.data) == manifest.artifacts[path] else {
+        throw SketchyBarGenerationError.invalid("\(path) digest does not match its manifest")
+      }
+    }
+    guard sketchyBarArtifactDigest(manifest.artifacts) == manifest.renderedDigest else {
+      throw SketchyBarGenerationError.invalid("rendered digest does not match its artifacts")
+    }
+    return manifest
   }
 
   private func inspectDirectory(descriptor: Int32, permissions: Int, label: String) throws {
@@ -364,6 +381,138 @@ package struct SketchyBarGenerationActivator: Sendable {
     try removeNamedGeneration(generationID)
   }
 
+  package func removeCurrentSelectionResidue(_ generationID: String) throws {
+    guard SketchyBarGenerationInspector.isGenerationID(generationID) else {
+      throw SketchyBarGenerationError.invalid("cannot recover an invalid generation identity")
+    }
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    defer { Darwin.close(descriptor) }
+    let name = Self.currentSelectionName(generationID)
+    let residue = providerRoot.appending(path: name)
+    let metadata: stat
+    do {
+      metadata = try PinnedFilesystem.metadata(
+        parentDescriptor: descriptor,
+        name: name,
+        url: residue
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    let expected = "generations/\(generationID)"
+    guard
+      metadata.st_mode & S_IFMT == S_IFLNK,
+      metadata.st_nlink == 1,
+      try PinnedFilesystem.symlinkDestination(
+        parentDescriptor: descriptor,
+        name: name,
+        url: residue
+      ) == expected
+    else {
+      throw SketchyBarGenerationError.invalid("current selection residue is not authentic")
+    }
+    guard name.withCString({ Darwin.unlinkat(descriptor, $0, 0) }) == 0 else {
+      throw SketchyBarGenerationError.system("remove current selection residue", residue, errno)
+    }
+    guard fsync(descriptor) == 0 else {
+      throw SketchyBarGenerationError.system("sync current selection recovery", residue, errno)
+    }
+  }
+
+  package func validatedGenerationIDs() throws -> [String] {
+    let providerDescriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
+    defer { Darwin.close(providerDescriptor) }
+    let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
+    let generationsDescriptor: Int32
+    do {
+      generationsDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: providerDescriptor,
+        name: "generations",
+        url: generations
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return []
+    }
+    defer { Darwin.close(generationsDescriptor) }
+    let inventory = try PinnedFilesystem.directoryEntries(
+      descriptor: generationsDescriptor,
+      url: generations,
+      limit: 1_024
+    )
+    guard
+      !inventory.truncated,
+      inventory.entries.allSatisfy(SketchyBarGenerationInspector.isGenerationID)
+    else {
+      throw SketchyBarGenerationError.invalid(
+        "SketchyBar generation inventory contains unowned entries"
+      )
+    }
+    let inspector = SketchyBarGenerationInspector(stateRoot: stateRoot)
+    for generationID in inventory.entries {
+      try inspector.validateGeneration(generationID)
+    }
+    return inventory.entries
+  }
+
+  package func removeGenerations(_ generationIDs: [String]) throws {
+    guard
+      generationIDs == generationIDs.sorted(),
+      Set(generationIDs).count == generationIDs.count,
+      generationIDs.allSatisfy(SketchyBarGenerationInspector.isGenerationID)
+    else {
+      throw SketchyBarGenerationError.invalid("cannot remove an invalid generation inventory")
+    }
+    let providerDescriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
+    defer { Darwin.close(providerDescriptor) }
+    let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
+    let generationsDescriptor: Int32
+    do {
+      generationsDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: providerDescriptor,
+        name: "generations",
+        url: generations
+      )
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return
+    }
+    defer { Darwin.close(generationsDescriptor) }
+    let inventory = try PinnedFilesystem.directoryEntries(
+      descriptor: generationsDescriptor,
+      url: generations,
+      limit: 1_024
+    )
+    let expected = Set(generationIDs)
+    guard !inventory.truncated, inventory.entries.allSatisfy(expected.contains) else {
+      throw SketchyBarGenerationError.invalid("SketchyBar generation inventory changed")
+    }
+    for generationID in generationIDs {
+      try removeNamedGeneration(
+        generationID,
+        parentDescriptor: generationsDescriptor,
+        generations: generations
+      )
+    }
+    let remaining = try PinnedFilesystem.directoryEntries(
+      descriptor: generationsDescriptor,
+      url: generations,
+      limit: 1
+    )
+    guard !remaining.truncated, remaining.entries.isEmpty else {
+      throw SketchyBarGenerationError.invalid("SketchyBar generation inventory changed")
+    }
+    try removeBoundDirectory(
+      parentDescriptor: providerDescriptor,
+      directoryDescriptor: generationsDescriptor,
+      name: "generations",
+      url: generations
+    )
+  }
+
   private var providerRoot: URL {
     stateRoot.appending(path: "desktop/sketchybar", directoryHint: .isDirectory)
   }
@@ -382,7 +531,7 @@ package struct SketchyBarGenerationActivator: Sendable {
     try authenticateSelectableGeneration(generationID)
     let descriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
     defer { Darwin.close(descriptor) }
-    let temporaryName = ".current-\(UUID().uuidString.lowercased())"
+    let temporaryName = Self.currentSelectionName(generationID)
     let temporary = providerRoot.appending(
       path: temporaryName
     )
@@ -437,6 +586,18 @@ package struct SketchyBarGenerationActivator: Sendable {
       return
     }
     defer { Darwin.close(generationsDescriptor) }
+    try removeNamedGeneration(
+      name,
+      parentDescriptor: generationsDescriptor,
+      generations: generations
+    )
+  }
+
+  private func removeNamedGeneration(
+    _ name: String,
+    parentDescriptor generationsDescriptor: Int32,
+    generations: URL
+  ) throws {
     let generation = generations.appending(path: name, directoryHint: .isDirectory)
     let descriptor: Int32
     do {
@@ -579,5 +740,9 @@ package struct SketchyBarGenerationActivator: Sendable {
 
   private static func stagingName(_ generationID: String) -> String {
     ".staging-\(generationID)"
+  }
+
+  private static func currentSelectionName(_ generationID: String) -> String {
+    ".current-\(generationID)"
   }
 }

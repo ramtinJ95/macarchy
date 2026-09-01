@@ -78,9 +78,16 @@ struct SketchyBarTransactionTests {
       composition: fixture.composition,
       adoptionEvidenceDigest: nil
     )
+    fixture.lifecycle.replaceProcess()
+    let refreshed = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: nil
+    )
     #expect(first.changed)
     #expect(!second.changed)
     #expect(second.generationID == first.generationID)
+    #expect(refreshed.changed)
+    #expect(refreshed.generationID == first.generationID)
   }
 
   @Test
@@ -166,12 +173,21 @@ struct SketchyBarTransactionTests {
       path: "desktop/sketchybar/generations/\(pending.generationID)",
       directoryHint: .isDirectory
     )
+    let selectionResidue = fixture.state.appending(
+      path: "desktop/sketchybar/.current-\(pending.generationID)"
+    )
+    try FileManager.default.createSymbolicLink(
+      atPath: selectionResidue.path,
+      withDestinationPath: "generations/\(pending.generationID)"
+    )
     #expect(FileManager.default.fileExists(atPath: published.path))
     #expect(try String(contentsOf: entry, encoding: .utf8) == "untouched\n")
 
     try transaction.recoverApply(pending)
 
     #expect(!FileManager.default.fileExists(atPath: published.path))
+    var missing = stat()
+    #expect(lstat(selectionResidue.path, &missing) != 0 && errno == ENOENT)
     #expect(try String(contentsOf: entry, encoding: .utf8) == "untouched\n")
     #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
   }
@@ -525,6 +541,101 @@ struct SketchyBarTransactionTests {
     )
     #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
   }
+
+  @Test
+  func interruptedTeardownContinuesForwardFromTheRestoredOriginal() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("personal\n")
+    var original = stat()
+    #expect(lstat(entry.path, &original) == 0)
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .generationDeselected { throw SketchyBarInterruptionError.injected }
+    }
+    _ = try transaction.convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: try fixture.adoptionDigest()
+    )
+
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.teardownLocked(dryRun: false)
+    }
+    let pending = try #require(
+      try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    )
+    #expect(pending.operation == .teardown)
+    #expect(pending.phase == .serviceChanged)
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal\n")
+    #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() == nil)
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+    try SketchyBarGenerationActivator(stateRoot: fixture.state).removeTransactionResidue(
+      pending.generationID
+    )
+
+    let resumed = try fixture.transaction().teardownLocked(dryRun: false)
+
+    var restored = stat()
+    #expect(resumed.changed)
+    #expect(lstat(entry.path, &restored) == 0)
+    #expect(restored.st_dev == original.st_dev)
+    #expect(restored.st_ino == original.st_ino)
+    #expect(fixture.lifecycle.reloadEntryStates == ["managed", "personal", "personal"])
+    #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() == nil)
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+  }
+
+  @Test
+  func teardownRestartsAnOriginallyRunningServiceThatStoppedLater() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    _ = try fixture.installRegularEntry("personal\n")
+    _ = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: try fixture.adoptionDigest()
+    )
+    try fixture.lifecycle.controller.stop()
+
+    _ = try fixture.transaction().teardownLocked(dryRun: false)
+
+    #expect(fixture.lifecycle.isRunning)
+  }
+
+  @Test
+  func teardownRemovesEveryManagedSketchyBarGeneration() throws {
+    let fixture = try SketchyBarTransactionFixture(serviceRunning: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    _ = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: nil
+    )
+    let updated = try fixture.composition(
+      profile: """
+        schema_version = 1
+        [desktop]
+        provider = "disabled"
+        """
+    )
+    _ = try fixture.transaction().convergeLocked(
+      composition: updated,
+      adoptionEvidenceDigest: nil
+    )
+    let generations = fixture.state.appending(path: "desktop/sketchybar/generations")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: generations.path).count == 2)
+    let invalid = generations.appending(
+      path: "s-00000000-0000-0000-0000-000000000000",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: invalid, withIntermediateDirectories: false)
+    #expect(throws: (any Error).self) {
+      try fixture.transaction().teardownLocked(dryRun: true)
+    }
+    try FileManager.default.removeItem(at: invalid)
+
+    _ = try fixture.transaction().teardownLocked(dryRun: false)
+
+    #expect(!FileManager.default.fileExists(atPath: generations.path))
+  }
 }
 
 private struct SketchyBarTransactionFixture {
@@ -661,6 +772,7 @@ private final class SketchyBarLifecycleFixture: Sendable {
   private struct State: Sendable {
     var running: Bool
     var failedReloads: Int
+    var processID: Int32 = 123
     var events: [String] = []
     var reloadEntryStates: [String] = []
     var stopSnapshots: [String] = []
@@ -678,6 +790,9 @@ private final class SketchyBarLifecycleFixture: Sendable {
 
   var controller: SketchyBarLifecycleController {
     SketchyBarLifecycleController(
+      inspect: {
+        self.state.withLock { $0.running ? Self.runtime(processID: $0.processID) : .stopped }
+      },
       preflight: { self.state.withLock { $0.running } },
       reload: { url in
         let entryState = Self.entryState(url)
@@ -689,15 +804,15 @@ private final class SketchyBarLifecycleFixture: Sendable {
             throw SketchyBarLifecycleTestError.reload
           }
           guard $0.running else { throw SketchyBarLifecycleTestError.reload }
-          return Self.runtime
+          return Self.runtime(processID: $0.processID)
         }
       },
       start: {
         self.state.withLock {
           $0.events.append("start")
           $0.running = true
+          return Self.runtime(processID: $0.processID)
         }
-        return Self.runtime
       },
       stop: {
         let currentState = Self.exists(self.current) ? "current" : "no-current"
@@ -714,14 +829,21 @@ private final class SketchyBarLifecycleFixture: Sendable {
   var events: [String] { state.withLock { $0.events } }
   var reloadEntryStates: [String] { state.withLock { $0.reloadEntryStates } }
   var stopSnapshots: [String] { state.withLock { $0.stopSnapshots } }
+  var isRunning: Bool { state.withLock { $0.running } }
 
-  private static let runtime = SketchyBarRuntimeInspection(
-    status: .running,
-    message: "running",
-    processID: 123,
-    executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
-    serviceLabel: SketchyBarHomebrewService.serviceLabel
-  )
+  func replaceProcess() {
+    state.withLock { $0.processID += 1 }
+  }
+
+  private static func runtime(processID: Int32) -> SketchyBarRuntimeInspection {
+    SketchyBarRuntimeInspection(
+      status: .running,
+      message: "running",
+      processID: processID,
+      executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
+      serviceLabel: SketchyBarHomebrewService.serviceLabel
+    )
+  }
 
   private static func entryState(_ url: URL) -> String {
     var metadata = stat()
