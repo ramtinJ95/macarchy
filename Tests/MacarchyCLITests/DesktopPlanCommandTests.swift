@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -14,6 +15,8 @@ struct DesktopPlanCommandTests {
     let execution = try execute(fixture, json: true, profileRequired: false)
     let report = try jsonObject(execution.output)
     let provider = try #require(report["provider"] as? [String: Any])
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let sketchyBarProvider = try #require(sketchyBar["provider"] as? [String: Any])
     let actions = try #require(report["actions"] as? [[String: Any]])
 
     #expect(execution.succeeded)
@@ -22,9 +25,23 @@ struct DesktopPlanCommandTests {
     #expect(report["desktop_provider"] as? String == "yabai-skhd")
     #expect(report["top_bar_provider"] as? String == "sketchybar")
     #expect(provider["status"] as? String == "install_required")
+    #expect(sketchyBarProvider["status"] as? String == "install_required")
+    #expect(sketchyBar["space_module"] as? String == "dynamic_yabai")
+    #expect(
+      (sketchyBar["theme_palette"] as? [String: Any])?["status"] as? String
+        == "unavailable"
+    )
+    #expect(
+      (sketchyBar["rendered_artifacts"] as? [String: String])?.keys.sorted()
+        == ["plugins/clock.sh", "plugins/space-indexes.sh", "sketchybarrc"]
+    )
     #expect(
       actions.compactMap { $0["id"] as? String }
-        == ["publish_yabai_generation", "install_yabai_entry", "restart_yabai_service"]
+        == [
+          "publish_yabai_generation", "install_yabai_entry", "restart_yabai_service",
+          "activate_sketchybar_theme_palette", "publish_sketchybar_generation",
+          "install_sketchybar_entry", "reload_sketchybar_service",
+        ]
     )
     #expect((report["rendered_yabairc"] as? String)?.contains("layout bsp") == true)
     #expect(!FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config").path))
@@ -58,12 +75,14 @@ struct DesktopPlanCommandTests {
     #expect(provider["ownership"] as? String == "directory_symlink")
     #expect(provider["source"] as? String == dotfiles.appending(path: "yabairc").path)
     #expect((provider["adoption_evidence_digest"] as? String)?.hasPrefix("sha256:") == true)
-    #expect(actions.dropLast().last?["id"] as? String == "adopt_yabai_directory_symlink")
-    #expect(actions.last?["id"] as? String == "restart_yabai_service")
+    #expect(
+      actions.compactMap { $0["id"] as? String }.contains("adopt_yabai_directory_symlink")
+    )
+    #expect(actions.compactMap { $0["id"] as? String }.contains("restart_yabai_service"))
   }
 
   @Test
-  func unsafeDirectoryInventoryBlocksManagedButDisabledPreservesIt() throws {
+  func disabledDesktopPreservesExternalYabaiAndPlansTheStandaloneBar() throws {
     let fixture = try planFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let dotfiles = fixture.root.appending(path: "dotfiles-yabai", directoryHint: .isDirectory)
@@ -99,11 +118,176 @@ struct DesktopPlanCommandTests {
     let disabled = try execute(fixture, json: true, profileRequired: true)
     let disabledReport = try jsonObject(disabled.output)
     let provider = try #require(disabledReport["provider"] as? [String: Any])
+    let sketchyBar = try #require(disabledReport["sketchybar"] as? [String: Any])
     #expect(disabled.succeeded)
-    #expect(disabledReport["outcome"] as? String == "no_change")
+    #expect(disabledReport["outcome"] as? String == "ready")
     #expect(disabledReport["rendered_yabairc"] == nil)
     #expect(provider["status"] as? String == "externally_managed")
-    #expect((disabledReport["actions"] as? [Any])?.isEmpty == true)
+    #expect(
+      sketchyBar["space_module"] as? String
+        == "disabled_without_supported_desktop"
+    )
+    #expect(
+      (disabledReport["actions"] as? [[String: Any]])?.compactMap { $0["id"] as? String }
+        == [
+          "activate_sketchybar_theme_palette", "publish_sketchybar_generation",
+          "install_sketchybar_entry", "reload_sketchybar_service",
+        ]
+    )
+  }
+
+  @Test
+  func sketchyBarDirectorySymlinkRequiresExplicitAdoptionWithoutReadingNestedCode() throws {
+    let fixture = try planFixture()
+    let dotfiles = fixture.root.appending(path: "dotfiles-sketchybar", directoryHint: .isDirectory)
+    let nested = dotfiles.appending(path: "items", directoryHint: .isDirectory)
+    defer {
+      try? FileManager.default.setAttributes(
+        [.posixPermissions: 0o700],
+        ofItemAtPath: nested.path
+      )
+      try? FileManager.default.removeItem(at: fixture.root)
+    }
+    try FileManager.default.createDirectory(
+      at: nested,
+      withIntermediateDirectories: true
+    )
+    try "#!/bin/sh\nexit 0\n".write(
+      to: dotfiles.appending(path: "sketchybarrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "uninspected nested code\n".write(
+      to: dotfiles.appending(path: "items/personal.sh"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: nested.path)
+    let configuration = fixture.home.appending(path: ".config", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: configuration, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: configuration.appending(path: "sketchybar", directoryHint: .isDirectory),
+      withDestinationURL: dotfiles
+    )
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let provider = try #require(sketchyBar["provider"] as? [String: Any])
+    let actionIDs = try #require(report["actions"] as? [[String: Any]])
+      .compactMap { $0["id"] as? String }
+
+    #expect(execution.succeeded)
+    #expect(provider["status"] as? String == "adoption_required")
+    #expect(provider["ownership"] as? String == "directory_symlink")
+    #expect(provider["source"] as? String == dotfiles.appending(path: "sketchybarrc").path)
+    #expect((provider["adoption_evidence_digest"] as? String)?.hasPrefix("sha256:") == true)
+    #expect(actionIDs.contains("adopt_sketchybar_directory_symlink"))
+  }
+
+  @Test
+  func disabledTopBarPreservesExternalConfigurationAndPlansNoBarActions() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let configuration = fixture.home.appending(
+      path: ".config/sketchybar",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: configuration, withIntermediateDirectories: true)
+    try "external\n".write(
+      to: configuration.appending(path: "sketchybarrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try """
+    schema_version = 1
+    [top_bar]
+    provider = "disabled"
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+
+    let execution = try execute(fixture, json: true, profileRequired: true)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let provider = try #require(sketchyBar["provider"] as? [String: Any])
+    let actionIDs = try #require(report["actions"] as? [[String: Any]])
+      .compactMap { $0["id"] as? String }
+
+    #expect(execution.succeeded)
+    #expect(provider["status"] as? String == "externally_managed")
+    #expect(sketchyBar["rendered_artifacts"] == nil)
+    #expect(!actionIDs.contains { $0.contains("sketchybar") })
+  }
+
+  @Test
+  func managedSketchyBarLinkWithoutASelectedGenerationBlocksExplicitly() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let configuration = fixture.home.appending(
+      path: ".config/sketchybar",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: configuration, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      atPath: configuration.appending(path: "sketchybarrc").path,
+      withDestinationPath: SketchyBarProviderPlanInspector.managedTarget(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.home.appending(
+          path: ".config/macarchy",
+          directoryHint: .isDirectory
+        )
+      )
+    )
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let provider = try #require(sketchyBar["provider"] as? [String: Any])
+
+    #expect(!execution.succeeded)
+    #expect(provider["status"] as? String == "blocked")
+    #expect(provider["ownership"] as? String == "managed_target_without_generation")
+    #expect((report["actions"] as? [Any])?.isEmpty == true)
+  }
+
+  @Test
+  func multiplyLinkedManagedSketchyBarEntryIsNeverClassifiedAsManaged() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let configuration = fixture.home.appending(
+      path: ".config/sketchybar",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: configuration, withIntermediateDirectories: true)
+    let entry = configuration.appending(path: "sketchybarrc")
+    try FileManager.default.createSymbolicLink(
+      atPath: entry.path,
+      withDestinationPath: SketchyBarProviderPlanInspector.managedTarget(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.home.appending(
+          path: ".config/macarchy",
+          directoryHint: .isDirectory
+        )
+      )
+    )
+    let alias = configuration.appending(path: "sketchybarrc-alias")
+    let linked = entry.path.withCString { source in
+      alias.path.withCString { destination in
+        Darwin.linkat(AT_FDCWD, source, AT_FDCWD, destination, 0)
+      }
+    }
+    #expect(linked == 0)
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let provider = try #require(sketchyBar["provider"] as? [String: Any])
+
+    #expect(!execution.succeeded)
+    #expect(provider["status"] as? String == "blocked")
+    #expect(provider["ownership"] as? String == "uninspectable")
+    var aliasMetadata = stat()
+    #expect(lstat(alias.path, &aliasMetadata) == 0)
+    #expect(aliasMetadata.st_nlink == 2)
   }
 
   @Test

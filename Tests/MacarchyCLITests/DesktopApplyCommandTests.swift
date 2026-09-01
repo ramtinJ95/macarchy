@@ -32,6 +32,8 @@ struct DesktopApplyCommandTests {
     provider = "disabled"
     [yabai]
     hook = "unused-while-disabled.sh"
+    [top_bar]
+    provider = "disabled"
     """.write(to: fixture.profile, atomically: true, encoding: .utf8)
     let disablePlan = try DesktopPlanCommandRunner.live.execute(
       resourcesRoot: fixture.resources,
@@ -39,7 +41,8 @@ struct DesktopApplyCommandTests {
       profileRequired: true,
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
-      json: true
+      json: true,
+      scope: .yabaiOnly
     )
     let disablePlanReport = try #require(
       JSONSerialization.jsonObject(with: Data(disablePlan.output.utf8)) as? [String: Any]
@@ -118,12 +121,14 @@ struct DesktopApplyCommandTests {
       profileRequired: false,
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
-      json: true
+      json: true,
+      scope: .yabaiOnly
     )
     let planReport = try #require(
       JSONSerialization.jsonObject(with: Data(plan.output.utf8)) as? [String: Any]
     )
     #expect((planReport["actions"] as? [Any])?.isEmpty == true)
+    #expect(planReport["sketchybar"] == nil)
 
     let status = try DesktopStatusCommandRunner(lifecycle: lifecycle.controller).execute(
       resourcesRoot: fixture.resources,
@@ -395,7 +400,8 @@ private struct DesktopApplyFixture {
       profileRequired: false,
       stateRoot: state,
       homeDirectory: home,
-      json: true
+      json: true,
+      scope: .yabaiOnly
     )
     let object = try #require(
       JSONSerialization.jsonObject(with: Data(execution.output.utf8)) as? [String: Any]

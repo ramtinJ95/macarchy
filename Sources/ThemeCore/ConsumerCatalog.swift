@@ -522,11 +522,26 @@ package struct ConsumerCatalog: Sendable {
       renderer: ConsumerRendererRegistration(
         id: SketchyBarAdapter.id,
         version: SketchyBarAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: SketchyBarAdapter.outputPath)]
+        artifacts: [
+          RenderedArtifactMetadata(path: SketchyBarAdapter.outputPath),
+          RenderedArtifactMetadata(
+            path: SketchyBarAdapter.shellOutputPath,
+            requirement: .requiredWhenRendererVersion(
+              renderer: .sketchyBar,
+              minimumVersion: 2
+            )
+          ),
+        ]
       ) { package, _, _ in
         [
           ConsumerRenderedOutput(
-            path: SketchyBarAdapter.outputPath, string: SketchyBarAdapter.render(package: package))
+            path: SketchyBarAdapter.outputPath,
+            string: SketchyBarAdapter.render(package: package)
+          ),
+          ConsumerRenderedOutput(
+            path: SketchyBarAdapter.shellOutputPath,
+            string: SketchyBarAdapter.renderShellPalette(package: package)
+          ),
         ]
       },
       dependencies: [.init(id: SketchyBarAdapter.id, role: .desktopSubstrate)]

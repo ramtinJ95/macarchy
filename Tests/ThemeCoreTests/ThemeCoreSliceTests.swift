@@ -40,6 +40,14 @@ struct ThemeCoreSliceTests {
     #expect(VersionGatedRendererIdentity(id: NeovimAdapter.id) == .neovim)
     #expect(VersionGatedRendererIdentity(id: SlackAdapter.id) == .slack)
     #expect(VersionGatedRendererIdentity(id: "fixture-renderer").id == "fixture-renderer")
+    #expect(
+      try !ThemeRenderer.requiredOutputPaths(rendererVersions: ["sketchybar": 1])
+        .contains(SketchyBarAdapter.shellOutputPath)
+    )
+    #expect(
+      try ThemeRenderer.requiredOutputPaths(rendererVersions: ["sketchybar": 2])
+        .contains(SketchyBarAdapter.shellOutputPath)
+    )
   }
 
   @Test
@@ -191,7 +199,8 @@ struct ThemeCoreSliceTests {
           "generated/atuin.toml", "generated/bat.tmTheme", "generated/btop.theme",
           "generated/capabilities.json", "generated/eza.yml", "generated/herdr.txt",
           "generated/kitty.conf", "generated/neovim.lua", "generated/pi.json",
-          "generated/sketchybar.lua", "generated/slack.txt", "generated/spicetify.ini",
+          "generated/sketchybar.lua", "generated/sketchybar.sh", "generated/slack.txt",
+          "generated/spicetify.ini",
           "generated/starship.toml", "generated/tuicr.toml", "generated/wallpaper.png",
           "generated/yazi-flavor.toml", "generated/yazi.tmTheme", "theme.json",
         ]
@@ -210,6 +219,9 @@ struct ThemeCoreSliceTests {
       NeovimAdapter.outputPath: Data(rendered.neovimTheme.utf8),
       PiAdapter.outputPath: Data(rendered.piTheme.utf8),
       SketchyBarAdapter.outputPath: Data(rendered.sketchyBarPalette.utf8),
+      SketchyBarAdapter.shellOutputPath: Data(
+        SketchyBarAdapter.renderShellPalette(package: package).utf8
+      ),
       SlackAdapter.outputPath: Data(rendered.slackTheme.utf8),
       SpicetifyAdapter.outputPath: Data(rendered.spicetifyTheme.utf8),
       StarshipAdapter.outputPath: Data(rendered.starshipPalette.utf8),
@@ -337,6 +349,7 @@ struct ThemeCoreSliceTests {
         (NeovimAdapter.outputPath, "neovim.lua"),
         (PiAdapter.outputPath, "pi.json"),
         (SketchyBarAdapter.outputPath, "sketchybar.lua"),
+        (SketchyBarAdapter.shellOutputPath, "sketchybar.sh"),
         (SlackAdapter.outputPath, "slack.txt"),
         (SpicetifyAdapter.outputPath, "spicetify.ini"),
         (StarshipAdapter.outputPath, "starship.toml"),
