@@ -68,7 +68,7 @@ package enum SketchyBarConfigurationError: Error, CustomStringConvertible, Senda
 package struct SketchyBarConfigurationComposer: Sendable {
   package static let providerID = "sketchybar"
   package static let paletteArtifactPath = "generated/sketchybar.sh"
-  static let readyItem = "macarchy.theme.ready"
+  package static let readyItem = "macarchy.theme.ready"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
     "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"

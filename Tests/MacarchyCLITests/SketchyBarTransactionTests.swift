@@ -418,11 +418,12 @@ struct SketchyBarTransactionTests {
       adoptionEvidenceDigest: nil
     )
     let lifecycleStore = SketchyBarLifecycleEvidenceStore(stateRoot: fixture.state)
-    let runtime = try #require(try lifecycleStore.read()?.runtime)
+    let evidence = try #require(try lifecycleStore.read())
     try lifecycleStore.write(
       SketchyBarLifecycleEvidence(
         generationID: "s-00000000-0000-0000-0000-000000000000",
-        runtime: runtime
+        runtime: evidence.runtime,
+        coreRuntime: evidence.coreRuntime
       )
     )
 
@@ -476,6 +477,25 @@ struct SketchyBarTransactionTests {
   }
 
   @Test
+  func failedCoreRuntimeVerificationRestoresTheOriginalBeforeReloadingIt() throws {
+    let fixture = try SketchyBarTransactionFixture(coreRuntimeStatus: .drifted)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("personal\n")
+
+    #expect(throws: SketchyBarDesktopError.self) {
+      try fixture.transaction().convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: try fixture.adoptionDigest()
+      )
+    }
+
+    #expect(fixture.lifecycle.reloadEntryStates == ["managed", "personal"])
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal\n")
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+    #expect(try SketchyBarLifecycleEvidenceStore(stateRoot: fixture.state).read() == nil)
+  }
+
+  @Test
   func interruptedStartIsStoppedAfterFilesystemRecovery() throws {
     let fixture = try SketchyBarTransactionFixture(serviceRunning: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -513,8 +533,13 @@ private struct SketchyBarTransactionFixture {
   let state: URL
   let composition: SketchyBarComposition
   let lifecycle: SketchyBarLifecycleFixture
+  let coreRuntime: SketchyBarCoreRuntimeInspection
 
-  init(serviceRunning: Bool = true, failedReloads: Int = 0) throws {
+  init(
+    serviceRunning: Bool = true,
+    failedReloads: Int = 0,
+    coreRuntimeStatus: SketchyBarCoreRuntimeStatus = .converged
+  ) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-sketchybar-transaction-tests-\(UUID().uuidString.lowercased())",
       directoryHint: .isDirectory
@@ -526,6 +551,15 @@ private struct SketchyBarTransactionFixture {
       failedReloads: failedReloads,
       entry: home.appending(path: ".config/sketchybar/sketchybarrc"),
       current: state.appending(path: "desktop/sketchybar/current")
+    )
+    coreRuntime = SketchyBarCoreRuntimeInspection(
+      status: coreRuntimeStatus,
+      message: coreRuntimeStatus == .converged ? "converged" : "runtime drift",
+      themeGenerationID: "g-00000000-0000-0000-0000-000000000000",
+      barColor: "0xf01e1e2e",
+      items: ["macarchy.clock", "macarchy.space.1", "macarchy.theme.ready"],
+      spaceIndices: [1],
+      clockLabelPresent: true
     )
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
     let profile = try PortableProfileLoader().decode(
@@ -546,6 +580,10 @@ private struct SketchyBarTransactionFixture {
       homeDirectory: home,
       stateRoot: state,
       lifecycle: lifecycle.controller,
+      coreRuntime: SketchyBarCoreRuntimeController(
+        inspect: { _ in self.coreRuntime },
+        settle: { _ in self.coreRuntime }
+      ),
       faultInjector: faultInjector
     )
   }

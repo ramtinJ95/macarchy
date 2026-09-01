@@ -335,26 +335,34 @@ struct SketchyBarLifecycleEvidence: Codable, Equatable, Sendable {
   let schemaVersion: Int
   let generationID: String
   let runtime: SketchyBarRuntimeInspection
+  let coreRuntime: SketchyBarCoreRuntimeInspection
 
-  init(generationID: String, runtime: SketchyBarRuntimeInspection) {
-    schemaVersion = 1
+  init(
+    generationID: String,
+    runtime: SketchyBarRuntimeInspection,
+    coreRuntime: SketchyBarCoreRuntimeInspection
+  ) {
+    schemaVersion = 2
     self.generationID = generationID
     self.runtime = runtime
+    self.coreRuntime = coreRuntime
   }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case generationID = "generation_id"
     case runtime
+    case coreRuntime = "core_runtime"
   }
 
   var isValid: Bool {
     guard
-      schemaVersion == 1,
+      schemaVersion == 2,
       SketchyBarGenerationInspector.isGenerationID(generationID),
       runtime.status == .running,
       runtime.processID.map({ $0 > 0 }) == true,
       runtime.serviceLabel == SketchyBarHomebrewService.serviceLabel,
+      coreRuntime.isValidEvidence,
       let executablePath = runtime.executablePath,
       !executablePath.contains("\0"),
       !executablePath.contains("\n")

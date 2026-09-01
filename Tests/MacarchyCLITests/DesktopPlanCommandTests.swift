@@ -258,7 +258,8 @@ struct DesktopPlanCommandTests {
     _ = try SketchyBarProviderTransaction(
       homeDirectory: fixture.home,
       stateRoot: state,
-      lifecycle: sketchyBarLifecycle
+      lifecycle: sketchyBarLifecycle,
+      coreRuntime: sketchyBarCoreRuntime
     ).convergeLocked(
       composition: try sketchyBarComposition(fixture, stateRoot: state),
       adoptionEvidenceDigest: nil
@@ -288,7 +289,8 @@ struct DesktopPlanCommandTests {
     _ = try SketchyBarProviderTransaction(
       homeDirectory: fixture.home,
       stateRoot: state,
-      lifecycle: sketchyBarLifecycle
+      lifecycle: sketchyBarLifecycle,
+      coreRuntime: sketchyBarCoreRuntime
     ).convergeLocked(
       composition: try sketchyBarComposition(fixture, stateRoot: state),
       adoptionEvidenceDigest: nil
@@ -321,6 +323,7 @@ struct DesktopPlanCommandTests {
       homeDirectory: fixture.home,
       stateRoot: state,
       lifecycle: sketchyBarLifecycle,
+      coreRuntime: sketchyBarCoreRuntime,
       faultInjector: { checkpoint in
         if checkpoint == .generationPublished { throw SketchyBarInterruptionError.injected }
       }
@@ -483,6 +486,22 @@ struct DesktopPlanCommandTests {
       reload: { _ in runtime },
       start: { runtime },
       stop: {}
+    )
+  }
+
+  private var sketchyBarCoreRuntime: SketchyBarCoreRuntimeController {
+    let runtime = SketchyBarCoreRuntimeInspection(
+      status: .converged,
+      message: "converged",
+      themeGenerationID: "g-00000000-0000-0000-0000-000000000000",
+      barColor: "0xf01e1e2e",
+      items: ["macarchy.clock", "macarchy.space.1", "macarchy.theme.ready"],
+      spaceIndices: [1],
+      clockLabelPresent: true
+    )
+    return SketchyBarCoreRuntimeController(
+      inspect: { _ in runtime },
+      settle: { _ in runtime }
     )
   }
 
