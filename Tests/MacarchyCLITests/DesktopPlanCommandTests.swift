@@ -24,7 +24,7 @@ struct DesktopPlanCommandTests {
     #expect(provider["status"] as? String == "install_required")
     #expect(
       actions.compactMap { $0["id"] as? String }
-        == ["publish_yabai_generation", "install_yabai_entry"]
+        == ["publish_yabai_generation", "install_yabai_entry", "restart_yabai_service"]
     )
     #expect((report["rendered_yabairc"] as? String)?.contains("layout bsp") == true)
     #expect(!FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config").path))
@@ -57,7 +57,9 @@ struct DesktopPlanCommandTests {
     #expect(provider["status"] as? String == "adoption_required")
     #expect(provider["ownership"] as? String == "directory_symlink")
     #expect(provider["source"] as? String == dotfiles.appending(path: "yabairc").path)
-    #expect(actions.last?["id"] as? String == "adopt_yabai_directory_symlink")
+    #expect((provider["adoption_evidence_digest"] as? String)?.hasPrefix("sha256:") == true)
+    #expect(actions.dropLast().last?["id"] as? String == "adopt_yabai_directory_symlink")
+    #expect(actions.last?["id"] as? String == "restart_yabai_service")
   }
 
   @Test
@@ -146,6 +148,10 @@ struct DesktopPlanCommandTests {
       resourcesRoot: repositoryRoot.appending(path: "Desktop", directoryHint: .isDirectory),
       profileURL: fixture.profile,
       profileRequired: profileRequired,
+      stateRoot: fixture.home.appending(
+        path: ".config/macarchy",
+        directoryHint: .isDirectory
+      ),
       homeDirectory: fixture.home,
       json: json
     )
