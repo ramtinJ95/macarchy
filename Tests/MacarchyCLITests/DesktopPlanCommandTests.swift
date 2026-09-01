@@ -257,7 +257,8 @@ struct DesktopPlanCommandTests {
     let state = fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
     _ = try SketchyBarProviderTransaction(
       homeDirectory: fixture.home,
-      stateRoot: state
+      stateRoot: state,
+      lifecycle: sketchyBarLifecycle
     ).convergeLocked(
       composition: try sketchyBarComposition(fixture, stateRoot: state),
       adoptionEvidenceDigest: nil
@@ -286,7 +287,8 @@ struct DesktopPlanCommandTests {
     let state = fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
     _ = try SketchyBarProviderTransaction(
       homeDirectory: fixture.home,
-      stateRoot: state
+      stateRoot: state,
+      lifecycle: sketchyBarLifecycle
     ).convergeLocked(
       composition: try sketchyBarComposition(fixture, stateRoot: state),
       adoptionEvidenceDigest: nil
@@ -318,6 +320,7 @@ struct DesktopPlanCommandTests {
     let transaction = SketchyBarProviderTransaction(
       homeDirectory: fixture.home,
       stateRoot: state,
+      lifecycle: sketchyBarLifecycle,
       faultInjector: { checkpoint in
         if checkpoint == .generationPublished { throw SketchyBarInterruptionError.injected }
       }
@@ -465,6 +468,22 @@ struct DesktopPlanCommandTests {
 
   private func jsonObject(_ output: String) throws -> [String: Any] {
     try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+  }
+
+  private var sketchyBarLifecycle: SketchyBarLifecycleController {
+    let runtime = SketchyBarRuntimeInspection(
+      status: .running,
+      message: "running",
+      processID: 123,
+      executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
+      serviceLabel: SketchyBarHomebrewService.serviceLabel
+    )
+    return SketchyBarLifecycleController(
+      preflight: { false },
+      reload: { _ in runtime },
+      start: { runtime },
+      stop: {}
+    )
   }
 
   private var repositoryRoot: URL {

@@ -181,20 +181,23 @@ struct SketchyBarOwnershipRecord: Codable, Equatable, Sendable {
   let original: SketchyBarAdoptionEvidence
   let retainedOriginalPath: String?
   let createdConfigurationDirectory: Bool
+  let priorServiceRunning: Bool
 
   init(
     generationID: String,
     managedTarget: String,
     original: SketchyBarAdoptionEvidence,
     retainedOriginalPath: String?,
-    createdConfigurationDirectory: Bool
+    createdConfigurationDirectory: Bool,
+    priorServiceRunning: Bool
   ) {
-    schemaVersion = 1
+    schemaVersion = 2
     self.generationID = generationID
     self.managedTarget = managedTarget
     self.original = original
     self.retainedOriginalPath = retainedOriginalPath
     self.createdConfigurationDirectory = createdConfigurationDirectory
+    self.priorServiceRunning = priorServiceRunning
   }
 
   enum CodingKeys: String, CodingKey {
@@ -204,6 +207,7 @@ struct SketchyBarOwnershipRecord: Codable, Equatable, Sendable {
     case original
     case retainedOriginalPath = "retained_original_path"
     case createdConfigurationDirectory = "created_configuration_directory"
+    case priorServiceRunning = "prior_service_running"
   }
 }
 
@@ -228,7 +232,7 @@ struct SketchyBarOwnershipStore: Sendable {
 
   static func isValid(_ record: SketchyBarOwnershipRecord, stateRoot: URL) -> Bool {
     guard
-      record.schemaVersion == 1,
+      record.schemaVersion == 2,
       SketchyBarGenerationInspector.isGenerationID(record.generationID),
       record.original.isValid,
       !record.managedTarget.isEmpty,
@@ -600,11 +604,13 @@ struct SketchyBarProviderPlanInspector: Sendable {
 
 enum SketchyBarDesktopError: Error, CustomStringConvertible, Sendable {
   case invalidState(String)
+  case lifecycle(String)
   case system(String, URL, Int32)
 
   var description: String {
     switch self {
     case .invalidState(let reason): reason
+    case .lifecycle(let reason): reason
     case .system(let operation, let url, let code):
       "cannot \(operation) \(url.path): \(String(cString: strerror(code))) (errno \(code))"
     }
