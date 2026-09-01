@@ -24,6 +24,7 @@ struct RuntimeEnvironmentTests {
 
     #expect(runtime.builtInThemesURL.path == checkout.appending(path: "Themes").path)
     #expect(runtime.builtInKeybindingsURL.path == checkout.appending(path: "Keybindings").path)
+    #expect(runtime.builtInDesktopURL.path == checkout.appending(path: "Desktop").path)
     #expect(
       try runtime.buildInformation()
         == MacarchyBuildInformation(
@@ -45,6 +46,7 @@ struct RuntimeEnvironmentTests {
 
     #expect(runtime.builtInThemesURL.path == layout.themes.path)
     #expect(runtime.builtInKeybindingsURL.path == layout.keybindings.path)
+    #expect(runtime.builtInDesktopURL.path == layout.desktop.path)
     #expect(packages.map(\.id) == ["catppuccin-mocha", "kanagawa-wave", "tokyo-night"])
     #expect(try runtime.buildInformation().installation == .unmanaged)
 
@@ -160,11 +162,12 @@ struct RuntimeEnvironmentTests {
     at root: URL,
     includeThemes: Bool = true,
     buildInformation: String? = nil
-  ) throws -> (executable: URL, themes: URL, keybindings: URL) {
+  ) throws -> (executable: URL, themes: URL, keybindings: URL, desktop: URL) {
     let executable = root.appending(path: "bin/macarchy")
     let resources = root.appending(path: "share/macarchy", directoryHint: .isDirectory)
     let themes = resources.appending(path: "themes", directoryHint: .isDirectory)
     let keybindings = resources.appending(path: "keybindings", directoryHint: .isDirectory)
+    let desktop = resources.appending(path: "desktop", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(
       at: executable.deletingLastPathComponent(),
       withIntermediateDirectories: true
@@ -186,7 +189,11 @@ struct RuntimeEnvironmentTests {
       at: repositoryRoot.appending(path: "Keybindings", directoryHint: .isDirectory),
       to: keybindings
     )
-    return (executable, themes, keybindings)
+    try FileManager.default.copyItem(
+      at: repositoryRoot.appending(path: "Desktop", directoryHint: .isDirectory),
+      to: desktop
+    )
+    return (executable, themes, keybindings, desktop)
   }
 
   private func temporaryDirectory(

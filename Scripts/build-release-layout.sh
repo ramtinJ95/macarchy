@@ -56,6 +56,7 @@ install -m 0755 "$binary" "$destination/bin/macarchy"
 /usr/bin/codesign --force --sign - --timestamp=none "$destination/bin/macarchy"
 /usr/bin/ditto "$repository_root/Themes" "$destination/share/macarchy/themes"
 /usr/bin/ditto "$repository_root/Keybindings" "$destination/share/macarchy/keybindings"
+/usr/bin/ditto "$repository_root/Desktop" "$destination/share/macarchy/desktop"
 install -m 0644 \
   "$repository_root/Documentation/theme-json.md" \
   "$destination/share/doc/macarchy/theme-json.md"

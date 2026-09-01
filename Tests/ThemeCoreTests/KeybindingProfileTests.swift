@@ -47,6 +47,64 @@ struct KeybindingProfileTests {
   }
 
   @Test
+  func sharedPortableProfileAcceptsTypedDesktopAndTopBarSelections() throws {
+    let source = URL(filePath: "/fixtures/profile.toml")
+    let text = """
+      schema_version = 1
+      [keybindings]
+      disabled = ["alt-k"]
+      [desktop]
+      provider = "yabai-skhd"
+      [yabai]
+      layout = "stack"
+      window_gap = 9
+      [top_bar]
+      provider = "disabled"
+      """
+
+    let portable = try PortableProfileLoader().decode(text, source: source)
+    let keybindings = try loader.decode(text, source: source)
+
+    #expect(portable.desktop.provider == .yabaiSkhd)
+    #expect(portable.desktop.yabai.layout == "stack")
+    #expect(portable.desktop.yabai.windowGap == 9)
+    #expect(portable.topBar == .disabled)
+    #expect(keybindings.disabledIdentities == ["alt-k"])
+  }
+
+  @Test
+  func rejectsUnknownProvidersAndUnsafeYabaiControls() {
+    let source = URL(filePath: "/fixtures/profile.toml")
+    let invalid: [(String, String)] = [
+      (
+        "schema_version = 1\n[desktop]\nprovider = \"arbitrary-command\"\n",
+        "unsupported provider"
+      ),
+      (
+        "schema_version = 1\n[yabai]\nsplit_ratio = 1.0\n",
+        "must be between 0.1 and 0.9"
+      ),
+      (
+        "schema_version = 1\n[yabai]\nhook = \"/tmp/yabairc\"\n",
+        "must be a relative path"
+      ),
+      (
+        "schema_version = 1\n[top_bar]\nprovider = \"custom\"\n",
+        "unsupported provider"
+      ),
+    ]
+
+    for (document, expected) in invalid {
+      do {
+        _ = try PortableProfileLoader().decode(document, source: source)
+        Issue.record("Expected invalid profile: \(expected)")
+      } catch {
+        #expect(String(describing: error).contains(expected))
+      }
+    }
+  }
+
+  @Test
   func rejectsUnknownFieldsUnsafePathsAndInvalidDisabledIdentities() {
     let source = URL(filePath: "/fixtures/profile.toml")
     let invalid: [(String, String)] = [

@@ -44,6 +44,10 @@ struct RuntimeEnvironment: Sendable {
     builtInResourceURL(packagedName: "keybindings", developmentName: "Keybindings")
   }
 
+  var builtInDesktopURL: URL {
+    builtInResourceURL(packagedName: "desktop", developmentName: "Desktop")
+  }
+
   private func builtInResourceURL(packagedName: String, developmentName: String) -> URL {
     let packaged = packagedResourceRoot.appending(
       path: packagedName,
