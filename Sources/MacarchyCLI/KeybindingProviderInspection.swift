@@ -1032,29 +1032,15 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return .invalid("cannot read setup ownership evidence: \(error)")
     }
-    let manifest: SetupOwnershipManifest
-    do {
-      try SetupOwnershipManager().validateManifestKeys(data)
-      manifest = try JSONDecoder().decode(SetupOwnershipManifest.self, from: data)
-    } catch {
-      return .invalid("setup ownership evidence is invalid: \(error)")
-    }
-    guard manifest.schemaVersion == SetupOwnershipManifest.currentSchemaVersion else {
-      return .invalid("setup ownership evidence has an unsupported schema")
-    }
-    guard Set(manifest.records.map(\.id)).count == manifest.records.count else {
-      return .invalid("setup ownership evidence contains duplicate integration identifiers")
-    }
     let manager = SetupOwnershipManager()
     let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
+    let record: SetupOwnershipRecord?
     do {
-      for record in manifest.records {
-        try manager.validateOwnershipRecord(record, context: context)
-      }
+      record = try manager.keybindingOwnershipRecord(from: data, context: context)
     } catch {
-      return .invalid("setup ownership evidence contains an invalid record: \(error)")
+      return .invalid(error.providerInspectionMessage)
     }
-    guard let record = manifest.records.first(where: { $0.id == Self.ownershipID }) else {
+    guard let record else {
       return .unclaimed
     }
     guard record.targetPath == entry.path, record.linkDestination == expectedTarget else {
