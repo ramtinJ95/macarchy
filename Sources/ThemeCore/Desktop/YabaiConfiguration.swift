@@ -49,6 +49,7 @@ package struct YabaiSettings: Equatable, Codable, Sendable {
 
 package struct YabaiComposition: Equatable, Sendable {
   package let settings: YabaiSettings
+  package let externalBarEnabled: Bool
   package let hookURL: URL?
   package let hookDigest: String?
   package let renderedConfiguration: String
@@ -122,6 +123,7 @@ package struct YabaiConfigurationComposer: Sendable {
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return YabaiComposition(
       settings: settings,
+      externalBarEnabled: profile.topBar == .sketchybar,
       hookURL: options.hookURL,
       hookDigest: hook?.digest,
       renderedConfiguration: rendered,
