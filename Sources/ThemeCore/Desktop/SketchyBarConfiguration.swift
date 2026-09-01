@@ -163,6 +163,14 @@ package struct SketchyBarConfigurationComposer: Sendable {
         contents: renderSpaceIndexes()
       ),
     ]
+    if layout.position(of: .volume) != nil {
+      artifacts.append(
+        SketchyBarConfigurationArtifact(
+          path: "plugins/volume.sh",
+          contents: renderVolume()
+        )
+      )
+    }
     if let hook {
       artifacts.append(
         SketchyBarConfigurationArtifact(
@@ -350,6 +358,12 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.clock \(position.rawValue) \\",
             "  --set macarchy.clock icon.drawing=off update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
           ]
+        case .volume:
+          lines += [
+            "\"$SKETCHYBAR\" --add item macarchy.volume \(position.rawValue) \\",
+            "  --set macarchy.volume icon=\"VOL\" label=\"--%\" script=\"$PLUGIN_DIR/volume.sh\"",
+            "\"$SKETCHYBAR\" --subscribe macarchy.volume volume_change system_woke",
+          ]
         }
         lines.append("")
       }
@@ -388,6 +402,27 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "  exit 1",
       "fi",
       "printf '%s\\n' \"$INDICES\"",
+    ].joined(separator: "\n") + "\n"
+  }
+
+  private func renderVolume() -> String {
+    [
+      "#!/bin/sh",
+      "set -eu",
+      ": \"${NAME:?SketchyBar did not provide an item name}\"",
+      "if [ \"${SENDER-}\" = volume_change ]; then",
+      "  VOLUME=${INFO-}",
+      "else",
+      "  VOLUME=$(/usr/bin/osascript -e 'output volume of (get volume settings)')",
+      "fi",
+      "case \"$VOLUME\" in",
+      "  ''|*[!0-9]*) echo 'cannot read system output volume' >&2; exit 1 ;;",
+      "esac",
+      "if [ \"$VOLUME\" -gt 100 ]; then",
+      "  echo 'system output volume is outside 0...100' >&2",
+      "  exit 1",
+      "fi",
+      "/opt/homebrew/bin/sketchybar --set \"$NAME\" label=\"${VOLUME}%\"",
     ].joined(separator: "\n") + "\n"
   }
 

@@ -17,6 +17,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
   let items: [String]
   let spaceIndices: [Int]
   let clockLabelPresent: Bool
+  let volumeLevelPresent: Bool?
 
   init(
     status: SketchyBarCoreRuntimeStatus,
@@ -25,7 +26,8 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     barColor: String? = nil,
     items: [String] = [],
     spaceIndices: [Int] = [],
-    clockLabelPresent: Bool = false
+    clockLabelPresent: Bool = false,
+    volumeLevelPresent: Bool = false
   ) {
     schemaVersion = 1
     self.status = status
@@ -35,6 +37,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     self.items = items
     self.spaceIndices = spaceIndices
     self.clockLabelPresent = clockLabelPresent
+    self.volumeLevelPresent = volumeLevelPresent
   }
 
   var isValidEvidence: Bool {
@@ -56,8 +59,11 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     else { return false }
     let hasClock = items.contains("macarchy.clock")
     guard hasClock == clockLabelPresent else { return false }
+    let hasVolume = items.contains("macarchy.volume")
+    guard hasVolume == (volumeLevelPresent ?? false) else { return false }
     var managedItems = [SketchyBarConfigurationComposer.readyItem]
     if hasClock { managedItems.append("macarchy.clock") }
+    if hasVolume { managedItems.append("macarchy.volume") }
     if items.contains("macarchy.spaces.unavailable") {
       guard spaceIndices.isEmpty else { return false }
       managedItems.append("macarchy.spaces.unavailable")
@@ -89,6 +95,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     case items
     case spaceIndices = "space_indices"
     case clockLabelPresent = "clock_label_present"
+    case volumeLevelPresent = "volume_level_present"
   }
 }
 
@@ -355,6 +362,49 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       }
     }
 
+    var volumeLevelPresent = false
+    if let volumePosition = composition.layout.position(of: .volume) {
+      let volume: SketchyBarItemQuery = try query(
+        control: Self.controlURL,
+        arguments: ["--query", "macarchy.volume"],
+        timeout: 0.1
+      )
+      let events: [String: SketchyBarEventQuery] = try query(
+        control: Self.controlURL,
+        arguments: ["--query", "events"],
+        timeout: 0.1
+      )
+      let expectedVolumeScript = stateRoot.appending(
+        path: "desktop/sketchybar/current/plugins/volume.sh"
+      ).path
+      let volumeEventBit = events["volume_change"]?.bit
+      let wakeEventBit = events["system_woke"]?.bit
+      let requiredEventMask = (volumeEventBit ?? 0) | (wakeEventBit ?? 0)
+      volumeLevelPresent = Self.isVolumeLabel(volume.label.value)
+      guard
+        volumeEventBit.map({ $0 > 0 }) == true,
+        wakeEventBit.map({ $0 > 0 }) == true,
+        volume.name == "macarchy.volume",
+        volume.type == "item",
+        volume.geometry.drawing == "on",
+        volume.geometry.position == volumePosition.rawValue,
+        volume.label.drawing == "on",
+        volumeLevelPresent,
+        volume.scripting.script == expectedVolumeScript,
+        volume.scripting.updateFrequency == 0,
+        volume.scripting.updateMask.map({ $0 & requiredEventMask == requiredEventMask }) == true
+      else {
+        return drifted(
+          "running SketchyBar volume module is incomplete, misplaced, or unsubscribed",
+          palette: palette,
+          items: items,
+          spaceIndices: spaceIndices,
+          clockLabelPresent: clockLabelPresent,
+          volumeLevelPresent: volumeLevelPresent
+        )
+      }
+    }
+
     let finalBar: SketchyBarBarQuery = try query(
       control: Self.controlURL,
       arguments: ["--query", "bar"],
@@ -366,7 +416,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         palette: palette,
         items: finalBar.items.sorted(),
         spaceIndices: spaceIndices,
-        clockLabelPresent: clockLabelPresent
+        clockLabelPresent: clockLabelPresent,
+        volumeLevelPresent: volumeLevelPresent
       )
     }
 
@@ -380,7 +431,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       barColor: palette.color,
       items: items,
       spaceIndices: spaceIndices,
-      clockLabelPresent: clockLabelPresent
+      clockLabelPresent: clockLabelPresent,
+      volumeLevelPresent: volumeLevelPresent
     )
   }
 
@@ -443,6 +495,9 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     if layout.position(of: .clock) != nil {
       names.append("macarchy.clock")
     }
+    if layout.position(of: .volume) != nil {
+      names.append("macarchy.volume")
+    }
     switch spaceModule {
     case .dynamicYabai:
       names += spaceIndices.map { "macarchy.space.\($0)" }
@@ -452,6 +507,16 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       break
     }
     return names.sorted()
+  }
+
+  private static func isVolumeLabel(_ value: String) -> Bool {
+    guard value.hasSuffix("%") else { return false }
+    let digits = value.dropLast()
+    return !digits.isEmpty && digits.count <= 3
+      && digits.allSatisfy(\.isNumber)
+      && digits.allSatisfy(\.isASCII)
+      && (digits.first != "0" || digits.count == 1)
+      && Int(digits).map({ (0...100).contains($0) }) == true
   }
 
   private func query<Value: Decodable>(
@@ -483,7 +548,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     palette: (generationID: String, color: String),
     items: [String],
     spaceIndices: [Int],
-    clockLabelPresent: Bool = false
+    clockLabelPresent: Bool = false,
+    volumeLevelPresent: Bool = false
   ) -> SketchyBarCoreRuntimeInspection {
     SketchyBarCoreRuntimeInspection(
       status: .drifted,
@@ -492,7 +558,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       barColor: palette.color,
       items: items,
       spaceIndices: spaceIndices,
-      clockLabelPresent: clockLabelPresent
+      clockLabelPresent: clockLabelPresent,
+      volumeLevelPresent: volumeLevelPresent
     )
   }
 
@@ -537,11 +604,13 @@ private struct SketchyBarItemQuery: Decodable {
     let script: String
     let clickScript: String
     let updateFrequency: Int
+    let updateMask: UInt64?
 
     enum CodingKeys: String, CodingKey {
       case script
       case clickScript = "click_script"
       case updateFrequency = "update_freq"
+      case updateMask = "update_mask"
     }
   }
 
@@ -550,6 +619,10 @@ private struct SketchyBarItemQuery: Decodable {
   let geometry: Geometry
   let label: Label
   let scripting: Scripting
+}
+
+private struct SketchyBarEventQuery: Decodable {
+  let bit: UInt64
 }
 
 private struct YabaiSpaceQuery: Decodable {

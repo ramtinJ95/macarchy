@@ -73,7 +73,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test
-  func profileControlsModuleVisibilityPositionAndOrder() throws {
+  func profileControlsModuleVisibilityPositionOrderAndOptionalVolume() throws {
     let root = try configurationRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
@@ -81,7 +81,7 @@ struct SketchyBarConfigurationTests {
       schema_version = 1
       [sketchybar]
       left = ["clock", "spaces"]
-      right = []
+      right = ["volume"]
       """,
       source: root.appending(path: "profile.toml")
     )
@@ -100,12 +100,24 @@ struct SketchyBarConfigurationTests {
 
     #expect(composition.layout.left == [.clock, .spaces])
     #expect(composition.layout.center.isEmpty)
-    #expect(composition.layout.right.isEmpty)
+    #expect(composition.layout.right == [.volume])
     let clock = try #require(entry.contents.range(of: "--add item macarchy.clock left"))
     let spaces = try #require(entry.contents.range(of: "--add space \"$item\" left"))
     #expect(clock.lowerBound < spaces.lowerBound)
+    #expect(entry.contents.contains("--add item macarchy.volume right"))
+    #expect(
+      entry.contents.contains(
+        "--subscribe macarchy.volume volume_change system_woke"
+      )
+    )
+    let volume = try #require(
+      composition.artifacts.first { $0.path == "plugins/volume.sh" }
+    )
+    #expect(volume.contents.contains("/usr/bin/osascript"))
+    #expect(defaultComposition.artifacts.allSatisfy { $0.path != "plugins/volume.sh" })
     #expect(composition.inputDigest != defaultComposition.inputDigest)
     #expect(composition.renderedDigest != defaultComposition.renderedDigest)
+    try requireValidShellSyntax(composition.artifacts, root: root)
   }
 
   @Test

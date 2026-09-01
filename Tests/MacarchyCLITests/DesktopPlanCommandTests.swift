@@ -448,6 +448,36 @@ struct DesktopPlanCommandTests {
   }
 
   @Test
+  func planReportsTheOptInVolumeCapabilityAndExactPlugin() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try """
+    schema_version = 1
+    [sketchybar]
+    right = ["volume", "clock"]
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+
+    let execution = try execute(fixture, json: true, profileRequired: true)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let layout = try #require(sketchyBar["layout"] as? [String: Any])
+    let capabilities = try #require(
+      sketchyBar["module_capabilities"] as? [String: String]
+    )
+    let artifacts = try #require(sketchyBar["rendered_artifacts"] as? [String: String])
+
+    #expect(execution.succeeded)
+    #expect(layout["right"] as? [String] == ["volume", "clock"])
+    #expect(capabilities == ["volume": "supported_macos_builtin"])
+    #expect(artifacts["plugins/volume.sh"]?.contains("/usr/bin/osascript") == true)
+    #expect(
+      artifacts["sketchybarrc"]?.contains(
+        "--subscribe macarchy.volume volume_change system_woke"
+      ) == true
+    )
+  }
+
+  @Test
   func humanPlanIncludesExactBytesAndNoChangeNotice() throws {
     let fixture = try planFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
