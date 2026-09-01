@@ -2,6 +2,11 @@ import Darwin
 import Foundation
 import ThemeCore
 
+enum SketchyBarTransactionOperation: String, Codable, Sendable {
+  case apply
+  case teardown
+}
+
 enum SketchyBarTransactionPhase: String, Codable, Sendable {
   case prepared
   case generationPublished = "generation_published"
@@ -14,6 +19,7 @@ enum SketchyBarTransactionPhase: String, Codable, Sendable {
 
 struct SketchyBarTransaction: Codable, Equatable, Sendable {
   let schemaVersion: Int
+  let operation: SketchyBarTransactionOperation
   var phase: SketchyBarTransactionPhase
   let generationID: String
   let previousGenerationID: String?
@@ -22,8 +28,10 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
   let previousOwnership: SketchyBarOwnershipRecord?
   let previousLifecycle: SketchyBarLifecycleEvidence?
   let serviceWasRunning: Bool
+  let teardownGenerationIDs: [String]?
 
   init(
+    operation: SketchyBarTransactionOperation,
     phase: SketchyBarTransactionPhase,
     generationID: String,
     previousGenerationID: String?,
@@ -31,9 +39,11 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
     ownership: SketchyBarOwnershipRecord,
     previousOwnership: SketchyBarOwnershipRecord?,
     previousLifecycle: SketchyBarLifecycleEvidence?,
-    serviceWasRunning: Bool
+    serviceWasRunning: Bool,
+    teardownGenerationIDs: [String]? = nil
   ) {
-    schemaVersion = 2
+    schemaVersion = 3
+    self.operation = operation
     self.phase = phase
     self.generationID = generationID
     self.previousGenerationID = previousGenerationID
@@ -42,11 +52,12 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
     self.previousOwnership = previousOwnership
     self.previousLifecycle = previousLifecycle
     self.serviceWasRunning = serviceWasRunning
+    self.teardownGenerationIDs = teardownGenerationIDs
   }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
-    case phase
+    case operation, phase
     case generationID = "generation_id"
     case previousGenerationID = "previous_generation_id"
     case generationCreated = "generation_created"
@@ -54,6 +65,7 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
     case previousOwnership = "previous_ownership"
     case previousLifecycle = "previous_lifecycle"
     case serviceWasRunning = "service_was_running"
+    case teardownGenerationIDs = "teardown_generation_ids"
   }
 }
 
@@ -108,15 +120,34 @@ struct SketchyBarTransactionStore: Sendable {
           && $0.generationID == transaction.previousGenerationID
           && transaction.previousOwnership != nil
       } ?? true
+    let operationIsValid =
+      switch transaction.operation {
+      case .apply:
+        transaction.teardownGenerationIDs == nil
+      case .teardown:
+        transaction.teardownGenerationIDs.map {
+          !$0.isEmpty
+            && $0 == $0.sorted()
+            && Set($0).count == $0.count
+            && $0.contains(transaction.generationID)
+            && $0.allSatisfy(SketchyBarGenerationInspector.isGenerationID)
+        } == true
+          && !transaction.generationCreated
+          && transaction.generationID == transaction.previousGenerationID
+          && transaction.previousOwnership == transaction.ownership
+          && [.providerChanging, .providerChanged, .serviceChanging, .serviceChanged]
+            .contains(transaction.phase)
+      }
     guard
-      transaction.schemaVersion == 2,
+      transaction.schemaVersion == 3,
       SketchyBarGenerationInspector.isGenerationID(transaction.generationID),
       transaction.previousGenerationID.map(SketchyBarGenerationInspector.isGenerationID) ?? true,
       SketchyBarOwnershipStore.isValid(transaction.ownership, stateRoot: stateRoot),
       transaction.ownership.generationID == transaction.generationID,
       generationRelationshipIsValid,
       previousOwnershipIsValid,
-      previousLifecycleIsValid
+      previousLifecycleIsValid,
+      operationIsValid
     else {
       throw SketchyBarDesktopError.invalidState("SketchyBar transaction record is invalid")
     }
@@ -129,7 +160,9 @@ enum SketchyBarTransactionCheckpoint: Sendable {
   case originalRetained
   case configurationDirectoryCreated
   case providerChanged
+  case providerRestored
   case serviceChanged
+  case generationDeselected
 }
 
 enum SketchyBarInterruptionError: Error, Sendable {
@@ -137,7 +170,7 @@ enum SketchyBarInterruptionError: Error, Sendable {
 }
 
 struct SketchyBarFilesystemConvergenceResult: Equatable, Sendable {
-  let generationID: String
+  let generationID: String?
   let changed: Bool
 }
 
@@ -168,9 +201,7 @@ struct SketchyBarProviderTransaction: Sendable {
     adoptionEvidenceDigest: String?
   ) throws -> SketchyBarFilesystemConvergenceResult {
     let transactionStore = SketchyBarTransactionStore(stateRoot: stateRoot)
-    if let pending = try transactionStore.read() {
-      try recoverApply(pending)
-    }
+    _ = try recoverPendingLocked()
 
     let generationInspector = SketchyBarGenerationInspector(stateRoot: stateRoot)
     let previousGeneration = generationInspector.inspect()
@@ -205,7 +236,7 @@ struct SketchyBarProviderTransaction: Sendable {
       if provider.status == .adoptionRequired {
         guard adoptionEvidenceDigest == original.digest else {
           throw SketchyBarDesktopError.invalidState(
-            "adoption requires --adopt \(original.digest) from the current reviewed plan"
+            "adoption requires --sketchybar-adopt \(original.digest) from the current reviewed plan"
           )
         }
       }
@@ -241,10 +272,12 @@ struct SketchyBarProviderTransaction: Sendable {
       createdConfigurationDirectory: createdConfigurationDirectory,
       priorServiceRunning: previousOwnership?.priorServiceRunning ?? serviceWasRunning
     )
+    let currentRuntime = serviceWasRunning ? try lifecycle.inspect() : nil
     let currentCoreRuntime = serviceWasRunning ? coreRuntime.inspect(composition) : nil
     if generationAgrees,
       previousOwnership == ownership,
       previousLifecycle?.generationID == generationID,
+      previousLifecycle?.runtime == currentRuntime,
       previousLifecycle?.coreRuntime == currentCoreRuntime,
       currentCoreRuntime?.status == .converged,
       serviceWasRunning
@@ -256,6 +289,7 @@ struct SketchyBarProviderTransaction: Sendable {
     }
 
     var transaction = SketchyBarTransaction(
+      operation: .apply,
       phase: .prepared,
       generationID: generationID,
       previousGenerationID: previousGeneration.generationID,
@@ -345,8 +379,30 @@ struct SketchyBarProviderTransaction: Sendable {
     }
   }
 
+  func recoverPendingLocked() throws -> SketchyBarTransaction? {
+    let store = SketchyBarTransactionStore(stateRoot: stateRoot)
+    guard let pending = try store.read() else { return nil }
+    switch pending.operation {
+    case .apply: try recoverApply(pending)
+    case .teardown: try completeTeardown(pending)
+    }
+    return pending
+  }
+
   func recoverApply(_ transaction: SketchyBarTransaction) throws {
+    guard transaction.operation == .apply else {
+      throw SketchyBarDesktopError.invalidState(
+        "cannot roll back a SketchyBar teardown as an apply"
+      )
+    }
     try validateContext(transaction)
+    let activator = SketchyBarGenerationActivator(stateRoot: stateRoot)
+    try activator.removeCurrentSelectionResidue(transaction.generationID)
+    if let previousGenerationID = transaction.previousGenerationID,
+      previousGenerationID != transaction.generationID
+    {
+      try activator.removeCurrentSelectionResidue(previousGenerationID)
+    }
     try authenticateCurrentForRecovery(transaction)
     if let previousOwnership = transaction.previousOwnership {
       guard isManagedEntry(target: previousOwnership.managedTarget) else {
@@ -378,7 +434,6 @@ struct SketchyBarProviderTransaction: Sendable {
         }
       }
     }
-    let activator = SketchyBarGenerationActivator(stateRoot: stateRoot)
     try activator.restoreCurrent(transaction.previousGenerationID)
     let ownershipStore = SketchyBarOwnershipStore(stateRoot: stateRoot)
     if let previous = transaction.previousOwnership {
@@ -404,11 +459,130 @@ struct SketchyBarProviderTransaction: Sendable {
     try SketchyBarTransactionStore(stateRoot: stateRoot).remove()
   }
 
+  func teardownLocked(dryRun: Bool) throws -> SketchyBarFilesystemConvergenceResult {
+    let transactionStore = SketchyBarTransactionStore(stateRoot: stateRoot)
+    var recoveredGenerationID: String?
+    if let pending = try transactionStore.read() {
+      if dryRun {
+        return SketchyBarFilesystemConvergenceResult(
+          generationID: pending.generationID,
+          changed: true
+        )
+      }
+      switch pending.operation {
+      case .apply: try recoverApply(pending)
+      case .teardown: try completeTeardown(pending)
+      }
+      recoveredGenerationID = pending.generationID
+    }
+
+    guard let ownership = try SketchyBarOwnershipStore(stateRoot: stateRoot).read() else {
+      return SketchyBarFilesystemConvergenceResult(
+        generationID: recoveredGenerationID,
+        changed: recoveredGenerationID != nil
+      )
+    }
+    let provider = SketchyBarProviderPlanInspector().inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      enabled: true,
+      generation: SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
+    )
+    guard provider.status == .managed else {
+      throw SketchyBarDesktopError.invalidState(provider.message)
+    }
+    let activator = SketchyBarGenerationActivator(stateRoot: stateRoot)
+    let teardownGenerationIDs = try activator.validatedGenerationIDs()
+    guard teardownGenerationIDs.contains(ownership.generationID) else {
+      throw SketchyBarDesktopError.invalidState(
+        "selected SketchyBar generation is absent from the owned inventory"
+      )
+    }
+    if dryRun {
+      return SketchyBarFilesystemConvergenceResult(
+        generationID: ownership.generationID,
+        changed: true
+      )
+    }
+
+    let serviceWasRunning = try lifecycle.preflight()
+    var transaction = SketchyBarTransaction(
+      operation: .teardown,
+      phase: .providerChanging,
+      generationID: ownership.generationID,
+      previousGenerationID: ownership.generationID,
+      generationCreated: false,
+      ownership: ownership,
+      previousOwnership: ownership,
+      previousLifecycle: try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).read(),
+      serviceWasRunning: serviceWasRunning,
+      teardownGenerationIDs: teardownGenerationIDs
+    )
+    try transactionStore.write(transaction)
+    try restoreOriginal(ownership)
+    transaction.phase = .providerChanged
+    try transactionStore.write(transaction)
+    try faultInjector(.providerRestored)
+    transaction.phase = .serviceChanging
+    try transactionStore.write(transaction)
+    try completeTeardown(transaction)
+    return SketchyBarFilesystemConvergenceResult(
+      generationID: ownership.generationID,
+      changed: true
+    )
+  }
+
+  func completeTeardown(_ transaction: SketchyBarTransaction) throws {
+    guard transaction.operation == .teardown else {
+      throw SketchyBarDesktopError.invalidState(
+        "cannot complete a SketchyBar apply as a teardown"
+      )
+    }
+    try validateContext(transaction)
+    try authenticateCurrentForRecovery(transaction)
+
+    let managed = isManagedEntry(target: transaction.ownership.managedTarget)
+    let retained = transaction.ownership.retainedOriginalPath.map(pathExistsNoFollow) ?? false
+    let createdDirectoryRemains =
+      transaction.ownership.createdConfigurationDirectory
+      && pathExistsNoFollow(configurationDirectory.path)
+    if managed || retained || createdDirectoryRemains {
+      try restoreOriginal(transaction.ownership)
+    }
+    let restored = try SketchyBarProviderPlanInspector().captureUnowned(
+      directory: configurationDirectory,
+      entry: entry
+    )
+    guard restored == transaction.ownership.original else {
+      throw SketchyBarDesktopError.invalidState(
+        "SketchyBar teardown restoration does not match approved evidence"
+      )
+    }
+
+    try lifecycle.restore(
+      wasRunning: transaction.ownership.priorServiceRunning,
+      configurationURL: entry
+    )
+    var completing = transaction
+    completing.phase = .serviceChanged
+    try SketchyBarTransactionStore(stateRoot: stateRoot).write(completing)
+    try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).remove()
+    try SketchyBarOwnershipStore(stateRoot: stateRoot).remove()
+    let activator = SketchyBarGenerationActivator(stateRoot: stateRoot)
+    try activator.restoreCurrent(nil)
+    try faultInjector(.generationDeselected)
+    try activator.removeGenerations(transaction.teardownGenerationIDs!)
+    try SketchyBarTransactionStore(stateRoot: stateRoot).remove()
+  }
+
   private func authenticateCurrentForRecovery(_ transaction: SketchyBarTransaction) throws {
     let current = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
     switch current.status {
     case .missing:
-      guard transaction.previousGenerationID == nil else {
+      guard
+        transaction.previousGenerationID == nil
+          || (transaction.operation == .teardown && transaction.phase == .serviceChanged)
+      else {
         throw SketchyBarDesktopError.invalidState(
           "SketchyBar current pointer disappeared during interrupted convergence"
         )

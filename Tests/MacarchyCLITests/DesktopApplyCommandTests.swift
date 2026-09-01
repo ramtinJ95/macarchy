@@ -4,8 +4,153 @@ import Synchronization
 import Testing
 
 @testable import MacarchyCLI
+@testable import ThemeCore
 
 struct DesktopApplyCommandTests {
+  @Test
+  func publicCommandsConvergeReportAndTeardownSketchyBar() throws {
+    let fixture = try SketchyBarPublicCommandFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let yabaiLifecycle = YabaiLifecycleFixture(running: false)
+    let originalEntry = try fixture.installRegularEntry("personal bar\n")
+    var original = stat()
+    #expect(lstat(originalEntry.path, &original) == 0)
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: fixture.coreController
+    )
+
+    let apply = try runner.execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      adopt: nil,
+      sketchyBarAdopt: try fixture.adoptionDigest(),
+      json: true
+    )
+    #expect(apply.succeeded)
+    #expect(fixture.lifecycle.isRunning)
+    let applyReport = try #require(
+      JSONSerialization.jsonObject(with: Data(apply.output.utf8)) as? [String: Any]
+    )
+    #expect(
+      (applyReport["sketchybar"] as? [String: Any])?["generation_id"] as? String != nil
+    )
+    #expect(
+      try fixture.linkTarget(fixture.home.appending(path: ".config/sketchybar/sketchybarrc"))
+        == "../macarchy/desktop/sketchybar/current/sketchybarrc"
+    )
+
+    let repeatApply = try runner.execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      adopt: nil,
+      json: true
+    )
+    let repeatReport = try #require(
+      JSONSerialization.jsonObject(with: Data(repeatApply.output.utf8)) as? [String: Any]
+    )
+    #expect(repeatApply.succeeded)
+    #expect(repeatReport["outcome"] as? String == "no_change")
+
+    let status = try DesktopStatusCommandRunner(
+      lifecycle: yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: fixture.coreController
+    ).execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    #expect(status.succeeded)
+
+    let driftedCore = SketchyBarCoreRuntimeInspection(
+      status: .drifted,
+      message: "injected item drift",
+      themeGenerationID: fixture.core.themeGenerationID,
+      barColor: fixture.core.barColor,
+      items: Array(fixture.core.items.dropLast()),
+      spaceIndices: fixture.core.spaceIndices,
+      clockLabelPresent: fixture.core.clockLabelPresent
+    )
+    let driftedStatus = try DesktopStatusCommandRunner(
+      lifecycle: yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: SketchyBarCoreRuntimeController(
+        inspect: { _ in driftedCore },
+        settle: { _ in driftedCore }
+      )
+    ).execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let driftedReport = try #require(
+      JSONSerialization.jsonObject(with: Data(driftedStatus.output.utf8)) as? [String: Any]
+    )
+    #expect(!driftedStatus.succeeded)
+    #expect(driftedReport["outcome"] as? String == "drifted")
+    #expect(
+      ((driftedReport["sketchybar"] as? [String: Any])?["core_runtime"]
+        as? [String: Any])?["status"] as? String == "drifted"
+    )
+
+    let transaction = fixture.state.appending(path: "desktop/sketchybar/transaction.json")
+    try Data("{}".utf8).write(to: transaction, options: .atomic)
+    let corruptTransactionStatus = try DesktopStatusCommandRunner(
+      lifecycle: yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: fixture.coreController
+    ).execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let corruptReport = try #require(
+      JSONSerialization.jsonObject(with: Data(corruptTransactionStatus.output.utf8))
+        as? [String: Any]
+    )
+    #expect(!corruptTransactionStatus.succeeded)
+    #expect(corruptReport["outcome"] as? String == "drifted")
+    #expect((corruptReport["diagnostics"] as? [String])?.isEmpty == false)
+    try FileManager.default.removeItem(at: transaction)
+
+    let teardown = try DesktopTeardownCommandRunner(
+      lifecycle: yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: fixture.coreController
+    ).execute(
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      dryRun: false,
+      json: true
+    )
+    #expect(teardown.succeeded)
+    #expect(!fixture.lifecycle.isRunning)
+    var restored = stat()
+    #expect(lstat(originalEntry.path, &restored) == 0)
+    #expect(restored.st_dev == original.st_dev)
+    #expect(restored.st_ino == original.st_ino)
+    #expect(try String(contentsOf: originalEntry, encoding: .utf8) == "personal bar\n")
+    #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() == nil)
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+  }
+
   @Test
   func cleanInstallAndRoleDisableRoundTripCreatedProviderState() throws {
     let fixture = try DesktopApplyFixture()
@@ -115,6 +260,14 @@ struct DesktopApplyCommandTests {
     #expect(repeatReport["outcome"] as? String == "no_change")
     #expect(repeatReport["mutated"] as? Bool == false)
 
+    let sketchyBarOwnership = fixture.state.appending(
+      path: "desktop/sketchybar/ownership.json"
+    )
+    try FileManager.default.createDirectory(
+      at: sketchyBarOwnership.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data("{}".utf8).write(to: sketchyBarOwnership)
     let plan = try DesktopPlanCommandRunner.live.execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
@@ -129,6 +282,7 @@ struct DesktopApplyCommandTests {
     )
     #expect((planReport["actions"] as? [Any])?.isEmpty == true)
     #expect(planReport["sketchybar"] == nil)
+    try FileManager.default.removeItem(at: sketchyBarOwnership)
 
     let status = try DesktopStatusCommandRunner(lifecycle: lifecycle.controller).execute(
       resourcesRoot: fixture.resources,
@@ -356,6 +510,33 @@ struct DesktopApplyCommandTests {
     #expect(try fixture.linkTarget(entry) == fixture.managedTarget)
     #expect(YabaiTransactionStore(stateRoot: fixture.state).exists)
   }
+
+  @Test
+  func failedTeardownDryRunNeverReportsMutation() throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let transaction = fixture.state.appending(path: "desktop/yabai/transaction.json")
+    try FileManager.default.createDirectory(
+      at: transaction.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try Data("{}".utf8).write(to: transaction)
+
+    let result = try DesktopTeardownCommandRunner(
+      lifecycle: YabaiLifecycleFixture(running: false).controller
+    ).execute(
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      dryRun: true,
+      json: true
+    )
+    let report = try #require(
+      JSONSerialization.jsonObject(with: Data(result.output.utf8)) as? [String: Any]
+    )
+
+    #expect(!result.succeeded)
+    #expect(report["mutated"] as? Bool == false)
+  }
 }
 
 private struct DesktopApplyFixture {
@@ -372,7 +553,12 @@ private struct DesktopApplyFixture {
     home = root.appending(path: "home", directoryHint: .isDirectory)
     state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
     profile = state.appending(path: "profile.toml")
-    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+    try """
+    schema_version = 1
+    [top_bar]
+    provider = "disabled"
+    """.write(to: profile, atomically: true, encoding: .utf8)
   }
 
   var resources: URL {
@@ -413,6 +599,121 @@ private struct DesktopApplyFixture {
   func linkTarget(_ url: URL) throws -> String {
     try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
   }
+
+}
+
+private struct SketchyBarPublicCommandFixture {
+  let root: URL
+  let home: URL
+  let state: URL
+  let profile: URL
+  let lifecycle: SketchyBarPublicLifecycleFixture
+  let core: SketchyBarCoreRuntimeInspection
+
+  init() throws {
+    root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-sketchybar-public-tests-\(UUID().uuidString.lowercased())",
+      directoryHint: .isDirectory
+    )
+    home = root.appending(path: "home", directoryHint: .isDirectory)
+    state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    profile = state.appending(path: "profile.toml")
+    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+    try """
+    schema_version = 1
+    [desktop]
+    provider = "disabled"
+    """.write(to: profile, atomically: true, encoding: .utf8)
+    let repositoryRoot = URL(filePath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let package = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(
+        path: "Themes/catppuccin-mocha",
+        directoryHint: .isDirectory
+      )
+    )
+    let generation = try ThemeActivator(root: state).activate(package: package)
+    lifecycle = SketchyBarPublicLifecycleFixture()
+    core = SketchyBarCoreRuntimeInspection(
+      status: .converged,
+      message: "converged",
+      themeGenerationID: generation.generationID,
+      barColor: "0xf01e1e2e",
+      items: ["macarchy.clock", "macarchy.spaces.unavailable", "macarchy.theme.ready"],
+      spaceIndices: [],
+      clockLabelPresent: true
+    )
+  }
+
+  var resources: URL { repositoryRoot.appending(path: "Desktop", directoryHint: .isDirectory) }
+
+  var coreController: SketchyBarCoreRuntimeController {
+    SketchyBarCoreRuntimeController(
+      inspect: { _ in core },
+      settle: { _ in core }
+    )
+  }
+
+  func linkTarget(_ url: URL) throws -> String {
+    try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
+  }
+
+  func installRegularEntry(_ contents: String) throws -> URL {
+    let directory = home.appending(path: ".config/sketchybar", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let entry = directory.appending(path: "sketchybarrc")
+    try contents.write(to: entry, atomically: true, encoding: .utf8)
+    return entry
+  }
+
+  func adoptionDigest() throws -> String {
+    let generation = SketchyBarGenerationInspector(stateRoot: state).inspect()
+    let provider = SketchyBarProviderPlanInspector().inspect(
+      homeDirectory: home,
+      stateRoot: state,
+      enabled: true,
+      generation: generation
+    )
+    return try #require(provider.adoptionEvidenceDigest)
+  }
+
+  private var repositoryRoot: URL {
+    URL(filePath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+  }
+}
+
+private final class SketchyBarPublicLifecycleFixture: Sendable {
+  private let running = Mutex(false)
+
+  var isRunning: Bool { running.withLock { $0 } }
+
+  var controller: SketchyBarLifecycleController {
+    SketchyBarLifecycleController(
+      inspect: { self.running.withLock { $0 } ? Self.runtime : .stopped },
+      preflight: { self.running.withLock { $0 } },
+      reload: { _ in Self.runtime },
+      start: {
+        self.running.withLock { $0 = true }
+        return Self.runtime
+      },
+      stop: {
+        self.running.withLock { $0 = false }
+      }
+    )
+  }
+
+  private static let runtime = SketchyBarRuntimeInspection(
+    status: .running,
+    message: "running",
+    processID: 42,
+    executablePath: "/opt/homebrew/Cellar/sketchybar/2.23.0/bin/sketchybar",
+    serviceLabel: SketchyBarHomebrewService.serviceLabel
+  )
 }
 
 private final class YabaiLifecycleFixture: Sendable {

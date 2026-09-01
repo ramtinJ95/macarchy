@@ -31,6 +31,7 @@ struct SketchyBarRuntimeInspection: Codable, Equatable, Sendable {
 }
 
 struct SketchyBarLifecycleController: Sendable {
+  let inspect: @Sendable () throws -> SketchyBarRuntimeInspection
   let preflight: @Sendable () throws -> Bool
   let reload: @Sendable (URL) throws -> SketchyBarRuntimeInspection
   let start: @Sendable () throws -> SketchyBarRuntimeInspection
@@ -39,6 +40,7 @@ struct SketchyBarLifecycleController: Sendable {
   static let live: Self = {
     let service = SketchyBarHomebrewService.live
     return Self(
+      inspect: service.serviceInspection,
       preflight: service.preflight,
       reload: service.reload,
       start: service.start,
@@ -51,10 +53,11 @@ struct SketchyBarLifecycleController: Sendable {
   }
 
   func restore(wasRunning: Bool, configurationURL: URL) throws {
-    if wasRunning {
-      _ = try reload(configurationURL)
-    } else if try preflight() {
-      try stop()
+    switch (wasRunning, try preflight()) {
+    case (true, true): _ = try reload(configurationURL)
+    case (true, false): _ = try start()
+    case (false, true): try stop()
+    case (false, false): break
     }
   }
 }

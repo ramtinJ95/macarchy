@@ -44,7 +44,7 @@ struct Desktop: ParsableCommand {
 
   struct Apply: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Publish, activate, and verify managed yabai configuration."
+      abstract: "Publish, activate, and verify managed desktop providers."
     )
 
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
@@ -54,10 +54,13 @@ struct Desktop: ParsableCommand {
     var stateRoot = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
 
-    @Option(help: "Exact adoption evidence digest from the reviewed desktop plan.")
+    @Option(help: "Exact yabai adoption evidence digest from the reviewed desktop plan.")
     var adopt: String?
 
-    @Flag(help: "Inspect without publishing, activating, or adopting yabai.")
+    @Option(help: "Exact SketchyBar adoption evidence digest from the reviewed desktop plan.")
+    var sketchybarAdopt: String?
+
+    @Flag(help: "Inspect yabai without publishing, activating, or adopting it.")
     var dryRun = false
 
     @Flag(help: "Emit machine-readable output.")
@@ -91,6 +94,7 @@ struct Desktop: ParsableCommand {
             stateRoot: stateRootURL,
             homeDirectory: home,
             adopt: adopt,
+            sketchyBarAdopt: sketchybarAdopt,
             json: json
           )
         }
@@ -101,7 +105,7 @@ struct Desktop: ParsableCommand {
 
   struct Status: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Report managed yabai generation, ownership, and runtime state."
+      abstract: "Report managed desktop generation, ownership, and runtime state."
     )
 
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
@@ -134,7 +138,7 @@ struct Desktop: ParsableCommand {
 
   struct Teardown: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Restore the exact yabai provider entry adopted by Macarchy."
+      abstract: "Restore the exact desktop provider entries adopted by Macarchy."
     )
 
     @Option(help: "Canonical Macarchy state directory.")
