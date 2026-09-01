@@ -8,6 +8,7 @@ enum SketchyBarProviderPlanStatus: String, Codable, Sendable {
   case managed
   case installRequired = "install_required"
   case adoptionRequired = "adoption_required"
+  case recoveryRequired = "recovery_required"
   case blocked
 }
 
@@ -94,14 +95,14 @@ struct SketchyBarProviderPlanInspection: Encodable, Sendable {
   }
 }
 
-private enum SketchyBarOriginalKind: String {
+enum SketchyBarOriginalKind: String, Codable, Sendable {
   case absent
   case regularFile = "regular_file"
   case entrySymlink = "entry_symlink"
   case directorySymlink = "directory_symlink"
 }
 
-private struct SketchyBarAdoptionEvidence {
+struct SketchyBarAdoptionEvidence: Codable, Equatable, Sendable {
   let kind: SketchyBarOriginalKind
   let publicPath: String
   let linkTarget: String?
@@ -126,6 +127,147 @@ private struct SketchyBarAdoptionEvidence {
     }
     return sha256Digest(data)
   }
+
+  var isValid: Bool {
+    guard
+      publicPath.hasPrefix("/"),
+      URL(filePath: publicPath).standardizedFileURL.path == publicPath,
+      inventory == inventory.sorted(),
+      Set(inventory).count == inventory.count,
+      inventory.count <= 1_024
+    else { return false }
+    let hasIdentity =
+      permissions.map { (0...0o777).contains($0) } == true
+      && device != nil
+      && inode != nil
+      && contentDigest.map(Self.isDigest) == true
+    switch kind {
+    case .absent:
+      return linkTarget == nil && contentDigest == nil && permissions == nil
+        && device == nil && inode == nil && inventory.isEmpty
+    case .regularFile:
+      return hasIdentity && linkTarget == nil && inventory.isEmpty
+    case .entrySymlink:
+      return hasIdentity && validLinkTarget && inventory.isEmpty
+    case .directorySymlink:
+      return hasIdentity && validLinkTarget && inventory.contains("sketchybarrc")
+    }
+  }
+
+  private var validLinkTarget: Bool {
+    linkTarget.map {
+      !$0.isEmpty && $0.utf8.count <= Int(PATH_MAX) && !$0.contains("\0")
+    } == true
+  }
+
+  private static func isDigest(_ value: String) -> Bool {
+    guard value.count == 71, value.hasPrefix("sha256:") else { return false }
+    return value.dropFirst(7).allSatisfy { $0.isHexDigit && !$0.isUppercase }
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case kind
+    case publicPath = "public_path"
+    case linkTarget = "link_target"
+    case contentDigest = "content_digest"
+    case permissions, device, inode, inventory
+  }
+}
+
+struct SketchyBarOwnershipRecord: Codable, Equatable, Sendable {
+  let schemaVersion: Int
+  let generationID: String
+  let managedTarget: String
+  let original: SketchyBarAdoptionEvidence
+  let retainedOriginalPath: String?
+  let createdConfigurationDirectory: Bool
+
+  init(
+    generationID: String,
+    managedTarget: String,
+    original: SketchyBarAdoptionEvidence,
+    retainedOriginalPath: String?,
+    createdConfigurationDirectory: Bool
+  ) {
+    schemaVersion = 1
+    self.generationID = generationID
+    self.managedTarget = managedTarget
+    self.original = original
+    self.retainedOriginalPath = retainedOriginalPath
+    self.createdConfigurationDirectory = createdConfigurationDirectory
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case schemaVersion = "schema_version"
+    case generationID = "generation_id"
+    case managedTarget = "managed_target"
+    case original
+    case retainedOriginalPath = "retained_original_path"
+    case createdConfigurationDirectory = "created_configuration_directory"
+  }
+}
+
+struct SketchyBarOwnershipStore: Sendable {
+  let stateRoot: URL
+
+  private var directory: URL {
+    stateRoot.appending(path: "desktop/sketchybar", directoryHint: .isDirectory)
+  }
+
+  private var file: URL { directory.appending(path: "ownership.json") }
+
+  func read() throws -> SketchyBarOwnershipRecord? {
+    guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+    let data = try BoundedRegularFile.read(at: file, maximumSize: 32_768).data
+    let record = try JSONDecoder().decode(SketchyBarOwnershipRecord.self, from: data)
+    guard Self.isValid(record, stateRoot: stateRoot) else {
+      throw SketchyBarDesktopError.invalidState("SketchyBar ownership record is invalid")
+    }
+    return record
+  }
+
+  static func isValid(_ record: SketchyBarOwnershipRecord, stateRoot: URL) -> Bool {
+    guard
+      record.schemaVersion == 1,
+      SketchyBarGenerationInspector.isGenerationID(record.generationID),
+      record.original.isValid,
+      !record.managedTarget.isEmpty,
+      !record.managedTarget.contains("\0"),
+      !record.managedTarget.contains("\n"),
+      !record.createdConfigurationDirectory || record.original.kind == .absent
+    else { return false }
+    guard record.original.kind != .absent else {
+      return record.retainedOriginalPath == nil
+    }
+    guard let retainedPath = record.retainedOriginalPath else { return false }
+    let retained = URL(filePath: retainedPath).standardizedFileURL
+    let provider = stateRoot.standardizedFileURL.appending(
+      path: "desktop/sketchybar",
+      directoryHint: .isDirectory
+    )
+    let name = retained.lastPathComponent
+    let nonce = String(name.dropFirst("retained-".count))
+    return retained.path == retainedPath
+      && retained.deletingLastPathComponent().path == provider.path
+      && name.hasPrefix("retained-")
+      && nonce == nonce.lowercased()
+      && UUID(uuidString: nonce) != nil
+  }
+
+  func write(_ record: SketchyBarOwnershipRecord) throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    try encoder.encode(record).write(to: file, options: .atomic)
+  }
+
+  func remove() throws {
+    do {
+      try FileManager.default.removeItem(at: file)
+    } catch let error as CocoaError where error.code == .fileNoSuchFile {
+      return
+    }
+  }
 }
 
 struct SketchyBarProviderPlanInspector: Sendable {
@@ -133,35 +275,44 @@ struct SketchyBarProviderPlanInspector: Sendable {
     homeDirectory: URL,
     stateRoot: URL,
     enabled: Bool,
-    generation: SketchyBarGenerationInspection
+    generation: SketchyBarGenerationInspection,
+    transactionPending: Bool = false
   ) -> SketchyBarProviderPlanInspection {
     let directory = homeDirectory.appending(
       path: ".config/sketchybar",
       directoryHint: .isDirectory
     )
     let entry = directory.appending(path: "sketchybarrc")
-    if !enabled {
-      return inspectDisabled(directory: directory, entry: entry)
-    }
-    if managedEntryTarget(directory: directory, entry: entry)
-      == Self.managedTarget(homeDirectory: homeDirectory, stateRoot: stateRoot)
-    {
-      guard generation.status == .current else {
-        return result(
-          .blocked,
-          ownership: "managed_target_without_generation",
-          entry: entry,
-          message: "SketchyBar points at Macarchy state without a valid selected generation"
-        )
-      }
+    if transactionPending {
       return result(
-        .managed,
-        ownership: "managed",
+        .recoveryRequired,
+        ownership: "transaction_pending",
         entry: entry,
-        message: "the SketchyBar entry points to the selected Macarchy generation"
+        message: "an interrupted SketchyBar transaction must be recovered before planning changes"
       )
     }
     do {
+      if let ownership = try SketchyBarOwnershipStore(stateRoot: stateRoot).read() {
+        return try inspectManaged(
+          ownership,
+          entry: entry,
+          expectedTarget: Self.managedTarget(homeDirectory: homeDirectory, stateRoot: stateRoot),
+          generation: generation
+        )
+      }
+      if !enabled {
+        return inspectDisabled(directory: directory, entry: entry)
+      }
+      if managedEntryTarget(directory: directory, entry: entry)
+        == Self.managedTarget(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      {
+        return result(
+          .blocked,
+          ownership: "managed_target_without_ownership",
+          entry: entry,
+          message: "SketchyBar points at Macarchy state without an ownership record"
+        )
+      }
       let evidence = try captureUnowned(directory: directory, entry: entry)
       switch evidence.kind {
       case .absent:
@@ -194,13 +345,13 @@ struct SketchyBarProviderPlanInspector: Sendable {
 
   static func managedTarget(homeDirectory: URL, stateRoot: URL) -> String {
     let canonical = homeDirectory.appending(path: ".config/macarchy").standardizedFileURL
-    if canonical == stateRoot.standardizedFileURL {
+    if canonical.path == stateRoot.standardizedFileURL.path {
       return "../macarchy/desktop/sketchybar/current/sketchybarrc"
     }
     return stateRoot.appending(path: "desktop/sketchybar/current/sketchybarrc").path
   }
 
-  private func captureUnowned(
+  func captureUnowned(
     directory: URL,
     entry: URL
   ) throws -> SketchyBarAdoptionEvidence {
@@ -298,6 +449,48 @@ struct SketchyBarProviderPlanInspector: Sendable {
         "sketchybarrc is not a regular file or symbolic link"
       )
     }
+  }
+
+  private func inspectManaged(
+    _ ownership: SketchyBarOwnershipRecord,
+    entry: URL,
+    expectedTarget: String,
+    generation: SketchyBarGenerationInspection
+  ) throws -> SketchyBarProviderPlanInspection {
+    let expectedPublicPath =
+      ownership.original.kind == .directorySymlink
+      ? entry.deletingLastPathComponent().path : entry.path
+    guard
+      ownership.managedTarget == expectedTarget,
+      ownership.original.publicPath == expectedPublicPath,
+      managedEntryTarget(directory: entry.deletingLastPathComponent(), entry: entry)
+        == ownership.managedTarget
+    else {
+      return result(
+        .blocked,
+        ownership: "ownership_drift",
+        entry: entry,
+        message: "owned sketchybarrc no longer matches the managed target"
+      )
+    }
+    guard
+      generation.status == .current,
+      generation.generationID == ownership.generationID
+    else {
+      return result(
+        .blocked,
+        ownership: "generation_drift",
+        entry: entry,
+        message: "SketchyBar ownership does not match a valid selected generation"
+      )
+    }
+    try SketchyBarProviderTransaction.authenticateRetained(ownership)
+    return result(
+      .managed,
+      ownership: "managed",
+      entry: entry,
+      message: "the SketchyBar provider entry is owned by Macarchy"
+    )
   }
 
   private func inspectDisabled(

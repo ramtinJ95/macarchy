@@ -1,0 +1,510 @@
+import Darwin
+import Foundation
+import Testing
+
+@testable import MacarchyCLI
+@testable import ThemeCore
+
+@Suite(.serialized)
+struct SketchyBarTransactionTests {
+  @Test
+  func interruptedAdoptionRestoresTheExactRegularFileInode() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("personal bar\n")
+    var original = stat()
+    #expect(lstat(entry.path, &original) == 0)
+    let digest = try fixture.adoptionDigest()
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .providerChanged { throw SketchyBarInterruptionError.injected }
+    }
+
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: digest
+      )
+    }
+    let storedTransaction = try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    let pending = try #require(storedTransaction)
+    let retained = try #require(pending.ownership.retainedOriginalPath)
+    var retainedMetadata = stat()
+    #expect(lstat(retained, &retainedMetadata) == 0)
+    #expect(retainedMetadata.st_dev == original.st_dev)
+    #expect(retainedMetadata.st_ino == original.st_ino)
+
+    try transaction.recoverApply(pending)
+
+    var restored = stat()
+    #expect(lstat(entry.path, &restored) == 0)
+    #expect(restored.st_dev == original.st_dev)
+    #expect(restored.st_ino == original.st_ino)
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal bar\n")
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+    #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() == nil)
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+  }
+
+  @Test
+  func adoptsAndAuthenticatesAnEntrySymlinkWithoutRecreatingIt() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let source = fixture.root.appending(path: "personal/sketchybarrc")
+    try FileManager.default.createDirectory(
+      at: source.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "personal symlink bar\n".write(to: source, atomically: true, encoding: .utf8)
+    let entry = try fixture.installEntrySymlink(target: source.path)
+    var original = stat()
+    #expect(lstat(entry.path, &original) == 0)
+
+    let first = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: try fixture.adoptionDigest()
+    )
+    let storedOwnership = try SketchyBarOwnershipStore(stateRoot: fixture.state).read()
+    let ownership = try #require(storedOwnership)
+    let retained = try #require(ownership.retainedOriginalPath)
+    var retainedMetadata = stat()
+    #expect(lstat(retained, &retainedMetadata) == 0)
+    #expect(retainedMetadata.st_dev == original.st_dev)
+    #expect(retainedMetadata.st_ino == original.st_ino)
+    #expect(try fixture.linkTarget(URL(filePath: retained)) == source.path)
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .current)
+
+    let second = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: nil
+    )
+    #expect(first.changed)
+    #expect(!second.changed)
+    #expect(second.generationID == first.generationID)
+  }
+
+  @Test
+  func adoptsTheMultiFileDirectorySymlinkWithoutCopyingOrWalkingItsTree() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let personal = fixture.root.appending(path: "dotfiles/sketchybar", directoryHint: .isDirectory)
+    let nested = personal.appending(path: "helpers/private", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    try "personal lua entry\n".write(
+      to: personal.appending(path: "sketchybarrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try Data([0, 1, 2, 3]).write(to: nested.appending(path: "opaque.bin"))
+    try "return {}\n".write(
+      to: personal.appending(path: "init.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: nested.path)
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: nested.path)
+    }
+    let directory = try fixture.installDirectorySymlink(target: "../../dotfiles/sketchybar")
+    var original = stat()
+    #expect(lstat(directory.path, &original) == 0)
+    let inventoryBefore = try FileManager.default.contentsOfDirectory(atPath: personal.path)
+      .sorted()
+
+    _ = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: try fixture.adoptionDigest()
+    )
+
+    let storedOwnership = try SketchyBarOwnershipStore(stateRoot: fixture.state).read()
+    let ownership = try #require(storedOwnership)
+    let retained = try #require(ownership.retainedOriginalPath)
+    var retainedMetadata = stat()
+    #expect(lstat(retained, &retainedMetadata) == 0)
+    #expect(retainedMetadata.st_dev == original.st_dev)
+    #expect(retainedMetadata.st_ino == original.st_ino)
+    #expect(try fixture.linkTarget(URL(filePath: retained)) == "../../dotfiles/sketchybar")
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: personal.path).sorted()
+        == inventoryBefore
+    )
+
+    try "drift\n".write(
+      to: personal.appending(path: "added-after-adoption"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let provider = SketchyBarProviderPlanInspector().inspect(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.state,
+      enabled: true,
+      generation: SketchyBarGenerationInspector(stateRoot: fixture.state).inspect()
+    )
+    #expect(provider.status == .blocked)
+    #expect(provider.ownership == "uninspectable")
+    #expect(provider.message.contains("source inventory drifted"))
+  }
+
+  @Test
+  func interruptedPublicationIsRecoveredBeforeProviderMutation() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("untouched\n")
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .generationPublished { throw SketchyBarInterruptionError.injected }
+    }
+
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: try fixture.adoptionDigest()
+      )
+    }
+    let storedTransaction = try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    let pending = try #require(storedTransaction)
+    let published = fixture.state.appending(
+      path: "desktop/sketchybar/generations/\(pending.generationID)",
+      directoryHint: .isDirectory
+    )
+    #expect(FileManager.default.fileExists(atPath: published.path))
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "untouched\n")
+
+    try transaction.recoverApply(pending)
+
+    #expect(!FileManager.default.fileExists(atPath: published.path))
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "untouched\n")
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+  }
+
+  @Test
+  func adoptionRequiresTheCurrentReviewedDigest() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("personal\n")
+
+    #expect(throws: SketchyBarDesktopError.self) {
+      try fixture.transaction().convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: "sha256:not-reviewed"
+      )
+    }
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal\n")
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+  }
+
+  @Test
+  func retainedDirectorySymlinkRecoversBeforeManagedDirectoryCreation() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let personal = fixture.root.appending(path: "dotfiles/sketchybar", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: personal, withIntermediateDirectories: true)
+    try "personal\n".write(
+      to: personal.appending(path: "sketchybarrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let directory = try fixture.installDirectorySymlink(target: "../../dotfiles/sketchybar")
+    var original = stat()
+    #expect(lstat(directory.path, &original) == 0)
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .originalRetained { throw SketchyBarInterruptionError.injected }
+    }
+
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: try fixture.adoptionDigest()
+      )
+    }
+    var missing = stat()
+    #expect(lstat(directory.path, &missing) != 0 && errno == ENOENT)
+    let pending = try #require(
+      try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    )
+
+    try transaction.recoverApply(pending)
+
+    var restored = stat()
+    #expect(lstat(directory.path, &restored) == 0)
+    #expect(restored.st_dev == original.st_dev)
+    #expect(restored.st_ino == original.st_ino)
+    #expect(try fixture.linkTarget(directory) == "../../dotfiles/sketchybar")
+  }
+
+  @Test
+  func foreignManagedDirectoryContentsBlockRecoveryWithoutDeletion() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let personal = fixture.root.appending(path: "dotfiles/sketchybar", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: personal, withIntermediateDirectories: true)
+    try "personal\n".write(
+      to: personal.appending(path: "sketchybarrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    _ = try fixture.installDirectorySymlink(target: "../../dotfiles/sketchybar")
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .providerChanged { throw SketchyBarInterruptionError.injected }
+    }
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: try fixture.adoptionDigest()
+      )
+    }
+    let foreign = fixture.home.appending(path: ".config/sketchybar/foreign")
+    try "keep\n".write(to: foreign, atomically: true, encoding: .utf8)
+    let pending = try #require(
+      try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    )
+
+    #expect(throws: SketchyBarDesktopError.self) {
+      try transaction.recoverApply(pending)
+    }
+
+    #expect(try String(contentsOf: foreign, encoding: .utf8) == "keep\n")
+    var retained = stat()
+    #expect(lstat(pending.ownership.retainedOriginalPath!, &retained) == 0)
+    #expect(SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+  }
+
+  @Test
+  func postRenameSourceDriftRestoresTheDisplacedSymlinkAndGeneration() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let source = fixture.root.appending(path: "personal/sketchybarrc")
+    try FileManager.default.createDirectory(
+      at: source.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "before\n".write(to: source, atomically: true, encoding: .utf8)
+    let entry = try fixture.installEntrySymlink(target: source.path)
+    var original = stat()
+    #expect(lstat(entry.path, &original) == 0)
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .originalRetained {
+        try "after\n".write(to: source, atomically: true, encoding: .utf8)
+      }
+    }
+
+    #expect(throws: SketchyBarDesktopError.self) {
+      try transaction.convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: try fixture.adoptionDigest()
+      )
+    }
+
+    var restored = stat()
+    #expect(lstat(entry.path, &restored) == 0)
+    #expect(restored.st_dev == original.st_dev)
+    #expect(restored.st_ino == original.st_ino)
+    #expect(try fixture.linkTarget(entry) == source.path)
+    #expect(try String(contentsOf: source, encoding: .utf8) == "after\n")
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+  }
+
+  @Test
+  func interruptedAbsentInstallRemovesOnlyItsCreatedDirectory() throws {
+    for interruption in [
+      SketchyBarTransactionCheckpoint.configurationDirectoryCreated,
+      .providerChanged,
+    ] {
+      let fixture = try SketchyBarTransactionFixture()
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      let transaction = fixture.transaction { checkpoint in
+        if checkpoint == interruption { throw SketchyBarInterruptionError.injected }
+      }
+
+      #expect(throws: SketchyBarInterruptionError.self) {
+        try transaction.convergeLocked(
+          composition: fixture.composition,
+          adoptionEvidenceDigest: nil
+        )
+      }
+      let pending = try #require(
+        try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+      )
+
+      try transaction.recoverApply(pending)
+
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: fixture.home.appending(path: ".config/sketchybar").path))
+    }
+  }
+
+  @Test
+  func interruptedManagedUpdateRestoresPreviousGenerationAndOwnership() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let first = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: nil
+    )
+    let previousOwnership = try #require(
+      try SketchyBarOwnershipStore(stateRoot: fixture.state).read()
+    )
+    let updatedComposition = try fixture.composition(
+      profile: """
+        schema_version = 1
+        [desktop]
+        provider = "disabled"
+        """
+    )
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .generationSelected { throw SketchyBarInterruptionError.injected }
+    }
+
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: updatedComposition,
+        adoptionEvidenceDigest: nil
+      )
+    }
+    let pending = try #require(
+      try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    )
+    #expect(pending.generationID != first.generationID)
+
+    try transaction.recoverApply(pending)
+
+    #expect(
+      SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().generationID
+        == first.generationID
+    )
+    #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() == previousOwnership)
+  }
+
+  @Test
+  func malformedTransactionPathsAreRejectedBeforeRecovery() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("personal\n")
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .generationPublished { throw SketchyBarInterruptionError.injected }
+    }
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: try fixture.adoptionDigest()
+      )
+    }
+    let transactionURL = fixture.state.appending(path: "desktop/sketchybar/transaction.json")
+    var json = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: transactionURL)) as? [String: Any]
+    )
+    var ownership = try #require(json["ownership"] as? [String: Any])
+    var original = try #require(ownership["original"] as? [String: Any])
+    original["public_path"] = "/tmp/not-sketchybar"
+    ownership["original"] = original
+    json["ownership"] = ownership
+    try JSONSerialization.data(withJSONObject: json).write(to: transactionURL, options: .atomic)
+
+    let malformed = try #require(
+      try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    )
+    #expect(throws: SketchyBarDesktopError.self) { try transaction.recoverApply(malformed) }
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal\n")
+  }
+}
+
+private struct SketchyBarTransactionFixture {
+  let root: URL
+  let home: URL
+  let state: URL
+  let composition: SketchyBarComposition
+
+  init() throws {
+    root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-sketchybar-transaction-tests-\(UUID().uuidString.lowercased())",
+      directoryHint: .isDirectory
+    )
+    home = root.appending(path: "home", directoryHint: .isDirectory)
+    state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n",
+      source: root.appending(path: "profile.toml")
+    )
+    composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml"),
+      profile: profile,
+      stateRoot: state
+    )
+  }
+
+  func transaction(
+    faultInjector: @escaping @Sendable (SketchyBarTransactionCheckpoint) throws -> Void = { _ in }
+  ) -> SketchyBarProviderTransaction {
+    SketchyBarProviderTransaction(
+      homeDirectory: home,
+      stateRoot: state,
+      faultInjector: faultInjector
+    )
+  }
+
+  func composition(profile: String) throws -> SketchyBarComposition {
+    let decoded = try PortableProfileLoader().decode(
+      profile,
+      source: root.appending(path: "updated-profile.toml")
+    )
+    return try SketchyBarConfigurationComposer().compose(
+      defaultsURL: repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml"),
+      profile: decoded,
+      stateRoot: state
+    )
+  }
+
+  func installRegularEntry(_ contents: String) throws -> URL {
+    let entry = try configurationEntry()
+    try contents.write(to: entry, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: entry.path)
+    return entry
+  }
+
+  func installEntrySymlink(target: String) throws -> URL {
+    let entry = try configurationEntry()
+    try FileManager.default.createSymbolicLink(atPath: entry.path, withDestinationPath: target)
+    return entry
+  }
+
+  func installDirectorySymlink(target: String) throws -> URL {
+    let configuration = home.appending(path: ".config/sketchybar", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createSymbolicLink(
+      atPath: configuration.path,
+      withDestinationPath: target
+    )
+    return configuration
+  }
+
+  func adoptionDigest() throws -> String {
+    let inspection = SketchyBarProviderPlanInspector().inspect(
+      homeDirectory: home,
+      stateRoot: state,
+      enabled: true,
+      generation: SketchyBarGenerationInspector(stateRoot: state).inspect()
+    )
+    return try #require(inspection.adoptionEvidenceDigest)
+  }
+
+  func linkTarget(_ url: URL) throws -> String {
+    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
+    let count = readlink(url.path, &buffer, buffer.count - 1)
+    guard count >= 0 else { throw POSIXError(.EIO) }
+    return String(
+      decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)),
+      as: UTF8.self
+    )
+  }
+
+  private func configurationEntry() throws -> URL {
+    let configuration = home.appending(path: ".config/sketchybar", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: configuration, withIntermediateDirectories: true)
+    return configuration.appending(path: "sketchybarrc")
+  }
+}

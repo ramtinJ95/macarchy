@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @testable import MacarchyCLI
+@testable import ThemeCore
 
 struct DesktopPlanCommandTests {
   private let runner = DesktopPlanCommandRunner()
@@ -219,7 +220,7 @@ struct DesktopPlanCommandTests {
   }
 
   @Test
-  func managedSketchyBarLinkWithoutASelectedGenerationBlocksExplicitly() throws {
+  func managedSketchyBarLinkWithoutOwnershipBlocksExplicitly() throws {
     let fixture = try planFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let configuration = fixture.home.appending(
@@ -245,8 +246,103 @@ struct DesktopPlanCommandTests {
 
     #expect(!execution.succeeded)
     #expect(provider["status"] as? String == "blocked")
-    #expect(provider["ownership"] as? String == "managed_target_without_generation")
+    #expect(provider["ownership"] as? String == "managed_target_without_ownership")
     #expect((report["actions"] as? [Any])?.isEmpty == true)
+  }
+
+  @Test
+  func ownedSketchyBarEntryWithGenerationDriftBlocksExplicitly() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let state = fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    _ = try SketchyBarProviderTransaction(
+      homeDirectory: fixture.home,
+      stateRoot: state
+    ).convergeLocked(
+      composition: try sketchyBarComposition(fixture, stateRoot: state),
+      adoptionEvidenceDigest: nil
+    )
+    let current = state.appending(path: "desktop/sketchybar/current")
+    try FileManager.default.removeItem(at: current)
+    try FileManager.default.createSymbolicLink(
+      atPath: current.path,
+      withDestinationPath: "generations/s-00000000-0000-0000-0000-000000000000"
+    )
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let provider = try #require(sketchyBar["provider"] as? [String: Any])
+
+    #expect(!execution.succeeded)
+    #expect(provider["status"] as? String == "blocked")
+    #expect(provider["ownership"] as? String == "generation_drift")
+  }
+
+  @Test
+  func ownedSketchyBarEntryRejectsARecordForAnotherPublicPath() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let state = fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    _ = try SketchyBarProviderTransaction(
+      homeDirectory: fixture.home,
+      stateRoot: state
+    ).convergeLocked(
+      composition: try sketchyBarComposition(fixture, stateRoot: state),
+      adoptionEvidenceDigest: nil
+    )
+    let ownershipURL = state.appending(path: "desktop/sketchybar/ownership.json")
+    var json = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: ownershipURL)) as? [String: Any]
+    )
+    var original = try #require(json["original"] as? [String: Any])
+    original["public_path"] = "/tmp/not-this-provider"
+    json["original"] = original
+    try JSONSerialization.data(withJSONObject: json).write(to: ownershipURL, options: .atomic)
+
+    let execution = try execute(fixture, json: true, profileRequired: false)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let provider = try #require(sketchyBar["provider"] as? [String: Any])
+
+    #expect(!execution.succeeded)
+    #expect(provider["status"] as? String == "blocked")
+    #expect(provider["ownership"] as? String == "ownership_drift")
+  }
+
+  @Test
+  func disabledTopBarStillReportsPendingRecovery() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let state = fixture.home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    let transaction = SketchyBarProviderTransaction(
+      homeDirectory: fixture.home,
+      stateRoot: state,
+      faultInjector: { checkpoint in
+        if checkpoint == .generationPublished { throw SketchyBarInterruptionError.injected }
+      }
+    )
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: try sketchyBarComposition(fixture, stateRoot: state),
+        adoptionEvidenceDigest: nil
+      )
+    }
+    try """
+    schema_version = 1
+    [top_bar]
+    provider = "disabled"
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+
+    let execution = try execute(fixture, json: true, profileRequired: true)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let provider = try #require(sketchyBar["provider"] as? [String: Any])
+    let diagnostics = try #require(report["diagnostics"] as? [[String: Any]])
+
+    #expect(!execution.succeeded)
+    #expect(provider["status"] as? String == "recovery_required")
+    #expect(diagnostics.contains { $0["code"] as? String == "sketchybar_provider_blocked" })
   }
 
   @Test
@@ -352,6 +448,18 @@ struct DesktopPlanCommandTests {
       root: root,
       home: home,
       profile: home.appending(path: "profile.toml")
+    )
+  }
+
+  private func sketchyBarComposition(
+    _ fixture: PlanFixture,
+    stateRoot: URL
+  ) throws -> SketchyBarComposition {
+    let profile = try PortableProfileLoader().load(at: fixture.profile, required: false)
+    return try SketchyBarConfigurationComposer().compose(
+      defaultsURL: repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml"),
+      profile: profile,
+      stateRoot: stateRoot
     )
   }
 
