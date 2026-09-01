@@ -380,6 +380,8 @@ struct SketchyBarLifecycleEvidence: Codable, Equatable, Sendable {
 }
 
 struct SketchyBarLifecycleEvidenceStore: Sendable {
+  private static let maximumSize = 32_768
+
   let stateRoot: URL
 
   private var directory: URL {
@@ -390,7 +392,7 @@ struct SketchyBarLifecycleEvidenceStore: Sendable {
 
   func read() throws -> SketchyBarLifecycleEvidence? {
     guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-    let data = try BoundedRegularFile.read(at: file, maximumSize: 32_768).data
+    let data = try BoundedRegularFile.read(at: file, maximumSize: Self.maximumSize).data
     let evidence = try JSONDecoder().decode(SketchyBarLifecycleEvidence.self, from: data)
     guard evidence.isValid else {
       throw SketchyBarDesktopError.invalidState("SketchyBar lifecycle evidence is invalid")
@@ -405,7 +407,11 @@ struct SketchyBarLifecycleEvidenceStore: Sendable {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(evidence).write(to: file, options: .atomic)
+    let data = try encoder.encode(evidence)
+    guard data.count <= Self.maximumSize else {
+      throw SketchyBarDesktopError.invalidState("SketchyBar lifecycle evidence is too large")
+    }
+    try data.write(to: file, options: .atomic)
   }
 
   func remove() throws {

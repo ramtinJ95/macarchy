@@ -24,7 +24,8 @@ struct DesktopStatusCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    json: Bool
+    json: Bool,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState?
     var diagnostics: [String] = []
@@ -33,7 +34,8 @@ struct DesktopStatusCommandRunner: Sendable {
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,
-        stateRoot: stateRoot
+        stateRoot: stateRoot,
+        macarchyExecutableURL: macarchyExecutableURL
       )
     } catch {
       desired = nil
@@ -149,11 +151,16 @@ struct DesktopStatusCommandRunner: Sendable {
       sketchyBarEvidence?.generationID == sketchyBarGeneration.generationID
       && sketchyBarEvidence?.runtime == sketchyBarRuntime
       && sketchyBarEvidence?.coreRuntime == sketchyBarCore
+    let sketchyBarCoreAgrees =
+      sketchyBarCore?.status == .converged
+      || (sketchyBarCore?.status == .partial
+        && desired?.sketchyBarComposition?.hookURL != nil)
     let sketchyBarConverged =
       sketchyBarEnabled && !sketchyBarTransactionPending && diagnostics.isEmpty
       && sketchyBarProvider.status == .managed && sketchyBarPalette.status == .current
       && sketchyBarGenerationAgrees && sketchyBarOwnershipAgrees && sketchyBarLifecycleAgrees
-      && sketchyBarRuntime?.status == .running && sketchyBarCore?.status == .converged
+      && sketchyBarRuntime?.status == .running
+      && sketchyBarCoreAgrees
     let sketchyBarDisabledClean =
       !sketchyBarEnabled
       && (sketchyBarProvider.status == .disabled
@@ -168,7 +175,9 @@ struct DesktopStatusCommandRunner: Sendable {
     let outcome =
       succeeded
       ? (disabledClean && sketchyBarDisabledClean
-        ? "disabled" : runtime.status == .partial ? "partial" : "converged")
+        ? "disabled"
+        : runtime.status == .partial || sketchyBarCore?.status == .partial
+          ? "partial" : "converged")
       : recoveryRequired ? "recovery_required" : "drifted"
     let report = DesktopStatusReport(
       outcome: outcome,

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import TOMLDecoder
 
@@ -66,6 +67,8 @@ package struct SketchyBarComposition: Equatable, Sendable {
   package let settings: SketchyBarSettings
   package let layout: SketchyBarLayout
   package let spaceModule: SketchyBarSpaceModule
+  package let hookURL: URL?
+  package let hookDigest: String?
   package let artifacts: [SketchyBarConfigurationArtifact]
   package let renderedDigest: String
   package let inputDigest: String
@@ -104,7 +107,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package func compose(
     defaultsURL: URL,
     profile: PortableProfile,
-    stateRoot: URL
+    stateRoot: URL,
+    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy")
   ) throws -> SketchyBarComposition {
     let defaults = try loadDefaults(at: defaultsURL)
     let settings = defaults.settings
@@ -127,7 +131,17 @@ package struct SketchyBarConfigurationComposer: Sendable {
       stateRoot
       .appending(path: "desktop/sketchybar/current/plugins", directoryHint: .isDirectory)
       .standardizedFileURL.path
-    let artifacts = [
+    let hook: (text: String, digest: String)?
+    if let hookURL = profile.sketchyBar.hookURL {
+      guard let hookRootURL = profile.sketchyBar.hookRootURL else {
+        throw SketchyBarConfigurationError.invalid(hookURL, "trusted hook root is unavailable")
+      }
+      hook = try readHook(at: hookURL, root: hookRootURL)
+    } else {
+      hook = nil
+    }
+    let macarchyExecutablePath = macarchyExecutableURL.standardizedFileURL.path
+    var artifacts = [
       SketchyBarConfigurationArtifact(
         path: "sketchybarrc",
         contents: renderEntry(
@@ -135,7 +149,9 @@ package struct SketchyBarConfigurationComposer: Sendable {
           layout: layout,
           spaceModule: spaceModule,
           palettePath: palettePath,
-          pluginPath: pluginPath
+          pluginPath: pluginPath,
+          hasHook: hook != nil,
+          macarchyExecutablePath: macarchyExecutablePath
         )
       ),
       SketchyBarConfigurationArtifact(
@@ -147,6 +163,14 @@ package struct SketchyBarConfigurationComposer: Sendable {
         contents: renderSpaceIndexes()
       ),
     ]
+    if let hook {
+      artifacts.append(
+        SketchyBarConfigurationArtifact(
+          path: "plugins/user-hook.sh",
+          contents: hook.text
+        )
+      )
+    }
     let renderedDigest = sketchyBarArtifactDigest(
       Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
@@ -157,6 +181,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
       settings: settings,
       layout: layout,
       spaceModule: spaceModule,
+      hookDigest: hook?.digest,
+      macarchyExecutablePath: macarchyExecutablePath,
       palettePath: palettePath,
       pluginPath: pluginPath
     )
@@ -166,6 +192,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
       settings: settings,
       layout: layout,
       spaceModule: spaceModule,
+      hookURL: profile.sketchyBar.hookURL,
+      hookDigest: hook?.digest,
       artifacts: artifacts,
       renderedDigest: renderedDigest,
       inputDigest: sha256Digest(try encoder.encode(identity))
@@ -273,7 +301,9 @@ package struct SketchyBarConfigurationComposer: Sendable {
     layout: SketchyBarLayout,
     spaceModule: SketchyBarSpaceModule,
     palettePath: String,
-    pluginPath: String
+    pluginPath: String,
+    hasHook: Bool,
+    macarchyExecutablePath: String
   ) -> String {
     let font = Self.shellLiteral("\(settings.font):Semibold:\(settings.fontSize).0")
     var lines = [
@@ -324,10 +354,13 @@ package struct SketchyBarConfigurationComposer: Sendable {
         lines.append("")
       }
     }
-    lines += [
-      Self.managedReadyMarkerDeclaration,
-      "\"$SKETCHYBAR\" --update",
-    ]
+    if hasHook {
+      lines += [
+        "export SKETCHYBAR YABAI PLUGIN_DIR PALETTE MACARCHY_BAR_COLOR MACARCHY_TEXT_COLOR MACARCHY_MUTED_COLOR MACARCHY_ACCENT_COLOR",
+        "\(Self.shellLiteral(macarchyExecutablePath)) desktop _run-sketchybar-hook \"$PLUGIN_DIR/user-hook.sh\"",
+      ]
+    }
+    lines += [Self.managedReadyMarkerDeclaration, "\"$SKETCHYBAR\" --update"]
     return lines.joined(separator: "\n") + "\n"
   }
 
@@ -356,6 +389,88 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "fi",
       "printf '%s\\n' \"$INDICES\"",
     ].joined(separator: "\n") + "\n"
+  }
+
+  private func readHook(at source: URL, root: URL) throws -> (text: String, digest: String) {
+    let root = root.standardizedFileURL
+    let resolved = source.resolvingSymlinksInPath().standardizedFileURL
+    let prefix = root.path.hasSuffix("/") ? root.path : root.path + "/"
+    guard resolved.path.hasPrefix(prefix) else {
+      throw SketchyBarConfigurationError.invalid(
+        source,
+        "trusted hook symlink must stay beside the profile"
+      )
+    }
+    let data: Data
+    do {
+      data = try readPinnedHook(at: resolved, root: root)
+    } catch {
+      throw SketchyBarConfigurationError.cannotRead(source, String(describing: error))
+    }
+    guard !data.starts(with: [0xef, 0xbb, 0xbf]) else {
+      throw SketchyBarConfigurationError.invalid(source, "trusted hook must not have a UTF-8 BOM")
+    }
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw SketchyBarConfigurationError.invalid(source, "trusted hook is not valid UTF-8")
+    }
+    guard !text.contains("\0") else {
+      throw SketchyBarConfigurationError.invalid(source, "trusted hook contains a NUL byte")
+    }
+    try validateShellSyntax(data, source: source)
+    return (text, sha256Digest(data))
+  }
+
+  private func readPinnedHook(at source: URL, root: URL) throws -> Data {
+    let relativePath = String(source.path.dropFirst(root.path.count + (root.path == "/" ? 0 : 1)))
+    let components = relativePath.split(separator: "/").map(String.init)
+    guard let name = components.last else {
+      throw SketchyBarConfigurationError.invalid(source, "trusted hook path is invalid")
+    }
+    var descriptor = try PinnedFilesystem.openDirectory(at: root)
+    defer { Darwin.close(descriptor) }
+    var directory = root
+    for component in components.dropLast() {
+      directory.append(path: component, directoryHint: .isDirectory)
+      let next = try PinnedFilesystem.openDirectory(
+        parentDescriptor: descriptor,
+        name: component,
+        url: directory
+      )
+      Darwin.close(descriptor)
+      descriptor = next
+    }
+    return try PinnedFilesystem.readRegularFile(
+      parentDescriptor: descriptor,
+      name: name,
+      url: source,
+      maximumSize: 1_048_576
+    ).data
+  }
+
+  private func validateShellSyntax(_ data: Data, source: URL) throws {
+    let process = Process()
+    let input = Pipe()
+    process.executableURL = URL(filePath: "/bin/sh")
+    process.arguments = ["-n"]
+    process.standardInput = input
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    do {
+      try process.run()
+      try input.fileHandleForWriting.write(contentsOf: data)
+      try input.fileHandleForWriting.close()
+      process.waitUntilExit()
+    } catch {
+      try? input.fileHandleForWriting.close()
+      if process.isRunning {
+        process.terminate()
+        process.waitUntilExit()
+      }
+      throw SketchyBarConfigurationError.invalid(source, "cannot validate trusted hook syntax")
+    }
+    guard process.terminationStatus == 0 else {
+      throw SketchyBarConfigurationError.invalid(source, "trusted hook has invalid /bin/sh syntax")
+    }
   }
 
   static func managedPaletteAssignment(stateRoot: URL) -> String {
@@ -396,6 +511,8 @@ private struct SketchyBarInputIdentity: Encodable {
   let settings: SketchyBarSettings
   let layout: SketchyBarLayout
   let spaceModule: SketchyBarSpaceModule
+  let hookDigest: String?
+  let macarchyExecutablePath: String
   let palettePath: String
   let pluginPath: String
 
@@ -406,6 +523,8 @@ private struct SketchyBarInputIdentity: Encodable {
     case settings
     case layout
     case spaceModule = "space_module"
+    case hookDigest = "hook_digest"
+    case macarchyExecutablePath = "macarchy_executable_path"
     case palettePath = "palette_path"
     case pluginPath = "plugin_path"
   }

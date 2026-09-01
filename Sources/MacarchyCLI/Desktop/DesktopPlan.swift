@@ -16,7 +16,8 @@ struct DesktopPlanCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     json: Bool,
-    scope: DesktopPlanScope = .allProviders
+    scope: DesktopPlanScope = .allProviders,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
   ) throws -> (output: String, succeeded: Bool) {
     var diagnostics: [DesktopPlanDiagnostic] = []
     let profile: PortableProfile?
@@ -61,7 +62,8 @@ struct DesktopPlanCommandRunner: Sendable {
         sketchyBarComposition = try SketchyBarConfigurationComposer().compose(
           defaultsURL: resourcesRoot.appending(path: "sketchybar/defaults.toml"),
           profile: profile,
-          stateRoot: stateRoot
+          stateRoot: stateRoot,
+          macarchyExecutableURL: macarchyExecutableURL
         )
       } catch {
         let source =
@@ -191,6 +193,8 @@ struct DesktopPlanCommandRunner: Sendable {
         settings: sketchyBarComposition?.settings,
         layout: sketchyBarComposition?.layout,
         spaceModule: sketchyBarComposition?.spaceModule.rawValue,
+        hook: sketchyBarComposition?.hookURL?.path,
+        hookDigest: sketchyBarComposition?.hookDigest,
         renderedArtifacts: sketchyBarComposition.map {
           Dictionary(uniqueKeysWithValues: $0.artifacts.map { ($0.path, $0.contents) })
         },
@@ -465,6 +469,8 @@ private struct DesktopSketchyBarPlanReport: Encodable {
   let settings: SketchyBarSettings?
   let layout: SketchyBarLayout?
   let spaceModule: String?
+  let hook: String?
+  let hookDigest: String?
   let renderedArtifacts: [String: String]?
   let renderedDigest: String?
   let proposedInputDigest: String?
@@ -480,6 +486,8 @@ private struct DesktopSketchyBarPlanReport: Encodable {
       "- SketchyBar center modules: \(modules(layout?.center))",
       "- SketchyBar right modules: \(modules(layout?.right))",
       "- SketchyBar Space module: \(spaceModule ?? "unavailable")",
+      "- trusted SketchyBar hook: \(hook ?? "none")",
+      "- SketchyBar hook digest: \(hookDigest ?? "none")",
       "- SketchyBar proposed input digest: \(proposedInputDigest ?? "unavailable")",
       "- SketchyBar rendered digest: \(renderedDigest ?? "unavailable")",
       "- SketchyBar current generation [\(currentGenerationStatus)]: "
@@ -504,6 +512,8 @@ private struct DesktopSketchyBarPlanReport: Encodable {
     case settings
     case layout
     case spaceModule = "space_module"
+    case hook
+    case hookDigest = "hook_digest"
     case renderedArtifacts = "rendered_artifacts"
     case renderedDigest = "rendered_digest"
     case proposedInputDigest = "proposed_input_digest"

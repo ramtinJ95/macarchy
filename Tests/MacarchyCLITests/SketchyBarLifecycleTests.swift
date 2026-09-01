@@ -209,6 +209,36 @@ struct SketchyBarLifecycleTests {
     }
   }
 
+  @Test
+  func maximumBoundedPartialEvidenceRoundTrips() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-sketchybar-lifecycle-\(UUID().uuidString.lowercased())"
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    var items = ["macarchy.clock", "macarchy.spaces.unavailable", "macarchy.theme.ready"]
+    items += (0..<61).map {
+      let prefix = "personal.\($0)."
+      return prefix + String(repeating: "x", count: 128 - prefix.utf8.count)
+    }
+    let evidence = SketchyBarLifecycleEvidence(
+      generationID: "s-00000000-0000-0000-0000-000000000000",
+      runtime: Self.runtime,
+      coreRuntime: SketchyBarCoreRuntimeInspection(
+        status: .partial,
+        message: "partial",
+        themeGenerationID: "g-00000000-0000-0000-0000-000000000000",
+        barColor: "0xf01e1e2e",
+        items: items.sorted(),
+        clockLabelPresent: true
+      )
+    )
+    let store = SketchyBarLifecycleEvidenceStore(stateRoot: root)
+
+    #expect(evidence.isValid)
+    try store.write(evidence)
+    #expect(try store.read() == evidence)
+  }
+
   private static let runtime = SketchyBarRuntimeInspection(
     status: .running,
     message: "running",

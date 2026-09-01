@@ -422,6 +422,32 @@ struct DesktopPlanCommandTests {
   }
 
   @Test
+  func planCopiesAndReportsTheTrustedSketchyBarHookWithoutExecutingIt() throws {
+    let fixture = try planFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let marker = fixture.home.appending(path: "executed")
+    let hook = fixture.home.appending(path: "sketchybar.sh")
+    let contents = "printf touched > \(marker.path)\n"
+    try contents.write(to: hook, atomically: true, encoding: .utf8)
+    try """
+    schema_version = 1
+    [sketchybar]
+    hook = "sketchybar.sh"
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+
+    let execution = try execute(fixture, json: true, profileRequired: true)
+    let report = try jsonObject(execution.output)
+    let sketchyBar = try #require(report["sketchybar"] as? [String: Any])
+    let artifacts = try #require(sketchyBar["rendered_artifacts"] as? [String: String])
+
+    #expect(execution.succeeded)
+    #expect(sketchyBar["hook"] as? String == hook.path)
+    #expect((sketchyBar["hook_digest"] as? String)?.hasPrefix("sha256:") == true)
+    #expect(artifacts["plugins/user-hook.sh"] == contents)
+    #expect(!FileManager.default.fileExists(atPath: marker.path))
+  }
+
+  @Test
   func humanPlanIncludesExactBytesAndNoChangeNotice() throws {
     let fixture = try planFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

@@ -3,6 +3,7 @@ import ThemeCore
 
 enum SketchyBarCoreRuntimeStatus: String, Codable, Sendable {
   case converged
+  case partial
   case drifted
   case failed
 }
@@ -39,25 +40,34 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
   var isValidEvidence: Bool {
     guard
       schemaVersion == 1,
-      status == .converged,
+      status == .converged || status == .partial,
       themeGenerationID.map(Self.isThemeGenerationID) == true,
       barColor.map(Self.isARGBColor) == true,
       items == items.sorted(),
       Set(items).count == items.count,
-      items.count <= 66,
+      items.count <= 64,
+      items.allSatisfy({
+        !$0.isEmpty && $0.utf8.count <= 128
+          && $0.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
+      }),
       spaceIndices == spaceIndices.sorted(),
       Set(spaceIndices).count == spaceIndices.count,
       spaceIndices.allSatisfy({ (1..<UInt32.bitWidth).contains($0) })
     else { return false }
     let hasClock = items.contains("macarchy.clock")
     guard hasClock == clockLabelPresent else { return false }
-    var expectedCore = [SketchyBarConfigurationComposer.readyItem]
-    if hasClock { expectedCore.append("macarchy.clock") }
+    var managedItems = [SketchyBarConfigurationComposer.readyItem]
+    if hasClock { managedItems.append("macarchy.clock") }
     if items.contains("macarchy.spaces.unavailable") {
-      return spaceIndices.isEmpty
-        && items == (expectedCore + ["macarchy.spaces.unavailable"]).sorted()
+      guard spaceIndices.isEmpty else { return false }
+      managedItems.append("macarchy.spaces.unavailable")
+    } else {
+      managedItems += spaceIndices.map { "macarchy.space.\($0)" }
     }
-    return items == (expectedCore + spaceIndices.map { "macarchy.space.\($0)" }).sorted()
+    managedItems.sort()
+    if status == .converged { return items == managedItems }
+    return Set(managedItems).isSubset(of: items)
+      && items.filter { $0.hasPrefix("macarchy.") }.allSatisfy(managedItems.contains)
   }
 
   private static func isThemeGenerationID(_ value: String) -> Bool {
@@ -133,27 +143,39 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   func settle(_ composition: SketchyBarComposition) -> SketchyBarCoreRuntimeInspection {
     var lastDrift: SketchyBarCoreRuntimeInspection?
     var lastTimeout: ProcessRunnerError?
+    var lastFailure: (any Error)?
     for attempt in 0..<11 {
       do {
         let inspection = try probe(composition)
-        if inspection.status == .converged {
+        if inspection.status == .converged || inspection.status == .partial {
           waitForPresentation()
           return inspection
         }
         lastDrift = inspection
       } catch let error as ProcessRunnerError {
-        guard
-          case .timedOut(let executableURL, _) = error,
-          executableURL == Self.controlURL
-        else {
-          return failed(error)
+        if composition.hookURL != nil {
+          lastFailure = error
+        } else {
+          guard
+            case .timedOut(let executableURL, _) = error,
+            executableURL == Self.controlURL
+          else {
+            return failed(error)
+          }
+          lastTimeout = error
         }
-        lastTimeout = error
       } catch {
-        return failed(error)
+        guard composition.hookURL != nil else { return failed(error) }
+        lastFailure = error
       }
-      if attempt < 10 { waitForSettle() }
+      if attempt < 10 {
+        // The hook runner exits within three seconds; do not roll back while it can still mutate.
+        for _ in 0..<(composition.hookURL == nil ? 1 : 10) {
+          waitForSettle()
+        }
+      }
     }
+    if let lastFailure { return failed(lastFailure) }
     if let lastDrift { return lastDrift }
     return SketchyBarCoreRuntimeInspection(
       status: .failed,
@@ -178,6 +200,14 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       timeout: 0.1
     )
     let items = bar.items.sorted()
+    let inventoryMatches =
+      if composition.hookURL == nil {
+        items == expectedItems
+      } else {
+        Set(items).count == items.count
+          && expectedItems.allSatisfy(items.contains)
+          && items.filter { $0.hasPrefix("macarchy.") }.allSatisfy(expectedItems.contains)
+      }
     guard
       bar.drawing == "on",
       bar.color.lowercased() == palette.color,
@@ -185,7 +215,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       bar.height == composition.settings.height,
       bar.margin == composition.settings.margin,
       bar.cornerRadius == composition.settings.cornerRadius,
-      items == expectedItems
+      inventoryMatches
     else {
       return drifted(
         "running SketchyBar bar state does not match the selected managed generation",
@@ -340,9 +370,12 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       )
     }
 
+    let partial = composition.hookURL != nil
     return SketchyBarCoreRuntimeInspection(
-      status: .converged,
-      message: "running SketchyBar matches the selected provider and canonical theme generations",
+      status: partial ? .partial : .converged,
+      message: partial
+        ? "managed SketchyBar core is verified; the trusted hook may add behavior Macarchy cannot inspect"
+        : "running SketchyBar matches the selected provider and canonical theme generations",
       themeGenerationID: palette.generationID,
       barColor: palette.color,
       items: items,

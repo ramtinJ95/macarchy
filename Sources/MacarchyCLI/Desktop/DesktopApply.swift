@@ -34,7 +34,8 @@ struct DesktopApplyCommandRunner: Sendable {
     homeDirectory: URL,
     adopt: String?,
     sketchyBarAdopt: String? = nil,
-    json: Bool
+    json: Bool,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState
     do {
@@ -42,7 +43,8 @@ struct DesktopApplyCommandRunner: Sendable {
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,
-        stateRoot: stateRoot
+        stateRoot: stateRoot,
+        macarchyExecutableURL: macarchyExecutableURL
       )
     } catch {
       return try result(
@@ -577,7 +579,8 @@ struct DesktopDesiredState: Sendable {
     resourcesRoot: URL,
     profileURL: URL,
     profileRequired: Bool,
-    stateRoot: URL
+    stateRoot: URL,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
   ) throws -> Self {
     let profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
     let yabaiComposition: YabaiComposition? =
@@ -594,7 +597,8 @@ struct DesktopDesiredState: Sendable {
         try SketchyBarConfigurationComposer().compose(
           defaultsURL: resourcesRoot.appending(path: "sketchybar/defaults.toml"),
           profile: profile,
-          stateRoot: stateRoot
+          stateRoot: stateRoot,
+          macarchyExecutableURL: macarchyExecutableURL
         )
       } else {
         nil

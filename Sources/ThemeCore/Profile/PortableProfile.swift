@@ -21,6 +21,8 @@ package struct SketchyBarProfileOptions: Equatable, Sendable {
   package let left: [SketchyBarModule]?
   package let center: [SketchyBarModule]?
   package let right: [SketchyBarModule]?
+  package let hookURL: URL?
+  package let hookRootURL: URL?
 }
 
 package struct YabaiProfileOptions: Equatable, Sendable {
@@ -123,6 +125,7 @@ package struct PortableProfileLoader: Sendable {
       "sketchybar.left",
       "sketchybar.center",
       "sketchybar.right",
+      "sketchybar.hook",
     ])
     if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
       throw KeybindingProfileError.invalid(
@@ -158,7 +161,7 @@ package struct PortableProfileLoader: Sendable {
       base: base
     )
     let topBar = try topBar(document.topBar, source: sourceURL)
-    let sketchyBar = try sketchyBar(document.sketchyBar, source: sourceURL)
+    let sketchyBar = try sketchyBar(document.sketchyBar, source: sourceURL, base: base)
     return PortableProfile(
       sourceURL: sourceURL,
       keybindings: keybindings,
@@ -286,7 +289,8 @@ package struct PortableProfileLoader: Sendable {
 
   private func sketchyBar(
     _ document: SketchyBarDocument?,
-    source: URL
+    source: URL,
+    base: URL
   ) throws -> SketchyBarProfileOptions {
     let modules = [document?.left, document?.center, document?.right]
       .compactMap { $0 }
@@ -297,10 +301,20 @@ package struct PortableProfileLoader: Sendable {
         "each explicitly positioned SketchyBar module must be unique"
       )
     }
+    let hookURL = try document?.hook.map {
+      try Self.resolvePortablePath(
+        $0,
+        field: "sketchybar.hook",
+        base: base,
+        source: source
+      )
+    }
     return SketchyBarProfileOptions(
       left: document?.left,
       center: document?.center,
-      right: document?.right
+      right: document?.right,
+      hookURL: hookURL,
+      hookRootURL: hookURL == nil ? nil : base
     )
   }
 
@@ -362,7 +376,9 @@ extension SketchyBarProfileOptions {
   fileprivate static let empty = SketchyBarProfileOptions(
     left: nil,
     center: nil,
-    right: nil
+    right: nil,
+    hookURL: nil,
+    hookRootURL: nil
   )
 }
 
@@ -426,4 +442,5 @@ private struct SketchyBarDocument: Decodable {
   let left: [SketchyBarModule]?
   let center: [SketchyBarModule]?
   let right: [SketchyBarModule]?
+  let hook: String?
 }
