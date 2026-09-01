@@ -1,0 +1,32 @@
+schema_version = 1
+
+layout = "bsp"
+window_placement = "second_child"
+window_insertion_point = "first"
+auto_balance = false
+split_ratio = 0.30
+
+top_padding = 0
+bottom_padding = 5
+left_padding = 5
+right_padding = 5
+window_gap = 5
+
+mouse_follows_focus = true
+mouse_modifier = "alt"
+mouse_action1 = "move"
+mouse_action2 = "resize"
+external_bar_height = 35
+
+[[rules]]
+app = "^System Settings$"
+
+[[rules]]
+app = "^Calculator$"
+
+[[rules]]
+label = "macarchy-keybindings-popup"
+app = "^macarchy$"
+title = "^Macarchy Keybindings$"
+role = "^AXWindow$"
+subrole = "^AXStandardWindow$"

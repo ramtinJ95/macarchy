@@ -8,8 +8,8 @@ struct Macarchy: AsyncParsableCommand {
     commandName: "macarchy",
     abstract: "A cohesive, theme-driven macOS environment.",
     subcommands: [
-      Theme.self, Keybindings.self, Reconcile.self, Doctor.self, Setup.self, Teardown.self,
-      Update.self, Version.self,
+      Theme.self, Keybindings.self, Desktop.self, Reconcile.self, Doctor.self, Setup.self,
+      Teardown.self, Update.self, Version.self,
     ]
   )
 

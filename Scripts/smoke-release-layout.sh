@@ -27,6 +27,7 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -d "$layout/share/macarchy/themes" ]]
 [[ -f "$layout/share/macarchy/keybindings/defaults.skhdrc" ]]
 [[ -f "$layout/share/macarchy/keybindings/metadata.toml" ]]
+[[ -f "$layout/share/macarchy/desktop/yabai/defaults.toml" ]]
 [[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
@@ -46,6 +47,8 @@ print -r -- "$signature" | grep -q '^Signature=adhoc$'
     | sed 's#^Themes/#share/macarchy/themes/#'
   git -C "$repository_root" ls-files -- Keybindings \
     | sed 's#^Keybindings/#share/macarchy/keybindings/#'
+  git -C "$repository_root" ls-files -- Desktop \
+    | sed 's#^Desktop/#share/macarchy/desktop/#'
 } | LC_ALL=C sort > "$temporary_directory/expected-inventory.txt"
 (
   cd "$layout"
@@ -95,6 +98,12 @@ grep -q '"schema_version" : 1' "$temporary_directory/keybindings-list.json"
 [[ "$(grep -c '"identity" :' "$temporary_directory/keybindings-list.json")" == "48" ]]
 
 "$script_directory/verify-keybindings-portability.sh" "$binary"
+
+HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+  "$binary" desktop plan --json > "$temporary_directory/desktop-plan.json"
+grep -q '"operation" : "desktop_plan"' "$temporary_directory/desktop-plan.json"
+grep -q '"mutated" : false' "$temporary_directory/desktop-plan.json"
+grep -q '"desktop_provider" : "yabai-skhd"' "$temporary_directory/desktop-plan.json"
 
 snapshot_tree "$temporary_directory/home-after.json" "$home"
 snapshot_tree "$temporary_directory/resources-after.json" "$resources"
