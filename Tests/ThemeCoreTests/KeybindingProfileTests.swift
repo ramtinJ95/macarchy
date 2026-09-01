@@ -62,7 +62,7 @@ struct KeybindingProfileTests {
       provider = "disabled"
       [sketchybar]
       left = ["clock", "spaces"]
-      right = []
+      right = ["volume"]
       hook = "sketchybar.sh"
       """
 
@@ -74,7 +74,7 @@ struct KeybindingProfileTests {
     #expect(portable.desktop.yabai.windowGap == 9)
     #expect(portable.topBar == .disabled)
     #expect(portable.sketchyBar.left == [.clock, .spaces])
-    #expect(portable.sketchyBar.right == [])
+    #expect(portable.sketchyBar.right == [.volume])
     #expect(portable.sketchyBar.hookURL == URL(filePath: "/fixtures/sketchybar.sh"))
     #expect(keybindings.disabledIdentities == ["alt-k"])
   }

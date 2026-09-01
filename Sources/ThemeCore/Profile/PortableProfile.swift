@@ -15,6 +15,7 @@ package enum TopBarProviderSelection: String, Codable, Sendable {
 package enum SketchyBarModule: String, Codable, Hashable, Sendable {
   case spaces
   case clock
+  case volume
 }
 
 package struct SketchyBarProfileOptions: Equatable, Sendable {

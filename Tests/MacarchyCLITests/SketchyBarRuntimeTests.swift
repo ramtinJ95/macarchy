@@ -227,6 +227,79 @@ struct SketchyBarRuntimeTests {
   }
 
   @Test
+  func verifiesTheOptInVolumeLevelAndRequiredEventSubscriptions() throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let composition = try fixture.composition(
+      """
+      schema_version = 1
+      [sketchybar]
+      left = []
+      center = []
+      right = ["volume"]
+      """
+    )
+
+    for (label, updateMask, expected) in [
+      ("42%", UInt64(4_104), SketchyBarCoreRuntimeStatus.converged),
+      ("42%", UInt64(8), .drifted),
+      ("042%", UInt64(4_104), .drifted),
+    ] {
+      let verifier = fixture.verifier { request in
+        switch request.arguments {
+        case ["--query", "bar"]:
+          return ProcessResult(
+            terminationStatus: 0,
+            output: """
+              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
+               "margin":8,"corner_radius":9,
+               "items":["macarchy.volume","macarchy.theme.ready"]}
+              """
+          )
+        case ["--query", "macarchy.theme.ready"]:
+          return ProcessResult(
+            terminationStatus: 0,
+            output: Self.itemJSON(
+              name: "macarchy.theme.ready",
+              drawing: "off",
+              position: "right"
+            )
+          )
+        case ["--query", "macarchy.volume"]:
+          return ProcessResult(
+            terminationStatus: 0,
+            output: Self.itemJSON(
+              name: "macarchy.volume",
+              drawing: "on",
+              position: "right",
+              label: label,
+              labelDrawing: "on",
+              script: fixture.volumeScript,
+              updateMask: updateMask
+            )
+          )
+        case ["--query", "events"]:
+          return ProcessResult(
+            terminationStatus: 0,
+            output: #"{"volume_change":{"bit":4096},"system_woke":{"bit":8}}"#
+          )
+        default:
+          Issue.record("unexpected request: \(request)")
+          return ProcessResult(terminationStatus: 1, output: "unexpected")
+        }
+      }
+
+      let inspection = verifier.inspect(composition)
+
+      #expect(inspection.status == expected)
+      if expected == .converged {
+        #expect(inspection.volumeLevelPresent == true)
+        #expect(inspection.isValidEvidence)
+      }
+    }
+  }
+
+  @Test
   func rejectsChangingDynamicSpaceSnapshotsAsDrift() throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -427,14 +500,16 @@ struct SketchyBarRuntimeTests {
     labelDrawing: String = "off",
     script: String = "(null)",
     clickScript: String = "(null)",
-    updateFrequency: Int = 0
+    updateFrequency: Int = 0,
+    updateMask: UInt64? = nil
   ) -> String {
-    """
-    {"name":"\(name)","type":"\(type)",
-     "geometry":{"drawing":"\(drawing)","position":"\(position)","associated_space_mask":\(associatedSpaceMask)},
-     "label":{"value":"\(label)","drawing":"\(labelDrawing)"},
-     "scripting":{"script":"\(script)","click_script":"\(clickScript)","update_freq":\(updateFrequency)}}
-    """
+    let mask = updateMask.map { ",\"update_mask\":\($0)" } ?? ""
+    return """
+      {"name":"\(name)","type":"\(type)",
+       "geometry":{"drawing":"\(drawing)","position":"\(position)","associated_space_mask":\(associatedSpaceMask)},
+       "label":{"value":"\(label)","drawing":"\(labelDrawing)"},
+       "scripting":{"script":"\(script)","click_script":"\(clickScript)","update_freq":\(updateFrequency)\(mask)}}
+      """
   }
 }
 
@@ -495,6 +570,10 @@ private struct SketchyBarRuntimeFixture {
 
   var clockScript: String {
     state.appending(path: "desktop/sketchybar/current/plugins/clock.sh").path
+  }
+
+  var volumeScript: String {
+    state.appending(path: "desktop/sketchybar/current/plugins/volume.sh").path
   }
 
   func composition(_ profile: String) throws -> SketchyBarComposition {

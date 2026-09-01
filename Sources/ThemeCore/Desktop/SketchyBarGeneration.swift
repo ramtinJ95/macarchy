@@ -71,7 +71,9 @@ package struct SketchyBarGenerationInspector: Sendable {
   private static let coreArtifactPaths = [
     "plugins/clock.sh", "plugins/space-indexes.sh", "sketchybarrc",
   ]
-  private static let hookArtifactPath = "plugins/user-hook.sh"
+  private static let optionalArtifactPaths = [
+    "plugins/user-hook.sh", "plugins/volume.sh",
+  ]
 
   private let stateRoot: URL
 
@@ -168,7 +170,7 @@ package struct SketchyBarGenerationInspector: Sendable {
     let pluginInventory = try PinnedFilesystem.directoryEntries(
       descriptor: pluginsDescriptor,
       url: plugins,
-      limit: 3
+      limit: 4
     )
     guard !pluginInventory.truncated else {
       throw SketchyBarGenerationError.invalid("plugin inventory is unexpected")
@@ -188,14 +190,15 @@ package struct SketchyBarGenerationInspector: Sendable {
       from: manifestFile.data
     )
     let artifactPaths = manifest.artifacts.keys.sorted()
+    let artifactSet = Set(artifactPaths)
     guard
       manifest.schemaVersion == SketchyBarGenerationManifest.schemaVersion,
       manifest.rendererVersion == SketchyBarGenerationManifest.rendererVersion,
       manifest.generationID == generationID,
       manifest.inputDigest.hasPrefix("sha256:"),
       manifest.renderedDigest.hasPrefix("sha256:"),
-      artifactPaths == Self.coreArtifactPaths
-        || artifactPaths == (Self.coreArtifactPaths + [Self.hookArtifactPath]).sorted()
+      Set(Self.coreArtifactPaths).isSubset(of: artifactSet),
+      artifactSet.isSubset(of: Set(Self.coreArtifactPaths + Self.optionalArtifactPaths))
     else {
       throw SketchyBarGenerationError.invalid("manifest identity or inventory is invalid")
     }
@@ -646,9 +649,9 @@ package struct SketchyBarGenerationActivator: Sendable {
       let pluginsInventory = try PinnedFilesystem.directoryEntries(
         descriptor: pluginsDescriptor,
         url: plugins,
-        limit: 3
+        limit: 4
       )
-      let expectedPlugins = Set(["clock.sh", "space-indexes.sh", "user-hook.sh"])
+      let expectedPlugins = Set(["clock.sh", "space-indexes.sh", "user-hook.sh", "volume.sh"])
       guard
         !pluginsInventory.truncated,
         Set(pluginsInventory.entries).isSubset(of: expectedPlugins)

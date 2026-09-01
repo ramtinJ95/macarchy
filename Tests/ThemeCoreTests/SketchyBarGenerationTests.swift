@@ -44,7 +44,12 @@ struct SketchyBarGenerationTests {
         encoding: .utf8
       )
       let profile = try PortableProfileLoader().decode(
-        "schema_version = 1\n[sketchybar]\nhook = \"hook.sh\"\n",
+        """
+        schema_version = 1
+        [sketchybar]
+        right = ["volume", "clock"]
+        hook = "hook.sh"
+        """,
         source: root.appending(path: "profile.toml")
       )
       let composition = try SketchyBarConfigurationComposer().compose(
@@ -58,6 +63,11 @@ struct SketchyBarGenerationTests {
       )
 
       #expect(try String(contentsOf: copied, encoding: .utf8).contains("personal.demo"))
+      #expect(
+        FileManager.default.fileExists(
+          atPath: copied.deletingLastPathComponent().appending(path: "volume.sh").path
+        )
+      )
       #expect(SketchyBarGenerationInspector(stateRoot: root).inspect().status == .current)
 
       try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copied.path)

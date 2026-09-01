@@ -193,6 +193,7 @@ struct DesktopPlanCommandRunner: Sendable {
         settings: sketchyBarComposition?.settings,
         layout: sketchyBarComposition?.layout,
         spaceModule: sketchyBarComposition?.spaceModule.rawValue,
+        moduleCapabilities: sketchyBarComposition.map(Self.moduleCapabilities),
         hook: sketchyBarComposition?.hookURL?.path,
         hookDigest: sketchyBarComposition?.hookDigest,
         renderedArtifacts: sketchyBarComposition.map {
@@ -365,6 +366,13 @@ struct DesktopPlanCommandRunner: Sendable {
     )
     return actions
   }
+
+  private static func moduleCapabilities(
+    _ composition: SketchyBarComposition
+  ) -> [String: String] {
+    composition.layout.position(of: .volume) == nil
+      ? [:] : [SketchyBarModule.volume.rawValue: "supported_macos_builtin"]
+  }
 }
 
 private struct DesktopPlanReport: Encodable {
@@ -469,6 +477,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
   let settings: SketchyBarSettings?
   let layout: SketchyBarLayout?
   let spaceModule: String?
+  let moduleCapabilities: [String: String]?
   let hook: String?
   let hookDigest: String?
   let renderedArtifacts: [String: String]?
@@ -486,6 +495,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
       "- SketchyBar center modules: \(modules(layout?.center))",
       "- SketchyBar right modules: \(modules(layout?.right))",
       "- SketchyBar Space module: \(spaceModule ?? "unavailable")",
+      "- SketchyBar optional module capabilities: \(capabilities)",
       "- trusted SketchyBar hook: \(hook ?? "none")",
       "- SketchyBar hook digest: \(hookDigest ?? "none")",
       "- SketchyBar proposed input digest: \(proposedInputDigest ?? "unavailable")",
@@ -507,11 +517,21 @@ private struct DesktopSketchyBarPlanReport: Encodable {
     return values.isEmpty ? "none" : values.map(\.rawValue).joined(separator: ", ")
   }
 
+  private var capabilities: String {
+    guard let moduleCapabilities else { return "unavailable" }
+    return moduleCapabilities.isEmpty
+      ? "none"
+      : moduleCapabilities.sorted { $0.key < $1.key }
+        .map { "\($0.key)=\($0.value)" }
+        .joined(separator: ", ")
+  }
+
   enum CodingKeys: String, CodingKey {
     case packagedDefaults = "packaged_defaults"
     case settings
     case layout
     case spaceModule = "space_module"
+    case moduleCapabilities = "module_capabilities"
     case hook
     case hookDigest = "hook_digest"
     case renderedArtifacts = "rendered_artifacts"
