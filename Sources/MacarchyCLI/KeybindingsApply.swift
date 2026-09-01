@@ -354,10 +354,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
     guard providerInspection.status == .managed else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
-    try KeybindingProviderInspector.validateOwnershipRecord(
-      record,
-      context: SetupOwnershipManager.Context(homeDirectory: homeDirectory)
-    )
     let usesLegacySymlinkRestoration =
       record.retainedOriginalPath == nil
       && [.symbolicLink, .directorySymbolicLink].contains(record.originalKind ?? .absent)
@@ -989,9 +985,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL
   ) throws -> Bool {
     if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
-      let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
-      let records = try SetupOwnershipManager().readRecords(context: context)
-      if records.contains(where: { $0.id == KeybindingProviderInspector.ownershipID }) {
+      if try keybindingOwnershipRecord(homeDirectory: homeDirectory) != nil {
         try provider.restoreOriginalEntry()
         return true
       } else if [.restorationFinalizing, .restorationFinalized].contains(transaction.phase) {
@@ -1197,9 +1191,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL
   ) throws -> SetupOwnershipRecord? {
     let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
-    return try SetupOwnershipManager().readRecords(context: context).first {
-      $0.id == KeybindingProviderInspector.ownershipID
-    }
+    return try SetupOwnershipManager().keybindingOwnershipRecord(context: context)
   }
 
   private func preflightRollback(

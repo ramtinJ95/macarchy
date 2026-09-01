@@ -15,23 +15,51 @@ extension SetupOwnershipManager {
       throw SetupOwnershipError.system(
         "read", context.manifestURL, String(describing: error))
     }
+    do {
+      return try validatedOwnershipRecords(from: data, context: context)
+    } catch {
+      throw error.setupReaderError
+    }
+  }
+
+  func keybindingOwnershipRecord(context: Context) throws -> SetupOwnershipRecord? {
+    try readRecords(context: context).first {
+      $0.id == KeybindingProviderInspector.ownershipID
+    }
+  }
+
+  func keybindingOwnershipRecord(
+    from data: Data,
+    context: Context
+  ) throws(SetupOwnershipManifestValidationError) -> SetupOwnershipRecord? {
+    try validatedOwnershipRecords(from: data, context: context).first {
+      $0.id == KeybindingProviderInspector.ownershipID
+    }
+  }
+
+  private func validatedOwnershipRecords(
+    from data: Data,
+    context: Context
+  ) throws(SetupOwnershipManifestValidationError) -> [SetupOwnershipRecord] {
     let manifest: SetupOwnershipManifest
     do {
       try validateManifestKeys(data)
       manifest = try JSONDecoder().decode(SetupOwnershipManifest.self, from: data)
     } catch {
-      throw SetupOwnershipError.invalidManifest(String(describing: error))
+      throw SetupOwnershipManifestValidationError.invalidPayload(String(describing: error))
     }
     guard manifest.schemaVersion == SetupOwnershipManifest.currentSchemaVersion else {
-      throw SetupOwnershipError.invalidManifest(
-        "unsupported schema version \(manifest.schemaVersion)"
-      )
+      throw SetupOwnershipManifestValidationError.unsupportedSchema(manifest.schemaVersion)
     }
     guard Set(manifest.records.map(\.id)).count == manifest.records.count else {
-      throw SetupOwnershipError.invalidManifest("integration identifiers must be unique")
+      throw SetupOwnershipManifestValidationError.duplicateIntegrationIdentifiers
     }
-    for record in manifest.records {
-      try validateOwnershipRecord(record, context: context)
+    do {
+      for record in manifest.records {
+        try validateOwnershipRecord(record, context: context)
+      }
+    } catch {
+      throw SetupOwnershipManifestValidationError.invalidRecord(error)
     }
     return manifest.records
   }
@@ -156,6 +184,39 @@ extension SetupOwnershipManager {
     }
   }
 
+}
+
+enum SetupOwnershipManifestValidationError: Error {
+  case invalidPayload(String)
+  case unsupportedSchema(Int)
+  case duplicateIntegrationIdentifiers
+  case invalidRecord(any Error)
+
+  var setupReaderError: any Error {
+    switch self {
+    case .invalidPayload(let reason):
+      SetupOwnershipError.invalidManifest(reason)
+    case .unsupportedSchema(let version):
+      SetupOwnershipError.invalidManifest("unsupported schema version \(version)")
+    case .duplicateIntegrationIdentifiers:
+      SetupOwnershipError.invalidManifest("integration identifiers must be unique")
+    case .invalidRecord(let error):
+      error
+    }
+  }
+
+  var providerInspectionMessage: String {
+    switch self {
+    case .invalidPayload(let reason):
+      "setup ownership evidence is invalid: \(reason)"
+    case .unsupportedSchema:
+      "setup ownership evidence has an unsupported schema"
+    case .duplicateIntegrationIdentifiers:
+      "setup ownership evidence contains duplicate integration identifiers"
+    case .invalidRecord(let error):
+      "setup ownership evidence contains an invalid record: \(error)"
+    }
+  }
 }
 
 struct SetupOwnershipManifest: Codable {
