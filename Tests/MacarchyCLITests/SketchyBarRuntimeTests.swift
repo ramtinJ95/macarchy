@@ -273,6 +273,77 @@ struct SketchyBarRuntimeTests {
     }
   }
 
+  @Test
+  func hookAllowsForeignItemsButPreservesTheManagedNamespace() throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try "# trusted\n".write(
+      to: fixture.root.appending(path: "hook.sh"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nhook = \"hook.sh\"\n"
+    )
+
+    for (extra, expected) in [
+      ("personal.demo", SketchyBarCoreRuntimeStatus.partial),
+      ("macarchy.unmanaged", .drifted),
+    ] {
+      let verifier = fixture.verifier { request in
+        if request.executableURL.path == SketchyBarCoreRuntimeVerifier.controlURL.path,
+          request.arguments == ["--query", "bar"]
+        {
+          return ProcessResult(
+            terminationStatus: 0,
+            output: """
+              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
+               "margin":8,"corner_radius":9,
+               "items":["macarchy.clock","macarchy.theme.ready","macarchy.space.1","\(extra)"]}
+              """
+          )
+        }
+        return Self.dynamicResult(request, fixture: fixture, indices: [1])
+      }
+
+      let inspection = verifier.inspect(composition)
+
+      #expect(inspection.status == expected, Comment(rawValue: extra))
+      if expected == .partial { #expect(inspection.isValidEvidence) }
+    }
+  }
+
+  @Test
+  func hookSettleDoesNotFailBeforeTheRunnerExecutionBound() throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try "# trusted\n".write(
+      to: fixture.root.appending(path: "hook.sh"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nhook = \"hook.sh\"\n"
+    )
+    let waits = Mutex(0)
+    let verifier = SketchyBarCoreRuntimeVerifier(
+      stateRoot: fixture.state,
+      processRunner: ProcessRunner { request in
+        if request.executableURL == SketchyBarCoreRuntimeVerifier.yabaiURL {
+          return ProcessResult(terminationStatus: 1, output: "temporary yabai failure")
+        }
+        return Self.dynamicResult(request, fixture: fixture, indices: [1])
+      },
+      waitForSettle: { waits.withLock { $0 += 1 } },
+      waitForPresentation: {}
+    )
+
+    let inspection = verifier.settle(composition)
+
+    #expect(inspection.status == .failed)
+    #expect(waits.withLock { $0 } == 100)
+  }
+
   private static func dynamicResult(
     _ request: ProcessRequest,
     fixture: SketchyBarRuntimeFixture,

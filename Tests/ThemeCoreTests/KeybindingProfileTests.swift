@@ -63,6 +63,7 @@ struct KeybindingProfileTests {
       [sketchybar]
       left = ["clock", "spaces"]
       right = []
+      hook = "sketchybar.sh"
       """
 
     let portable = try PortableProfileLoader().decode(text, source: source)
@@ -74,6 +75,7 @@ struct KeybindingProfileTests {
     #expect(portable.topBar == .disabled)
     #expect(portable.sketchyBar.left == [.clock, .spaces])
     #expect(portable.sketchyBar.right == [])
+    #expect(portable.sketchyBar.hookURL == URL(filePath: "/fixtures/sketchybar.sh"))
     #expect(keybindings.disabledIdentities == ["alt-k"])
   }
 
@@ -104,6 +106,10 @@ struct KeybindingProfileTests {
       (
         "schema_version = 1\n[sketchybar]\nright = [\"weather\"]\n",
         "weather"
+      ),
+      (
+        "schema_version = 1\n[sketchybar]\nhook = \"/tmp/sketchybar.sh\"\n",
+        "must be a relative path"
       ),
     ]
 

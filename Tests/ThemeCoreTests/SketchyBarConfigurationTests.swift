@@ -135,6 +135,138 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test
+  func copiesTheTrustedHookWithoutExecutingItAndIncludesItInGenerationIdentity() throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let marker = root.appending(path: "executed")
+    let hook = root.appending(path: "sketchybar.sh")
+    let hookContents =
+      "printf touched > \(marker.path)\n"
+      + "\"$SKETCHYBAR\" --add item personal.demo center\n"
+    try hookContents.write(to: hook, atomically: true, encoding: .utf8)
+    let profile = try PortableProfileLoader().decode(
+      """
+      schema_version = 1
+      [sketchybar]
+      hook = "sketchybar.sh"
+      """,
+      source: root.appending(path: "profile.toml")
+    )
+    let executable = root.appending(path: "development macarchy")
+
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL,
+      profile: profile,
+      stateRoot: root,
+      macarchyExecutableURL: executable
+    )
+    let withoutHook = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL,
+      profile: .defaults,
+      stateRoot: root,
+      macarchyExecutableURL: executable
+    )
+    let installedExecutable = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL,
+      profile: profile,
+      stateRoot: root
+    )
+    let copied = try #require(
+      composition.artifacts.first { $0.path == "plugins/user-hook.sh" }
+    )
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+    let invocation = try #require(
+      entry.contents.range(
+        of: "'\(executable.path)' desktop _run-sketchybar-hook \"$PLUGIN_DIR/user-hook.sh\""
+      )
+    )
+    let ready = try #require(entry.contents.range(of: "macarchy.theme.ready"))
+
+    #expect(composition.hookURL == hook)
+    #expect(composition.hookDigest == copied.digest)
+    #expect(copied.contents == hookContents)
+    #expect(invocation.lowerBound < ready.lowerBound)
+    #expect(!FileManager.default.fileExists(atPath: marker.path))
+    #expect(composition.inputDigest != withoutHook.inputDigest)
+    #expect(composition.renderedDigest != withoutHook.renderedDigest)
+    #expect(composition.inputDigest != installedExecutable.inputDigest)
+    #expect(composition.renderedDigest != installedExecutable.renderedDigest)
+    try requireValidShellSyntax(composition.artifacts, root: root)
+  }
+
+  @Test
+  func rejectsInvalidTrustedHooksBeforeRendering() throws {
+    let root = try configurationRoot()
+    let outside = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-sketchybar-outside-hook-\(UUID().uuidString).sh"
+    )
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: outside)
+    }
+    let hook = root.appending(path: "hook.sh")
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[sketchybar]\nhook = \"hook.sh\"\n",
+      source: root.appending(path: "profile.toml")
+    )
+
+    #expect(throws: SketchyBarConfigurationError.self) {
+      _ = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: defaultsURL,
+        profile: profile,
+        stateRoot: root
+      )
+    }
+
+    try "if then\n".write(to: hook, atomically: true, encoding: .utf8)
+    #expect(throws: SketchyBarConfigurationError.self) {
+      _ = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: defaultsURL,
+        profile: profile,
+        stateRoot: root
+      )
+    }
+
+    try Data([0xef, 0xbb, 0xbf] + Array("# valid\n".utf8)).write(to: hook, options: .atomic)
+    #expect(throws: SketchyBarConfigurationError.self) {
+      _ = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: defaultsURL,
+        profile: profile,
+        stateRoot: root
+      )
+    }
+
+    try FileManager.default.removeItem(at: hook)
+    let hooks = root.appending(path: "hooks", directoryHint: .isDirectory)
+    let shared = root.appending(path: "shared.sh")
+    try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: false)
+    try "# shared\n".write(to: shared, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      atPath: hooks.appending(path: "hook.sh").path,
+      withDestinationPath: "../shared.sh"
+    )
+    let nestedProfile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[sketchybar]\nhook = \"hooks/hook.sh\"\n",
+      source: root.appending(path: "profile.toml")
+    )
+    _ = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL,
+      profile: nestedProfile,
+      stateRoot: root
+    )
+
+    try "# outside\n".write(to: outside, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(at: hook, withDestinationURL: outside)
+    #expect(throws: SketchyBarConfigurationError.self) {
+      _ = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: defaultsURL,
+        profile: profile,
+        stateRoot: root
+      )
+    }
+  }
+
+  @Test
   func rejectsAnOverrideThatDuplicatesAPackagedModulePosition() throws {
     let root = try configurationRoot()
     defer { try? FileManager.default.removeItem(at: root) }

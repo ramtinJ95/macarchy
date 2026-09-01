@@ -4,7 +4,7 @@ import Foundation
 struct Desktop: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Plan and manage the default desktop providers.",
-    subcommands: [Plan.self, Apply.self, Status.self, Teardown.self]
+    subcommands: [Plan.self, Apply.self, Status.self, Teardown.self, RunSketchyBarHook.self]
   )
 
   struct Plan: ParsableCommand {
@@ -160,6 +160,19 @@ struct Desktop: ParsableCommand {
       )
       print(execution.output)
       if !execution.succeeded { throw ExitCode.failure }
+    }
+  }
+
+  struct RunSketchyBarHook: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      commandName: "_run-sketchybar-hook",
+      shouldDisplay: false
+    )
+
+    @Argument var hook: String
+
+    mutating func run() throws {
+      try SketchyBarHookRunner().execute(URL(filePath: hook).standardizedFileURL)
     }
   }
 }

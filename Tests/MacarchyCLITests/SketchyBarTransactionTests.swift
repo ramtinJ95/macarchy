@@ -512,6 +512,38 @@ struct SketchyBarTransactionTests {
   }
 
   @Test
+  func partialHookRuntimeRequiresPersistableEvidence() throws {
+    for hookItemCount in [0, 62] {
+      let fixture = try SketchyBarTransactionFixture(
+        serviceRunning: false,
+        coreRuntimeStatus: .partial,
+        hookItemCount: hookItemCount
+      )
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+      if hookItemCount == 0 {
+        let result = try fixture.transaction().convergeLocked(
+          composition: fixture.composition,
+          adoptionEvidenceDigest: nil
+        )
+        let evidence = try #require(
+          try SketchyBarLifecycleEvidenceStore(stateRoot: fixture.state).read()
+        )
+        #expect(result.changed)
+        #expect(evidence.coreRuntime.status == .partial)
+      } else {
+        #expect(throws: SketchyBarDesktopError.self) {
+          try fixture.transaction().convergeLocked(
+            composition: fixture.composition,
+            adoptionEvidenceDigest: nil
+          )
+        }
+        #expect(try SketchyBarLifecycleEvidenceStore(stateRoot: fixture.state).read() == nil)
+      }
+    }
+  }
+
+  @Test
   func interruptedStartIsStoppedAfterFilesystemRecovery() throws {
     let fixture = try SketchyBarTransactionFixture(serviceRunning: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -649,7 +681,8 @@ private struct SketchyBarTransactionFixture {
   init(
     serviceRunning: Bool = true,
     failedReloads: Int = 0,
-    coreRuntimeStatus: SketchyBarCoreRuntimeStatus = .converged
+    coreRuntimeStatus: SketchyBarCoreRuntimeStatus = .converged,
+    hookItemCount: Int = 0
   ) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-sketchybar-transaction-tests-\(UUID().uuidString.lowercased())",
@@ -668,13 +701,25 @@ private struct SketchyBarTransactionFixture {
       message: coreRuntimeStatus == .converged ? "converged" : "runtime drift",
       themeGenerationID: "g-00000000-0000-0000-0000-000000000000",
       barColor: "0xf01e1e2e",
-      items: ["macarchy.clock", "macarchy.space.1", "macarchy.theme.ready"],
+      items: (["macarchy.clock", "macarchy.space.1", "macarchy.theme.ready"]
+        + (0..<hookItemCount).map { "personal.\($0)" }).sorted(),
       spaceIndices: [1],
       clockLabelPresent: true
     )
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    let profileText: String
+    if coreRuntimeStatus == .partial {
+      try "# trusted\n".write(
+        to: root.appending(path: "hook.sh"),
+        atomically: true,
+        encoding: .utf8
+      )
+      profileText = "schema_version = 1\n[sketchybar]\nhook = \"hook.sh\"\n"
+    } else {
+      profileText = "schema_version = 1\n"
+    }
     let profile = try PortableProfileLoader().decode(
-      "schema_version = 1\n",
+      profileText,
       source: root.appending(path: "profile.toml")
     )
     composition = try SketchyBarConfigurationComposer().compose(

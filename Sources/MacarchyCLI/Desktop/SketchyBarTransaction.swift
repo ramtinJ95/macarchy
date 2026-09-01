@@ -279,7 +279,8 @@ struct SketchyBarProviderTransaction: Sendable {
       previousLifecycle?.generationID == generationID,
       previousLifecycle?.runtime == currentRuntime,
       previousLifecycle?.coreRuntime == currentCoreRuntime,
-      currentCoreRuntime?.status == .converged,
+      let currentCoreRuntime,
+      Self.isSuccessfulCoreRuntime(currentCoreRuntime, composition: composition),
       serviceWasRunning
     {
       return SketchyBarFilesystemConvergenceResult(
@@ -347,7 +348,7 @@ struct SketchyBarProviderTransaction: Sendable {
         throw SketchyBarDesktopError.lifecycle(runtime.message)
       }
       let verifiedCoreRuntime = coreRuntime.settle(composition)
-      guard verifiedCoreRuntime.status == .converged else {
+      guard Self.isSuccessfulCoreRuntime(verifiedCoreRuntime, composition: composition) else {
         throw SketchyBarDesktopError.lifecycle(verifiedCoreRuntime.message)
       }
       transaction.phase = .serviceChanged
@@ -377,6 +378,15 @@ struct SketchyBarProviderTransaction: Sendable {
       }
       throw convergenceError
     }
+  }
+
+  private static func isSuccessfulCoreRuntime(
+    _ inspection: SketchyBarCoreRuntimeInspection,
+    composition: SketchyBarComposition
+  ) -> Bool {
+    inspection.isValidEvidence
+      && (inspection.status == .converged
+        || (inspection.status == .partial && composition.hookURL != nil))
   }
 
   func recoverPendingLocked() throws -> SketchyBarTransaction? {

@@ -8,6 +8,51 @@ import Testing
 
 struct DesktopApplyCommandTests {
   @Test
+  func trustedSketchyBarHookReportsSuccessfulPartialStatus() throws {
+    let fixture = try SketchyBarPublicCommandFixture(hasHook: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let yabaiLifecycle = YabaiLifecycleFixture(running: false)
+    let applyRunner = DesktopApplyCommandRunner(
+      lifecycle: yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: fixture.coreController
+    )
+
+    let apply = try applyRunner.execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      adopt: nil,
+      json: true
+    )
+    let status = try DesktopStatusCommandRunner(
+      lifecycle: yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: fixture.coreController
+    ).execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      json: true
+    )
+    let report = try #require(
+      JSONSerialization.jsonObject(with: Data(status.output.utf8)) as? [String: Any]
+    )
+
+    #expect(apply.succeeded)
+    #expect(status.succeeded)
+    #expect(report["outcome"] as? String == "partial")
+    #expect(
+      ((report["sketchybar"] as? [String: Any])?["core_runtime"]
+        as? [String: Any])?["status"] as? String == "partial"
+    )
+  }
+
+  @Test
   func publicCommandsConvergeReportAndTeardownSketchyBar() throws {
     let fixture = try SketchyBarPublicCommandFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -610,7 +655,7 @@ private struct SketchyBarPublicCommandFixture {
   let lifecycle: SketchyBarPublicLifecycleFixture
   let core: SketchyBarCoreRuntimeInspection
 
-  init() throws {
+  init(hasHook: Bool = false) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-sketchybar-public-tests-\(UUID().uuidString.lowercased())",
       directoryHint: .isDirectory
@@ -619,11 +664,16 @@ private struct SketchyBarPublicCommandFixture {
     state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
     profile = state.appending(path: "profile.toml")
     try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
-    try """
-    schema_version = 1
-    [desktop]
-    provider = "disabled"
-    """.write(to: profile, atomically: true, encoding: .utf8)
+    var profileText = "schema_version = 1\n[desktop]\nprovider = \"disabled\"\n"
+    if hasHook {
+      profileText += "[sketchybar]\nhook = \"hook.sh\"\n"
+      try "# trusted\n".write(
+        to: state.appending(path: "hook.sh"),
+        atomically: true,
+        encoding: .utf8
+      )
+    }
+    try profileText.write(to: profile, atomically: true, encoding: .utf8)
     let repositoryRoot = URL(filePath: #filePath)
       .deletingLastPathComponent()
       .deletingLastPathComponent()
@@ -637,11 +687,12 @@ private struct SketchyBarPublicCommandFixture {
     let generation = try ThemeActivator(root: state).activate(package: package)
     lifecycle = SketchyBarPublicLifecycleFixture()
     core = SketchyBarCoreRuntimeInspection(
-      status: .converged,
-      message: "converged",
+      status: hasHook ? .partial : .converged,
+      message: hasHook ? "partial" : "converged",
       themeGenerationID: generation.generationID,
       barColor: "0xf01e1e2e",
-      items: ["macarchy.clock", "macarchy.spaces.unavailable", "macarchy.theme.ready"],
+      items: (["macarchy.clock", "macarchy.spaces.unavailable", "macarchy.theme.ready"]
+        + (hasHook ? ["personal.demo"] : [])).sorted(),
       spaceIndices: [],
       clockLabelPresent: true
     )

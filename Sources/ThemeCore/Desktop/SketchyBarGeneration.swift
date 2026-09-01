@@ -68,9 +68,10 @@ package enum SketchyBarGenerationError: Error, CustomStringConvertible, Sendable
 }
 
 package struct SketchyBarGenerationInspector: Sendable {
-  private static let artifactPaths = [
+  private static let coreArtifactPaths = [
     "plugins/clock.sh", "plugins/space-indexes.sh", "sketchybarrc",
   ]
+  private static let hookArtifactPath = "plugins/user-hook.sh"
 
   private let stateRoot: URL
 
@@ -167,12 +168,9 @@ package struct SketchyBarGenerationInspector: Sendable {
     let pluginInventory = try PinnedFilesystem.directoryEntries(
       descriptor: pluginsDescriptor,
       url: plugins,
-      limit: 2
+      limit: 3
     )
-    guard
-      !pluginInventory.truncated,
-      pluginInventory.entries == ["clock.sh", "space-indexes.sh"]
-    else {
+    guard !pluginInventory.truncated else {
       throw SketchyBarGenerationError.invalid("plugin inventory is unexpected")
     }
 
@@ -189,17 +187,27 @@ package struct SketchyBarGenerationInspector: Sendable {
       SketchyBarGenerationManifest.self,
       from: manifestFile.data
     )
+    let artifactPaths = manifest.artifacts.keys.sorted()
     guard
       manifest.schemaVersion == SketchyBarGenerationManifest.schemaVersion,
       manifest.rendererVersion == SketchyBarGenerationManifest.rendererVersion,
       manifest.generationID == generationID,
       manifest.inputDigest.hasPrefix("sha256:"),
       manifest.renderedDigest.hasPrefix("sha256:"),
-      manifest.artifacts.keys.sorted() == Self.artifactPaths
+      artifactPaths == Self.coreArtifactPaths
+        || artifactPaths == (Self.coreArtifactPaths + [Self.hookArtifactPath]).sorted()
     else {
       throw SketchyBarGenerationError.invalid("manifest identity or inventory is invalid")
     }
-    for path in Self.artifactPaths {
+    let expectedPluginInventory =
+      artifactPaths
+      .filter { $0.hasPrefix("plugins/") }
+      .map { String($0.dropFirst("plugins/".count)) }
+      .sorted()
+    guard pluginInventory.entries == expectedPluginInventory else {
+      throw SketchyBarGenerationError.invalid("plugin inventory does not match its manifest")
+    }
+    for path in artifactPaths {
       let components = path.split(separator: "/")
       let parentDescriptor = components.count == 1 ? generationDescriptor : pluginsDescriptor
       let name = String(components.last!)
@@ -638,9 +646,9 @@ package struct SketchyBarGenerationActivator: Sendable {
       let pluginsInventory = try PinnedFilesystem.directoryEntries(
         descriptor: pluginsDescriptor,
         url: plugins,
-        limit: 2
+        limit: 3
       )
-      let expectedPlugins = Set(["clock.sh", "space-indexes.sh"])
+      let expectedPlugins = Set(["clock.sh", "space-indexes.sh", "user-hook.sh"])
       guard
         !pluginsInventory.truncated,
         Set(pluginsInventory.entries).isSubset(of: expectedPlugins)

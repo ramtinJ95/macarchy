@@ -35,6 +35,38 @@ struct SketchyBarGenerationTests {
   }
 
   @Test
+  func sealsAndAuthenticatesTheCopiedTrustedHook() throws {
+    try withTemporaryRoot(named: "macarchy-sketchybar-generation-tests") { root in
+      let hook = root.appending(path: "hook.sh")
+      try "\"$SKETCHYBAR\" --add item personal.demo center\n".write(
+        to: hook,
+        atomically: true,
+        encoding: .utf8
+      )
+      let profile = try PortableProfileLoader().decode(
+        "schema_version = 1\n[sketchybar]\nhook = \"hook.sh\"\n",
+        source: root.appending(path: "profile.toml")
+      )
+      let composition = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: defaultsURL,
+        profile: profile,
+        stateRoot: root
+      )
+      let installed = try installGeneration(composition, root: root)
+      let copied = root.appending(
+        path: "desktop/sketchybar/generations/\(installed.generationID)/plugins/user-hook.sh"
+      )
+
+      #expect(try String(contentsOf: copied, encoding: .utf8).contains("personal.demo"))
+      #expect(SketchyBarGenerationInspector(stateRoot: root).inspect().status == .current)
+
+      try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copied.path)
+      try Data("drift\n".utf8).write(to: copied)
+      #expect(SketchyBarGenerationInspector(stateRoot: root).inspect().status == .invalid)
+    }
+  }
+
+  @Test
   func publicationSetsExactModesUnderARestrictiveUmask() throws {
     try withTemporaryRoot(named: "macarchy-sketchybar-generation-tests") { root in
       let previousUmask = Darwin.umask(0o077)

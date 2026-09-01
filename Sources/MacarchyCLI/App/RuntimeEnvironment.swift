@@ -30,7 +30,7 @@ struct RuntimeEnvironment: Sendable {
       ?? URL(filePath: CommandLine.arguments.first ?? "macarchy")
   )
 
-  private let executableURL: URL
+  let executableURL: URL
 
   init(executableURL: URL) {
     self.executableURL = executableURL.resolvingSymlinksInPath().standardizedFileURL
