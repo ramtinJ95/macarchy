@@ -8,6 +8,8 @@ enum SketchyBarTransactionPhase: String, Codable, Sendable {
   case generationSelected = "generation_selected"
   case providerChanging = "provider_changing"
   case providerChanged = "provider_changed"
+  case serviceChanging = "service_changing"
+  case serviceChanged = "service_changed"
 }
 
 struct SketchyBarTransaction: Codable, Equatable, Sendable {
@@ -18,6 +20,8 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
   let generationCreated: Bool
   let ownership: SketchyBarOwnershipRecord
   let previousOwnership: SketchyBarOwnershipRecord?
+  let previousLifecycle: SketchyBarLifecycleEvidence?
+  let serviceWasRunning: Bool
 
   init(
     phase: SketchyBarTransactionPhase,
@@ -25,15 +29,19 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
     previousGenerationID: String?,
     generationCreated: Bool,
     ownership: SketchyBarOwnershipRecord,
-    previousOwnership: SketchyBarOwnershipRecord?
+    previousOwnership: SketchyBarOwnershipRecord?,
+    previousLifecycle: SketchyBarLifecycleEvidence?,
+    serviceWasRunning: Bool
   ) {
-    schemaVersion = 1
+    schemaVersion = 2
     self.phase = phase
     self.generationID = generationID
     self.previousGenerationID = previousGenerationID
     self.generationCreated = generationCreated
     self.ownership = ownership
     self.previousOwnership = previousOwnership
+    self.previousLifecycle = previousLifecycle
+    self.serviceWasRunning = serviceWasRunning
   }
 
   enum CodingKeys: String, CodingKey {
@@ -44,6 +52,8 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
     case generationCreated = "generation_created"
     case ownership
     case previousOwnership = "previous_ownership"
+    case previousLifecycle = "previous_lifecycle"
+    case serviceWasRunning = "service_was_running"
   }
 }
 
@@ -62,30 +72,12 @@ struct SketchyBarTransactionStore: Sendable {
     guard exists else { return nil }
     let data = try BoundedRegularFile.read(at: file, maximumSize: 65_536).data
     let transaction = try JSONDecoder().decode(SketchyBarTransaction.self, from: data)
-    let generationRelationshipIsValid =
-      transaction.generationCreated
-      ? transaction.generationID != transaction.previousGenerationID
-      : transaction.generationID == transaction.previousGenerationID
-    let previousOwnershipIsValid =
-      transaction.previousOwnership.map {
-        SketchyBarOwnershipStore.isValid($0, stateRoot: stateRoot)
-          && $0.generationID == transaction.previousGenerationID
-      } ?? true
-    guard
-      transaction.schemaVersion == 1,
-      SketchyBarGenerationInspector.isGenerationID(transaction.generationID),
-      transaction.previousGenerationID.map(SketchyBarGenerationInspector.isGenerationID) ?? true,
-      SketchyBarOwnershipStore.isValid(transaction.ownership, stateRoot: stateRoot),
-      transaction.ownership.generationID == transaction.generationID,
-      generationRelationshipIsValid,
-      previousOwnershipIsValid
-    else {
-      throw SketchyBarDesktopError.invalidState("SketchyBar transaction record is invalid")
-    }
+    try validate(transaction)
     return transaction
   }
 
   func write(_ transaction: SketchyBarTransaction) throws {
+    try validate(transaction)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -99,6 +91,36 @@ struct SketchyBarTransactionStore: Sendable {
       return
     }
   }
+
+  private func validate(_ transaction: SketchyBarTransaction) throws {
+    let generationRelationshipIsValid =
+      transaction.generationCreated
+      ? transaction.generationID != transaction.previousGenerationID
+      : transaction.generationID == transaction.previousGenerationID
+    let previousOwnershipIsValid =
+      transaction.previousOwnership.map {
+        SketchyBarOwnershipStore.isValid($0, stateRoot: stateRoot)
+          && $0.generationID == transaction.previousGenerationID
+      } ?? true
+    let previousLifecycleIsValid =
+      transaction.previousLifecycle.map {
+        $0.isValid
+          && $0.generationID == transaction.previousGenerationID
+          && transaction.previousOwnership != nil
+      } ?? true
+    guard
+      transaction.schemaVersion == 2,
+      SketchyBarGenerationInspector.isGenerationID(transaction.generationID),
+      transaction.previousGenerationID.map(SketchyBarGenerationInspector.isGenerationID) ?? true,
+      SketchyBarOwnershipStore.isValid(transaction.ownership, stateRoot: stateRoot),
+      transaction.ownership.generationID == transaction.generationID,
+      generationRelationshipIsValid,
+      previousOwnershipIsValid,
+      previousLifecycleIsValid
+    else {
+      throw SketchyBarDesktopError.invalidState("SketchyBar transaction record is invalid")
+    }
+  }
 }
 
 enum SketchyBarTransactionCheckpoint: Sendable {
@@ -107,6 +129,7 @@ enum SketchyBarTransactionCheckpoint: Sendable {
   case originalRetained
   case configurationDirectoryCreated
   case providerChanged
+  case serviceChanged
 }
 
 enum SketchyBarInterruptionError: Error, Sendable {
@@ -121,15 +144,18 @@ struct SketchyBarFilesystemConvergenceResult: Equatable, Sendable {
 struct SketchyBarProviderTransaction: Sendable {
   let homeDirectory: URL
   let stateRoot: URL
+  let lifecycle: SketchyBarLifecycleController
   let faultInjector: @Sendable (SketchyBarTransactionCheckpoint) throws -> Void
 
   init(
     homeDirectory: URL,
     stateRoot: URL,
+    lifecycle: SketchyBarLifecycleController,
     faultInjector: @escaping @Sendable (SketchyBarTransactionCheckpoint) throws -> Void = { _ in }
   ) {
     self.homeDirectory = homeDirectory.standardizedFileURL
     self.stateRoot = stateRoot.standardizedFileURL
+    self.lifecycle = lifecycle
     self.faultInjector = faultInjector
   }
 
@@ -194,6 +220,13 @@ struct SketchyBarProviderTransaction: Sendable {
       generationAgrees
       ? previousGeneration.generationID!
       : "s-\(UUID().uuidString.lowercased())"
+    let serviceWasRunning = try lifecycle.preflight()
+    let previousLifecycle = try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).read()
+    if serviceWasRunning, previousOwnership == nil, original.kind == .absent {
+      throw SketchyBarDesktopError.lifecycle(
+        "cannot adopt a running SketchyBar service without a restorable original sketchybarrc"
+      )
+    }
     let ownership = SketchyBarOwnershipRecord(
       generationID: generationID,
       managedTarget: SketchyBarProviderPlanInspector.managedTarget(
@@ -202,10 +235,18 @@ struct SketchyBarProviderTransaction: Sendable {
       ),
       original: original,
       retainedOriginalPath: retainedOriginalPath,
-      createdConfigurationDirectory: createdConfigurationDirectory
+      createdConfigurationDirectory: createdConfigurationDirectory,
+      priorServiceRunning: previousOwnership?.priorServiceRunning ?? serviceWasRunning
     )
-    if generationAgrees, previousOwnership == ownership {
-      return SketchyBarFilesystemConvergenceResult(generationID: generationID, changed: false)
+    if generationAgrees,
+      previousOwnership == ownership,
+      previousLifecycle?.generationID == generationID,
+      serviceWasRunning
+    {
+      return SketchyBarFilesystemConvergenceResult(
+        generationID: generationID,
+        changed: false
+      )
     }
 
     var transaction = SketchyBarTransaction(
@@ -214,11 +255,18 @@ struct SketchyBarProviderTransaction: Sendable {
       previousGenerationID: previousGeneration.generationID,
       generationCreated: !generationAgrees,
       ownership: ownership,
-      previousOwnership: previousOwnership
+      previousOwnership: previousOwnership,
+      previousLifecycle: previousLifecycle,
+      serviceWasRunning: serviceWasRunning
     )
     try transactionStore.write(transaction)
     let activator = SketchyBarGenerationActivator(stateRoot: stateRoot)
     do {
+      if !serviceWasRunning, try lifecycle.preflight() {
+        throw SketchyBarDesktopError.lifecycle(
+          "SketchyBar started after lifecycle preflight; review the current service state"
+        )
+      }
       if !generationAgrees {
         try activator.publish(composition, generationID: generationID)
         transaction.phase = .generationPublished
@@ -248,15 +296,38 @@ struct SketchyBarProviderTransaction: Sendable {
       transaction.phase = .providerChanged
       try transactionStore.write(transaction)
       try faultInjector(.providerChanged)
+
+      transaction.phase = .serviceChanging
+      try transactionStore.write(transaction)
+      let runtime = try lifecycle.activate(
+        wasRunning: serviceWasRunning,
+        configurationURL: entry
+      )
+      guard runtime.status == .running else {
+        throw SketchyBarDesktopError.lifecycle(runtime.message)
+      }
+      transaction.phase = .serviceChanged
+      try transactionStore.write(transaction)
+      try faultInjector(.serviceChanged)
+      try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).write(
+        SketchyBarLifecycleEvidence(generationID: generationID, runtime: runtime)
+      )
       try transactionStore.remove()
       return SketchyBarFilesystemConvergenceResult(generationID: generationID, changed: true)
     } catch is SketchyBarInterruptionError {
       throw SketchyBarInterruptionError.injected
     } catch {
+      let convergenceError = error
       if let persisted = try transactionStore.read() {
-        try recoverApply(persisted)
+        do {
+          try recoverApply(persisted)
+        } catch {
+          throw SketchyBarDesktopError.invalidState(
+            "SketchyBar convergence failed: \(convergenceError); rollback requires recovery: \(error)"
+          )
+        }
       }
-      throw error
+      throw convergenceError
     }
   }
 
@@ -303,6 +374,18 @@ struct SketchyBarProviderTransaction: Sendable {
     }
     if transaction.generationCreated {
       try activator.removeTransactionResidue(transaction.generationID)
+    }
+    if transaction.phase == .serviceChanging || transaction.phase == .serviceChanged {
+      try lifecycle.restore(
+        wasRunning: transaction.serviceWasRunning,
+        configurationURL: entry
+      )
+    }
+    let lifecycleStore = SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot)
+    if let previous = transaction.previousLifecycle, transaction.serviceWasRunning {
+      try lifecycleStore.write(previous)
+    } else {
+      try lifecycleStore.remove()
     }
     try SketchyBarTransactionStore(stateRoot: stateRoot).remove()
   }

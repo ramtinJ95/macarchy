@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 import Testing
 
 @testable import MacarchyCLI
@@ -310,7 +311,7 @@ struct SketchyBarTransactionTests {
       SketchyBarTransactionCheckpoint.configurationDirectoryCreated,
       .providerChanged,
     ] {
-      let fixture = try SketchyBarTransactionFixture()
+      let fixture = try SketchyBarTransactionFixture(serviceRunning: false)
       defer { try? FileManager.default.removeItem(at: fixture.root) }
       let transaction = fixture.transaction { checkpoint in
         if checkpoint == interruption { throw SketchyBarInterruptionError.injected }
@@ -336,7 +337,7 @@ struct SketchyBarTransactionTests {
 
   @Test
   func interruptedManagedUpdateRestoresPreviousGenerationAndOwnership() throws {
-    let fixture = try SketchyBarTransactionFixture()
+    let fixture = try SketchyBarTransactionFixture(serviceRunning: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let first = try fixture.transaction().convergeLocked(
       composition: fixture.composition,
@@ -407,6 +408,103 @@ struct SketchyBarTransactionTests {
     #expect(throws: SketchyBarDesktopError.self) { try transaction.recoverApply(malformed) }
     #expect(try String(contentsOf: entry, encoding: .utf8) == "personal\n")
   }
+
+  @Test
+  func staleLifecycleEvidenceBlocksBeforeTransactionMutation() throws {
+    let fixture = try SketchyBarTransactionFixture(serviceRunning: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let first = try fixture.transaction().convergeLocked(
+      composition: fixture.composition,
+      adoptionEvidenceDigest: nil
+    )
+    let lifecycleStore = SketchyBarLifecycleEvidenceStore(stateRoot: fixture.state)
+    let runtime = try #require(try lifecycleStore.read()?.runtime)
+    try lifecycleStore.write(
+      SketchyBarLifecycleEvidence(
+        generationID: "s-00000000-0000-0000-0000-000000000000",
+        runtime: runtime
+      )
+    )
+
+    #expect(throws: SketchyBarDesktopError.self) {
+      try fixture.transaction().convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: nil
+      )
+    }
+
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+    #expect(
+      SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().generationID
+        == first.generationID
+    )
+  }
+
+  @Test
+  func runningServiceWithoutAnOriginalConfigurationBlocksBeforeMutation() throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+    #expect(throws: SketchyBarDesktopError.self) {
+      try fixture.transaction().convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: nil
+      )
+    }
+
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+  }
+
+  @Test
+  func failedReloadRestoresTheOriginalEntryBeforeReloadingIt() throws {
+    let fixture = try SketchyBarTransactionFixture(failedReloads: 1)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("personal\n")
+
+    #expect(throws: SketchyBarLifecycleTestError.self) {
+      try fixture.transaction().convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: try fixture.adoptionDigest()
+      )
+    }
+
+    #expect(fixture.lifecycle.reloadEntryStates == ["managed", "personal"])
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal\n")
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+    #expect(try SketchyBarLifecycleEvidenceStore(stateRoot: fixture.state).read() == nil)
+  }
+
+  @Test
+  func interruptedStartIsStoppedAfterFilesystemRecovery() throws {
+    let fixture = try SketchyBarTransactionFixture(serviceRunning: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let transaction = fixture.transaction { checkpoint in
+      if checkpoint == .serviceChanged { throw SketchyBarInterruptionError.injected }
+    }
+
+    #expect(throws: SketchyBarInterruptionError.self) {
+      try transaction.convergeLocked(
+        composition: fixture.composition,
+        adoptionEvidenceDigest: nil
+      )
+    }
+    let pending = try #require(
+      try SketchyBarTransactionStore(stateRoot: fixture.state).read()
+    )
+    #expect(fixture.lifecycle.events == ["start"])
+
+    try transaction.recoverApply(pending)
+
+    #expect(fixture.lifecycle.events == ["start", "stop"])
+    #expect(fixture.lifecycle.stopSnapshots == ["missing/no-current"])
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: fixture.home.appending(path: ".config/sketchybar").path
+      )
+    )
+    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
+  }
 }
 
 private struct SketchyBarTransactionFixture {
@@ -414,14 +512,21 @@ private struct SketchyBarTransactionFixture {
   let home: URL
   let state: URL
   let composition: SketchyBarComposition
+  let lifecycle: SketchyBarLifecycleFixture
 
-  init() throws {
+  init(serviceRunning: Bool = true, failedReloads: Int = 0) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-sketchybar-transaction-tests-\(UUID().uuidString.lowercased())",
       directoryHint: .isDirectory
     )
     home = root.appending(path: "home", directoryHint: .isDirectory)
     state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    lifecycle = SketchyBarLifecycleFixture(
+      running: serviceRunning,
+      failedReloads: failedReloads,
+      entry: home.appending(path: ".config/sketchybar/sketchybarrc"),
+      current: state.appending(path: "desktop/sketchybar/current")
+    )
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
     let profile = try PortableProfileLoader().decode(
       "schema_version = 1\n",
@@ -440,6 +545,7 @@ private struct SketchyBarTransactionFixture {
     SketchyBarProviderTransaction(
       homeDirectory: home,
       stateRoot: state,
+      lifecycle: lifecycle.controller,
       faultInjector: faultInjector
     )
   }
@@ -506,5 +612,89 @@ private struct SketchyBarTransactionFixture {
     let configuration = home.appending(path: ".config/sketchybar", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: configuration, withIntermediateDirectories: true)
     return configuration.appending(path: "sketchybarrc")
+  }
+}
+
+private enum SketchyBarLifecycleTestError: Error {
+  case reload
+}
+
+private final class SketchyBarLifecycleFixture: Sendable {
+  private struct State: Sendable {
+    var running: Bool
+    var failedReloads: Int
+    var events: [String] = []
+    var reloadEntryStates: [String] = []
+    var stopSnapshots: [String] = []
+  }
+
+  private let state: Mutex<State>
+  private let entry: URL
+  private let current: URL
+
+  init(running: Bool, failedReloads: Int, entry: URL, current: URL) {
+    state = Mutex(State(running: running, failedReloads: failedReloads))
+    self.entry = entry
+    self.current = current
+  }
+
+  var controller: SketchyBarLifecycleController {
+    SketchyBarLifecycleController(
+      preflight: { self.state.withLock { $0.running } },
+      reload: { url in
+        let entryState = Self.entryState(url)
+        return try self.state.withLock {
+          $0.events.append("reload")
+          $0.reloadEntryStates.append(entryState)
+          if $0.failedReloads > 0 {
+            $0.failedReloads -= 1
+            throw SketchyBarLifecycleTestError.reload
+          }
+          guard $0.running else { throw SketchyBarLifecycleTestError.reload }
+          return Self.runtime
+        }
+      },
+      start: {
+        self.state.withLock {
+          $0.events.append("start")
+          $0.running = true
+        }
+        return Self.runtime
+      },
+      stop: {
+        let currentState = Self.exists(self.current) ? "current" : "no-current"
+        let snapshot = "\(Self.entryState(self.entry))/\(currentState)"
+        self.state.withLock {
+          $0.events.append("stop")
+          $0.stopSnapshots.append(snapshot)
+          $0.running = false
+        }
+      }
+    )
+  }
+
+  var events: [String] { state.withLock { $0.events } }
+  var reloadEntryStates: [String] { state.withLock { $0.reloadEntryStates } }
+  var stopSnapshots: [String] { state.withLock { $0.stopSnapshots } }
+
+  private static let runtime = SketchyBarRuntimeInspection(
+    status: .running,
+    message: "running",
+    processID: 123,
+    executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
+    serviceLabel: SketchyBarHomebrewService.serviceLabel
+  )
+
+  private static func entryState(_ url: URL) -> String {
+    var metadata = stat()
+    guard lstat(url.path, &metadata) == 0 else { return "missing" }
+    if metadata.st_mode & S_IFMT == S_IFLNK { return "managed" }
+    return (try? String(contentsOf: url, encoding: .utf8))?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unreadable"
+  }
+
+  private static func exists(_ url: URL) -> Bool {
+    var metadata = stat()
+    return lstat(url.path, &metadata) == 0
   }
 }
