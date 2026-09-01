@@ -3,6 +3,7 @@ import Testing
 
 @testable import ThemeCore
 
+@Suite(.serialized)
 struct SketchyBarGenerationTests {
   @Test
   func validatesASelectedSealedGeneration() throws {
@@ -33,46 +34,48 @@ struct SketchyBarGenerationTests {
     }
   }
 
+  @Test
+  func publicationSetsExactModesUnderARestrictiveUmask() throws {
+    try withTemporaryRoot(named: "macarchy-sketchybar-generation-tests") { root in
+      let previousUmask = Darwin.umask(0o077)
+      defer { Darwin.umask(previousUmask) }
+
+      _ = try installGeneration(try composition(root: root), root: root)
+
+      #expect(SketchyBarGenerationInspector(stateRoot: root).inspect().status == .current)
+    }
+  }
+
+  @Test
+  func transactionResidueRemovalHandlesBoundedPartialStaging() throws {
+    try withTemporaryRoot(named: "macarchy-sketchybar-generation-tests") { root in
+      let generationID = "s-\(UUID().uuidString.lowercased())"
+      let staging = root.appending(
+        path: "desktop/sketchybar/generations/.staging-\(generationID)",
+        directoryHint: .isDirectory
+      )
+      let plugins = staging.appending(path: "plugins", directoryHint: .isDirectory)
+      try FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
+      try Data("#!/bin/sh\n".utf8).write(to: plugins.appending(path: "clock.sh"))
+
+      try SketchyBarGenerationActivator(stateRoot: root).removeTransactionResidue(generationID)
+
+      #expect(!FileManager.default.fileExists(atPath: staging.path))
+    }
+  }
+
   private func installGeneration(
     _ composition: SketchyBarComposition,
     root: URL
   ) throws -> (generationID: String, entry: URL) {
     let generationID = "s-\(UUID().uuidString.lowercased())"
-    let provider = root.appending(path: "desktop/sketchybar", directoryHint: .isDirectory)
-    let generation = provider.appending(
-      path: "generations/\(generationID)",
-      directoryHint: .isDirectory
+    let activator = SketchyBarGenerationActivator(stateRoot: root)
+    try activator.publish(composition, generationID: generationID)
+    try activator.select(generationID)
+    return (
+      generationID,
+      root.appending(path: "desktop/sketchybar/generations/\(generationID)/sketchybarrc")
     )
-    let plugins = generation.appending(path: "plugins", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
-    for artifact in composition.artifacts {
-      let file = generation.appending(path: artifact.path)
-      try Data(artifact.contents.utf8).write(to: file)
-      try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: file.path)
-    }
-    let manifest = SketchyBarGenerationManifest(
-      generationID: generationID,
-      composition: composition
-    )
-    let manifestURL = generation.appending(path: "manifest.json")
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(manifest).write(to: manifestURL)
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o444],
-      ofItemAtPath: manifestURL.path
-    )
-    for directory in [plugins, generation] {
-      try FileManager.default.setAttributes(
-        [.posixPermissions: 0o555],
-        ofItemAtPath: directory.path
-      )
-    }
-    try FileManager.default.createSymbolicLink(
-      atPath: provider.appending(path: "current").path,
-      withDestinationPath: "generations/\(generationID)"
-    )
-    return (generationID, generation.appending(path: "sketchybarrc"))
   }
 
   private func composition(root: URL) throws -> SketchyBarComposition {

@@ -315,6 +315,9 @@ package enum PinnedFilesystem {
       }
       offset += count
     }
+    guard fchmod(descriptor, mode) == 0 else {
+      throw PinnedFilesystemError(operation: "set pinned regular file mode", url: url, code: errno)
+    }
     guard fsync(descriptor) == 0 else {
       throw PinnedFilesystemError(operation: "sync pinned regular file", url: url, code: errno)
     }
