@@ -118,9 +118,13 @@ struct DesktopPlanCommandRunner: Sendable {
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
       enabled: sketchyBarEnabled,
-      generation: sketchyBarGeneration
+      generation: sketchyBarGeneration,
+      transactionPending: SketchyBarTransactionStore(stateRoot: stateRoot).exists
     )
-    if sketchyBarEnabled, sketchyBarProvider.status == .blocked {
+    if scope == .allProviders,
+      sketchyBarProvider.status == .blocked
+        || sketchyBarProvider.status == .recoveryRequired
+    {
       diagnostics.append(
         DesktopPlanDiagnostic(
           code: "sketchybar_provider_blocked",
@@ -272,7 +276,15 @@ struct DesktopPlanCommandRunner: Sendable {
     blocked: Bool
   ) -> [DesktopPlanAction] {
     guard !blocked else { return [] }
-    guard enabled else { return [] }
+    if !enabled {
+      return provider.status == .managed
+        ? [
+          DesktopPlanAction(
+            id: "teardown_sketchybar_provider",
+            message: "Restore the exact prior SketchyBar provider entry and service state."
+          )
+        ] : []
+    }
     guard let composition else { return [] }
     let generationAgrees =
       generation.status == .current
@@ -317,7 +329,7 @@ struct DesktopPlanCommandRunner: Sendable {
       )
     case .managed:
       break
-    case .disabled, .externallyManaged, .blocked:
+    case .disabled, .externallyManaged, .recoveryRequired, .blocked:
       break
     }
     actions.append(
