@@ -36,6 +36,11 @@ struct SketchyBarConfigurationTests {
     #expect(entry.contents.contains("--add space \"$item\" left"))
     #expect(entry.contents.contains("macarchy.theme.ready"))
     #expect(!entry.contents.contains("Spaces unavailable"))
+    #expect(
+      entry.contents.contains(
+        "PLUGIN_DIR='\(root.path)/desktop/sketchybar/current/plugins'"
+      )
+    )
     try requireValidShellSyntax(first.artifacts, root: root)
     try requireDateAccepts(first.settings.clockFormat)
   }

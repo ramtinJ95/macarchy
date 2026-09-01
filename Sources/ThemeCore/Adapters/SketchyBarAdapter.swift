@@ -19,9 +19,9 @@ enum SketchyBarAdapterError: Error, CustomStringConvertible, Sendable {
     case .missingInitImport(let importLine):
       "SketchyBar entry configuration must contain '\(importLine)'"
     case .missingPaletteImport(let importLine):
-      "SketchyBar colors module must contain '\(importLine)'"
+      "SketchyBar configuration must contain '\(importLine)'"
     case .missingReadyMarker(let declaration):
-      "SketchyBar init module must contain '\(declaration)'"
+      "SketchyBar configuration must contain '\(declaration)'"
     case .controlUnavailable(let url):
       "SketchyBar control is not executable at \(url.path)"
     case .queryRejected(let message):
@@ -39,7 +39,7 @@ struct SketchyBarAdapter: Sendable {
   static let rendererVersion = 2
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/sketchybar")
   static let initImport = "require(\"init\")"
-  static let readyItem = "macarchy.theme.ready"
+  static let readyItem = SketchyBarConfigurationComposer.readyItem
   static let readyMarkerDeclaration =
     "sbar.add(\"item\", \"\(readyItem)\", { drawing = false })"
 
@@ -91,6 +91,34 @@ struct SketchyBarAdapter: Sendable {
     }
 
     let entry = try readConfigurationText(configurationURL)
+    let managedPaletteAssignment =
+      SketchyBarConfigurationComposer.managedPaletteAssignment(stateRoot: root)
+    if containsExactLine(managedPaletteAssignment, in: entry)
+      || containsExactLine(
+        SketchyBarConfigurationComposer.managedReadyMarkerDeclaration,
+        in: entry
+      )
+    {
+      guard containsExactLine(managedPaletteAssignment, in: entry) else {
+        throw SketchyBarAdapterError.missingPaletteImport(managedPaletteAssignment)
+      }
+      guard containsExactLine(SketchyBarConfigurationComposer.paletteSource, in: entry) else {
+        throw SketchyBarAdapterError.missingPaletteImport(
+          SketchyBarConfigurationComposer.paletteSource
+        )
+      }
+      guard
+        containsExactLine(
+          SketchyBarConfigurationComposer.managedReadyMarkerDeclaration,
+          in: entry
+        )
+      else {
+        throw SketchyBarAdapterError.missingReadyMarker(
+          SketchyBarConfigurationComposer.managedReadyMarkerDeclaration
+        )
+      }
+      return
+    }
     guard containsExactLine(Self.initImport, in: entry) else {
       throw SketchyBarAdapterError.missingInitImport(Self.initImport)
     }

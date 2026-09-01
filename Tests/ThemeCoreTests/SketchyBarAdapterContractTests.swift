@@ -95,6 +95,63 @@ extension AdapterContractTests {
   }
 
   @Test
+  func sketchyBarAcceptsTheManagedShellPaletteAndReadyMarker() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n",
+      source: root.appending(path: "profile.toml")
+    )
+    let defaults = URL(filePath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appending(path: "Desktop/sketchybar/defaults.toml")
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaults,
+      profile: profile,
+      stateRoot: root
+    )
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+    let configuration = root.appending(path: ".config/sketchybar/sketchybarrc")
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try entry.contents.write(to: configuration, atomically: true, encoding: .utf8)
+    let adapter = SketchyBarAdapter(
+      root: root,
+      configurationURL: configuration,
+      executableURL: SketchyBarAdapter.liveExecutableURL,
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        Issue.record("Shell preflight must not invoke SketchyBar")
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+    )
+
+    #expect(adapter.inspection().status == .ready)
+
+    let drifted = entry.contents.replacingOccurrences(
+      of: SketchyBarConfigurationComposer.managedPaletteAssignment(stateRoot: root),
+      with: "PALETTE='/tmp/foreign-sketchybar.sh'"
+    )
+    try drifted.write(to: configuration, atomically: true, encoding: .utf8)
+    let paletteDrift = adapter.inspection()
+    #expect(paletteDrift.status == .drifted)
+    #expect(paletteDrift.message?.contains("SketchyBar configuration must contain") == true)
+
+    let missingReadyMarker = entry.contents.replacingOccurrences(
+      of: SketchyBarConfigurationComposer.managedReadyMarkerDeclaration,
+      with: ""
+    )
+    try missingReadyMarker.write(to: configuration, atomically: true, encoding: .utf8)
+    let readyMarkerDrift = adapter.inspection()
+    #expect(readyMarkerDrift.status == .drifted)
+    #expect(readyMarkerDrift.message?.contains("drawing=off") == true)
+  }
+
+  @Test
   func sketchyBarRuntimeInspectionIsExplicitAndNonMutating() throws {
     let root = try temporaryDirectory()
     defer {

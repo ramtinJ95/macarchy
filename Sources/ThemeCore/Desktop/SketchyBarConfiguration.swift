@@ -68,6 +68,10 @@ package enum SketchyBarConfigurationError: Error, CustomStringConvertible, Senda
 package struct SketchyBarConfigurationComposer: Sendable {
   package static let providerID = "sketchybar"
   package static let paletteArtifactPath = "generated/sketchybar.sh"
+  static let readyItem = "macarchy.theme.ready"
+  static let paletteSource = ". \"$PALETTE\""
+  static let managedReadyMarkerDeclaration =
+    "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
 
   package init() {}
 
@@ -79,9 +83,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
     let settings = try loadDefaults(at: defaultsURL)
     let spaceModule: SketchyBarSpaceModule =
       profile.desktop.provider == .yabaiSkhd ? .dynamicYabai : .disabledWithoutDesktop
-    let palettePath =
+    let palettePath = Self.palettePath(stateRoot: stateRoot)
+    let pluginPath =
       stateRoot
-      .appending(path: "current/\(Self.paletteArtifactPath)")
+      .appending(path: "desktop/sketchybar/current/plugins", directoryHint: .isDirectory)
       .standardizedFileURL.path
     let artifacts = [
       SketchyBarConfigurationArtifact(
@@ -89,7 +94,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
         contents: renderEntry(
           settings: settings,
           spaceModule: spaceModule,
-          palettePath: palettePath
+          palettePath: palettePath,
+          pluginPath: pluginPath
         )
       ),
       SketchyBarConfigurationArtifact(
@@ -110,7 +116,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
       desktopProvider: profile.desktop.provider.rawValue,
       settings: settings,
       spaceModule: spaceModule,
-      palettePath: palettePath
+      palettePath: palettePath,
+      pluginPath: pluginPath
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -211,7 +218,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   private func renderEntry(
     settings: SketchyBarSettings,
     spaceModule: SketchyBarSpaceModule,
-    palettePath: String
+    palettePath: String,
+    pluginPath: String
   ) -> String {
     let font = Self.shellLiteral("\(settings.font):Semibold:\(settings.fontSize).0")
     var lines = [
@@ -220,9 +228,9 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "",
       "SKETCHYBAR=/opt/homebrew/bin/sketchybar",
       "YABAI=/opt/homebrew/bin/yabai",
-      "PLUGIN_DIR=\"$CONFIG_DIR/plugins\"",
-      "PALETTE=\(Self.shellLiteral(palettePath))",
-      ". \"$PALETTE\"",
+      "PLUGIN_DIR=\(Self.shellLiteral(pluginPath))",
+      Self.paletteAssignment(path: palettePath),
+      Self.paletteSource,
       "",
       "\"$SKETCHYBAR\" --bar position=\(settings.position) height=\(settings.height) margin=\(settings.margin) corner_radius=\(settings.cornerRadius) color=\"$MACARCHY_BAR_COLOR\"",
       "\"$SKETCHYBAR\" --default padding_left=\(settings.itemPadding) padding_right=\(settings.itemPadding) icon.font=\(font) label.font=\(font) icon.color=\"$MACARCHY_TEXT_COLOR\" label.color=\"$MACARCHY_TEXT_COLOR\"",
@@ -251,8 +259,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "",
       "\"$SKETCHYBAR\" --add item macarchy.clock right \\",
       "  --set macarchy.clock icon.drawing=off update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
-      "\"$SKETCHYBAR\" --add item macarchy.theme.ready right \\",
-      "  --set macarchy.theme.ready drawing=off",
+      Self.managedReadyMarkerDeclaration,
       "\"$SKETCHYBAR\" --update",
     ]
     return lines.joined(separator: "\n") + "\n"
@@ -285,6 +292,20 @@ package struct SketchyBarConfigurationComposer: Sendable {
     ].joined(separator: "\n") + "\n"
   }
 
+  static func managedPaletteAssignment(stateRoot: URL) -> String {
+    paletteAssignment(path: palettePath(stateRoot: stateRoot))
+  }
+
+  static func palettePath(stateRoot: URL) -> String {
+    stateRoot
+      .appending(path: "current/\(paletteArtifactPath)")
+      .standardizedFileURL.path
+  }
+
+  private static func paletteAssignment(path: String) -> String {
+    "PALETTE=\(shellLiteral(path))"
+  }
+
   private static func shellLiteral(_ value: String) -> String {
     "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
   }
@@ -309,6 +330,7 @@ private struct SketchyBarInputIdentity: Encodable {
   let settings: SketchyBarSettings
   let spaceModule: SketchyBarSpaceModule
   let palettePath: String
+  let pluginPath: String
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -317,6 +339,7 @@ private struct SketchyBarInputIdentity: Encodable {
     case settings
     case spaceModule = "space_module"
     case palettePath = "palette_path"
+    case pluginPath = "plugin_path"
   }
 }
 
