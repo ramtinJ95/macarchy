@@ -23,6 +23,31 @@ package struct SketchyBarSettings: Equatable, Codable, Sendable {
 package enum SketchyBarSpaceModule: String, Codable, Sendable {
   case dynamicYabai = "dynamic_yabai"
   case disabledWithoutDesktop = "disabled_without_supported_desktop"
+  case hidden
+}
+
+package enum SketchyBarPosition: String, CaseIterable, Codable, Sendable {
+  case left
+  case center
+  case right
+}
+
+package struct SketchyBarLayout: Equatable, Codable, Sendable {
+  package let left: [SketchyBarModule]
+  package let center: [SketchyBarModule]
+  package let right: [SketchyBarModule]
+
+  package func modules(at position: SketchyBarPosition) -> [SketchyBarModule] {
+    switch position {
+    case .left: left
+    case .center: center
+    case .right: right
+    }
+  }
+
+  package func position(of module: SketchyBarModule) -> SketchyBarPosition? {
+    SketchyBarPosition.allCases.first { modules(at: $0).contains(module) }
+  }
 }
 
 package struct SketchyBarConfigurationArtifact: Equatable, Sendable {
@@ -39,6 +64,7 @@ package struct SketchyBarConfigurationArtifact: Equatable, Sendable {
 
 package struct SketchyBarComposition: Equatable, Sendable {
   package let settings: SketchyBarSettings
+  package let layout: SketchyBarLayout
   package let spaceModule: SketchyBarSpaceModule
   package let artifacts: [SketchyBarConfigurationArtifact]
   package let renderedDigest: String
@@ -80,9 +106,22 @@ package struct SketchyBarConfigurationComposer: Sendable {
     profile: PortableProfile,
     stateRoot: URL
   ) throws -> SketchyBarComposition {
-    let settings = try loadDefaults(at: defaultsURL)
+    let defaults = try loadDefaults(at: defaultsURL)
+    let settings = defaults.settings
+    let layout = SketchyBarLayout(
+      left: profile.sketchyBar.left ?? defaults.layout.left,
+      center: profile.sketchyBar.center ?? defaults.layout.center,
+      right: profile.sketchyBar.right ?? defaults.layout.right
+    )
+    try validate(layout, source: profile.sourceURL ?? defaultsURL)
     let spaceModule: SketchyBarSpaceModule =
-      profile.desktop.provider == .yabaiSkhd ? .dynamicYabai : .disabledWithoutDesktop
+      if layout.position(of: .spaces) == nil {
+        .hidden
+      } else if profile.desktop.provider == .yabaiSkhd {
+        .dynamicYabai
+      } else {
+        .disabledWithoutDesktop
+      }
     let palettePath = Self.palettePath(stateRoot: stateRoot)
     let pluginPath =
       stateRoot
@@ -93,6 +132,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
         path: "sketchybarrc",
         contents: renderEntry(
           settings: settings,
+          layout: layout,
           spaceModule: spaceModule,
           palettePath: palettePath,
           pluginPath: pluginPath
@@ -115,6 +155,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       topBarProvider: profile.topBar.rawValue,
       desktopProvider: profile.desktop.provider.rawValue,
       settings: settings,
+      layout: layout,
       spaceModule: spaceModule,
       palettePath: palettePath,
       pluginPath: pluginPath
@@ -123,6 +164,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return SketchyBarComposition(
       settings: settings,
+      layout: layout,
       spaceModule: spaceModule,
       artifacts: artifacts,
       renderedDigest: renderedDigest,
@@ -130,7 +172,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     )
   }
 
-  private func loadDefaults(at source: URL) throws -> SketchyBarSettings {
+  private func loadDefaults(at source: URL) throws -> SketchyBarDefaults {
     let text: String
     do {
       text = try BoundedRegularFile.readUTF8(at: source, maximumSize: 65_536)
@@ -155,7 +197,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     }
     let allowedFields = Set([
       "schema_version", "position", "height", "margin", "corner_radius",
-      "item_padding", "font", "font_size", "clock_format",
+      "item_padding", "font", "font_size", "clock_format", "left", "center", "right",
     ])
     if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
       throw SketchyBarConfigurationError.invalid(
@@ -177,7 +219,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
       )
     }
     try validate(document.settings, source: source)
-    return document.settings
+    try validate(document.layout, source: source)
+    return SketchyBarDefaults(settings: document.settings, layout: document.layout)
   }
 
   private func validate(_ settings: SketchyBarSettings, source: URL) throws {
@@ -215,8 +258,19 @@ package struct SketchyBarConfigurationComposer: Sendable {
     }
   }
 
+  private func validate(_ layout: SketchyBarLayout, source: URL) throws {
+    let modules = SketchyBarPosition.allCases.flatMap(layout.modules)
+    guard Set(modules).count == modules.count else {
+      throw SketchyBarConfigurationError.invalid(
+        source,
+        "each SketchyBar module may appear in only one position"
+      )
+    }
+  }
+
   private func renderEntry(
     settings: SketchyBarSettings,
+    layout: SketchyBarLayout,
     spaceModule: SketchyBarSpaceModule,
     palettePath: String,
     pluginPath: String
@@ -236,29 +290,41 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "\"$SKETCHYBAR\" --default padding_left=\(settings.itemPadding) padding_right=\(settings.itemPadding) icon.font=\(font) label.font=\(font) icon.color=\"$MACARCHY_TEXT_COLOR\" label.color=\"$MACARCHY_TEXT_COLOR\"",
       "",
     ]
-    switch spaceModule {
-    case .dynamicYabai:
-      lines += [
-        "SPACE_INDICES=$(\"$PLUGIN_DIR/space-indexes.sh\")",
-        "for sid in $SPACE_INDICES; do",
-        "  item=\"macarchy.space.$sid\"",
-        "  \"$SKETCHYBAR\" --add space \"$item\" left \\",
-        "    --set \"$item\" space=\"$sid\" icon=\"$sid\" label.drawing=off \\",
-        "      icon.highlight_color=\"$MACARCHY_ACCENT_COLOR\" \\",
-        "      click_script=\"$YABAI -m space --focus $sid\"",
-        "done",
-      ]
-    case .disabledWithoutDesktop:
-      lines += [
-        "\"$SKETCHYBAR\" --add item macarchy.spaces.unavailable left \\",
-        "  --set macarchy.spaces.unavailable icon=\"!\" label=\"Spaces unavailable\" \\",
-        "    icon.color=\"$MACARCHY_MUTED_COLOR\" label.color=\"$MACARCHY_MUTED_COLOR\"",
-      ]
+    for position in SketchyBarPosition.allCases {
+      for module in layout.modules(at: position) {
+        switch module {
+        case .spaces:
+          switch spaceModule {
+          case .dynamicYabai:
+            lines += [
+              "SPACE_INDICES=$(\"$PLUGIN_DIR/space-indexes.sh\")",
+              "for sid in $SPACE_INDICES; do",
+              "  item=\"macarchy.space.$sid\"",
+              "  \"$SKETCHYBAR\" --add space \"$item\" \(position.rawValue) \\",
+              "    --set \"$item\" space=\"$sid\" icon=\"$sid\" label.drawing=off \\",
+              "      icon.highlight_color=\"$MACARCHY_ACCENT_COLOR\" \\",
+              "      click_script=\"$YABAI -m space --focus $sid\"",
+              "done",
+            ]
+          case .disabledWithoutDesktop:
+            lines += [
+              "\"$SKETCHYBAR\" --add item macarchy.spaces.unavailable \(position.rawValue) \\",
+              "  --set macarchy.spaces.unavailable icon=\"!\" label=\"Spaces unavailable\" \\",
+              "    icon.color=\"$MACARCHY_MUTED_COLOR\" label.color=\"$MACARCHY_MUTED_COLOR\"",
+            ]
+          case .hidden:
+            break
+          }
+        case .clock:
+          lines += [
+            "\"$SKETCHYBAR\" --add item macarchy.clock \(position.rawValue) \\",
+            "  --set macarchy.clock icon.drawing=off update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
+          ]
+        }
+        lines.append("")
+      }
     }
     lines += [
-      "",
-      "\"$SKETCHYBAR\" --add item macarchy.clock right \\",
-      "  --set macarchy.clock icon.drawing=off update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
       Self.managedReadyMarkerDeclaration,
       "\"$SKETCHYBAR\" --update",
     ]
@@ -328,6 +394,7 @@ private struct SketchyBarInputIdentity: Encodable {
   let topBarProvider: String
   let desktopProvider: String
   let settings: SketchyBarSettings
+  let layout: SketchyBarLayout
   let spaceModule: SketchyBarSpaceModule
   let palettePath: String
   let pluginPath: String
@@ -337,6 +404,7 @@ private struct SketchyBarInputIdentity: Encodable {
     case topBarProvider = "top_bar_provider"
     case desktopProvider = "desktop_provider"
     case settings
+    case layout
     case spaceModule = "space_module"
     case palettePath = "palette_path"
     case pluginPath = "plugin_path"
@@ -353,6 +421,9 @@ private struct SketchyBarDefaultsDocument: Decodable {
   let font: String
   let fontSize: Int
   let clockFormat: String
+  let left: [SketchyBarModule]
+  let center: [SketchyBarModule]
+  let right: [SketchyBarModule]
 
   var settings: SketchyBarSettings {
     SketchyBarSettings(
@@ -367,6 +438,10 @@ private struct SketchyBarDefaultsDocument: Decodable {
     )
   }
 
+  var layout: SketchyBarLayout {
+    SketchyBarLayout(left: left, center: center, right: right)
+  }
+
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case position, height, margin, font
@@ -374,5 +449,11 @@ private struct SketchyBarDefaultsDocument: Decodable {
     case itemPadding = "item_padding"
     case fontSize = "font_size"
     case clockFormat = "clock_format"
+    case left, center, right
   }
+}
+
+private struct SketchyBarDefaults {
+  let settings: SketchyBarSettings
+  let layout: SketchyBarLayout
 }

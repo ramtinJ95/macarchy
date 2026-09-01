@@ -28,6 +28,10 @@ struct DesktopPlanCommandTests {
     #expect(provider["status"] as? String == "install_required")
     #expect(sketchyBarProvider["status"] as? String == "install_required")
     #expect(sketchyBar["space_module"] as? String == "dynamic_yabai")
+    let layout = try #require(sketchyBar["layout"] as? [String: Any])
+    #expect(layout["left"] as? [String] == ["spaces"])
+    #expect(layout["center"] as? [String] == [])
+    #expect(layout["right"] as? [String] == ["clock"])
     #expect(
       (sketchyBar["theme_palette"] as? [String: Any])?["status"] as? String
         == "unavailable"

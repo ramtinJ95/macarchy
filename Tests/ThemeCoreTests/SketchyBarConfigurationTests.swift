@@ -73,6 +73,90 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test
+  func profileControlsModuleVisibilityPositionAndOrder() throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = try PortableProfileLoader().decode(
+      """
+      schema_version = 1
+      [sketchybar]
+      left = ["clock", "spaces"]
+      right = []
+      """,
+      source: root.appending(path: "profile.toml")
+    )
+
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL,
+      profile: profile,
+      stateRoot: root
+    )
+    let defaultComposition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL,
+      profile: .defaults,
+      stateRoot: root
+    )
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+
+    #expect(composition.layout.left == [.clock, .spaces])
+    #expect(composition.layout.center.isEmpty)
+    #expect(composition.layout.right.isEmpty)
+    let clock = try #require(entry.contents.range(of: "--add item macarchy.clock left"))
+    let spaces = try #require(entry.contents.range(of: "--add space \"$item\" left"))
+    #expect(clock.lowerBound < spaces.lowerBound)
+    #expect(composition.inputDigest != defaultComposition.inputDigest)
+    #expect(composition.renderedDigest != defaultComposition.renderedDigest)
+  }
+
+  @Test
+  func hidingSpacesRemovesTheYabaiDependencyFromTheRenderedEntry() throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = try PortableProfileLoader().decode(
+      """
+      schema_version = 1
+      [sketchybar]
+      left = []
+      """,
+      source: root.appending(path: "profile.toml")
+    )
+
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL,
+      profile: profile,
+      stateRoot: root
+    )
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+
+    #expect(composition.spaceModule == .hidden)
+    #expect(!entry.contents.contains("SPACE_INDICES="))
+    #expect(!entry.contents.contains("Spaces unavailable"))
+    #expect(entry.contents.contains("--add item macarchy.clock right"))
+  }
+
+  @Test
+  func rejectsAnOverrideThatDuplicatesAPackagedModulePosition() throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = try PortableProfileLoader().decode(
+      """
+      schema_version = 1
+      [sketchybar]
+      right = ["clock", "spaces"]
+      """,
+      source: root.appending(path: "profile.toml")
+    )
+
+    #expect(throws: SketchyBarConfigurationError.self) {
+      _ = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: defaultsURL,
+        profile: profile,
+        stateRoot: root
+      )
+    }
+  }
+
+  @Test
   func rejectsUnknownPackagedDefaultsBeforeRendering() throws {
     let root = try configurationRoot()
     defer { try? FileManager.default.removeItem(at: root) }

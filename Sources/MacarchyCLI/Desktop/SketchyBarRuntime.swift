@@ -47,16 +47,17 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
       items.count <= 66,
       spaceIndices == spaceIndices.sorted(),
       Set(spaceIndices).count == spaceIndices.count,
-      spaceIndices.allSatisfy({ (1...64).contains($0) }),
-      clockLabelPresent
+      spaceIndices.allSatisfy({ (1..<UInt32.bitWidth).contains($0) })
     else { return false }
-    let expectedCore = ["macarchy.clock", SketchyBarConfigurationComposer.readyItem]
+    let hasClock = items.contains("macarchy.clock")
+    guard hasClock == clockLabelPresent else { return false }
+    var expectedCore = [SketchyBarConfigurationComposer.readyItem]
+    if hasClock { expectedCore.append("macarchy.clock") }
     if items.contains("macarchy.spaces.unavailable") {
       return spaceIndices.isEmpty
         && items == (expectedCore + ["macarchy.spaces.unavailable"]).sorted()
     }
-    return !spaceIndices.isEmpty
-      && items == (expectedCore + spaceIndices.map { "macarchy.space.\($0)" }).sorted()
+    return items == (expectedCore + spaceIndices.map { "macarchy.space.\($0)" }).sorted()
   }
 
   private static func isThemeGenerationID(_ value: String) -> Bool {
@@ -167,6 +168,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     let palette = try activePalette()
     let spaceIndices = try expectedSpaceIndices(composition.spaceModule)
     let expectedItems = expectedItemNames(
+      layout: composition.layout,
       spaceModule: composition.spaceModule,
       spaceIndices: spaceIndices
     )
@@ -193,32 +195,36 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       )
     }
 
-    let clock: SketchyBarItemQuery = try query(
-      control: Self.controlURL,
-      arguments: ["--query", "macarchy.clock"],
-      timeout: 0.1
-    )
-    let expectedClockScript = stateRoot.appending(
-      path: "desktop/sketchybar/current/plugins/clock.sh"
-    ).path
-    let clockLabel = clock.label.value
-    guard
-      clock.name == "macarchy.clock",
-      clock.type == "item",
-      clock.geometry.drawing == "on",
-      clock.geometry.position == "right",
-      clock.label.drawing == "on",
-      !clockLabel.isEmpty,
-      clock.scripting.script == expectedClockScript,
-      clock.scripting.updateFrequency == 30
-    else {
-      return drifted(
-        "running SketchyBar clock is incomplete or uses an unexpected script",
-        palette: palette,
-        items: items,
-        spaceIndices: spaceIndices,
-        clockLabelPresent: !clockLabel.isEmpty
+    var clockLabelPresent = false
+    if let clockPosition = composition.layout.position(of: .clock) {
+      let clock: SketchyBarItemQuery = try query(
+        control: Self.controlURL,
+        arguments: ["--query", "macarchy.clock"],
+        timeout: 0.1
       )
+      let expectedClockScript = stateRoot.appending(
+        path: "desktop/sketchybar/current/plugins/clock.sh"
+      ).path
+      let clockLabel = clock.label.value
+      clockLabelPresent = !clockLabel.isEmpty
+      guard
+        clock.name == "macarchy.clock",
+        clock.type == "item",
+        clock.geometry.drawing == "on",
+        clock.geometry.position == clockPosition.rawValue,
+        clock.label.drawing == "on",
+        clockLabelPresent,
+        clock.scripting.script == expectedClockScript,
+        clock.scripting.updateFrequency == 30
+      else {
+        return drifted(
+          "running SketchyBar clock is incomplete, misplaced, or uses an unexpected script",
+          palette: palette,
+          items: items,
+          spaceIndices: spaceIndices,
+          clockLabelPresent: clockLabelPresent
+        )
+      }
     }
 
     let ready: SketchyBarItemQuery = try query(
@@ -237,11 +243,12 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         palette: palette,
         items: items,
         spaceIndices: spaceIndices,
-        clockLabelPresent: true
+        clockLabelPresent: clockLabelPresent
       )
     }
 
     if composition.spaceModule == .disabledWithoutDesktop {
+      let expectedPosition = composition.layout.position(of: .spaces)!
       let fallback: SketchyBarItemQuery = try query(
         control: Self.controlURL,
         arguments: ["--query", "macarchy.spaces.unavailable"],
@@ -251,7 +258,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         fallback.name == "macarchy.spaces.unavailable",
         fallback.type == "item",
         fallback.geometry.drawing == "on",
-        fallback.geometry.position == "left",
+        fallback.geometry.position == expectedPosition.rawValue,
         fallback.label.drawing == "on",
         fallback.label.value == "Spaces unavailable"
       else {
@@ -260,9 +267,77 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
           palette: palette,
           items: items,
           spaceIndices: spaceIndices,
-          clockLabelPresent: true
+          clockLabelPresent: clockLabelPresent
         )
       }
+    } else if composition.spaceModule == .dynamicYabai {
+      let expectedPosition = composition.layout.position(of: .spaces)!
+      for index in spaceIndices {
+        let name = "macarchy.space.\(index)"
+        let space: SketchyBarItemQuery
+        do {
+          space = try query(
+            control: Self.controlURL,
+            arguments: ["--query", name],
+            timeout: 0.1
+          )
+        } catch SketchyBarDesktopError.lifecycle(let message) {
+          let missing = "[!] Query: Invalid query, or item '\(name)' not found"
+          guard message.trimmingCharacters(in: .whitespacesAndNewlines) == missing else {
+            throw SketchyBarDesktopError.lifecycle(message)
+          }
+          return drifted(
+            "running SketchyBar Space inventory changed during verification",
+            palette: palette,
+            items: items,
+            spaceIndices: spaceIndices,
+            clockLabelPresent: clockLabelPresent
+          )
+        }
+        let expectedAssociation = UInt32(1) << UInt32(index)
+        let expectedClickScript = "\(Self.yabaiURL.path) -m space --focus \(index)"
+        guard
+          space.name == name,
+          space.type == "space",
+          space.geometry.drawing == "on",
+          space.geometry.position == expectedPosition.rawValue,
+          space.geometry.associatedSpaceMask == expectedAssociation,
+          space.scripting.clickScript == expectedClickScript
+        else {
+          return drifted(
+            "running SketchyBar Spaces are incomplete or misplaced",
+            palette: palette,
+            items: items,
+            spaceIndices: spaceIndices,
+            clockLabelPresent: clockLabelPresent
+          )
+        }
+      }
+      let finalSpaceIndices = try expectedSpaceIndices(.dynamicYabai)
+      guard finalSpaceIndices == spaceIndices else {
+        return drifted(
+          "running SketchyBar Space inventory changed during verification",
+          palette: palette,
+          items: items,
+          spaceIndices: finalSpaceIndices,
+          clockLabelPresent: clockLabelPresent
+        )
+      }
+    }
+
+    let finalBar: SketchyBarBarQuery = try query(
+      control: Self.controlURL,
+      arguments: ["--query", "bar"],
+      timeout: 0.1
+    )
+    guard finalBar.items.sorted() == items else {
+      return drifted(
+        "running SketchyBar item inventory changed during verification",
+        palette: palette,
+        items: finalBar.items.sorted(),
+        spaceIndices: spaceIndices,
+        clockLabelPresent: clockLabelPresent
+      )
     }
 
     return SketchyBarCoreRuntimeInspection(
@@ -272,7 +347,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       barColor: palette.color,
       items: items,
       spaceIndices: spaceIndices,
-      clockLabelPresent: true
+      clockLabelPresent: clockLabelPresent
     )
   }
 
@@ -319,7 +394,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       !indices.isEmpty,
       indices.count <= 64,
       Set(indices).count == indices.count,
-      indices.allSatisfy({ (1...64).contains($0) })
+      indices.allSatisfy({ (1..<UInt32.bitWidth).contains($0) })
     else {
       throw SketchyBarDesktopError.lifecycle("yabai returned an invalid Space inventory")
     }
@@ -327,15 +402,21 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private func expectedItemNames(
+    layout: SketchyBarLayout,
     spaceModule: SketchyBarSpaceModule,
     spaceIndices: [Int]
   ) -> [String] {
-    var names = ["macarchy.clock", SketchyBarConfigurationComposer.readyItem]
+    var names = [SketchyBarConfigurationComposer.readyItem]
+    if layout.position(of: .clock) != nil {
+      names.append("macarchy.clock")
+    }
     switch spaceModule {
     case .dynamicYabai:
       names += spaceIndices.map { "macarchy.space.\($0)" }
     case .disabledWithoutDesktop:
       names.append("macarchy.spaces.unavailable")
+    case .hidden:
+      break
     }
     return names.sorted()
   }
@@ -406,6 +487,12 @@ private struct SketchyBarItemQuery: Decodable {
   struct Geometry: Decodable {
     let drawing: String
     let position: String
+    let associatedSpaceMask: UInt32
+
+    enum CodingKeys: String, CodingKey {
+      case drawing, position
+      case associatedSpaceMask = "associated_space_mask"
+    }
   }
 
   struct Label: Decodable {
@@ -415,10 +502,12 @@ private struct SketchyBarItemQuery: Decodable {
 
   struct Scripting: Decodable {
     let script: String
+    let clickScript: String
     let updateFrequency: Int
 
     enum CodingKeys: String, CodingKey {
       case script
+      case clickScript = "click_script"
       case updateFrequency = "update_freq"
     }
   }
