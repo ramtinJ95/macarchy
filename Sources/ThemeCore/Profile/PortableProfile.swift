@@ -12,6 +12,17 @@ package enum TopBarProviderSelection: String, Codable, Sendable {
   case disabled
 }
 
+package enum SketchyBarModule: String, Codable, Hashable, Sendable {
+  case spaces
+  case clock
+}
+
+package struct SketchyBarProfileOptions: Equatable, Sendable {
+  package let left: [SketchyBarModule]?
+  package let center: [SketchyBarModule]?
+  package let right: [SketchyBarModule]?
+}
+
 package struct YabaiProfileOptions: Equatable, Sendable {
   package let layout: String?
   package let splitRatio: Double?
@@ -34,12 +45,14 @@ package struct PortableProfile: Equatable, Sendable {
   package let keybindings: KeybindingProfile
   package let desktop: DesktopProfile
   package let topBar: TopBarProviderSelection
+  package let sketchyBar: SketchyBarProfileOptions
 
   package static let defaults = PortableProfile(
     sourceURL: nil,
     keybindings: .empty,
     desktop: DesktopProfile(provider: .yabaiSkhd, yabai: .empty),
-    topBar: .sketchybar
+    topBar: .sketchybar,
+    sketchyBar: .empty
   )
 }
 
@@ -82,7 +95,7 @@ package struct PortableProfileLoader: Sendable {
       throw KeybindingProfileError.invalid(source, String(describing: error))
     }
 
-    let allowedTables = Set(["keybindings", "desktop", "yabai", "top_bar"])
+    let allowedTables = Set(["keybindings", "desktop", "yabai", "top_bar", "sketchybar"])
     if let table = index.tables.first(where: {
       !allowedTables.contains($0.path) || $0.isArray
     }) {
@@ -107,6 +120,9 @@ package struct PortableProfileLoader: Sendable {
       "yabai.mouse_follows_focus",
       "yabai.hook",
       "top_bar.provider",
+      "sketchybar.left",
+      "sketchybar.center",
+      "sketchybar.right",
     ])
     if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
       throw KeybindingProfileError.invalid(
@@ -142,11 +158,13 @@ package struct PortableProfileLoader: Sendable {
       base: base
     )
     let topBar = try topBar(document.topBar, source: sourceURL)
+    let sketchyBar = try sketchyBar(document.sketchyBar, source: sourceURL)
     return PortableProfile(
       sourceURL: sourceURL,
       keybindings: keybindings,
       desktop: desktop,
-      topBar: topBar
+      topBar: topBar,
+      sketchyBar: sketchyBar
     )
   }
 
@@ -266,6 +284,26 @@ package struct PortableProfileLoader: Sendable {
     )
   }
 
+  private func sketchyBar(
+    _ document: SketchyBarDocument?,
+    source: URL
+  ) throws -> SketchyBarProfileOptions {
+    let modules = [document?.left, document?.center, document?.right]
+      .compactMap { $0 }
+      .flatMap { $0 }
+    if Set(modules).count != modules.count {
+      throw KeybindingProfileError.invalid(
+        source,
+        "each explicitly positioned SketchyBar module must be unique"
+      )
+    }
+    return SketchyBarProfileOptions(
+      left: document?.left,
+      center: document?.center,
+      right: document?.right
+    )
+  }
+
   private func selection<T: RawRepresentable>(
     _ value: String,
     as type: T.Type,
@@ -320,12 +358,21 @@ extension YabaiProfileOptions {
   )
 }
 
+extension SketchyBarProfileOptions {
+  fileprivate static let empty = SketchyBarProfileOptions(
+    left: nil,
+    center: nil,
+    right: nil
+  )
+}
+
 private struct PortableProfileDocument: Decodable {
   let schemaVersion: Int
   let keybindings: KeybindingsDocument?
   let desktop: DesktopDocument?
   let yabai: YabaiDocument?
   let topBar: TopBarDocument?
+  let sketchyBar: SketchyBarDocument?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -333,6 +380,7 @@ private struct PortableProfileDocument: Decodable {
     case desktop
     case yabai
     case topBar = "top_bar"
+    case sketchyBar = "sketchybar"
   }
 }
 
@@ -372,4 +420,10 @@ private struct YabaiDocument: Decodable {
 
 private struct TopBarDocument: Decodable {
   let provider: String?
+}
+
+private struct SketchyBarDocument: Decodable {
+  let left: [SketchyBarModule]?
+  let center: [SketchyBarModule]?
+  let right: [SketchyBarModule]?
 }

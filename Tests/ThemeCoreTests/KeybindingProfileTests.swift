@@ -60,6 +60,9 @@ struct KeybindingProfileTests {
       window_gap = 9
       [top_bar]
       provider = "disabled"
+      [sketchybar]
+      left = ["clock", "spaces"]
+      right = []
       """
 
     let portable = try PortableProfileLoader().decode(text, source: source)
@@ -69,6 +72,8 @@ struct KeybindingProfileTests {
     #expect(portable.desktop.yabai.layout == "stack")
     #expect(portable.desktop.yabai.windowGap == 9)
     #expect(portable.topBar == .disabled)
+    #expect(portable.sketchyBar.left == [.clock, .spaces])
+    #expect(portable.sketchyBar.right == [])
     #expect(keybindings.disabledIdentities == ["alt-k"])
   }
 
@@ -91,6 +96,14 @@ struct KeybindingProfileTests {
       (
         "schema_version = 1\n[top_bar]\nprovider = \"custom\"\n",
         "unsupported provider"
+      ),
+      (
+        "schema_version = 1\n[sketchybar]\nleft = [\"clock\", \"clock\"]\n",
+        "module must be unique"
+      ),
+      (
+        "schema_version = 1\n[sketchybar]\nright = [\"weather\"]\n",
+        "weather"
       ),
     ]
 

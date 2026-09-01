@@ -189,6 +189,7 @@ struct DesktopPlanCommandRunner: Sendable {
       ? DesktopSketchyBarPlanReport(
         packagedDefaults: resourcesRoot.appending(path: "sketchybar/defaults.toml").path,
         settings: sketchyBarComposition?.settings,
+        layout: sketchyBarComposition?.layout,
         spaceModule: sketchyBarComposition?.spaceModule.rawValue,
         renderedArtifacts: sketchyBarComposition.map {
           Dictionary(uniqueKeysWithValues: $0.artifacts.map { ($0.path, $0.contents) })
@@ -462,6 +463,7 @@ private struct DesktopPlanReport: Encodable {
 private struct DesktopSketchyBarPlanReport: Encodable {
   let packagedDefaults: String
   let settings: SketchyBarSettings?
+  let layout: SketchyBarLayout?
   let spaceModule: String?
   let renderedArtifacts: [String: String]?
   let renderedDigest: String?
@@ -474,6 +476,9 @@ private struct DesktopSketchyBarPlanReport: Encodable {
   var humanLines: [String] {
     [
       "- packaged SketchyBar defaults: \(packagedDefaults)",
+      "- SketchyBar left modules: \(modules(layout?.left))",
+      "- SketchyBar center modules: \(modules(layout?.center))",
+      "- SketchyBar right modules: \(modules(layout?.right))",
       "- SketchyBar Space module: \(spaceModule ?? "unavailable")",
       "- SketchyBar proposed input digest: \(proposedInputDigest ?? "unavailable")",
       "- SketchyBar rendered digest: \(renderedDigest ?? "unavailable")",
@@ -489,9 +494,15 @@ private struct DesktopSketchyBarPlanReport: Encodable {
     ]
   }
 
+  private func modules(_ values: [SketchyBarModule]?) -> String {
+    guard let values else { return "unavailable" }
+    return values.isEmpty ? "none" : values.map(\.rawValue).joined(separator: ", ")
+  }
+
   enum CodingKeys: String, CodingKey {
     case packagedDefaults = "packaged_defaults"
     case settings
+    case layout
     case spaceModule = "space_module"
     case renderedArtifacts = "rendered_artifacts"
     case renderedDigest = "rendered_digest"
