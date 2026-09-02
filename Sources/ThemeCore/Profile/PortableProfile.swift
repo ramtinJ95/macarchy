@@ -12,6 +12,26 @@ package enum TopBarProviderSelection: String, Codable, Sendable {
   case disabled
 }
 
+package enum TerminalProviderSelection: String, Codable, Sendable {
+  case kitty
+  case disabled
+}
+
+package enum ShellProviderSelection: String, Codable, Sendable {
+  case zsh
+  case disabled
+}
+
+package enum PromptProviderSelection: String, Codable, Sendable {
+  case starship
+  case disabled
+}
+
+package enum HistoryProviderSelection: String, Codable, Sendable {
+  case atuin
+  case disabled
+}
+
 package enum SketchyBarModule: String, Codable, Hashable, Sendable {
   case spaces
   case clock
@@ -43,19 +63,57 @@ package struct DesktopProfile: Equatable, Sendable {
   package let yabai: YabaiProfileOptions
 }
 
+package struct KittyProfileOptions: Equatable, Sendable {
+  package let fontFamily: String?
+  package let fontSize: Double?
+  package let backgroundOpacity: Double?
+  package let backgroundBlur: Int?
+  package let overrideDirectoryURL: URL?
+}
+
+package struct ZshProfileOptions: Equatable, Sendable {
+  package let editor: String?
+  package let hookURL: URL?
+}
+
+package struct StarshipProfileOptions: Equatable, Sendable {
+  package let behaviorURL: URL?
+}
+
+package struct AtuinProfileOptions: Equatable, Sendable {
+  package let searchMode: String?
+  package let keymapMode: String?
+  package let enterAccept: Bool?
+  package let daemon: Bool?
+  package let configurationURL: URL?
+}
+
+package struct EnvironmentProfile: Equatable, Sendable {
+  package let terminal: TerminalProviderSelection
+  package let shell: ShellProviderSelection
+  package let prompt: PromptProviderSelection
+  package let history: HistoryProviderSelection
+  package let kitty: KittyProfileOptions
+  package let zsh: ZshProfileOptions
+  package let starship: StarshipProfileOptions
+  package let atuin: AtuinProfileOptions
+}
+
 package struct PortableProfile: Equatable, Sendable {
   package let sourceURL: URL?
   package let keybindings: KeybindingProfile
   package let desktop: DesktopProfile
   package let topBar: TopBarProviderSelection
   package let sketchyBar: SketchyBarProfileOptions
+  package let environment: EnvironmentProfile
 
   package static let defaults = PortableProfile(
     sourceURL: nil,
     keybindings: .empty,
     desktop: DesktopProfile(provider: .yabaiSkhd, yabai: .empty),
     topBar: .sketchybar,
-    sketchyBar: .empty
+    sketchyBar: .empty,
+    environment: .defaults
   )
 }
 
@@ -98,7 +156,10 @@ package struct PortableProfileLoader: Sendable {
       throw KeybindingProfileError.invalid(source, String(describing: error))
     }
 
-    let allowedTables = Set(["keybindings", "desktop", "yabai", "top_bar", "sketchybar"])
+    let allowedTables = Set([
+      "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
+      "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
+    ])
     if let table = index.tables.first(where: {
       !allowedTables.contains($0.path) || $0.isArray
     }) {
@@ -127,6 +188,23 @@ package struct PortableProfileLoader: Sendable {
       "sketchybar.center",
       "sketchybar.right",
       "sketchybar.hook",
+      "terminal.provider",
+      "kitty.font_family",
+      "kitty.font_size",
+      "kitty.background_opacity",
+      "kitty.background_blur",
+      "kitty.override",
+      "shell.provider",
+      "zsh.editor",
+      "zsh.hook",
+      "prompt.provider",
+      "starship.behavior",
+      "history.provider",
+      "atuin.search_mode",
+      "atuin.keymap_mode",
+      "atuin.enter_accept",
+      "atuin.daemon",
+      "atuin.configuration",
     ])
     if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
       throw KeybindingProfileError.invalid(
@@ -163,12 +241,14 @@ package struct PortableProfileLoader: Sendable {
     )
     let topBar = try topBar(document.topBar, source: sourceURL)
     let sketchyBar = try sketchyBar(document.sketchyBar, source: sourceURL, base: base)
+    let environment = try environment(document, source: sourceURL, base: base)
     return PortableProfile(
       sourceURL: sourceURL,
       keybindings: keybindings,
       desktop: desktop,
       topBar: topBar,
-      sketchyBar: sketchyBar
+      sketchyBar: sketchyBar,
+      environment: environment
     )
   }
 
@@ -319,6 +399,195 @@ package struct PortableProfileLoader: Sendable {
     )
   }
 
+  private func environment(
+    _ document: PortableProfileDocument,
+    source: URL,
+    base: URL
+  ) throws -> EnvironmentProfile {
+    let terminal = try selection(
+      document.terminal?.provider ?? TerminalProviderSelection.kitty.rawValue,
+      as: TerminalProviderSelection.self,
+      field: "terminal.provider",
+      source: source
+    )
+    if terminal == .disabled, document.kitty != nil {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[kitty] cannot customize a disabled terminal provider"
+      )
+    }
+
+    let shell = try selection(
+      document.shell?.provider ?? ShellProviderSelection.zsh.rawValue,
+      as: ShellProviderSelection.self,
+      field: "shell.provider",
+      source: source
+    )
+    let declaredPrompt = try selection(
+      document.prompt?.provider ?? PromptProviderSelection.starship.rawValue,
+      as: PromptProviderSelection.self,
+      field: "prompt.provider",
+      source: source
+    )
+    let declaredHistory = try selection(
+      document.history?.provider ?? HistoryProviderSelection.atuin.rawValue,
+      as: HistoryProviderSelection.self,
+      field: "history.provider",
+      source: source
+    )
+    let hasShellCustomization =
+      document.zsh != nil || document.starship != nil || document.atuin != nil
+      || declaredPrompt != .disabled && document.prompt != nil
+      || declaredHistory != .disabled && document.history != nil
+    if shell == .disabled, hasShellCustomization {
+      throw KeybindingProfileError.invalid(
+        source,
+        "zsh, prompt, and history customization requires shell.provider = \"zsh\""
+      )
+    }
+    if declaredPrompt == .disabled, document.starship != nil {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[starship] cannot customize a disabled prompt provider"
+      )
+    }
+    if declaredHistory == .disabled, document.atuin != nil {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[atuin] cannot customize a disabled history provider"
+      )
+    }
+
+    let kitty = try kitty(document.kitty, source: source, base: base)
+    let zsh = try zsh(document.zsh, source: source, base: base)
+    let starship = StarshipProfileOptions(
+      behaviorURL: try document.starship?.behavior.map {
+        try Self.resolvePortablePath(
+          $0,
+          field: "starship.behavior",
+          base: base,
+          source: source
+        )
+      }
+    )
+    let atuin = try atuin(document.atuin, source: source, base: base)
+    return EnvironmentProfile(
+      terminal: terminal,
+      shell: shell,
+      prompt: shell == .disabled ? .disabled : declaredPrompt,
+      history: shell == .disabled ? .disabled : declaredHistory,
+      kitty: kitty,
+      zsh: zsh,
+      starship: starship,
+      atuin: atuin
+    )
+  }
+
+  private func kitty(
+    _ options: KittyDocument?,
+    source: URL,
+    base: URL
+  ) throws -> KittyProfileOptions {
+    if let family = options?.fontFamily {
+      guard family == family.trimmingCharacters(in: .whitespacesAndNewlines),
+        !family.isEmpty, family.utf8.count <= 128,
+        !family.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+      else {
+        throw KeybindingProfileError.invalid(
+          source,
+          "kitty.font_family must be a single-line value of at most 128 bytes"
+        )
+      }
+    }
+    if let size = options?.fontSize, !(4...96).contains(size) {
+      throw KeybindingProfileError.invalid(source, "kitty.font_size must be between 4 and 96")
+    }
+    if let opacity = options?.backgroundOpacity, !(0...1).contains(opacity) {
+      throw KeybindingProfileError.invalid(
+        source,
+        "kitty.background_opacity must be between 0 and 1"
+      )
+    }
+    if let blur = options?.backgroundBlur, !(0...64).contains(blur) {
+      throw KeybindingProfileError.invalid(
+        source,
+        "kitty.background_blur must be between 0 and 64"
+      )
+    }
+    return KittyProfileOptions(
+      fontFamily: options?.fontFamily,
+      fontSize: options?.fontSize,
+      backgroundOpacity: options?.backgroundOpacity,
+      backgroundBlur: options?.backgroundBlur,
+      overrideDirectoryURL: try options?.override.map {
+        try Self.resolvePortablePath($0, field: "kitty.override", base: base, source: source)
+      }
+    )
+  }
+
+  private func zsh(
+    _ options: ZshDocument?,
+    source: URL,
+    base: URL
+  ) throws -> ZshProfileOptions {
+    if let editor = options?.editor {
+      let allowed = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+.-"
+      )
+      guard !editor.isEmpty, editor.utf8.count <= 128,
+        editor.unicodeScalars.allSatisfy(allowed.contains)
+      else {
+        throw KeybindingProfileError.invalid(
+          source,
+          "zsh.editor must be an ASCII command name of at most 128 bytes"
+        )
+      }
+    }
+    return ZshProfileOptions(
+      editor: options?.editor,
+      hookURL: try options?.hook.map {
+        try Self.resolvePortablePath($0, field: "zsh.hook", base: base, source: source)
+      }
+    )
+  }
+
+  private func atuin(
+    _ options: AtuinDocument?,
+    source: URL,
+    base: URL
+  ) throws -> AtuinProfileOptions {
+    if let mode = options?.searchMode,
+      !["fuzzy", "prefix", "fulltext", "daemon-fuzzy"].contains(mode)
+    {
+      throw KeybindingProfileError.invalid(
+        source,
+        "atuin.search_mode must be fuzzy, prefix, fulltext, or daemon-fuzzy"
+      )
+    }
+    if let mode = options?.keymapMode,
+      !["emacs", "vim-insert", "vim-normal"].contains(mode)
+    {
+      throw KeybindingProfileError.invalid(
+        source,
+        "atuin.keymap_mode must be emacs, vim-insert, or vim-normal"
+      )
+    }
+    return AtuinProfileOptions(
+      searchMode: options?.searchMode,
+      keymapMode: options?.keymapMode,
+      enterAccept: options?.enterAccept,
+      daemon: options?.daemon,
+      configurationURL: try options?.configuration.map {
+        try Self.resolvePortablePath(
+          $0,
+          field: "atuin.configuration",
+          base: base,
+          source: source
+        )
+      }
+    )
+  }
+
   private func selection<T: RawRepresentable>(
     _ value: String,
     as type: T.Type,
@@ -346,12 +615,23 @@ package struct PortableProfileLoader: Sendable {
     guard !NSString(string: path).isAbsolutePath else {
       throw KeybindingProfileError.invalid(source, "\(field) must be a relative path")
     }
-    let resolved = base.appending(path: path).standardizedFileURL
-    let prefix = base.path.hasSuffix("/") ? base.path : base.path + "/"
-    guard resolved.path.hasPrefix(prefix) else {
+    let lexicalBase = base.standardizedFileURL
+    let lexicalTarget = lexicalBase.appending(path: path).standardizedFileURL
+    let lexicalPrefix = lexicalBase.path.hasSuffix("/") ? lexicalBase.path : lexicalBase.path + "/"
+    guard lexicalTarget.path.hasPrefix(lexicalPrefix) else {
       throw KeybindingProfileError.invalid(source, "\(field) must stay beside the profile")
     }
-    return resolved
+    let resolvedBase = lexicalBase.resolvingSymlinksInPath().standardizedFileURL
+    let resolvedTarget = lexicalTarget.resolvingSymlinksInPath().standardizedFileURL
+    let resolvedPrefix =
+      resolvedBase.path.hasSuffix("/") ? resolvedBase.path : resolvedBase.path + "/"
+    guard resolvedTarget.path.hasPrefix(resolvedPrefix) else {
+      throw KeybindingProfileError.invalid(
+        source,
+        "\(field) must not escape the profile directory through a symbolic link"
+      )
+    }
+    return lexicalTarget
   }
 
   private static func systemError(_ code: Int32) -> String {
@@ -383,6 +663,31 @@ extension SketchyBarProfileOptions {
   )
 }
 
+extension EnvironmentProfile {
+  fileprivate static let defaults = EnvironmentProfile(
+    terminal: .kitty,
+    shell: .zsh,
+    prompt: .starship,
+    history: .atuin,
+    kitty: KittyProfileOptions(
+      fontFamily: nil,
+      fontSize: nil,
+      backgroundOpacity: nil,
+      backgroundBlur: nil,
+      overrideDirectoryURL: nil
+    ),
+    zsh: ZshProfileOptions(editor: nil, hookURL: nil),
+    starship: StarshipProfileOptions(behaviorURL: nil),
+    atuin: AtuinProfileOptions(
+      searchMode: nil,
+      keymapMode: nil,
+      enterAccept: nil,
+      daemon: nil,
+      configurationURL: nil
+    )
+  )
+}
+
 private struct PortableProfileDocument: Decodable {
   let schemaVersion: Int
   let keybindings: KeybindingsDocument?
@@ -390,6 +695,14 @@ private struct PortableProfileDocument: Decodable {
   let yabai: YabaiDocument?
   let topBar: TopBarDocument?
   let sketchyBar: SketchyBarDocument?
+  let terminal: TerminalDocument?
+  let kitty: KittyDocument?
+  let shell: ShellDocument?
+  let zsh: ZshDocument?
+  let prompt: PromptDocument?
+  let starship: StarshipDocument?
+  let history: HistoryDocument?
+  let atuin: AtuinDocument?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -398,6 +711,14 @@ private struct PortableProfileDocument: Decodable {
     case yabai
     case topBar = "top_bar"
     case sketchyBar = "sketchybar"
+    case terminal
+    case kitty
+    case shell
+    case zsh
+    case prompt
+    case starship
+    case history
+    case atuin
   }
 }
 
@@ -444,4 +765,61 @@ private struct SketchyBarDocument: Decodable {
   let center: [SketchyBarModule]?
   let right: [SketchyBarModule]?
   let hook: String?
+}
+
+private struct TerminalDocument: Decodable {
+  let provider: String?
+}
+
+private struct KittyDocument: Decodable {
+  let fontFamily: String?
+  let fontSize: Double?
+  let backgroundOpacity: Double?
+  let backgroundBlur: Int?
+  let override: String?
+
+  enum CodingKeys: String, CodingKey {
+    case fontFamily = "font_family"
+    case fontSize = "font_size"
+    case backgroundOpacity = "background_opacity"
+    case backgroundBlur = "background_blur"
+    case override
+  }
+}
+
+private struct ShellDocument: Decodable {
+  let provider: String?
+}
+
+private struct ZshDocument: Decodable {
+  let editor: String?
+  let hook: String?
+}
+
+private struct PromptDocument: Decodable {
+  let provider: String?
+}
+
+private struct StarshipDocument: Decodable {
+  let behavior: String?
+}
+
+private struct HistoryDocument: Decodable {
+  let provider: String?
+}
+
+private struct AtuinDocument: Decodable {
+  let searchMode: String?
+  let keymapMode: String?
+  let enterAccept: Bool?
+  let daemon: Bool?
+  let configuration: String?
+
+  enum CodingKeys: String, CodingKey {
+    case searchMode = "search_mode"
+    case keymapMode = "keymap_mode"
+    case enterAccept = "enter_accept"
+    case daemon
+    case configuration
+  }
 }

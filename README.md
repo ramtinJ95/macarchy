@@ -103,6 +103,7 @@ macarchy desktop apply [--profile <path>] [--dry-run] [--json]
 macarchy desktop status [--profile <path>] [--json]
 macarchy desktop doctor [--profile <path>] [--json]
 macarchy desktop teardown [--dry-run] [--json]
+macarchy environment plan [--profile <path>] [--state-root <path>] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup [--dry-run] [--json]
@@ -117,6 +118,61 @@ Development builds find bundled themes from the checkout containing `.build`.
 Installed builds resolve resources relative to the executable, so commands do
 not depend on the current working directory. `--themes-root`, `--state-root`,
 and consumer-specific path options are available for development and testing.
+
+## Curated terminal-session plan
+
+`environment plan` is the read-only entry point for M3's Kitty, zsh, Starship,
+and Atuin session. It composes package-owned defaults with the portable profile,
+prints every proposed native artifact and digest, and makes no filesystem or
+provider changes. Apply, status, recovery, and teardown follow in the next
+vertical slice; until then the command reports desired state only.
+
+All four providers are enabled when the profile is absent. Roles can be disabled
+without Macarchy touching their external configuration:
+
+```toml
+schema_version = 1
+
+[terminal]
+provider = "kitty" # or "disabled"
+
+[shell]
+provider = "zsh" # or "disabled"
+
+[prompt]
+provider = "starship" # or "disabled"
+
+[history]
+provider = "atuin" # or "disabled"
+```
+
+Common options remain sparse. Advanced inputs use native provider files beside
+the resolved profile source:
+
+```toml
+[kitty]
+font_size = 15
+background_opacity = 0.92
+override = "kitty"
+
+[zsh]
+editor = "nvim"
+hook = "zshrc"
+
+[starship]
+behavior = "starship.toml"
+
+[atuin]
+search_mode = "daemon-fuzzy"
+keymap_mode = "vim-insert"
+configuration = "atuin.toml"
+```
+
+The Kitty override is a bounded, symlink-free directory containing
+`kitty.conf`; exact relative includes must resolve inside it. The zsh hook is
+trusted local code but is copied, not executed, during planning. Starship
+behavior cannot define `palette` or `palettes`, and Atuin behavior cannot define
+`[theme]`, because those values remain owned by Macarchy's active theme.
 
 ## Managed desktop shell
 
