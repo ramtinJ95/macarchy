@@ -98,6 +98,11 @@ macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
 macarchy keybindings doctor --effective [--profile <path>] [--state-root <path>] [--json]
 macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
 macarchy keybindings show --effective [--profile <path>] [--state-root <path>]
+macarchy desktop plan [--profile <path>] [--json]
+macarchy desktop apply [--profile <path>] [--dry-run] [--json]
+macarchy desktop status [--profile <path>] [--json]
+macarchy desktop doctor [--profile <path>] [--json]
+macarchy desktop teardown [--dry-run] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup [--dry-run] [--json]
@@ -112,6 +117,93 @@ Development builds find bundled themes from the checkout containing `.build`.
 Installed builds resolve resources relative to the executable, so commands do
 not depend on the current working directory. `--themes-root`, `--state-root`,
 and consumer-specific path options are available for development and testing.
+
+## Managed desktop shell
+
+The default desktop outcome combines no-SA yabai tiling, the authoritative
+managed skhd shortcuts, and a Space-aware themed SketchyBar. Run setup first to
+inspect the `yabai`, `skhd`, and `sketchybar` package prerequisites. The
+third-party Homebrew formulae remain an explicit trust decision; Macarchy never
+runs `brew trust`. yabai and skhd also require the user-granted Accessibility
+permission reported by `desktop doctor`.
+
+The same portable profile used by managed keybindings controls both desktop
+roles. An absent profile selects the curated `yabai-skhd` and `sketchybar`
+defaults. Sparse controls and role opt-outs do not require copying packaged
+configuration:
+
+```toml
+schema_version = 1
+
+[desktop]
+provider = "yabai-skhd" # or "disabled"
+
+[yabai]
+layout = "bsp"
+window_gap = 8
+hook = "personal-yabai.sh"
+
+[top_bar]
+provider = "sketchybar" # or "disabled"
+
+[sketchybar]
+left = ["spaces"]
+center = []
+right = ["volume", "clock"]
+hook = "personal-sketchybar.sh"
+```
+
+Hook paths are relative to the resolved profile source. They are bounded,
+validated, copied into sealed generated state, and never executed during
+planning. The SketchyBar hook has a three-second execution bound and cannot
+leave supported detached or background work. A configured hook makes status
+honestly `partial` because Macarchy verifies its managed namespace but cannot
+claim complete behavior equivalence.
+
+Review the aggregate plan and its exact adoption evidence before mutation:
+
+```sh
+macarchy desktop plan --profile /path/to/profile.toml
+macarchy desktop apply --profile /path/to/profile.toml --dry-run
+macarchy desktop apply \
+  --profile /path/to/profile.toml \
+  --adopt 'sha256:yabai-plan-digest' \
+  --keybindings-adopt 'sha256:skhd-plan-digest' \
+  --sketchybar-adopt 'sha256:sketchybar-plan-digest'
+macarchy desktop status --profile /path/to/profile.toml
+macarchy desktop doctor --profile /path/to/profile.toml
+```
+
+Only digests required by the reviewed plan need to be supplied. Apply preflights
+all selected packages, provider conflicts, hooks, service boundaries, the
+Accessibility-dependent yabai query, and the canonical theme before the first
+provider mutation. It then converges yabai, skhd, and SketchyBar under one
+durable aggregate transaction, releases the activation lock, and reconciles
+the selected wallpaper and SketchyBar theme adapters. A later-provider or
+required-theme failure rolls completed provider boundaries back in reverse
+order.
+
+`desktop status` correlates desired profile input with provider generations,
+ownership, service/runtime evidence, skhd lifecycle evidence, the active theme,
+and any interrupted aggregate transaction. `desktop doctor` adds selected-role
+package and manual-prerequisite findings. Neither command repairs or hides
+drift.
+
+Teardown previews and then restores SketchyBar, skhd, and yabai in reverse
+dependency order:
+
+```sh
+macarchy desktop teardown --dry-run
+macarchy desktop teardown
+```
+
+Existing regular files and supported symlinks are retained and restored at
+their established exact-inode boundaries. Portable profile and hook sources
+remain user-owned; immutable generations and lifecycle records remain under
+`~/.config/macarchy` and must not be copied into dotfiles. If status reports
+`recovery_required`, rerun the same aggregate apply or teardown command first;
+the durable transaction completes forward after its commit boundary and rolls
+back otherwise.
 
 `keybindings list`, `doctor`, and `show` preserve source-based inspection for
 externally managed skhd configuration. They parse enabled key-to-command
