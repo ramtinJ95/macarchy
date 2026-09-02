@@ -8,6 +8,38 @@ import Testing
 
 struct EnvironmentLifecycleTests {
   @Test
+  func managedConsumerPathsResolveTheOwnedShellLink() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-environment-consumer-paths-(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appending(path: "home", directoryHint: .isDirectory)
+    let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    let generated = state.appending(path: "environment/current/zsh/.zshrc")
+    try FileManager.default.createDirectory(
+      at: generated.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "export MACARCHY_MANAGED_SESSION=1\n".write(
+      to: generated,
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.createSymbolicLink(
+      at: home.appending(path: ".zshrc"),
+      withDestinationURL: generated
+    )
+
+    let paths = testConsumerPaths().managedEnvironmentPaths(
+      stateRoot: state,
+      homeDirectory: home
+    )
+
+    #expect(paths.shellConfigurationURL == generated)
+  }
+
+  @Test
   func aggregateAdoptionApplyRepeatAndTeardownRestoreExactEntries() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
