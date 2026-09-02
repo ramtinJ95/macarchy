@@ -117,6 +117,7 @@ if (( desktop_plan_status == 1 )); then
   )"
   [[ -z "$unexpected_desktop_diagnostic" ]]
 fi
+print "desktop plan smoke passed"
 
 cat > "$temporary_directory/desktop-disabled.toml" <<'EOF'
 schema_version = 1
@@ -142,10 +143,12 @@ else
     /"status" : "failure"/ && finding !~ /"desktop\.prerequisite\./ { exit 1 }
   ' "$temporary_directory/desktop-doctor.json"
 fi
+print "desktop doctor smoke passed"
 
 snapshot_tree "$temporary_directory/home-after.json" "$home"
 snapshot_tree "$temporary_directory/resources-after.json" "$resources"
 cmp "$temporary_directory/home-before.json" "$temporary_directory/home-after.json"
 cmp "$temporary_directory/resources-before.json" "$temporary_directory/resources-after.json"
+print "release layout immutability smoke passed"
 
 print "release layout smoke test passed"
