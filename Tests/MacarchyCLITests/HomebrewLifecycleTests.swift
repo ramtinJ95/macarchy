@@ -426,6 +426,14 @@ struct HomebrewLifecycleTests {
         .appending(path: "Themes"),
       to: resourceRoot.appending(path: "themes")
     )
+    try FileManager.default.copyItem(
+      at: URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appending(path: "Environment"),
+      to: resourceRoot.appending(path: "environment")
+    )
     try Data(
       """
       {"schema_version":1,"version":"0.2.0","revision":"\(String(repeating: "a", count: 40))"}
