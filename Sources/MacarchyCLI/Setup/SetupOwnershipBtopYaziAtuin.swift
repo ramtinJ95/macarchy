@@ -128,7 +128,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupTOMLSelector(
+    if try environmentOwns([.atuinConfiguration], context: context) {
+      return integrationResult(
+        id: Self.atuinSelectorID,
+        target: context.atuinConfiguration,
+        status: .external,
+        message: "Atuin configuration is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupTOMLSelector(
       id: Self.atuinSelectorID,
       target: context.atuinConfiguration,
       backupURL: context.atuinSelectorBackup,
@@ -148,7 +156,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupThemeLink(
+    if try environmentOwns([.atuinConfiguration, .atuinTheme], context: context) {
+      return integrationResult(
+        id: Self.atuinThemeLinkID,
+        target: context.atuinThemeLink,
+        status: .external,
+        message: "The Atuin theme seam is managed by the aggregate environment lifecycle"
+      )
+    }
+    return try setupThemeLink(
       id: Self.atuinThemeLinkID,
       target: context.atuinThemeLink,
       destination: context.atuinThemeDestination,

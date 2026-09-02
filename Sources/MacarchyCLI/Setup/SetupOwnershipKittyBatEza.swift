@@ -7,7 +7,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupRegularFile(
+    if try environmentOwns([.kitty], context: context) {
+      return integrationResult(
+        id: Self.integrationID,
+        target: context.kittyConfiguration,
+        status: .external,
+        message: "Kitty configuration is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupRegularFile(
       id: Self.integrationID,
       target: context.kittyConfiguration,
       backupURL: context.backupURL,
