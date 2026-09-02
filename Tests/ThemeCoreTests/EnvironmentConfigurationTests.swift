@@ -43,6 +43,56 @@ struct EnvironmentConfigurationTests {
   }
 
   @Test
+  func providerInitCommandFailureStopsTheManagedShellMarker() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appending(path: "home", directoryHint: .isDirectory)
+    let bin = root.appending(path: "bin", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+    let atuin = bin.appending(path: "atuin")
+    try "#!/bin/sh\nexit 17\n".write(to: atuin, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: atuin.path)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n",
+      source: root.appending(path: "profile.toml")
+    )
+    let composition = try composer.compose(
+      resourcesRoot: resourcesRoot,
+      profile: profile,
+      stateRoot: root.appending(path: "state")
+    )
+    try artifact("zsh/.zshrc", in: composition).write(
+      to: home.appending(path: ".zshrc"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let output = Pipe()
+    let process = Process()
+    process.executableURL = URL(filePath: "/bin/zsh")
+    process.arguments = [
+      "-c",
+      "source .zshrc; startup=$?; print -r -- ${MACARCHY_MANAGED_SESSION-unset}; exit $startup",
+    ]
+    process.currentDirectoryURL = home
+    process.environment = [
+      "HOME": home.path,
+      "PATH": "\(bin.path):/usr/bin:/bin",
+      "ZDOTDIR": home.path,
+    ]
+    process.standardOutput = output
+    process.standardError = output
+
+    try process.run()
+    process.waitUntilExit()
+
+    #expect(process.terminationStatus != 0)
+    #expect(
+      String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        == "unset\n")
+  }
+
+  @Test
   func nativeInputsAndStableOptionsProduceSelfContainedArtifacts() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }

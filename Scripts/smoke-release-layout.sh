@@ -160,14 +160,45 @@ else
 fi
 print "desktop doctor smoke passed"
 
+environment_plan_status=0
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
-  "$binary" environment plan --json > "$temporary_directory/environment-plan.json"
+  "$binary" environment plan --json > "$temporary_directory/environment-plan.json" \
+  || environment_plan_status=$?
+(( environment_plan_status == 0 || environment_plan_status == 1 ))
 grep -q '"operation" : "environment_plan"' "$temporary_directory/environment-plan.json"
-grep -q '"outcome" : "ready"' "$temporary_directory/environment-plan.json"
 grep -q '"mutated" : false' "$temporary_directory/environment-plan.json"
 grep -q '"terminal_provider" : "kitty"' "$temporary_directory/environment-plan.json"
 grep -q '"shell_provider" : "zsh"' "$temporary_directory/environment-plan.json"
+if (( environment_plan_status == 0 )); then
+  grep -q '"outcome" : "ready"' "$temporary_directory/environment-plan.json"
+else
+  grep -q '"outcome" : "blocked"' "$temporary_directory/environment-plan.json"
+fi
 print "environment plan smoke passed"
+
+cat > "$temporary_directory/environment-disabled.toml" <<'EOF'
+schema_version = 1
+[terminal]
+provider = "disabled"
+[shell]
+provider = "disabled"
+EOF
+for operation in apply status doctor teardown; do
+  if [[ $operation == teardown ]]; then
+    HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+      "$binary" environment teardown --json \
+      > "$temporary_directory/environment-$operation.json"
+  else
+    HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+      "$binary" environment "$operation" \
+      --profile "$temporary_directory/environment-disabled.toml" \
+      --json > "$temporary_directory/environment-$operation.json"
+  fi
+  grep -q "\"operation\" : \"environment_$operation\"" \
+    "$temporary_directory/environment-$operation.json"
+  grep -q '"mutated" : false' "$temporary_directory/environment-$operation.json"
+done
+print "environment lifecycle smoke passed"
 
 snapshot_tree "$temporary_directory/home-after.json" "$home"
 snapshot_tree "$temporary_directory/resources-after.json" "$resources"

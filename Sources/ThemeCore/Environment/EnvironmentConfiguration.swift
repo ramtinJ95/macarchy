@@ -92,11 +92,34 @@ package struct EnvironmentConfigurationComposer: Sendable {
         configuration = appendLine("export VISUAL=\"$EDITOR\"", to: configuration)
       }
       if options.history == .atuin {
-        configuration = appendLine("eval \"$(atuin init zsh)\"", to: configuration)
+        configuration = appendLine(
+          "MACARCHY_ATUIN_INIT=\"$(atuin init zsh)\" || return 1",
+          to: configuration
+        )
+        configuration = appendLine(
+          "eval \"$MACARCHY_ATUIN_INIT\" || return 1",
+          to: configuration
+        )
+        configuration = appendLine(
+          "unset MACARCHY_ATUIN_INIT",
+          to: configuration
+        )
       }
       if options.prompt == .starship {
-        configuration = appendLine("eval \"$(starship init zsh)\"", to: configuration)
+        configuration = appendLine(
+          "MACARCHY_STARSHIP_INIT=\"$(starship init zsh)\" || return 1",
+          to: configuration
+        )
+        configuration = appendLine(
+          "eval \"$MACARCHY_STARSHIP_INIT\" || return 1",
+          to: configuration
+        )
+        configuration = appendLine(
+          "unset MACARCHY_STARSHIP_INIT",
+          to: configuration
+        )
       }
+      configuration = appendLine("export MACARCHY_MANAGED_SESSION=1", to: configuration)
       if let hookURL = options.zsh.hookURL {
         let text = try readText(at: hookURL)
         zshHook = (text, sha256Digest(Data(text.utf8)))
