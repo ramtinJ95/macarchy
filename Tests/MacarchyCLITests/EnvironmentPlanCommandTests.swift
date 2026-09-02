@@ -109,6 +109,37 @@ struct EnvironmentPlanCommandTests {
     #expect(!FileManager.default.fileExists(atPath: state.path))
   }
 
+  @Test
+  func livePlanRequiresTheCanonicalThemeNeededByApply() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appending(path: "home", directoryHint: .isDirectory)
+    let state = root.appending(path: "state", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+
+    let execution = try EnvironmentPlanCommandRunner(
+      prerequisites: .assumed,
+      requiresActiveTheme: true
+    ).execute(
+      resourcesRoot: resourcesRoot,
+      profileURL: root.appending(path: "missing-profile.toml"),
+      profileRequired: false,
+      stateRoot: state,
+      homeDirectory: home,
+      json: true
+    )
+    let report = try jsonObject(execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(
+      (report["diagnostics"] as? [[String: Any]])?.contains {
+        $0["code"] as? String == "active_theme_required"
+      } == true
+    )
+    #expect(!FileManager.default.fileExists(atPath: state.path))
+  }
+
   private var resourcesRoot: URL {
     repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory)
   }

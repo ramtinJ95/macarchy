@@ -2,13 +2,28 @@ import Foundation
 import ThemeCore
 
 struct EnvironmentPlanCommandRunner: Sendable {
-  static let live = EnvironmentPlanCommandRunner()
+  static let live = EnvironmentPlanCommandRunner(
+    prerequisites: .live,
+    requiresActiveTheme: true
+  )
+
+  let prerequisites: EnvironmentPrerequisiteInspector
+  let requiresActiveTheme: Bool
+
+  init(
+    prerequisites: EnvironmentPrerequisiteInspector = .live,
+    requiresActiveTheme: Bool = false
+  ) {
+    self.prerequisites = prerequisites
+    self.requiresActiveTheme = requiresActiveTheme
+  }
 
   func execute(
     resourcesRoot: URL,
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
+    homeDirectory: URL? = nil,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
@@ -50,8 +65,45 @@ struct EnvironmentPlanCommandRunner: Sendable {
       return (try report.render(json: json), false)
     }
 
+    let provider = homeDirectory.map {
+      EnvironmentProviderInspector().inspect(
+        composition: composition,
+        homeDirectory: $0,
+        stateRoot: stateRoot
+      )
+    }
+    let prerequisiteState =
+      homeDirectory.map {
+        prerequisites.inspect(composition.profile, $0)
+      } ?? []
+    let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
+    let themeDiagnostic: EnvironmentPlanDiagnostic?
+    if requiresActiveTheme, !composition.profile.selectedThemeAdapterIDs.isEmpty {
+      do {
+        _ = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+        themeDiagnostic = nil
+      } catch {
+        themeDiagnostic = EnvironmentPlanDiagnostic(
+          code: "active_theme_required",
+          source: stateRoot.path,
+          message: "An active canonical theme is required before environment apply: \(error)"
+        )
+      }
+    } else {
+      themeDiagnostic = nil
+    }
+    let blocked =
+      provider?.isBlocked == true
+      || prerequisiteState.contains { $0.status == "missing" }
+      || EnvironmentStateStore(stateRoot: stateRoot).transactionExists
+      || themeDiagnostic != nil
+    var diagnostics =
+      provider?.blockedMessage.map {
+        [EnvironmentPlanDiagnostic(code: "provider_blocked", source: stateRoot.path, message: $0)]
+      } ?? []
+    if let themeDiagnostic { diagnostics.append(themeDiagnostic) }
     let report = EnvironmentPlanReport(
-      outcome: "ready",
+      outcome: blocked ? "blocked" : "ready",
       profile: profileURL.path,
       profileStatus: profile.sourceURL == nil ? "absent_default" : "loaded",
       terminalProvider: composition.profile.terminal.rawValue,
@@ -69,13 +121,29 @@ struct EnvironmentPlanCommandRunner: Sendable {
       ),
       renderedDigest: composition.renderedDigest,
       proposedInputDigest: composition.inputDigest,
-      actions: Self.actions(for: composition.profile),
-      diagnostics: []
+      generation: EnvironmentGenerationReport(generation),
+      transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
+        ? "recovery_required" : "clear",
+      adoptionEvidenceDigest: provider?.adoptionEvidenceDigest,
+      prerequisites: prerequisiteState,
+      entries: provider?.entries ?? [],
+      actions: Self.actions(
+        for: composition.profile,
+        adoptionRequired: provider?.adoptionEvidenceDigest != nil,
+        restorationRequired: provider?.entries.contains {
+          $0.status == "restoration_required"
+        } == true
+      ),
+      diagnostics: diagnostics
     )
-    return (try report.render(json: json), true)
+    return (try report.render(json: json), !blocked)
   }
 
-  private static func actions(for profile: EnvironmentProfile) -> [EnvironmentPlanAction] {
+  private static func actions(
+    for profile: EnvironmentProfile,
+    adoptionRequired: Bool,
+    restorationRequired: Bool
+  ) -> [EnvironmentPlanAction] {
     var actions: [EnvironmentPlanAction] = []
     if profile.terminal == .kitty {
       actions.append(
@@ -118,6 +186,24 @@ struct EnvironmentPlanCommandRunner: Sendable {
         at: 0
       )
     }
+    if adoptionRequired {
+      actions.insert(
+        EnvironmentPlanAction(
+          id: "adopt_provider_entries",
+          message: "Adopt every reviewed external provider entry as one aggregate transaction."
+        ),
+        at: 0
+      )
+    }
+    if restorationRequired {
+      actions.insert(
+        EnvironmentPlanAction(
+          id: "restore_disabled_provider_entries",
+          message: "Restore adopted entries for roles that are now disabled."
+        ),
+        at: 0
+      )
+    }
     return actions
   }
 }
@@ -142,6 +228,11 @@ private struct EnvironmentPlanReport: Encodable {
   let renderedArtifacts: [String: String]
   let renderedDigest: String?
   let proposedInputDigest: String?
+  let generation: EnvironmentGenerationReport
+  let transactionStatus: String
+  let adoptionEvidenceDigest: String?
+  let prerequisites: [EnvironmentPrerequisiteStatus]
+  let entries: [EnvironmentEntryInspection]
   let actions: [EnvironmentPlanAction]
   let diagnostics: [EnvironmentPlanDiagnostic]
 
@@ -169,6 +260,14 @@ private struct EnvironmentPlanReport: Encodable {
       renderedArtifacts: [:],
       renderedDigest: nil,
       proposedInputDigest: nil,
+      generation: EnvironmentGenerationReport(
+        status: "unavailable",
+        message: diagnostic.message
+      ),
+      transactionStatus: "unknown",
+      adoptionEvidenceDigest: nil,
+      prerequisites: [],
+      entries: [],
       actions: [],
       diagnostics: [diagnostic]
     )
@@ -191,8 +290,30 @@ private struct EnvironmentPlanReport: Encodable {
       "- Atuin configuration: " + (atuinConfiguration ?? "none"),
       "- proposed input digest: " + (proposedInputDigest ?? "unavailable"),
       "- rendered digest: " + (renderedDigest ?? "unavailable"),
-      actions.isEmpty ? "Actions: none" : "Actions:",
+      "- generation: \(generation.status)",
+      "- transaction: \(transactionStatus)",
+      "- adoption evidence: " + (adoptionEvidenceDigest ?? "none"),
     ]
+    lines += prerequisites.map {
+      "- prerequisite \($0.id) [\($0.status)]: \($0.requirement)"
+    }
+    for entry in entries {
+      lines.append("- \(entry.id) [\(entry.status)]: \(entry.path) — \(entry.message)")
+      if let evidence = entry.evidence {
+        lines.append(
+          "  evidence: kind=\(evidence.kind.rawValue)"
+            + " device=\(evidence.device.map(String.init) ?? "none")"
+            + " inode=\(evidence.inode.map(String.init) ?? "none")"
+            + " mode=\(evidence.mode.map(String.init) ?? "none")"
+            + " size=\(evidence.size.map(String.init) ?? "none")"
+            + " link=\(evidence.linkDestination ?? "none")"
+            + " content=\(evidence.contentDigest ?? "none")"
+            + " metadata=\(evidence.metadataDigest ?? "none")"
+            + " inventory=\(evidence.inventory)"
+        )
+      }
+    }
+    lines.append(actions.isEmpty ? "Actions: none" : "Actions:")
     lines += actions.map { "- \($0.id): \($0.message)" }
     if !diagnostics.isEmpty {
       lines.append("Diagnostics:")
