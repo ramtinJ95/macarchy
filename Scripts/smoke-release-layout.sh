@@ -104,10 +104,6 @@ desktop_plan_status=0
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" desktop plan --json > "$temporary_directory/desktop-plan.json" \
   || desktop_plan_status=$?
-if (( desktop_plan_status != 0 )); then
-  print "desktop plan exited with status $desktop_plan_status"
-  cat "$temporary_directory/desktop-plan.json"
-fi
 (( desktop_plan_status == 0 || desktop_plan_status == 1 ))
 grep -q '"operation" : "desktop_plan"' "$temporary_directory/desktop-plan.json"
 grep -q '"mutated" : false' "$temporary_directory/desktop-plan.json"
@@ -117,9 +113,18 @@ if (( desktop_plan_status == 1 )); then
     "$temporary_directory/desktop-plan.json"
   unexpected_desktop_diagnostic="$(
     grep '"code" :' "$temporary_directory/desktop-plan.json" \
-      | grep -v '"code" : "desktop_prerequisite_missing"' || true
+      | grep -Ev '"code" : "(desktop_prerequisite_missing|keybindings_blocked)"' || true
   )"
-  [[ -z "$unexpected_desktop_diagnostic" ]]
+  if [[ -n "$unexpected_desktop_diagnostic" ]]; then
+    cat "$temporary_directory/desktop-plan.json"
+    exit 1
+  fi
+  if grep -q '"code" : "keybindings_blocked"' "$temporary_directory/desktop-plan.json"; then
+    grep -q '"source" : "skhd"' "$temporary_directory/desktop-plan.json"
+    grep -q '"provider_status" : "install_required"' \
+      "$temporary_directory/desktop-plan.json"
+    grep -q '"ownership" : "absent"' "$temporary_directory/desktop-plan.json"
+  fi
 fi
 print "desktop plan smoke passed"
 
@@ -136,10 +141,6 @@ HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   --profile "$temporary_directory/desktop-disabled.toml" \
   --json > "$temporary_directory/desktop-doctor.json" \
   || desktop_doctor_status=$?
-if (( desktop_doctor_status != 0 )); then
-  print "desktop doctor exited with status $desktop_doctor_status"
-  cat "$temporary_directory/desktop-doctor.json"
-fi
 (( desktop_doctor_status == 0 || desktop_doctor_status == 1 ))
 grep -q '"operation" : "desktop_doctor"' "$temporary_directory/desktop-doctor.json"
 if (( desktop_doctor_status == 0 )); then
