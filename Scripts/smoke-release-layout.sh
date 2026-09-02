@@ -33,6 +33,12 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/macarchy/environment/zsh/defaults.zsh" ]]
 [[ -f "$layout/share/macarchy/environment/starship/behavior.toml" ]]
 [[ -f "$layout/share/macarchy/environment/atuin/config.toml" ]]
+[[ -f "$layout/share/macarchy/environment/bat/config" ]]
+[[ -f "$layout/share/macarchy/environment/eza/defaults.zsh" ]]
+[[ -f "$layout/share/macarchy/environment/btop/btop.conf" ]]
+[[ -f "$layout/share/macarchy/environment/yazi/yazi.toml" ]]
+[[ -f "$layout/share/macarchy/environment/yazi/theme.toml" ]]
+[[ -f "$layout/share/macarchy/environment/yazi/defaults.zsh" ]]
 [[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
@@ -182,6 +188,11 @@ schema_version = 1
 provider = "disabled"
 [shell]
 provider = "disabled"
+[tools]
+bat = false
+eza = false
+btop = false
+yazi = false
 EOF
 for operation in apply status doctor teardown; do
   if [[ $operation == teardown ]]; then
