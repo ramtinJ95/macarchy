@@ -36,6 +36,14 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
+    if try environmentOwns([.batConfiguration], context: context) {
+      return integrationResult(
+        id: Self.batSelectorID,
+        target: context.batConfiguration,
+        status: .external,
+        message: "bat configuration is owned by the aggregate environment lifecycle"
+      )
+    }
     let exactLine = BatAdapter.themeDirective
     return try setupRegularFile(
       id: Self.batSelectorID,
@@ -69,7 +77,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupThemeLink(
+    if try environmentOwns([.batTheme], context: context) {
+      return integrationResult(
+        id: Self.batThemeLinkID,
+        target: context.batThemeLink,
+        status: .external,
+        message: "The bat theme seam is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupThemeLink(
       id: Self.batThemeLinkID,
       target: context.batThemeLink,
       destination: context.batThemeDestination,
@@ -85,6 +101,14 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
+    if try environmentOwns([.zsh], context: context) {
+      return integrationResult(
+        id: Self.ezaEnvironmentID,
+        target: context.shellConfiguration,
+        status: .external,
+        message: "The Eza environment is owned by the aggregate environment lifecycle"
+      )
+    }
     let exactLine = EzaAdapter.environmentDirective(
       configurationDirectoryURL: context.ezaThemeLink.deletingLastPathComponent()
     )
@@ -120,7 +144,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupThemeLink(
+    if try environmentOwns([.ezaTheme], context: context) {
+      return integrationResult(
+        id: Self.ezaThemeLinkID,
+        target: context.ezaThemeLink,
+        status: .external,
+        message: "The Eza theme seam is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupThemeLink(
       id: Self.ezaThemeLinkID,
       target: context.ezaThemeLink,
       destination: context.ezaThemeDestination,

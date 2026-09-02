@@ -20,6 +20,10 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         + (profile.terminal == .kitty ? ["kitty"] : [])
         + (profile.prompt == .starship ? ["starship"] : [])
         + (profile.history == .atuin ? ["atuin"] : [])
+        + (profile.tools.bat ? ["bat"] : [])
+        + (profile.tools.eza ? ["eza"] : [])
+        + (profile.tools.btop ? ["btop"] : [])
+        + (profile.tools.yazi ? ["yazi"] : [])
     )
     var results = DependencyProfile.personal(homeDirectory: homeDirectory).capabilities
       .filter { selected.contains($0.id) }
@@ -60,12 +64,17 @@ struct EnvironmentPrerequisiteInspector: Sendable {
 extension EnvironmentProfile {
   var isEntirelyDisabled: Bool {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
+      && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
   }
 
   var selectedThemeAdapterIDs: [String] {
     (terminal == .kitty ? ["kitty"] : [])
       + (prompt == .starship ? ["starship"] : [])
       + (history == .atuin ? ["atuin"] : [])
+      + (tools.bat ? ["bat"] : [])
+      + (tools.btop ? ["btop"] : [])
+      + (tools.eza ? ["eza"] : [])
+      + (tools.yazi ? ["yazi"] : [])
   }
 }
 
@@ -75,11 +84,11 @@ extension ThemeConsumerPaths {
       kittyConfigurationURL: homeDirectory.appending(path: ".config/kitty/kitty.conf"),
       sketchyBarConfigurationURL: sketchyBarConfigurationURL,
       shellConfigurationURL: homeDirectory.appending(path: ".zshrc"),
-      ezaConfigurationDirectoryURL: ezaConfigurationDirectoryURL,
-      batConfigurationDirectoryURL: batConfigurationDirectoryURL,
+      ezaConfigurationDirectoryURL: homeDirectory.appending(path: ".config/eza"),
+      batConfigurationDirectoryURL: homeDirectory.appending(path: ".config/bat"),
       batCacheDirectoryURL: batCacheDirectoryURL,
-      btopConfigurationDirectoryURL: btopConfigurationDirectoryURL,
-      yaziConfigurationDirectoryURL: yaziConfigurationDirectoryURL,
+      btopConfigurationDirectoryURL: homeDirectory.appending(path: ".config/btop"),
+      yaziConfigurationDirectoryURL: homeDirectory.appending(path: ".config/yazi"),
       atuinConfigurationDirectoryURL: homeDirectory.appending(
         path: ".config/atuin",
         directoryHint: .isDirectory
@@ -408,6 +417,10 @@ struct EnvironmentStatusCommandRunner: Sendable {
       "shell": profile.shell.rawValue,
       "prompt": profile.prompt.rawValue,
       "history": profile.history.rawValue,
+      "bat": profile.tools.bat ? "enabled" : "disabled",
+      "btop": profile.tools.btop ? "enabled" : "disabled",
+      "eza": profile.tools.eza ? "enabled" : "disabled",
+      "yazi": profile.tools.yazi ? "enabled" : "disabled",
     ]
   }
 

@@ -31,6 +31,9 @@ package struct EzaAdapter: Sendable {
     "export EZA_CONFIG_DIR=\"\(configurationDirectoryURL.path)\""
   }
 
+  private static let managedEnvironmentDirective =
+    "export EZA_CONFIG_DIR=\"$HOME/.config/eza\""
+
   let root: URL
   let configurationDirectoryURL: URL
   let shellConfigurationURL: URL
@@ -53,7 +56,10 @@ package struct EzaAdapter: Sendable {
 
     let shell = try readShellConfiguration()
     let directive = Self.environmentDirective(configurationDirectoryURL: configurationDirectoryURL)
-    guard containsExactLine(directive, in: shell) else {
+    guard
+      containsExactLine(directive, in: shell)
+        || containsExactLine(Self.managedEnvironmentDirective, in: shell)
+    else {
       throw EzaAdapterError.missingEnvironmentDirective(directive)
     }
   }

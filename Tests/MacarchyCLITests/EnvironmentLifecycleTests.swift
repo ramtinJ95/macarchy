@@ -64,6 +64,73 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test
+  func btopAdoptionRestoresOwnedKeysAndPreservesLaterProviderChanges() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let configuration = fixture.home.appending(path: ".config/btop/btop.conf")
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try """
+    # Personal btop settings
+    color_theme = "personal" # keep this comment
+    update_ms = 2500
+    custom_graph_symbol = "braille"
+    """.write(to: configuration, atomically: true, encoding: .utf8)
+
+    let plan = try fixture.plan()
+    let report = try jsonObject(plan.output)
+    let digest = try #require(report["adoption_evidence_digest"] as? String)
+    let entries = try #require(report["entries"] as? [[String: Any]])
+    #expect(plan.succeeded)
+    #expect(
+      entries.contains {
+        $0["id"] as? String == "btop_configuration"
+          && $0["status"] as? String == "adoption_required"
+      }
+    )
+
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    var managed = try String(contentsOf: configuration, encoding: .utf8)
+    managed = managed.replacingOccurrences(
+      of: "custom_graph_symbol = \"braille\"",
+      with: "custom_graph_symbol = \"block\""
+    )
+    try managed.write(to: configuration, atomically: true, encoding: .utf8)
+    #expect(try await fixture.apply(adopt: nil).succeeded)
+    #expect(try fixture.status().succeeded)
+    #expect(try fixture.teardown().succeeded)
+
+    let restored = try String(contentsOf: configuration, encoding: .utf8)
+    #expect(
+      restored
+        == """
+        # Personal btop settings
+        color_theme = "personal" # keep this comment
+        update_ms = 2500
+        custom_graph_symbol = "block"
+        """
+    )
+  }
+
+  @Test
+  func btopTeardownReleasesProviderStateAddedAfterCleanInstall() async throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let configuration = fixture.home.appending(path: ".config/btop/btop.conf")
+
+    #expect(try await fixture.apply(adopt: nil).succeeded)
+    var providerState = try String(contentsOf: configuration, encoding: .utf8)
+    providerState += "custom_graph_symbol = \"block\"\n"
+    try providerState.write(to: configuration, atomically: true, encoding: .utf8)
+
+    #expect(try fixture.teardown().succeeded)
+    let released = try String(contentsOf: configuration, encoding: .utf8)
+    #expect(released == "custom_graph_symbol = \"block\"\n")
+  }
+
+  @Test
   func staleAggregateEvidenceBlocksBeforeAnyProviderEntryChanges() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -182,6 +249,14 @@ struct EnvironmentLifecycleTests {
     #expect(!FileManager.default.fileExists(atPath: fixture.starshipEntry.path))
     #expect(
       !FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config/atuin").path))
+    #expect(
+      !FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config/bat").path))
+    #expect(
+      !FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config/btop").path))
+    #expect(
+      !FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config/eza").path))
+    #expect(
+      !FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config/yazi").path))
   }
 
   @Test
@@ -245,7 +320,8 @@ struct EnvironmentLifecycleTests {
         previousOwnership: ownership,
         proposedOwnership: nil,
         previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
-          .currentDestination()
+          .currentDestination(),
+        btopReplacementName: ".macarchy-environment-btop-test.replacement"
       )
     )
 
@@ -279,7 +355,8 @@ struct EnvironmentLifecycleTests {
         previousOwnership: ownership,
         proposedOwnership: nil,
         previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
-          .currentDestination()
+          .currentDestination(),
+        btopReplacementName: ".macarchy-environment-btop-test.replacement"
       )
     )
     try FileManager.default.removeItem(at: fixture.kittyEntry.appending(path: "kitty.conf"))
@@ -443,7 +520,7 @@ struct EnvironmentLifecycleTests {
     #expect(apply.succeeded)
     #expect(calls.withLock { $0 } == ["reconcile", "verify"])
     let report = try jsonObject(apply.output)
-    #expect((report["theme"] as? [Any])?.count == 3)
+    #expect((report["theme"] as? [Any])?.count == 7)
     #expect((report["verification"] as? [Any])?.count == 1)
   }
 
@@ -766,6 +843,11 @@ private struct EnvironmentLifecycleFixture {
       provider = "disabled"
       [shell]
       provider = "disabled"
+      [tools]
+      bat = false
+      eza = false
+      btop = false
+      yazi = false
       """.write(to: profile, atomically: true, encoding: .utf8)
       return
     }
@@ -869,11 +951,26 @@ private struct EnvironmentLifecycleFixture {
   func isManaged() throws -> Bool {
     let inspector = EnvironmentProviderInspector()
     let profile = try PortableProfileLoader().load(at: profile, required: true)
-    return try inspector.desiredEntries(
+    let staticEntries = try inspector.desiredEntries(
       profile: profile.environment,
       homeDirectory: home,
       stateRoot: state
     ).allSatisfy { try inspector.managedEntryIsExact($0) }
+    let btop = home.appending(path: ".config/btop/btop.conf")
+    let generation = try #require(
+      try EnvironmentGenerationStore(stateRoot: state).currentManifest()
+    )
+    let expected = try EnvironmentBtopFileTransaction(
+      homeDirectory: home,
+      stateRoot: state
+    ).generationState(generation.generationID)
+    let actual = try String(contentsOf: btop, encoding: .utf8)
+    let btopManaged = try EnvironmentBtopDocument.matchesManaged(
+      actual,
+      values: expected.values,
+      source: btop
+    )
+    return staticEntries && btopManaged
   }
 
   func entryEvidence() throws -> [EnvironmentEntryID: EnvironmentEntryEvidence] {
@@ -884,6 +981,32 @@ private struct EnvironmentLifecycleFixture {
       .starship: try inspector.capture(starshipEntry, kittyDirectory: false),
       .atuinConfiguration: try inspector.capture(atuinConfigEntry, kittyDirectory: false),
       .atuinTheme: try inspector.capture(atuinThemeEntry, kittyDirectory: false),
+      .batConfiguration: try inspector.capture(
+        home.appending(path: ".config/bat/config"), kittyDirectory: false),
+      .batTheme: try inspector.capture(
+        home.appending(path: ".config/bat/themes/Macarchy Current.tmTheme"),
+        kittyDirectory: false
+      ),
+      .btopConfiguration: try inspector.capture(
+        home.appending(path: ".config/btop/btop.conf"), kittyDirectory: false),
+      .btopTheme: try inspector.capture(
+        home.appending(path: ".config/btop/themes/macarchy-current.theme"),
+        kittyDirectory: false
+      ),
+      .ezaTheme: try inspector.capture(
+        home.appending(path: ".config/eza/theme.yml"), kittyDirectory: false),
+      .yaziConfiguration: try inspector.capture(
+        home.appending(path: ".config/yazi/yazi.toml"), kittyDirectory: false),
+      .yaziThemeSelection: try inspector.capture(
+        home.appending(path: ".config/yazi/theme.toml"), kittyDirectory: false),
+      .yaziFlavor: try inspector.capture(
+        home.appending(path: ".config/yazi/flavors/macarchy-current.yazi/flavor.toml"),
+        kittyDirectory: false
+      ),
+      .yaziSyntax: try inspector.capture(
+        home.appending(path: ".config/yazi/flavors/macarchy-current.yazi/tmtheme.xml"),
+        kittyDirectory: false
+      ),
     ]
   }
 

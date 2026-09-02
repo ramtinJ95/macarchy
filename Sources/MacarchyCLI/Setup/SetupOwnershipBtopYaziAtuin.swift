@@ -4,6 +4,14 @@ import ThemeCore
 
 extension SetupOwnershipManager {
   func setupBtopSelector(context: Context) throws -> SetupIntegrationResult {
+    if try environmentOwns([.btopConfiguration], context: context) {
+      return integrationResult(
+        id: Self.btopSelectorID,
+        target: context.btopConfiguration,
+        status: .external,
+        message: "btop keys are owned by the aggregate environment lifecycle"
+      )
+    }
     let exactLine = BtopAdapter.themeDirective
     let configuration = try readConfiguration(
       context.btopConfiguration,
@@ -36,7 +44,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupThemeLink(
+    if try environmentOwns([.btopTheme], context: context) {
+      return integrationResult(
+        id: Self.btopThemeLinkID,
+        target: context.btopThemeLink,
+        status: .external,
+        message: "The btop theme seam is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupThemeLink(
       id: Self.btopThemeLinkID,
       target: context.btopThemeLink,
       destination: context.btopThemeDestination,
@@ -52,7 +68,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupTOMLSelector(
+    if try environmentOwns([.yaziThemeSelection], context: context) {
+      return integrationResult(
+        id: Self.yaziSelectorID,
+        target: context.yaziConfiguration,
+        status: .external,
+        message: "Yazi theme selection is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupTOMLSelector(
       id: Self.yaziSelectorID,
       target: context.yaziConfiguration,
       backupURL: context.yaziSelectorBackup,
@@ -72,6 +96,14 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
+    if try environmentOwns([.yaziFlavor], context: context) {
+      return integrationResult(
+        id: Self.yaziFlavorLinkID,
+        target: context.yaziFlavorLink,
+        status: .external,
+        message: "The Yazi flavor seam is owned by the aggregate environment lifecycle"
+      )
+    }
     if !records.contains(where: { $0.id == Self.yaziFlavorLinkID }) {
       var metadata = stat()
       let result = stat(context.yaziFlavorDirectory.path, &metadata)
@@ -112,7 +144,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupThemeLink(
+    if try environmentOwns([.yaziSyntax], context: context) {
+      return integrationResult(
+        id: Self.yaziSyntaxLinkID,
+        target: context.yaziSyntaxLink,
+        status: .external,
+        message: "The Yazi syntax seam is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupThemeLink(
       id: Self.yaziSyntaxLinkID,
       target: context.yaziSyntaxLink,
       destination: context.yaziSyntaxDestination,
