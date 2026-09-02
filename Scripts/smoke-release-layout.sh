@@ -104,6 +104,10 @@ desktop_plan_status=0
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" desktop plan --json > "$temporary_directory/desktop-plan.json" \
   || desktop_plan_status=$?
+if (( desktop_plan_status != 0 )); then
+  print "desktop plan exited with status $desktop_plan_status"
+  cat "$temporary_directory/desktop-plan.json"
+fi
 (( desktop_plan_status == 0 || desktop_plan_status == 1 ))
 grep -q '"operation" : "desktop_plan"' "$temporary_directory/desktop-plan.json"
 grep -q '"mutated" : false' "$temporary_directory/desktop-plan.json"
@@ -132,6 +136,10 @@ HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   --profile "$temporary_directory/desktop-disabled.toml" \
   --json > "$temporary_directory/desktop-doctor.json" \
   || desktop_doctor_status=$?
+if (( desktop_doctor_status != 0 )); then
+  print "desktop doctor exited with status $desktop_doctor_status"
+  cat "$temporary_directory/desktop-doctor.json"
+fi
 (( desktop_doctor_status == 0 || desktop_doctor_status == 1 ))
 grep -q '"operation" : "desktop_doctor"' "$temporary_directory/desktop-doctor.json"
 if (( desktop_doctor_status == 0 )); then
