@@ -158,6 +158,62 @@ package struct EnvironmentGenerationStore: Sendable {
     return manifest
   }
 
+  package func validatedArtifact(generationID: String, path: String) throws -> Data {
+    guard Self.isGenerationID(generationID), !path.hasPrefix("/") else {
+      throw EnvironmentGenerationError.invalid("artifact identity is invalid")
+    }
+    let components = path.split(separator: "/", omittingEmptySubsequences: false)
+    guard !components.isEmpty,
+      components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
+    else {
+      throw EnvironmentGenerationError.invalid("artifact identity is invalid")
+    }
+
+    let generation = generationsRoot.appending(path: generationID, directoryHint: .isDirectory)
+    var rootMetadata = stat()
+    guard lstat(generation.path, &rootMetadata) == 0 else {
+      throw EnvironmentGenerationError.system("inspect generation", generation, errno)
+    }
+    guard rootMetadata.st_mode & S_IFMT == S_IFDIR, rootMetadata.st_mode & 0o222 == 0 else {
+      throw EnvironmentGenerationError.invalid("generation root is not sealed")
+    }
+
+    let manifestURL = generation.appending(path: "manifest.json")
+    let manifestFile = try BoundedRegularFile.read(at: manifestURL, maximumSize: 65_536)
+    guard manifestFile.permissions & 0o222 == 0 else {
+      throw EnvironmentGenerationError.invalid("manifest is not sealed")
+    }
+    let manifestData = manifestFile.data
+    let manifest = try JSONDecoder().decode(EnvironmentGenerationManifest.self, from: manifestData)
+    guard manifest.schemaVersion == EnvironmentGenerationManifest.currentSchemaVersion,
+      manifest.generationID == generationID,
+      let expectedDigest = manifest.artifacts[path]
+    else {
+      throw EnvironmentGenerationError.invalid("manifest identity is invalid")
+    }
+
+    var directory = generation
+    for component in components.dropLast() {
+      directory.append(path: String(component), directoryHint: .isDirectory)
+      var metadata = stat()
+      guard lstat(directory.path, &metadata) == 0 else {
+        throw EnvironmentGenerationError.system("inspect artifact directory", directory, errno)
+      }
+      guard metadata.st_mode & S_IFMT == S_IFDIR, metadata.st_mode & 0o222 == 0 else {
+        throw EnvironmentGenerationError.invalid("artifact directory is not sealed")
+      }
+    }
+
+    let artifactURL = generation.appending(path: path)
+    let artifact = try BoundedRegularFile.read(at: artifactURL)
+    guard artifact.permissions & 0o222 == 0,
+      sha256Digest(artifact.data) == expectedDigest
+    else {
+      throw EnvironmentGenerationError.invalid("artifact bytes drifted: \(path)")
+    }
+    return artifact.data
+  }
+
   package func stage(_ composition: EnvironmentComposition) throws -> StagedEnvironmentGeneration {
     try ensureRoots()
     let current: EnvironmentGenerationManifest?

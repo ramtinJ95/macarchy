@@ -110,6 +110,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       shellProvider: composition.profile.shell.rawValue,
       promptProvider: composition.profile.prompt.rawValue,
       historyProvider: composition.profile.history.rawValue,
+      dailyTools: Self.dailyTools(composition.profile),
       packagedDefaults: resourcesRoot.path,
       kittyOverride: composition.kittyOverrideURL?.path,
       zshHook: composition.zshHookURL?.path,
@@ -137,6 +138,15 @@ struct EnvironmentPlanCommandRunner: Sendable {
       diagnostics: diagnostics
     )
     return (try report.render(json: json), !blocked)
+  }
+
+  fileprivate static func dailyTools(_ profile: EnvironmentProfile) -> [String: String] {
+    [
+      "bat": profile.tools.bat ? "enabled" : "disabled",
+      "btop": profile.tools.btop ? "enabled" : "disabled",
+      "eza": profile.tools.eza ? "enabled" : "disabled",
+      "yazi": profile.tools.yazi ? "enabled" : "disabled",
+    ]
   }
 
   private static func actions(
@@ -174,6 +184,38 @@ struct EnvironmentPlanCommandRunner: Sendable {
         EnvironmentPlanAction(
           id: "configure_atuin",
           message: "Configure Atuin behavior while retaining Macarchy theme ownership."
+        )
+      )
+    }
+    if profile.tools.bat {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_bat",
+          message: "Configure bat behavior and its canonical theme seam."
+        )
+      )
+    }
+    if profile.tools.eza {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_eza",
+          message: "Configure eza shell behavior and its canonical theme seam."
+        )
+      )
+    }
+    if profile.tools.btop {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_btop",
+          message: "Configure btop while preserving its provider-writable state."
+        )
+      )
+    }
+    if profile.tools.yazi {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_yazi",
+          message: "Configure Yazi behavior and its generated flavor seams."
         )
       )
     }
@@ -219,6 +261,7 @@ private struct EnvironmentPlanReport: Encodable {
   let shellProvider: String?
   let promptProvider: String?
   let historyProvider: String?
+  let dailyTools: [String: String]
   let packagedDefaults: String
   let kittyOverride: String?
   let zshHook: String?
@@ -251,6 +294,7 @@ private struct EnvironmentPlanReport: Encodable {
       shellProvider: environment?.shell.rawValue,
       promptProvider: environment?.prompt.rawValue,
       historyProvider: environment?.history.rawValue,
+      dailyTools: environment.map(EnvironmentPlanCommandRunner.dailyTools) ?? [:],
       packagedDefaults: resourcesRoot.path,
       kittyOverride: environment?.kitty.overrideDirectoryURL?.path,
       zshHook: environment?.zsh.hookURL?.path,
@@ -282,6 +326,9 @@ private struct EnvironmentPlanReport: Encodable {
       "- shell provider: " + (shellProvider ?? "unavailable"),
       "- prompt provider: " + (promptProvider ?? "unavailable"),
       "- history provider: " + (historyProvider ?? "unavailable"),
+      "- daily tools: "
+        + dailyTools.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+        .joined(separator: ", "),
       "- packaged defaults: \(packagedDefaults)",
       "- Kitty override: " + (kittyOverride ?? "none"),
       "- trusted zsh hook: " + (zshHook ?? "none"),

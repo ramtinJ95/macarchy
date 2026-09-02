@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import TOMLDecoder
 import ThemeCore
 
 enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
@@ -9,6 +10,15 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
   case starship
   case atuinConfiguration = "atuin_configuration"
   case atuinTheme = "atuin_theme"
+  case batConfiguration = "bat_configuration"
+  case batTheme = "bat_theme"
+  case btopConfiguration = "btop_configuration"
+  case btopTheme = "btop_theme"
+  case ezaTheme = "eza_theme"
+  case yaziConfiguration = "yazi_configuration"
+  case yaziThemeSelection = "yazi_theme_selection"
+  case yaziFlavor = "yazi_flavor"
+  case yaziSyntax = "yazi_syntax"
 }
 
 enum EnvironmentEntryKind: String, Codable, Sendable {
@@ -61,18 +71,21 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let records: [EnvironmentOwnershipRecord]
   let createdDirectories: [String]
   let originalThemeBridges: [EnvironmentThemeBridgeState.Entry]
+  let btop: EnvironmentBtopOwnership?
 
   init(
     generationID: String,
     records: [EnvironmentOwnershipRecord],
     createdDirectories: [String],
-    originalThemeBridges: [EnvironmentThemeBridgeState.Entry]
+    originalThemeBridges: [EnvironmentThemeBridgeState.Entry],
+    btop: EnvironmentBtopOwnership? = nil
   ) {
     schemaVersion = Self.currentSchemaVersion
     self.generationID = generationID
     self.records = records.sorted { $0.id.rawValue < $1.id.rawValue }
     self.createdDirectories = createdDirectories.sorted()
     self.originalThemeBridges = originalThemeBridges.sorted { $0.path < $1.path }
+    self.btop = btop
   }
 
   enum CodingKeys: String, CodingKey {
@@ -81,6 +94,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case records
     case createdDirectories = "created_directories"
     case originalThemeBridges = "original_theme_bridges"
+    case btop
   }
 
   var hasValidShape: Bool {
@@ -88,7 +102,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       EnvironmentGenerationStore.isGenerationID(generationID),
       Set(records.map(\.id)).count == records.count,
       Set(createdDirectories).count == createdDirectories.count,
-      Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count
+      Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count,
+      btop?.hasValidShape ?? true
     else { return false }
 
     return records.allSatisfy { record in
@@ -137,6 +152,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let previousCurrentDestination: String?
   let previousThemeGenerationID: String?
   let rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry]
+  let btopReplacementName: String?
 
   init(
     operation: EnvironmentTransactionOperation,
@@ -145,7 +161,8 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     proposedOwnership: EnvironmentOwnership?,
     previousCurrentDestination: String?,
     previousThemeGenerationID: String? = nil,
-    rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry] = []
+    rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry] = [],
+    btopReplacementName: String? = nil
   ) {
     schemaVersion = Self.currentSchemaVersion
     self.operation = operation
@@ -155,6 +172,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.previousCurrentDestination = previousCurrentDestination
     self.previousThemeGenerationID = previousThemeGenerationID
     self.rollbackThemeBridges = rollbackThemeBridges
+    self.btopReplacementName = btopReplacementName
   }
 
   var rollingBack: Self {
@@ -165,7 +183,8 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       proposedOwnership: proposedOwnership,
       previousCurrentDestination: previousCurrentDestination,
       previousThemeGenerationID: previousThemeGenerationID,
-      rollbackThemeBridges: rollbackThemeBridges
+      rollbackThemeBridges: rollbackThemeBridges,
+      btopReplacementName: btopReplacementName
     )
   }
 
@@ -177,6 +196,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case previousCurrentDestination = "previous_current_destination"
     case previousThemeGenerationID = "previous_theme_generation_id"
     case rollbackThemeBridges = "rollback_theme_bridges"
+    case btopReplacementName = "btop_replacement_name"
   }
 }
 
@@ -338,8 +358,13 @@ struct EnvironmentProviderInspection: Sendable {
   let desiredEntries: [EnvironmentManagedEntry]
   let externalEvidence: [EnvironmentEntryID: EnvironmentEntryEvidence]
   let createdDirectories: [String]
+  let proposedBtopOwnership: EnvironmentBtopOwnership?
+  let btopExternalEvidence: EnvironmentEntryEvidence?
 
-  var isBlocked: Bool { blockedMessage != nil || entries.contains { $0.status == "drifted" } }
+  var isBlocked: Bool {
+    blockedMessage != nil
+      || entries.contains { $0.status == "drifted" || $0.status == "unsupported" }
+  }
 }
 
 struct EnvironmentManagedEntry: Equatable, Sendable {
@@ -388,6 +413,7 @@ struct EnvironmentStateStore: Sendable {
           value.rollbackThemeBridges,
           stateRoot: stateRoot
         )
+        && Self.btopReplacementIsValid(value)
     }
   }
 
@@ -517,6 +543,18 @@ struct EnvironmentStateStore: Sendable {
     }
     return EnvironmentGenerationStore.isGenerationID(String(destination.dropFirst(prefix.count)))
   }
+
+  private static func btopReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let required =
+      transaction.previousOwnership?.btop != nil
+      || transaction.proposedOwnership?.btop != nil
+    guard required else { return transaction.btopReplacementName == nil }
+    guard let name = transaction.btopReplacementName else { return false }
+    return name.hasPrefix(".macarchy-environment-btop-")
+      && name.hasSuffix(".replacement")
+      && !name.contains("/")
+      && name.utf8.count <= 128
+  }
 }
 
 struct EnvironmentProviderInspector: Sendable {
@@ -558,6 +596,18 @@ struct EnvironmentProviderInspector: Sendable {
       if entries.contains(where: { $0.id == .starship }) {
         legacyIDs.insert("starship.configuration-link")
       }
+      if composition.profile.tools.bat {
+        legacyIDs.formUnion(["bat.selector", "bat.theme-link"])
+      }
+      if composition.profile.tools.eza {
+        legacyIDs.formUnion(["eza.environment", "eza.theme-link"])
+      }
+      if composition.profile.tools.btop {
+        legacyIDs.formUnion(["btop.selector", "btop.theme-link"])
+      }
+      if composition.profile.tools.yazi {
+        legacyIDs.formUnion(["yazi.selector", "yazi.flavor-link", "yazi.syntax-link"])
+      }
       let conflicts = try SetupOwnershipManager().readRecords(context: setupContext)
         .map(\.id).filter { legacyIDs.contains($0) }
       guard conflicts.isEmpty else {
@@ -590,28 +640,39 @@ struct EnvironmentProviderInspector: Sendable {
           entry.url,
           stoppingAt: homeDirectory
         )
-        if entry.id == .atuinTheme, hasExternalAncestor, owned[entry.id] == nil {
-          let captured = try capture(entry.url, kittyDirectory: false)
-          guard captured.kind == .symbolicLink,
-            captured.linkDestination == entry.target
-          else {
-            throw EnvironmentLifecycleError.blocked(
-              "the Atuin theme path is below an externally owned directory and is not the exact canonical link"
-            )
-          }
+        let captured =
+          owned[entry.id] == nil
+          ? try capture(entry.url, kittyDirectory: entry.kind == .kittyDirectory) : nil
+        if let captured,
+          entry.id != .atuinTheme || hasExternalAncestor,
+          try externalEntryIsExact(entry, evidence: captured, composition: composition)
+        {
           inspections.append(
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
               path: entry.url.path,
               status: "external",
               ownership: "external_exact",
-              message: "The exact canonical Atuin theme link remains externally owned.",
+              message: "The exact provider seam remains externally owned.",
               evidence: captured
             )
           )
           continue
         }
-        guard !hasExternalAncestor else {
+        if hasExternalAncestor {
+          if Self.isDailyToolEntry(entry.id) {
+            inspections.append(
+              EnvironmentEntryInspection(
+                id: entry.id.rawValue,
+                path: entry.url.path,
+                status: "unsupported",
+                ownership: "external",
+                message: "The provider entry is below a symlink-owned parent.",
+                evidence: captured
+              )
+            )
+            continue
+          }
           throw EnvironmentLifecycleError.blocked(
             "provider entry is below a symlink-owned parent: \(entry.url.path)"
           )
@@ -639,7 +700,11 @@ struct EnvironmentProviderInspector: Sendable {
           continue
         }
 
-        let captured = try capture(entry.url, kittyDirectory: entry.kind == .kittyDirectory)
+        guard let captured else {
+          throw EnvironmentLifecycleError.blocked(
+            "provider inspection lost external evidence for \(entry.id.rawValue)"
+          )
+        }
         evidence[entry.id] = captured
         for directory in try missingParentDirectories(of: entry.url, homeDirectory: homeDirectory) {
           createdDirectories.insert(directory.path)
@@ -657,6 +722,32 @@ struct EnvironmentProviderInspector: Sendable {
             evidence: captured
           )
         )
+      }
+
+      if composition.profile.tools.eza, composition.profile.shell == .disabled {
+        inspections.append(
+          try inspectExternalEzaEnvironment(
+            homeDirectory: homeDirectory,
+            configurationDirectory: homeDirectory.appending(path: ".config/eza")
+          )
+        )
+      }
+
+      let btop = try inspectBtop(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        ownership: ownership?.btop,
+        ownershipGenerationID: ownership?.generationID
+      )
+      if let entry = btop.entry { inspections.append(entry) }
+      if btop.proposedOwnership != nil {
+        for directory in try missingParentDirectories(
+          of: homeDirectory.appending(path: ".config/btop/btop.conf"),
+          homeDirectory: homeDirectory
+        ) {
+          createdDirectories.insert(directory.path)
+        }
       }
 
       for record in ownership?.records ?? [] where !entries.contains(where: { $0.id == record.id })
@@ -685,12 +776,15 @@ struct EnvironmentProviderInspector: Sendable {
           ? try adoptionDigest(
             composition: composition,
             entries: inspections,
-            selected: entries
+            selected: entries,
+            btop: btop.proposedOwnership
           ) : nil,
         blockedMessage: nil,
         desiredEntries: entries,
         externalEvidence: evidence,
-        createdDirectories: createdDirectories.sorted()
+        createdDirectories: createdDirectories.sorted(),
+        proposedBtopOwnership: btop.proposedOwnership,
+        btopExternalEvidence: btop.externalEvidence
       )
     } catch {
       return EnvironmentProviderInspection(
@@ -700,7 +794,9 @@ struct EnvironmentProviderInspector: Sendable {
         blockedMessage: String(describing: error),
         desiredEntries: [],
         externalEvidence: [:],
-        createdDirectories: []
+        createdDirectories: [],
+        proposedBtopOwnership: nil,
+        btopExternalEvidence: nil
       )
     }
   }
@@ -710,12 +806,19 @@ struct EnvironmentProviderInspector: Sendable {
     homeDirectory: URL,
     stateRoot: URL
   ) -> [EnvironmentManagedEntry] {
-    let enabled: Set<EnvironmentEntryID> = Set(
-      (profile.terminal == .kitty ? [.kitty] : [])
-        + (profile.shell == .zsh ? [.zsh] : [])
-        + (profile.prompt == .starship ? [.starship] : [])
-        + (profile.history == .atuin ? [.atuinConfiguration, .atuinTheme] : [])
-    )
+    var enabled = Set<EnvironmentEntryID>()
+    if profile.terminal == .kitty { enabled.insert(.kitty) }
+    if profile.shell == .zsh { enabled.insert(.zsh) }
+    if profile.prompt == .starship { enabled.insert(.starship) }
+    if profile.history == .atuin {
+      enabled.formUnion([.atuinConfiguration, .atuinTheme])
+    }
+    if profile.tools.bat { enabled.formUnion([.batConfiguration, .batTheme]) }
+    if profile.tools.eza { enabled.insert(.ezaTheme) }
+    if profile.tools.btop { enabled.insert(.btopTheme) }
+    if profile.tools.yazi {
+      enabled.formUnion([.yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax])
+    }
     return allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .filter { enabled.contains($0.id) }
   }
@@ -753,6 +856,58 @@ struct EnvironmentProviderInspector: Sendable {
         url: home.appending(path: ".config/atuin/themes/\(AtuinAdapter.themeName).toml"),
         kind: .symbolicLink,
         target: state.appending(path: "current/\(AtuinAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .batConfiguration,
+        url: home.appending(path: ".config/bat/config"),
+        kind: .symbolicLink,
+        target: state.appending(path: "environment/current/bat/config").path
+      ),
+      EnvironmentManagedEntry(
+        id: .batTheme,
+        url: home.appending(path: ".config/bat/themes/\(BatAdapter.themeFileName)"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(TextMateThemeArtifact.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .ezaTheme,
+        url: home.appending(path: ".config/eza/\(EzaAdapter.themeFileName)"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(EzaAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .btopTheme,
+        url: home.appending(path: ".config/btop/themes/\(BtopAdapter.themeFileName)"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(BtopAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .yaziConfiguration,
+        url: home.appending(path: ".config/yazi/yazi.toml"),
+        kind: .symbolicLink,
+        target: state.appending(path: "environment/current/yazi/yazi.toml").path
+      ),
+      EnvironmentManagedEntry(
+        id: .yaziThemeSelection,
+        url: home.appending(path: ".config/yazi/theme.toml"),
+        kind: .symbolicLink,
+        target: state.appending(path: "environment/current/yazi/theme.toml").path
+      ),
+      EnvironmentManagedEntry(
+        id: .yaziFlavor,
+        url: home.appending(
+          path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/flavor.toml"
+        ),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(YaziAdapter.flavorOutputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .yaziSyntax,
+        url: home.appending(
+          path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/tmtheme.xml"
+        ),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(TextMateThemeArtifact.yaziOutputPath)").path
       ),
     ]
   }
@@ -976,7 +1131,8 @@ struct EnvironmentProviderInspector: Sendable {
   private func adoptionDigest(
     composition: EnvironmentComposition,
     entries: [EnvironmentEntryInspection],
-    selected: [EnvironmentManagedEntry]
+    selected: [EnvironmentManagedEntry],
+    btop: EnvironmentBtopOwnership?
   ) throws -> String {
     struct Payload: Encodable {
       let schemaVersion: Int
@@ -992,7 +1148,10 @@ struct EnvironmentProviderInspector: Sendable {
         let evidence: EnvironmentEntryEvidence?
       }
     }
-    let targets = Dictionary(uniqueKeysWithValues: selected.map { ($0.id.rawValue, $0.target) })
+    var targets = Dictionary(uniqueKeysWithValues: selected.map { ($0.id.rawValue, $0.target) })
+    if let btop {
+      targets[EnvironmentEntryID.btopConfiguration.rawValue] = "provider-writable:\(btop.path)"
+    }
     let payload = Payload(
       schemaVersion: 1,
       inputDigest: composition.inputDigest,
@@ -1002,6 +1161,10 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.shell.rawValue,
         composition.profile.prompt.rawValue,
         composition.profile.history.rawValue,
+        composition.profile.tools.bat ? "bat" : "bat-disabled",
+        composition.profile.tools.eza ? "eza" : "eza-disabled",
+        composition.profile.tools.btop ? "btop" : "btop-disabled",
+        composition.profile.tools.yazi ? "yazi" : "yazi-disabled",
       ],
       entries: entries.filter { targets[$0.id] != nil }.map {
         Payload.Entry(
@@ -1015,6 +1178,272 @@ struct EnvironmentProviderInspector: Sendable {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return sha256Digest(try encoder.encode(payload))
+  }
+
+  private func externalEntryIsExact(
+    _ entry: EnvironmentManagedEntry,
+    evidence: EnvironmentEntryEvidence,
+    composition: EnvironmentComposition
+  ) throws -> Bool {
+    switch entry.id {
+    case .atuinTheme, .batTheme, .btopTheme, .ezaTheme, .yaziFlavor, .yaziSyntax:
+      return evidence.kind == .symbolicLink && evidence.linkDestination == entry.target
+    case .batConfiguration:
+      guard evidence.kind == .regularFile else { return false }
+      let text = try configurationText(at: entry.url, evidence: evidence)
+      let directives = text.split(whereSeparator: \Character.isNewline).filter {
+        let line = $0.trimmingCharacters(in: .whitespaces)
+        return line.hasPrefix("--theme=") || line.hasPrefix("--theme ")
+      }
+      return directives.map { $0.trimmingCharacters(in: .whitespaces) }
+        == [BatAdapter.themeDirective]
+    case .yaziConfiguration:
+      guard evidence.kind == .regularFile else { return false }
+      let text = try configurationText(at: entry.url, evidence: evidence)
+      try validateTOML(text, source: entry.url)
+      return CanonicalTOMLSelector(
+        configuration: text,
+        table: "mgr",
+        key: "show_hidden"
+      ).selectsExactly(String(composition.profile.yazi.showHidden ?? true))
+    case .yaziThemeSelection:
+      guard evidence.kind == .regularFile else { return false }
+      let text = try configurationText(at: entry.url, evidence: evidence)
+      try validateTOML(text, source: entry.url)
+      return CanonicalTOMLSelector(
+        configuration: text,
+        table: YaziAdapter.selectionTable,
+        key: YaziAdapter.selectionKey
+      ).selectsExactly("\"\(YaziAdapter.flavorName)\"")
+    default:
+      return false
+    }
+  }
+
+  private static func isDailyToolEntry(_ id: EnvironmentEntryID) -> Bool {
+    switch id {
+    case .batConfiguration, .batTheme, .btopConfiguration, .btopTheme, .ezaTheme,
+      .yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax:
+      true
+    case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme:
+      false
+    }
+  }
+
+  private func configurationText(
+    at url: URL,
+    evidence: EnvironmentEntryEvidence
+  ) throws -> String {
+    let data = try BoundedRegularFile.read(at: url).data
+    guard sha256Digest(data) == evidence.contentDigest,
+      let text = String(data: data, encoding: .utf8)
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "provider configuration changed during inspection: \(url.path)"
+      )
+    }
+    return text
+  }
+
+  private func validateTOML(_ text: String, source: URL) throws {
+    do {
+      _ = try TOMLTable(source: text)
+    } catch {
+      throw EnvironmentLifecycleError.blocked(
+        "invalid TOML configuration at \(source.path): \(error)"
+      )
+    }
+  }
+
+  private func inspectExternalEzaEnvironment(
+    homeDirectory: URL,
+    configurationDirectory: URL
+  ) throws -> EnvironmentEntryInspection {
+    let shell = homeDirectory.appending(path: ".zshrc")
+    let evidence = try capture(shell, kittyDirectory: false)
+    let text: String
+    switch evidence.kind {
+    case .regularFile:
+      text = try configurationText(at: shell, evidence: evidence)
+    case .symbolicLink:
+      let resolved = shell.resolvingSymlinksInPath()
+      let data = try BoundedRegularFile.read(at: resolved).data
+      guard let value = String(data: data, encoding: .utf8) else {
+        throw EnvironmentLifecycleError.blocked("external zsh configuration is not UTF-8")
+      }
+      text = value
+    case .absent:
+      return EnvironmentEntryInspection(
+        id: "eza_environment",
+        path: shell.path,
+        status: "unsupported",
+        ownership: "external",
+        message: "Eza requires an external EZA_CONFIG_DIR directive when zsh is disabled.",
+        evidence: evidence
+      )
+    }
+    let directives = [
+      EzaAdapter.environmentDirective(configurationDirectoryURL: configurationDirectory),
+      "export EZA_CONFIG_DIR=\"$HOME/.config/eza\"",
+    ]
+    let exact = directives.contains { directive in
+      text.components(separatedBy: .newlines).contains {
+        $0.trimmingCharacters(in: .whitespaces) == directive
+      }
+    }
+    return EnvironmentEntryInspection(
+      id: "eza_environment",
+      path: shell.path,
+      status: exact ? "external" : "unsupported",
+      ownership: "external_exact",
+      message: exact
+        ? "The external shell selects the managed Eza configuration directory."
+        : "Eza requires an exact external EZA_CONFIG_DIR directive when zsh is disabled.",
+      evidence: evidence
+    )
+  }
+
+  private func inspectBtop(
+    composition: EnvironmentComposition,
+    homeDirectory: URL,
+    stateRoot: URL,
+    ownership: EnvironmentBtopOwnership?,
+    ownershipGenerationID: String?
+  ) throws -> (
+    entry: EnvironmentEntryInspection?,
+    proposedOwnership: EnvironmentBtopOwnership?,
+    externalEvidence: EnvironmentEntryEvidence?
+  ) {
+    guard composition.profile.tools.btop || ownership != nil else { return (nil, nil, nil) }
+    let url = homeDirectory.appending(path: ".config/btop/btop.conf")
+    if let ownership {
+      guard let ownershipGenerationID else {
+        throw EnvironmentLifecycleError.blocked("btop ownership has no generation")
+      }
+      guard ownership.path == url.path,
+        try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+      else {
+        throw EnvironmentLifecycleError.blocked("btop ownership path is invalid")
+      }
+      let evidence = try capture(url, kittyDirectory: false)
+      let state = try EnvironmentBtopFileTransaction(
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot
+      ).generationState(ownershipGenerationID)
+      let exact: Bool
+      if evidence.kind == .regularFile {
+        exact = try EnvironmentBtopDocument.matchesManaged(
+          configurationText(at: url, evidence: evidence),
+          values: state.values,
+          source: url
+        )
+      } else {
+        exact = false
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.btopConfiguration.rawValue,
+          path: url.path,
+          status: exact
+            ? (composition.profile.tools.btop ? "managed" : "restoration_required") : "drifted",
+          ownership: "macarchy",
+          message: exact
+            ? (composition.profile.tools.btop
+              ? "The owned btop keys are managed."
+              : "The disabled btop keys will be restored.")
+            : "The owned btop keys drifted.",
+          evidence: nil
+        ),
+        composition.profile.tools.btop ? ownership : nil,
+        nil
+      )
+    }
+
+    guard composition.profile.tools.btop else { return (nil, nil, nil) }
+    let artifactURL = stateRoot.appending(path: "environment/current/btop/btop.conf")
+    guard let artifact = composition.artifacts.first(where: { $0.path == "btop/btop.conf" }) else {
+      throw EnvironmentLifecycleError.blocked("missing rendered btop configuration")
+    }
+    let desired = try EnvironmentBtopDocument.desiredValues(
+      in: artifact.contents,
+      source: artifactURL
+    )
+    let evidence = try capture(url, kittyDirectory: false)
+    let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+    if evidence.kind == .regularFile {
+      let text = try configurationText(at: url, evidence: evidence)
+      if try EnvironmentBtopDocument.matchesManaged(text, values: desired, source: url) {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.btopConfiguration.rawValue,
+            path: url.path,
+            status: "external",
+            ownership: "external_exact",
+            message: "The exact btop keys remain externally owned.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      if externalAncestor {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.btopConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "Divergent btop keys are below a symlink-owned provider directory.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      let proposed = EnvironmentBtopOwnership(
+        path: url.path,
+        originalFileExisted: true,
+        originalAssignments: try EnvironmentBtopDocument.originalAssignments(
+          in: text,
+          source: url
+        )
+      )
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.btopConfiguration.rawValue,
+          path: url.path,
+          status: "adoption_required",
+          ownership: "external",
+          message: "The existing btop keys require reviewed adoption.",
+          evidence: evidence
+        ), proposed, evidence
+      )
+    }
+    if evidence.kind == .absent, !externalAncestor {
+      let proposed = EnvironmentBtopOwnership(
+        path: url.path,
+        originalFileExisted: false,
+        originalAssignments: EnvironmentBtopDocument.ownedKeys.map {
+          EnvironmentBtopOriginalAssignment(key: $0, line: nil)
+        }
+      )
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.btopConfiguration.rawValue,
+          path: url.path,
+          status: "install_required",
+          ownership: "external",
+          message: "The btop baseline will be installed.",
+          evidence: evidence
+        ), proposed, evidence
+      )
+    }
+    return (
+      EnvironmentEntryInspection(
+        id: EnvironmentEntryID.btopConfiguration.rawValue,
+        path: url.path,
+        status: "unsupported",
+        ownership: "external",
+        message: "The btop configuration cannot be safely adopted.",
+        evidence: evidence
+      ), nil, nil
+    )
   }
 
   private func kittyInventory(link: URL, destination: String) throws -> [String] {
@@ -1176,12 +1605,20 @@ struct EnvironmentTransactionCoordinator: Sendable {
         _ = try EnvironmentGenerationStore(stateRoot: stateRoot).manifest(
           generationID: proposed.generationID
         )
-        try transition(from: transaction.previousOwnership, to: proposed)
+        try transition(
+          from: transaction.previousOwnership,
+          to: proposed,
+          btopReplacementName: transaction.btopReplacementName
+        )
         try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
         try EnvironmentGenerationStore(stateRoot: stateRoot).select(proposed.generationID)
         try store.writeOwnership(proposed)
       case .teardown:
-        try transition(from: transaction.previousOwnership, to: nil)
+        try transition(
+          from: transaction.previousOwnership,
+          to: nil,
+          btopReplacementName: transaction.btopReplacementName
+        )
         try EnvironmentThemeBridgeState(
           entries: transaction.previousOwnership?.originalThemeBridges ?? []
         ).restore()
@@ -1189,7 +1626,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try store.writeOwnership(nil)
       }
     case .rollback:
-      try transition(from: transaction.proposedOwnership, to: transaction.previousOwnership)
+      try transition(
+        from: transaction.proposedOwnership,
+        to: transaction.previousOwnership,
+        btopReplacementName: transaction.btopReplacementName
+      )
       try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
         transaction.previousCurrentDestination
       )
@@ -1285,10 +1726,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
           }
         ).union(inspection.createdDirectories)
       ),
-      originalThemeBridges: originalThemeBridges
+      originalThemeBridges: originalThemeBridges,
+      btop: inspection.proposedBtopOwnership
     )
     let generationChanged = previous?.generationID != proposed.generationID
-    let ownershipChanged = previous?.records != proposed.records
+    let ownershipChanged = previous?.records != proposed.records || previous?.btop != proposed.btop
     let changed = generationChanged || ownershipChanged
 
     // Re-capture every external entry after staging and before publishing the claim.
@@ -1301,20 +1743,36 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
+    if let expected = inspection.btopExternalEvidence {
+      let url = homeDirectory.appending(path: ".config/btop/btop.conf")
+      guard try inspector.capture(url, kittyDirectory: false) == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "btop configuration changed after planning; run environment plan again"
+        )
+      }
+    }
+    let btopReplacementName =
+      previous?.btop != nil || proposed.btop != nil
+      ? ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement" : nil
     let transaction = EnvironmentTransaction(
       operation: .apply,
       previousOwnership: previous,
       proposedOwnership: proposed,
       previousCurrentDestination: previousCurrent,
       previousThemeGenerationID: previousThemeGenerationID,
-      rollbackThemeBridges: themeBridges.entries
+      rollbackThemeBridges: themeBridges.entries,
+      btopReplacementName: btopReplacementName
     )
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     try store.writeTransaction(transaction)
     do {
       if changed {
         try generationStore.select(proposed.generationID)
-        try transition(from: previous, to: proposed)
+        try transition(
+          from: previous,
+          to: proposed,
+          btopReplacementName: btopReplacementName
+        )
         try restoreReleasedThemeBridges(from: previous, to: proposed)
         try store.writeOwnership(proposed)
       }
@@ -1329,7 +1787,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
       do {
-        try transition(from: proposed, to: previous)
+        try transition(
+          from: proposed,
+          to: previous,
+          btopReplacementName: btopReplacementName
+        )
         try generationStore.restoreCurrent(previousCurrent)
         try EnvironmentThemeBridgeState(entries: themeBridges.entries).restore()
         try store.writeOwnership(previous)
@@ -1343,7 +1805,19 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
   }
 
-  func finishApplyLocked() throws {
+  func finishApplyLocked(composition: EnvironmentComposition) throws {
+    let inspection = inspector.inspect(
+      composition: composition,
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    )
+    guard !inspection.isBlocked,
+      inspection.entries.allSatisfy({ ["managed", "external"].contains($0.status) })
+    else {
+      throw EnvironmentLifecycleError.drift(
+        inspection.blockedMessage ?? "provider verification failed before transaction completion"
+      )
+    }
     try EnvironmentStateStore(stateRoot: stateRoot).removeTransaction()
   }
 
@@ -1356,7 +1830,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
     try validate(transaction.proposedOwnership)
     let rollback = transaction.rollingBack
     try store.writeTransaction(rollback)
-    try transition(from: rollback.proposedOwnership, to: rollback.previousOwnership)
+    try transition(
+      from: rollback.proposedOwnership,
+      to: rollback.previousOwnership,
+      btopReplacementName: rollback.btopReplacementName
+    )
     try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
       rollback.previousCurrentDestination
     )
@@ -1411,10 +1889,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
       rollbackThemeBridges: try EnvironmentThemeBridgeState.capture(
         ids: Set(ownership.records.map(\.id)),
         stateRoot: stateRoot
-      ).entries
+      ).entries,
+      btopReplacementName: ownership.btop.map { _ in
+        ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement"
+      }
     )
     try store.writeTransaction(transaction)
-    try transition(from: ownership, to: nil)
+    try transition(
+      from: ownership,
+      to: nil,
+      btopReplacementName: transaction.btopReplacementName
+    )
     try EnvironmentThemeBridgeState(entries: ownership.originalThemeBridges).restore()
     try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(nil)
     try store.writeOwnership(nil)
@@ -1424,7 +1909,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
 
   private func transition(
     from old: EnvironmentOwnership?,
-    to new: EnvironmentOwnership?
+    to new: EnvironmentOwnership?,
+    btopReplacementName: String?
   ) throws {
     let oldByID = Dictionary(uniqueKeysWithValues: (old?.records ?? []).map { ($0.id, $0) })
     let newByID = Dictionary(uniqueKeysWithValues: (new?.records ?? []).map { ($0.id, $0) })
@@ -1457,6 +1943,15 @@ struct EnvironmentTransactionCoordinator: Sendable {
           }
         }
       }
+    }
+    if old?.btop != nil || new?.btop != nil {
+      guard let btopReplacementName else {
+        throw EnvironmentLifecycleError.blocked("btop transaction has no replacement identity")
+      }
+      try EnvironmentBtopFileTransaction(
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot
+      ).transition(from: old, to: new, replacementName: btopReplacementName)
     }
     let obsoleteDirectories = Set(old?.createdDirectories ?? [])
       .subtracting(new?.createdDirectories ?? [])
@@ -1515,6 +2010,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
       }
     }
+    if let btop = ownership.btop {
+      let expected = homeDirectory.appending(path: ".config/btop/btop.conf").path
+      guard btop.path == expected else {
+        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected btop path")
+      }
+    }
     let allowedDirectories = Set(
       allowed.values.map { $0.url.deletingLastPathComponent().path }
         + allowed.values.flatMap { entry -> [String] in
@@ -1556,6 +2057,23 @@ struct EnvironmentTransactionCoordinator: Sendable {
         else {
           throw EnvironmentLifecycleError.drift("retained original for \(record.id.rawValue)")
         }
+      }
+    }
+    if let btop = ownership.btop {
+      let url = URL(filePath: btop.path)
+      let evidence = try inspector.capture(url, kittyDirectory: false)
+      let state = try EnvironmentBtopFileTransaction(
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot
+      ).generationState(ownership.generationID)
+      guard evidence.kind == .regularFile,
+        try EnvironmentBtopDocument.matchesManaged(
+          String(data: BoundedRegularFile.read(at: url).data, encoding: .utf8) ?? "",
+          values: state.values,
+          source: url
+        )
+      else {
+        throw EnvironmentLifecycleError.drift(url.path)
       }
     }
   }

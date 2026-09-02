@@ -257,7 +257,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         throw EnvironmentLifecycleError.blocked(failures.joined(separator: "; "))
       }
       try ActivationLock(root: stateRoot).withLock {
-        try coordinator.finishApplyLocked()
+        try coordinator.finishApplyLocked(composition: composition)
       }
     } catch {
       do {

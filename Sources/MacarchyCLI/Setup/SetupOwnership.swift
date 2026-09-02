@@ -476,6 +476,7 @@ extension SetupOwnershipManager {
     guard let ownership = try store.readOwnership()
     else { return false }
     return !ids.isDisjoint(with: Set(ownership.records.map(\.id)))
+      || (ids.contains(.btopConfiguration) && ownership.btop != nil)
   }
 }
 
