@@ -29,6 +29,10 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/macarchy/keybindings/metadata.toml" ]]
 [[ -f "$layout/share/macarchy/desktop/yabai/defaults.toml" ]]
 [[ -f "$layout/share/macarchy/desktop/sketchybar/defaults.toml" ]]
+[[ -f "$layout/share/macarchy/environment/kitty/defaults.conf" ]]
+[[ -f "$layout/share/macarchy/environment/zsh/defaults.zsh" ]]
+[[ -f "$layout/share/macarchy/environment/starship/behavior.toml" ]]
+[[ -f "$layout/share/macarchy/environment/atuin/config.toml" ]]
 [[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
@@ -50,6 +54,8 @@ print -r -- "$signature" | grep -q '^Signature=adhoc$'
     | sed 's#^Keybindings/#share/macarchy/keybindings/#'
   git -C "$repository_root" ls-files -- Desktop \
     | sed 's#^Desktop/#share/macarchy/desktop/#'
+  git -C "$repository_root" ls-files -- Environment \
+    | sed 's#^Environment/#share/macarchy/environment/#'
 } | LC_ALL=C sort > "$temporary_directory/expected-inventory.txt"
 (
   cd "$layout"
@@ -153,6 +159,15 @@ else
   ' "$temporary_directory/desktop-doctor.json"
 fi
 print "desktop doctor smoke passed"
+
+HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+  "$binary" environment plan --json > "$temporary_directory/environment-plan.json"
+grep -q '"operation" : "environment_plan"' "$temporary_directory/environment-plan.json"
+grep -q '"outcome" : "ready"' "$temporary_directory/environment-plan.json"
+grep -q '"mutated" : false' "$temporary_directory/environment-plan.json"
+grep -q '"terminal_provider" : "kitty"' "$temporary_directory/environment-plan.json"
+grep -q '"shell_provider" : "zsh"' "$temporary_directory/environment-plan.json"
+print "environment plan smoke passed"
 
 snapshot_tree "$temporary_directory/home-after.json" "$home"
 snapshot_tree "$temporary_directory/resources-after.json" "$resources"

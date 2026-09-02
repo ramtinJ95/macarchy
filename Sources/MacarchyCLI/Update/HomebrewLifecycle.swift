@@ -494,6 +494,10 @@ struct HomebrewInstallationVerifier: Sendable {
       throw HomebrewVerificationError(reason: "installed built-in themes are incomplete")
     }
     for relativePath in [
+      "share/macarchy/environment/kitty/defaults.conf",
+      "share/macarchy/environment/zsh/defaults.zsh",
+      "share/macarchy/environment/starship/behavior.toml",
+      "share/macarchy/environment/atuin/config.toml",
       "share/doc/macarchy/CHANGELOG.md",
       "share/doc/macarchy/LICENSE",
       "share/doc/macarchy/theme-json.md",
