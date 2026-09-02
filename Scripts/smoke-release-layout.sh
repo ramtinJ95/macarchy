@@ -100,11 +100,37 @@ grep -q '"schema_version" : 1' "$temporary_directory/keybindings-list.json"
 
 "$script_directory/verify-keybindings-portability.sh" "$binary"
 
+desktop_plan_status=0
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
-  "$binary" desktop plan --json > "$temporary_directory/desktop-plan.json"
+  "$binary" desktop plan --json > "$temporary_directory/desktop-plan.json" \
+  || desktop_plan_status=$?
+(( desktop_plan_status == 0 || desktop_plan_status == 1 ))
 grep -q '"operation" : "desktop_plan"' "$temporary_directory/desktop-plan.json"
 grep -q '"mutated" : false' "$temporary_directory/desktop-plan.json"
 grep -q '"desktop_provider" : "yabai-skhd"' "$temporary_directory/desktop-plan.json"
+if (( desktop_plan_status == 1 )); then
+  grep -q '"code" : "desktop_prerequisite_missing"' \
+    "$temporary_directory/desktop-plan.json"
+  unexpected_desktop_diagnostic="$(
+    grep '"code" :' "$temporary_directory/desktop-plan.json" \
+      | grep -v '"code" : "desktop_prerequisite_missing"' || true
+  )"
+  [[ -z "$unexpected_desktop_diagnostic" ]]
+fi
+
+cat > "$temporary_directory/desktop-disabled.toml" <<'EOF'
+schema_version = 1
+[desktop]
+provider = "disabled"
+[top_bar]
+provider = "disabled"
+EOF
+HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+  "$binary" desktop doctor \
+  --profile "$temporary_directory/desktop-disabled.toml" \
+  --json > "$temporary_directory/desktop-doctor.json"
+grep -q '"operation" : "desktop_doctor"' "$temporary_directory/desktop-doctor.json"
+grep -q '"outcome" : "healthy"' "$temporary_directory/desktop-doctor.json"
 
 snapshot_tree "$temporary_directory/home-after.json" "$home"
 snapshot_tree "$temporary_directory/resources-after.json" "$resources"

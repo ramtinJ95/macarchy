@@ -76,6 +76,14 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
       && items.filter { $0.hasPrefix("macarchy.") }.allSatisfy(managedItems.contains)
   }
 
+  func agreesWithProviderRuntime(_ current: Self) -> Bool {
+    status == current.status
+      && items == current.items
+      && spaceIndices == current.spaceIndices
+      && clockLabelPresent == current.clockLabelPresent
+      && volumeLevelPresent == current.volumeLevelPresent
+  }
+
   private static func isThemeGenerationID(_ value: String) -> Bool {
     value.hasPrefix("g-")
       && value == value.lowercased()
@@ -102,10 +110,25 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
 struct SketchyBarCoreRuntimeController: Sendable {
   let inspect: @Sendable (SketchyBarComposition) -> SketchyBarCoreRuntimeInspection
   let settle: @Sendable (SketchyBarComposition) -> SketchyBarCoreRuntimeInspection
+  let settleRestored: @Sendable (SketchyBarCoreRuntimeInspection) -> Bool
+
+  init(
+    inspect: @escaping @Sendable (SketchyBarComposition) -> SketchyBarCoreRuntimeInspection,
+    settle: @escaping @Sendable (SketchyBarComposition) -> SketchyBarCoreRuntimeInspection,
+    settleRestored: @escaping @Sendable (SketchyBarCoreRuntimeInspection) -> Bool
+  ) {
+    self.inspect = inspect
+    self.settle = settle
+    self.settleRestored = settleRestored
+  }
 
   static func live(stateRoot: URL) -> Self {
     let verifier = SketchyBarCoreRuntimeVerifier.live(stateRoot: stateRoot)
-    return Self(inspect: verifier.inspect, settle: verifier.settle)
+    return Self(
+      inspect: verifier.inspect,
+      settle: verifier.settle,
+      settleRestored: verifier.settleRestored
+    )
   }
 }
 
@@ -151,7 +174,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     var lastDrift: SketchyBarCoreRuntimeInspection?
     var lastTimeout: ProcessRunnerError?
     var lastFailure: (any Error)?
-    for attempt in 0..<11 {
+    let attemptCount = composition.hookURL == nil ? 41 : 11
+    for attempt in 0..<attemptCount {
       do {
         let inspection = try probe(composition)
         if inspection.status == .converged || inspection.status == .partial {
@@ -175,7 +199,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         guard composition.hookURL != nil else { return failed(error) }
         lastFailure = error
       }
-      if attempt < 10 {
+      if attempt < attemptCount - 1 {
         // The hook runner exits within three seconds; do not roll back while it can still mutate.
         for _ in 0..<(composition.hookURL == nil ? 1 : 10) {
           waitForSettle()
@@ -189,6 +213,57 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       message:
         "SketchyBar queries timed out through the bounded settle window: \(String(describing: lastTimeout))"
     )
+  }
+
+  func settleRestored(_ expected: SketchyBarCoreRuntimeInspection) -> Bool {
+    guard
+      expected.isValidEvidence,
+      let expectedColor = (try? activePalette())?.color
+    else { return false }
+    for attempt in 0..<41 {
+      do {
+        let bar: SketchyBarBarQuery = try query(
+          control: Self.controlURL,
+          arguments: ["--query", "bar"],
+          timeout: 0.1
+        )
+        let items = bar.items.sorted()
+        let inventoryMatches =
+          if expected.status == .partial {
+            expected.items.filter { $0.hasPrefix("macarchy.") }.allSatisfy(items.contains)
+              && items.filter { $0.hasPrefix("macarchy.") }.allSatisfy(expected.items.contains)
+          } else {
+            items == expected.items
+          }
+        var presentationMatches = inventoryMatches
+        if expected.clockLabelPresent {
+          let clock: SketchyBarItemQuery = try query(
+            control: Self.controlURL,
+            arguments: ["--query", "macarchy.clock"],
+            timeout: 0.1
+          )
+          presentationMatches = presentationMatches && !clock.label.value.isEmpty
+        }
+        if expected.volumeLevelPresent == true {
+          let volume: SketchyBarItemQuery = try query(
+            control: Self.controlURL,
+            arguments: ["--query", "macarchy.volume"],
+            timeout: 0.1
+          )
+          presentationMatches = presentationMatches && !volume.label.value.isEmpty
+        }
+        if bar.drawing == "on", bar.color.lowercased() == expectedColor,
+          presentationMatches
+        {
+          waitForPresentation()
+          return true
+        }
+      } catch {
+        // Retry only inside the same bounded settle window used for normal reloads.
+      }
+      if attempt < 40 { waitForSettle() }
+    }
+    return false
   }
 
   private func probe(
@@ -255,7 +330,11 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         clock.scripting.updateFrequency == 30
       else {
         return drifted(
-          "running SketchyBar clock is incomplete, misplaced, or uses an unexpected script",
+          "running SketchyBar clock is incomplete: "
+            + "name=\(clock.name), type=\(clock.type), drawing=\(clock.geometry.drawing), "
+            + "position=\(clock.geometry.position), label_drawing=\(clock.label.drawing), "
+            + "label_present=\(clockLabelPresent), script=\(clock.scripting.script), "
+            + "update_freq=\(clock.scripting.updateFrequency)",
           palette: palette,
           items: items,
           spaceIndices: spaceIndices,

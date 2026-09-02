@@ -85,12 +85,17 @@ package struct ThemeActivationCoordinator: Sendable {
     let controlIsAvailable: @Sendable (URL) -> Bool = {
       FileManager.default.isExecutableFile(atPath: $0.path)
     }
+    let macarchyExecutableURL =
+      (Bundle.main.executableURL
+      ?? URL(filePath: CommandLine.arguments.first ?? "macarchy"))
+      .resolvingSymlinksInPath()
+      .standardizedFileURL
     self.init(
       root: root,
       consumerPaths: consumerPaths,
       processRunner: .live,
       wallpaperControl: .live,
-      wallpaperSignal: .personal(),
+      wallpaperSignal: .personal(macarchyExecutableURL: macarchyExecutableURL),
       currentAppearance: appearance.currentAppearance,
       appearanceControlIsAvailable: appearance.controlIsAvailable,
       sketchyBarControlIsAvailable: {
@@ -578,7 +583,6 @@ package struct ThemeActivationCoordinator: Sendable {
         preflight: { preflightContext in
           guard preflightContext.hasSelectedWallpaper else { return }
           _ = try wallpaper.preflight()
-          try wallpaperSignal.preflight()
         },
         inspection: {
           if let inspection = context.wallpaperInspectionOverride {
@@ -595,10 +599,27 @@ package struct ThemeActivationCoordinator: Sendable {
         },
         reconciliation: {
           AdapterReconciliation(id: WallpaperAdapter.id, requirement: .required) {
-            try await wallpaper.reconciliation {
+            let wallpaperOutcome = try await wallpaper.reconciliation {
               let manifest = try statusStore.activeManifest()
               return activeWallpaperURL(manifest: manifest)
             }.run()
+            guard wallpaperOutcome.status == .applied else {
+              return wallpaperOutcome
+            }
+            do {
+              try wallpaperSignal.preflight()
+              return wallpaperOutcome
+            } catch {
+              let status: AdapterStatus =
+                if case YabaiWallpaperSignalError.missingDirective = error {
+                  .drifted
+                } else if case YabaiWallpaperSignalError.runtimeSignalMissing = error {
+                  .drifted
+                } else {
+                  .failed
+                }
+              return AdapterOutcome(status: status, message: String(describing: error))
+            }
           }
         }
       )
