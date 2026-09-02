@@ -104,6 +104,10 @@ macarchy desktop status [--profile <path>] [--json]
 macarchy desktop doctor [--profile <path>] [--json]
 macarchy desktop teardown [--dry-run] [--json]
 macarchy environment plan [--profile <path>] [--state-root <path>] [--json]
+macarchy environment apply [--profile <path>] [--adopt <evidence-digest>] [--dry-run] [--json]
+macarchy environment status [--profile <path>] [--json]
+macarchy environment doctor [--profile <path>] [--json]
+macarchy environment teardown [--dry-run] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup [--dry-run] [--json]
@@ -119,13 +123,30 @@ Installed builds resolve resources relative to the executable, so commands do
 not depend on the current working directory. `--themes-root`, `--state-root`,
 and consumer-specific path options are available for development and testing.
 
-## Curated terminal-session plan
+## Managed terminal session
 
-`environment plan` is the read-only entry point for M3's Kitty, zsh, Starship,
-and Atuin session. It composes package-owned defaults with the portable profile,
-prints every proposed native artifact and digest, and makes no filesystem or
-provider changes. Apply, status, recovery, and teardown follow in the next
-vertical slice; until then the command reports desired state only.
+The `environment` lifecycle manages M3's Kitty, zsh, Starship, and Atuin session
+as one outcome. `plan` composes package-owned defaults with the portable profile,
+reports selected-package prerequisites, provider ownership, exact artifacts,
+and one aggregate adoption digest without mutation. `apply` publishes one
+immutable generation, installs stable provider bridges, reconciles the active
+theme, and verifies a fresh login shell before finalizing.
+
+Review existing configuration before adopting it:
+
+```sh
+macarchy environment plan --profile /path/to/profile.toml --json
+macarchy environment apply \
+  --profile /path/to/profile.toml \
+  --adopt 'sha256:digest-from-the-reviewed-plan'
+macarchy environment status --profile /path/to/profile.toml
+macarchy environment doctor --profile /path/to/profile.toml
+```
+
+The digest covers every selected external entry, lexical link destination,
+retained identity and metadata, Kitty inventory, provider selection, native
+inputs, and rendered artifacts. Apply recaptures that evidence before changing
+any entry. If the plan reports no adoption requirement, omit `--adopt`.
 
 All four providers are enabled when the profile is absent. Roles can be disabled
 without Macarchy touching their external configuration:
@@ -173,6 +194,27 @@ The Kitty override is a bounded, symlink-free directory containing
 trusted local code but is copied, not executed, during planning. Starship
 behavior cannot define `palette` or `palettes`, and Atuin behavior cannot define
 `[theme]`, because those values remain owned by Macarchy's active theme.
+
+Generated state lives under
+`~/.config/macarchy/environment/generations/e-<id>` behind `environment/current`.
+Macarchy retains adopted files and lexical symlinks by inode until teardown.
+Atuin history, daemon state, caches, and unrelated files remain untouched.
+Disabling a previously managed role restores only that role's adopted entries;
+an entirely disabled session installs nothing.
+
+Use teardown only after reviewing its aggregate preflight:
+
+```sh
+macarchy environment teardown --dry-run
+macarchy environment teardown
+```
+
+Drift in any owned entry blocks all restoration. Interrupted apply or teardown
+is recovered before another mutation and requires the command to be rerun.
+Kitty receives its supported reload signal, Starship changes on the next prompt,
+and Atuin changes on the next history interface. Existing shells keep their
+already-loaded startup state; `environment doctor` launches a fresh login shell
+and reports trusted hook behavior as semantically unverifiable.
 
 ## Managed desktop shell
 
@@ -576,7 +618,8 @@ does not write through GNU Stow or other symlink-owned configuration. When it
 does make a change, it writes a private backup and a strict ownership record
 before atomically replacing a file or creating an exact canonical link.
 
-The current setup surface covers:
+The setup surface still covers these theme-only seams when the corresponding
+behavioral provider has not been adopted by `macarchy environment`:
 
 - Kitty's stable bridge include;
 - bat's theme selector and canonical theme link;
@@ -585,6 +628,11 @@ The current setup surface covers:
   externally managed;
 - Yazi's TOML flavor selector plus flavor and syntax-theme links; and
 - Atuin's TOML theme selector and canonical theme link.
+
+Once aggregate environment ownership exists, setup reports Kitty, Starship,
+and Atuin as delegated to that lifecycle and does not run a parallel mutation
+path. Existing setup ownership of those seams must be torn down before the
+aggregate environment can adopt them.
 
 Yazi's `flavors/macarchy-current.yazi` directory is an external structural
 prerequisite. Setup may own the exact links inside it, but it does not claim the
