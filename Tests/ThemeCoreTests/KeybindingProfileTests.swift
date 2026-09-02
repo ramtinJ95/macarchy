@@ -80,6 +80,110 @@ struct KeybindingProfileTests {
   }
 
   @Test
+  func sharedPortableProfileAcceptsTypedTerminalSessionIntent() throws {
+    let source = URL(filePath: "/fixtures/profile.toml")
+    let text = """
+      schema_version = 1
+      [terminal]
+      provider = "kitty"
+      [kitty]
+      font_family = "MesloLGS NF"
+      font_size = 14
+      background_opacity = 0.92
+      background_blur = 24
+      override = "kitty"
+      [shell]
+      provider = "zsh"
+      [zsh]
+      editor = "nvim"
+      hook = "zshrc"
+      [prompt]
+      provider = "starship"
+      [starship]
+      behavior = "starship.toml"
+      [history]
+      provider = "atuin"
+      [atuin]
+      search_mode = "daemon-fuzzy"
+      keymap_mode = "vim-insert"
+      enter_accept = true
+      daemon = true
+      configuration = "atuin.toml"
+      """
+
+    let environment = try PortableProfileLoader().decode(text, source: source).environment
+
+    #expect(environment.terminal == .kitty)
+    #expect(environment.shell == .zsh)
+    #expect(environment.prompt == .starship)
+    #expect(environment.history == .atuin)
+    #expect(environment.kitty.fontFamily == "MesloLGS NF")
+    #expect(environment.kitty.fontSize == 14)
+    #expect(environment.kitty.backgroundOpacity == 0.92)
+    #expect(environment.kitty.backgroundBlur == 24)
+    #expect(environment.kitty.overrideDirectoryURL == URL(filePath: "/fixtures/kitty"))
+    #expect(environment.zsh.editor == "nvim")
+    #expect(environment.zsh.hookURL == URL(filePath: "/fixtures/zshrc"))
+    #expect(environment.starship.behaviorURL == URL(filePath: "/fixtures/starship.toml"))
+    #expect(environment.atuin.searchMode == "daemon-fuzzy")
+    #expect(environment.atuin.keymapMode == "vim-insert")
+    #expect(environment.atuin.enterAccept == true)
+    #expect(environment.atuin.daemon == true)
+    #expect(environment.atuin.configurationURL == URL(filePath: "/fixtures/atuin.toml"))
+  }
+
+  @Test
+  func environmentInputsCannotEscapeThroughAnIntermediateSymbolicLink() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profileDirectory = root.appending(path: "profile", directoryHint: .isDirectory)
+    let outside = root.appending(path: "outside", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: profileDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    try "echo outside\n".write(
+      to: outside.appending(path: "hook.zsh"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.createSymbolicLink(
+      at: profileDirectory.appending(path: "linked"),
+      withDestinationURL: outside
+    )
+
+    #expect(throws: KeybindingProfileError.self) {
+      _ = try PortableProfileLoader().decode(
+        "schema_version = 1\n[zsh]\nhook = \"linked/hook.zsh\"\n",
+        source: profileDirectory.appending(path: "profile.toml")
+      )
+    }
+  }
+
+  @Test
+  func terminalSessionDefaultsAndShellDisablementAreTyped() throws {
+    let source = URL(filePath: "/fixtures/profile.toml")
+    let defaults = try PortableProfileLoader().decode(
+      "schema_version = 1\n",
+      source: source
+    ).environment
+    #expect(defaults.terminal == .kitty)
+    #expect(defaults.shell == .zsh)
+    #expect(defaults.prompt == .starship)
+    #expect(defaults.history == .atuin)
+
+    let disabled = try PortableProfileLoader().decode(
+      """
+      schema_version = 1
+      [shell]
+      provider = "disabled"
+      """,
+      source: source
+    ).environment
+    #expect(disabled.shell == .disabled)
+    #expect(disabled.prompt == .disabled)
+    #expect(disabled.history == .disabled)
+  }
+
+  @Test
   func rejectsUnknownProvidersAndUnsafeYabaiControls() {
     let source = URL(filePath: "/fixtures/profile.toml")
     let invalid: [(String, String)] = [
@@ -110,6 +214,50 @@ struct KeybindingProfileTests {
       (
         "schema_version = 1\n[sketchybar]\nhook = \"/tmp/sketchybar.sh\"\n",
         "must be a relative path"
+      ),
+      (
+        "schema_version = 1\n[terminal]\nprovider = \"wezterm\"\n",
+        "unsupported provider"
+      ),
+      (
+        "schema_version = 1\n[terminal]\nprovider = \"disabled\"\n[kitty]\nfont_size = 14\n",
+        "cannot customize a disabled terminal"
+      ),
+      (
+        "schema_version = 1\n[shell]\nprovider = \"disabled\"\n[zsh]\neditor = \"nvim\"\n",
+        "requires shell.provider"
+      ),
+      (
+        "schema_version = 1\n[shell]\nprovider = \"disabled\"\n[prompt]\nprovider = \"starship\"\n",
+        "requires shell.provider"
+      ),
+      (
+        "schema_version = 1\n[shell]\nprovider = \"disabled\"\n[history]\nprovider = \"atuin\"\n",
+        "requires shell.provider"
+      ),
+      (
+        "schema_version = 1\n[prompt]\nprovider = \"disabled\"\n[starship]\nbehavior = \"starship.toml\"\n",
+        "cannot customize a disabled prompt"
+      ),
+      (
+        "schema_version = 1\n[history]\nprovider = \"disabled\"\n[atuin]\ndaemon = false\n",
+        "cannot customize a disabled history"
+      ),
+      (
+        "schema_version = 1\n[kitty]\nbackground_opacity = -0.1\n",
+        "must be between 0 and 1"
+      ),
+      (
+        "schema_version = 1\n[kitty]\nfont_family = \"Menlo\\nallow_remote_control yes\"\n",
+        "must be a single-line value"
+      ),
+      (
+        "schema_version = 1\n[zsh]\neditor = \"/usr/bin/vim\"\n",
+        "must be an ASCII command name"
+      ),
+      (
+        "schema_version = 1\n[atuin]\nsearch_mode = \"skim\"\n",
+        "must be fuzzy, prefix, fulltext, or daemon-fuzzy"
       ),
     ]
 
