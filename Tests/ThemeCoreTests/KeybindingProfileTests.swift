@@ -109,6 +109,15 @@ struct KeybindingProfileTests {
       enter_accept = true
       daemon = true
       configuration = "atuin.toml"
+      [tools]
+      bat = false
+      eza = true
+      btop = true
+      yazi = true
+      [btop]
+      vim_keys = false
+      [yazi]
+      show_hidden = false
       """
 
     let environment = try PortableProfileLoader().decode(text, source: source).environment
@@ -130,6 +139,12 @@ struct KeybindingProfileTests {
     #expect(environment.atuin.enterAccept == true)
     #expect(environment.atuin.daemon == true)
     #expect(environment.atuin.configurationURL == URL(filePath: "/fixtures/atuin.toml"))
+    #expect(environment.tools.bat == false)
+    #expect(environment.tools.eza == true)
+    #expect(environment.tools.btop == true)
+    #expect(environment.tools.yazi == true)
+    #expect(environment.btop.vimKeys == false)
+    #expect(environment.yazi.showHidden == false)
   }
 
   @Test
@@ -169,6 +184,10 @@ struct KeybindingProfileTests {
     #expect(defaults.shell == .zsh)
     #expect(defaults.prompt == .starship)
     #expect(defaults.history == .atuin)
+    #expect(defaults.tools.bat)
+    #expect(defaults.tools.eza)
+    #expect(defaults.tools.btop)
+    #expect(defaults.tools.yazi)
 
     let disabled = try PortableProfileLoader().decode(
       """
@@ -181,6 +200,19 @@ struct KeybindingProfileTests {
     #expect(disabled.shell == .disabled)
     #expect(disabled.prompt == .disabled)
     #expect(disabled.history == .disabled)
+  }
+
+  @Test
+  func disabledDailyToolsCannotRetainToolSpecificIntent() {
+    let source = URL(filePath: "/fixtures/profile.toml")
+    for text in [
+      "schema_version = 1\n[tools]\nbtop = false\n[btop]\nvim_keys = true\n",
+      "schema_version = 1\n[tools]\nyazi = false\n[yazi]\nshow_hidden = true\n",
+    ] {
+      #expect(throws: KeybindingProfileError.self) {
+        _ = try PortableProfileLoader().decode(text, source: source)
+      }
+    }
   }
 
   @Test

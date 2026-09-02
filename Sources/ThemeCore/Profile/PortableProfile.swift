@@ -88,6 +88,21 @@ package struct AtuinProfileOptions: Equatable, Sendable {
   package let configurationURL: URL?
 }
 
+package struct DailyToolsProfile: Equatable, Sendable {
+  package let bat: Bool
+  package let eza: Bool
+  package let btop: Bool
+  package let yazi: Bool
+}
+
+package struct BtopProfileOptions: Equatable, Sendable {
+  package let vimKeys: Bool?
+}
+
+package struct YaziProfileOptions: Equatable, Sendable {
+  package let showHidden: Bool?
+}
+
 package struct EnvironmentProfile: Equatable, Sendable {
   package let terminal: TerminalProviderSelection
   package let shell: ShellProviderSelection
@@ -97,6 +112,9 @@ package struct EnvironmentProfile: Equatable, Sendable {
   package let zsh: ZshProfileOptions
   package let starship: StarshipProfileOptions
   package let atuin: AtuinProfileOptions
+  package let tools: DailyToolsProfile
+  package let btop: BtopProfileOptions
+  package let yazi: YaziProfileOptions
 }
 
 package struct PortableProfile: Equatable, Sendable {
@@ -159,6 +177,7 @@ package struct PortableProfileLoader: Sendable {
     let allowedTables = Set([
       "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
       "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
+      "tools", "btop", "yazi",
     ])
     if let table = index.tables.first(where: {
       !allowedTables.contains($0.path) || $0.isArray
@@ -205,6 +224,12 @@ package struct PortableProfileLoader: Sendable {
       "atuin.enter_accept",
       "atuin.daemon",
       "atuin.configuration",
+      "tools.bat",
+      "tools.eza",
+      "tools.btop",
+      "tools.yazi",
+      "btop.vim_keys",
+      "yazi.show_hidden",
     ])
     if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
       throw KeybindingProfileError.invalid(
@@ -471,6 +496,24 @@ package struct PortableProfileLoader: Sendable {
       }
     )
     let atuin = try atuin(document.atuin, source: source, base: base)
+    let tools = DailyToolsProfile(
+      bat: document.tools?.bat ?? true,
+      eza: document.tools?.eza ?? true,
+      btop: document.tools?.btop ?? true,
+      yazi: document.tools?.yazi ?? true
+    )
+    if !tools.btop, document.btop != nil {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[btop] cannot customize a disabled daily tool"
+      )
+    }
+    if !tools.yazi, document.yazi != nil {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[yazi] cannot customize a disabled daily tool"
+      )
+    }
     return EnvironmentProfile(
       terminal: terminal,
       shell: shell,
@@ -479,7 +522,10 @@ package struct PortableProfileLoader: Sendable {
       kitty: kitty,
       zsh: zsh,
       starship: starship,
-      atuin: atuin
+      atuin: atuin,
+      tools: tools,
+      btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
+      yazi: YaziProfileOptions(showHidden: document.yazi?.showHidden)
     )
   }
 
@@ -684,7 +730,10 @@ extension EnvironmentProfile {
       enterAccept: nil,
       daemon: nil,
       configurationURL: nil
-    )
+    ),
+    tools: DailyToolsProfile(bat: true, eza: true, btop: true, yazi: true),
+    btop: BtopProfileOptions(vimKeys: nil),
+    yazi: YaziProfileOptions(showHidden: nil)
   )
 }
 
@@ -703,6 +752,9 @@ private struct PortableProfileDocument: Decodable {
   let starship: StarshipDocument?
   let history: HistoryDocument?
   let atuin: AtuinDocument?
+  let tools: DailyToolsDocument?
+  let btop: BtopDocument?
+  let yazi: YaziDocument?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -719,6 +771,9 @@ private struct PortableProfileDocument: Decodable {
     case starship
     case history
     case atuin
+    case tools
+    case btop
+    case yazi
   }
 }
 
@@ -821,5 +876,28 @@ private struct AtuinDocument: Decodable {
     case enterAccept = "enter_accept"
     case daemon
     case configuration
+  }
+}
+
+private struct DailyToolsDocument: Decodable {
+  let bat: Bool?
+  let eza: Bool?
+  let btop: Bool?
+  let yazi: Bool?
+}
+
+private struct BtopDocument: Decodable {
+  let vimKeys: Bool?
+
+  enum CodingKeys: String, CodingKey {
+    case vimKeys = "vim_keys"
+  }
+}
+
+private struct YaziDocument: Decodable {
+  let showHidden: Bool?
+
+  enum CodingKeys: String, CodingKey {
+    case showHidden = "show_hidden"
   }
 }
