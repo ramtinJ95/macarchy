@@ -47,6 +47,14 @@ extension SetupOwnershipManager {
   }
 
   func setupStarshipBehavior(context: Context) throws -> SetupIntegrationResult {
+    if try environmentOwns([.starship], context: context) {
+      return integrationResult(
+        id: Self.starshipBehaviorID,
+        target: context.starshipBehavior,
+        status: .external,
+        message: "Starship behavior is owned by the aggregate environment lifecycle"
+      )
+    }
     let configuration = try readExternalPrerequisite(
       at: context.starshipBehavior,
       id: Self.starshipBehaviorID
@@ -81,6 +89,14 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
+    if try environmentOwns([.starship], context: context) {
+      return integrationResult(
+        id: Self.starshipConfigurationLinkID,
+        target: context.starshipConfigurationLink,
+        status: .external,
+        message: "Starship configuration is owned by the aggregate environment lifecycle"
+      )
+    }
     if !records.contains(where: { $0.id == Self.starshipConfigurationLinkID }) {
       guard
         try themeLinkRemovalState(

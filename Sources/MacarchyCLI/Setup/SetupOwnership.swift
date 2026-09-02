@@ -465,6 +465,20 @@ struct SetupOwnershipManager: Sendable {
 
 }
 
+extension SetupOwnershipManager {
+  func environmentOwns(_ ids: Set<EnvironmentEntryID>, context: Context) throws -> Bool {
+    let store = EnvironmentStateStore(stateRoot: context.stateRoot)
+    guard try store.readTransaction() == nil else {
+      throw EnvironmentLifecycleError.blocked(
+        "an interrupted environment transaction must be recovered before legacy setup"
+      )
+    }
+    guard let ownership = try store.readOwnership()
+    else { return false }
+    return !ids.isDisjoint(with: Set(ownership.records.map(\.id)))
+  }
+}
+
 struct TeardownCommandRunner: Sendable {
   let ownershipManager: SetupOwnershipManager
 

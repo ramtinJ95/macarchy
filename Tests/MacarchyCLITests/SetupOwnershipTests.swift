@@ -433,6 +433,40 @@ struct SetupOwnershipTests {
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
+  @Test
+  func legacySetupRefusesAnInterruptedEnvironmentTransaction() throws {
+    let fixture = try Fixture(configuration: "font_size 13\n")
+    defer { fixture.remove() }
+    let stateRoot = fixture.home.appending(
+      path: ".config/macarchy",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: true)
+    let proposed = EnvironmentOwnership(
+      generationID: "e-00000000-0000-0000-0000-000000000000",
+      records: [],
+      createdDirectories: [],
+      originalThemeBridges: []
+    )
+    try EnvironmentStateStore(stateRoot: stateRoot).writeTransaction(
+      EnvironmentTransaction(
+        operation: .apply,
+        previousOwnership: nil,
+        proposedOwnership: proposed,
+        previousCurrentDestination: nil
+      )
+    )
+
+    do {
+      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+      Issue.record("Expected setup to stop for environment recovery")
+    } catch {
+      #expect(String(describing: error).contains("must be recovered before legacy setup"))
+    }
+    #expect(try fixture.configuration() == "font_size 13\n")
+    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+  }
+
   private func setupRunner(ownershipManager: SetupOwnershipManager) -> SetupCommandRunner {
     SetupCommandRunner(
       resolveProfile: DependencyProfile.named,
