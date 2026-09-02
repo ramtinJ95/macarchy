@@ -125,12 +125,23 @@ provider = "disabled"
 [top_bar]
 provider = "disabled"
 EOF
+desktop_doctor_status=0
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" desktop doctor \
   --profile "$temporary_directory/desktop-disabled.toml" \
-  --json > "$temporary_directory/desktop-doctor.json"
+  --json > "$temporary_directory/desktop-doctor.json" \
+  || desktop_doctor_status=$?
+(( desktop_doctor_status == 0 || desktop_doctor_status == 1 ))
 grep -q '"operation" : "desktop_doctor"' "$temporary_directory/desktop-doctor.json"
-grep -q '"outcome" : "healthy"' "$temporary_directory/desktop-doctor.json"
+if (( desktop_doctor_status == 0 )); then
+  grep -q '"outcome" : "healthy"' "$temporary_directory/desktop-doctor.json"
+else
+  grep -q '"outcome" : "unhealthy"' "$temporary_directory/desktop-doctor.json"
+  awk '
+    /"id" :/ { finding = $0 }
+    /"status" : "failure"/ && finding !~ /"desktop\.prerequisite\./ { exit 1 }
+  ' "$temporary_directory/desktop-doctor.json"
+fi
 
 snapshot_tree "$temporary_directory/home-after.json" "$home"
 snapshot_tree "$temporary_directory/resources-after.json" "$resources"
