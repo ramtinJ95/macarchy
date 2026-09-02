@@ -172,7 +172,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
   func teardownLocked(
     stateRoot: URL,
     homeDirectory: URL,
-    dryRun: Bool
+    dryRun: Bool,
+    deferFinalization: Bool = false
   ) throws -> SetupIntegrationResult {
     let target = homeDirectory.appending(path: ".config/skhd/skhdrc")
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
@@ -244,6 +245,16 @@ struct KeybindingsApplyCommandRunner: Sendable {
         stateRoot: stateRoot,
         transactionStore: transactionStore
       )
+      if deferFinalization {
+        return SetupIntegrationResult(
+          id: KeybindingProviderInspector.ownershipID,
+          status: .removed,
+          target: target.path,
+          message: "Restored the prior skhd entry; aggregate finalization is pending",
+          mutationAttempted: true,
+          lifecycle: combinedLifecycle(recoveryLifecycle, .restart)
+        )
+      }
       try finalizeTeardown(
         preparation.provider,
         transaction: &transaction,
@@ -553,7 +564,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
           adopt: adopt,
-          evidence: evidence
+          evidence: evidence,
+          deferFinalization: false
         )
       }
       return (try result.render(json: json), result.succeeded)
@@ -583,6 +595,99 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
   }
 
+  func applyIntegrationLocked(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    adopt: String?,
+    deferFinalization: Bool
+  ) throws -> SetupIntegrationResult {
+    guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
+      throw KeybindingsApplyError.blocked(
+        "keybinding apply requires the canonical per-user state root"
+      )
+    }
+    let report = try applyLocked(
+      resourcesRoot: resourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      adopt: adopt,
+      evidence: Mutex(KeybindingsApplyEvidence()),
+      deferFinalization: deferFinalization
+    )
+    return SetupIntegrationResult(
+      id: KeybindingProviderInspector.ownershipID,
+      status: .owned,
+      target: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
+      message: report.message,
+      mutationAttempted: report.mutated,
+      lifecycle: report.lifecycle
+    )
+  }
+
+  func recoverPendingLocked(
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    let store = KeybindingApplyTransactionStore(stateRoot: stateRoot)
+    guard let transaction = try store.read() else { return }
+    _ = try recoverForTeardown(
+      transaction,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      transactionStore: store
+    )
+  }
+
+  func rollbackDeferredLocked(
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    let store = KeybindingApplyTransactionStore(stateRoot: stateRoot)
+    guard let transaction = try store.read() else { return }
+    guard
+      transaction.phase != .restorationFinalizing,
+      transaction.phase != .restorationFinalized
+    else {
+      throw KeybindingsApplyError.postcondition(
+        "deferred keybinding transaction has crossed its rollback boundary"
+      )
+    }
+    try preflightRollback(transaction, stateRoot: stateRoot, homeDirectory: homeDirectory)
+    try rollback(
+      transaction,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      transactionStore: store
+    )
+  }
+
+  func commitDeferredLocked(
+    stateRoot: URL,
+    homeDirectory: URL
+  ) throws {
+    let store = KeybindingApplyTransactionStore(stateRoot: stateRoot)
+    guard var transaction = try store.read() else { return }
+    if transaction.operation == .teardownEntry {
+      try finalizeTeardown(
+        KeybindingProviderTransaction(homeDirectory: homeDirectory),
+        transaction: &transaction,
+        transactionStore: store
+      )
+    } else {
+      try finalizeApply(
+        selectedGenerationID: transaction.generationID,
+        transaction: transaction,
+        activator: KeybindingGenerationActivator(stateRoot: stateRoot),
+        transactionStore: store
+      )
+    }
+  }
+
   private func applyLocked(
     resourcesRoot: URL,
     profileURL: URL,
@@ -590,7 +695,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     adopt: String?,
-    evidence: borrowing Mutex<KeybindingsApplyEvidence>
+    evidence: borrowing Mutex<KeybindingsApplyEvidence>,
+    deferFinalization: Bool
   ) throws -> KeybindingsApplyReport {
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
     try recoverInterruptedApply(
@@ -672,12 +778,14 @@ struct KeybindingsApplyCommandRunner: Sendable {
         stateRoot: stateRoot,
         homeDirectory: homeDirectory
       )
-      try finalizeApply(
-        selectedGenerationID: selectedGenerationID,
-        transaction: transaction,
-        activator: activator,
-        transactionStore: transactionStore
-      )
+      if !deferFinalization {
+        try finalizeApply(
+          selectedGenerationID: selectedGenerationID,
+          transaction: transaction,
+          activator: activator,
+          transactionStore: transactionStore
+        )
+      }
       return KeybindingsApplyReport(
         outcome: "applied",
         mutated: true,

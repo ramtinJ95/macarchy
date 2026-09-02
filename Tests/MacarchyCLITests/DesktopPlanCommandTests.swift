@@ -6,7 +6,10 @@ import Testing
 @testable import ThemeCore
 
 struct DesktopPlanCommandTests {
-  private let runner = DesktopPlanCommandRunner()
+  private let runner = DesktopPlanCommandRunner(
+    keybindings: nil,
+    prerequisites: .assumed
+  )
 
   @Test
   func cleanDefaultPlansManagedYabaiWithoutMutation() throws {
@@ -567,7 +570,8 @@ struct DesktopPlanCommandTests {
     )
     return SketchyBarCoreRuntimeController(
       inspect: { _ in runtime },
-      settle: { _ in runtime }
+      settle: { _ in runtime },
+      settleRestored: { $0.agreesWithProviderRuntime(runtime) }
     )
   }
 

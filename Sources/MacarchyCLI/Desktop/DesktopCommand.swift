@@ -4,7 +4,9 @@ import Foundation
 struct Desktop: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Plan and manage the default desktop providers.",
-    subcommands: [Plan.self, Apply.self, Status.self, Teardown.self, RunSketchyBarHook.self]
+    subcommands: [
+      Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, RunSketchyBarHook.self,
+    ]
   )
 
   struct Plan: ParsableCommand {
@@ -42,7 +44,7 @@ struct Desktop: ParsableCommand {
     }
   }
 
-  struct Apply: ParsableCommand {
+  struct Apply: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Publish, activate, and verify managed desktop providers."
     )
@@ -50,50 +52,48 @@ struct Desktop: ParsableCommand {
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
     var profile: String?
 
-    @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    @OptionGroup var state: Macarchy.StateOptions
 
     @Option(help: "Exact yabai adoption evidence digest from the reviewed desktop plan.")
     var adopt: String?
 
+    @Option(help: "Exact skhd adoption evidence digest from the reviewed desktop plan.")
+    var keybindingsAdopt: String?
+
     @Option(help: "Exact SketchyBar adoption evidence digest from the reviewed desktop plan.")
     var sketchybarAdopt: String?
 
-    @Flag(help: "Inspect yabai without publishing, activating, or adopting it.")
+    @Flag(help: "Inspect the aggregate desktop outcome without mutation.")
     var dryRun = false
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
-    mutating func run() throws {
+    mutating func run() async throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
       let profileURL =
         profile.map { URL(filePath: $0).standardizedFileURL }
         ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
-      let stateRootURL = URL(
-        filePath: stateRoot,
-        directoryHint: .isDirectory
-      ).standardizedFileURL
       let execution =
         if dryRun {
           try DesktopPlanCommandRunner.live.execute(
             resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
             profileURL: profileURL,
             profileRequired: profile != nil,
-            stateRoot: stateRootURL,
+            stateRoot: state.stateRootURL,
             homeDirectory: home,
-            json: json,
-            scope: .yabaiOnly
+            json: json
           )
         } else {
-          try DesktopApplyCommandRunner.live.execute(
+          try await DesktopApplyCommandRunner.live.executeAggregate(
             resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
             profileURL: profileURL,
             profileRequired: profile != nil,
-            stateRoot: stateRootURL,
+            stateRoot: state.stateRootURL,
             homeDirectory: home,
+            consumerPaths: state.consumerPaths,
             adopt: adopt,
+            keybindingsAdopt: keybindingsAdopt,
             sketchyBarAdopt: sketchybarAdopt,
             json: json
           )
@@ -111,9 +111,7 @@ struct Desktop: ParsableCommand {
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
     var profile: String?
 
-    @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    @OptionGroup var state: Macarchy.StateOptions
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
@@ -127,9 +125,10 @@ struct Desktop: ParsableCommand {
         resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
         profileURL: profileURL,
         profileRequired: profile != nil,
-        stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
+        stateRoot: state.stateRootURL,
         homeDirectory: home,
-        json: json
+        json: json,
+        consumerPaths: state.consumerPaths
       )
       print(execution.output)
       if !execution.succeeded { throw ExitCode.failure }
@@ -152,10 +151,42 @@ struct Desktop: ParsableCommand {
     var json = false
 
     mutating func run() throws {
-      let execution = try DesktopTeardownCommandRunner.live.execute(
+      let execution = try DesktopTeardownCommandRunner.live.executeAggregate(
         stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
         homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
         dryRun: dryRun,
+        json: json
+      )
+      print(execution.output)
+      if !execution.succeeded { throw ExitCode.failure }
+    }
+  }
+
+  struct Doctor: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Diagnose aggregate desktop prerequisites, providers, runtime, and theme state."
+    )
+
+    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
+    var profile: String?
+
+    @OptionGroup var state: Macarchy.StateOptions
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    mutating func run() throws {
+      let home = FileManager.default.homeDirectoryForCurrentUser
+      let profileURL =
+        profile.map { URL(filePath: $0).standardizedFileURL }
+        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let execution = try DesktopDoctorCommandRunner.live.execute(
+        resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
+        profileURL: profileURL,
+        profileRequired: profile != nil,
+        stateRoot: state.stateRootURL,
+        homeDirectory: home,
+        consumerPaths: state.consumerPaths,
         json: json
       )
       print(execution.output)

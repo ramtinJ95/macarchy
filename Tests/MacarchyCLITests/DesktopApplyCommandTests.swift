@@ -8,6 +8,47 @@ import Testing
 
 struct DesktopApplyCommandTests {
   @Test
+  func yabaiAccessibilityEvidenceRequiresAnAXBackedWindow() throws {
+    #expect(
+      try YabaiLifecycleController.accessibilityEvidence(
+        from: #"[{"has-ax-reference":false},{"has-ax-reference":true}]"#
+      ) == .available
+    )
+    #expect(
+      try YabaiLifecycleController.accessibilityEvidence(
+        from: #"[{"has-ax-reference":false}]"#
+      ) == .unavailable
+    )
+    #expect(
+      try YabaiLifecycleController.accessibilityEvidence(from: "[]") == .unobservable
+    )
+  }
+
+  @Test
+  func yabaiLifecycleAgreementDoesNotTreatARestartedPIDAsDrift() {
+    let recorded = YabaiRuntimeInspection(
+      status: .converged,
+      message: "verified",
+      verifiedSettings: ["layout"],
+      verifiedRuleLabels: ["rule"],
+      wallpaperSignalVerified: true,
+      processID: 41,
+      executablePath: "/opt/homebrew/Cellar/yabai/7.1.25/bin/yabai"
+    )
+    let restarted = YabaiRuntimeInspection(
+      status: .converged,
+      message: "verified",
+      verifiedSettings: ["layout"],
+      verifiedRuleLabels: ["rule"],
+      wallpaperSignalVerified: true,
+      processID: 42,
+      executablePath: "/opt/homebrew/Cellar/yabai/7.1.25/bin/yabai"
+    )
+
+    #expect(recorded.agreesWithCurrentProcess(restarted))
+  }
+
+  @Test
   func trustedSketchyBarHookReportsSuccessfulPartialStatus() throws {
     let fixture = try SketchyBarPublicCommandFixture(hasHook: true)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -15,7 +56,10 @@ struct DesktopApplyCommandTests {
     let applyRunner = DesktopApplyCommandRunner(
       lifecycle: yabaiLifecycle.controller,
       sketchyBarLifecycle: fixture.lifecycle.controller,
-      sketchyBarCoreRuntime: fixture.coreController
+      sketchyBarCoreRuntime: fixture.coreController,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
     )
 
     let apply = try applyRunner.execute(
@@ -30,7 +74,9 @@ struct DesktopApplyCommandTests {
     let status = try DesktopStatusCommandRunner(
       lifecycle: yabaiLifecycle.controller,
       sketchyBarLifecycle: fixture.lifecycle.controller,
-      sketchyBarCoreRuntime: fixture.coreController
+      sketchyBarCoreRuntime: fixture.coreController,
+      keybindings: nil,
+      theme: nil
     ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
@@ -63,7 +109,10 @@ struct DesktopApplyCommandTests {
     let runner = DesktopApplyCommandRunner(
       lifecycle: yabaiLifecycle.controller,
       sketchyBarLifecycle: fixture.lifecycle.controller,
-      sketchyBarCoreRuntime: fixture.coreController
+      sketchyBarCoreRuntime: fixture.coreController,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
     )
 
     let apply = try runner.execute(
@@ -107,7 +156,9 @@ struct DesktopApplyCommandTests {
     let status = try DesktopStatusCommandRunner(
       lifecycle: yabaiLifecycle.controller,
       sketchyBarLifecycle: fixture.lifecycle.controller,
-      sketchyBarCoreRuntime: fixture.coreController
+      sketchyBarCoreRuntime: fixture.coreController,
+      keybindings: nil,
+      theme: nil
     ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
@@ -132,8 +183,11 @@ struct DesktopApplyCommandTests {
       sketchyBarLifecycle: fixture.lifecycle.controller,
       sketchyBarCoreRuntime: SketchyBarCoreRuntimeController(
         inspect: { _ in driftedCore },
-        settle: { _ in driftedCore }
-      )
+        settle: { _ in driftedCore },
+        settleRestored: { $0.agreesWithProviderRuntime(driftedCore) }
+      ),
+      keybindings: nil,
+      theme: nil
     ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
@@ -157,7 +211,9 @@ struct DesktopApplyCommandTests {
     let corruptTransactionStatus = try DesktopStatusCommandRunner(
       lifecycle: yabaiLifecycle.controller,
       sketchyBarLifecycle: fixture.lifecycle.controller,
-      sketchyBarCoreRuntime: fixture.coreController
+      sketchyBarCoreRuntime: fixture.coreController,
+      keybindings: nil,
+      theme: nil
     ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
@@ -178,7 +234,8 @@ struct DesktopApplyCommandTests {
     let teardown = try DesktopTeardownCommandRunner(
       lifecycle: yabaiLifecycle.controller,
       sketchyBarLifecycle: fixture.lifecycle.controller,
-      sketchyBarCoreRuntime: fixture.coreController
+      sketchyBarCoreRuntime: fixture.coreController,
+      keybindings: nil
     ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
@@ -201,7 +258,12 @@ struct DesktopApplyCommandTests {
     let fixture = try DesktopApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let lifecycle = YabaiLifecycleFixture(running: false)
-    let runner = DesktopApplyCommandRunner(lifecycle: lifecycle.controller)
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    )
 
     let apply = try runner.execute(
       resourcesRoot: fixture.resources,
@@ -255,7 +317,11 @@ struct DesktopApplyCommandTests {
       )
     )
     #expect(lifecycle.calls.withLock { $0 }.contains("stop"))
-    let disabledStatus = try DesktopStatusCommandRunner(lifecycle: lifecycle.controller).execute(
+    let disabledStatus = try DesktopStatusCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
@@ -274,7 +340,12 @@ struct DesktopApplyCommandTests {
     var originalMetadata = stat()
     #expect(lstat(entry.path, &originalMetadata) == 0)
     let lifecycle = YabaiLifecycleFixture(running: true)
-    let runner = DesktopApplyCommandRunner(lifecycle: lifecycle.controller)
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    )
     let digest = try fixture.adoptionDigest()
 
     let apply = try runner.execute(
@@ -329,7 +400,11 @@ struct DesktopApplyCommandTests {
     #expect(planReport["sketchybar"] == nil)
     try FileManager.default.removeItem(at: sketchyBarOwnership)
 
-    let status = try DesktopStatusCommandRunner(lifecycle: lifecycle.controller).execute(
+    let status = try DesktopStatusCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -339,7 +414,10 @@ struct DesktopApplyCommandTests {
     )
     #expect(status.succeeded)
 
-    let teardown = try DesktopTeardownCommandRunner(lifecycle: lifecycle.controller).execute(
+    let teardown = try DesktopTeardownCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil
+    ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
       dryRun: false,
@@ -375,7 +453,12 @@ struct DesktopApplyCommandTests {
     let lifecycle = YabaiLifecycleFixture(running: false)
     let digest = try fixture.adoptionDigest()
 
-    let apply = try DesktopApplyCommandRunner(lifecycle: lifecycle.controller).execute(
+    let apply = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -387,7 +470,10 @@ struct DesktopApplyCommandTests {
     #expect(apply.succeeded)
     #expect(try String(contentsOf: sourceEntry, encoding: .utf8) == "dotfiles yabai\n")
 
-    let teardown = try DesktopTeardownCommandRunner(lifecycle: lifecycle.controller).execute(
+    let teardown = try DesktopTeardownCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil
+    ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
       dryRun: false,
@@ -408,6 +494,9 @@ struct DesktopApplyCommandTests {
     let lifecycle = YabaiLifecycleFixture(running: true)
     let interrupted = DesktopApplyCommandRunner(
       lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil,
       faultInjector: { checkpoint in
         if checkpoint == .providerChanged { throw YabaiInterruptionError.injected }
       }
@@ -427,7 +516,12 @@ struct DesktopApplyCommandTests {
     }
     #expect(YabaiTransactionStore(stateRoot: fixture.state).exists)
 
-    let retry = try DesktopApplyCommandRunner(lifecycle: lifecycle.controller).execute(
+    let retry = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -448,7 +542,12 @@ struct DesktopApplyCommandTests {
     let entry = try fixture.installRegularConfiguration("restore after interruption\n")
     let lifecycle = YabaiLifecycleFixture(running: true)
     let digest = try fixture.adoptionDigest()
-    let apply = try DesktopApplyCommandRunner(lifecycle: lifecycle.controller).execute(
+    let apply = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -460,6 +559,7 @@ struct DesktopApplyCommandTests {
     #expect(apply.succeeded)
     let interrupted = DesktopTeardownCommandRunner(
       lifecycle: lifecycle.controller,
+      keybindings: nil,
       faultInjector: { checkpoint in
         if checkpoint == .providerRestored { throw YabaiInterruptionError.injected }
       }
@@ -478,7 +578,10 @@ struct DesktopApplyCommandTests {
       try String(contentsOf: entry, encoding: .utf8) == "restore after interruption\n"
     )
 
-    let resumed = try DesktopTeardownCommandRunner(lifecycle: lifecycle.controller).execute(
+    let resumed = try DesktopTeardownCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil
+    ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
       dryRun: false,
@@ -499,7 +602,12 @@ struct DesktopApplyCommandTests {
     let lifecycle = YabaiLifecycleFixture(running: true, runtimeStatus: .drifted)
     let digest = try fixture.adoptionDigest()
 
-    let apply = try DesktopApplyCommandRunner(lifecycle: lifecycle.controller).execute(
+    let apply = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -521,7 +629,12 @@ struct DesktopApplyCommandTests {
     let entry = try fixture.installRegularConfiguration("retained original\n")
     let lifecycle = YabaiLifecycleFixture(running: true)
     let digest = try fixture.adoptionDigest()
-    let apply = try DesktopApplyCommandRunner(lifecycle: lifecycle.controller).execute(
+    let apply = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -536,7 +649,11 @@ struct DesktopApplyCommandTests {
     let retained = try #require(ownership.retainedOriginalPath)
     try Data("drifted original\n".utf8).write(to: URL(filePath: retained))
 
-    let status = try DesktopStatusCommandRunner(lifecycle: lifecycle.controller).execute(
+    let status = try DesktopStatusCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      theme: nil
+    ).execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -545,7 +662,10 @@ struct DesktopApplyCommandTests {
       json: true
     )
     #expect(!status.succeeded)
-    let teardown = try DesktopTeardownCommandRunner(lifecycle: lifecycle.controller).execute(
+    let teardown = try DesktopTeardownCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil
+    ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
       dryRun: false,
@@ -568,7 +688,8 @@ struct DesktopApplyCommandTests {
     try Data("{}".utf8).write(to: transaction)
 
     let result = try DesktopTeardownCommandRunner(
-      lifecycle: YabaiLifecycleFixture(running: false).controller
+      lifecycle: YabaiLifecycleFixture(running: false).controller,
+      keybindings: nil
     ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
@@ -703,7 +824,8 @@ private struct SketchyBarPublicCommandFixture {
   var coreController: SketchyBarCoreRuntimeController {
     SketchyBarCoreRuntimeController(
       inspect: { _ in core },
-      settle: { _ in core }
+      settle: { _ in core },
+      settleRestored: { $0.agreesWithProviderRuntime(core) }
     )
   }
 
@@ -802,7 +924,8 @@ private final class YabaiLifecycleFixture: Sendable {
           processID: 42,
           executablePath: "/opt/homebrew/bin/yabai"
         )
-      }
+      },
+      waitBetweenInspections: {}
     )
   }
 }

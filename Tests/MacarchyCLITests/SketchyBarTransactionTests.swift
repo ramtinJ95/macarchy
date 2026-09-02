@@ -738,7 +738,8 @@ private struct SketchyBarTransactionFixture {
       lifecycle: lifecycle.controller,
       coreRuntime: SketchyBarCoreRuntimeController(
         inspect: { _ in self.coreRuntime },
-        settle: { _ in self.coreRuntime }
+        settle: { _ in self.coreRuntime },
+        settleRestored: { $0.agreesWithProviderRuntime(self.coreRuntime) }
       ),
       faultInjector: faultInjector
     )

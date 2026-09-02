@@ -7,10 +7,17 @@ enum DesktopPlanScope: Sendable {
 }
 
 struct DesktopPlanCommandRunner: Sendable {
-  static let live = DesktopPlanCommandRunner()
+  let keybindings: DesktopKeybindingOrchestrator?
+  let prerequisites: DesktopPrerequisiteInspector
+
+  static let live = DesktopPlanCommandRunner(
+    keybindings: .live,
+    prerequisites: .live
+  )
 
   func execute(
     resourcesRoot: URL,
+    keybindingsResourcesRoot: URL = RuntimeEnvironment.live.builtInKeybindingsURL,
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
@@ -36,12 +43,55 @@ struct DesktopPlanCommandRunner: Sendable {
 
     let yabaiEnabled = profile?.desktop.provider == .yabaiSkhd
     let sketchyBarEnabled = scope == .allProviders && profile?.topBar == .sketchybar
+    let prerequisiteStatuses =
+      scope == .allProviders
+      ? profile.map { prerequisites.inspect($0, homeDirectory) } ?? []
+      : []
+    for prerequisite in prerequisiteStatuses where prerequisite.status == .missing {
+      diagnostics.append(
+        DesktopPlanDiagnostic(
+          code: "desktop_prerequisite_missing",
+          source: prerequisite.id,
+          message: "\(prerequisite.requirement); \(prerequisite.remediation)"
+        )
+      )
+    }
+    var keybindingPlan: DesktopKeybindingPlan?
+    if let keybindings, scope == .allProviders, profile != nil {
+      do {
+        keybindingPlan = try keybindings.plan(
+          resourcesRoot: keybindingsResourcesRoot,
+          profileURL: profileURL,
+          profileRequired: profileRequired,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+        if yabaiEnabled, keybindingPlan?.succeeded == false {
+          diagnostics.append(
+            DesktopPlanDiagnostic(
+              code: "keybindings_blocked",
+              source: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
+              message: keybindingPlan?.message ?? "keybinding state is blocked"
+            )
+          )
+        }
+      } catch {
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "keybindings_invalid",
+            source: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
+            message: String(describing: error)
+          )
+        )
+      }
+    }
     var yabaiComposition: YabaiComposition?
     if let profile, yabaiEnabled {
       do {
         yabaiComposition = try YabaiConfigurationComposer().compose(
           defaultsURL: resourcesRoot.appending(path: "yabai/defaults.toml"),
-          profile: profile
+          profile: profile,
+          macarchyExecutableURL: macarchyExecutableURL
         )
       } catch {
         let source =
@@ -177,6 +227,11 @@ struct DesktopPlanCommandRunner: Sendable {
         generation: yabaiGeneration,
         blocked: blocked
       )
+      + keybindingActions(
+        enabled: yabaiEnabled,
+        plan: keybindingPlan,
+        blocked: blocked
+      )
       + sketchyBarActions(
         enabled: sketchyBarEnabled,
         provider: sketchyBarProvider,
@@ -224,6 +279,8 @@ struct DesktopPlanCommandRunner: Sendable {
       currentGenerationStatus: yabaiGeneration.status.rawValue,
       provider: yabaiProvider,
       sketchyBar: sketchyBarReport,
+      prerequisites: prerequisiteStatuses,
+      keybindings: keybindingPlan,
       actions: actions,
       diagnostics: diagnostics
     )
@@ -373,6 +430,30 @@ struct DesktopPlanCommandRunner: Sendable {
     composition.layout.position(of: .volume) == nil
       ? [:] : [SketchyBarModule.volume.rawValue: "supported_macos_builtin"]
   }
+
+  private func keybindingActions(
+    enabled: Bool,
+    plan: DesktopKeybindingPlan?,
+    blocked: Bool
+  ) -> [DesktopPlanAction] {
+    guard !blocked, let plan else { return [] }
+    if enabled {
+      return plan.outcome == "ready"
+        ? [
+          DesktopPlanAction(
+            id: "converge_skhd_provider",
+            message: "Publish and activate the authoritative managed skhd configuration."
+          )
+        ] : []
+    }
+    return plan.providerStatus == "managed"
+      ? [
+        DesktopPlanAction(
+          id: "teardown_skhd_provider",
+          message: "Restore the exact prior skhd provider entry."
+        )
+      ] : []
+  }
 }
 
 private struct DesktopPlanReport: Encodable {
@@ -395,6 +476,8 @@ private struct DesktopPlanReport: Encodable {
   let currentGenerationStatus: String
   let provider: YabaiProviderPlanInspection
   let sketchyBar: DesktopSketchyBarPlanReport?
+  let prerequisites: [DesktopPrerequisiteStatus]
+  let keybindings: DesktopKeybindingPlan?
   let actions: [DesktopPlanAction]
   let diagnostics: [DesktopPlanDiagnostic]
 
@@ -422,6 +505,18 @@ private struct DesktopPlanReport: Encodable {
     ]
     if let sketchyBar {
       lines += sketchyBar.humanLines
+    }
+    if !prerequisites.isEmpty {
+      lines.append("Desktop prerequisites:")
+      lines += prerequisites.map {
+        "- \($0.id) [\($0.status.rawValue)]: \($0.requirement)"
+      }
+    }
+    if let keybindings {
+      lines.append(
+        "- skhd [\(keybindings.effectiveStatus), \(keybindings.providerStatus)]: "
+          + keybindings.message
+      )
     }
     lines.append(actions.isEmpty ? "Actions: none" : "Actions:")
     lines += actions.map { "- \($0.id): \($0.message)" }
@@ -467,6 +562,7 @@ private struct DesktopPlanReport: Encodable {
     case currentGenerationStatus = "current_generation_status"
     case provider
     case sketchyBar = "sketchybar"
+    case prerequisites, keybindings
     case actions
     case diagnostics
   }

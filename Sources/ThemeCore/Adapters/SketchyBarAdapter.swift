@@ -279,7 +279,7 @@ struct SketchyBarAdapter: Sendable {
 
   private func readConfiguration(_ url: URL) throws -> Data {
     do {
-      return try BoundedRegularFile.read(at: url).data
+      return try BoundedRegularFile.read(at: url.resolvingSymlinksInPath()).data
     } catch BoundedRegularFileError.tooLarge {
       throw SketchyBarAdapterError.configurationTooLarge(url)
     } catch {

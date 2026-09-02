@@ -48,6 +48,21 @@ struct YabaiRuntimeInspection: Codable, Equatable, Sendable {
     processID: nil,
     executablePath: nil
   )
+
+  func agreesWithCurrentProcess(_ current: Self) -> Bool {
+    status == current.status
+      && message == current.message
+      && verifiedSettings == current.verifiedSettings
+      && verifiedRuleLabels == current.verifiedRuleLabels
+      && wallpaperSignalVerified == current.wallpaperSignalVerified
+      && executablePath == current.executablePath
+  }
+}
+
+enum YabaiAccessibilityEvidence: Equatable, Sendable {
+  case available
+  case unavailable
+  case unobservable
 }
 
 struct YabaiLifecycleController: Sendable {
@@ -55,6 +70,7 @@ struct YabaiLifecycleController: Sendable {
   let restart: @Sendable () throws -> Void
   let stop: @Sendable () throws -> Void
   let inspect: @Sendable (YabaiComposition) -> YabaiRuntimeInspection
+  let waitBetweenInspections: @Sendable () -> Void
 
   static let live = YabaiLifecycleController(
     preflight: {
@@ -74,6 +90,7 @@ struct YabaiLifecycleController: Sendable {
           "the running yabai process cannot query Spaces; grant the documented Accessibility prerequisite before apply"
         )
       }
+      try requireAccessibilityEvidence()
       return true
     },
     restart: {
@@ -81,10 +98,25 @@ struct YabaiLifecycleController: Sendable {
       guard runtimeReady() else {
         throw YabaiDesktopError.lifecycle("yabai did not become queryable after restart")
       }
+      guard accessibilityReady() else {
+        throw YabaiDesktopError.lifecycle(
+          "yabai has no Accessibility references after restart; grant the documented Accessibility prerequisite before apply"
+        )
+      }
     },
     stop: { try requireSuccess(arguments: ["--stop-service"], operation: "stop service") },
-    inspect: inspectLive
+    inspect: inspectLive,
+    waitBetweenInspections: { Thread.sleep(forTimeInterval: 0.1) }
   )
+
+  func inspectAfterRestart(_ composition: YabaiComposition) -> YabaiRuntimeInspection {
+    var result = inspect(composition)
+    for _ in 1..<20 where result.status != .converged && result.status != .partial {
+      waitBetweenInspections()
+      result = inspect(composition)
+    }
+    return result
+  }
 
   func restoreService(wasRunning: Bool) throws {
     if wasRunning { try restart() } else { try stop() }
@@ -114,7 +146,8 @@ struct YabaiLifecycleController: Sendable {
     }
     var verified: [String] = []
     do {
-      guard let process = try processEvidence() else { return .stopped }
+      guard let process = try settledProcessEvidence() else { return .stopped }
+      try requireAccessibilityEvidence()
       for (name, value) in expected {
         let result = try run(arguments: ["-m", "config", name])
         guard result.terminationStatus == 0 else {
@@ -252,7 +285,7 @@ struct YabaiLifecycleController: Sendable {
   }
 
   private static func runtimeReady() -> Bool {
-    for _ in 0..<20 {
+    for _ in 0..<100 {
       if (try? processEvidence()) != nil {
         if let query = try? run(arguments: ["-m", "query", "--spaces"], timeout: 0.5),
           query.terminationStatus == 0
@@ -263,6 +296,66 @@ struct YabaiLifecycleController: Sendable {
       Thread.sleep(forTimeInterval: 0.1)
     }
     return false
+  }
+
+  static func accessibilityEvidence(from output: String) throws -> YabaiAccessibilityEvidence {
+    guard
+      let windows = try JSONSerialization.jsonObject(with: Data(output.utf8))
+        as? [[String: Any]]
+    else {
+      throw YabaiDesktopError.lifecycle("yabai returned invalid Accessibility evidence")
+    }
+    guard !windows.isEmpty else { return .unobservable }
+    return windows.contains { $0["has-ax-reference"] as? Bool == true }
+      ? .available : .unavailable
+  }
+
+  private static func accessibilityReady() -> Bool {
+    for attempt in 0..<100 {
+      if let result = try? run(arguments: ["-m", "query", "--windows"], timeout: 0.5),
+        result.terminationStatus == 0,
+        let evidence = try? accessibilityEvidence(from: result.output),
+        evidence == .available
+      {
+        return true
+      }
+      if attempt < 99 { Thread.sleep(forTimeInterval: 0.1) }
+    }
+    return false
+  }
+
+  private static func requireAccessibilityEvidence() throws {
+    let result = try run(arguments: ["-m", "query", "--windows"])
+    guard result.terminationStatus == 0 else {
+      throw YabaiDesktopError.lifecycle("cannot inspect yabai Accessibility evidence")
+    }
+    switch try accessibilityEvidence(from: result.output) {
+    case .available:
+      return
+    case .unavailable:
+      throw YabaiDesktopError.lifecycle(
+        "yabai has no Accessibility references; grant the documented Accessibility prerequisite before apply"
+      )
+    case .unobservable:
+      throw YabaiDesktopError.lifecycle(
+        "yabai Accessibility cannot be verified without an ordinary application window"
+      )
+    }
+  }
+
+  private static func settledProcessEvidence() throws -> (
+    processID: Int32, executablePath: String
+  )? {
+    var lastError: (any Error)?
+    for attempt in 0..<20 {
+      do {
+        return try processEvidence()
+      } catch {
+        lastError = error
+      }
+      if attempt < 19 { Thread.sleep(forTimeInterval: 0.1) }
+    }
+    throw lastError!
   }
 
   private static func ruleField(

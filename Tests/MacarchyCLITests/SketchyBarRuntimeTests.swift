@@ -417,6 +417,94 @@ struct SketchyBarRuntimeTests {
     #expect(waits.withLock { $0 } == 100)
   }
 
+  @Test
+  func coreSettleAllowsTheObservedTwoSecondReloadWindow() throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let barQueries = Mutex(0)
+    let waits = Mutex(0)
+    let verifier = SketchyBarCoreRuntimeVerifier(
+      stateRoot: fixture.state,
+      processRunner: ProcessRunner { request in
+        if request.executableURL == SketchyBarCoreRuntimeVerifier.controlURL,
+          request.arguments == ["--query", "bar"]
+        {
+          let query = barQueries.withLock { count in
+            count += 1
+            return count
+          }
+          if query <= 20 {
+            return ProcessResult(
+              terminationStatus: 0,
+              output: """
+                {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
+                 "margin":8,"corner_radius":9,"items":[]}
+                """
+            )
+          }
+        }
+        return Self.dynamicResult(request, fixture: fixture, indices: [1])
+      },
+      waitForSettle: { waits.withLock { $0 += 1 } },
+      waitForPresentation: {}
+    )
+
+    let inspection = verifier.settle(fixture.dynamicComposition)
+
+    #expect(inspection.status == .converged)
+    #expect(waits.withLock { $0 } == 20)
+  }
+
+  @Test
+  func rollbackSettleRestoresThePreviousObservableRuntime() throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let current = fixture.verifier {
+      Self.dynamicResult($0, fixture: fixture, indices: [1])
+    }.inspect(fixture.dynamicComposition)
+    let expected = SketchyBarCoreRuntimeInspection(
+      status: current.status,
+      message: "evidence from the previous theme",
+      themeGenerationID: "g-00000000-0000-0000-0000-000000000001",
+      barColor: "0xff000000",
+      items: current.items,
+      spaceIndices: current.spaceIndices,
+      clockLabelPresent: current.clockLabelPresent,
+      volumeLevelPresent: current.volumeLevelPresent ?? false
+    )
+    let barQueries = Mutex(0)
+    let waits = Mutex(0)
+    let verifier = SketchyBarCoreRuntimeVerifier(
+      stateRoot: fixture.state,
+      processRunner: ProcessRunner { request in
+        if request.executableURL == SketchyBarCoreRuntimeVerifier.controlURL,
+          request.arguments == ["--query", "bar"]
+        {
+          let query = barQueries.withLock { count in
+            count += 1
+            return count
+          }
+          if query <= 20 {
+            return ProcessResult(
+              terminationStatus: 0,
+              output: """
+                {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
+                 "margin":8,"corner_radius":9,"items":[]}
+                """
+            )
+          }
+        }
+        return Self.dynamicResult(request, fixture: fixture, indices: [1])
+      },
+      waitForSettle: { waits.withLock { $0 += 1 } },
+      waitForPresentation: {}
+    )
+
+    #expect(expected.agreesWithProviderRuntime(current))
+    #expect(verifier.settleRestored(expected))
+    #expect(waits.withLock { $0 } == 20)
+  }
+
   private static func dynamicResult(
     _ request: ProcessRequest,
     fixture: SketchyBarRuntimeFixture,

@@ -83,7 +83,8 @@ package struct YabaiConfigurationComposer: Sendable {
 
   package func compose(
     defaultsURL: URL,
-    profile: PortableProfile
+    profile: PortableProfile,
+    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy")
   ) throws -> YabaiComposition {
     let defaults = try loadDefaults(at: defaultsURL)
     let options = profile.desktop.yabai
@@ -109,7 +110,8 @@ package struct YabaiConfigurationComposer: Sendable {
     let rendered = render(
       settings: settings,
       topBarEnabled: profile.topBar == .sketchybar,
-      hook: hook?.text
+      hook: hook?.text,
+      macarchyExecutablePath: macarchyExecutableURL.standardizedFileURL.path
     )
     let renderedDigest = sha256Digest(Data(rendered.utf8))
     let input = YabaiInputIdentity(
@@ -117,7 +119,8 @@ package struct YabaiConfigurationComposer: Sendable {
       desktopProvider: profile.desktop.provider.rawValue,
       topBarProvider: profile.topBar.rawValue,
       settings: settings,
-      hookDigest: hook?.digest
+      hookDigest: hook?.digest,
+      macarchyExecutablePath: macarchyExecutableURL.standardizedFileURL.path
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -255,7 +258,8 @@ package struct YabaiConfigurationComposer: Sendable {
   private func render(
     settings: YabaiSettings,
     topBarEnabled: Bool,
-    hook: String?
+    hook: String?,
+    macarchyExecutablePath: String
   ) -> String {
     let command = #""$YABAI" -m config"#
     var lines = [
@@ -297,7 +301,7 @@ package struct YabaiConfigurationComposer: Sendable {
       "",
       "# Reconcile canonical wallpaper when an inactive Space becomes active.",
       #""$YABAI" -m signal --remove macarchy-wallpaper >/dev/null 2>&1 || true"#,
-      #""$YABAI" -m signal --add event=space_changed label=macarchy-wallpaper action='/opt/homebrew/bin/macarchy reconcile wallpaper'"#,
+      "\"$YABAI\" -m signal --add event=space_changed label=macarchy-wallpaper action=\(Self.shellLiteral("\(macarchyExecutablePath) reconcile wallpaper"))",
     ]
     if let hook {
       lines += ["", "# Begin trusted user hook."]
@@ -313,6 +317,10 @@ package struct YabaiConfigurationComposer: Sendable {
     if rendered.last == "." { rendered.append("0") }
     return rendered
   }
+
+  private static func shellLiteral(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+  }
 }
 
 private struct YabaiInputIdentity: Encodable {
@@ -321,6 +329,7 @@ private struct YabaiInputIdentity: Encodable {
   let topBarProvider: String
   let settings: YabaiSettings
   let hookDigest: String?
+  let macarchyExecutablePath: String
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -328,6 +337,7 @@ private struct YabaiInputIdentity: Encodable {
     case topBarProvider = "top_bar_provider"
     case settings
     case hookDigest = "hook_digest"
+    case macarchyExecutablePath = "macarchy_executable_path"
   }
 }
 

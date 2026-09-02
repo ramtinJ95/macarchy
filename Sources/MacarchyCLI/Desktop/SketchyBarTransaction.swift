@@ -198,7 +198,8 @@ struct SketchyBarProviderTransaction: Sendable {
   // The aggregate desktop mutation owns ActivationLock across every provider transaction.
   func convergeLocked(
     composition: SketchyBarComposition,
-    adoptionEvidenceDigest: String?
+    adoptionEvidenceDigest: String?,
+    deferFinalization: Bool = false
   ) throws -> SketchyBarFilesystemConvergenceResult {
     let transactionStore = SketchyBarTransactionStore(stateRoot: stateRoot)
     _ = try recoverPendingLocked()
@@ -361,7 +362,9 @@ struct SketchyBarProviderTransaction: Sendable {
           coreRuntime: verifiedCoreRuntime
         )
       )
-      try transactionStore.remove()
+      if !deferFinalization {
+        try transactionStore.remove()
+      }
       return SketchyBarFilesystemConvergenceResult(generationID: generationID, changed: true)
     } catch is SketchyBarInterruptionError {
       throw SketchyBarInterruptionError.injected
@@ -462,6 +465,11 @@ struct SketchyBarProviderTransaction: Sendable {
     }
     let lifecycleStore = SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot)
     if let previous = transaction.previousLifecycle, transaction.serviceWasRunning {
+      guard coreRuntime.settleRestored(previous.coreRuntime) else {
+        throw SketchyBarDesktopError.lifecycle(
+          "restored SketchyBar did not return to its previous observable runtime state"
+        )
+      }
       try lifecycleStore.write(previous)
     } else {
       try lifecycleStore.remove()
@@ -469,7 +477,10 @@ struct SketchyBarProviderTransaction: Sendable {
     try SketchyBarTransactionStore(stateRoot: stateRoot).remove()
   }
 
-  func teardownLocked(dryRun: Bool) throws -> SketchyBarFilesystemConvergenceResult {
+  func teardownLocked(
+    dryRun: Bool,
+    deferFinalization: Bool = false
+  ) throws -> SketchyBarFilesystemConvergenceResult {
     let transactionStore = SketchyBarTransactionStore(stateRoot: stateRoot)
     var recoveredGenerationID: String?
     if let pending = try transactionStore.read() {
@@ -535,14 +546,17 @@ struct SketchyBarProviderTransaction: Sendable {
     try faultInjector(.providerRestored)
     transaction.phase = .serviceChanging
     try transactionStore.write(transaction)
-    try completeTeardown(transaction)
+    try completeTeardown(transaction, deferFinalization: deferFinalization)
     return SketchyBarFilesystemConvergenceResult(
       generationID: ownership.generationID,
       changed: true
     )
   }
 
-  func completeTeardown(_ transaction: SketchyBarTransaction) throws {
+  func completeTeardown(
+    _ transaction: SketchyBarTransaction,
+    deferFinalization: Bool = false
+  ) throws {
     guard transaction.operation == .teardown else {
       throw SketchyBarDesktopError.invalidState(
         "cannot complete a SketchyBar apply as a teardown"
@@ -576,6 +590,7 @@ struct SketchyBarProviderTransaction: Sendable {
     var completing = transaction
     completing.phase = .serviceChanged
     try SketchyBarTransactionStore(stateRoot: stateRoot).write(completing)
+    if deferFinalization { return }
     try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).remove()
     try SketchyBarOwnershipStore(stateRoot: stateRoot).remove()
     let activator = SketchyBarGenerationActivator(stateRoot: stateRoot)
@@ -583,6 +598,56 @@ struct SketchyBarProviderTransaction: Sendable {
     try faultInjector(.generationDeselected)
     try activator.removeGenerations(transaction.teardownGenerationIDs!)
     try SketchyBarTransactionStore(stateRoot: stateRoot).remove()
+  }
+
+  func rollbackDeferredLocked() throws {
+    let store = SketchyBarTransactionStore(stateRoot: stateRoot)
+    guard let transaction = try store.read() else { return }
+    if transaction.operation == .apply {
+      try recoverApply(transaction)
+      return
+    }
+    if !isManagedEntry(target: transaction.ownership.managedTarget) {
+      let publicEvidence = try SketchyBarProviderPlanInspector().captureUnowned(
+        directory: configurationDirectory,
+        entry: entry
+      )
+      guard publicEvidence == transaction.ownership.original else {
+        throw SketchyBarDesktopError.invalidState(
+          "deferred SketchyBar teardown cannot restore managed ownership"
+        )
+      }
+      try installManaged(transaction.ownership)
+    }
+    try lifecycle.restore(
+      wasRunning: transaction.serviceWasRunning,
+      configurationURL: entry
+    )
+    if let previous = transaction.previousLifecycle {
+      guard coreRuntime.settleRestored(previous.coreRuntime) else {
+        throw SketchyBarDesktopError.lifecycle(
+          "restored SketchyBar did not return to its previous observable runtime state"
+        )
+      }
+      try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).write(previous)
+    }
+    try store.remove()
+  }
+
+  func commitDeferredLocked() throws {
+    let store = SketchyBarTransactionStore(stateRoot: stateRoot)
+    guard let transaction = try store.read() else { return }
+    switch transaction.operation {
+    case .apply:
+      guard transaction.phase == .serviceChanged else {
+        throw SketchyBarDesktopError.invalidState(
+          "deferred SketchyBar apply is not ready to commit"
+        )
+      }
+      try store.remove()
+    case .teardown:
+      try completeTeardown(transaction)
+    }
   }
 
   private func authenticateCurrentForRecovery(_ transaction: SketchyBarTransaction) throws {

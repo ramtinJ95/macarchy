@@ -127,6 +127,90 @@ struct YabaiProviderTransaction: Sendable {
     stateRoot.appending(path: "desktop/yabai/retained-\(nonce.uuidString.lowercased())")
   }
 
+  func teardownLocked(
+    lifecycle: YabaiLifecycleController,
+    faultInjector: @Sendable (YabaiTransactionCheckpoint) throws -> Void,
+    dryRun: Bool,
+    deferFinalization: Bool = false
+  ) throws -> ApplyResult {
+    let transactionStore = YabaiTransactionStore(stateRoot: stateRoot)
+    var recovered: YabaiTransaction?
+    if let pending = try transactionStore.read() {
+      if dryRun {
+        return ApplyResult(
+          changed: true,
+          generationID: pending.generationID,
+          lifecycle: "recovery_required",
+          message: "would recover the interrupted \(pending.operation.rawValue) transaction first"
+        )
+      }
+      switch pending.operation {
+      case .apply:
+        try recoverApply(pending, lifecycle: lifecycle)
+      case .teardown:
+        try completeTeardown(pending, lifecycle: lifecycle)
+      }
+      recovered = pending
+    }
+    guard let ownership = try YabaiOwnershipStore(stateRoot: stateRoot).read() else {
+      if let recovered {
+        return ApplyResult(
+          changed: true,
+          generationID: recovered.generationID,
+          lifecycle: "recovery",
+          message:
+            "recovered interrupted \(recovered.operation.rawValue); no managed yabai provider remains"
+        )
+      }
+      return ApplyResult(
+        changed: false,
+        generationID: nil,
+        lifecycle: "none",
+        message: "no Macarchy-owned yabai provider exists"
+      )
+    }
+    if dryRun {
+      return ApplyResult(
+        changed: true,
+        generationID: ownership.generationID,
+        lifecycle: ownership.priorServiceRunning ? "restart" : "stop",
+        message:
+          "would restore exact \(ownership.original.kind.rawValue) evidence \(ownership.original.digest)"
+      )
+    }
+    let serviceWasRunning = try lifecycle.preflight()
+    var transaction = YabaiTransaction(
+      operation: .teardown,
+      phase: .providerChanging,
+      generationID: ownership.generationID,
+      previousGenerationID: ownership.generationID,
+      generationCreated: false,
+      ownership: ownership,
+      previousOwnership: ownership,
+      previousLifecycle: try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).read(),
+      serviceWasRunning: serviceWasRunning
+    )
+    try transactionStore.write(transaction)
+    try restoreOriginal(ownership)
+    transaction.phase = .providerChanged
+    try transactionStore.write(transaction)
+    try faultInjector(.providerRestored)
+    transaction.phase = .serviceChanging
+    try transactionStore.write(transaction)
+    try completeTeardown(
+      transaction,
+      lifecycle: lifecycle,
+      deferFinalization: deferFinalization
+    )
+    return ApplyResult(
+      changed: true,
+      generationID: ownership.generationID,
+      lifecycle: ownership.priorServiceRunning ? "restart" : "stop",
+      message:
+        "restored exact \(ownership.original.kind.rawValue) evidence \(ownership.original.digest)"
+    )
+  }
+
   func installManaged(_ ownership: YabaiOwnershipRecord) throws {
     let original = ownership.original
     if let retainedPath = ownership.retainedOriginalPath {
@@ -222,10 +306,19 @@ struct YabaiProviderTransaction: Sendable {
       transaction.ownership.retainedOriginalPath.map {
         pathExistsNoFollow($0)
       } ?? false
-    if managed || retainedExists {
-      try restoreOriginal(transaction.ownership)
-    } else if !originalPublic {
-      throw YabaiDesktopError.invalidState("interrupted yabai provider state is ambiguous")
+    if let previousOwnership = transaction.previousOwnership {
+      guard managed else {
+        throw YabaiDesktopError.invalidState(
+          "managed yabai entry drifted during interrupted update"
+        )
+      }
+      try Self.authenticateRetained(previousOwnership)
+    } else {
+      if managed || retainedExists {
+        try restoreOriginal(transaction.ownership)
+      } else if !originalPublic {
+        throw YabaiDesktopError.invalidState("interrupted yabai provider state is ambiguous")
+      }
     }
     try YabaiGenerationActivator(stateRoot: stateRoot).restoreCurrent(
       transaction.previousGenerationID
@@ -253,7 +346,8 @@ struct YabaiProviderTransaction: Sendable {
 
   func completeTeardown(
     _ transaction: YabaiTransaction,
-    lifecycle: YabaiLifecycleController
+    lifecycle: YabaiLifecycleController,
+    deferFinalization: Bool = false
   ) throws {
     guard transaction.operation == .teardown else {
       throw YabaiDesktopError.invalidState("cannot complete an apply as a teardown")
@@ -273,11 +367,59 @@ struct YabaiProviderTransaction: Sendable {
       throw YabaiDesktopError.invalidState("teardown restoration does not match approved evidence")
     }
     try lifecycle.restoreService(wasRunning: transaction.ownership.priorServiceRunning)
+    var completing = transaction
+    completing.phase = .serviceChanged
+    try YabaiTransactionStore(stateRoot: stateRoot).write(completing)
+    if deferFinalization { return }
     try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).remove()
     try YabaiOwnershipStore(stateRoot: stateRoot).remove()
     try YabaiGenerationActivator(stateRoot: stateRoot).restoreCurrent(nil)
     try YabaiGenerationActivator(stateRoot: stateRoot).removeGeneration(transaction.generationID)
     try YabaiTransactionStore(stateRoot: stateRoot).remove()
+  }
+
+  func rollbackDeferred(
+    lifecycle: YabaiLifecycleController
+  ) throws {
+    let store = YabaiTransactionStore(stateRoot: stateRoot)
+    guard let transaction = try store.read() else { return }
+    if transaction.operation == .apply {
+      try recoverApply(transaction, lifecycle: lifecycle)
+      return
+    }
+    let managed = isManagedEntry(target: transaction.ownership.managedTarget)
+    if !managed {
+      let originalPublic = originalIsPublic(transaction.ownership.original)
+      guard originalPublic else {
+        throw YabaiDesktopError.invalidState(
+          "deferred yabai teardown cannot restore managed ownership"
+        )
+      }
+      try installManaged(transaction.ownership)
+    }
+    try lifecycle.restoreService(wasRunning: transaction.serviceWasRunning)
+    if let previous = transaction.previousLifecycle {
+      try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).write(previous)
+    }
+    try store.remove()
+  }
+
+  func commitDeferred(
+    lifecycle: YabaiLifecycleController
+  ) throws {
+    let store = YabaiTransactionStore(stateRoot: stateRoot)
+    guard let transaction = try store.read() else { return }
+    switch transaction.operation {
+    case .apply:
+      guard transaction.phase == .serviceChanged else {
+        throw YabaiDesktopError.invalidState(
+          "deferred yabai apply is not ready to commit"
+        )
+      }
+      try store.remove()
+    case .teardown:
+      try completeTeardown(transaction, lifecycle: lifecycle)
+    }
   }
 
   private func isManagedEntry(target: String) -> Bool {
