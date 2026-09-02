@@ -7,6 +7,18 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Added the first-class default desktop shell: deterministic no-SA yabai
+  tiling, managed skhd shortcuts, and a clean-room Space-aware themed
+  SketchyBar with role opt-outs and sparse portable profile controls.
+- Added reviewed adoption, immutable provider generations, service/runtime
+  evidence, trusted local yabai and SketchyBar hooks, drift reporting, recovery,
+  and exact restoration for the desktop providers.
+- Added aggregate `desktop plan`, `apply`, `status`, `doctor`, and `teardown`
+  behavior with selected-role prerequisite reporting, reverse-order rollback,
+  theme reconciliation, and an opt-in event-driven volume module.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added
