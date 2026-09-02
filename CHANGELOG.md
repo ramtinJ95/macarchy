@@ -12,6 +12,10 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added `environment plan` with typed Kitty, zsh, Starship, and Atuin provider
   selections, package-owned defaults, bounded native customization, exact
   rendered artifacts, and fail-closed theme ownership validation.
+- Added aggregate `environment apply`, `status`, `doctor`, and `teardown` with
+  profile-selected prerequisites, immutable generations, reviewed multi-entry
+  adoption, theme reconciliation, fresh-shell verification, interrupted-state
+  recovery, drift-safe rollback, and exact restoration of retained entries.
 - Added the first-class default desktop shell: deterministic no-SA yabai
   tiling, managed skhd shortcuts, and a clean-room Space-aware themed
   SketchyBar with role opt-outs and sparse portable profile controls.
