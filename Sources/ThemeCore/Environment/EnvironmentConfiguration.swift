@@ -65,6 +65,35 @@ package struct EnvironmentConfigurationComposer: Sendable {
     let options = profile.environment
     var kittyOverrideArtifacts: [EnvironmentConfigurationArtifact] = []
 
+    if options.tools.bat {
+      let source = resourcesRoot.appending(path: "bat/config")
+      artifacts.append(
+        EnvironmentConfigurationArtifact(
+          path: "bat/config",
+          contents: terminated(try readText(at: source))
+        )
+      )
+    }
+
+    if options.tools.btop {
+      let source = resourcesRoot.appending(path: "btop/btop.conf")
+      var configuration = try readText(at: source)
+      if let vimKeys = options.btop.vimKeys {
+        configuration = try replacingBtopValue(
+          "vim_keys",
+          with: vimKeys ? "True" : "False",
+          in: configuration,
+          source: source
+        )
+      }
+      artifacts.append(
+        EnvironmentConfigurationArtifact(
+          path: "btop/btop.conf",
+          contents: terminated(configuration)
+        )
+      )
+    }
+
     if options.terminal == .kitty {
       let source = resourcesRoot.appending(path: "kitty/defaults.conf")
       var configuration = try readText(at: source)
@@ -90,6 +119,18 @@ package struct EnvironmentConfigurationComposer: Sendable {
       if let editor = options.zsh.editor {
         configuration = appendLine("export EDITOR=\"\(editor)\"", to: configuration)
         configuration = appendLine("export VISUAL=\"$EDITOR\"", to: configuration)
+      }
+      if options.tools.eza {
+        configuration = appendSection(
+          try readText(at: resourcesRoot.appending(path: "eza/defaults.zsh")),
+          to: configuration
+        )
+      }
+      if options.tools.yazi {
+        configuration = appendSection(
+          try readText(at: resourcesRoot.appending(path: "yazi/defaults.zsh")),
+          to: configuration
+        )
       }
       if options.history == .atuin {
         configuration = appendLine(
@@ -174,6 +215,35 @@ package struct EnvironmentConfigurationComposer: Sendable {
       )
     }
 
+    if options.tools.yazi {
+      let behaviorSource = resourcesRoot.appending(path: "yazi/yazi.toml")
+      var behavior = try readText(at: behaviorSource)
+      if let showHidden = options.yazi.showHidden {
+        behavior = setTOMLValue(
+          String(showHidden),
+          table: "mgr",
+          key: "show_hidden",
+          in: behavior
+        )
+      }
+      try validateTOML(behavior, source: behaviorSource, role: "Yazi")
+      let themeSource = resourcesRoot.appending(path: "yazi/theme.toml")
+      let theme = try readText(at: themeSource)
+      try validateTOML(theme, source: themeSource, role: "Yazi theme")
+      artifacts.append(
+        EnvironmentConfigurationArtifact(
+          path: "yazi/theme.toml",
+          contents: terminated(theme)
+        )
+      )
+      artifacts.append(
+        EnvironmentConfigurationArtifact(
+          path: "yazi/yazi.toml",
+          contents: terminated(behavior)
+        )
+      )
+    }
+
     artifacts.sort { $0.path < $1.path }
     let renderedDigest = Self.artifactDigest(artifacts)
     let identity = EnvironmentInputIdentity(
@@ -182,6 +252,12 @@ package struct EnvironmentConfigurationComposer: Sendable {
       shell: options.shell.rawValue,
       prompt: options.prompt.rawValue,
       history: options.history.rawValue,
+      tools: [
+        "bat": options.tools.bat,
+        "btop": options.tools.btop,
+        "eza": options.tools.eza,
+        "yazi": options.tools.yazi,
+      ],
       artifacts: Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
     let encoder = JSONEncoder()
@@ -536,6 +612,29 @@ package struct EnvironmentConfigurationComposer: Sendable {
     }
   }
 
+  private func replacingBtopValue(
+    _ key: String,
+    with value: String,
+    in text: String,
+    source: URL
+  ) throws -> String {
+    var lines = text.split(omittingEmptySubsequences: false, whereSeparator: \Character.isNewline)
+      .map(String.init)
+    let matches = lines.indices.filter { index in
+      let content = lines[index].split(separator: "#", maxSplits: 1).first ?? ""
+      guard let equals = content.firstIndex(of: "=") else { return false }
+      return content[..<equals].trimmingCharacters(in: .whitespaces) == key
+    }
+    guard matches.count == 1, let index = matches.first else {
+      throw EnvironmentConfigurationError.invalid(
+        source,
+        "btop baseline must define exactly one \(key) value"
+      )
+    }
+    lines[index] = "\(key) = \(value)"
+    return lines.joined(separator: "\n")
+  }
+
   private func readText(at source: URL) throws -> String {
     let parent = source.deletingLastPathComponent()
     let descriptor: Int32
@@ -585,11 +684,12 @@ private struct EnvironmentInputIdentity: Encodable {
   let shell: String
   let prompt: String
   let history: String
+  let tools: [String: Bool]
   let artifacts: [String: String]
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
-    case terminal, shell, prompt, history, artifacts
+    case terminal, shell, prompt, history, tools, artifacts
   }
 }
 

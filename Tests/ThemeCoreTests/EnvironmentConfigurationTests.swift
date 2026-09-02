@@ -28,12 +28,15 @@ struct EnvironmentConfigurationTests {
     #expect(first == second)
     #expect(
       first.artifacts.map(\.path) == [
-        "atuin/config.toml", "kitty/kitty.conf", "starship/behavior.toml", "zsh/.zshrc",
+        "atuin/config.toml", "bat/config", "btop/btop.conf", "kitty/kitty.conf",
+        "starship/behavior.toml", "yazi/theme.toml", "yazi/yazi.toml", "zsh/.zshrc",
       ]
     )
     #expect(artifact("kitty/kitty.conf", in: first).contains("state/adapters/kitty.conf"))
     #expect(!artifact("kitty/kitty.conf", in: first).contains("allow_remote_control"))
     let zsh = artifact("zsh/.zshrc", in: first)
+    #expect(zsh.contains("export EZA_CONFIG_DIR=\"$HOME/.config/eza\""))
+    #expect(zsh.contains("function y()"))
     let atuinInit = try #require(zsh.range(of: "atuin init zsh"))
     let starshipInit = try #require(zsh.range(of: "starship init zsh"))
     #expect(atuinInit.lowerBound < starshipInit.lowerBound)
@@ -151,8 +154,9 @@ struct EnvironmentConfigurationTests {
 
     #expect(
       composition.artifacts.map(\.path) == [
-        "atuin/config.toml", "kitty/kitty.conf", "kitty/override/bindings.conf",
-        "kitty/override/kitty.conf", "starship/behavior.toml", "zsh/.zshrc",
+        "atuin/config.toml", "bat/config", "btop/btop.conf", "kitty/kitty.conf",
+        "kitty/override/bindings.conf", "kitty/override/kitty.conf", "starship/behavior.toml",
+        "yazi/theme.toml", "yazi/yazi.toml", "zsh/.zshrc",
       ]
     )
     #expect(artifact("kitty/kitty.conf", in: composition).contains("font_size 15.0"))
@@ -166,6 +170,37 @@ struct EnvironmentConfigurationTests {
     #expect(atuin.contains("enabled = false"))
     #expect(atuin.contains("autostart = false"))
     #expect(composition.zshHookDigest?.hasPrefix("sha256:") == true)
+  }
+
+  @Test
+  func dailyToolOptOutsAndSparseOptionsChangeOnlyOwnedBehavior() throws {
+    let profile = try PortableProfileLoader().decode(
+      """
+      schema_version = 1
+      [tools]
+      bat = false
+      eza = false
+      [btop]
+      vim_keys = false
+      [yazi]
+      show_hidden = false
+      """,
+      source: URL(filePath: "/fixtures/profile.toml")
+    )
+
+    let composition = try composer.compose(
+      resourcesRoot: resourcesRoot,
+      profile: profile,
+      stateRoot: URL(filePath: "/fixtures/state")
+    )
+
+    #expect(!composition.artifacts.contains { $0.path == "bat/config" })
+    #expect(artifact("btop/btop.conf", in: composition).contains("vim_keys = False"))
+    #expect(artifact("yazi/yazi.toml", in: composition).contains("show_hidden = false"))
+    let zsh = artifact("zsh/.zshrc", in: composition)
+    #expect(!zsh.contains("EZA_CONFIG_DIR"))
+    #expect(!zsh.contains("alias ls='eza"))
+    #expect(zsh.contains("function y()"))
   }
 
   @Test
