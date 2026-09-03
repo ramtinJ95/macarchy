@@ -142,7 +142,13 @@ extension AdapterContractTests {
       root: root,
       configurationDirectoryURL: codex,
       executableURL: CodexAdapter.liveExecutableURL,
-      controlIsAvailable: { true }
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(
+          terminationStatus: 0,
+          output: "codex-cli \(CodexAdapter.minimumVersion)"
+        )
+      }
     ).reconciliation().run()
     #expect(tuicrOutcome.status == .restartRequired)
     #expect(codexOutcome.status == .restartRequired)

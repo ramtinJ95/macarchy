@@ -306,7 +306,11 @@ package struct EnvironmentConfigurationComposer: Sendable {
         "eza": options.tools.eza,
         "yazi": options.tools.yazi,
       ],
-      presets: ["tuicr": options.presets.tuicr],
+      presets: [
+        "codex": options.presets.codex,
+        "pi": options.presets.pi,
+        "tuicr": options.presets.tuicr,
+      ],
       artifacts: Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
     let encoder = JSONEncoder()

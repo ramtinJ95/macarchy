@@ -21,6 +21,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         + (profile.prompt == .starship ? ["starship"] : [])
         + (profile.history == .atuin ? ["atuin"] : [])
         + (profile.editor == .neovim ? ["neovim"] : [])
+        + (profile.presets.codex ? ["codex"] : [])
         + (profile.presets.pi ? ["pi"] : [])
         + (profile.presets.tuicr ? ["tuicr"] : [])
         + (profile.tools.bat ? ["bat"] : [])
@@ -68,6 +69,36 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         )
       }
     }
+    if profile.presets.codex,
+      let index = results.firstIndex(where: { $0.id == CodexAdapter.id }),
+      results[index].status == "present"
+    {
+      let executable = CodexAdapter.liveExecutableURL
+      do {
+        let version = try CodexAdapter(
+          root: homeDirectory.appending(path: ".config/macarchy"),
+          configurationDirectoryURL: homeDirectory.appending(path: ".codex"),
+          executableURL: executable,
+          controlIsAvailable: { true },
+          processRunner: .live
+        ).supportedVersion()
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: CodexAdapter.id,
+          status: "present",
+          requirement:
+            "Codex \(version) satisfies the required version >= \(CodexAdapter.minimumVersion)",
+          remediation: results[index].remediation
+        )
+      } catch {
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: CodexAdapter.id,
+          status: "missing",
+          requirement:
+            "Codex must report 'codex-cli X.Y.Z' >= \(CodexAdapter.minimumVersion): \(error)",
+          remediation: results[index].remediation
+        )
+      }
+    }
     if profile.shell == .zsh {
       let zsh = URL(filePath: "/bin/zsh")
       results.append(
@@ -110,7 +141,7 @@ extension EnvironmentProfile {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
       && editor == .disabled
       && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
-      && !presets.pi && !presets.tuicr
+      && !presets.codex && !presets.pi && !presets.tuicr
   }
 
   var selectedThemeAdapterIDs: [String] {
@@ -122,6 +153,7 @@ extension EnvironmentProfile {
       + (tools.btop ? ["btop"] : [])
       + (tools.eza ? ["eza"] : [])
       + (tools.yazi ? ["yazi"] : [])
+      + (presets.codex ? ["codex"] : [])
       + (presets.pi ? ["pi"] : [])
       + (presets.tuicr ? ["tuicr"] : [])
   }
@@ -473,6 +505,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       "btop": profile.tools.btop ? "enabled" : "disabled",
       "eza": profile.tools.eza ? "enabled" : "disabled",
       "yazi": profile.tools.yazi ? "enabled" : "disabled",
+      "codex": profile.presets.codex ? "enabled" : "disabled",
       "pi": profile.presets.pi ? "enabled" : "disabled",
       "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]

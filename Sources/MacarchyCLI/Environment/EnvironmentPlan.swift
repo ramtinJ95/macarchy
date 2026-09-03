@@ -166,6 +166,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
 
   fileprivate static func presets(_ profile: EnvironmentProfile) -> [String: String] {
     [
+      "codex": profile.presets.codex ? "enabled" : "disabled",
       "pi": profile.presets.pi ? "enabled" : "disabled",
       "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]
@@ -260,6 +261,14 @@ struct EnvironmentPlanCommandRunner: Sendable {
         EnvironmentPlanAction(
           id: "configure_tuicr",
           message: "Configure tuicr's root theme selector and canonical palette and syntax links."
+        )
+      )
+    }
+    if profile.presets.codex {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_codex",
+          message: "Configure Codex CLI's [tui].theme selector and canonical TextMate theme link."
         )
       )
     }

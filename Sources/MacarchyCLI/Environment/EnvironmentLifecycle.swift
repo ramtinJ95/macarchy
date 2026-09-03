@@ -15,6 +15,8 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
   case btopConfiguration = "btop_configuration"
   case btopTheme = "btop_theme"
   case ezaTheme = "eza_theme"
+  case codexConfiguration = "codex_configuration"
+  case codexTheme = "codex_theme"
   case piConfiguration = "pi_configuration"
   case piTheme = "pi_theme"
   case tuicrConfiguration = "tuicr_configuration"
@@ -105,8 +107,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let createdDirectories: [String]
   let originalThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btop: EnvironmentBtopOwnership?
+  let codex: EnvironmentCodexOwnership?
   let pi: EnvironmentPiOwnership?
   let tuicr: EnvironmentTuicrOwnership?
+  let codexEnabled: Bool
   let piEnabled: Bool
   let tuicrEnabled: Bool
   let enabledThemeAdapterIDs: [String]?
@@ -117,8 +121,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     createdDirectories: [String],
     originalThemeBridges: [EnvironmentThemeBridgeState.Entry],
     btop: EnvironmentBtopOwnership? = nil,
+    codex: EnvironmentCodexOwnership? = nil,
     pi: EnvironmentPiOwnership? = nil,
     tuicr: EnvironmentTuicrOwnership? = nil,
+    codexEnabled: Bool = false,
     piEnabled: Bool = false,
     tuicrEnabled: Bool = false,
     enabledThemeAdapterIDs: [String]? = nil
@@ -129,8 +135,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.createdDirectories = createdDirectories.sorted()
     self.originalThemeBridges = originalThemeBridges.sorted { $0.path < $1.path }
     self.btop = btop
+    self.codex = codex
     self.pi = pi
     self.tuicr = tuicr
+    self.codexEnabled = codexEnabled
     self.piEnabled = piEnabled
     self.tuicrEnabled = tuicrEnabled
     self.enabledThemeAdapterIDs = enabledThemeAdapterIDs?.sorted()
@@ -143,8 +151,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case createdDirectories = "created_directories"
     case originalThemeBridges = "original_theme_bridges"
     case btop
+    case codex
     case pi
     case tuicr
+    case codexEnabled = "codex_enabled"
     case piEnabled = "pi_enabled"
     case tuicrEnabled = "tuicr_enabled"
     case enabledThemeAdapterIDs = "enabled_theme_adapter_ids"
@@ -161,8 +171,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       forKey: .originalThemeBridges
     )
     btop = try container.decodeIfPresent(EnvironmentBtopOwnership.self, forKey: .btop)
+    codex = try container.decodeIfPresent(EnvironmentCodexOwnership.self, forKey: .codex)
     pi = try container.decodeIfPresent(EnvironmentPiOwnership.self, forKey: .pi)
     tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
+    codexEnabled = try container.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? false
     piEnabled = try container.decodeIfPresent(Bool.self, forKey: .piEnabled) ?? false
     tuicrEnabled = try container.decodeIfPresent(Bool.self, forKey: .tuicrEnabled) ?? false
     enabledThemeAdapterIDs = try container.decodeIfPresent(
@@ -178,6 +190,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
         adapterIDs == adapterIDs.sorted()
           && Set(adapterIDs).count == adapterIDs.count
           && Set(adapterIDs).isSubset(of: knownThemeAdapterIDs)
+          && adapterIDs.contains(CodexAdapter.id) == codexEnabled
           && adapterIDs.contains(PiAdapter.id) == piEnabled
           && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
       } ?? true
@@ -187,6 +200,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       Set(createdDirectories).count == createdDirectories.count,
       Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count,
       btop?.hasValidShape ?? true,
+      codex?.hasValidShape ?? true,
       pi?.hasValidShape ?? true,
       tuicr?.hasValidShape ?? true,
       hasValidThemeAdapterInventory
@@ -240,6 +254,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let previousThemeGenerationID: String?
   let rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btopReplacementName: String?
+  let codexReplacementName: String?
   let piReplacementName: String?
   let tuicrReplacementName: String?
 
@@ -252,6 +267,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     previousThemeGenerationID: String? = nil,
     rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry] = [],
     btopReplacementName: String? = nil,
+    codexReplacementName: String? = nil,
     piReplacementName: String? = nil,
     tuicrReplacementName: String? = nil
   ) {
@@ -264,6 +280,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.previousThemeGenerationID = previousThemeGenerationID
     self.rollbackThemeBridges = rollbackThemeBridges
     self.btopReplacementName = btopReplacementName
+    self.codexReplacementName = codexReplacementName
     self.piReplacementName = piReplacementName
     self.tuicrReplacementName = tuicrReplacementName
   }
@@ -278,6 +295,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: rollbackThemeBridges,
       btopReplacementName: btopReplacementName,
+      codexReplacementName: codexReplacementName,
       piReplacementName: piReplacementName,
       tuicrReplacementName: tuicrReplacementName
     )
@@ -292,6 +310,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case previousThemeGenerationID = "previous_theme_generation_id"
     case rollbackThemeBridges = "rollback_theme_bridges"
     case btopReplacementName = "btop_replacement_name"
+    case codexReplacementName = "codex_replacement_name"
     case piReplacementName = "pi_replacement_name"
     case tuicrReplacementName = "tuicr_replacement_name"
   }
@@ -457,6 +476,8 @@ struct EnvironmentProviderInspection: Sendable {
   let createdDirectories: [String]
   let proposedBtopOwnership: EnvironmentBtopOwnership?
   let btopExternalEvidence: EnvironmentEntryEvidence?
+  let proposedCodexOwnership: EnvironmentCodexOwnership?
+  let codexExternalEvidence: EnvironmentEntryEvidence?
   let proposedPiOwnership: EnvironmentPiOwnership?
   let piExternalEvidence: EnvironmentEntryEvidence?
   let proposedTuicrOwnership: EnvironmentTuicrOwnership?
@@ -515,6 +536,7 @@ struct EnvironmentStateStore: Sendable {
           stateRoot: stateRoot
         )
         && Self.btopReplacementIsValid(value)
+        && Self.codexReplacementIsValid(value)
         && Self.piReplacementIsValid(value)
         && Self.tuicrReplacementIsValid(value)
     }
@@ -651,33 +673,54 @@ struct EnvironmentStateStore: Sendable {
     let required =
       transaction.previousOwnership?.btop != nil
       || transaction.proposedOwnership?.btop != nil
-    guard required else { return transaction.btopReplacementName == nil }
-    guard let name = transaction.btopReplacementName else { return false }
-    return name.hasPrefix(".macarchy-environment-btop-")
-      && name.hasSuffix(".replacement")
-      && !name.contains("/")
-      && name.utf8.count <= 128
+    return replacementIsValid(
+      transaction.btopReplacementName,
+      required: required,
+      prefix: ".macarchy-environment-btop-"
+    )
+  }
+
+  private static func codexReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let required =
+      transaction.previousOwnership?.codex != nil
+      || transaction.proposedOwnership?.codex != nil
+    return replacementIsValid(
+      transaction.codexReplacementName,
+      required: required,
+      prefix: ".macarchy-environment-codex-"
+    )
   }
 
   private static func tuicrReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
     let required =
       transaction.previousOwnership?.tuicr != nil
       || transaction.proposedOwnership?.tuicr != nil
-    guard required else { return transaction.tuicrReplacementName == nil }
-    guard let name = transaction.tuicrReplacementName else { return false }
-    return name.hasPrefix(".macarchy-environment-tuicr-")
-      && name.hasSuffix(".replacement")
-      && !name.contains("/")
-      && name.utf8.count <= 128
+    return replacementIsValid(
+      transaction.tuicrReplacementName,
+      required: required,
+      prefix: ".macarchy-environment-tuicr-"
+    )
   }
 
   private static func piReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
     let required =
       transaction.previousOwnership?.pi != nil
       || transaction.proposedOwnership?.pi != nil
-    guard required else { return transaction.piReplacementName == nil }
-    guard let name = transaction.piReplacementName else { return false }
-    return name.hasPrefix(".macarchy-environment-pi-")
+    return replacementIsValid(
+      transaction.piReplacementName,
+      required: required,
+      prefix: ".macarchy-environment-pi-"
+    )
+  }
+
+  private static func replacementIsValid(
+    _ name: String?,
+    required: Bool,
+    prefix: String
+  ) -> Bool {
+    guard required else { return name == nil }
+    guard let name else { return false }
+    return name.hasPrefix(prefix)
       && name.hasSuffix(".replacement")
       && !name.contains("/")
       && name.utf8.count <= 128
@@ -738,29 +781,31 @@ struct EnvironmentProviderInspector: Sendable {
         legacyIDs.formUnion(["yazi.selector", "yazi.flavor-link", "yazi.syntax-link"])
       }
       let setupRecords = try SetupOwnershipManager().readRecords(context: setupContext)
+      let setupIDs = Set(setupRecords.map(\.id))
       let legacyTuicrIDs = Set([
         SetupOwnershipManager.tuicrSelectorID,
         SetupOwnershipManager.tuicrThemeLinkID,
         SetupOwnershipManager.tuicrSyntaxLinkID,
       ])
-      let presentLegacyTuicrIDs = Set(setupRecords.map(\.id)).intersection(legacyTuicrIDs)
-      guard presentLegacyTuicrIDs.isEmpty || presentLegacyTuicrIDs == legacyTuicrIDs else {
-        throw EnvironmentLifecycleError.blocked(
-          "legacy setup-owned tuicr integration is incomplete: \(presentLegacyTuicrIDs.sorted().joined(separator: ", "))"
-        )
-      }
-      let legacyTuicrOwned = presentLegacyTuicrIDs == legacyTuicrIDs
+      let legacyTuicrOwned = try Self.hasCompleteLegacyIntegration(
+        named: "tuicr", requiredIDs: legacyTuicrIDs, setupIDs: setupIDs)
       let legacyPiIDs = Set([
         SetupOwnershipManager.piSelectorID,
         SetupOwnershipManager.piThemeLinkID,
       ])
-      let presentLegacyPiIDs = Set(setupRecords.map(\.id)).intersection(legacyPiIDs)
-      guard presentLegacyPiIDs.isEmpty || presentLegacyPiIDs == legacyPiIDs else {
-        throw EnvironmentLifecycleError.blocked(
-          "legacy setup-owned Pi integration is incomplete: \(presentLegacyPiIDs.sorted().joined(separator: ", "))"
-        )
-      }
-      let legacyPiOwned = presentLegacyPiIDs == legacyPiIDs
+      let legacyPiOwned = try Self.hasCompleteLegacyIntegration(
+        named: "Pi", requiredIDs: legacyPiIDs, setupIDs: setupIDs)
+      let legacyCodexIDs = Set([
+        SetupOwnershipManager.codexSelectorID,
+        SetupOwnershipManager.codexThemeLinkID,
+      ])
+      let legacyCodexOwned = try Self.hasCompleteLegacyIntegration(
+        named: "Codex", requiredIDs: legacyCodexIDs, setupIDs: setupIDs)
+      let externallyAuthoritativeCodex =
+        ownership?.codexEnabled == true
+        && ownership?.codex == nil
+        && ownership?.records.contains(where: { $0.id == .codexTheme }) != true
+        && !legacyCodexOwned
       let externallyAuthoritativePi =
         ownership?.piEnabled == true
         && ownership?.pi == nil
@@ -919,6 +964,57 @@ struct EnvironmentProviderInspector: Sendable {
         }
       }
 
+      let codex = try inspectCodex(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        ownership: ownership?.codex,
+        legacyOwned: legacyCodexOwned,
+        externallyAuthoritative: externallyAuthoritativeCodex
+      )
+      if let entry = codex.entry { inspections.append(entry) }
+      if legacyCodexOwned {
+        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .first { $0.id == .codexTheme }!
+        guard try managedEntryIsExact(entry) else {
+          throw EnvironmentLifecycleError.drift("legacy setup-owned codex_theme")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: "external",
+            ownership: "legacy_setup",
+            message: "The working legacy setup-owned Codex theme link is preserved.",
+            evidence: nil
+          )
+        )
+      }
+      if externallyAuthoritativeCodex, !composition.profile.presets.codex {
+        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .first { $0.id == .codexTheme }!
+        let captured = try capture(entry.url, directoryLink: nil)
+        guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
+          throw EnvironmentLifecycleError.drift("externally owned codex_theme")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: "external",
+            ownership: "external_exact",
+            message: "The exact Codex tuple remains externally owned until disablement.",
+            evidence: captured
+          )
+        )
+      }
+      if codex.proposedOwnership != nil {
+        for directory in try missingParentDirectories(
+          of: homeDirectory.appending(path: ".codex/config.toml"),
+          homeDirectory: homeDirectory
+        ) { createdDirectories.insert(directory.path) }
+      }
+
       let pi = try inspectPi(
         composition: composition,
         homeDirectory: homeDirectory,
@@ -1055,6 +1151,7 @@ struct EnvironmentProviderInspector: Sendable {
             entries: inspections,
             selected: entries,
             btop: btop.proposedOwnership,
+            codex: codex.proposedOwnership,
             pi: pi.proposedOwnership,
             tuicr: tuicr.proposedOwnership
           ) : nil,
@@ -1064,6 +1161,8 @@ struct EnvironmentProviderInspector: Sendable {
         createdDirectories: createdDirectories.sorted(),
         proposedBtopOwnership: btop.proposedOwnership,
         btopExternalEvidence: btop.externalEvidence,
+        proposedCodexOwnership: codex.proposedOwnership,
+        codexExternalEvidence: codex.externalEvidence,
         proposedPiOwnership: pi.proposedOwnership,
         piExternalEvidence: pi.externalEvidence,
         proposedTuicrOwnership: tuicr.proposedOwnership,
@@ -1080,6 +1179,8 @@ struct EnvironmentProviderInspector: Sendable {
         createdDirectories: [],
         proposedBtopOwnership: nil,
         btopExternalEvidence: nil,
+        proposedCodexOwnership: nil,
+        codexExternalEvidence: nil,
         proposedPiOwnership: nil,
         piExternalEvidence: nil,
         proposedTuicrOwnership: nil,
@@ -1107,6 +1208,7 @@ struct EnvironmentProviderInspector: Sendable {
     if profile.tools.yazi {
       enabled.formUnion([.yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax])
     }
+    if profile.presets.codex { enabled.insert(.codexTheme) }
     if profile.presets.pi { enabled.insert(.piTheme) }
     if profile.presets.tuicr { enabled.formUnion([.tuicrTheme, .tuicrSyntax]) }
     return allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
@@ -1176,6 +1278,12 @@ struct EnvironmentProviderInspector: Sendable {
         url: home.appending(path: ".config/btop/themes/\(BtopAdapter.themeFileName)"),
         kind: .symbolicLink,
         target: state.appending(path: "current/\(BtopAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .codexTheme,
+        url: home.appending(path: ".codex/themes/\(CodexAdapter.themeName).tmTheme"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(TextMateThemeArtifact.outputPath)").path
       ),
       EnvironmentManagedEntry(
         id: .piTheme,
@@ -1454,6 +1562,7 @@ struct EnvironmentProviderInspector: Sendable {
     entries: [EnvironmentEntryInspection],
     selected: [EnvironmentManagedEntry],
     btop: EnvironmentBtopOwnership?,
+    codex: EnvironmentCodexOwnership?,
     pi: EnvironmentPiOwnership?,
     tuicr: EnvironmentTuicrOwnership?
   ) throws -> String {
@@ -1475,6 +1584,9 @@ struct EnvironmentProviderInspector: Sendable {
     if let btop {
       targets[EnvironmentEntryID.btopConfiguration.rawValue] = "provider-writable:\(btop.path)"
     }
+    if let codex {
+      targets[EnvironmentEntryID.codexConfiguration.rawValue] = "key-owned:\(codex.path)"
+    }
     if let pi {
       targets[EnvironmentEntryID.piConfiguration.rawValue] = "key-owned:\(pi.path)"
     }
@@ -1495,6 +1607,7 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.tools.eza ? "eza" : "eza-disabled",
         composition.profile.tools.btop ? "btop" : "btop-disabled",
         composition.profile.tools.yazi ? "yazi" : "yazi-disabled",
+        composition.profile.presets.codex ? "codex" : "codex-disabled",
         composition.profile.presets.pi ? "pi" : "pi-disabled",
         composition.profile.presets.tuicr ? "tuicr" : "tuicr-disabled",
       ],
@@ -1518,7 +1631,8 @@ struct EnvironmentProviderInspector: Sendable {
     composition: EnvironmentComposition
   ) throws -> Bool {
     switch entry.id {
-    case .atuinTheme, .batTheme, .btopTheme, .ezaTheme, .piTheme, .tuicrTheme, .tuicrSyntax,
+    case .atuinTheme, .batTheme, .btopTheme, .codexTheme, .ezaTheme, .piTheme, .tuicrTheme,
+      .tuicrSyntax,
       .yaziFlavor, .yaziSyntax:
       return evidence.kind == .symbolicLink && evidence.linkDestination == entry.target
     case .batConfiguration:
@@ -1555,13 +1669,253 @@ struct EnvironmentProviderInspector: Sendable {
 
   private static func isDailyToolEntry(_ id: EnvironmentEntryID) -> Bool {
     switch id {
-    case .batConfiguration, .batTheme, .btopConfiguration, .btopTheme, .ezaTheme,
+    case .batConfiguration, .batTheme, .btopConfiguration, .btopTheme, .codexConfiguration,
+      .codexTheme, .ezaTheme,
       .piConfiguration, .piTheme, .tuicrConfiguration, .tuicrTheme, .tuicrSyntax,
       .yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax:
       true
     case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim:
       false
     }
+  }
+
+  private static func hasCompleteLegacyIntegration(
+    named name: String,
+    requiredIDs: Set<String>,
+    setupIDs: Set<String>
+  ) throws -> Bool {
+    let present = setupIDs.intersection(requiredIDs)
+    guard present.isEmpty || present == requiredIDs else {
+      throw EnvironmentLifecycleError.blocked(
+        "legacy setup-owned \(name) integration is incomplete: \(present.sorted().joined(separator: ", "))"
+      )
+    }
+    return present == requiredIDs
+  }
+
+  private func inspectCodex(
+    composition: EnvironmentComposition,
+    homeDirectory: URL,
+    stateRoot: URL,
+    ownership: EnvironmentCodexOwnership?,
+    legacyOwned: Bool,
+    externallyAuthoritative: Bool
+  ) throws -> (
+    entry: EnvironmentEntryInspection?,
+    proposedOwnership: EnvironmentCodexOwnership?,
+    externalEvidence: EnvironmentEntryEvidence?
+  ) {
+    guard
+      composition.profile.presets.codex || ownership != nil || legacyOwned
+        || externallyAuthoritative
+    else { return (nil, nil, nil) }
+    let url = homeDirectory.appending(path: ".codex/config.toml")
+    if legacyOwned {
+      let evidence = try capture(url, directoryLink: nil)
+      guard evidence.kind == .regularFile,
+        try EnvironmentCodexDocument.matchesManaged(
+          configurationText(at: url, evidence: evidence), source: url)
+      else { throw EnvironmentLifecycleError.drift("legacy setup-owned Codex selector") }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.codexConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "legacy_setup",
+          message: "The working legacy setup-owned Codex integration is preserved.",
+          evidence: evidence
+        ), nil, nil
+      )
+    }
+    if let ownership {
+      guard ownership.path == url.path,
+        try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+      else { throw EnvironmentLifecycleError.blocked("Codex ownership path is invalid") }
+      let evidence = try capture(url, directoryLink: nil)
+      let exact: Bool
+      if evidence.kind == .regularFile {
+        exact = try EnvironmentCodexDocument.matchesManaged(
+          configurationText(at: url, evidence: evidence), source: url)
+      } else {
+        exact = false
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.codexConfiguration.rawValue,
+          path: url.path,
+          status: exact
+            ? (composition.profile.presets.codex ? "managed" : "restoration_required")
+            : "drifted",
+          ownership: "macarchy",
+          message: exact
+            ? (composition.profile.presets.codex
+              ? "The Codex [tui].theme key is managed."
+              : "The disabled Codex [tui].theme key will be restored.")
+            : "The owned Codex [tui].theme key drifted.",
+          evidence: nil
+        ),
+        composition.profile.presets.codex ? ownership : nil,
+        nil
+      )
+    }
+    if externallyAuthoritative {
+      let evidence = try capture(url, directoryLink: nil)
+      guard
+        try codexExternalTupleIsExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot,
+          configurationEvidence: evidence
+        )
+      else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.codexConfiguration.rawValue,
+            path: url.path,
+            status: "drifted",
+            ownership: "external_exact",
+            message: "The externally owned Codex tuple drifted.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.codexConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "external_exact",
+          message: "The exact Codex tuple remains externally owned until disablement.",
+          evidence: evidence
+        ), nil, nil
+      )
+    }
+    guard composition.profile.presets.codex else { return (nil, nil, nil) }
+    let evidence = try capture(url, directoryLink: nil)
+    let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+    if evidence.kind == .symbolicLink || externalAncestor {
+      let text = try externalConfigurationText(
+        at: url,
+        evidence: evidence,
+        hasExternalAncestor: externalAncestor,
+        label: "Codex configuration"
+      )
+      guard try EnvironmentCodexDocument.matchesManaged(text, source: url) else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.codexConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "A divergent Codex selector is behind an externally owned symlink.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      guard
+        try externalLinksAreExact(
+          [.codexTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
+      else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.codexConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "The externally owned Codex selector requires the exact theme link.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.codexConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "external_exact",
+          message: "The exact Codex selector and theme link remain externally owned.",
+          evidence: evidence
+        ), nil, evidence
+      )
+    }
+    if evidence.kind == .regularFile {
+      let text = try configurationText(at: url, evidence: evidence)
+      if try EnvironmentCodexDocument.matchesManaged(text, source: url) {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.codexConfiguration.rawValue,
+            path: url.path,
+            status: "external",
+            ownership: "external_exact",
+            message: "The exact Codex [tui].theme key remains externally owned.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      let proposed = try EnvironmentCodexDocument.ownership(for: text, source: url)
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.codexConfiguration.rawValue,
+          path: url.path,
+          status: "adoption_required",
+          ownership: "external",
+          message: "The existing Codex [tui].theme key requires reviewed adoption.",
+          evidence: evidence
+        ), proposed, evidence
+      )
+    }
+    if evidence.kind == .absent, !externalAncestor {
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.codexConfiguration.rawValue,
+          path: url.path,
+          status: "install_required",
+          ownership: "external",
+          message: "Minimal Codex [tui].theme configuration will be installed.",
+          evidence: evidence
+        ),
+        EnvironmentCodexOwnership(
+          path: url.path,
+          originalFileExisted: false,
+          originalSelector: nil,
+          introducedTable: true,
+          insertedSeparatorBeforeTable: false,
+          insertedSeparatorAfterTable: false
+        ), evidence
+      )
+    }
+    return (
+      EnvironmentEntryInspection(
+        id: EnvironmentEntryID.codexConfiguration.rawValue,
+        path: url.path,
+        status: "unsupported",
+        ownership: "external",
+        message: "The Codex configuration cannot be safely adopted.",
+        evidence: evidence
+      ), nil, nil
+    )
+  }
+
+  func codexExternalTupleIsExact(
+    homeDirectory: URL,
+    stateRoot: URL,
+    configurationEvidence: EnvironmentEntryEvidence? = nil
+  ) throws -> Bool {
+    let configuration = homeDirectory.appending(path: ".codex/config.toml")
+    let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
+    let externalAncestor = try hasSymlinkAncestor(configuration, stoppingAt: homeDirectory)
+    guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
+    let text =
+      evidence.kind == .symbolicLink || externalAncestor
+      ? try externalConfigurationText(
+        at: configuration,
+        evidence: evidence,
+        hasExternalAncestor: externalAncestor,
+        label: "Codex configuration"
+      )
+      : try configurationText(at: configuration, evidence: evidence)
+    return try EnvironmentCodexDocument.matchesManaged(text, source: configuration)
+      && externalLinksAreExact(
+        [.codexTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
   }
 
   private func configurationText(
@@ -1899,10 +2253,11 @@ struct EnvironmentProviderInspector: Sendable {
     let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
     let externalConfiguration = evidence.kind == .symbolicLink || externalAncestor
     if externalConfiguration {
-      let data = try externalPiConfigurationData(
+      let data = try externalConfigurationData(
         at: url,
         evidence: evidence,
-        hasExternalAncestor: externalAncestor
+        hasExternalAncestor: externalAncestor,
+        label: "Pi settings"
       )
       guard try EnvironmentPiDocument.matchesManaged(data, source: url) else {
         return (
@@ -1916,7 +2271,10 @@ struct EnvironmentProviderInspector: Sendable {
           ), nil, nil
         )
       }
-      guard try piLinkIsExternalExact(homeDirectory: homeDirectory, stateRoot: stateRoot) else {
+      guard
+        try externalLinksAreExact(
+          [.piTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
+      else {
         return (
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.piConfiguration.rawValue,
@@ -2002,58 +2360,16 @@ struct EnvironmentProviderInspector: Sendable {
     guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
     let data =
       evidence.kind == .symbolicLink || externalAncestor
-      ? try externalPiConfigurationData(
+      ? try externalConfigurationData(
         at: configuration,
         evidence: evidence,
-        hasExternalAncestor: externalAncestor
+        hasExternalAncestor: externalAncestor,
+        label: "Pi settings"
       )
       : try configurationData(at: configuration, evidence: evidence)
     return try EnvironmentPiDocument.matchesManaged(data, source: configuration)
-      && piLinkIsExternalExact(homeDirectory: homeDirectory, stateRoot: stateRoot)
-  }
-
-  private func piLinkIsExternalExact(homeDirectory: URL, stateRoot: URL) throws -> Bool {
-    let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-      .first { $0.id == .piTheme }!
-    let evidence = try capture(entry.url, directoryLink: nil)
-    return evidence.kind == .symbolicLink && evidence.linkDestination == entry.target
-  }
-
-  private func externalPiConfigurationData(
-    at url: URL,
-    evidence: EnvironmentEntryEvidence,
-    hasExternalAncestor: Bool
-  ) throws -> Data {
-    guard evidence.kind == .symbolicLink || hasExternalAncestor else {
-      return try configurationData(at: url, evidence: evidence)
-    }
-    let firstTarget = try resolvedPiTarget(url)
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(at: firstTarget).data
-    } catch {
-      throw EnvironmentLifecycleError.blocked(
-        "Pi settings symlink target is not a bounded regular file: \(error)"
-      )
-    }
-    let secondTarget = try resolvedPiTarget(url)
-    guard firstTarget == secondTarget, try capture(url, directoryLink: nil) == evidence else {
-      throw EnvironmentLifecycleError.blocked("Pi settings symlink chain changed during inspection")
-    }
-    return data
-  }
-
-  private func resolvedPiTarget(_ url: URL) throws -> URL {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let resolved = url.path.withCString { Darwin.realpath($0, &buffer) }
-    guard resolved != nil else {
-      throw EnvironmentLifecycleError.system("resolve Pi settings symlink chain", url, errno)
-    }
-    let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
-    guard let path = String(bytes: bytes, encoding: .utf8) else {
-      throw EnvironmentLifecycleError.blocked("Pi settings symlink chain is not valid UTF-8")
-    }
-    return URL(filePath: path).standardizedFileURL
+      && externalLinksAreExact(
+        [.piTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
   }
 
   private func inspectTuicr(
@@ -2163,10 +2479,11 @@ struct EnvironmentProviderInspector: Sendable {
     let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
     let externalConfiguration = evidence.kind == .symbolicLink || externalAncestor
     if externalConfiguration {
-      let text = try externalTuicrConfigurationText(
+      let text = try externalConfigurationText(
         at: url,
         evidence: evidence,
-        hasExternalAncestor: externalAncestor
+        hasExternalAncestor: externalAncestor,
+        label: "tuicr configuration"
       )
       guard try EnvironmentTuicrDocument.matchesManaged(text, source: url) else {
         return (
@@ -2181,10 +2498,10 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
       guard
-        try tuicrLinksAreExternalExact(
+        try externalLinksAreExact(
+          [.tuicrTheme, .tuicrSyntax],
           homeDirectory: homeDirectory,
-          stateRoot: stateRoot
-        )
+          stateRoot: stateRoot)
       else {
         return (
           EnvironmentEntryInspection(
@@ -2293,22 +2610,29 @@ struct EnvironmentProviderInspector: Sendable {
     guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
     let text =
       evidence.kind == .symbolicLink || externalAncestor
-      ? try externalTuicrConfigurationText(
+      ? try externalConfigurationText(
         at: configuration,
         evidence: evidence,
-        hasExternalAncestor: externalAncestor
+        hasExternalAncestor: externalAncestor,
+        label: "tuicr configuration"
       )
       : try configurationText(at: configuration, evidence: evidence)
     return try EnvironmentTuicrDocument.matchesManaged(text, source: configuration)
-      && tuicrLinksAreExternalExact(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      && externalLinksAreExact(
+        [.tuicrTheme, .tuicrSyntax],
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot)
   }
 
-  private func tuicrLinksAreExternalExact(
+  private func externalLinksAreExact(
+    _ ids: Set<EnvironmentEntryID>,
     homeDirectory: URL,
     stateRoot: URL
   ) throws -> Bool {
-    for entry in allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-    where entry.id == .tuicrTheme || entry.id == .tuicrSyntax {
+    let entries = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      .filter { ids.contains($0.id) }
+    guard entries.count == ids.count else { return false }
+    for entry in entries {
       let evidence = try capture(entry.url, directoryLink: nil)
       guard evidence.kind == .symbolicLink, evidence.linkDestination == entry.target else {
         return false
@@ -2317,50 +2641,80 @@ struct EnvironmentProviderInspector: Sendable {
     return true
   }
 
-  private func externalTuicrConfigurationText(
+  private func externalConfigurationText(
     at url: URL,
     evidence: EnvironmentEntryEvidence,
-    hasExternalAncestor: Bool
+    hasExternalAncestor: Bool,
+    label: String
   ) throws -> String {
-    guard evidence.kind == .symbolicLink || hasExternalAncestor else {
-      return try configurationText(at: url, evidence: evidence)
-    }
-    let firstTarget = try resolvedTuicrTarget(url)
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(at: firstTarget).data
-    } catch {
+    let configuration = try externalConfiguration(
+      at: url,
+      evidence: evidence,
+      hasExternalAncestor: hasExternalAncestor,
+      label: label
+    )
+    guard let text = String(data: configuration.data, encoding: .utf8) else {
       throw EnvironmentLifecycleError.blocked(
-        "tuicr configuration symlink target is not a bounded regular file: \(error)"
-      )
-    }
-    let secondTarget = try resolvedTuicrTarget(url)
-    guard firstTarget == secondTarget,
-      try capture(url, directoryLink: nil) == evidence
-    else {
-      throw EnvironmentLifecycleError.blocked(
-        "tuicr configuration symlink chain changed during inspection"
-      )
-    }
-    guard let text = String(data: data, encoding: .utf8) else {
-      throw EnvironmentLifecycleError.blocked(
-        "tuicr configuration symlink target is not UTF-8: \(firstTarget.path)"
+        "\(label) symlink target is not UTF-8: \(configuration.target.path)"
       )
     }
     return text
   }
 
-  private func resolvedTuicrTarget(_ url: URL) throws -> URL {
+  private func externalConfigurationData(
+    at url: URL,
+    evidence: EnvironmentEntryEvidence,
+    hasExternalAncestor: Bool,
+    label: String
+  ) throws -> Data {
+    try externalConfiguration(
+      at: url,
+      evidence: evidence,
+      hasExternalAncestor: hasExternalAncestor,
+      label: label
+    ).data
+  }
+
+  private func externalConfiguration(
+    at url: URL,
+    evidence: EnvironmentEntryEvidence,
+    hasExternalAncestor: Bool,
+    label: String
+  ) throws -> (data: Data, target: URL) {
+    guard evidence.kind == .symbolicLink || hasExternalAncestor else {
+      return (try configurationData(at: url, evidence: evidence), url)
+    }
+    let firstTarget = try resolvedExternalTarget(url, label: label)
+    let data: Data
+    do {
+      data = try BoundedRegularFile.read(at: firstTarget).data
+    } catch {
+      throw EnvironmentLifecycleError.blocked(
+        "\(label) symlink target is not a bounded regular file: \(error)"
+      )
+    }
+    let secondTarget = try resolvedExternalTarget(url, label: label)
+    guard firstTarget == secondTarget,
+      try capture(url, directoryLink: nil) == evidence
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "\(label) symlink chain changed during inspection"
+      )
+    }
+    return (data, firstTarget)
+  }
+
+  private func resolvedExternalTarget(_ url: URL, label: String) throws -> URL {
     var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
     let resolved = url.path.withCString { Darwin.realpath($0, &buffer) }
     guard resolved != nil else {
       throw EnvironmentLifecycleError.system(
-        "resolve tuicr configuration symlink chain", url, errno)
+        "resolve \(label) symlink chain", url, errno)
     }
     let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
     guard let path = String(bytes: bytes, encoding: .utf8) else {
       throw EnvironmentLifecycleError.blocked(
-        "tuicr configuration symlink chain is not valid UTF-8"
+        "\(label) symlink chain is not valid UTF-8"
       )
     }
     return URL(filePath: path).standardizedFileURL
@@ -2553,6 +2907,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: transaction.previousOwnership,
           to: proposed,
           btopReplacementName: transaction.btopReplacementName,
+          codexReplacementName: transaction.codexReplacementName,
           piReplacementName: transaction.piReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
@@ -2564,6 +2919,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: transaction.previousOwnership,
           to: nil,
           btopReplacementName: transaction.btopReplacementName,
+          codexReplacementName: transaction.codexReplacementName,
           piReplacementName: transaction.piReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
@@ -2578,6 +2934,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         from: transaction.proposedOwnership,
         to: transaction.previousOwnership,
         btopReplacementName: transaction.btopReplacementName,
+        codexReplacementName: transaction.codexReplacementName,
         piReplacementName: transaction.piReplacementName,
         tuicrReplacementName: transaction.tuicrReplacementName
       )
@@ -2613,6 +2970,57 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     if inspection.adoptionEvidenceDigest == nil, adoptionDigest != nil {
       throw EnvironmentLifecycleError.blocked("no environment adoption is currently required")
+    }
+
+    // Revalidate every external seam before staging or publishing any state.
+    for (id, expected) in inspection.externalEvidence {
+      guard let entry = inspection.desiredEntries.first(where: { $0.id == id }),
+        try inspector.capture(entry.url, directoryLink: entry.id.directoryLinkKind) == expected
+      else {
+        throw EnvironmentLifecycleError.blocked(
+          "provider entry changed after planning; run environment plan again"
+        )
+      }
+    }
+    if let expected = inspection.btopExternalEvidence {
+      let url = homeDirectory.appending(path: ".config/btop/btop.conf")
+      guard try inspector.capture(url, directoryLink: nil) == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "btop configuration changed after planning; run environment plan again"
+        )
+      }
+    }
+    if let expected = inspection.codexExternalEvidence {
+      let url = homeDirectory.appending(path: ".codex/config.toml")
+      let tupleIsExact =
+        try inspection.proposedCodexOwnership != nil
+        || inspector.codexExternalTupleIsExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot,
+          configurationEvidence: expected
+        )
+      guard try inspector.capture(url, directoryLink: nil) == expected, tupleIsExact
+      else {
+        throw EnvironmentLifecycleError.blocked(
+          "Codex external tuple changed after planning; run environment plan again"
+        )
+      }
+    }
+    if let expected = inspection.piExternalEvidence {
+      let url = homeDirectory.appending(path: ".pi/agent/settings.json")
+      guard try inspector.capture(url, directoryLink: nil) == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "Pi settings changed after planning; run environment plan again"
+        )
+      }
+    }
+    if let expected = inspection.tuicrExternalEvidence {
+      let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
+      guard try inspector.capture(url, directoryLink: nil) == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "tuicr configuration changed after planning; run environment plan again"
+        )
+      }
     }
 
     let generationStore = EnvironmentGenerationStore(stateRoot: stateRoot)
@@ -2678,8 +3086,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       ),
       originalThemeBridges: originalThemeBridges,
       btop: inspection.proposedBtopOwnership,
+      codex: inspection.proposedCodexOwnership,
       pi: inspection.proposedPiOwnership,
       tuicr: inspection.proposedTuicrOwnership,
+      codexEnabled: composition.profile.presets.codex,
       piEnabled: composition.profile.presets.pi,
       tuicrEnabled: composition.profile.presets.tuicr,
       enabledThemeAdapterIDs: composition.profile.selectedThemeAdapterIDs
@@ -2687,53 +3097,21 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let generationChanged = previous?.generationID != proposed.generationID
     let ownershipChanged =
       previous?.records != proposed.records || previous?.btop != proposed.btop
+      || previous?.codex != proposed.codex
       || previous?.pi != proposed.pi
       || previous?.tuicr != proposed.tuicr
+      || previous?.codexEnabled != proposed.codexEnabled
       || previous?.piEnabled != proposed.piEnabled
       || previous?.tuicrEnabled != proposed.tuicrEnabled
       || previous?.enabledThemeAdapterIDs != proposed.enabledThemeAdapterIDs
     let changed = generationChanged || ownershipChanged
 
-    // Re-capture every external entry after staging and before publishing the claim.
-    for (id, expected) in inspection.externalEvidence {
-      guard let entry = inspection.desiredEntries.first(where: { $0.id == id }),
-        try inspector.capture(
-          entry.url,
-          directoryLink: entry.id.directoryLinkKind
-        ) == expected
-      else {
-        throw EnvironmentLifecycleError.blocked(
-          "provider entry changed after planning; run environment plan again"
-        )
-      }
-    }
-    if let expected = inspection.btopExternalEvidence {
-      let url = homeDirectory.appending(path: ".config/btop/btop.conf")
-      guard try inspector.capture(url, directoryLink: nil) == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "btop configuration changed after planning; run environment plan again"
-        )
-      }
-    }
-    if let expected = inspection.piExternalEvidence {
-      let url = homeDirectory.appending(path: ".pi/agent/settings.json")
-      guard try inspector.capture(url, directoryLink: nil) == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "Pi settings changed after planning; run environment plan again"
-        )
-      }
-    }
-    if let expected = inspection.tuicrExternalEvidence {
-      let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
-      guard try inspector.capture(url, directoryLink: nil) == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "tuicr configuration changed after planning; run environment plan again"
-        )
-      }
-    }
     let btopReplacementName =
       previous?.btop != nil || proposed.btop != nil
       ? ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement" : nil
+    let codexReplacementName =
+      previous?.codex != nil || proposed.codex != nil
+      ? ".macarchy-environment-codex-\(UUID().uuidString.lowercased()).replacement" : nil
     let piReplacementName =
       previous?.pi != nil || proposed.pi != nil
       ? ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement" : nil
@@ -2748,6 +3126,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: themeBridges.entries,
       btopReplacementName: btopReplacementName,
+      codexReplacementName: codexReplacementName,
       piReplacementName: piReplacementName,
       tuicrReplacementName: tuicrReplacementName
     )
@@ -2760,6 +3139,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: previous,
           to: proposed,
           btopReplacementName: btopReplacementName,
+          codexReplacementName: codexReplacementName,
           piReplacementName: piReplacementName,
           tuicrReplacementName: tuicrReplacementName
         )
@@ -2781,6 +3161,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: proposed,
           to: previous,
           btopReplacementName: btopReplacementName,
+          codexReplacementName: codexReplacementName,
           piReplacementName: piReplacementName,
           tuicrReplacementName: tuicrReplacementName
         )
@@ -2827,6 +3208,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       from: rollback.proposedOwnership,
       to: rollback.previousOwnership,
       btopReplacementName: rollback.btopReplacementName,
+      codexReplacementName: rollback.codexReplacementName,
       piReplacementName: rollback.piReplacementName,
       tuicrReplacementName: rollback.tuicrReplacementName
     )
@@ -2888,6 +3270,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       btopReplacementName: ownership.btop.map { _ in
         ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement"
       },
+      codexReplacementName: ownership.codex.map { _ in
+        ".macarchy-environment-codex-\(UUID().uuidString.lowercased()).replacement"
+      },
       piReplacementName: ownership.pi.map { _ in
         ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement"
       },
@@ -2900,6 +3285,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       from: ownership,
       to: nil,
       btopReplacementName: transaction.btopReplacementName,
+      codexReplacementName: transaction.codexReplacementName,
       piReplacementName: transaction.piReplacementName,
       tuicrReplacementName: transaction.tuicrReplacementName
     )
@@ -2914,14 +3300,23 @@ struct EnvironmentTransactionCoordinator: Sendable {
     from old: EnvironmentOwnership?,
     to new: EnvironmentOwnership?,
     btopReplacementName: String?,
+    codexReplacementName: String?,
     piReplacementName: String?,
     tuicrReplacementName: String?
   ) throws {
     let oldByID = Dictionary(uniqueKeysWithValues: (old?.records ?? []).map { ($0.id, $0) })
     let newByID = Dictionary(uniqueKeysWithValues: (new?.records ?? []).map { ($0.id, $0) })
+    let codexTransaction = EnvironmentCodexFileTransaction(homeDirectory: homeDirectory)
     let piTransaction = EnvironmentPiFileTransaction(homeDirectory: homeDirectory)
     let tuicrTransaction = EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
     let transitionedPiBeforeLinks = old?.pi != nil
+    let transitionedCodexBeforeLinks = old?.codex != nil
+    if transitionedCodexBeforeLinks {
+      guard let codexReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Codex transaction has no replacement identity")
+      }
+      try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
+    }
     if transitionedPiBeforeLinks {
       guard let piReplacementName else {
         throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
@@ -2977,6 +3372,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       ).transition(from: old, to: new, replacementName: btopReplacementName)
+    }
+    if !transitionedCodexBeforeLinks, new?.codex != nil {
+      guard let codexReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Codex transaction has no replacement identity")
+      }
+      try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
     }
     if !transitionedPiBeforeLinks, new?.pi != nil {
       guard let piReplacementName else {
@@ -3057,6 +3458,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         throw EnvironmentLifecycleError.blocked("ownership contains an unexpected btop path")
       }
     }
+    if let codex = ownership.codex {
+      let expected = homeDirectory.appending(path: ".codex/config.toml").path
+      guard codex.path == expected else {
+        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Codex path")
+      }
+    }
     if let pi = ownership.pi {
       let expected = homeDirectory.appending(path: ".pi/agent/settings.json").path
       guard pi.path == expected else {
@@ -3128,6 +3535,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
       else {
         throw EnvironmentLifecycleError.drift(url.path)
       }
+    }
+    if let codex = ownership.codex {
+      try EnvironmentCodexFileTransaction(homeDirectory: homeDirectory).preflight(codex)
+    } else if ownership.codexEnabled,
+      !ownership.records.contains(where: { $0.id == .codexTheme })
+    {
+      guard
+        try inspector.codexExternalTupleIsExact(
+          homeDirectory: homeDirectory, stateRoot: stateRoot)
+      else { throw EnvironmentLifecycleError.drift("externally owned Codex tuple") }
     }
     if let pi = ownership.pi {
       try EnvironmentPiFileTransaction(homeDirectory: homeDirectory).preflight(pi)

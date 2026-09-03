@@ -17,6 +17,7 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
   case configurationIsExternallyOwned(String, URL)
   case configurationTooLarge(String, URL)
   case corruptBackup(URL)
+  case environmentCodexOwnershipActive
   case environmentPiOwnershipActive
   case environmentTuicrOwnershipActive
   case invalidManifest(String)
@@ -49,6 +50,8 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
       "Configuration for \(id) at \(url.path) exceeds 1 MiB"
     case .corruptBackup(let url):
       "Macarchy-owned backup at \(url.path) is missing or corrupt"
+    case .environmentCodexOwnershipActive:
+      "Applied environment ownership still enables Codex; set [presets].codex = false and run 'macarchy environment apply' before setup teardown"
     case .environmentPiOwnershipActive:
       "Applied environment ownership still enables Pi; set [presets].pi = false and run 'macarchy environment apply' to disable or migrate it before setup teardown"
     case .environmentTuicrOwnershipActive:
@@ -230,6 +233,8 @@ struct SetupOwnershipManager: Sendable {
         identity = integrationIdentity(for: url, context: context)
       case .environmentTuicrOwnershipActive:
         identity = (tuicrSelectorID, context.tuicrConfiguration.path)
+      case .environmentCodexOwnershipActive:
+        identity = (codexSelectorID, context.codexConfiguration.path)
       case .system(_, let url, _):
         identity = integrationIdentity(for: url, context: context)
       case .invalidManifest:
@@ -349,10 +354,16 @@ struct SetupOwnershipManager: Sendable {
 
   private func teardown(context: Context, dryRun: Bool) throws -> [SetupIntegrationResult] {
     var records = try readRecords(context: context)
-    let legacyPiIDs = Set([Self.piSelectorID, Self.piThemeLinkID])
-    if legacyPiIDs.isSubset(of: Set(records.map(\.id))),
-      try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()?.piEnabled == true
+    let setupIDs = Set(records.map(\.id))
+    let environment = try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()
+    let legacyCodexIDs = Set([Self.codexSelectorID, Self.codexThemeLinkID])
+    if legacyCodexIDs.isSubset(of: setupIDs), let environment,
+      ThemeRuntimeSelection.appliedAdapterIDs(for: environment).contains(CodexAdapter.id)
     {
+      throw SetupOwnershipError.environmentCodexOwnershipActive
+    }
+    let legacyPiIDs = Set([Self.piSelectorID, Self.piThemeLinkID])
+    if legacyPiIDs.isSubset(of: setupIDs), environment?.piEnabled == true {
       throw SetupOwnershipError.environmentPiOwnershipActive
     }
     let legacyTuicrIDs = Set([
@@ -360,9 +371,7 @@ struct SetupOwnershipManager: Sendable {
       Self.tuicrThemeLinkID,
       Self.tuicrSyntaxLinkID,
     ])
-    if legacyTuicrIDs.isSubset(of: Set(records.map(\.id))),
-      try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()?.tuicrEnabled == true
-    {
+    if legacyTuicrIDs.isSubset(of: setupIDs), environment?.tuicrEnabled == true {
       throw SetupOwnershipError.environmentTuicrOwnershipActive
     }
     var preflightRecords = records
@@ -506,6 +515,7 @@ extension SetupOwnershipManager {
     else { return false }
     return !ids.isDisjoint(with: Set(ownership.records.map(\.id)))
       || (ids.contains(.btopConfiguration) && ownership.btop != nil)
+      || (ids.contains(.codexConfiguration) && ownership.codex != nil)
   }
 }
 

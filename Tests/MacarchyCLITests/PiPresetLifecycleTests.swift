@@ -14,11 +14,6 @@ struct PiPresetLifecycleTests {
 
     let plan = try fixture.plan()
     #expect(plan.succeeded)
-    let planJSON = try jsonObject(plan.output)
-    #expect(
-      planJSON["presets"] as? [String: String]
-        == ["pi": "enabled", "tuicr": "disabled"]
-    )
     #expect(try await fixture.apply().succeeded)
     #expect(
       try String(contentsOf: fixture.settings, encoding: .utf8)

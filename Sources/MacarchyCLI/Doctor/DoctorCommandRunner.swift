@@ -21,25 +21,9 @@ struct DoctorCommandRunner: Sendable {
   static let live = DoctorCommandRunner(
     read: readThemeStatusSnapshot,
     inspect: { stateRoot, consumerPaths in
-      try ThemeActivationCoordinator(
-        root: stateRoot,
-        consumerPaths: consumerPaths,
-        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
-          stateRoot: stateRoot,
-          consumerPaths: consumerPaths
-        ),
-        piSelectionIsApplied: {
-          try ThemeRuntimeSelection.piIsEnabled(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        },
-        piThemeLinkRefreshIsAllowed: {
-          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        }
+      try ThemeRuntimeSelection.activationCoordinator(
+        stateRoot: stateRoot,
+        consumerPaths: consumerPaths
       ).inspectAdapters([], includeRuntimeChecks: true)
     },
     enabledAdapterIDs: { stateRoot, consumerPaths in
