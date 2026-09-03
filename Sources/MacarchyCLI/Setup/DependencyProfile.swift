@@ -125,6 +125,20 @@ struct DependencyProfile: Sendable {
   let name: String
   let capabilities: [DependencyCapability]
 
+  func selected(by portableProfile: PortableProfile) -> DependencyProfile {
+    let selected = capabilities.compactMap { capability -> DependencyCapability? in
+      guard capability.id == TuicrAdapter.id else { return capability }
+      guard portableProfile.environment.presets.tuicr else { return nil }
+      return DependencyCapability(
+        id: capability.id,
+        category: .requiredAdapter,
+        probes: capability.probes,
+        remediation: capability.remediation
+      )
+    }
+    return DependencyProfile(name: name, capabilities: selected)
+  }
+
   static func named(_ name: String, homeDirectory: URL) -> DependencyProfile? {
     guard name == "personal" else { return nil }
     return personal(homeDirectory: homeDirectory)
@@ -354,7 +368,11 @@ struct SetupCommandRunner: Sendable {
       try FileHandle.standardError.write(contentsOf: Data("\(output)\n".utf8))
     },
     setupIntegrations: { homeDirectory, dryRun in
-      try SetupOwnershipManager().setup(homeDirectory: homeDirectory, dryRun: dryRun)
+      try SetupOwnershipManager().setup(
+        homeDirectory: homeDirectory,
+        dryRun: dryRun,
+        excluding: [.tuicr]
+      )
     },
     setupKeybindings: { profileURL, profileRequired, homeDirectory, dryRun, adopt in
       try KeybindingsApplyCommandRunner.live.setupIntegration(
@@ -382,7 +400,7 @@ struct SetupCommandRunner: Sendable {
     adoptKeybindings: String? = nil,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
-    guard let profile = resolveProfile(profileName, homeDirectory) else {
+    guard let dependencyProfile = resolveProfile(profileName, homeDirectory) else {
       let report = SetupReport.unknownProfile(
         profileName,
         installDependencies: installDependencies,
@@ -390,6 +408,13 @@ struct SetupCommandRunner: Sendable {
       )
       return (try report.render(json: json), false)
     }
+
+    let portableProfile = try PortableProfileLoader().load(
+      at: keybindingProfileURL
+        ?? homeDirectory.appending(path: ".config/macarchy/profile.toml"),
+      required: keybindingProfileRequired
+    )
+    let profile = dependencyProfile.selected(by: portableProfile)
 
     return try apply(
       SetupPreparation(

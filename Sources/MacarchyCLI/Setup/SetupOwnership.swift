@@ -17,6 +17,7 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
   case configurationIsExternallyOwned(String, URL)
   case configurationTooLarge(String, URL)
   case corruptBackup(URL)
+  case environmentTuicrOwnershipActive
   case invalidManifest(String)
   case invalidConfiguration(String, URL, String)
   case installedConfigurationTooLarge(String, URL)
@@ -47,6 +48,8 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
       "Configuration for \(id) at \(url.path) exceeds 1 MiB"
     case .corruptBackup(let url):
       "Macarchy-owned backup at \(url.path) is missing or corrupt"
+    case .environmentTuicrOwnershipActive:
+      "Applied environment ownership still enables tuicr; set [presets].tuicr = false and run 'macarchy environment apply' to disable or migrate it before setup teardown"
     case .invalidManifest(let reason):
       "Setup ownership manifest is invalid: \(reason)"
     case .invalidConfiguration(let id, let url, let reason):
@@ -222,6 +225,8 @@ struct SetupOwnershipManager: Sendable {
         identity = integrationIdentity(for: url, context: context)
       case .corruptBackup(let url), .orphanedBackup(let url), .orphanedReplacement(let url):
         identity = integrationIdentity(for: url, context: context)
+      case .environmentTuicrOwnershipActive:
+        identity = (tuicrSelectorID, context.tuicrConfiguration.path)
       case .system(_, let url, _):
         identity = integrationIdentity(for: url, context: context)
       case .invalidManifest:
@@ -280,12 +285,15 @@ struct SetupOwnershipManager: Sendable {
 
   func setup(
     homeDirectory: URL,
-    dryRun: Bool
+    dryRun: Bool,
+    excluding excludedConsumers: Set<ConsumerID> = []
   ) throws -> [SetupIntegrationResult] {
     let context = Context(homeDirectory: homeDirectory)
-    if dryRun { return try setup(context: context, dryRun: true) }
+    if dryRun {
+      return try setup(context: context, dryRun: true, excluding: excludedConsumers)
+    }
     return try ActivationLock(root: context.stateRoot).withLock {
-      try setup(context: context, dryRun: false)
+      try setup(context: context, dryRun: false, excluding: excludedConsumers)
     }
   }
 
@@ -299,12 +307,14 @@ struct SetupOwnershipManager: Sendable {
 
   private func setup(
     context: Context,
-    dryRun: Bool
+    dryRun: Bool,
+    excluding excludedConsumers: Set<ConsumerID>
   ) throws -> [SetupIntegrationResult] {
     var records = try readRecords(context: context)
     var results = [SetupIntegrationResult]()
     do {
-      for plan in consumerSetupPlans(context: context) {
+      for plan in consumerSetupPlans(context: context)
+      where !excludedConsumers.contains(plan.consumerID) {
         results.append(contentsOf: try plan.setup(dryRun, &records))
       }
       return Self.orderedResults(results, context: context)
@@ -336,6 +346,16 @@ struct SetupOwnershipManager: Sendable {
 
   private func teardown(context: Context, dryRun: Bool) throws -> [SetupIntegrationResult] {
     var records = try readRecords(context: context)
+    let legacyTuicrIDs = Set([
+      Self.tuicrSelectorID,
+      Self.tuicrThemeLinkID,
+      Self.tuicrSyntaxLinkID,
+    ])
+    if legacyTuicrIDs.isSubset(of: Set(records.map(\.id))),
+      try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()?.tuicrEnabled == true
+    {
+      throw SetupOwnershipError.environmentTuicrOwnershipActive
+    }
     var preflightRecords = records
     let pendingKeybindingTransaction = try KeybindingApplyTransactionStore(
       stateRoot: context.stateRoot
