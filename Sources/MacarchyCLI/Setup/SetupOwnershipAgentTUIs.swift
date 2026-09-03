@@ -825,7 +825,7 @@ private enum PiSelectionState: Equatable {
 // Pi rewrites this whole file when unrelated settings change. Keep only the root member ranges
 // needed for the selector edit; recurse solely to reject duplicate keys and trailing commas before
 // JSONSerialization performs the remaining semantic validation.
-private struct PiSettingsJSONDocument {
+struct PiSettingsJSONDocument {
   struct Member {
     let key: String
     let keyRange: Range<Int>

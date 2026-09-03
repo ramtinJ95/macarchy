@@ -153,11 +153,7 @@ struct SetupCommandTests {
     #expect(plan.casks == ["kitty", "codex", "spotify"])
     #expect(
       plan.external.map(\.capabilityId)
-        == ["macos-26", "arm64", "homebrew", "sketchybar", "skhd", "yabai", "pi"]
-    )
-    #expect(
-      plan.external.first { $0.capabilityId == "pi" }?.instruction
-        == "Run: npm install --global @earendil-works/pi-coding-agent"
+        == ["macos-26", "arm64", "homebrew", "sketchybar", "skhd", "yabai"]
     )
     #expect(
       plan.external.first { $0.capabilityId == "skhd" }?.instruction
@@ -408,6 +404,51 @@ struct SetupCommandTests {
     #expect(!execution.succeeded)
     #expect(report.dependencyInstallation.plan.formulae == ["tuicr"])
     #expect(report.summary?.missingRequiredCount == 1)
+  }
+
+  @Test
+  func selectedPiIsOnlyAManualPrerequisiteAndNeverLaunchesNPM() throws {
+    let home = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: home) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    let profile = home.appending(path: "profile.toml")
+    try "schema_version = 1\n[presets]\npi = true\n".write(
+      to: profile,
+      atomically: true,
+      encoding: .utf8
+    )
+    let requests = Mutex([ProcessRequest]())
+    let runner = SetupCommandRunner(
+      resolveProfile: DependencyProfile.named,
+      capabilityIsAvailable: { $0.id != PiAdapter.id },
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        return ProcessResult(terminationStatus: 1, output: "unexpected")
+      },
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegrations: externalIntegrations()
+    )
+
+    let execution = try runner.execute(
+      profileName: "personal",
+      homeDirectory: home,
+      installDependencies: true,
+      dryRun: false,
+      keybindingProfileURL: profile,
+      keybindingProfileRequired: true,
+      json: true
+    )
+    let report = try decode(execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(requests.withLock { $0 }.isEmpty)
+    #expect(report.dependencyInstallation.plan.formulae.isEmpty)
+    #expect(report.dependencyInstallation.plan.casks.isEmpty)
+    #expect(report.dependencyInstallation.plan.external.map(\.capabilityId) == [PiAdapter.id])
+    #expect(
+      report.dependencyInstallation.plan.external.first?.instruction
+        == "Run: npm install --global @earendil-works/pi-coding-agent"
+    )
   }
 
   @Test
