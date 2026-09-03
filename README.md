@@ -171,6 +171,27 @@ provider = "atuin" # or "disabled"
 provider = "neovim" # or "disabled"
 ```
 
+Optional presets are closed, typed opt-ins and remain disabled when the profile
+is absent. The first preset is tuicr's review/theme integration:
+
+```toml
+[presets]
+tuicr = true
+```
+
+Run `macarchy setup --install-dependencies` after selecting the preset to review
+and install its approved `tuicr` Homebrew formula. `environment apply` never
+installs software; it reports and blocks before configuration mutation when the
+selected executable is missing. When available, the environment lifecycle owns
+only the root `theme` selector in `~/.config/tuicr/config.toml` and the
+`macarchy-current.toml` palette and `macarchy-current.tmTheme` syntax links
+under `~/.config/tuicr/themes`. It preserves unrelated configuration and does
+not own repositories, review behavior, credentials, caches, or other tuicr
+settings. Theme commands follow the last successfully applied environment
+selection, not un-applied profile edits, and a running tuicr session must be
+restarted to observe a newly activated theme. A complete older setup-owned
+tuicr integration remains active until it is explicitly migrated or torn down.
+
 Common options remain sparse. Advanced inputs use native provider files beside
 the resolved profile source:
 
