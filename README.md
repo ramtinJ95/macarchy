@@ -172,25 +172,47 @@ provider = "neovim" # or "disabled"
 ```
 
 Optional presets are closed, typed opt-ins and remain disabled when the profile
-is absent. The first preset is tuicr's review/theme integration:
+is absent. Pi and tuicr theme integrations are selected independently:
 
 ```toml
 [presets]
+pi = true
 tuicr = true
 ```
 
-Run `macarchy setup --install-dependencies` after selecting the preset to review
-and install its approved `tuicr` Homebrew formula. `environment apply` never
-installs software; it reports and blocks before configuration mutation when the
-selected executable is missing. When available, the environment lifecycle owns
-only the root `theme` selector in `~/.config/tuicr/config.toml` and the
-`macarchy-current.toml` palette and `macarchy-current.tmTheme` syntax links
-under `~/.config/tuicr/themes`. It preserves unrelated configuration and does
-not own repositories, review behavior, credentials, caches, or other tuicr
-settings. Theme commands follow the last successfully applied environment
-selection, not un-applied profile edits, and a running tuicr session must be
-restarted to observe a newly activated theme. A complete older setup-owned
-tuicr integration remains active until it is explicitly migrated or torn down.
+Pi is a manual prerequisite: install it yourself with
+`npm install --global @earendil-works/pi-coding-agent`. Macarchy reports that
+instruction only and never executes npm. Selected Pi must report a parseable
+version of at least 0.84.3; there is no upper version cap. The lifecycle owns
+only the root `theme` member in `~/.pi/agent/settings.json` and the watched
+`~/.pi/agent/themes/macarchy-current.json` link. It preserves every unrelated
+settings byte and all Pi conversations, credentials, extensions, models,
+sessions, caches, and other private state. Pi 0.84.4 watches replacement of that
+directory entry, not replacement of the stable generated target, and exposes no
+external reload API. When Macarchy owns the link, or a complete older setup
+record owns it, theme reconciliation atomically refreshes the watched entry and
+reports `applied`; running sessions repaint automatically. For a complete exact
+externally owned Stow tuple, reconciliation preserves the link inode and
+metadata and reports the accepted `restart_required` boundary instead. Existing
+Pi sessions then need Pi's `/reload` action or a new launch to use the active
+palette.
+
+Run `macarchy setup --install-dependencies` after selecting tuicr to review and
+install its approved Homebrew formula. `environment apply` never installs
+software; it reports and blocks before configuration mutation when a selected
+executable or compatible Pi version is missing. For tuicr, the environment
+lifecycle owns only the root `theme` selector in
+`~/.config/tuicr/config.toml` and the `macarchy-current.toml` palette and
+`macarchy-current.tmTheme` syntax links under `~/.config/tuicr/themes`. It
+preserves unrelated configuration and does not own repositories, review
+behavior, credentials, caches, or other tuicr settings. Theme commands follow
+the last successfully applied environment selection, not un-applied profile
+edits, and a running tuicr session must be restarted to observe a newly
+activated theme. Complete exact Stow-owned Pi or tuicr tuples remain external
+and are never adopted. For Pi this includes never replacing the externally
+owned watched-link inode merely to request repaint. Complete older setup-owned
+integrations remain active until explicitly migrated or torn down; partial
+tuples block rather than being guessed or repaired.
 
 Common options remain sparse. Advanced inputs use native provider files beside
 the resolved profile source:
