@@ -172,13 +172,33 @@ provider = "neovim" # or "disabled"
 ```
 
 Optional presets are closed, typed opt-ins and remain disabled when the profile
-is absent. Pi and tuicr theme integrations are selected independently:
+is absent. Codex CLI, Pi, and tuicr theme integrations are selected independently:
 
 ```toml
 [presets]
+codex = true
 pi = true
 tuicr = true
 ```
+
+Selected Codex CLI uses the approved official Homebrew `codex` cask when the
+command is missing. A compatible pre-existing `/opt/homebrew/bin/codex`,
+including an npm-provided binary at that path, remains external and unclaimed.
+Macarchy requires exact `codex-cli X.Y.Z` version output at or above 0.151.0,
+with no upper cap, before configuration mutation. `environment apply` owns only
+`theme = "macarchy-current"` under the canonical `[tui]` table in
+`~/.codex/config.toml` and
+`~/.codex/themes/macarchy-current.tmTheme`. It preserves every unrelated byte,
+including Codex rewrites, and restores an adopted divergent selector at its
+exact original boundary. Authentication, sessions, project trust, MCP servers,
+plugins, hooks, caches, histories, and all other Codex state remain external.
+A complete personal Stow topology—with an external `config.toml` link, a
+separate external `themes` directory link, and the nested exact theme
+link—remains `external_exact` and is never written through or adopted; partial
+or divergent external tuples block. Codex loads theme changes only in a fresh
+TUI launch, so apply and theme reconciliation report `restart_required` and
+never restart a running session. New `macarchy setup` runs install a selected
+missing cask but leave Codex integration configuration to `environment apply`.
 
 Pi is a manual prerequisite: install it yourself with
 `npm install --global @earendil-works/pi-coding-agent`. Macarchy reports that
@@ -200,7 +220,7 @@ palette.
 Run `macarchy setup --install-dependencies` after selecting tuicr to review and
 install its approved Homebrew formula. `environment apply` never installs
 software; it reports and blocks before configuration mutation when a selected
-executable or compatible Pi version is missing. For tuicr, the environment
+executable or compatible Pi or Codex version is missing. For tuicr, the environment
 lifecycle owns only the root `theme` selector in
 `~/.config/tuicr/config.toml` and the `macarchy-current.toml` palette and
 `macarchy-current.tmTheme` syntax links under `~/.config/tuicr/themes`. It
@@ -208,7 +228,7 @@ preserves unrelated configuration and does not own repositories, review
 behavior, credentials, caches, or other tuicr settings. Theme commands follow
 the last successfully applied environment selection, not un-applied profile
 edits, and a running tuicr session must be restarted to observe a newly
-activated theme. Complete exact Stow-owned Pi or tuicr tuples remain external
+activated theme. Complete exact Stow-owned Codex, Pi, or tuicr tuples remain external
 and are never adopted. For Pi this includes never replacing the externally
 owned watched-link inode merely to request repaint. Complete older setup-owned
 integrations remain active until explicitly migrated or torn down; partial
