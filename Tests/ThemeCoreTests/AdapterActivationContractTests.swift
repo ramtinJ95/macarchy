@@ -36,6 +36,7 @@ extension AdapterContractTests {
         return state.typedPublished && state.darwinPublished
       }
       if request.executableURL != PiAdapter.liveExecutableURL
+        && request.executableURL != CodexAdapter.liveExecutableURL
         || request.arguments != ["--version"]
       {
         #expect(published)
@@ -71,6 +72,14 @@ extension AdapterContractTests {
         request.arguments == ["--version"]
       {
         return ProcessResult(terminationStatus: 0, output: PiAdapter.minimumVersion)
+      }
+      if request.executableURL == CodexAdapter.liveExecutableURL,
+        request.arguments == ["--version"]
+      {
+        return ProcessResult(
+          terminationStatus: 0,
+          output: "codex-cli \(CodexAdapter.minimumVersion)"
+        )
       }
       if request.executableURL == URL(filePath: "/usr/bin/pgrep") {
         return ProcessResult(terminationStatus: 1, output: "")
@@ -389,6 +398,14 @@ extension AdapterContractTests {
         root: root, kittyConfigurationURL: configurationURL,
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
       processRunner: ProcessRunner { request in
+        if request.executableURL == CodexAdapter.liveExecutableURL,
+          request.arguments == ["--version"]
+        {
+          return ProcessResult(
+            terminationStatus: 0,
+            output: "codex-cli \(CodexAdapter.minimumVersion)"
+          )
+        }
         if request.executableURL == PiAdapter.liveExecutableURL,
           request.arguments == ["--version"]
         {

@@ -397,26 +397,9 @@ struct DesktopThemeController: Sendable {
 
   static let live = Self(
     reconcile: { adapterIDs, stateRoot, consumerPaths in
-      let enabled = try ThemeRuntimeSelection.enabledAdapterIDs(
+      let result = try await ThemeRuntimeSelection.activationCoordinator(
         stateRoot: stateRoot,
         consumerPaths: consumerPaths
-      )
-      let result = try await ThemeActivationCoordinator(
-        root: stateRoot,
-        consumerPaths: consumerPaths,
-        enabledAdapterIDs: enabled,
-        piSelectionIsApplied: {
-          try ThemeRuntimeSelection.piIsEnabled(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        },
-        piThemeLinkRefreshIsAllowed: {
-          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        }
       ).reconcile(adapterIDs: adapterIDs)
       let selected = Set(adapterIDs)
       let results = result.record.results.filter { selected.contains($0.adapterID) }
@@ -434,26 +417,9 @@ struct DesktopThemeController: Sendable {
       )
     },
     inspect: { adapterIDs, stateRoot, consumerPaths in
-      let enabled = try ThemeRuntimeSelection.enabledAdapterIDs(
+      return try ThemeRuntimeSelection.activationCoordinator(
         stateRoot: stateRoot,
         consumerPaths: consumerPaths
-      )
-      return try ThemeActivationCoordinator(
-        root: stateRoot,
-        consumerPaths: consumerPaths,
-        enabledAdapterIDs: enabled,
-        piSelectionIsApplied: {
-          try ThemeRuntimeSelection.piIsEnabled(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        },
-        piThemeLinkRefreshIsAllowed: {
-          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        }
       ).inspectAdapters(adapterIDs, includeRuntimeChecks: true).map {
         DesktopThemeAdapterStatus(
           adapterID: $0.adapterID,

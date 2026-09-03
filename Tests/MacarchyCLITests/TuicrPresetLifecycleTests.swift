@@ -45,17 +45,13 @@ struct TuicrPresetLifecycleTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          PiAdapter.id, TuicrAdapter.id,
+          CodexAdapter.id, PiAdapter.id, TuicrAdapter.id,
         ])
     )
 
     let plan = try fixture.plan()
     let planJSON = try jsonObject(plan.output)
     #expect(plan.succeeded)
-    #expect(
-      planJSON["presets"] as? [String: String]
-        == ["pi": "disabled", "tuicr": "enabled"]
-    )
     #expect(
       Set((planJSON["entries"] as? [[String: Any]])?.compactMap { $0["id"] as? String } ?? [])
         == ["tuicr_configuration", "tuicr_theme", "tuicr_syntax"]

@@ -13,47 +13,15 @@ struct ReconcileCommandRunner: Sendable {
 
   static let live = ReconcileCommandRunner(
     preview: { adapterIDs, stateRoot, consumerPaths in
-      try ThemeActivationCoordinator(
-        root: stateRoot,
-        consumerPaths: consumerPaths,
-        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
-          stateRoot: stateRoot,
-          consumerPaths: consumerPaths
-        ),
-        piSelectionIsApplied: {
-          try ThemeRuntimeSelection.piIsEnabled(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        },
-        piThemeLinkRefreshIsAllowed: {
-          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        }
+      try ThemeRuntimeSelection.activationCoordinator(
+        stateRoot: stateRoot,
+        consumerPaths: consumerPaths
       ).previewReconciliation(adapterIDs)
     },
     reconcile: { adapterIDs, stateRoot, consumerPaths in
-      try await ThemeActivationCoordinator(
-        root: stateRoot,
-        consumerPaths: consumerPaths,
-        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
-          stateRoot: stateRoot,
-          consumerPaths: consumerPaths
-        ),
-        piSelectionIsApplied: {
-          try ThemeRuntimeSelection.piIsEnabled(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        },
-        piThemeLinkRefreshIsAllowed: {
-          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths
-          )
-        }
+      try await ThemeRuntimeSelection.activationCoordinator(
+        stateRoot: stateRoot,
+        consumerPaths: consumerPaths
       ).reconcile(adapterIDs: adapterIDs)
     }
   )

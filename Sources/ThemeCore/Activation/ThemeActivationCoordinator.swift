@@ -174,7 +174,8 @@ package struct ThemeActivationCoordinator: Sendable {
       root: root,
       configurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
       executableURL: CodexAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(CodexAdapter.liveExecutableURL) }
+      controlIsAvailable: { controlIsAvailable(CodexAdapter.liveExecutableURL) },
+      processRunner: processRunner
     )
     configurationStore = MacarchyConfigurationStore(root: root)
     self.enabledAdapterIDs = enabledAdapterIDs ?? Set(Self.adapterRequirements.keys)
@@ -530,7 +531,7 @@ package struct ThemeActivationCoordinator: Sendable {
       return ConfiguredAdapter(
         entry: entry,
         preflight: { _ in try codex.preflight() },
-        inspection: codex.inspection,
+        inspection: { codex.inspection(includeRuntimeChecks: context.includeRuntimeChecks) },
         reconciliation: codex.reconciliation
       )
     case .eza:

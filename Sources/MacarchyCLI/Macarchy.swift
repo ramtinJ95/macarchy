@@ -85,7 +85,7 @@ struct Macarchy: AsyncParsableCommand {
 
     @Option(help: "Starship behavior source file.")
     var starshipBehavior = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy/environment/current/starship/behavior.toml").path
+      .appending(path: ".config/starship/behavior.toml").path
 
     @Option(help: "Pi configuration directory.")
     var piConfigDir = FileManager.default.homeDirectoryForCurrentUser

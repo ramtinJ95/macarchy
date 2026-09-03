@@ -52,6 +52,52 @@ struct ThemeSetCommandTests {
   }
 
   @Test
+  func starshipBehaviorSourceFollowsEnvironmentAuthorityAcrossTeardown() throws {
+    let stateRoot = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-runtime-paths-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: false)
+    defer { try? FileManager.default.removeItem(at: stateRoot) }
+    let externalPaths = testConsumerPaths()
+    let managedBehavior = stateRoot.appending(
+      path: "environment/current/starship/behavior.toml"
+    )
+
+    #expect(
+      try ThemeRuntimeSelection.consumerPaths(
+        stateRoot: stateRoot,
+        consumerPaths: externalPaths
+      ).starshipBehaviorURL == externalPaths.starshipBehaviorURL
+    )
+
+    try EnvironmentStateStore(stateRoot: stateRoot).writeOwnership(
+      EnvironmentOwnership(
+        generationID: "e-00000000-0000-0000-0000-000000000000",
+        records: [],
+        createdDirectories: [],
+        originalThemeBridges: [],
+        enabledThemeAdapterIDs: []
+      )
+    )
+    #expect(
+      try ThemeRuntimeSelection.consumerPaths(
+        stateRoot: stateRoot,
+        consumerPaths: externalPaths
+      ).starshipBehaviorURL == managedBehavior
+    )
+
+    try EnvironmentStateStore(stateRoot: stateRoot).writeOwnership(nil)
+    #expect(!FileManager.default.fileExists(atPath: managedBehavior.path))
+    #expect(
+      try ThemeRuntimeSelection.consumerPaths(
+        stateRoot: stateRoot,
+        consumerPaths: externalPaths
+      ).starshipBehaviorURL == externalPaths.starshipBehaviorURL
+    )
+  }
+
+  @Test
   func successfulCommitAcceptsRestartRequiredAndOptionalFailure() async throws {
     let runner = runner {
       try activation(
@@ -256,10 +302,21 @@ struct ThemeSetCommandTests {
       set: { _, _ in }
     )
     let runner = ProcessRunner { request in
-      ProcessResult(
+      let output: String
+      if request.executableURL == CodexAdapter.liveExecutableURL,
+        request.arguments == ["--version"]
+      {
+        output = "codex-cli \(CodexAdapter.minimumVersion)"
+      } else if request.executableURL == PiAdapter.liveExecutableURL,
+        request.arguments == ["--version"]
+      {
+        output = PiAdapter.minimumVersion
+      } else {
+        output = ""
+      }
+      return ProcessResult(
         terminationStatus: 0,
-        output: request.executableURL == PiAdapter.liveExecutableURL
-          && request.arguments == ["--version"] ? PiAdapter.minimumVersion : ""
+        output: output
       )
     }
     return ThemeSetCommandRunner(

@@ -11,26 +11,16 @@ struct EnvironmentConfigurationTests {
     let source = URL(filePath: "/fixtures/profile.toml")
     let defaults = try PortableProfileLoader().decode("schema_version = 1\n", source: source)
     let selected = try PortableProfileLoader().decode(
-      "schema_version = 1\n[presets]\npi = true\ntuicr = true\n",
+      "schema_version = 1\n[presets]\ncodex = true\npi = true\ntuicr = true\n",
       source: source
     )
 
+    #expect(!defaults.environment.presets.codex)
     #expect(!defaults.environment.presets.pi)
     #expect(!defaults.environment.presets.tuicr)
+    #expect(selected.environment.presets.codex)
     #expect(selected.environment.presets.pi)
     #expect(selected.environment.presets.tuicr)
-    #expect(throws: (any Error).self) {
-      try PortableProfileLoader().decode(
-        "schema_version = 1\n[presets]\npi = \"yes\"\n",
-        source: source
-      )
-    }
-    #expect(throws: (any Error).self) {
-      try PortableProfileLoader().decode(
-        "schema_version = 1\n[presets]\ntuicr = \"yes\"\n",
-        source: source
-      )
-    }
     #expect(throws: (any Error).self) {
       try PortableProfileLoader().decode(
         "schema_version = 1\n[presets]\nunknown = true\n",

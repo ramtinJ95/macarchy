@@ -5,6 +5,7 @@ package struct CanonicalTOMLSelector {
   package let values: [String]
   package let assignments: [CanonicalTOMLAssignment]
   package let firstTopLevelTableIndex: String.Index?
+  package let selectionTableHeader: TOMLPhysicalLine?
 
   package init(configuration: String, table: String, key: String) {
     self.init(configuration: configuration, selectionTable: table, key: key)
@@ -27,6 +28,7 @@ package struct CanonicalTOMLSelector {
     var assignments = [CanonicalTOMLAssignment]()
     var pendingAssignment: (lineIndex: Int, start: String.Index)?
     var firstTopLevelTableIndex: String.Index?
+    var selectionTableHeader: TOMLPhysicalLine?
 
     for line in tomlPhysicalLines(configuration) {
       let startsAtTopLevel = arrayDepth == 0 && multilineQuote == nil
@@ -37,7 +39,10 @@ package struct CanonicalTOMLSelector {
         let header = trimmed.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
           in: .whitespacesAndNewlines)
         inSelectionTable = selectionTable.map { header == "[\($0)]" } ?? false
-        if inSelectionTable { tableHeaderCount += 1 }
+        if inSelectionTable {
+          tableHeaderCount += 1
+          if selectionTableHeader == nil { selectionTableHeader = line }
+        }
         continue
       }
 
@@ -71,6 +76,7 @@ package struct CanonicalTOMLSelector {
     self.values = values
     self.assignments = assignments
     self.firstTopLevelTableIndex = firstTopLevelTableIndex
+    self.selectionTableHeader = selectionTableHeader
   }
 }
 
