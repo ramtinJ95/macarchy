@@ -146,7 +146,7 @@ struct SetupCommandTests {
     #expect(
       plan.formulae
         == [
-          "atuin", "bat", "btop", "eza", "herdr", "neovim", "starship", "yazi",
+          "atuin", "bat", "btop", "eza", "neovim", "starship", "yazi",
           "spicetify-cli",
         ]
     )
@@ -393,6 +393,36 @@ struct SetupCommandTests {
     #expect(!execution.succeeded)
     #expect(report.dependencyInstallation.plan.formulae == ["tuicr"])
     #expect(report.summary?.missingRequiredCount == 1)
+  }
+
+  @Test
+  func selectedHerdrAddsItsFormula() throws {
+    let home = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: home) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    let profile = home.appending(path: "profile.toml")
+    try "schema_version = 1\n[presets]\nherdr = true\n".write(
+      to: profile,
+      atomically: true,
+      encoding: .utf8
+    )
+    let missing = SetupCommandRunner(
+      resolveProfile: DependencyProfile.named,
+      capabilityIsAvailable: { $0.id != HerdrAdapter.id },
+      processRunner: unexpectedProcessRunner(),
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegrations: externalIntegrations()
+    )
+    let selected = try missing.execute(
+      profileName: "personal",
+      homeDirectory: home,
+      installDependencies: true,
+      dryRun: true,
+      keybindingProfileURL: profile,
+      keybindingProfileRequired: true,
+      json: true
+    )
+    #expect(try decode(selected.output).dependencyInstallation.plan.formulae == ["herdr"])
   }
 
   @Test
