@@ -32,6 +32,11 @@ package enum HistoryProviderSelection: String, Codable, Sendable {
   case disabled
 }
 
+package enum EditorProviderSelection: String, Codable, Sendable {
+  case neovim
+  case disabled
+}
+
 package enum SketchyBarModule: String, Codable, Hashable, Sendable {
   case spaces
   case clock
@@ -88,6 +93,10 @@ package struct AtuinProfileOptions: Equatable, Sendable {
   package let configurationURL: URL?
 }
 
+package struct NeovimProfileOptions: Equatable, Sendable {
+  package let configurationDirectoryURL: URL?
+}
+
 package struct DailyToolsProfile: Equatable, Sendable {
   package let bat: Bool
   package let eza: Bool
@@ -108,10 +117,12 @@ package struct EnvironmentProfile: Equatable, Sendable {
   package let shell: ShellProviderSelection
   package let prompt: PromptProviderSelection
   package let history: HistoryProviderSelection
+  package let editor: EditorProviderSelection
   package let kitty: KittyProfileOptions
   package let zsh: ZshProfileOptions
   package let starship: StarshipProfileOptions
   package let atuin: AtuinProfileOptions
+  package let neovim: NeovimProfileOptions
   package let tools: DailyToolsProfile
   package let btop: BtopProfileOptions
   package let yazi: YaziProfileOptions
@@ -177,6 +188,7 @@ package struct PortableProfileLoader: Sendable {
     let allowedTables = Set([
       "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
       "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
+      "editor", "neovim",
       "tools", "btop", "yazi",
     ])
     if let table = index.tables.first(where: {
@@ -224,6 +236,8 @@ package struct PortableProfileLoader: Sendable {
       "atuin.enter_accept",
       "atuin.daemon",
       "atuin.configuration",
+      "editor.provider",
+      "neovim.configuration",
       "tools.bat",
       "tools.eza",
       "tools.btop",
@@ -496,6 +510,28 @@ package struct PortableProfileLoader: Sendable {
       }
     )
     let atuin = try atuin(document.atuin, source: source, base: base)
+    let editor = try selection(
+      document.editor?.provider ?? EditorProviderSelection.neovim.rawValue,
+      as: EditorProviderSelection.self,
+      field: "editor.provider",
+      source: source
+    )
+    if editor == .disabled, document.neovim != nil {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[neovim] cannot customize a disabled editor provider"
+      )
+    }
+    let neovim = NeovimProfileOptions(
+      configurationDirectoryURL: try document.neovim?.configuration.map {
+        try Self.resolvePortablePath(
+          $0,
+          field: "neovim.configuration",
+          base: base,
+          source: source
+        )
+      }
+    )
     let tools = DailyToolsProfile(
       bat: document.tools?.bat ?? true,
       eza: document.tools?.eza ?? true,
@@ -519,10 +555,12 @@ package struct PortableProfileLoader: Sendable {
       shell: shell,
       prompt: shell == .disabled ? .disabled : declaredPrompt,
       history: shell == .disabled ? .disabled : declaredHistory,
+      editor: editor,
       kitty: kitty,
       zsh: zsh,
       starship: starship,
       atuin: atuin,
+      neovim: neovim,
       tools: tools,
       btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
       yazi: YaziProfileOptions(showHidden: document.yazi?.showHidden)
@@ -715,6 +753,7 @@ extension EnvironmentProfile {
     shell: .zsh,
     prompt: .starship,
     history: .atuin,
+    editor: .neovim,
     kitty: KittyProfileOptions(
       fontFamily: nil,
       fontSize: nil,
@@ -731,6 +770,7 @@ extension EnvironmentProfile {
       daemon: nil,
       configurationURL: nil
     ),
+    neovim: NeovimProfileOptions(configurationDirectoryURL: nil),
     tools: DailyToolsProfile(bat: true, eza: true, btop: true, yazi: true),
     btop: BtopProfileOptions(vimKeys: nil),
     yazi: YaziProfileOptions(showHidden: nil)
@@ -752,6 +792,8 @@ private struct PortableProfileDocument: Decodable {
   let starship: StarshipDocument?
   let history: HistoryDocument?
   let atuin: AtuinDocument?
+  let editor: EditorDocument?
+  let neovim: NeovimDocument?
   let tools: DailyToolsDocument?
   let btop: BtopDocument?
   let yazi: YaziDocument?
@@ -771,6 +813,8 @@ private struct PortableProfileDocument: Decodable {
     case starship
     case history
     case atuin
+    case editor
+    case neovim
     case tools
     case btop
     case yazi
@@ -877,6 +921,14 @@ private struct AtuinDocument: Decodable {
     case daemon
     case configuration
   }
+}
+
+private struct EditorDocument: Decodable {
+  let provider: String?
+}
+
+private struct NeovimDocument: Decodable {
+  let configuration: String?
 }
 
 private struct DailyToolsDocument: Decodable {

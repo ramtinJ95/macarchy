@@ -109,6 +109,10 @@ struct KeybindingProfileTests {
       enter_accept = true
       daemon = true
       configuration = "atuin.toml"
+      [editor]
+      provider = "neovim"
+      [neovim]
+      configuration = "nvim"
       [tools]
       bat = false
       eza = true
@@ -126,6 +130,7 @@ struct KeybindingProfileTests {
     #expect(environment.shell == .zsh)
     #expect(environment.prompt == .starship)
     #expect(environment.history == .atuin)
+    #expect(environment.editor == .neovim)
     #expect(environment.kitty.fontFamily == "MesloLGS NF")
     #expect(environment.kitty.fontSize == 14)
     #expect(environment.kitty.backgroundOpacity == 0.92)
@@ -139,6 +144,9 @@ struct KeybindingProfileTests {
     #expect(environment.atuin.enterAccept == true)
     #expect(environment.atuin.daemon == true)
     #expect(environment.atuin.configurationURL == URL(filePath: "/fixtures/atuin.toml"))
+    #expect(
+      environment.neovim.configurationDirectoryURL == URL(filePath: "/fixtures/nvim")
+    )
     #expect(environment.tools.bat == false)
     #expect(environment.tools.eza == true)
     #expect(environment.tools.btop == true)
@@ -184,6 +192,7 @@ struct KeybindingProfileTests {
     #expect(defaults.shell == .zsh)
     #expect(defaults.prompt == .starship)
     #expect(defaults.history == .atuin)
+    #expect(defaults.editor == .neovim)
     #expect(defaults.tools.bat)
     #expect(defaults.tools.eza)
     #expect(defaults.tools.btop)
@@ -274,6 +283,14 @@ struct KeybindingProfileTests {
       (
         "schema_version = 1\n[history]\nprovider = \"disabled\"\n[atuin]\ndaemon = false\n",
         "cannot customize a disabled history"
+      ),
+      (
+        "schema_version = 1\n[editor]\nprovider = \"zed\"\n",
+        "unsupported provider"
+      ),
+      (
+        "schema_version = 1\n[editor]\nprovider = \"disabled\"\n[neovim]\nconfiguration = \"nvim\"\n",
+        "cannot customize a disabled editor"
       ),
       (
         "schema_version = 1\n[kitty]\nbackground_opacity = -0.1\n",

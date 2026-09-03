@@ -247,7 +247,7 @@ package struct EnvironmentGenerationStore: Sendable {
         at: file.deletingLastPathComponent(),
         withIntermediateDirectories: true
       )
-      try Data(artifact.contents.utf8).write(to: file, options: .withoutOverwriting)
+      try artifact.data.write(to: file, options: .withoutOverwriting)
       try sealRegularFile(file, operation: "seal artifact")
     }
     let manifest = EnvironmentGenerationManifest(

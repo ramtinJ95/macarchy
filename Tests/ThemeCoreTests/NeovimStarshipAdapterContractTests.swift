@@ -132,12 +132,13 @@ extension AdapterContractTests {
     let macarchy = neovimDirectory.appending(path: "lua/macarchy", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: macarchy, withIntermediateDirectories: true)
-    try writeBackgroundAwareWatcher(at: neovimDirectory)
+    try writeBackgroundAwareWatcher(at: neovimDirectory, managedRoot: root)
     try "\(NeovimAdapter.integrationDirective)\n".write(
       to: plugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
-    try FileManager.default.createSymbolicLink(
-      at: macarchy.appending(path: "current.lua"),
-      withDestinationURL: root.appending(path: "current/\(NeovimAdapter.outputPath)")
+    try "\(NeovimAdapter.managedThemeLoaderDirective(root: root))\n".write(
+      to: macarchy.appending(path: "current.lua"),
+      atomically: true,
+      encoding: .utf8
     )
     let adapter = NeovimAdapter(
       root: root,
@@ -156,6 +157,41 @@ extension AdapterContractTests {
     let reconciliation = try await adapter.reconciliation().run()
     #expect(reconciliation.status == .failed)
     #expect(reconciliation.message == "Aether palette mismatch")
+
+    let themeLoader = macarchy.appending(path: "current.lua")
+    try "\(NeovimAdapter.managedThemeLoaderDirective(root: root.appending(path: "wrong-state")))\n"
+      .write(
+        to: themeLoader,
+        atomically: true,
+        encoding: .utf8
+      )
+    let loaderDrift = adapter.inspection()
+    #expect(loaderDrift.status == .drifted)
+    #expect(
+      loaderDrift.message?.contains(NeovimAdapter.managedThemeLoaderDirective(root: root))
+        == true
+    )
+    try "\(NeovimAdapter.managedThemeLoaderDirective(root: root))\n".write(
+      to: themeLoader,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    try """
+    \(NeovimAdapter.backgroundAwareWatcherDirective)
+    \(NeovimAdapter.managedWatcherRootDirective(root: root.appending(path: "wrong-state")))
+
+    """.write(
+      to: neovimDirectory.appending(path: "lua/config/macarchy-theme.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let rootDrift = adapter.inspection()
+    #expect(rootDrift.status == .drifted)
+    #expect(
+      rootDrift.message?.contains(NeovimAdapter.managedWatcherRootDirective(root: root))
+        == true
+    )
 
     try "return {}\n".write(
       to: neovimDirectory.appending(path: "lua/config/macarchy-theme.lua"),
@@ -268,13 +304,20 @@ extension AdapterContractTests {
     #expect(!rendered.contains("require"))
   }
 
-  private func writeBackgroundAwareWatcher(at neovimDirectory: URL) throws {
+  private func writeBackgroundAwareWatcher(
+    at neovimDirectory: URL,
+    managedRoot: URL? = nil
+  ) throws {
     let watcher = neovimDirectory.appending(path: "lua/config/macarchy-theme.lua")
     try FileManager.default.createDirectory(
       at: watcher.deletingLastPathComponent(),
       withIntermediateDirectories: true
     )
-    try "\(NeovimAdapter.backgroundAwareWatcherDirective)\n".write(
+    let managedRootDirective =
+      managedRoot.map {
+        "\n\(NeovimAdapter.managedWatcherRootDirective(root: $0))"
+      } ?? ""
+    try "\(NeovimAdapter.backgroundAwareWatcherDirective)\(managedRootDirective)\n".write(
       to: watcher,
       atomically: true,
       encoding: .utf8
