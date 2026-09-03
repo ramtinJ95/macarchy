@@ -11,13 +11,21 @@ struct ThemeSetCommandRunner: Sendable {
     preflight: { package, backgroundID, stateRoot, consumerPaths in
       try ThemeActivationCoordinator(
         root: stateRoot,
-        consumerPaths: consumerPaths
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths
+        )
       ).preflight(package: package, requestedBackgroundID: backgroundID)
     },
     activate: { package, backgroundID, stateRoot, consumerPaths, expectedActiveGenerationID in
       try await ThemeActivationCoordinator(
         root: stateRoot,
-        consumerPaths: consumerPaths
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths
+        )
       ).activate(
         package: package,
         expectedActiveGenerationID: expectedActiveGenerationID,

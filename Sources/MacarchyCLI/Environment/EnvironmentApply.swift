@@ -85,6 +85,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let theme: DesktopThemeController?
   let verifier: EnvironmentSessionVerifier
   let neovim: EnvironmentNeovimPreparer
+  let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
 
   static let live = Self(
     prerequisites: .live,
@@ -97,12 +98,17 @@ struct EnvironmentApplyCommandRunner: Sendable {
     prerequisites: EnvironmentPrerequisiteInspector,
     theme: DesktopThemeController?,
     verifier: EnvironmentSessionVerifier,
-    neovim: EnvironmentNeovimPreparer = .assumed
+    neovim: EnvironmentNeovimPreparer = .assumed,
+    transactionFaultInjector:
+      @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = {
+        _ in
+      }
   ) {
     self.prerequisites = prerequisites
     self.theme = theme
     self.verifier = verifier
     self.neovim = neovim
+    self.transactionFaultInjector = transactionFaultInjector
   }
 
   func execute(
@@ -148,7 +154,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
 
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory,
-      stateRoot: stateRoot
+      stateRoot: stateRoot,
+      faultInjector: transactionFaultInjector
     )
 
     if profile.environment.isEntirelyDisabled {

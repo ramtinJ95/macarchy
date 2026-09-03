@@ -425,7 +425,9 @@ extension AdapterContractTests {
           return ProcessResult(terminationStatus: 0, output: "")
         },
         wallpaperControl: Self.wallpaperControl(),
-        wallpaperSignal: try Self.wallpaperSignal(root: root)
+        wallpaperSignal: try Self.wallpaperSignal(root: root),
+        enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
+          .subtracting([TuicrAdapter.id])
       )
 
       await #expect(throws: AdapterSelectionError.unknown("tmux")) {
@@ -433,6 +435,9 @@ extension AdapterContractTests {
       }
       await #expect(throws: AdapterSelectionError.duplicate("kitty")) {
         _ = try await coordinator.reconcile(adapterIDs: ["kitty", "kitty"])
+      }
+      await #expect(throws: AdapterSelectionError.disabled(TuicrAdapter.id)) {
+        _ = try await coordinator.reconcile(adapterIDs: [TuicrAdapter.id])
       }
 
       #expect(processCalls.withLock { $0 } == 0)

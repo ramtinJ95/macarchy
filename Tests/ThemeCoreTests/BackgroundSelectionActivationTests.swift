@@ -41,7 +41,15 @@ extension AdapterContractTests {
     )
     requests.values.withLock { $0.removeAll() }
 
-    let second = try await coordinator.activate(
+    let withoutTuicr = try backgroundCoordinator(
+      root: root,
+      consumerPaths: consumerPaths,
+      requests: requests,
+      wallpaperControl: trackedWallpaperControl(state: wallpaperState),
+      enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
+        .subtracting([TuicrAdapter.id])
+    )
+    let second = try await withoutTuicr.activate(
       package: package,
       expectedActiveGenerationID: first.manifest.generationID,
       requestedBackgroundID: "second"
@@ -60,6 +68,7 @@ extension AdapterContractTests {
       #expect(result.message == prior.message)
       #expect(result.carriedForwardFromGenerationID == first.manifest.generationID)
     }
+    #expect(!second.reconciliation.results.contains { $0.adapterID == TuicrAdapter.id })
     #expect(
       try BackgroundPreferenceStore(root: root).load()[package.id] == "second"
     )
@@ -218,7 +227,8 @@ extension AdapterContractTests {
     root: URL,
     consumerPaths: ThemeConsumerPaths,
     requests: BackgroundRequestLog,
-    wallpaperControl: WallpaperControl
+    wallpaperControl: WallpaperControl,
+    enabledAdapterIDs: Set<String>? = nil
   ) throws -> ThemeActivationCoordinator {
     let runner = ProcessRunner { request in
       requests.values.withLock { $0.append(request) }
@@ -267,7 +277,8 @@ extension AdapterContractTests {
       processRunner: runner,
       wallpaperControl: wallpaperControl,
       wallpaperSignal: try Self.wallpaperSignal(root: root),
-      currentAppearance: { .dark }
+      currentAppearance: { .dark },
+      enabledAdapterIDs: enabledAdapterIDs
     )
   }
 

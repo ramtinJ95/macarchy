@@ -26,11 +26,14 @@ package struct ThemeCommittedWithReconciliationError: Error, CustomStringConvert
 }
 
 package enum AdapterSelectionError: Error, CustomStringConvertible, Equatable, Sendable {
+  case disabled(String)
   case duplicate(String)
   case unknown(String)
 
   package var description: String {
     switch self {
+    case .disabled(let adapterID):
+      "Adapter '\(adapterID)' is disabled in the applied environment"
     case .duplicate(let adapterID):
       "Adapter '\(adapterID)' was selected more than once"
     case .unknown(let adapterID):
@@ -61,6 +64,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let codex: CodexAdapter
   private let configurationStore: MacarchyConfigurationStore
   private let eza: EzaAdapter
+  private let enabledAdapterIDs: Set<String>
   private let herdr: HerdrAdapter
   private let kitty: KittyAdapter
   private let neovim: NeovimAdapter
@@ -78,7 +82,8 @@ package struct ThemeActivationCoordinator: Sendable {
 
   package init(
     root: URL,
-    consumerPaths: ThemeConsumerPaths
+    consumerPaths: ThemeConsumerPaths,
+    enabledAdapterIDs: Set<String>? = nil
   ) {
     let root = root.standardizedFileURL
     let appearance = MacOSAppearanceAdapter.live(root: root)
@@ -101,7 +106,8 @@ package struct ThemeActivationCoordinator: Sendable {
       sketchyBarControlIsAvailable: {
         controlIsAvailable(SketchyBarAdapter.liveExecutableURL)
       },
-      controlIsAvailable: controlIsAvailable
+      controlIsAvailable: controlIsAvailable,
+      enabledAdapterIDs: enabledAdapterIDs
     )
   }
 
@@ -117,7 +123,8 @@ package struct ThemeActivationCoordinator: Sendable {
     controlIsAvailable: @escaping @Sendable (URL) -> Bool = { _ in true },
     faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void = { _ in },
     onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
-    postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in }
+    postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in },
+    enabledAdapterIDs: Set<String>? = nil
   ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
@@ -164,6 +171,7 @@ package struct ThemeActivationCoordinator: Sendable {
       controlIsAvailable: { controlIsAvailable(CodexAdapter.liveExecutableURL) }
     )
     configurationStore = MacarchyConfigurationStore(root: root)
+    self.enabledAdapterIDs = enabledAdapterIDs ?? Set(Self.adapterRequirements.keys)
     eza = EzaAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
@@ -436,6 +444,9 @@ package struct ThemeActivationCoordinator: Sendable {
       guard Self.adapterRequirements[adapterID] != nil else {
         throw AdapterSelectionError.unknown(adapterID)
       }
+      guard enabledAdapterIDs.contains(adapterID) else {
+        throw AdapterSelectionError.disabled(adapterID)
+      }
     }
   }
 
@@ -448,14 +459,19 @@ package struct ThemeActivationCoordinator: Sendable {
     guard !requestedAll else { return (selected, []) }
     switch try statusStore.reconciliationState(for: manifest) {
     case .current(let record):
-      return (selected, record.results)
+      return (
+        selected,
+        record.results.filter { enabledAdapterIDs.contains($0.adapterID) }
+      )
     case .missing, .stale:
       return (adapters, [])
     }
   }
 
   private func configuredAdapters(context: AdapterResolutionContext) -> [ConfiguredAdapter] {
-    ConsumerCatalog.shared.runtimeEntries.map { entry in
+    ConsumerCatalog.shared.runtimeEntries.filter { entry in
+      enabledAdapterIDs.contains(entry.id.rawValue)
+    }.map { entry in
       configuredAdapter(entry, context: context)
     }
   }
@@ -796,17 +812,20 @@ package struct ThemeActivationCoordinator: Sendable {
       previousEvidence.manifest.themeDigest == manifest.themeDigest,
       !manifest.themeDigest.isEmpty,
       let record = previousEvidence.record,
-      isCompleteReconciliation(record)
+      isCompleteReconciliation(record, adapters: adapters)
     else { return (adapters, []) }
+
+    let enabledIDs = Set(adapters.map(\.id))
+    let enabledResults = record.results.filter { enabledIDs.contains($0.adapterID) }
 
     if previousEvidence.manifest.generationID == manifest.generationID {
       return (
         adapters.filter { $0.id == WallpaperAdapter.id },
-        record.results.filter { $0.adapterID != WallpaperAdapter.id }
+        enabledResults.filter { $0.adapterID != WallpaperAdapter.id }
       )
     }
 
-    let carried = record.results.filter { $0.adapterID != WallpaperAdapter.id }.map { result in
+    let carried = enabledResults.filter { $0.adapterID != WallpaperAdapter.id }.map { result in
       AdapterResult(
         adapterID: result.adapterID,
         requirement: result.requirement,
@@ -822,12 +841,19 @@ package struct ThemeActivationCoordinator: Sendable {
     )
   }
 
-  private func isCompleteReconciliation(_ record: ReconciliationRecord) -> Bool {
-    guard Set(record.results.map(\.adapterID)) == Set(Self.adapterRequirements.keys) else {
+  private func isCompleteReconciliation(
+    _ record: ReconciliationRecord,
+    adapters: [ConfiguredAdapter]
+  ) -> Bool {
+    let requirements = Dictionary(
+      uniqueKeysWithValues: adapters.map { ($0.id, $0.entry.mode.requirement!) }
+    )
+    let enabledResults = record.results.filter { requirements[$0.adapterID] != nil }
+    guard Set(enabledResults.map(\.adapterID)) == Set(requirements.keys) else {
       return false
     }
-    return record.results.allSatisfy { result in
-      Self.adapterRequirements[result.adapterID] == result.requirement
+    return enabledResults.allSatisfy { result in
+      requirements[result.adapterID] == result.requirement
     }
   }
 

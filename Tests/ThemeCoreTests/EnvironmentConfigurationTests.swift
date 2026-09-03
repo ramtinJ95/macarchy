@@ -7,6 +7,31 @@ struct EnvironmentConfigurationTests {
   private let composer = EnvironmentConfigurationComposer()
 
   @Test
+  func tuicrPresetIsClosedTypedAndDisabledByDefault() throws {
+    let source = URL(filePath: "/fixtures/profile.toml")
+    let defaults = try PortableProfileLoader().decode("schema_version = 1\n", source: source)
+    let selected = try PortableProfileLoader().decode(
+      "schema_version = 1\n[presets]\ntuicr = true\n",
+      source: source
+    )
+
+    #expect(!defaults.environment.presets.tuicr)
+    #expect(selected.environment.presets.tuicr)
+    #expect(throws: (any Error).self) {
+      try PortableProfileLoader().decode(
+        "schema_version = 1\n[presets]\ntuicr = \"yes\"\n",
+        source: source
+      )
+    }
+    #expect(throws: (any Error).self) {
+      try PortableProfileLoader().decode(
+        "schema_version = 1\n[presets]\nunknown = true\n",
+        source: source
+      )
+    }
+  }
+
+  @Test
   func packagedDefaultsComposeDeterministicTerminalSession() throws {
     let profile = try PortableProfileLoader().decode(
       "schema_version = 1\n",

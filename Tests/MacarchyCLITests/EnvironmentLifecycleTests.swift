@@ -71,6 +71,11 @@ struct EnvironmentLifecycleTests {
     #expect(apply.succeeded)
     #expect(applyReport["outcome"] as? String == "applied")
     #expect(try fixture.isManaged())
+    #expect(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?
+        .enabledThemeAdapterIDs
+        == ["atuin", "bat", "btop", "eza", "kitty", "starship", "yazi"]
+    )
     #expect(try String(contentsOf: fixture.atuinHistory, encoding: .utf8) == "history\n")
 
     let repeatApply = try await fixture.apply(adopt: nil)

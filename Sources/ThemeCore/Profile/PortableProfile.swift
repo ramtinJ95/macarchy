@@ -104,6 +104,10 @@ package struct DailyToolsProfile: Equatable, Sendable {
   package let yazi: Bool
 }
 
+package struct PresetsProfile: Equatable, Sendable {
+  package let tuicr: Bool
+}
+
 package struct BtopProfileOptions: Equatable, Sendable {
   package let vimKeys: Bool?
 }
@@ -124,6 +128,7 @@ package struct EnvironmentProfile: Equatable, Sendable {
   package let atuin: AtuinProfileOptions
   package let neovim: NeovimProfileOptions
   package let tools: DailyToolsProfile
+  package let presets: PresetsProfile
   package let btop: BtopProfileOptions
   package let yazi: YaziProfileOptions
 }
@@ -189,7 +194,7 @@ package struct PortableProfileLoader: Sendable {
       "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
       "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
       "editor", "neovim",
-      "tools", "btop", "yazi",
+      "tools", "presets", "btop", "yazi",
     ])
     if let table = index.tables.first(where: {
       !allowedTables.contains($0.path) || $0.isArray
@@ -242,6 +247,7 @@ package struct PortableProfileLoader: Sendable {
       "tools.eza",
       "tools.btop",
       "tools.yazi",
+      "presets.tuicr",
       "btop.vim_keys",
       "yazi.show_hidden",
     ])
@@ -562,6 +568,7 @@ package struct PortableProfileLoader: Sendable {
       atuin: atuin,
       neovim: neovim,
       tools: tools,
+      presets: PresetsProfile(tuicr: document.presets?.tuicr ?? false),
       btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
       yazi: YaziProfileOptions(showHidden: document.yazi?.showHidden)
     )
@@ -772,6 +779,7 @@ extension EnvironmentProfile {
     ),
     neovim: NeovimProfileOptions(configurationDirectoryURL: nil),
     tools: DailyToolsProfile(bat: true, eza: true, btop: true, yazi: true),
+    presets: PresetsProfile(tuicr: false),
     btop: BtopProfileOptions(vimKeys: nil),
     yazi: YaziProfileOptions(showHidden: nil)
   )
@@ -795,6 +803,7 @@ private struct PortableProfileDocument: Decodable {
   let editor: EditorDocument?
   let neovim: NeovimDocument?
   let tools: DailyToolsDocument?
+  let presets: PresetsDocument?
   let btop: BtopDocument?
   let yazi: YaziDocument?
 
@@ -816,6 +825,7 @@ private struct PortableProfileDocument: Decodable {
     case editor
     case neovim
     case tools
+    case presets
     case btop
     case yazi
   }
@@ -936,6 +946,10 @@ private struct DailyToolsDocument: Decodable {
   let eza: Bool?
   let btop: Bool?
   let yazi: Bool?
+}
+
+private struct PresetsDocument: Decodable {
+  let tuicr: Bool?
 }
 
 private struct BtopDocument: Decodable {

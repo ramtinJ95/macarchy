@@ -123,6 +123,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       historyProvider: composition.profile.history.rawValue,
       editorProvider: composition.profile.editor.rawValue,
       dailyTools: Self.dailyTools(composition.profile),
+      presets: Self.presets(composition.profile),
       packagedDefaults: resourcesRoot.path,
       kittyOverride: composition.kittyOverrideURL?.path,
       zshHook: composition.zshHookURL?.path,
@@ -161,6 +162,10 @@ struct EnvironmentPlanCommandRunner: Sendable {
       "eza": profile.tools.eza ? "enabled" : "disabled",
       "yazi": profile.tools.yazi ? "enabled" : "disabled",
     ]
+  }
+
+  fileprivate static func presets(_ profile: EnvironmentProfile) -> [String: String] {
+    ["tuicr": profile.presets.tuicr ? "enabled" : "disabled"]
   }
 
   private static func actions(
@@ -247,6 +252,14 @@ struct EnvironmentPlanCommandRunner: Sendable {
         )
       )
     }
+    if profile.presets.tuicr {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_tuicr",
+          message: "Configure tuicr's root theme selector and canonical palette and syntax links."
+        )
+      )
+    }
     if !actions.isEmpty {
       actions.insert(
         EnvironmentPlanAction(
@@ -291,6 +304,7 @@ private struct EnvironmentPlanReport: Encodable {
   let historyProvider: String?
   let editorProvider: String?
   let dailyTools: [String: String]
+  let presets: [String: String]
   let packagedDefaults: String
   let kittyOverride: String?
   let zshHook: String?
@@ -327,6 +341,7 @@ private struct EnvironmentPlanReport: Encodable {
       historyProvider: environment?.history.rawValue,
       editorProvider: environment?.editor.rawValue,
       dailyTools: environment.map(EnvironmentPlanCommandRunner.dailyTools) ?? [:],
+      presets: environment.map(EnvironmentPlanCommandRunner.presets) ?? [:],
       packagedDefaults: resourcesRoot.path,
       kittyOverride: environment?.kitty.overrideDirectoryURL?.path,
       zshHook: environment?.zsh.hookURL?.path,
@@ -363,6 +378,9 @@ private struct EnvironmentPlanReport: Encodable {
       "- editor provider: " + (editorProvider ?? "unavailable"),
       "- daily tools: "
         + dailyTools.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+        .joined(separator: ", "),
+      "- presets: "
+        + presets.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         .joined(separator: ", "),
       "- packaged defaults: \(packagedDefaults)",
       "- Kitty override: " + (kittyOverride ?? "none"),

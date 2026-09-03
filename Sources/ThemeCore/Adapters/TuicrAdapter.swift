@@ -22,7 +22,7 @@ enum TuicrAdapterError: Error, CustomStringConvertible, Sendable {
 }
 
 package struct TuicrAdapter: Sendable {
-  static let id = "tuicr"
+  package static let id = "tuicr"
   package static let outputPath = "generated/tuicr.toml"
   static let rendererVersion = 1
   package static let themeName = "macarchy-current"

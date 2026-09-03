@@ -3,6 +3,8 @@ import Foundation
 package struct CanonicalTOMLSelector {
   package let tableHeaderCount: Int
   package let values: [String]
+  package let assignments: [CanonicalTOMLAssignment]
+  package let firstTopLevelTableIndex: String.Index?
 
   package init(configuration: String, table: String, key: String) {
     self.init(configuration: configuration, selectionTable: table, key: key)
@@ -22,14 +24,16 @@ package struct CanonicalTOMLSelector {
     var inSelectionTable = selectionTable == nil
     var tableHeaderCount = 0
     var values = [String]()
+    var assignments = [CanonicalTOMLAssignment]()
+    var pendingAssignment: (lineIndex: Int, start: String.Index)?
+    var firstTopLevelTableIndex: String.Index?
 
-    for rawLine in configuration.split(
-      omittingEmptySubsequences: false, whereSeparator: \.isNewline)
-    {
+    for line in tomlPhysicalLines(configuration) {
       let startsAtTopLevel = arrayDepth == 0 && multilineQuote == nil
-      let raw = String(rawLine)
+      let raw = String(configuration[line.contentRange])
       let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
       if startsAtTopLevel, trimmed.hasPrefix("[") {
+        if firstTopLevelTableIndex == nil { firstTopLevelTableIndex = line.fullRange.lowerBound }
         let header = trimmed.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
           in: .whitespacesAndNewlines)
         inSelectionTable = selectionTable.map { header == "[\($0)]" } ?? false
@@ -37,23 +41,83 @@ package struct CanonicalTOMLSelector {
         continue
       }
 
-      let line = scanTOMLLine(
+      let scanned = scanTOMLLine(
         raw,
         arrayDepth: &arrayDepth,
         multilineQuote: &multilineQuote
       ).trimmingCharacters(in: .whitespacesAndNewlines)
-      guard startsAtTopLevel, inSelectionTable else { continue }
-      let parts = line.split(separator: "=", maxSplits: 1).map {
-        $0.trimmingCharacters(in: .whitespaces)
+      if startsAtTopLevel, inSelectionTable {
+        let parts = scanned.split(separator: "=", maxSplits: 1).map {
+          $0.trimmingCharacters(in: .whitespaces)
+        }
+        if parts.first == key {
+          values.append(parts.count == 2 ? parts[1] : "")
+          pendingAssignment = (line.lineIndex, line.fullRange.lowerBound)
+        }
       }
-      if parts.first == key {
-        values.append(parts.count == 2 ? parts[1] : "")
+      if let pending = pendingAssignment, arrayDepth == 0, multilineQuote == nil {
+        assignments.append(
+          CanonicalTOMLAssignment(
+            lineIndex: pending.lineIndex,
+            fullRange: pending.start..<line.fullRange.upperBound,
+            contentRange: pending.start..<line.contentRange.upperBound
+          )
+        )
+        pendingAssignment = nil
       }
     }
 
     self.tableHeaderCount = tableHeaderCount
     self.values = values
+    self.assignments = assignments
+    self.firstTopLevelTableIndex = firstTopLevelTableIndex
   }
+}
+
+package struct CanonicalTOMLAssignment {
+  package let lineIndex: Int
+  package let fullRange: Range<String.Index>
+  package let contentRange: Range<String.Index>
+}
+
+package struct TOMLPhysicalLine {
+  package let lineIndex: Int
+  package let fullRange: Range<String.Index>
+  package let contentRange: Range<String.Index>
+  package let terminator: String
+}
+
+package func tomlPhysicalLines(_ text: String) -> [TOMLPhysicalLine] {
+  guard !text.isEmpty else { return [] }
+  var lines = [TOMLPhysicalLine]()
+  var lineStart = text.startIndex
+  var index = text.startIndex
+  while index < text.endIndex {
+    if text[index].isNewline {
+      let afterNewline = text.index(after: index)
+      lines.append(
+        TOMLPhysicalLine(
+          lineIndex: lines.count,
+          fullRange: lineStart..<afterNewline,
+          contentRange: lineStart..<index,
+          terminator: String(text[index])
+        )
+      )
+      lineStart = afterNewline
+    }
+    index = text.index(after: index)
+  }
+  if lineStart < text.endIndex {
+    lines.append(
+      TOMLPhysicalLine(
+        lineIndex: lines.count,
+        fullRange: lineStart..<text.endIndex,
+        contentRange: lineStart..<text.endIndex,
+        terminator: ""
+      )
+    )
+  }
+  return lines
 }
 
 enum TOMLMultilineQuote {

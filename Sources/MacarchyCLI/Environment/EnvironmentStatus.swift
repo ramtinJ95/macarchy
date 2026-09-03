@@ -21,6 +21,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         + (profile.prompt == .starship ? ["starship"] : [])
         + (profile.history == .atuin ? ["atuin"] : [])
         + (profile.editor == .neovim ? ["neovim"] : [])
+        + (profile.presets.tuicr ? ["tuicr"] : [])
         + (profile.tools.bat ? ["bat"] : [])
         + (profile.tools.eza ? ["eza"] : [])
         + (profile.tools.btop ? ["btop"] : [])
@@ -78,6 +79,7 @@ extension EnvironmentProfile {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
       && editor == .disabled
       && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
+      && !presets.tuicr
   }
 
   var selectedThemeAdapterIDs: [String] {
@@ -89,6 +91,7 @@ extension EnvironmentProfile {
       + (tools.btop ? ["btop"] : [])
       + (tools.eza ? ["eza"] : [])
       + (tools.yazi ? ["yazi"] : [])
+      + (presets.tuicr ? ["tuicr"] : [])
   }
 }
 
@@ -395,7 +398,9 @@ struct EnvironmentStatusCommandRunner: Sendable {
       : generation.status == .current
     let themeReady =
       themeFailure == nil
-      && themeState.allSatisfy { $0.status == "ready" || $0.status == "applied" }
+      && themeState.allSatisfy {
+        $0.status == "ready" || $0.status == "applied" || $0.status == "restart_required"
+      }
     let verificationReady = verification.allSatisfy { $0.status == "verified" }
     let converged =
       !missing && providerReady && generationReady && themeReady
@@ -436,6 +441,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       "btop": profile.tools.btop ? "enabled" : "disabled",
       "eza": profile.tools.eza ? "enabled" : "disabled",
       "yazi": profile.tools.yazi ? "enabled" : "disabled",
+      "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]
   }
 

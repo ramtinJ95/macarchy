@@ -397,9 +397,14 @@ struct DesktopThemeController: Sendable {
 
   static let live = Self(
     reconcile: { adapterIDs, stateRoot, consumerPaths in
+      let enabled = try ThemeRuntimeSelection.enabledAdapterIDs(
+        stateRoot: stateRoot,
+        consumerPaths: consumerPaths
+      )
       let result = try await ThemeActivationCoordinator(
         root: stateRoot,
-        consumerPaths: consumerPaths
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: enabled
       ).reconcile(adapterIDs: adapterIDs)
       let selected = Set(adapterIDs)
       let results = result.record.results.filter { selected.contains($0.adapterID) }
@@ -417,9 +422,14 @@ struct DesktopThemeController: Sendable {
       )
     },
     inspect: { adapterIDs, stateRoot, consumerPaths in
-      try ThemeActivationCoordinator(
-        root: stateRoot,
+      let enabled = try ThemeRuntimeSelection.enabledAdapterIDs(
+        stateRoot: stateRoot,
         consumerPaths: consumerPaths
+      )
+      return try ThemeActivationCoordinator(
+        root: stateRoot,
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: enabled
       ).inspectAdapters(adapterIDs, includeRuntimeChecks: true).map {
         DesktopThemeAdapterStatus(
           adapterID: $0.adapterID,
