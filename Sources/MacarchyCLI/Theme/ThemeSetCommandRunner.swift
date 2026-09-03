@@ -15,7 +15,19 @@ struct ThemeSetCommandRunner: Sendable {
         enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths
-        )
+        ),
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        }
       ).preflight(package: package, requestedBackgroundID: backgroundID)
     },
     activate: { package, backgroundID, stateRoot, consumerPaths, expectedActiveGenerationID in
@@ -25,7 +37,19 @@ struct ThemeSetCommandRunner: Sendable {
         enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths
-        )
+        ),
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        }
       ).activate(
         package: package,
         expectedActiveGenerationID: expectedActiveGenerationID,

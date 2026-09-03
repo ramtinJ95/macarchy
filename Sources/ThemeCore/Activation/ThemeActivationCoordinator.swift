@@ -83,7 +83,9 @@ package struct ThemeActivationCoordinator: Sendable {
   package init(
     root: URL,
     consumerPaths: ThemeConsumerPaths,
-    enabledAdapterIDs: Set<String>? = nil
+    enabledAdapterIDs: Set<String>? = nil,
+    piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
+    piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
     let root = root.standardizedFileURL
     let appearance = MacOSAppearanceAdapter.live(root: root)
@@ -107,7 +109,9 @@ package struct ThemeActivationCoordinator: Sendable {
         controlIsAvailable(SketchyBarAdapter.liveExecutableURL)
       },
       controlIsAvailable: controlIsAvailable,
-      enabledAdapterIDs: enabledAdapterIDs
+      enabledAdapterIDs: enabledAdapterIDs,
+      piSelectionIsApplied: piSelectionIsApplied,
+      piThemeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed
     )
   }
 
@@ -124,7 +128,9 @@ package struct ThemeActivationCoordinator: Sendable {
     faultInjector: @escaping @Sendable (ActivationCheckpoint) throws -> Void = { _ in },
     onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
     postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in },
-    enabledAdapterIDs: Set<String>? = nil
+    enabledAdapterIDs: Set<String>? = nil,
+    piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
+    piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
@@ -204,7 +210,10 @@ package struct ThemeActivationCoordinator: Sendable {
       root: root,
       configurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
       executableURL: PiAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(PiAdapter.liveExecutableURL) }
+      controlIsAvailable: { controlIsAvailable(PiAdapter.liveExecutableURL) },
+      processRunner: processRunner,
+      selectionIsApplied: piSelectionIsApplied,
+      themeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed
     )
     self.processRunner = processRunner
     reconciler = ThemeReconciler(statusStore: statusStore)
@@ -560,7 +569,9 @@ package struct ThemeActivationCoordinator: Sendable {
       return ConfiguredAdapter(
         entry: entry,
         preflight: { _ in try pi.preflight() },
-        inspection: pi.inspection,
+        inspection: {
+          pi.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+        },
         reconciliation: pi.reconciliation
       )
     case .sketchyBar:

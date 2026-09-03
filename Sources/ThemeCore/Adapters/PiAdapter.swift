@@ -5,6 +5,9 @@ enum PiAdapterError: Error, CustomStringConvertible, Sendable {
   case cannotReadSettings(URL)
   case controlUnavailable(URL)
   case cannotRefreshThemeLink(URL, code: Int32)
+  case invalidVersion(String)
+  case noLongerSelected
+  case unsupportedVersion(String)
   case wrongThemeSelection(String)
 
   var description: String {
@@ -15,6 +18,12 @@ enum PiAdapterError: Error, CustomStringConvertible, Sendable {
       "Pi is not executable at \(url.path)"
     case .cannotRefreshThemeLink(let url, let code):
       "Cannot refresh Pi theme link at \(url.path) (errno \(code))"
+    case .invalidVersion(let value):
+      "Pi returned an unparseable version: \(value)"
+    case .noLongerSelected:
+      "Pi is no longer enabled in the applied environment"
+    case .unsupportedVersion(let value):
+      "Pi \(value) is unsupported; version \(PiAdapter.minimumVersion) or newer is required"
     case .wrongThemeSelection(let expected):
       "Pi settings must select theme \"\(expected)\""
     }
@@ -22,17 +31,41 @@ enum PiAdapterError: Error, CustomStringConvertible, Sendable {
 }
 
 package struct PiAdapter: Sendable {
-  static let id = "pi"
+  package static let id = "pi"
   package static let outputPath = "generated/pi.json"
   static let rendererVersion = 4
   package static let themeName = "macarchy-current"
   package static let selectionKey = "theme"
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/pi")
+  package static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/pi")
+  package static let minimumVersion = "0.84.3"
 
   let root: URL
   let configurationDirectoryURL: URL
   let executableURL: URL
   let controlIsAvailable: @Sendable () -> Bool
+  let processRunner: ProcessRunner
+  let selectionIsApplied: @Sendable () throws -> Bool
+  let themeLinkRefreshIsAllowed: @Sendable () throws -> Bool
+
+  package init(
+    root: URL,
+    configurationDirectoryURL: URL,
+    executableURL: URL,
+    controlIsAvailable: @escaping @Sendable () -> Bool,
+    processRunner: ProcessRunner = ProcessRunner { _ in
+      ProcessResult(terminationStatus: 0, output: PiAdapter.minimumVersion)
+    },
+    selectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
+    themeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
+  ) {
+    self.root = root
+    self.configurationDirectoryURL = configurationDirectoryURL
+    self.executableURL = executableURL
+    self.controlIsAvailable = controlIsAvailable
+    self.processRunner = processRunner
+    self.selectionIsApplied = selectionIsApplied
+    self.themeLinkRefreshIsAllowed = themeLinkRefreshIsAllowed
+  }
 
   private var settingsURL: URL {
     configurationDirectoryURL.appending(path: "settings.json")
@@ -46,13 +79,27 @@ package struct PiAdapter: Sendable {
   }
 
   func preflight() throws {
+    try requireControl()
+    _ = try supportedVersion()
+    try validateManagedSeams()
+  }
+
+  private func integrationPreflight() throws {
+    try requireControl()
+    try validateManagedSeams()
+  }
+
+  private func requireControl() throws {
     guard controlIsAvailable() else {
       throw PiAdapterError.controlUnavailable(executableURL)
     }
-    try themeLink.validate()
+  }
+
+  private func validateManagedSeams() throws {
     guard try selectedTheme() == Self.themeName else {
       throw PiAdapterError.wrongThemeSelection(Self.themeName)
     }
+    try themeLink.validate()
   }
 
   private var runtime: OrdinaryAdapterRuntime {
@@ -64,8 +111,13 @@ package struct PiAdapter: Sendable {
     )
   }
 
-  func inspection() -> AdapterInspection {
-    runtime.inspection(
+  func inspection(includeRuntimeChecks: Bool = false) -> AdapterInspection {
+    OrdinaryAdapterRuntime(
+      adapterID: Self.id,
+      requirement: .required,
+      preflight: includeRuntimeChecks ? preflight : integrationPreflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    ).inspection(
       readyMessage: "Pi watches the generated theme and repaints running sessions"
     )
   }
@@ -73,12 +125,21 @@ package struct PiAdapter: Sendable {
   func reconciliation() -> AdapterReconciliation {
     runtime.reconciliation {
       try ActivationLock(root: root).withLock {
+        guard try selectionIsApplied() else { throw PiAdapterError.noLongerSelected }
+        try preflight()
+        guard try themeLinkRefreshIsAllowed() else {
+          return AdapterOutcome(
+            status: .restartRequired,
+            message:
+              "Pi's externally owned watched theme link was preserved; existing sessions need /reload or a new launch to use the active palette"
+          )
+        }
         try refreshThemeLink()
+        return AdapterOutcome(
+          status: .applied,
+          message: "Running Pi sessions reloaded the active palette"
+        )
       }
-      return AdapterOutcome(
-        status: .applied,
-        message: "Running Pi sessions reloaded the active palette"
-      )
     }
   }
 
@@ -259,6 +320,37 @@ package struct PiAdapter: Sendable {
       throw PiAdapterError.cannotReadSettings(settingsURL)
     }
     return object["theme"] as? String
+  }
+
+  package static func parseVersion(_ output: String) -> [Int]? {
+    guard let token = output.split(whereSeparator: \Character.isWhitespace).last else {
+      return nil
+    }
+    let value = token.first == "v" ? token.dropFirst() : token[...]
+    let components = value.split(separator: ".", omittingEmptySubsequences: false)
+    guard components.count == 3,
+      components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) })
+    else { return nil }
+    var parsed: [Int] = []
+    for component in components {
+      guard let number = Int(component) else { return nil }
+      parsed.append(number)
+    }
+    return parsed
+  }
+
+  package func supportedVersion() throws -> String {
+    let result = try processRunner.run(
+      ProcessRequest(executableURL: executableURL, arguments: ["--version"], timeout: 2)
+    )
+    guard result.terminationStatus == 0, let version = Self.parseVersion(result.output) else {
+      throw PiAdapterError.invalidVersion(result.output)
+    }
+    let minimum = Self.parseVersion(Self.minimumVersion)!
+    guard version.lexicographicallyPrecedes(minimum) == false else {
+      throw PiAdapterError.unsupportedVersion(result.output)
+    }
+    return result.output
   }
 
   private func refreshThemeLink() throws {

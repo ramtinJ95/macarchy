@@ -36,7 +36,16 @@ struct ThemeBackgroundCommandRunner: Sendable {
         enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
           stateRoot: root,
           consumerPaths: consumerPaths
-        )
+        ),
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(stateRoot: root, consumerPaths: consumerPaths)
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: root,
+            consumerPaths: consumerPaths
+          )
+        }
       ).preflight(
         package: package,
         requestedBackgroundID: backgroundID
@@ -49,7 +58,16 @@ struct ThemeBackgroundCommandRunner: Sendable {
         enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
           stateRoot: root,
           consumerPaths: consumerPaths
-        )
+        ),
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(stateRoot: root, consumerPaths: consumerPaths)
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: root,
+            consumerPaths: consumerPaths
+          )
+        }
       ).activate(
         package: package,
         expectedActiveGenerationID: expectedGenerationID,

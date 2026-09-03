@@ -27,7 +27,19 @@ struct DoctorCommandRunner: Sendable {
         enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths
-        )
+        ),
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        }
       ).inspectAdapters([], includeRuntimeChecks: true)
     },
     enabledAdapterIDs: { stateRoot, consumerPaths in

@@ -367,7 +367,8 @@ extension AdapterContractTests {
           return ProcessResult(terminationStatus: 0, output: "")
         },
         wallpaperControl: WallpaperControl(inspect: { [] }, set: { _, _ in }),
-        wallpaperSignal: try Self.wallpaperSignal(root: root)
+        wallpaperSignal: try Self.wallpaperSignal(root: root),
+        enabledAdapterIDs: [WallpaperAdapter.id]
       )
 
       await #expect(throws: WallpaperAdapterError.noDisplays) {
@@ -426,7 +427,8 @@ extension AdapterContractTests {
         ProcessResult(terminationStatus: 1, output: "no matching process")
       },
       wallpaperControl: Self.wallpaperControl(),
-      wallpaperSignal: try Self.wallpaperSignal(root: root)
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
+      enabledAdapterIDs: [WallpaperAdapter.id]
     )
 
     let result = try await coordinator.activate(
@@ -560,7 +562,8 @@ extension AdapterContractTests {
       processRunner: runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
-      currentAppearance: { state.withLock { $0.appearance } }
+      currentAppearance: { state.withLock { $0.appearance } },
+      enabledAdapterIDs: [MacOSAppearanceAdapter.id]
     )
     let darkCoordinator = ThemeActivationCoordinator(
       root: root,
@@ -573,7 +576,8 @@ extension AdapterContractTests {
           state.darkPreflightEntered = true
           return state.appearance
         }
-      }
+      },
+      enabledAdapterIDs: [MacOSAppearanceAdapter.id]
     )
     let basePackage = try catppuccinPackage()
     let lightPackage = package(basePackage, appearance: .light)

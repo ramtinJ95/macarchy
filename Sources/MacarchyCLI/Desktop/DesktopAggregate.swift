@@ -404,7 +404,19 @@ struct DesktopThemeController: Sendable {
       let result = try await ThemeActivationCoordinator(
         root: stateRoot,
         consumerPaths: consumerPaths,
-        enabledAdapterIDs: enabled
+        enabledAdapterIDs: enabled,
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        }
       ).reconcile(adapterIDs: adapterIDs)
       let selected = Set(adapterIDs)
       let results = result.record.results.filter { selected.contains($0.adapterID) }
@@ -429,7 +441,19 @@ struct DesktopThemeController: Sendable {
       return try ThemeActivationCoordinator(
         root: stateRoot,
         consumerPaths: consumerPaths,
-        enabledAdapterIDs: enabled
+        enabledAdapterIDs: enabled,
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        }
       ).inspectAdapters(adapterIDs, includeRuntimeChecks: true).map {
         DesktopThemeAdapterStatus(
           adapterID: $0.adapterID,

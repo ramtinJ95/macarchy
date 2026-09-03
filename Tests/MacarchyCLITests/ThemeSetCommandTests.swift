@@ -255,7 +255,13 @@ struct ThemeSetCommandTests {
       },
       set: { _, _ in }
     )
-    let runner = ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+    let runner = ProcessRunner { request in
+      ProcessResult(
+        terminationStatus: 0,
+        output: request.executableURL == PiAdapter.liveExecutableURL
+          && request.arguments == ["--version"] ? PiAdapter.minimumVersion : ""
+      )
+    }
     return ThemeSetCommandRunner(
       preflight: { package, backgroundID, stateRoot, consumerPaths in
         try ThemeActivationCoordinator(
