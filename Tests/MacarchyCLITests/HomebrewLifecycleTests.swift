@@ -389,7 +389,7 @@ struct HomebrewLifecycleTests {
   }
 
   @Test
-  func installedLayoutVerifierReopensBuildMetadataThemesAndDocumentation() throws {
+  func installedLayoutVerifierReopensBuildMetadataThemesEnvironmentAndDocumentation() throws {
     let prefix = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-homebrew-prefix-\(UUID().uuidString)",
       directoryHint: .isDirectory
@@ -471,6 +471,27 @@ struct HomebrewLifecycleTests {
           ["version", "--json"],
         ]
     )
+    for relativePath in [
+      "default/init.lua",
+      "default/lazy-lock.json",
+      "default/lazyvim.json",
+      "default/lua/config/autocmds.lua",
+      "default/lua/config/keymaps.lua",
+      "default/lua/config/lazy.lua",
+      "default/lua/config/options.lua",
+      "theme/colors/macarchy-imported.lua",
+      "theme/lua/config/macarchy-theme.lua",
+      "theme/lua/macarchy/current.lua",
+      "theme/lua/plugins/colorscheme.lua",
+    ] {
+      let resource = resourceRoot.appending(path: "environment/neovim/\(relativePath)")
+      let contents = try Data(contentsOf: resource)
+      try FileManager.default.removeItem(at: resource)
+      #expect(throws: HomebrewVerificationError.self) {
+        try verifier.verify(expectedVersion: "0.2.0")
+      }
+      try contents.write(to: resource)
+    }
     try FileManager.default.removeItem(
       at: prefix.appending(path: "share/doc/macarchy/LICENSE")
     )

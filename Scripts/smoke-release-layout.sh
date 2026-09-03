@@ -39,6 +39,8 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/macarchy/environment/yazi/yazi.toml" ]]
 [[ -f "$layout/share/macarchy/environment/yazi/theme.toml" ]]
 [[ -f "$layout/share/macarchy/environment/yazi/defaults.zsh" ]]
+[[ -f "$layout/share/macarchy/environment/neovim/default/init.lua" ]]
+[[ -f "$layout/share/macarchy/environment/neovim/theme/lua/config/macarchy-theme.lua" ]]
 [[ -f "$layout/share/doc/macarchy/CHANGELOG.md" ]]
 [[ -f "$layout/share/doc/macarchy/theme-json.md" ]]
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
@@ -187,6 +189,8 @@ schema_version = 1
 [terminal]
 provider = "disabled"
 [shell]
+provider = "disabled"
+[editor]
 provider = "disabled"
 [tools]
 bat = false
