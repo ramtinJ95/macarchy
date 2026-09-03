@@ -20,6 +20,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         + (profile.terminal == .kitty ? ["kitty"] : [])
         + (profile.prompt == .starship ? ["starship"] : [])
         + (profile.history == .atuin ? ["atuin"] : [])
+        + (profile.editor == .neovim ? ["neovim"] : [])
         + (profile.tools.bat ? ["bat"] : [])
         + (profile.tools.eza ? ["eza"] : [])
         + (profile.tools.btop ? ["btop"] : [])
@@ -46,6 +47,17 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         )
       )
     }
+    if profile.editor == .neovim {
+      let git = URL(filePath: "/usr/bin/git")
+      results.append(
+        EnvironmentPrerequisiteStatus(
+          id: "git",
+          status: FileManager.default.isExecutableFile(atPath: git.path) ? "present" : "missing",
+          requirement: "/usr/bin/git must be executable for pinned Neovim plugins",
+          remediation: "Install the supported macOS Command Line Tools."
+        )
+      )
+    }
     return results.sorted { $0.id < $1.id }
   }
 
@@ -64,6 +76,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
 extension EnvironmentProfile {
   var isEntirelyDisabled: Bool {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
+      && editor == .disabled
       && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
   }
 
@@ -71,6 +84,7 @@ extension EnvironmentProfile {
     (terminal == .kitty ? ["kitty"] : [])
       + (prompt == .starship ? ["starship"] : [])
       + (history == .atuin ? ["atuin"] : [])
+      + (editor == .neovim ? ["neovim"] : [])
       + (tools.bat ? ["bat"] : [])
       + (tools.btop ? ["btop"] : [])
       + (tools.eza ? ["eza"] : [])
@@ -93,7 +107,7 @@ extension ThemeConsumerPaths {
         path: ".config/atuin",
         directoryHint: .isDirectory
       ),
-      neovimConfigurationDirectoryURL: neovimConfigurationDirectoryURL,
+      neovimConfigurationDirectoryURL: homeDirectory.appending(path: ".config/nvim"),
       starshipConfigurationURL: homeDirectory.appending(path: ".config/starship.toml"),
       starshipBehaviorURL: stateRoot.appending(
         path: "environment/current/starship/behavior.toml"
@@ -405,8 +419,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
       verification: verification,
       message: themeFailure ?? provider.blockedMessage
         ?? (converged
-          ? (successMessage ?? "The managed terminal session is converged.")
-          : "The managed terminal session requires attention.")
+          ? (successMessage ?? "The managed daily tool environment is converged.")
+          : "The managed daily tool environment requires attention.")
     )
     return (try report.render(json: json), report.succeeded)
   }
@@ -417,6 +431,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       "shell": profile.shell.rawValue,
       "prompt": profile.prompt.rawValue,
       "history": profile.history.rawValue,
+      "editor": profile.editor.rawValue,
       "bat": profile.tools.bat ? "enabled" : "disabled",
       "btop": profile.tools.btop ? "enabled" : "disabled",
       "eza": profile.tools.eza ? "enabled" : "disabled",
