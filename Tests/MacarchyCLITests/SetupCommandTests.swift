@@ -150,7 +150,7 @@ struct SetupCommandTests {
           "spicetify-cli",
         ]
     )
-    #expect(plan.casks == ["kitty", "codex", "spotify"])
+    #expect(plan.casks == ["kitty", "spotify"])
     #expect(
       plan.external.map(\.capabilityId)
         == ["macos-26", "arm64", "homebrew", "sketchybar", "skhd", "yabai"]
@@ -165,7 +165,7 @@ struct SetupCommandTests {
 
   @Test
   func installPrintsExactJSONPlanBeforeScopedHomebrewAndReinspects() throws {
-    let missing = Mutex(Set(["bat", "codex"]))
+    let missing = Mutex(Set(["bat"]))
     let events = Mutex([SetupTestEvent]())
     let runner = SetupCommandRunner(
       resolveProfile: DependencyProfile.named,
@@ -177,9 +177,6 @@ struct SetupCommandTests {
         missing.withLock { state in
           if request.arguments.contains("bat") {
             state.remove("bat")
-          }
-          if request.arguments.contains("codex") {
-            state.remove("codex")
           }
         }
         return ProcessResult(terminationStatus: 0, output: "")
@@ -207,7 +204,7 @@ struct SetupCommandTests {
     #expect(report.mutationAttempted)
     #expect(announcedPlan.operation == "setup_dependency_installation_plan")
     #expect(announcedPlan.plan.formulae == ["bat"])
-    #expect(announcedPlan.plan.casks == ["codex"])
+    #expect(announcedPlan.plan.casks.isEmpty)
     #expect(
       observedEvents.dropFirst() == [
         .process(
@@ -216,18 +213,10 @@ struct SetupCommandTests {
             arguments: ["install", "--formula", "--no-ask", "bat"],
             environmentOverrides: HomebrewInstallPlan.environment
           )
-        ),
-        .process(
-          ProcessRequest(
-            executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
-            arguments: ["install", "--cask", "--no-ask", "codex"],
-            environmentOverrides: HomebrewInstallPlan.environment
-          )
-        ),
+        )
       ])
     #expect(
-      report.capabilities?.filter { ["bat", "codex"].contains($0.id) }.map(\.status)
-        == ["present", "present"]
+      report.capabilities?.filter { $0.id == "bat" }.map(\.status) == ["present"]
     )
   }
 
@@ -404,6 +393,54 @@ struct SetupCommandTests {
     #expect(!execution.succeeded)
     #expect(report.dependencyInstallation.plan.formulae == ["tuicr"])
     #expect(report.summary?.missingRequiredCount == 1)
+  }
+
+  @Test
+  func selectedCodexUsesTheApprovedCaskWhileAnExistingBinaryNeedsNoInstall() throws {
+    let home = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: home) }
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    let profile = home.appending(path: "profile.toml")
+    try "schema_version = 1\n[presets]\ncodex = true\n".write(
+      to: profile,
+      atomically: true,
+      encoding: .utf8
+    )
+    let missing = SetupCommandRunner(
+      resolveProfile: DependencyProfile.named,
+      capabilityIsAvailable: { $0.id != CodexAdapter.id },
+      processRunner: unexpectedProcessRunner(),
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegrations: externalIntegrations()
+    )
+    let selected = try missing.execute(
+      profileName: "personal",
+      homeDirectory: home,
+      installDependencies: true,
+      dryRun: true,
+      keybindingProfileURL: profile,
+      keybindingProfileRequired: true,
+      json: true
+    )
+    #expect(try decode(selected.output).dependencyInstallation.plan.casks == ["codex"])
+
+    let existing = SetupCommandRunner(
+      resolveProfile: DependencyProfile.named,
+      capabilityIsAvailable: { _ in true },
+      processRunner: unexpectedProcessRunner(),
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegrations: externalIntegrations()
+    )
+    let unclaimed = try existing.execute(
+      profileName: "personal",
+      homeDirectory: home,
+      installDependencies: true,
+      dryRun: true,
+      keybindingProfileURL: profile,
+      keybindingProfileRequired: true,
+      json: true
+    )
+    #expect(try decode(unclaimed.output).dependencyInstallation.plan.casks.isEmpty)
   }
 
   @Test
