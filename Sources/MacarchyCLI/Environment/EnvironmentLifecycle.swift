@@ -15,6 +15,8 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
   case btopConfiguration = "btop_configuration"
   case btopTheme = "btop_theme"
   case ezaTheme = "eza_theme"
+  case piConfiguration = "pi_configuration"
+  case piTheme = "pi_theme"
   case tuicrConfiguration = "tuicr_configuration"
   case tuicrTheme = "tuicr_theme"
   case tuicrSyntax = "tuicr_syntax"
@@ -103,7 +105,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let createdDirectories: [String]
   let originalThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btop: EnvironmentBtopOwnership?
+  let pi: EnvironmentPiOwnership?
   let tuicr: EnvironmentTuicrOwnership?
+  let piEnabled: Bool
   let tuicrEnabled: Bool
   let enabledThemeAdapterIDs: [String]?
 
@@ -113,7 +117,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     createdDirectories: [String],
     originalThemeBridges: [EnvironmentThemeBridgeState.Entry],
     btop: EnvironmentBtopOwnership? = nil,
+    pi: EnvironmentPiOwnership? = nil,
     tuicr: EnvironmentTuicrOwnership? = nil,
+    piEnabled: Bool = false,
     tuicrEnabled: Bool = false,
     enabledThemeAdapterIDs: [String]? = nil
   ) {
@@ -123,7 +129,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.createdDirectories = createdDirectories.sorted()
     self.originalThemeBridges = originalThemeBridges.sorted { $0.path < $1.path }
     self.btop = btop
+    self.pi = pi
     self.tuicr = tuicr
+    self.piEnabled = piEnabled
     self.tuicrEnabled = tuicrEnabled
     self.enabledThemeAdapterIDs = enabledThemeAdapterIDs?.sorted()
   }
@@ -135,7 +143,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case createdDirectories = "created_directories"
     case originalThemeBridges = "original_theme_bridges"
     case btop
+    case pi
     case tuicr
+    case piEnabled = "pi_enabled"
     case tuicrEnabled = "tuicr_enabled"
     case enabledThemeAdapterIDs = "enabled_theme_adapter_ids"
   }
@@ -151,7 +161,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       forKey: .originalThemeBridges
     )
     btop = try container.decodeIfPresent(EnvironmentBtopOwnership.self, forKey: .btop)
+    pi = try container.decodeIfPresent(EnvironmentPiOwnership.self, forKey: .pi)
     tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
+    piEnabled = try container.decodeIfPresent(Bool.self, forKey: .piEnabled) ?? false
     tuicrEnabled = try container.decodeIfPresent(Bool.self, forKey: .tuicrEnabled) ?? false
     enabledThemeAdapterIDs = try container.decodeIfPresent(
       [String].self,
@@ -166,6 +178,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
         adapterIDs == adapterIDs.sorted()
           && Set(adapterIDs).count == adapterIDs.count
           && Set(adapterIDs).isSubset(of: knownThemeAdapterIDs)
+          && adapterIDs.contains(PiAdapter.id) == piEnabled
           && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
       } ?? true
     guard schemaVersion == Self.currentSchemaVersion,
@@ -174,6 +187,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       Set(createdDirectories).count == createdDirectories.count,
       Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count,
       btop?.hasValidShape ?? true,
+      pi?.hasValidShape ?? true,
       tuicr?.hasValidShape ?? true,
       hasValidThemeAdapterInventory
     else { return false }
@@ -226,6 +240,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let previousThemeGenerationID: String?
   let rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btopReplacementName: String?
+  let piReplacementName: String?
   let tuicrReplacementName: String?
 
   init(
@@ -237,6 +252,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     previousThemeGenerationID: String? = nil,
     rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry] = [],
     btopReplacementName: String? = nil,
+    piReplacementName: String? = nil,
     tuicrReplacementName: String? = nil
   ) {
     schemaVersion = Self.currentSchemaVersion
@@ -248,6 +264,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.previousThemeGenerationID = previousThemeGenerationID
     self.rollbackThemeBridges = rollbackThemeBridges
     self.btopReplacementName = btopReplacementName
+    self.piReplacementName = piReplacementName
     self.tuicrReplacementName = tuicrReplacementName
   }
 
@@ -261,6 +278,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: rollbackThemeBridges,
       btopReplacementName: btopReplacementName,
+      piReplacementName: piReplacementName,
       tuicrReplacementName: tuicrReplacementName
     )
   }
@@ -274,6 +292,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case previousThemeGenerationID = "previous_theme_generation_id"
     case rollbackThemeBridges = "rollback_theme_bridges"
     case btopReplacementName = "btop_replacement_name"
+    case piReplacementName = "pi_replacement_name"
     case tuicrReplacementName = "tuicr_replacement_name"
   }
 }
@@ -438,6 +457,8 @@ struct EnvironmentProviderInspection: Sendable {
   let createdDirectories: [String]
   let proposedBtopOwnership: EnvironmentBtopOwnership?
   let btopExternalEvidence: EnvironmentEntryEvidence?
+  let proposedPiOwnership: EnvironmentPiOwnership?
+  let piExternalEvidence: EnvironmentEntryEvidence?
   let proposedTuicrOwnership: EnvironmentTuicrOwnership?
   let tuicrExternalEvidence: EnvironmentEntryEvidence?
 
@@ -494,6 +515,7 @@ struct EnvironmentStateStore: Sendable {
           stateRoot: stateRoot
         )
         && Self.btopReplacementIsValid(value)
+        && Self.piReplacementIsValid(value)
         && Self.tuicrReplacementIsValid(value)
     }
   }
@@ -648,6 +670,18 @@ struct EnvironmentStateStore: Sendable {
       && !name.contains("/")
       && name.utf8.count <= 128
   }
+
+  private static func piReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let required =
+      transaction.previousOwnership?.pi != nil
+      || transaction.proposedOwnership?.pi != nil
+    guard required else { return transaction.piReplacementName == nil }
+    guard let name = transaction.piReplacementName else { return false }
+    return name.hasPrefix(".macarchy-environment-pi-")
+      && name.hasSuffix(".replacement")
+      && !name.contains("/")
+      && name.utf8.count <= 128
+  }
 }
 
 struct EnvironmentProviderInspector: Sendable {
@@ -716,6 +750,22 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
       let legacyTuicrOwned = presentLegacyTuicrIDs == legacyTuicrIDs
+      let legacyPiIDs = Set([
+        SetupOwnershipManager.piSelectorID,
+        SetupOwnershipManager.piThemeLinkID,
+      ])
+      let presentLegacyPiIDs = Set(setupRecords.map(\.id)).intersection(legacyPiIDs)
+      guard presentLegacyPiIDs.isEmpty || presentLegacyPiIDs == legacyPiIDs else {
+        throw EnvironmentLifecycleError.blocked(
+          "legacy setup-owned Pi integration is incomplete: \(presentLegacyPiIDs.sorted().joined(separator: ", "))"
+        )
+      }
+      let legacyPiOwned = presentLegacyPiIDs == legacyPiIDs
+      let externallyAuthoritativePi =
+        ownership?.piEnabled == true
+        && ownership?.pi == nil
+        && ownership?.records.contains(where: { $0.id == .piTheme }) != true
+        && !legacyPiOwned
       let externallyAuthoritativeTuicr =
         ownership?.tuicrEnabled == true
         && ownership?.tuicr == nil
@@ -869,6 +919,57 @@ struct EnvironmentProviderInspector: Sendable {
         }
       }
 
+      let pi = try inspectPi(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        ownership: ownership?.pi,
+        legacyOwned: legacyPiOwned,
+        externallyAuthoritative: externallyAuthoritativePi
+      )
+      if let entry = pi.entry { inspections.append(entry) }
+      if legacyPiOwned {
+        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .first { $0.id == .piTheme }!
+        guard try managedEntryIsExact(entry) else {
+          throw EnvironmentLifecycleError.drift("legacy setup-owned pi_theme")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: "external",
+            ownership: "legacy_setup",
+            message: "The working legacy setup-owned Pi link is preserved.",
+            evidence: nil
+          )
+        )
+      }
+      if externallyAuthoritativePi, !composition.profile.presets.pi {
+        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .first { $0.id == .piTheme }!
+        let captured = try capture(entry.url, directoryLink: nil)
+        guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
+          throw EnvironmentLifecycleError.drift("externally owned pi_theme")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: "external",
+            ownership: "external_exact",
+            message: "The exact Pi tuple remains externally owned until disablement.",
+            evidence: captured
+          )
+        )
+      }
+      if pi.proposedOwnership != nil {
+        for directory in try missingParentDirectories(
+          of: homeDirectory.appending(path: ".pi/agent/settings.json"),
+          homeDirectory: homeDirectory
+        ) { createdDirectories.insert(directory.path) }
+      }
+
       let tuicr = try inspectTuicr(
         composition: composition,
         homeDirectory: homeDirectory,
@@ -954,6 +1055,7 @@ struct EnvironmentProviderInspector: Sendable {
             entries: inspections,
             selected: entries,
             btop: btop.proposedOwnership,
+            pi: pi.proposedOwnership,
             tuicr: tuicr.proposedOwnership
           ) : nil,
         blockedMessage: nil,
@@ -962,6 +1064,8 @@ struct EnvironmentProviderInspector: Sendable {
         createdDirectories: createdDirectories.sorted(),
         proposedBtopOwnership: btop.proposedOwnership,
         btopExternalEvidence: btop.externalEvidence,
+        proposedPiOwnership: pi.proposedOwnership,
+        piExternalEvidence: pi.externalEvidence,
         proposedTuicrOwnership: tuicr.proposedOwnership,
         tuicrExternalEvidence: tuicr.externalEvidence
       )
@@ -976,6 +1080,8 @@ struct EnvironmentProviderInspector: Sendable {
         createdDirectories: [],
         proposedBtopOwnership: nil,
         btopExternalEvidence: nil,
+        proposedPiOwnership: nil,
+        piExternalEvidence: nil,
         proposedTuicrOwnership: nil,
         tuicrExternalEvidence: nil
       )
@@ -1001,6 +1107,7 @@ struct EnvironmentProviderInspector: Sendable {
     if profile.tools.yazi {
       enabled.formUnion([.yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax])
     }
+    if profile.presets.pi { enabled.insert(.piTheme) }
     if profile.presets.tuicr { enabled.formUnion([.tuicrTheme, .tuicrSyntax]) }
     return allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .filter { enabled.contains($0.id) }
@@ -1069,6 +1176,12 @@ struct EnvironmentProviderInspector: Sendable {
         url: home.appending(path: ".config/btop/themes/\(BtopAdapter.themeFileName)"),
         kind: .symbolicLink,
         target: state.appending(path: "current/\(BtopAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .piTheme,
+        url: home.appending(path: ".pi/agent/themes/\(PiAdapter.themeName).json"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(PiAdapter.outputPath)").path
       ),
       EnvironmentManagedEntry(
         id: .tuicrTheme,
@@ -1341,6 +1454,7 @@ struct EnvironmentProviderInspector: Sendable {
     entries: [EnvironmentEntryInspection],
     selected: [EnvironmentManagedEntry],
     btop: EnvironmentBtopOwnership?,
+    pi: EnvironmentPiOwnership?,
     tuicr: EnvironmentTuicrOwnership?
   ) throws -> String {
     struct Payload: Encodable {
@@ -1361,6 +1475,9 @@ struct EnvironmentProviderInspector: Sendable {
     if let btop {
       targets[EnvironmentEntryID.btopConfiguration.rawValue] = "provider-writable:\(btop.path)"
     }
+    if let pi {
+      targets[EnvironmentEntryID.piConfiguration.rawValue] = "key-owned:\(pi.path)"
+    }
     if let tuicr {
       targets[EnvironmentEntryID.tuicrConfiguration.rawValue] = "key-owned:\(tuicr.path)"
     }
@@ -1378,6 +1495,7 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.tools.eza ? "eza" : "eza-disabled",
         composition.profile.tools.btop ? "btop" : "btop-disabled",
         composition.profile.tools.yazi ? "yazi" : "yazi-disabled",
+        composition.profile.presets.pi ? "pi" : "pi-disabled",
         composition.profile.presets.tuicr ? "tuicr" : "tuicr-disabled",
       ],
       entries: entries.filter { targets[$0.id] != nil }.map {
@@ -1400,7 +1518,7 @@ struct EnvironmentProviderInspector: Sendable {
     composition: EnvironmentComposition
   ) throws -> Bool {
     switch entry.id {
-    case .atuinTheme, .batTheme, .btopTheme, .ezaTheme, .tuicrTheme, .tuicrSyntax,
+    case .atuinTheme, .batTheme, .btopTheme, .ezaTheme, .piTheme, .tuicrTheme, .tuicrSyntax,
       .yaziFlavor, .yaziSyntax:
       return evidence.kind == .symbolicLink && evidence.linkDestination == entry.target
     case .batConfiguration:
@@ -1438,7 +1556,7 @@ struct EnvironmentProviderInspector: Sendable {
   private static func isDailyToolEntry(_ id: EnvironmentEntryID) -> Bool {
     switch id {
     case .batConfiguration, .batTheme, .btopConfiguration, .btopTheme, .ezaTheme,
-      .tuicrConfiguration, .tuicrTheme, .tuicrSyntax,
+      .piConfiguration, .piTheme, .tuicrConfiguration, .tuicrTheme, .tuicrSyntax,
       .yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax:
       true
     case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim:
@@ -1450,15 +1568,27 @@ struct EnvironmentProviderInspector: Sendable {
     at url: URL,
     evidence: EnvironmentEntryEvidence
   ) throws -> String {
-    let data = try BoundedRegularFile.read(at: url).data
-    guard sha256Digest(data) == evidence.contentDigest,
-      let text = String(data: data, encoding: .utf8)
+    let data = try configurationData(at: url, evidence: evidence)
+    guard let text = String(data: data, encoding: .utf8)
     else {
       throw EnvironmentLifecycleError.blocked(
         "provider configuration changed during inspection: \(url.path)"
       )
     }
     return text
+  }
+
+  private func configurationData(
+    at url: URL,
+    evidence: EnvironmentEntryEvidence
+  ) throws -> Data {
+    let data = try BoundedRegularFile.read(at: url).data
+    guard sha256Digest(data) == evidence.contentDigest else {
+      throw EnvironmentLifecycleError.blocked(
+        "provider configuration changed during inspection: \(url.path)"
+      )
+    }
+    return data
   }
 
   private func validateTOML(_ text: String, source: URL) throws {
@@ -1663,6 +1793,267 @@ struct EnvironmentProviderInspector: Sendable {
         evidence: evidence
       ), nil, nil
     )
+  }
+
+  private func inspectPi(
+    composition: EnvironmentComposition,
+    homeDirectory: URL,
+    stateRoot: URL,
+    ownership: EnvironmentPiOwnership?,
+    legacyOwned: Bool,
+    externallyAuthoritative: Bool
+  ) throws -> (
+    entry: EnvironmentEntryInspection?,
+    proposedOwnership: EnvironmentPiOwnership?,
+    externalEvidence: EnvironmentEntryEvidence?
+  ) {
+    guard
+      composition.profile.presets.pi || ownership != nil || legacyOwned
+        || externallyAuthoritative
+    else { return (nil, nil, nil) }
+    let url = homeDirectory.appending(path: ".pi/agent/settings.json")
+    if legacyOwned {
+      let evidence = try capture(url, directoryLink: nil)
+      guard evidence.kind == .regularFile,
+        try EnvironmentPiDocument.matchesManaged(
+          configurationData(at: url, evidence: evidence),
+          source: url
+        )
+      else { throw EnvironmentLifecycleError.drift("legacy setup-owned Pi selector") }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.piConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "legacy_setup",
+          message: "The working legacy setup-owned Pi integration is preserved.",
+          evidence: evidence
+        ), nil, nil
+      )
+    }
+    if let ownership {
+      guard ownership.path == url.path,
+        try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+      else { throw EnvironmentLifecycleError.blocked("Pi ownership path is invalid") }
+      let evidence = try capture(url, directoryLink: nil)
+      let exact: Bool
+      if evidence.kind == .regularFile {
+        exact = try EnvironmentPiDocument.matchesManaged(
+          configurationData(at: url, evidence: evidence),
+          source: url
+        )
+      } else {
+        exact = false
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.piConfiguration.rawValue,
+          path: url.path,
+          status: exact
+            ? (composition.profile.presets.pi ? "managed" : "restoration_required") : "drifted",
+          ownership: "macarchy",
+          message: exact
+            ? (composition.profile.presets.pi
+              ? "The Pi theme member is managed."
+              : "The disabled Pi theme member will be restored.")
+            : "The owned Pi theme member drifted.",
+          evidence: nil
+        ),
+        composition.profile.presets.pi ? ownership : nil,
+        nil
+      )
+    }
+    if externallyAuthoritative {
+      let evidence = try capture(url, directoryLink: nil)
+      guard
+        try piExternalTupleIsExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot,
+          configurationEvidence: evidence
+        )
+      else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.piConfiguration.rawValue,
+            path: url.path,
+            status: "drifted",
+            ownership: "external_exact",
+            message: "The externally owned Pi tuple drifted.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.piConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "external_exact",
+          message: "The exact Pi tuple remains externally owned until disablement.",
+          evidence: evidence
+        ), nil, nil
+      )
+    }
+    guard composition.profile.presets.pi else { return (nil, nil, nil) }
+    let evidence = try capture(url, directoryLink: nil)
+    let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+    let externalConfiguration = evidence.kind == .symbolicLink || externalAncestor
+    if externalConfiguration {
+      let data = try externalPiConfigurationData(
+        at: url,
+        evidence: evidence,
+        hasExternalAncestor: externalAncestor
+      )
+      guard try EnvironmentPiDocument.matchesManaged(data, source: url) else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.piConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "A divergent Pi selector is behind an externally owned symlink.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      guard try piLinkIsExternalExact(homeDirectory: homeDirectory, stateRoot: stateRoot) else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.piConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "The externally owned Pi selector requires the exact watched theme link.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.piConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "external_exact",
+          message: "The exact Pi selector and watched theme link remain externally owned.",
+          evidence: evidence
+        ), nil, evidence
+      )
+    }
+    if evidence.kind == .regularFile {
+      let data = try configurationData(at: url, evidence: evidence)
+      if try EnvironmentPiDocument.matchesManaged(data, source: url) {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.piConfiguration.rawValue,
+            path: url.path,
+            status: "external",
+            ownership: "external_exact",
+            message: "The exact Pi theme member remains externally owned.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      let proposed = try EnvironmentPiDocument.ownership(for: data, source: url)
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.piConfiguration.rawValue,
+          path: url.path,
+          status: "adoption_required",
+          ownership: "external",
+          message: "The existing Pi theme member requires reviewed adoption.",
+          evidence: evidence
+        ), proposed, evidence
+      )
+    }
+    if evidence.kind == .absent, !externalAncestor {
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.piConfiguration.rawValue,
+          path: url.path,
+          status: "install_required",
+          ownership: "external",
+          message: "Minimal Pi settings containing only the theme member will be installed.",
+          evidence: evidence
+        ),
+        EnvironmentPiOwnership(path: url.path, originalFileExisted: false, originalMember: nil),
+        evidence
+      )
+    }
+    return (
+      EnvironmentEntryInspection(
+        id: EnvironmentEntryID.piConfiguration.rawValue,
+        path: url.path,
+        status: "unsupported",
+        ownership: "external",
+        message: "Pi settings cannot be safely adopted.",
+        evidence: evidence
+      ), nil, nil
+    )
+  }
+
+  func piExternalTupleIsExact(
+    homeDirectory: URL,
+    stateRoot: URL,
+    configurationEvidence: EnvironmentEntryEvidence? = nil
+  ) throws -> Bool {
+    let configuration = homeDirectory.appending(path: ".pi/agent/settings.json")
+    let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
+    let externalAncestor = try hasSymlinkAncestor(configuration, stoppingAt: homeDirectory)
+    guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
+    let data =
+      evidence.kind == .symbolicLink || externalAncestor
+      ? try externalPiConfigurationData(
+        at: configuration,
+        evidence: evidence,
+        hasExternalAncestor: externalAncestor
+      )
+      : try configurationData(at: configuration, evidence: evidence)
+    return try EnvironmentPiDocument.matchesManaged(data, source: configuration)
+      && piLinkIsExternalExact(homeDirectory: homeDirectory, stateRoot: stateRoot)
+  }
+
+  private func piLinkIsExternalExact(homeDirectory: URL, stateRoot: URL) throws -> Bool {
+    let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      .first { $0.id == .piTheme }!
+    let evidence = try capture(entry.url, directoryLink: nil)
+    return evidence.kind == .symbolicLink && evidence.linkDestination == entry.target
+  }
+
+  private func externalPiConfigurationData(
+    at url: URL,
+    evidence: EnvironmentEntryEvidence,
+    hasExternalAncestor: Bool
+  ) throws -> Data {
+    guard evidence.kind == .symbolicLink || hasExternalAncestor else {
+      return try configurationData(at: url, evidence: evidence)
+    }
+    let firstTarget = try resolvedPiTarget(url)
+    let data: Data
+    do {
+      data = try BoundedRegularFile.read(at: firstTarget).data
+    } catch {
+      throw EnvironmentLifecycleError.blocked(
+        "Pi settings symlink target is not a bounded regular file: \(error)"
+      )
+    }
+    let secondTarget = try resolvedPiTarget(url)
+    guard firstTarget == secondTarget, try capture(url, directoryLink: nil) == evidence else {
+      throw EnvironmentLifecycleError.blocked("Pi settings symlink chain changed during inspection")
+    }
+    return data
+  }
+
+  private func resolvedPiTarget(_ url: URL) throws -> URL {
+    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
+    let resolved = url.path.withCString { Darwin.realpath($0, &buffer) }
+    guard resolved != nil else {
+      throw EnvironmentLifecycleError.system("resolve Pi settings symlink chain", url, errno)
+    }
+    let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+    guard let path = String(bytes: bytes, encoding: .utf8) else {
+      throw EnvironmentLifecycleError.blocked("Pi settings symlink chain is not valid UTF-8")
+    }
+    return URL(filePath: path).standardizedFileURL
   }
 
   private func inspectTuicr(
@@ -2162,6 +2553,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: transaction.previousOwnership,
           to: proposed,
           btopReplacementName: transaction.btopReplacementName,
+          piReplacementName: transaction.piReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
         try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
@@ -2172,6 +2564,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: transaction.previousOwnership,
           to: nil,
           btopReplacementName: transaction.btopReplacementName,
+          piReplacementName: transaction.piReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
         try EnvironmentThemeBridgeState(
@@ -2185,6 +2578,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         from: transaction.proposedOwnership,
         to: transaction.previousOwnership,
         btopReplacementName: transaction.btopReplacementName,
+        piReplacementName: transaction.piReplacementName,
         tuicrReplacementName: transaction.tuicrReplacementName
       )
       try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
@@ -2284,14 +2678,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
       ),
       originalThemeBridges: originalThemeBridges,
       btop: inspection.proposedBtopOwnership,
+      pi: inspection.proposedPiOwnership,
       tuicr: inspection.proposedTuicrOwnership,
+      piEnabled: composition.profile.presets.pi,
       tuicrEnabled: composition.profile.presets.tuicr,
       enabledThemeAdapterIDs: composition.profile.selectedThemeAdapterIDs
     )
     let generationChanged = previous?.generationID != proposed.generationID
     let ownershipChanged =
       previous?.records != proposed.records || previous?.btop != proposed.btop
+      || previous?.pi != proposed.pi
       || previous?.tuicr != proposed.tuicr
+      || previous?.piEnabled != proposed.piEnabled
       || previous?.tuicrEnabled != proposed.tuicrEnabled
       || previous?.enabledThemeAdapterIDs != proposed.enabledThemeAdapterIDs
     let changed = generationChanged || ownershipChanged
@@ -2317,6 +2715,14 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
+    if let expected = inspection.piExternalEvidence {
+      let url = homeDirectory.appending(path: ".pi/agent/settings.json")
+      guard try inspector.capture(url, directoryLink: nil) == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "Pi settings changed after planning; run environment plan again"
+        )
+      }
+    }
     if let expected = inspection.tuicrExternalEvidence {
       let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
       guard try inspector.capture(url, directoryLink: nil) == expected else {
@@ -2328,6 +2734,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let btopReplacementName =
       previous?.btop != nil || proposed.btop != nil
       ? ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement" : nil
+    let piReplacementName =
+      previous?.pi != nil || proposed.pi != nil
+      ? ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement" : nil
     let tuicrReplacementName =
       previous?.tuicr != nil || proposed.tuicr != nil
       ? ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement" : nil
@@ -2339,6 +2748,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: themeBridges.entries,
       btopReplacementName: btopReplacementName,
+      piReplacementName: piReplacementName,
       tuicrReplacementName: tuicrReplacementName
     )
     let store = EnvironmentStateStore(stateRoot: stateRoot)
@@ -2350,6 +2760,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: previous,
           to: proposed,
           btopReplacementName: btopReplacementName,
+          piReplacementName: piReplacementName,
           tuicrReplacementName: tuicrReplacementName
         )
         try restoreReleasedThemeBridges(from: previous, to: proposed)
@@ -2370,6 +2781,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           from: proposed,
           to: previous,
           btopReplacementName: btopReplacementName,
+          piReplacementName: piReplacementName,
           tuicrReplacementName: tuicrReplacementName
         )
         try generationStore.restoreCurrent(previousCurrent)
@@ -2415,6 +2827,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       from: rollback.proposedOwnership,
       to: rollback.previousOwnership,
       btopReplacementName: rollback.btopReplacementName,
+      piReplacementName: rollback.piReplacementName,
       tuicrReplacementName: rollback.tuicrReplacementName
     )
     try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
@@ -2475,6 +2888,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       btopReplacementName: ownership.btop.map { _ in
         ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement"
       },
+      piReplacementName: ownership.pi.map { _ in
+        ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement"
+      },
       tuicrReplacementName: ownership.tuicr.map { _ in
         ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement"
       }
@@ -2484,6 +2900,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       from: ownership,
       to: nil,
       btopReplacementName: transaction.btopReplacementName,
+      piReplacementName: transaction.piReplacementName,
       tuicrReplacementName: transaction.tuicrReplacementName
     )
     try EnvironmentThemeBridgeState(entries: ownership.originalThemeBridges).restore()
@@ -2497,11 +2914,20 @@ struct EnvironmentTransactionCoordinator: Sendable {
     from old: EnvironmentOwnership?,
     to new: EnvironmentOwnership?,
     btopReplacementName: String?,
+    piReplacementName: String?,
     tuicrReplacementName: String?
   ) throws {
     let oldByID = Dictionary(uniqueKeysWithValues: (old?.records ?? []).map { ($0.id, $0) })
     let newByID = Dictionary(uniqueKeysWithValues: (new?.records ?? []).map { ($0.id, $0) })
+    let piTransaction = EnvironmentPiFileTransaction(homeDirectory: homeDirectory)
     let tuicrTransaction = EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
+    let transitionedPiBeforeLinks = old?.pi != nil
+    if transitionedPiBeforeLinks {
+      guard let piReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
+      }
+      try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
+    }
     let transitionedTuicrBeforeLinks = old?.tuicr != nil
     if transitionedTuicrBeforeLinks {
       guard let tuicrReplacementName else {
@@ -2551,6 +2977,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       ).transition(from: old, to: new, replacementName: btopReplacementName)
+    }
+    if !transitionedPiBeforeLinks, new?.pi != nil {
+      guard let piReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
+      }
+      try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
     }
     if !transitionedTuicrBeforeLinks, new?.tuicr != nil {
       guard let tuicrReplacementName else {
@@ -2625,6 +3057,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         throw EnvironmentLifecycleError.blocked("ownership contains an unexpected btop path")
       }
     }
+    if let pi = ownership.pi {
+      let expected = homeDirectory.appending(path: ".pi/agent/settings.json").path
+      guard pi.path == expected else {
+        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Pi path")
+      }
+    }
     if let tuicr = ownership.tuicr {
       let expected = homeDirectory.appending(path: ".config/tuicr/config.toml").path
       guard tuicr.path == expected else {
@@ -2690,6 +3128,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
       else {
         throw EnvironmentLifecycleError.drift(url.path)
       }
+    }
+    if let pi = ownership.pi {
+      try EnvironmentPiFileTransaction(homeDirectory: homeDirectory).preflight(pi)
+    } else if ownership.piEnabled,
+      !ownership.records.contains(where: { $0.id == .piTheme })
+    {
+      guard
+        try inspector.piExternalTupleIsExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot
+        )
+      else { throw EnvironmentLifecycleError.drift("externally owned Pi tuple") }
     }
     if let tuicr = ownership.tuicr {
       try EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory).preflight(tuicr)

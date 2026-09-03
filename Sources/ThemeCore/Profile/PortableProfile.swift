@@ -105,6 +105,7 @@ package struct DailyToolsProfile: Equatable, Sendable {
 }
 
 package struct PresetsProfile: Equatable, Sendable {
+  package let pi: Bool
   package let tuicr: Bool
 }
 
@@ -247,6 +248,7 @@ package struct PortableProfileLoader: Sendable {
       "tools.eza",
       "tools.btop",
       "tools.yazi",
+      "presets.pi",
       "presets.tuicr",
       "btop.vim_keys",
       "yazi.show_hidden",
@@ -568,7 +570,10 @@ package struct PortableProfileLoader: Sendable {
       atuin: atuin,
       neovim: neovim,
       tools: tools,
-      presets: PresetsProfile(tuicr: document.presets?.tuicr ?? false),
+      presets: PresetsProfile(
+        pi: document.presets?.pi ?? false,
+        tuicr: document.presets?.tuicr ?? false
+      ),
       btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
       yazi: YaziProfileOptions(showHidden: document.yazi?.showHidden)
     )
@@ -779,7 +784,7 @@ extension EnvironmentProfile {
     ),
     neovim: NeovimProfileOptions(configurationDirectoryURL: nil),
     tools: DailyToolsProfile(bat: true, eza: true, btop: true, yazi: true),
-    presets: PresetsProfile(tuicr: false),
+    presets: PresetsProfile(pi: false, tuicr: false),
     btop: BtopProfileOptions(vimKeys: nil),
     yazi: YaziProfileOptions(showHidden: nil)
   )
@@ -949,6 +954,7 @@ private struct DailyToolsDocument: Decodable {
 }
 
 private struct PresetsDocument: Decodable {
+  let pi: Bool?
   let tuicr: Bool?
 }
 

@@ -35,7 +35,11 @@ extension AdapterContractTests {
         }
         return state.typedPublished && state.darwinPublished
       }
-      #expect(published)
+      if request.executableURL != PiAdapter.liveExecutableURL
+        || request.arguments != ["--version"]
+      {
+        #expect(published)
+      }
       if request.executableURL == URL(filePath: "/usr/bin/osascript") {
         return ProcessResult(terminationStatus: 0, output: "")
       }
@@ -62,6 +66,11 @@ extension AdapterContractTests {
       }
       if request.executableURL == HerdrAdapter.liveExecutableURL {
         return ProcessResult(terminationStatus: 0, output: "")
+      }
+      if request.executableURL == PiAdapter.liveExecutableURL,
+        request.arguments == ["--version"]
+      {
+        return ProcessResult(terminationStatus: 0, output: PiAdapter.minimumVersion)
       }
       if request.executableURL == URL(filePath: "/usr/bin/pgrep") {
         return ProcessResult(terminationStatus: 1, output: "")
@@ -303,7 +312,8 @@ extension AdapterContractTests {
         },
         wallpaperControl: Self.wallpaperControl(),
         wallpaperSignal: try Self.wallpaperSignal(root: root),
-        onThemeChanged: { _ in calls.withLock { $0 += 1 } }
+        onThemeChanged: { _ in calls.withLock { $0 += 1 } },
+        enabledAdapterIDs: [adapterID]
       )
 
       do {
@@ -378,7 +388,12 @@ extension AdapterContractTests {
       consumerPaths: try Self.consumerPaths(
         root: root, kittyConfigurationURL: configurationURL,
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { _ in
+      processRunner: ProcessRunner { request in
+        if request.executableURL == PiAdapter.liveExecutableURL,
+          request.arguments == ["--version"]
+        {
+          return ProcessResult(terminationStatus: 0, output: PiAdapter.minimumVersion)
+        }
         let manifest = try ThemeActivator(root: root, faultInjector: { _ in }).activate(
           package: tokyoNight
         )
@@ -489,7 +504,8 @@ extension AdapterContractTests {
         return ProcessResult(terminationStatus: 1, output: "unexpected process")
       },
       wallpaperControl: Self.wallpaperControl(),
-      wallpaperSignal: try Self.wallpaperSignal(root: root)
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
+      enabledAdapterIDs: [HerdrAdapter.id, KittyAdapter.id, NeovimAdapter.id]
     )
 
     try coordinator.preflight(package: package)

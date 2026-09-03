@@ -21,6 +21,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         + (profile.prompt == .starship ? ["starship"] : [])
         + (profile.history == .atuin ? ["atuin"] : [])
         + (profile.editor == .neovim ? ["neovim"] : [])
+        + (profile.presets.pi ? ["pi"] : [])
         + (profile.presets.tuicr ? ["tuicr"] : [])
         + (profile.tools.bat ? ["bat"] : [])
         + (profile.tools.eza ? ["eza"] : [])
@@ -37,6 +38,36 @@ struct EnvironmentPrerequisiteInspector: Sendable {
           remediation: remediation($0.remediation)
         )
       }
+    if profile.presets.pi,
+      let index = results.firstIndex(where: { $0.id == PiAdapter.id }),
+      results[index].status == "present"
+    {
+      let executable = PiAdapter.liveExecutableURL
+      do {
+        let version = try PiAdapter(
+          root: homeDirectory.appending(path: ".config/macarchy"),
+          configurationDirectoryURL: homeDirectory.appending(path: ".pi/agent"),
+          executableURL: executable,
+          controlIsAvailable: { true },
+          processRunner: .live
+        ).supportedVersion()
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: PiAdapter.id,
+          status: "present",
+          requirement:
+            "Pi \(version) satisfies the required version >= \(PiAdapter.minimumVersion)",
+          remediation: results[index].remediation
+        )
+      } catch {
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: PiAdapter.id,
+          status: "missing",
+          requirement:
+            "Pi must report a parseable version >= \(PiAdapter.minimumVersion): \(error)",
+          remediation: results[index].remediation
+        )
+      }
+    }
     if profile.shell == .zsh {
       let zsh = URL(filePath: "/bin/zsh")
       results.append(
@@ -79,7 +110,7 @@ extension EnvironmentProfile {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
       && editor == .disabled
       && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
-      && !presets.tuicr
+      && !presets.pi && !presets.tuicr
   }
 
   var selectedThemeAdapterIDs: [String] {
@@ -91,6 +122,7 @@ extension EnvironmentProfile {
       + (tools.btop ? ["btop"] : [])
       + (tools.eza ? ["eza"] : [])
       + (tools.yazi ? ["yazi"] : [])
+      + (presets.pi ? ["pi"] : [])
       + (presets.tuicr ? ["tuicr"] : [])
   }
 }
@@ -441,6 +473,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       "btop": profile.tools.btop ? "enabled" : "disabled",
       "eza": profile.tools.eza ? "enabled" : "disabled",
       "yazi": profile.tools.yazi ? "enabled" : "disabled",
+      "pi": profile.presets.pi ? "enabled" : "disabled",
       "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]
   }

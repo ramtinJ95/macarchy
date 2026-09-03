@@ -19,7 +19,19 @@ struct ReconcileCommandRunner: Sendable {
         enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths
-        )
+        ),
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        }
       ).previewReconciliation(adapterIDs)
     },
     reconcile: { adapterIDs, stateRoot, consumerPaths in
@@ -29,7 +41,19 @@ struct ReconcileCommandRunner: Sendable {
         enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
           stateRoot: stateRoot,
           consumerPaths: consumerPaths
-        )
+        ),
+        piSelectionIsApplied: {
+          try ThemeRuntimeSelection.piIsEnabled(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        },
+        piThemeLinkRefreshIsAllowed: {
+          try ThemeRuntimeSelection.piThemeLinkRefreshIsAllowed(
+            stateRoot: stateRoot,
+            consumerPaths: consumerPaths
+          )
+        }
       ).reconcile(adapterIDs: adapterIDs)
     }
   )
