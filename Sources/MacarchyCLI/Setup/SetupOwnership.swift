@@ -17,6 +17,7 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
   case configurationIsExternallyOwned(String, URL)
   case configurationTooLarge(String, URL)
   case corruptBackup(URL)
+  case environmentPiOwnershipActive
   case environmentTuicrOwnershipActive
   case invalidManifest(String)
   case invalidConfiguration(String, URL, String)
@@ -48,6 +49,8 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
       "Configuration for \(id) at \(url.path) exceeds 1 MiB"
     case .corruptBackup(let url):
       "Macarchy-owned backup at \(url.path) is missing or corrupt"
+    case .environmentPiOwnershipActive:
+      "Applied environment ownership still enables Pi; set [presets].pi = false and run 'macarchy environment apply' to disable or migrate it before setup teardown"
     case .environmentTuicrOwnershipActive:
       "Applied environment ownership still enables tuicr; set [presets].tuicr = false and run 'macarchy environment apply' to disable or migrate it before setup teardown"
     case .invalidManifest(let reason):
@@ -346,6 +349,12 @@ struct SetupOwnershipManager: Sendable {
 
   private func teardown(context: Context, dryRun: Bool) throws -> [SetupIntegrationResult] {
     var records = try readRecords(context: context)
+    let legacyPiIDs = Set([Self.piSelectorID, Self.piThemeLinkID])
+    if legacyPiIDs.isSubset(of: Set(records.map(\.id))),
+      try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()?.piEnabled == true
+    {
+      throw SetupOwnershipError.environmentPiOwnershipActive
+    }
     let legacyTuicrIDs = Set([
       Self.tuicrSelectorID,
       Self.tuicrThemeLinkID,
