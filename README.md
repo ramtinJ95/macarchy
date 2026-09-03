@@ -123,10 +123,11 @@ Installed builds resolve resources relative to the executable, so commands do
 not depend on the current working directory. `--themes-root`, `--state-root`,
 and consumer-specific path options are available for development and testing.
 
-## Managed terminal session
+## Managed daily tool environment
 
-The `environment` lifecycle manages M3's Kitty, zsh, Starship, and Atuin session
-as one outcome. `plan` composes package-owned defaults with the portable profile,
+The `environment` lifecycle manages M3's Kitty, zsh, Starship, Atuin, Neovim,
+and daily TUI environment as one outcome. `plan` composes package-owned defaults
+with the portable profile,
 reports selected-package prerequisites, provider ownership, exact artifacts,
 and one aggregate adoption digest without mutation. `apply` publishes one
 immutable generation, installs stable provider bridges, reconciles the active
@@ -148,7 +149,7 @@ retained identity and metadata, Kitty inventory, provider selection, native
 inputs, and rendered artifacts. Apply recaptures that evidence before changing
 any entry. If the plan reports no adoption requirement, omit `--adopt`.
 
-All four providers are enabled when the profile is absent. Roles can be disabled
+All curated providers are enabled when the profile is absent. Roles can be disabled
 without Macarchy touching their external configuration:
 
 ```toml
@@ -165,6 +166,9 @@ provider = "starship" # or "disabled"
 
 [history]
 provider = "atuin" # or "disabled"
+
+[editor]
+provider = "neovim" # or "disabled"
 ```
 
 Common options remain sparse. Advanced inputs use native provider files beside
@@ -187,6 +191,9 @@ behavior = "starship.toml"
 search_mode = "daemon-fuzzy"
 keymap_mode = "vim-insert"
 configuration = "atuin.toml"
+
+[neovim]
+configuration = "nvim"
 ```
 
 The Kitty override is a bounded, symlink-free directory containing
@@ -195,10 +202,28 @@ trusted local code but is copied, not executed, during planning. Starship
 behavior cannot define `palette` or `palettes`, and Atuin behavior cannot define
 `[theme]`, because those values remain owned by Macarchy's active theme.
 
+When `neovim.configuration` is absent, Macarchy supplies its curated, locked
+LazyVim baseline. When present, it accepts a complete profile-relative native
+configuration, including arbitrary Lua and binary native files. Planning copies
+that tree as inert bytes; it never edits or executes the source. The tree must
+contain `init.lua`, use Lazy with a `lazy-lock.json`, and leave
+`lua/plugins/colorscheme.lua`, `lua/config/macarchy-theme.lua`,
+`lua/macarchy/current.lua`, and `colors/macarchy-imported.lua` unclaimed. All
+symlinks fail except the prior Macarchy integration's one
+`lua/macarchy/current.lua` canonical-pointer link: its destination must be an
+absolute path ending in `/.config/macarchy/current/generated/neovim.lua`.
+Macarchy also owns the `aether`, `catppuccin`, `kanagawa.nvim`, and
+`tokyonight.nvim` entries in the generated `lazy-lock.json`; every other lock
+entry remains native-config owned. Recognized older Macarchy theme files are
+replaced in the generated copy only. Apply restores and verifies the pinned
+plugin graph from a temporary writable copy before validating the immutable
+effective configuration's active theme and fresh headless editor.
+
 Generated state lives under
 `~/.config/macarchy/environment/generations/e-<id>` behind `environment/current`.
 Macarchy retains adopted files and lexical symlinks by inode until teardown.
-Atuin history, daemon state, caches, and unrelated files remain untouched.
+Atuin history and daemon state remain untouched. Neovim plugin/cache state stays
+in Neovim's normal data directories and is retained across teardown.
 Disabling a previously managed role restores only that role's adopted entries;
 an entirely disabled session installs nothing.
 
