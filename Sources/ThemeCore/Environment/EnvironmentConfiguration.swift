@@ -308,6 +308,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
       ],
       presets: [
         "codex": options.presets.codex,
+        "herdr": options.presets.herdr,
         "pi": options.presets.pi,
         "tuicr": options.presets.tuicr,
       ],

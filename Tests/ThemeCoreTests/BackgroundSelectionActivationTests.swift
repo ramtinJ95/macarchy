@@ -4,6 +4,10 @@ import Testing
 
 @testable import ThemeCore
 
+private let backgroundHerdrReloadSuccess =
+  #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"#
+  + #""status":"applied","type":"config_reload"}}"#
+
 extension AdapterContractTests {
   @Test
   func backgroundOnlyActivationCarriesEvidenceAndRestoresRememberedSelection() async throws {
@@ -47,7 +51,7 @@ extension AdapterContractTests {
       requests: requests,
       wallpaperControl: trackedWallpaperControl(state: wallpaperState),
       enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
-        .subtracting([CodexAdapter.id, PiAdapter.id, TuicrAdapter.id])
+        .subtracting([CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, TuicrAdapter.id])
     )
     let second = try await withoutTuicr.activate(
       package: package,
@@ -232,10 +236,17 @@ extension AdapterContractTests {
   ) throws -> ThemeActivationCoordinator {
     let runner = ProcessRunner { request in
       requests.values.withLock { $0.append(request) }
+      if request.executableURL == HerdrAdapter.liveExecutableURL {
+        return request.arguments == ["--version"]
+          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          : ProcessResult(
+            terminationStatus: 0,
+            output: backgroundHerdrReloadSuccess
+          )
+      }
       if request.executableURL == URL(filePath: "/usr/bin/osascript")
         || request.executableURL == BatAdapter.liveExecutableURL
         || request.executableURL == EzaAdapter.liveExecutableURL
-        || request.executableURL == HerdrAdapter.liveExecutableURL
         || request.executableURL == SpicetifyAdapter.liveExecutableURL
       {
         return ProcessResult(terminationStatus: 0, output: "")
@@ -280,7 +291,7 @@ extension AdapterContractTests {
       currentAppearance: { .dark },
       enabledAdapterIDs: enabledAdapterIDs
         ?? Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          CodexAdapter.id, PiAdapter.id,
+          CodexAdapter.id, HerdrAdapter.id, PiAdapter.id,
         ])
     )
   }

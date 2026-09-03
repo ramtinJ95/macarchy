@@ -33,8 +33,18 @@ enum ThemeRuntimeSelection {
     } else {
       enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
       enabled.remove(CodexAdapter.id)
+      enabled.remove(HerdrAdapter.id)
       enabled.remove(PiAdapter.id)
       enabled.remove(TuicrAdapter.id)
+      let herdr = HerdrAdapter(
+        root: stateRoot,
+        configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+        executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+        controlIsAvailable: { true }
+      )
+      if try herdr.legacyOwnershipEvidence() != nil {
+        enabled.insert(HerdrAdapter.id)
+      }
     }
     if legacyCodex { enabled.insert(CodexAdapter.id) }
     if legacyPi { enabled.insert(PiAdapter.id) }
@@ -56,9 +66,21 @@ enum ThemeRuntimeSelection {
 
   static func activationCoordinator(
     stateRoot: URL,
-    consumerPaths: ThemeConsumerPaths
+    consumerPaths: ThemeConsumerPaths,
+    herdrRuntime: EnvironmentHerdrRuntimeReloader = .live
   ) throws -> ThemeActivationCoordinator {
-    try ThemeActivationCoordinator(
+    let homeDirectory = consumerPaths.piConfigurationDirectoryURL
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+    let herdrManagedMode =
+      ownership?.herdrEnabled == true
+      ? managedHerdrMode(
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        runtime: herdrRuntime
+      ) : nil
+    return try ThemeActivationCoordinator(
       root: stateRoot,
       consumerPaths: Self.consumerPaths(
         stateRoot: stateRoot,
@@ -68,6 +90,7 @@ enum ThemeRuntimeSelection {
         stateRoot: stateRoot,
         consumerPaths: consumerPaths
       ),
+      herdrManagedMode: herdrManagedMode,
       piSelectionIsApplied: {
         try piIsEnabled(stateRoot: stateRoot, consumerPaths: consumerPaths)
       },
@@ -78,6 +101,89 @@ enum ThemeRuntimeSelection {
         )
       }
     )
+  }
+
+  static func managedHerdrMode(
+    stateRoot: URL,
+    homeDirectory: URL,
+    runtime: EnvironmentHerdrRuntimeReloader
+  ) -> HerdrManagedMode {
+    HerdrManagedMode(
+      preflight: { desired in
+        try EnvironmentTransactionCoordinator(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot
+        ).preflightManagedHerdr(desired, requireActiveMatch: false)
+      },
+      inspect: { desired in
+        try EnvironmentTransactionCoordinator(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot
+        ).preflightManagedHerdr(desired, requireActiveMatch: true)
+        return "Herdr's 16-key theme surface is owned by the applied environment"
+      },
+      reconcile: { desired in
+        try reconcileManagedHerdr(
+          desired,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: runtime
+        )
+      }
+    )
+  }
+
+  private static func reconcileManagedHerdr(
+    _ desired: GeneratedHerdrTheme,
+    stateRoot: URL,
+    homeDirectory: URL,
+    runtime: EnvironmentHerdrRuntimeReloader
+  ) throws -> String {
+    let coordinator = EnvironmentTransactionCoordinator(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    )
+    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
+    let descriptor = try lifecycleLock.acquire()
+    defer { lifecycleLock.release(descriptor) }
+    let changed = try ActivationLock(root: stateRoot).withLock {
+      try coordinator.beginHerdrThemeTransitionLocked(desired)
+    }
+    guard changed else {
+      return "Herdr's aggregate-managed theme surface was already current"
+    }
+    do {
+      let message = try runtime.reload(stateRoot, homeDirectory)
+      try ActivationLock(root: stateRoot).withLock {
+        try coordinator.markHerdrRuntimeVerifiedLocked(.managed)
+        _ = try coordinator.prepareRecoveryLocked()
+      }
+      return message
+    } catch {
+      let activationError = error
+      do {
+        try ActivationLock(root: stateRoot).withLock {
+          try coordinator.rollbackApplyLocked()
+        }
+        let target = try ActivationLock(root: stateRoot).withLock {
+          try coordinator.pendingHerdrRuntimeTargetLocked()
+        }
+        if let target {
+          _ = try runtime.reload(stateRoot, homeDirectory)
+          try ActivationLock(root: stateRoot).withLock {
+            try coordinator.markHerdrRuntimeVerifiedLocked(target)
+            _ = try coordinator.prepareRecoveryLocked()
+          }
+        }
+      } catch {
+        throw EnvironmentLifecycleError.blocked(
+          "Herdr theme reload failed and rollback requires recovery: \(error)"
+        )
+      }
+      throw EnvironmentLifecycleError.blocked(
+        "Herdr theme reload failed and was rolled back: \(activationError)"
+      )
+    }
   }
 
   static func consumerPaths(

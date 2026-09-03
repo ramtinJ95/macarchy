@@ -2,6 +2,90 @@ import Darwin
 import Foundation
 import ThemeCore
 
+struct EnvironmentHerdrRuntimeReloader: Sendable {
+  let reload: @Sendable (URL, URL) throws -> String
+
+  static let assumed = Self { _, _ in
+    "Herdr runtime activation was assumed by the caller."
+  }
+
+  static let live = Self { stateRoot, homeDirectory in
+    let result = try HerdrAdapter(
+      root: stateRoot,
+      configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+      executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+      controlIsAvailable: { true }
+    ).reloadCurrentConfiguration()
+    guard result.succeeded else {
+      throw EnvironmentLifecycleError.blocked(result.message)
+    }
+    return result.message
+  }
+}
+
+private func recoverEnvironmentTransaction(
+  coordinator: EnvironmentTransactionCoordinator,
+  stateRoot: URL,
+  homeDirectory: URL,
+  runtime: EnvironmentHerdrRuntimeReloader
+) throws -> Bool {
+  let preparation = try ActivationLock(root: stateRoot).withLock {
+    try coordinator.prepareRecoveryLocked()
+  }
+  guard preparation.recovered else { return false }
+  if let target = preparation.runtimeTarget {
+    _ = try runtime.reload(stateRoot, homeDirectory)
+    try ActivationLock(root: stateRoot).withLock {
+      try coordinator.markHerdrRuntimeVerifiedLocked(target)
+      _ = try coordinator.prepareRecoveryLocked()
+    }
+  }
+  return true
+}
+
+private func verifyPendingHerdrRuntime(
+  coordinator: EnvironmentTransactionCoordinator,
+  stateRoot: URL,
+  homeDirectory: URL,
+  runtime: EnvironmentHerdrRuntimeReloader
+) throws -> DesktopThemeAdapterStatus? {
+  let target = try ActivationLock(root: stateRoot).withLock {
+    try coordinator.pendingHerdrRuntimeTargetLocked()
+  }
+  guard let target else { return nil }
+  let message = try runtime.reload(stateRoot, homeDirectory)
+  try ActivationLock(root: stateRoot).withLock {
+    try coordinator.markHerdrRuntimeVerifiedLocked(target)
+  }
+  return DesktopThemeAdapterStatus(
+    adapterID: HerdrAdapter.id,
+    requirement: "required",
+    status: "applied",
+    message: message
+  )
+}
+
+private func rollbackEnvironmentTransaction(
+  coordinator: EnvironmentTransactionCoordinator,
+  stateRoot: URL,
+  homeDirectory: URL,
+  runtime: EnvironmentHerdrRuntimeReloader
+) throws {
+  try ActivationLock(root: stateRoot).withLock {
+    try coordinator.rollbackApplyLocked()
+  }
+  if try verifyPendingHerdrRuntime(
+    coordinator: coordinator,
+    stateRoot: stateRoot,
+    homeDirectory: homeDirectory,
+    runtime: runtime
+  ) != nil {
+    try ActivationLock(root: stateRoot).withLock {
+      _ = try coordinator.prepareRecoveryLocked()
+    }
+  }
+}
+
 struct EnvironmentNeovimPreparer: Sendable {
   let prepare: @Sendable (EnvironmentProfile, URL) -> EnvironmentVerification?
 
@@ -85,13 +169,15 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let theme: DesktopThemeController?
   let verifier: EnvironmentSessionVerifier
   let neovim: EnvironmentNeovimPreparer
+  let herdrRuntime: EnvironmentHerdrRuntimeReloader
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
 
   static let live = Self(
     prerequisites: .live,
     theme: .live,
     verifier: .live,
-    neovim: .live
+    neovim: .live,
+    herdrRuntime: .live
   )
 
   init(
@@ -99,6 +185,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     theme: DesktopThemeController?,
     verifier: EnvironmentSessionVerifier,
     neovim: EnvironmentNeovimPreparer = .assumed,
+    herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
     transactionFaultInjector:
       @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = {
         _ in
@@ -108,6 +195,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.theme = theme
     self.verifier = verifier
     self.neovim = neovim
+    self.herdrRuntime = herdrRuntime
     self.transactionFaultInjector = transactionFaultInjector
   }
 
@@ -189,8 +277,45 @@ struct EnvironmentApplyCommandRunner: Sendable {
         let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
         let lifecycleLockDescriptor = try lifecycleLock.acquire()
         defer { lifecycleLock.release(lifecycleLockDescriptor) }
+        _ = try recoverEnvironmentTransaction(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: herdrRuntime
+        )
         let result = try ActivationLock(root: stateRoot).withLock {
           try coordinator.teardownLocked(dryRun: false)
+        }
+        let restoredHerdr: DesktopThemeAdapterStatus?
+        do {
+          restoredHerdr = try verifyPendingHerdrRuntime(
+            coordinator: coordinator,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            runtime: herdrRuntime
+          )
+          if restoredHerdr != nil {
+            try ActivationLock(root: stateRoot).withLock {
+              _ = try coordinator.prepareRecoveryLocked()
+            }
+          }
+        } catch {
+          let activationError = error
+          do {
+            try rollbackEnvironmentTransaction(
+              coordinator: coordinator,
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              runtime: herdrRuntime
+            )
+          } catch {
+            throw EnvironmentLifecycleError.blocked(
+              "teardown runtime activation failed and rollback requires recovery: \(error)"
+            )
+          }
+          throw EnvironmentLifecycleError.blocked(
+            "teardown runtime activation failed and was rolled back: \(activationError)"
+          )
         }
         return try EnvironmentStatusCommandRunner(
           prerequisites: prerequisites,
@@ -205,6 +330,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           homeDirectory: homeDirectory,
           consumerPaths: consumerPaths,
           includeVerification: true,
+          observedTheme: restoredHerdr.map { [$0] },
           successfulOutcome: result.changed ? "applied" : "no_change",
           mutated: result.changed,
           successMessage: result.message,
@@ -230,9 +356,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
     defer { lifecycleLock.release(lifecycleLockDescriptor) }
 
     do {
-      let recovered = try ActivationLock(root: stateRoot).withLock {
-        try coordinator.recoverLocked()
-      }
+      let recovered = try recoverEnvironmentTransaction(
+        coordinator: coordinator,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        runtime: herdrRuntime
+      )
       if recovered {
         return try failure(
           profileURL: profileURL,
@@ -288,7 +417,6 @@ struct EnvironmentApplyCommandRunner: Sendable {
         json: json
       )
     }
-
     let applyResult: (changed: Bool, generationID: String)
     do {
       applyResult = try ActivationLock(root: stateRoot).withLock {
@@ -337,15 +465,25 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let appliedTheme: [DesktopThemeAdapterStatus]
     let verification: [EnvironmentVerification]
     var neovimPluginPreparationRan = false
+    var herdrActivation: DesktopThemeAdapterStatus?
     do {
+      herdrActivation = try verifyPendingHerdrRuntime(
+        coordinator: coordinator,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        runtime: herdrRuntime
+      )
       let neovimVerification = neovim.prepare(profile.environment, homeDirectory)
       neovimPluginPreparationRan = neovimVerification != nil
       if let neovimVerification, neovimVerification.status != "verified" {
         throw EnvironmentLifecycleError.blocked(neovimVerification.message)
       }
-      if let theme, !profile.environment.selectedThemeAdapterIDs.isEmpty {
+      let nonHerdrAdapterIDs = profile.environment.selectedThemeAdapterIDs.filter {
+        $0 != HerdrAdapter.id
+      }
+      if let theme, !nonHerdrAdapterIDs.isEmpty {
         let reconciliation = try await theme.reconcile(
-          profile.environment.selectedThemeAdapterIDs,
+          nonHerdrAdapterIDs,
           stateRoot,
           consumerPaths.managedEnvironmentPaths(
             stateRoot: stateRoot,
@@ -357,9 +495,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
             "required theme reconciliation failed for environment generation \(applyResult.generationID)"
           )
         }
-        appliedTheme = reconciliation.results
+        appliedTheme = (reconciliation.results + (herdrActivation.map { [$0] } ?? []))
+          .sorted { $0.adapterID < $1.adapterID }
       } else {
-        appliedTheme = []
+        appliedTheme = herdrActivation.map { [$0] } ?? []
       }
       verification =
         (neovimVerification.map { [$0] } ?? [])
@@ -373,9 +512,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
       }
     } catch {
       do {
-        try ActivationLock(root: stateRoot).withLock {
-          try coordinator.rollbackApplyLocked()
-        }
+        try rollbackEnvironmentTransaction(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: herdrRuntime
+        )
       } catch {
         return try failure(
           profileURL: profileURL,
@@ -469,7 +611,13 @@ struct EnvironmentApplyCommandRunner: Sendable {
 }
 
 struct EnvironmentTeardownCommandRunner: Sendable {
-  static let live = Self()
+  let herdrRuntime: EnvironmentHerdrRuntimeReloader
+
+  static let live = Self(herdrRuntime: .live)
+
+  init(herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed) {
+    self.herdrRuntime = herdrRuntime
+  }
 
   func execute(
     stateRoot: URL,
@@ -507,11 +655,51 @@ struct EnvironmentTeardownCommandRunner: Sendable {
       let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
       let lifecycleLockDescriptor = try lifecycleLock.acquire()
       defer { lifecycleLock.release(lifecycleLockDescriptor) }
-      let result = try ActivationLock(root: stateRoot).withLock {
-        try EnvironmentTransactionCoordinator(
+      let coordinator = EnvironmentTransactionCoordinator(
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot
+      )
+      if !dryRun {
+        _ = try recoverEnvironmentTransaction(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          stateRoot: stateRoot
-        ).teardownLocked(dryRun: dryRun)
+          runtime: herdrRuntime
+        )
+      }
+      let result = try ActivationLock(root: stateRoot).withLock {
+        try coordinator.teardownLocked(dryRun: dryRun)
+      }
+      let restoredHerdr: DesktopThemeAdapterStatus?
+      do {
+        restoredHerdr = try verifyPendingHerdrRuntime(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: herdrRuntime
+        )
+        if restoredHerdr != nil {
+          try ActivationLock(root: stateRoot).withLock {
+            _ = try coordinator.prepareRecoveryLocked()
+          }
+        }
+      } catch {
+        let activationError = error
+        do {
+          try rollbackEnvironmentTransaction(
+            coordinator: coordinator,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            runtime: herdrRuntime
+          )
+        } catch {
+          throw EnvironmentLifecycleError.blocked(
+            "teardown runtime activation failed and rollback requires recovery: \(error)"
+          )
+        }
+        throw EnvironmentLifecycleError.blocked(
+          "teardown runtime activation failed and was rolled back: \(activationError)"
+        )
       }
       let report = EnvironmentLifecycleReport(
         operation: "environment_teardown",
@@ -527,7 +715,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         adoptionEvidenceDigest: nil,
         prerequisites: [],
         entries: [],
-        theme: [],
+        theme: restoredHerdr.map { [$0] } ?? [],
         verification: [],
         message: result.message
       )

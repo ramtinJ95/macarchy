@@ -45,7 +45,7 @@ struct TuicrPresetLifecycleTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          CodexAdapter.id, PiAdapter.id, TuicrAdapter.id,
+          CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, TuicrAdapter.id,
         ])
     )
 
