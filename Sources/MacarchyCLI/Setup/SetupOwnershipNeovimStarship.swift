@@ -12,6 +12,14 @@ extension SetupOwnershipManager {
     "../../../../../.config/macarchy/\(StarshipAdapter.bridgePath)"
 
   func setupNeovimWatcher(context: Context) throws -> SetupIntegrationResult {
+    if try environmentOwns([.neovim], context: context) {
+      return integrationResult(
+        id: Self.neovimWatcherID,
+        target: context.neovimWatcherConfiguration,
+        status: .external,
+        message: "Neovim behavior is owned by the aggregate environment lifecycle"
+      )
+    }
     let configuration = try readExternalPrerequisite(
       at: context.neovimWatcherConfiguration,
       id: Self.neovimWatcherID
@@ -35,7 +43,15 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try setupThemeLink(
+    if try environmentOwns([.neovim], context: context) {
+      return integrationResult(
+        id: Self.neovimThemeLinkID,
+        target: context.neovimThemeLink,
+        status: .external,
+        message: "Neovim theming is owned by the aggregate environment lifecycle"
+      )
+    }
+    return try setupThemeLink(
       id: Self.neovimThemeLinkID,
       target: context.neovimThemeLink,
       destination: context.neovimThemeDestination,

@@ -19,6 +19,34 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
   case yaziThemeSelection = "yazi_theme_selection"
   case yaziFlavor = "yazi_flavor"
   case yaziSyntax = "yazi_syntax"
+  case neovim
+
+  var directoryLinkKind: EnvironmentDirectoryLinkKind? {
+    switch self {
+    case .kitty: .kitty
+    case .neovim: .neovim
+    default: nil
+    }
+  }
+}
+
+enum EnvironmentDirectoryLinkKind: String, Sendable {
+  case kitty = "Kitty"
+  case neovim = "Neovim"
+
+  var maximumEntries: Int {
+    switch self {
+    case .kitty: 128
+    case .neovim: 512
+    }
+  }
+
+  var maximumBytes: Int {
+    switch self {
+    case .kitty: 4 * 1_048_576
+    case .neovim: 8 * 1_048_576
+    }
+  }
 }
 
 enum EnvironmentEntryKind: String, Codable, Sendable {
@@ -119,13 +147,14 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && evidence.contentDigest == nil && evidence.metadataDigest == nil
           && evidence.inventory.isEmpty
       case .regularFile:
-        return record.id != .kitty && record.retainedPath != nil && hasIdentity
+        return record.id != .kitty && record.id != .neovim
+          && record.retainedPath != nil && hasIdentity
           && evidence.linkDestination == nil && evidence.contentDigest != nil
           && evidence.inventory.isEmpty
       case .symbolicLink:
         return record.retainedPath != nil && hasIdentity
           && evidence.linkDestination != nil && evidence.contentDigest == nil
-          && (record.id == .kitty || evidence.inventory.isEmpty)
+          && ([.kitty, .neovim].contains(record.id) || evidence.inventory.isEmpty)
       }
     }
   }
@@ -559,7 +588,6 @@ struct EnvironmentStateStore: Sendable {
 
 struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
-  private static let maximumKittyEntries = 128
 
   func inspect(
     composition: EnvironmentComposition,
@@ -595,6 +623,9 @@ struct EnvironmentProviderInspector: Sendable {
       }
       if entries.contains(where: { $0.id == .starship }) {
         legacyIDs.insert("starship.configuration-link")
+      }
+      if entries.contains(where: { $0.id == .neovim }) {
+        legacyIDs.insert("neovim.theme-link")
       }
       if composition.profile.tools.bat {
         legacyIDs.formUnion(["bat.selector", "bat.theme-link"])
@@ -642,7 +673,10 @@ struct EnvironmentProviderInspector: Sendable {
         )
         let captured =
           owned[entry.id] == nil
-          ? try capture(entry.url, kittyDirectory: entry.kind == .kittyDirectory) : nil
+          ? try capture(
+            entry.url,
+            directoryLink: entry.id.directoryLinkKind
+          ) : nil
         if let captured,
           entry.id != .atuinTheme || hasExternalAncestor,
           try externalEntryIsExact(entry, evidence: captured, composition: composition)
@@ -813,6 +847,7 @@ struct EnvironmentProviderInspector: Sendable {
     if profile.history == .atuin {
       enabled.formUnion([.atuinConfiguration, .atuinTheme])
     }
+    if profile.editor == .neovim { enabled.insert(.neovim) }
     if profile.tools.bat { enabled.formUnion([.batConfiguration, .batTheme]) }
     if profile.tools.eza { enabled.insert(.ezaTheme) }
     if profile.tools.btop { enabled.insert(.btopTheme) }
@@ -844,6 +879,12 @@ struct EnvironmentProviderInspector: Sendable {
         url: home.appending(path: ".config/starship.toml"),
         kind: .symbolicLink,
         target: state.appending(path: StarshipAdapter.bridgePath).path
+      ),
+      EnvironmentManagedEntry(
+        id: .neovim,
+        url: home.appending(path: ".config/nvim", directoryHint: .isDirectory),
+        kind: .symbolicLink,
+        target: state.appending(path: "environment/current/neovim").path
       ),
       EnvironmentManagedEntry(
         id: .atuinConfiguration,
@@ -912,7 +953,10 @@ struct EnvironmentProviderInspector: Sendable {
     ]
   }
 
-  func capture(_ url: URL, kittyDirectory: Bool) throws -> EnvironmentEntryEvidence {
+  func capture(
+    _ url: URL,
+    directoryLink: EnvironmentDirectoryLinkKind?
+  ) throws -> EnvironmentEntryEvidence {
     var metadata = stat()
     guard lstat(url.path, &metadata) == 0 else {
       if errno == ENOENT {
@@ -948,9 +992,11 @@ struct EnvironmentProviderInspector: Sendable {
         linkDestination: destination,
         contentDigest: nil,
         metadataDigest: try metadataDigest(at: url, symbolicLink: true),
-        inventory: kittyDirectory ? try kittyInventory(link: url, destination: destination) : []
+        inventory: try directoryLink.map {
+          try nativeDirectoryInventory(link: url, destination: destination, kind: $0)
+        } ?? []
       )
-    case S_IFREG where !kittyDirectory:
+    case S_IFREG where directoryLink == nil:
       guard metadata.st_nlink == 1 else {
         throw EnvironmentLifecycleError.blocked("\(url.path) is hard-linked")
       }
@@ -1034,7 +1080,7 @@ struct EnvironmentProviderInspector: Sendable {
     parentDescriptor: Int32,
     name: String,
     url: URL,
-    kittyDirectory: Bool
+    directoryLink: EnvironmentDirectoryLinkKind?
   ) throws -> EnvironmentEntryEvidence {
     let metadata: stat
     do {
@@ -1083,9 +1129,11 @@ struct EnvironmentProviderInspector: Sendable {
           url: url,
           symbolicLink: true
         ),
-        inventory: kittyDirectory ? try kittyInventory(link: url, destination: destination) : []
+        inventory: try directoryLink.map {
+          try nativeDirectoryInventory(link: url, destination: destination, kind: $0)
+        } ?? []
       )
-    case S_IFREG where !kittyDirectory:
+    case S_IFREG where directoryLink == nil:
       guard metadata.st_nlink == 1 else {
         throw EnvironmentLifecycleError.blocked("\(url.path) is hard-linked")
       }
@@ -1161,6 +1209,7 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.shell.rawValue,
         composition.profile.prompt.rawValue,
         composition.profile.history.rawValue,
+        composition.profile.editor.rawValue,
         composition.profile.tools.bat ? "bat" : "bat-disabled",
         composition.profile.tools.eza ? "eza" : "eza-disabled",
         composition.profile.tools.btop ? "btop" : "btop-disabled",
@@ -1225,7 +1274,7 @@ struct EnvironmentProviderInspector: Sendable {
     case .batConfiguration, .batTheme, .btopConfiguration, .btopTheme, .ezaTheme,
       .yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax:
       true
-    case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme:
+    case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim:
       false
     }
   }
@@ -1260,7 +1309,7 @@ struct EnvironmentProviderInspector: Sendable {
     configurationDirectory: URL
   ) throws -> EnvironmentEntryInspection {
     let shell = homeDirectory.appending(path: ".zshrc")
-    let evidence = try capture(shell, kittyDirectory: false)
+    let evidence = try capture(shell, directoryLink: nil)
     let text: String
     switch evidence.kind {
     case .regularFile:
@@ -1325,7 +1374,7 @@ struct EnvironmentProviderInspector: Sendable {
       else {
         throw EnvironmentLifecycleError.blocked("btop ownership path is invalid")
       }
-      let evidence = try capture(url, kittyDirectory: false)
+      let evidence = try capture(url, directoryLink: nil)
       let state = try EnvironmentBtopFileTransaction(
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
@@ -1364,11 +1413,14 @@ struct EnvironmentProviderInspector: Sendable {
     guard let artifact = composition.artifacts.first(where: { $0.path == "btop/btop.conf" }) else {
       throw EnvironmentLifecycleError.blocked("missing rendered btop configuration")
     }
+    guard let artifactText = artifact.textContents else {
+      throw EnvironmentLifecycleError.blocked("rendered btop configuration is not UTF-8")
+    }
     let desired = try EnvironmentBtopDocument.desiredValues(
-      in: artifact.contents,
+      in: artifactText,
       source: artifactURL
     )
-    let evidence = try capture(url, kittyDirectory: false)
+    let evidence = try capture(url, directoryLink: nil)
     let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
     if evidence.kind == .regularFile {
       let text = try configurationText(at: url, evidence: evidence)
@@ -1446,7 +1498,11 @@ struct EnvironmentProviderInspector: Sendable {
     )
   }
 
-  private func kittyInventory(link: URL, destination: String) throws -> [String] {
+  private func nativeDirectoryInventory(
+    link: URL,
+    destination: String,
+    kind: EnvironmentDirectoryLinkKind
+  ) throws -> [String] {
     let root =
       destination.hasPrefix("/")
       ? URL(filePath: destination)
@@ -1455,31 +1511,42 @@ struct EnvironmentProviderInspector: Sendable {
     guard stat(root.path, &rootMetadata) == 0,
       rootMetadata.st_mode & S_IFMT == S_IFDIR
     else {
-      throw EnvironmentLifecycleError.blocked("Kitty directory link target is not a directory")
+      throw EnvironmentLifecycleError.blocked(
+        "\(kind.rawValue) directory link target is not a directory"
+      )
     }
+    let inventoryRoot = root.resolvingSymlinksInPath().standardizedFileURL
     guard
       let enumerator = FileManager.default.enumerator(
-        at: root,
+        at: inventoryRoot,
         includingPropertiesForKeys: nil,
         options: []
       )
     else {
-      throw EnvironmentLifecycleError.blocked("cannot inventory Kitty directory link target")
+      throw EnvironmentLifecycleError.blocked(
+        "cannot inventory \(kind.rawValue) directory link target"
+      )
     }
     var result = [String]()
     var bytes = 0
-    let rootComponents = root.resolvingSymlinksInPath().pathComponents
+    let rootPath = inventoryRoot.path + "/"
     for case let item as URL in enumerator {
-      guard result.count < Self.maximumKittyEntries else {
-        throw EnvironmentLifecycleError.blocked("Kitty directory inventory exceeds 128 entries")
+      guard result.count < kind.maximumEntries else {
+        throw EnvironmentLifecycleError.blocked(
+          "\(kind.rawValue) directory inventory exceeds \(kind.maximumEntries) entries"
+        )
       }
       var metadata = stat()
       guard lstat(item.path, &metadata) == 0 else {
-        throw EnvironmentLifecycleError.system("inventory Kitty entry", item, errno)
+        throw EnvironmentLifecycleError.system("inventory \(kind.rawValue) entry", item, errno)
       }
-      let relative = item.resolvingSymlinksInPath().pathComponents.dropFirst(
-        rootComponents.count
-      ).joined(separator: "/")
+      let itemPath = item.standardizedFileURL.path
+      guard itemPath.hasPrefix(rootPath) else {
+        throw EnvironmentLifecycleError.blocked(
+          "\(kind.rawValue) directory inventory escaped its root"
+        )
+      }
+      let relative = String(itemPath.dropFirst(rootPath.count))
       switch metadata.st_mode & S_IFMT {
       case S_IFDIR:
         result.append("directory:\(relative)")
@@ -1492,12 +1559,16 @@ struct EnvironmentProviderInspector: Sendable {
           maximumSize: Self.maximumExternalFileSize
         ).data
         bytes += data.count
-        guard bytes <= Self.maximumExternalFileSize else {
-          throw EnvironmentLifecycleError.blocked("Kitty directory inventory exceeds 4 MiB")
+        guard bytes <= kind.maximumBytes else {
+          throw EnvironmentLifecycleError.blocked(
+            "\(kind.rawValue) directory inventory exceeds \(kind.maximumBytes / 1_048_576) MiB"
+          )
         }
         result.append("file:\(relative):\(sha256Digest(data))")
       default:
-        throw EnvironmentLifecycleError.blocked("Kitty directory contains an unsupported entry")
+        throw EnvironmentLifecycleError.blocked(
+          "\(kind.rawValue) directory contains an unsupported entry"
+        )
       }
     }
     return result.sorted()
@@ -1736,7 +1807,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
     // Re-capture every external entry after staging and before publishing the claim.
     for (id, expected) in inspection.externalEvidence {
       guard let entry = inspection.desiredEntries.first(where: { $0.id == id }),
-        try inspector.capture(entry.url, kittyDirectory: entry.kind == .kittyDirectory) == expected
+        try inspector.capture(
+          entry.url,
+          directoryLink: entry.id.directoryLinkKind
+        ) == expected
       else {
         throw EnvironmentLifecycleError.blocked(
           "provider entry changed after planning; run environment plan again"
@@ -1745,7 +1819,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     if let expected = inspection.btopExternalEvidence {
       let url = homeDirectory.appending(path: ".config/btop/btop.conf")
-      guard try inspector.capture(url, kittyDirectory: false) == expected else {
+      guard try inspector.capture(url, directoryLink: nil) == expected else {
         throw EnvironmentLifecycleError.blocked(
           "btop configuration changed after planning; run environment plan again"
         )
@@ -1934,7 +2008,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           if try evidence(
             at: entry.url,
             matches: record.original,
-            kittyDirectory: record.id == .kitty
+            directoryLink: record.id.directoryLinkKind
           ) {
             try retainOriginal(record)
             try publishManaged(entry)
@@ -2052,7 +2126,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           try evidence(
             at: URL(filePath: retained),
             matches: record.original,
-            kittyDirectory: record.id == .kitty
+            directoryLink: record.id.directoryLinkKind
           )
         else {
           throw EnvironmentLifecycleError.drift("retained original for \(record.id.rawValue)")
@@ -2061,7 +2135,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     if let btop = ownership.btop {
       let url = URL(filePath: btop.path)
-      let evidence = try inspector.capture(url, kittyDirectory: false)
+      let evidence = try inspector.capture(url, directoryLink: nil)
       let state = try EnvironmentBtopFileTransaction(
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
@@ -2088,7 +2162,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           try evidence(
             at: retainedURL,
             matches: record.original,
-            kittyDirectory: record.id == .kitty
+            directoryLink: record.id.directoryLinkKind
           ),
           !(try itemExists(entry.url))
         else { throw EnvironmentLifecycleError.drift(entry.url.path) }
@@ -2097,7 +2171,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           try evidence(
             at: entry.url,
             matches: record.original,
-            kittyDirectory: record.id == .kitty
+            directoryLink: record.id.directoryLinkKind
           )
         else {
           throw EnvironmentLifecycleError.drift(entry.url.path)
@@ -2130,7 +2204,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         parentDescriptor: parent,
         name: entry.url.lastPathComponent,
         url: entry.url,
-        kittyDirectory: record.id == .kitty
+        directoryLink: record.id.directoryLinkKind
       )
       if publicEvidence == record.original {
         return
@@ -2143,7 +2217,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         parentDescriptor: parent,
         name: retainedURL.lastPathComponent,
         url: retainedURL,
-        kittyDirectory: record.id == .kitty
+        directoryLink: record.id.directoryLinkKind
       )
       guard retainedEvidence == record.original else {
         throw EnvironmentLifecycleError.drift("retained original for \(record.id.rawValue)")
@@ -2180,7 +2254,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         parentDescriptor: parent,
         name: retainedName,
         url: retainedURL,
-        kittyDirectory: record.id == .kitty
+        directoryLink: record.id.directoryLinkKind
       )
       guard retainedEvidence == record.original else {
         throw EnvironmentLifecycleError.drift("retained original for \(record.id.rawValue)")
@@ -2199,7 +2273,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         parentDescriptor: parent,
         name: entry.url.lastPathComponent,
         url: entry.url,
-        kittyDirectory: record.id == .kitty
+        directoryLink: record.id.directoryLinkKind
       ) == record.original
     else {
       throw EnvironmentLifecycleError.drift("restored \(entry.url.path)")
@@ -2220,7 +2294,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         parentDescriptor: parent,
         name: publicURL.lastPathComponent,
         url: publicURL,
-        kittyDirectory: record.id == .kitty
+        directoryLink: record.id.directoryLinkKind
       ) == record.original
     else {
       throw EnvironmentLifecycleError.drift(publicURL.path)
@@ -2252,7 +2326,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         parentDescriptor: parent,
         name: retained.lastPathComponent,
         url: retained,
-        kittyDirectory: record.id == .kitty
+        directoryLink: record.id.directoryLinkKind
       ) == record.original
     else {
       throw EnvironmentLifecycleError.drift("retained original for \(record.id.rawValue)")
@@ -2360,7 +2434,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private func evidence(
     at url: URL,
     matches expected: EnvironmentEntryEvidence,
-    kittyDirectory: Bool
+    directoryLink: EnvironmentDirectoryLinkKind?
   ) throws -> Bool {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
     defer { Darwin.close(parent) }
@@ -2368,7 +2442,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       parentDescriptor: parent,
       name: url.lastPathComponent,
       url: url,
-      kittyDirectory: kittyDirectory
+      directoryLink: directoryLink
     ) == expected
   }
 

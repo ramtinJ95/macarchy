@@ -1,12 +1,109 @@
+import Darwin
 import Foundation
 import ThemeCore
+
+struct EnvironmentNeovimPreparer: Sendable {
+  let prepare: @Sendable (EnvironmentProfile, URL) -> EnvironmentVerification?
+
+  private static let verifyPluginPins =
+    #"lua local ok,message=pcall(require("config.macarchy-theme").verify_plugins); if not ok then vim.api.nvim_err_writeln(message); vim.cmd("cquit 1") end"#
+
+  static let assumed = Self { _, _ in nil }
+
+  static let live = Self { profile, homeDirectory in
+    guard profile.editor == .neovim else { return nil }
+    let temporaryRoot = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-neovim-\(UUID().uuidString.lowercased())",
+      directoryHint: .isDirectory
+    )
+    do {
+      let configurationRoot = temporaryRoot.appending(
+        path: "nvim",
+        directoryHint: .isDirectory
+      )
+      try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: false)
+      defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+      try FileManager.default.copyItem(
+        at: homeDirectory.appending(path: ".config/nvim").resolvingSymlinksInPath(),
+        to: configurationRoot
+      )
+      try makeWritable(configurationRoot)
+      let result = try ProcessRunner.live.run(
+        ProcessRequest(
+          executableURL: NeovimAdapter.liveExecutableURL,
+          arguments: ["--headless", "+Lazy! restore", "+\(Self.verifyPluginPins)", "+qa"],
+          timeout: 180,
+          environmentOverrides: [
+            "HOME": homeDirectory.path,
+            "XDG_CONFIG_HOME": temporaryRoot.path,
+          ]
+        )
+      )
+      return EnvironmentVerification(
+        id: "neovim_plugins",
+        status: result.terminationStatus == 0 ? "verified" : "failed",
+        message: result.terminationStatus == 0
+          ? "Neovim restored and verified the selected plugin graph from its lock."
+          : (result.output.isEmpty
+            ? "Neovim could not restore the selected plugin graph." : result.output)
+      )
+    } catch {
+      return EnvironmentVerification(
+        id: "neovim_plugins",
+        status: "failed",
+        message: String(describing: error)
+      )
+    }
+  }
+
+  private static func makeWritable(_ root: URL) throws {
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: root.path
+    )
+    guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+    else { return }
+    for case let item as URL in enumerator {
+      var metadata = stat()
+      guard lstat(item.path, &metadata) == 0 else {
+        throw EnvironmentLifecycleError.system(
+          "inspect temporary Neovim configuration",
+          item,
+          errno
+        )
+      }
+      try FileManager.default.setAttributes(
+        [.posixPermissions: metadata.st_mode & S_IFMT == S_IFDIR ? 0o700 : 0o600],
+        ofItemAtPath: item.path
+      )
+    }
+  }
+}
 
 struct EnvironmentApplyCommandRunner: Sendable {
   let prerequisites: EnvironmentPrerequisiteInspector
   let theme: DesktopThemeController?
   let verifier: EnvironmentSessionVerifier
+  let neovim: EnvironmentNeovimPreparer
 
-  static let live = Self(prerequisites: .live, theme: .live, verifier: .live)
+  static let live = Self(
+    prerequisites: .live,
+    theme: .live,
+    verifier: .live,
+    neovim: .live
+  )
+
+  init(
+    prerequisites: EnvironmentPrerequisiteInspector,
+    theme: DesktopThemeController?,
+    verifier: EnvironmentSessionVerifier,
+    neovim: EnvironmentNeovimPreparer = .assumed
+  ) {
+    self.prerequisites = prerequisites
+    self.theme = theme
+    self.verifier = verifier
+    self.neovim = neovim
+  }
 
   func execute(
     resourcesRoot: URL,
@@ -78,7 +175,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
             successfulOutcome: "no_change",
             mutated: false,
             successMessage:
-              "Every terminal-session role is disabled; no managed state was changed.",
+              "Every daily tool role is disabled; no managed state was changed.",
             json: json
           )
         }
@@ -232,7 +329,13 @@ struct EnvironmentApplyCommandRunner: Sendable {
 
     let appliedTheme: [DesktopThemeAdapterStatus]
     let verification: [EnvironmentVerification]
+    var neovimPluginPreparationRan = false
     do {
+      let neovimVerification = neovim.prepare(profile.environment, homeDirectory)
+      neovimPluginPreparationRan = neovimVerification != nil
+      if let neovimVerification, neovimVerification.status != "verified" {
+        throw EnvironmentLifecycleError.blocked(neovimVerification.message)
+      }
       if let theme, !profile.environment.selectedThemeAdapterIDs.isEmpty {
         let reconciliation = try await theme.reconcile(
           profile.environment.selectedThemeAdapterIDs,
@@ -251,7 +354,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
       } else {
         appliedTheme = []
       }
-      verification = verifier.verify(profile.environment, homeDirectory)
+      verification =
+        (neovimVerification.map { [$0] } ?? [])
+        + verifier.verify(profile.environment, homeDirectory)
       guard verification.allSatisfy({ $0.status == "verified" }) else {
         let failures = verification.filter { $0.status != "verified" }.map(\.message)
         throw EnvironmentLifecycleError.blocked(failures.joined(separator: "; "))
@@ -269,7 +374,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
-          message: "Provider verification failed and rollback requires recovery: \(error)",
+          message: neovimPluginPreparationRan
+            ? "Environment configuration ownership rollback requires recovery; provider-private Neovim plugin/cache changes may remain. Rollback failed: \(error)"
+            : "Provider verification failed and rollback requires recovery: \(error)",
           mutated: true,
           transactionStatus: "recovery_required",
           json: json
@@ -282,7 +389,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
           profile: profile.environment,
           prerequisites: prerequisiteState,
           message:
-            "Environment apply rolled back, but the restored fresh session failed: \(failed.message)",
+            neovimPluginPreparationRan
+            ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. The restored fresh session also failed: \(failed.message)"
+            : "Environment apply rolled back, but the restored fresh session failed: \(failed.message)",
           mutated: applyResult.changed,
           json: json
         )
@@ -291,7 +400,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
         profileURL: profileURL,
         profile: profile.environment,
         prerequisites: prerequisiteState,
-        message: "Environment apply rolled back: \(error)",
+        message: neovimPluginPreparationRan
+          ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(error)"
+          : "Environment apply rolled back: \(error)",
         mutated: applyResult.changed,
         json: json
       )
@@ -314,8 +425,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
       successfulOutcome: applyResult.changed ? "applied" : "no_change",
       mutated: applyResult.changed,
       successMessage: applyResult.changed
-        ? "The terminal-session environment was published and verified."
-        : "The terminal-session environment was already converged.",
+        ? "The daily tool environment was published and verified."
+        : "The daily tool environment was already converged.",
       json: json
     )
   }

@@ -96,6 +96,122 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test
+  func fullNativeNeovimTreeIsCopiedThenItsDirectoryLinkIsRestored() async throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let source = fixture.root.appending(path: "dotfiles/nvim", directoryHint: .isDirectory)
+    let custom = source.appending(path: "lua/custom", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: custom, withIntermediateDirectories: true)
+    try "require(\"custom.settings\")\n".write(
+      to: source.appending(path: "init.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "vim.o.number = true\n".write(
+      to: custom.appending(path: "settings.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "require(\"lazy\").setup({ spec = { { import = \"plugins\" } } })\n".write(
+      to: custom.appending(path: "lazy.lua"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "{}\n".write(
+      to: source.appending(path: "lazy-lock.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let entry = fixture.home.appending(path: ".config/nvim")
+    try FileManager.default.createDirectory(
+      at: entry.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createSymbolicLink(
+      at: entry,
+      withDestinationURL: source
+    )
+    try """
+    schema_version = 1
+    [terminal]
+    provider = "disabled"
+    [shell]
+    provider = "disabled"
+    [editor]
+    provider = "neovim"
+    [neovim]
+    configuration = "dotfiles/nvim"
+    [tools]
+    bat = false
+    eza = false
+    btop = false
+    yazi = false
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    let inspector = EnvironmentProviderInspector()
+    let original = try inspector.capture(entry, directoryLink: .neovim)
+    let plan = try fixture.plan()
+    let digest = try #require(
+      try jsonObject(plan.output)["adoption_evidence_digest"] as? String
+    )
+
+    #expect(plan.succeeded)
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
+        == fixture.state.appending(path: "environment/current/neovim").path
+    )
+    #expect(
+      try String(
+        contentsOf: entry.appending(path: "lua/custom/settings.lua"),
+        encoding: .utf8
+      ) == "vim.o.number = true\n"
+    )
+    #expect(try fixture.teardown().succeeded)
+    #expect(try inspector.capture(entry, directoryLink: .neovim) == original)
+  }
+
+  @Test
+  func directoryInventoryCanonicalizesOnlyTheOuterTarget() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-environment-inventory-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    let actualTree = root.appending(path: "actual/nvim", directoryHint: .isDirectory)
+    let nestedDirectory = actualTree.appending(path: "lua", directoryHint: .isDirectory)
+    let entry = root.appending(path: "home/.config/nvim", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: nestedDirectory,
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: entry.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    let palette = Data("return { foreground = '#ffffff' }\n".utf8)
+    try palette.write(to: actualTree.appending(path: "palette.lua"))
+    try symlink("../palette.lua", nestedDirectory.appending(path: "current.lua").path)
+      .requireZero()
+    try symlink("actual", root.appending(path: "dotfiles").path).requireZero()
+    try symlink("../../dotfiles/nvim", entry.path).requireZero()
+
+    let evidence = try EnvironmentProviderInspector().capture(
+      entry,
+      directoryLink: .neovim
+    )
+
+    #expect(evidence.linkDestination == "../../dotfiles/nvim")
+    #expect(
+      evidence.inventory
+        == [
+          "directory:lua",
+          "file:palette.lua:\(sha256Digest(palette))",
+          "symlink:lua/current.lua:../palette.lua",
+        ]
+    )
+  }
+
+  @Test
   func btopAdoptionRestoresOwnedKeysAndPreservesLaterProviderChanges() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -204,7 +320,7 @@ struct EnvironmentLifecycleTests {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let inspector = EnvironmentProviderInspector()
-    let before = try inspector.capture(fixture.kittyEntry, kittyDirectory: true)
+    let before = try inspector.capture(fixture.kittyEntry, directoryLink: .kitty)
     let provenance = Data("volatile provenance".utf8)
     let written = provenance.withUnsafeBytes { bytes in
       fixture.kittyEntry.path.withCString { path in
@@ -222,7 +338,7 @@ struct EnvironmentLifecycleTests {
     }
     try written.requireZero()
 
-    let after = try inspector.capture(fixture.kittyEntry, kittyDirectory: true)
+    let after = try inspector.capture(fixture.kittyEntry, directoryLink: .kitty)
 
     #expect(after == before)
   }
@@ -430,9 +546,108 @@ struct EnvironmentLifecycleTests {
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
     #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
     #expect(apply.output.contains("Environment apply rolled back"))
+    #expect(!apply.output.contains("provider-private Neovim plugin/cache changes may remain"))
     #expect(
       try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination() == nil
     )
+  }
+
+  @Test
+  func laterFailureWarnsWhenNeovimPluginPreparationRan() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try "schema_version = 1\n".write(
+      to: fixture.profile,
+      atomically: true,
+      encoding: .utf8
+    )
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    let neovim = EnvironmentNeovimPreparer { _, _ in
+      EnvironmentVerification(
+        id: "neovim_plugins",
+        status: "verified",
+        message: "prepared"
+      )
+    }
+    let verifier = EnvironmentSessionVerifier(
+      { _, _ in
+        [EnvironmentVerification(id: "zsh_fresh_session", status: "failed", message: "injected")]
+      },
+      verifyRestored: { _, _ in
+        [EnvironmentVerification(id: "zsh_fresh_session", status: "verified", message: "restored")]
+      }
+    )
+
+    let apply = try await fixture.apply(
+      adopt: digest,
+      verifier: verifier,
+      neovim: neovim
+    )
+
+    #expect(!apply.succeeded)
+    #expect(
+      apply.output.contains(
+        "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain"
+      )
+    )
+  }
+
+  @Test
+  func failedNeovimPluginRestoreRollsBackBeforeThemeReconciliation() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try "schema_version = 1\n".write(
+      to: fixture.profile,
+      atomically: true,
+      encoding: .utf8
+    )
+    try fixture.activateTheme()
+    let originalEntries = try fixture.entryEvidence()
+    let themeCalls = Mutex(0)
+    let theme = DesktopThemeController(
+      reconcile: { _, _, _ in
+        themeCalls.withLock { $0 += 1 }
+        return DesktopThemeReconciliation(
+          generationID: "g-00000000-0000-0000-0000-000000000000",
+          results: [],
+          succeeded: true
+        )
+      },
+      inspect: { _, _, _ in [] }
+    )
+    let neovim = EnvironmentNeovimPreparer { _, _ in
+      EnvironmentVerification(
+        id: "neovim_plugins",
+        status: "failed",
+        message: "injected plugin restore failure"
+      )
+    }
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+
+    let apply = try await fixture.apply(
+      adopt: digest,
+      theme: theme,
+      neovim: neovim
+    )
+
+    #expect(!apply.succeeded)
+    #expect(themeCalls.withLock { $0 } == 0)
+    #expect(
+      apply.output.contains(
+        "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain"
+      )
+    )
+    #expect(try fixture.entryEvidence() == originalEntries)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: fixture.home.appending(path: ".config/nvim").path
+      )
+    )
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
   }
 
   @Test
@@ -875,6 +1090,8 @@ private struct EnvironmentLifecycleFixture {
       provider = "disabled"
       [shell]
       provider = "disabled"
+      [editor]
+      provider = "disabled"
       [tools]
       bat = false
       eza = false
@@ -885,7 +1102,11 @@ private struct EnvironmentLifecycleFixture {
     }
 
     if !externalEntries {
-      try "schema_version = 1\n".write(to: profile, atomically: true, encoding: .utf8)
+      try "schema_version = 1\n[editor]\nprovider = \"disabled\"\n".write(
+        to: profile,
+        atomically: true,
+        encoding: .utf8
+      )
       return
     }
 
@@ -921,7 +1142,11 @@ private struct EnvironmentLifecycleFixture {
     try symlink(zshTarget, zshEntry.path).requireZero()
     try symlink(starshipTarget, starshipEntry.path).requireZero()
     try symlink(atuinTarget, atuinConfigEntry.path).requireZero()
-    try "schema_version = 1\n".write(to: profile, atomically: true, encoding: .utf8)
+    try "schema_version = 1\n[editor]\nprovider = \"disabled\"\n".write(
+      to: profile,
+      atomically: true,
+      encoding: .utf8
+    )
   }
 
   func plan() throws -> (output: String, succeeded: Bool) {
@@ -938,12 +1163,14 @@ private struct EnvironmentLifecycleFixture {
   func apply(
     adopt: String?,
     theme: DesktopThemeController? = nil,
-    verifier: EnvironmentSessionVerifier = .assumed
+    verifier: EnvironmentSessionVerifier = .assumed,
+    neovim: EnvironmentNeovimPreparer = .assumed
   ) async throws -> (output: String, succeeded: Bool) {
     try await EnvironmentApplyCommandRunner(
       prerequisites: prerequisites,
       theme: theme,
-      verifier: verifier
+      verifier: verifier,
+      neovim: neovim
     ).execute(
       resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
       profileURL: profile,
@@ -1008,36 +1235,36 @@ private struct EnvironmentLifecycleFixture {
   func entryEvidence() throws -> [EnvironmentEntryID: EnvironmentEntryEvidence] {
     let inspector = EnvironmentProviderInspector()
     return [
-      .kitty: try inspector.capture(kittyEntry, kittyDirectory: true),
-      .zsh: try inspector.capture(zshEntry, kittyDirectory: false),
-      .starship: try inspector.capture(starshipEntry, kittyDirectory: false),
-      .atuinConfiguration: try inspector.capture(atuinConfigEntry, kittyDirectory: false),
-      .atuinTheme: try inspector.capture(atuinThemeEntry, kittyDirectory: false),
+      .kitty: try inspector.capture(kittyEntry, directoryLink: .kitty),
+      .zsh: try inspector.capture(zshEntry, directoryLink: nil),
+      .starship: try inspector.capture(starshipEntry, directoryLink: nil),
+      .atuinConfiguration: try inspector.capture(atuinConfigEntry, directoryLink: nil),
+      .atuinTheme: try inspector.capture(atuinThemeEntry, directoryLink: nil),
       .batConfiguration: try inspector.capture(
-        home.appending(path: ".config/bat/config"), kittyDirectory: false),
+        home.appending(path: ".config/bat/config"), directoryLink: nil),
       .batTheme: try inspector.capture(
         home.appending(path: ".config/bat/themes/Macarchy Current.tmTheme"),
-        kittyDirectory: false
+        directoryLink: nil
       ),
       .btopConfiguration: try inspector.capture(
-        home.appending(path: ".config/btop/btop.conf"), kittyDirectory: false),
+        home.appending(path: ".config/btop/btop.conf"), directoryLink: nil),
       .btopTheme: try inspector.capture(
         home.appending(path: ".config/btop/themes/macarchy-current.theme"),
-        kittyDirectory: false
+        directoryLink: nil
       ),
       .ezaTheme: try inspector.capture(
-        home.appending(path: ".config/eza/theme.yml"), kittyDirectory: false),
+        home.appending(path: ".config/eza/theme.yml"), directoryLink: nil),
       .yaziConfiguration: try inspector.capture(
-        home.appending(path: ".config/yazi/yazi.toml"), kittyDirectory: false),
+        home.appending(path: ".config/yazi/yazi.toml"), directoryLink: nil),
       .yaziThemeSelection: try inspector.capture(
-        home.appending(path: ".config/yazi/theme.toml"), kittyDirectory: false),
+        home.appending(path: ".config/yazi/theme.toml"), directoryLink: nil),
       .yaziFlavor: try inspector.capture(
         home.appending(path: ".config/yazi/flavors/macarchy-current.yazi/flavor.toml"),
-        kittyDirectory: false
+        directoryLink: nil
       ),
       .yaziSyntax: try inspector.capture(
         home.appending(path: ".config/yazi/flavors/macarchy-current.yazi/tmtheme.xml"),
-        kittyDirectory: false
+        directoryLink: nil
       ),
     ]
   }

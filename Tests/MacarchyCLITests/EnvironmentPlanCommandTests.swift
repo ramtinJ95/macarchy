@@ -30,6 +30,7 @@ struct EnvironmentPlanCommandTests {
     #expect(report["shell_provider"] as? String == "zsh")
     #expect(report["prompt_provider"] as? String == "starship")
     #expect(report["history_provider"] as? String == "atuin")
+    #expect(report["editor_provider"] as? String == "neovim")
     #expect(
       report["daily_tools"] as? [String: String]
         == ["bat": "enabled", "btop": "enabled", "eza": "enabled", "yazi": "enabled"]
@@ -38,18 +39,59 @@ struct EnvironmentPlanCommandTests {
       (report["rendered_artifacts"] as? [String: String])?.keys.sorted()
         == [
           "atuin/config.toml", "bat/config", "btop/btop.conf", "kitty/kitty.conf",
-          "starship/behavior.toml", "yazi/theme.toml", "yazi/yazi.toml", "zsh/.zshrc",
+          "starship/behavior.toml",
+          "yazi/theme.toml", "yazi/yazi.toml", "zsh/.zshrc",
         ]
     )
     #expect(
       (report["actions"] as? [[String: Any]])?.compactMap { $0["id"] as? String }
         == [
           "publish_environment_generation", "configure_kitty", "configure_zsh",
-          "configure_starship", "configure_atuin", "configure_bat", "configure_eza",
+          "configure_starship", "configure_atuin", "configure_neovim",
+          "restore_neovim_plugins",
+          "configure_bat", "configure_eza",
           "configure_btop", "configure_yazi",
         ]
     )
     #expect(!FileManager.default.fileExists(atPath: state.path))
+  }
+
+  @Test
+  func textPlanPrintsSortedNeovimArtifactIdentitiesWithoutContents() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = root.appending(path: "missing-profile.toml")
+    let state = root.appending(path: "state", directoryHint: .isDirectory)
+    let jsonExecution = try runner.execute(
+      resourcesRoot: resourcesRoot,
+      profileURL: profile,
+      profileRequired: false,
+      stateRoot: state,
+      json: true
+    )
+    let textExecution = try runner.execute(
+      resourcesRoot: resourcesRoot,
+      profileURL: profile,
+      profileRequired: false,
+      stateRoot: state,
+      json: false
+    )
+    let report = try jsonObject(jsonExecution.output)
+    let digests = try #require(report["rendered_artifact_digests"] as? [String: String])
+    let expected = digests.filter { $0.key.hasPrefix("neovim/") }
+      .sorted { $0.key < $1.key }
+      .map { "- \($0.key): \($0.value)" }
+    let lines = textExecution.output.components(separatedBy: "\n")
+    let heading = try #require(lines.firstIndex(of: "Neovim artifacts:"))
+    let actual = Array(
+      lines.dropFirst(heading + 1).prefix { $0.hasPrefix("- neovim/") }
+    )
+
+    #expect(jsonExecution.succeeded)
+    #expect(textExecution.succeeded)
+    #expect(expected.count == 11)
+    #expect(actual == expected)
+    #expect(!textExecution.output.contains("Rendered neovim/"))
   }
 
   @Test
@@ -62,6 +104,8 @@ struct EnvironmentPlanCommandTests {
     [terminal]
     provider = "disabled"
     [shell]
+    provider = "disabled"
+    [editor]
     provider = "disabled"
     [tools]
     bat = false

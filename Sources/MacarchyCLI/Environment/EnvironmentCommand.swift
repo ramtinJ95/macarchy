@@ -10,7 +10,7 @@ struct EnvironmentCommand: ParsableCommand {
 
   struct Plan: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Compose the terminal-session environment without making changes."
+      abstract: "Compose the curated terminal, editor, and TUI environment without changes."
     )
 
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
@@ -43,7 +43,7 @@ struct EnvironmentCommand: ParsableCommand {
 
   struct Apply: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Publish, activate, and verify the managed terminal session."
+      abstract: "Publish, activate, and verify the managed daily tool environment."
     )
 
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
@@ -121,7 +121,7 @@ struct EnvironmentCommand: ParsableCommand {
 
   struct Doctor: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Diagnose managed providers and verify a fresh terminal session."
+      abstract: "Diagnose managed providers and verify the daily tool environment."
     )
 
     @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")

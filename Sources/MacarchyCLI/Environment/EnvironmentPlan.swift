@@ -102,6 +102,17 @@ struct EnvironmentPlanCommandRunner: Sendable {
         [EnvironmentPlanDiagnostic(code: "provider_blocked", source: stateRoot.path, message: $0)]
       } ?? []
     if let themeDiagnostic { diagnostics.append(themeDiagnostic) }
+    let renderedArtifacts = try Dictionary(
+      uniqueKeysWithValues: composition.artifacts.compactMap { artifact -> (String, String)? in
+        guard !artifact.path.hasPrefix("neovim/") else { return nil }
+        guard let contents = artifact.textContents else {
+          throw EnvironmentLifecycleError.blocked(
+            "rendered environment artifact \(artifact.path) is not UTF-8"
+          )
+        }
+        return (artifact.path, contents)
+      }
+    )
     let report = EnvironmentPlanReport(
       outcome: blocked ? "blocked" : "ready",
       profile: profileURL.path,
@@ -110,6 +121,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       shellProvider: composition.profile.shell.rawValue,
       promptProvider: composition.profile.prompt.rawValue,
       historyProvider: composition.profile.history.rawValue,
+      editorProvider: composition.profile.editor.rawValue,
       dailyTools: Self.dailyTools(composition.profile),
       packagedDefaults: resourcesRoot.path,
       kittyOverride: composition.kittyOverrideURL?.path,
@@ -117,8 +129,10 @@ struct EnvironmentPlanCommandRunner: Sendable {
       zshHookDigest: composition.zshHookDigest,
       starshipBehavior: composition.starshipBehaviorURL?.path,
       atuinConfiguration: composition.atuinConfigurationURL?.path,
-      renderedArtifacts: Dictionary(
-        uniqueKeysWithValues: composition.artifacts.map { ($0.path, $0.contents) }
+      neovimConfiguration: composition.neovimConfigurationURL?.path,
+      renderedArtifacts: renderedArtifacts,
+      renderedArtifactDigests: Dictionary(
+        uniqueKeysWithValues: composition.artifacts.map { ($0.path, $0.digest) }
       ),
       renderedDigest: composition.renderedDigest,
       proposedInputDigest: composition.inputDigest,
@@ -187,6 +201,20 @@ struct EnvironmentPlanCommandRunner: Sendable {
         )
       )
     }
+    if profile.editor == .neovim {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_neovim",
+          message: "Configure Neovim behavior and canonical theme integration."
+        )
+      )
+      actions.append(
+        EnvironmentPlanAction(
+          id: "restore_neovim_plugins",
+          message: "Restore the selected Neovim plugin graph from its lock using Lazy."
+        )
+      )
+    }
     if profile.tools.bat {
       actions.append(
         EnvironmentPlanAction(
@@ -223,7 +251,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       actions.insert(
         EnvironmentPlanAction(
           id: "publish_environment_generation",
-          message: "Publish the deterministic terminal-session generation."
+          message: "Publish the deterministic daily tool generation."
         ),
         at: 0
       )
@@ -261,6 +289,7 @@ private struct EnvironmentPlanReport: Encodable {
   let shellProvider: String?
   let promptProvider: String?
   let historyProvider: String?
+  let editorProvider: String?
   let dailyTools: [String: String]
   let packagedDefaults: String
   let kittyOverride: String?
@@ -268,7 +297,9 @@ private struct EnvironmentPlanReport: Encodable {
   let zshHookDigest: String?
   let starshipBehavior: String?
   let atuinConfiguration: String?
+  let neovimConfiguration: String?
   let renderedArtifacts: [String: String]
+  let renderedArtifactDigests: [String: String]
   let renderedDigest: String?
   let proposedInputDigest: String?
   let generation: EnvironmentGenerationReport
@@ -294,6 +325,7 @@ private struct EnvironmentPlanReport: Encodable {
       shellProvider: environment?.shell.rawValue,
       promptProvider: environment?.prompt.rawValue,
       historyProvider: environment?.history.rawValue,
+      editorProvider: environment?.editor.rawValue,
       dailyTools: environment.map(EnvironmentPlanCommandRunner.dailyTools) ?? [:],
       packagedDefaults: resourcesRoot.path,
       kittyOverride: environment?.kitty.overrideDirectoryURL?.path,
@@ -301,7 +333,9 @@ private struct EnvironmentPlanReport: Encodable {
       zshHookDigest: nil,
       starshipBehavior: environment?.starship.behaviorURL?.path,
       atuinConfiguration: environment?.atuin.configurationURL?.path,
+      neovimConfiguration: environment?.neovim.configurationDirectoryURL?.path,
       renderedArtifacts: [:],
+      renderedArtifactDigests: [:],
       renderedDigest: nil,
       proposedInputDigest: nil,
       generation: EnvironmentGenerationReport(
@@ -326,6 +360,7 @@ private struct EnvironmentPlanReport: Encodable {
       "- shell provider: " + (shellProvider ?? "unavailable"),
       "- prompt provider: " + (promptProvider ?? "unavailable"),
       "- history provider: " + (historyProvider ?? "unavailable"),
+      "- editor provider: " + (editorProvider ?? "unavailable"),
       "- daily tools: "
         + dailyTools.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
         .joined(separator: ", "),
@@ -335,12 +370,20 @@ private struct EnvironmentPlanReport: Encodable {
       "- zsh hook digest: " + (zshHookDigest ?? "none"),
       "- Starship behavior: " + (starshipBehavior ?? "none"),
       "- Atuin configuration: " + (atuinConfiguration ?? "none"),
+      "- Neovim configuration: " + (neovimConfiguration ?? "none"),
       "- proposed input digest: " + (proposedInputDigest ?? "unavailable"),
       "- rendered digest: " + (renderedDigest ?? "unavailable"),
       "- generation: \(generation.status)",
       "- transaction: \(transactionStatus)",
       "- adoption evidence: " + (adoptionEvidenceDigest ?? "none"),
     ]
+    let neovimArtifactDigests = renderedArtifactDigests.filter {
+      $0.key.hasPrefix("neovim/")
+    }.sorted { $0.key < $1.key }
+    if !neovimArtifactDigests.isEmpty {
+      lines.append("Neovim artifacts:")
+      lines += neovimArtifactDigests.map { "- \($0.key): \($0.value)" }
+    }
     lines += prerequisites.map {
       "- prerequisite \($0.id) [\($0.status)]: \($0.requirement)"
     }
