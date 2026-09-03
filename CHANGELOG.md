@@ -16,6 +16,9 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   profile-selected prerequisites, immutable generations, reviewed multi-entry
   adoption, theme reconciliation, fresh-shell verification, interrupted-state
   recovery, drift-safe rollback, and exact restoration of retained entries.
+- Added the optional first-class Herdr environment preset with strict version
+  and live-reload contracts, bounded 16-token theme ownership, reviewed Stow
+  target adoption, legacy-journal migration, and exact disable restoration.
 - Added the first-class default desktop shell: deterministic no-SA yabai
   tiling, managed skhd shortcuts, and a clean-room Space-aware themed
   SketchyBar with role opt-outs and sparse portable profile controls.

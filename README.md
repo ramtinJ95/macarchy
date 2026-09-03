@@ -172,11 +172,13 @@ provider = "neovim" # or "disabled"
 ```
 
 Optional presets are closed, typed opt-ins and remain disabled when the profile
-is absent. Codex CLI, Pi, and tuicr theme integrations are selected independently:
+is absent. Codex CLI, Herdr, Pi, and tuicr theme integrations are selected
+independently:
 
 ```toml
 [presets]
 codex = true
+herdr = true
 pi = true
 tuicr = true
 ```
@@ -200,6 +202,32 @@ TUI launch, so apply and theme reconciliation report `restart_required` and
 never restart a running session. New `macarchy setup` runs install a selected
 missing cask but leave Codex integration configuration to `environment apply`.
 
+Selected Herdr uses the approved official Homebrew `herdr` formula when the
+command is missing. A compatible pre-existing `~/.local/bin/herdr` remains
+external and unclaimed. Macarchy requires exact `herdr X.Y.Z` version output at
+or above 0.8.0, with no upper cap. `environment apply` owns only
+`[theme].name` and the established 16 keys under `[theme.custom]` in the
+canonical `~/.config/herdr/config.toml`. The three optional fields introduced
+in Herdr 0.8.2 are deliberately outside that contract; those and any newer
+optional theme fields keep Herdr's defaults, so Macarchy does not claim a
+complete custom palette beyond its 16 managed tokens. Existing unrelated bytes
+and provider rewrites are preserved. A reviewed `~/.config/herdr` directory
+symlink is the sole Stow exception: Macarchy preserves the lexical directory
+symlink and writes the resolved regular `config.toml` target atomically. Other
+symlink topologies block. A complete authenticated older Herdr theme journal is
+migrated into aggregate ownership and its exact Catppuccin selector boundary is
+restored on disable; partial, stale, or unauthenticated evidence blocks.
+
+Herdr's configuration path cannot be overridden while this preset is selected:
+`HERDR_CONFIG_PATH` is unsupported because Macarchy cannot inspect or prove
+ownership of a second live configuration. A running Herdr server must return
+the exact successful reload result with no diagnostics; partial or ambiguous
+responses fail and roll the environment change back. A stopped server reports
+that the configuration will take effect on next launch. Macarchy never starts,
+stops, restarts, configures, or otherwise owns the Herdr service. New
+`macarchy setup` runs install a selected missing formula but leave Herdr
+configuration to `environment apply`.
+
 Pi is a manual prerequisite: install it yourself with
 `npm install --global @earendil-works/pi-coding-agent`. Macarchy reports that
 instruction only and never executes npm. Selected Pi must report a parseable
@@ -220,8 +248,8 @@ palette.
 Run `macarchy setup --install-dependencies` after selecting tuicr to review and
 install its approved Homebrew formula. `environment apply` never installs
 software; it reports and blocks before configuration mutation when a selected
-executable or compatible Pi or Codex version is missing. For tuicr, the environment
-lifecycle owns only the root `theme` selector in
+executable or compatible Pi, Herdr, or Codex version is missing. For tuicr, the
+environment lifecycle owns only the root `theme` selector in
 `~/.config/tuicr/config.toml` and the `macarchy-current.toml` palette and
 `macarchy-current.tmTheme` syntax links under `~/.config/tuicr/themes`. It
 preserves unrelated configuration and does not own repositories, review
@@ -671,11 +699,11 @@ Imported palettes drive macOS appearance, wallpaper, Kitty, SketchyBar, shell
 tools, Neovim, and every other generated-palette consumer. Neovim receives a
 strictly data-only palette rendered through a pinned, preinstalled Aether v3
 plugin; repository-provided Lua remains ignored and Macarchy's canonical
-pointer remains the only theme authority. Herdr receives a complete generated
-16-token custom palette and repaints through its live config reload. Macarchy
-edits only the allowlisted theme selector/custom keys, retains first-import
-backup and ownership evidence, rejects unowned custom colors, and removes its
-custom values when returning to a built-in. Missing wallpaper provenance is
+pointer remains the only theme authority. Herdr receives a generated 16-token
+custom palette within the bounded contract described above and repaints through
+its live config reload. Macarchy edits only the allowlisted theme
+selector/custom keys, rejects unowned custom colors, and removes its custom
+values when returning to a built-in. Missing wallpaper provenance is
 reported as a personal-use warning; imported assets are not release-eligible
 without verified rights.
 
@@ -701,7 +729,8 @@ than editing Slack's private Electron storage.
 configuration seams Macarchy needs. It is non-mutating unless an allowlisted
 integration is missing from an eligible ordinary local path.
 
-Correct pre-existing configuration remains external and unclaimed. Macarchy
+Correct pre-existing configuration remains external and unclaimed. Except for
+the reviewed aggregate Herdr directory-symlink seam described above, Macarchy
 does not write through GNU Stow or other symlink-owned configuration. When it
 does make a change, it writes a private backup and a strict ownership record
 before atomically replacing a file or creating an exact canonical link.
