@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum NeovimAdapterError: Error, CustomStringConvertible, Sendable {
@@ -40,7 +41,7 @@ package struct NeovimAdapter: Sendable {
   package static let aetherCommitDirective = "commit = \"\(aetherCommit)\","
   package static let outputPath = "generated/neovim.lua"
   static let rendererVersion = 4
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/nvim")
+  package static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/nvim")
 
   let root: URL
   let configurationDirectoryURL: URL
@@ -71,6 +72,10 @@ package struct NeovimAdapter: Sendable {
     )
   }
 
+  private var themeLoaderURL: URL {
+    configurationDirectoryURL.appending(path: "lua/macarchy/current.lua")
+  }
+
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
       adapterID: Self.id,
@@ -84,7 +89,7 @@ package struct NeovimAdapter: Sendable {
     guard controlIsAvailable() else {
       throw NeovimAdapterError.controlUnavailable(executableURL)
     }
-    try themeLink.validate()
+    let usesManagedThemeLoader = try validateThemeLoader()
     guard Self.containsIntegrationDirective(in: try readConfiguration()) else {
       throw NeovimAdapterError.missingIntegration(Self.integrationDirective)
     }
@@ -96,6 +101,31 @@ package struct NeovimAdapter: Sendable {
     else {
       throw NeovimAdapterError.missingIntegration(Self.backgroundAwareWatcherDirective)
     }
+    if usesManagedThemeLoader {
+      let watcherRoot = Self.managedWatcherRootDirective(root: root)
+      guard Self.contains(directive: watcherRoot, in: try readConfiguration(at: watcherURL))
+      else {
+        throw NeovimAdapterError.missingIntegration(watcherRoot)
+      }
+    }
+  }
+
+  private func validateThemeLoader() throws -> Bool {
+    var metadata = stat()
+    if lstat(themeLoaderURL.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFLNK {
+      try themeLink.validate()
+      return false
+    }
+    let directive = Self.managedThemeLoaderDirective(root: root)
+    guard
+      Self.contains(
+        directive: directive,
+        in: try readConfiguration(at: themeLoaderURL)
+      )
+    else {
+      throw NeovimAdapterError.missingIntegration(directive)
+    }
+    return true
   }
 
   func preflight(package: ThemePackage) throws {
@@ -280,6 +310,39 @@ package struct NeovimAdapter: Sendable {
 
   package static func containsIntegrationDirective(in text: String) -> Bool {
     contains(directive: integrationDirective, in: text)
+  }
+
+  package static func managedThemeLoaderDirective(root: URL) -> String {
+    let literal = luaStringLiteral(root.standardizedFileURL.path)
+    return "loadfile(\(literal) .. \"/current/\(outputPath)\")"
+  }
+
+  package static func managedWatcherRootDirective(root: URL) -> String {
+    "local root = \(luaStringLiteral(root.standardizedFileURL.path))"
+  }
+
+  package static func luaStringLiteral(_ value: String) -> String {
+    var escaped = "\""
+    for scalar in value.unicodeScalars {
+      switch scalar.value {
+      case 0x22:
+        escaped += "\\\""
+      case 0x5C:
+        escaped += "\\\\"
+      case 0x0A:
+        escaped += "\\n"
+      case 0x0D:
+        escaped += "\\r"
+      case 0x09:
+        escaped += "\\t"
+      case 0..<0x20, 0x7F:
+        escaped += String(format: "\\%03d", scalar.value)
+      default:
+        escaped.unicodeScalars.append(scalar)
+      }
+    }
+    escaped += "\""
+    return escaped
   }
 
   private static func contains(directive: String, in text: String) -> Bool {
