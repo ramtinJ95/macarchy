@@ -22,6 +22,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         + (profile.history == .atuin ? ["atuin"] : [])
         + (profile.editor == .neovim ? ["neovim"] : [])
         + (profile.presets.codex ? ["codex"] : [])
+        + (profile.presets.herdr ? ["herdr"] : [])
         + (profile.presets.pi ? ["pi"] : [])
         + (profile.presets.tuicr ? ["tuicr"] : [])
         + (profile.tools.bat ? ["bat"] : [])
@@ -99,6 +100,45 @@ struct EnvironmentPrerequisiteInspector: Sendable {
         )
       }
     }
+    if profile.presets.herdr,
+      let index = results.firstIndex(where: { $0.id == HerdrAdapter.id }),
+      results[index].status == "present"
+    {
+      if ProcessInfo.processInfo.environment["HERDR_CONFIG_PATH"] != nil {
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: HerdrAdapter.id,
+          status: "missing",
+          requirement:
+            "Herdr must use canonical ~/.config/herdr/config.toml; HERDR_CONFIG_PATH is unsupported and uninspectable",
+          remediation: "Unset HERDR_CONFIG_PATH and run the command again."
+        )
+      } else {
+        do {
+          let version = try HerdrAdapter(
+            root: homeDirectory.appending(path: ".config/macarchy"),
+            configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+            executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+            controlIsAvailable: { true },
+            processRunner: .live
+          ).supportedVersion()
+          results[index] = EnvironmentPrerequisiteStatus(
+            id: HerdrAdapter.id,
+            status: "present",
+            requirement:
+              "Herdr \(version) satisfies the required version >= \(HerdrAdapter.minimumVersion)",
+            remediation: results[index].remediation
+          )
+        } catch {
+          results[index] = EnvironmentPrerequisiteStatus(
+            id: HerdrAdapter.id,
+            status: "missing",
+            requirement:
+              "Herdr must report 'herdr X.Y.Z' >= \(HerdrAdapter.minimumVersion): \(error)",
+            remediation: results[index].remediation
+          )
+        }
+      }
+    }
     if profile.shell == .zsh {
       let zsh = URL(filePath: "/bin/zsh")
       results.append(
@@ -142,6 +182,7 @@ extension EnvironmentProfile {
       && editor == .disabled
       && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
       && !presets.codex && !presets.pi && !presets.tuicr
+      && !presets.herdr
   }
 
   var selectedThemeAdapterIDs: [String] {
@@ -154,6 +195,7 @@ extension EnvironmentProfile {
       + (tools.eza ? ["eza"] : [])
       + (tools.yazi ? ["yazi"] : [])
       + (presets.codex ? ["codex"] : [])
+      + (presets.herdr ? ["herdr"] : [])
       + (presets.pi ? ["pi"] : [])
       + (presets.tuicr ? ["tuicr"] : [])
   }
@@ -506,6 +548,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       "eza": profile.tools.eza ? "enabled" : "disabled",
       "yazi": profile.tools.yazi ? "enabled" : "disabled",
       "codex": profile.presets.codex ? "enabled" : "disabled",
+      "herdr": profile.presets.herdr ? "enabled" : "disabled",
       "pi": profile.presets.pi ? "enabled" : "disabled",
       "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]

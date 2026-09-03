@@ -167,6 +167,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
   fileprivate static func presets(_ profile: EnvironmentProfile) -> [String: String] {
     [
       "codex": profile.presets.codex ? "enabled" : "disabled",
+      "herdr": profile.presets.herdr ? "enabled" : "disabled",
       "pi": profile.presets.pi ? "enabled" : "disabled",
       "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]
@@ -269,6 +270,15 @@ struct EnvironmentPlanCommandRunner: Sendable {
         EnvironmentPlanAction(
           id: "configure_codex",
           message: "Configure Codex CLI's [tui].theme selector and canonical TextMate theme link."
+        )
+      )
+    }
+    if profile.presets.herdr {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_herdr",
+          message:
+            "Configure Herdr's [theme] selector and established 16-key [theme.custom] surface."
         )
       )
     }

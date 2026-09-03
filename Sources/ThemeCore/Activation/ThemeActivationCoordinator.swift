@@ -84,6 +84,7 @@ package struct ThemeActivationCoordinator: Sendable {
     root: URL,
     consumerPaths: ThemeConsumerPaths,
     enabledAdapterIDs: Set<String>? = nil,
+    herdrManagedMode: HerdrManagedMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
@@ -110,6 +111,7 @@ package struct ThemeActivationCoordinator: Sendable {
       },
       controlIsAvailable: controlIsAvailable,
       enabledAdapterIDs: enabledAdapterIDs,
+      herdrManagedMode: herdrManagedMode,
       piSelectionIsApplied: piSelectionIsApplied,
       piThemeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed
     )
@@ -129,6 +131,7 @@ package struct ThemeActivationCoordinator: Sendable {
     onThemeChanged: @escaping @Sendable (ThemeChanged) -> Void = { _ in },
     postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in },
     enabledAdapterIDs: Set<String>? = nil,
+    herdrManagedMode: HerdrManagedMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
@@ -192,7 +195,8 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationURL: consumerPaths.herdrConfigurationURL,
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { controlIsAvailable(HerdrAdapter.liveExecutableURL) },
-      processRunner: processRunner
+      processRunner: processRunner,
+      managedMode: herdrManagedMode
     )
     kitty = KittyAdapter(
       root: root,
@@ -546,7 +550,9 @@ package struct ThemeActivationCoordinator: Sendable {
         entry: entry,
         unsupportedAdapterIDs: context.unsupportedAdapterIDs,
         preflight: { context in try herdr.preflight(package: context.package) },
-        inspection: herdr.inspection,
+        inspection: {
+          herdr.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+        },
         reconciliation: herdr.reconciliation
       )
     case .kitty:

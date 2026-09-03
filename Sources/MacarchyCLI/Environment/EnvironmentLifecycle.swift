@@ -108,9 +108,11 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let originalThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btop: EnvironmentBtopOwnership?
   let codex: EnvironmentCodexOwnership?
+  let herdr: EnvironmentHerdrOwnership?
   let pi: EnvironmentPiOwnership?
   let tuicr: EnvironmentTuicrOwnership?
   let codexEnabled: Bool
+  let herdrEnabled: Bool
   let piEnabled: Bool
   let tuicrEnabled: Bool
   let enabledThemeAdapterIDs: [String]?
@@ -122,9 +124,11 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     originalThemeBridges: [EnvironmentThemeBridgeState.Entry],
     btop: EnvironmentBtopOwnership? = nil,
     codex: EnvironmentCodexOwnership? = nil,
+    herdr: EnvironmentHerdrOwnership? = nil,
     pi: EnvironmentPiOwnership? = nil,
     tuicr: EnvironmentTuicrOwnership? = nil,
     codexEnabled: Bool = false,
+    herdrEnabled: Bool = false,
     piEnabled: Bool = false,
     tuicrEnabled: Bool = false,
     enabledThemeAdapterIDs: [String]? = nil
@@ -136,9 +140,11 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.originalThemeBridges = originalThemeBridges.sorted { $0.path < $1.path }
     self.btop = btop
     self.codex = codex
+    self.herdr = herdr
     self.pi = pi
     self.tuicr = tuicr
     self.codexEnabled = codexEnabled
+    self.herdrEnabled = herdrEnabled
     self.piEnabled = piEnabled
     self.tuicrEnabled = tuicrEnabled
     self.enabledThemeAdapterIDs = enabledThemeAdapterIDs?.sorted()
@@ -152,9 +158,11 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case originalThemeBridges = "original_theme_bridges"
     case btop
     case codex
+    case herdr
     case pi
     case tuicr
     case codexEnabled = "codex_enabled"
+    case herdrEnabled = "herdr_enabled"
     case piEnabled = "pi_enabled"
     case tuicrEnabled = "tuicr_enabled"
     case enabledThemeAdapterIDs = "enabled_theme_adapter_ids"
@@ -172,9 +180,11 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     )
     btop = try container.decodeIfPresent(EnvironmentBtopOwnership.self, forKey: .btop)
     codex = try container.decodeIfPresent(EnvironmentCodexOwnership.self, forKey: .codex)
+    herdr = try container.decodeIfPresent(EnvironmentHerdrOwnership.self, forKey: .herdr)
     pi = try container.decodeIfPresent(EnvironmentPiOwnership.self, forKey: .pi)
     tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
     codexEnabled = try container.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? false
+    herdrEnabled = try container.decodeIfPresent(Bool.self, forKey: .herdrEnabled) ?? false
     piEnabled = try container.decodeIfPresent(Bool.self, forKey: .piEnabled) ?? false
     tuicrEnabled = try container.decodeIfPresent(Bool.self, forKey: .tuicrEnabled) ?? false
     enabledThemeAdapterIDs = try container.decodeIfPresent(
@@ -191,6 +201,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && Set(adapterIDs).count == adapterIDs.count
           && Set(adapterIDs).isSubset(of: knownThemeAdapterIDs)
           && adapterIDs.contains(CodexAdapter.id) == codexEnabled
+          && adapterIDs.contains(HerdrAdapter.id) == herdrEnabled
           && adapterIDs.contains(PiAdapter.id) == piEnabled
           && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
       } ?? true
@@ -201,6 +212,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count,
       btop?.hasValidShape ?? true,
       codex?.hasValidShape ?? true,
+      herdr?.hasValidShape ?? true,
       pi?.hasValidShape ?? true,
       tuicr?.hasValidShape ?? true,
       hasValidThemeAdapterInventory
@@ -230,16 +242,52 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       }
     }
   }
+
+  func replacingHerdr(_ herdr: EnvironmentHerdrOwnership?) -> Self {
+    Self(
+      generationID: generationID,
+      records: records,
+      createdDirectories: createdDirectories,
+      originalThemeBridges: originalThemeBridges,
+      btop: btop,
+      codex: codex,
+      herdr: herdr,
+      pi: pi,
+      tuicr: tuicr,
+      codexEnabled: codexEnabled,
+      herdrEnabled: herdrEnabled,
+      piEnabled: piEnabled,
+      tuicrEnabled: tuicrEnabled,
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs
+    )
+  }
 }
 
 enum EnvironmentTransactionOperation: String, Codable, Sendable {
   case apply
+  case herdrTheme = "herdr_theme"
   case teardown
 }
 
 enum EnvironmentTransactionDirection: String, Codable, Sendable {
   case forward
   case rollback
+}
+
+enum EnvironmentHerdrRuntimeTarget: String, Codable, Equatable, Sendable {
+  case managed
+  case original
+}
+
+private func requiredHerdrRuntimeTarget(
+  from old: EnvironmentOwnership?,
+  to new: EnvironmentOwnership?
+) -> EnvironmentHerdrRuntimeTarget? {
+  let wasEnabled = old?.herdrEnabled == true
+  let willBeEnabled = new?.herdrEnabled == true
+  if wasEnabled != willBeEnabled { return willBeEnabled ? .managed : .original }
+  if wasEnabled, old?.herdr?.managedTheme != new?.herdr?.managedTheme { return .managed }
+  return nil
 }
 
 struct EnvironmentTransaction: Codable, Equatable, Sendable {
@@ -255,6 +303,10 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btopReplacementName: String?
   let codexReplacementName: String?
+  let herdrReplacementName: String?
+  let herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget?
+  let herdrRuntimeVerified: Bool?
+  let herdrLegacyMigration: Bool?
   let piReplacementName: String?
   let tuicrReplacementName: String?
 
@@ -268,6 +320,10 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry] = [],
     btopReplacementName: String? = nil,
     codexReplacementName: String? = nil,
+    herdrReplacementName: String? = nil,
+    herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget? = nil,
+    herdrRuntimeVerified: Bool? = nil,
+    herdrLegacyMigration: Bool? = nil,
     piReplacementName: String? = nil,
     tuicrReplacementName: String? = nil
   ) {
@@ -281,6 +337,10 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.rollbackThemeBridges = rollbackThemeBridges
     self.btopReplacementName = btopReplacementName
     self.codexReplacementName = codexReplacementName
+    self.herdrReplacementName = herdrReplacementName
+    self.herdrRuntimeTarget = herdrRuntimeTarget
+    self.herdrRuntimeVerified = herdrRuntimeVerified
+    self.herdrLegacyMigration = herdrLegacyMigration
     self.piReplacementName = piReplacementName
     self.tuicrReplacementName = tuicrReplacementName
   }
@@ -296,6 +356,35 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       rollbackThemeBridges: rollbackThemeBridges,
       btopReplacementName: btopReplacementName,
       codexReplacementName: codexReplacementName,
+      herdrReplacementName: herdrReplacementName,
+      herdrRuntimeTarget: herdrLegacyMigration == true
+        ? .managed
+        : requiredHerdrRuntimeTarget(
+          from: proposedOwnership,
+          to: previousOwnership
+        ),
+      herdrRuntimeVerified: nil,
+      herdrLegacyMigration: herdrLegacyMigration,
+      piReplacementName: piReplacementName,
+      tuicrReplacementName: tuicrReplacementName
+    )
+  }
+
+  var withHerdrRuntimeVerified: Self {
+    Self(
+      operation: operation,
+      direction: direction,
+      previousOwnership: previousOwnership,
+      proposedOwnership: proposedOwnership,
+      previousCurrentDestination: previousCurrentDestination,
+      previousThemeGenerationID: previousThemeGenerationID,
+      rollbackThemeBridges: rollbackThemeBridges,
+      btopReplacementName: btopReplacementName,
+      codexReplacementName: codexReplacementName,
+      herdrReplacementName: herdrReplacementName,
+      herdrRuntimeTarget: herdrRuntimeTarget,
+      herdrRuntimeVerified: true,
+      herdrLegacyMigration: herdrLegacyMigration,
       piReplacementName: piReplacementName,
       tuicrReplacementName: tuicrReplacementName
     )
@@ -311,6 +400,10 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case rollbackThemeBridges = "rollback_theme_bridges"
     case btopReplacementName = "btop_replacement_name"
     case codexReplacementName = "codex_replacement_name"
+    case herdrReplacementName = "herdr_replacement_name"
+    case herdrRuntimeTarget = "herdr_runtime_target"
+    case herdrRuntimeVerified = "herdr_runtime_verified"
+    case herdrLegacyMigration = "herdr_legacy_migration"
     case piReplacementName = "pi_replacement_name"
     case tuicrReplacementName = "tuicr_replacement_name"
   }
@@ -478,6 +571,8 @@ struct EnvironmentProviderInspection: Sendable {
   let btopExternalEvidence: EnvironmentEntryEvidence?
   let proposedCodexOwnership: EnvironmentCodexOwnership?
   let codexExternalEvidence: EnvironmentEntryEvidence?
+  let proposedHerdrOwnership: EnvironmentHerdrOwnership?
+  let herdrExternalEvidence: EnvironmentEntryEvidence?
   let proposedPiOwnership: EnvironmentPiOwnership?
   let piExternalEvidence: EnvironmentEntryEvidence?
   let proposedTuicrOwnership: EnvironmentTuicrOwnership?
@@ -527,7 +622,8 @@ struct EnvironmentStateStore: Sendable {
   func readTransaction() throws -> EnvironmentTransaction? {
     try read(EnvironmentTransaction.self, at: transactionURL) { value in
       value.schemaVersion == EnvironmentTransaction.currentSchemaVersion
-        && (value.operation != .apply || value.proposedOwnership != nil)
+        && (![.apply, .herdrTheme].contains(value.operation)
+          || value.proposedOwnership != nil)
         && (value.previousOwnership?.hasValidShape ?? true)
         && (value.proposedOwnership?.hasValidShape ?? true)
         && Self.currentDestinationIsValid(value.previousCurrentDestination)
@@ -537,6 +633,8 @@ struct EnvironmentStateStore: Sendable {
         )
         && Self.btopReplacementIsValid(value)
         && Self.codexReplacementIsValid(value)
+        && Self.herdrReplacementIsValid(value)
+        && Self.herdrRuntimeIsValid(value)
         && Self.piReplacementIsValid(value)
         && Self.tuicrReplacementIsValid(value)
     }
@@ -700,6 +798,46 @@ struct EnvironmentStateStore: Sendable {
       required: required,
       prefix: ".macarchy-environment-tuicr-"
     )
+  }
+
+  private static func herdrReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let required =
+      transaction.previousOwnership?.herdr != nil
+      || transaction.proposedOwnership?.herdr != nil
+    return replacementIsValid(
+      transaction.herdrReplacementName,
+      required: required,
+      prefix: ".macarchy-environment-herdr-"
+    )
+  }
+
+  private static func herdrRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let expected =
+      transaction.direction == .rollback && transaction.herdrLegacyMigration == true
+      ? .managed
+      : transaction.direction == .forward
+        ? requiredHerdrRuntimeTarget(
+          from: transaction.previousOwnership,
+          to: transaction.proposedOwnership
+        )
+        : requiredHerdrRuntimeTarget(
+          from: transaction.proposedOwnership,
+          to: transaction.previousOwnership
+        )
+    return transaction.herdrRuntimeTarget == expected
+      && (transaction.herdrRuntimeVerified == nil || transaction.herdrRuntimeVerified == true)
+      && herdrLegacyMigrationIsValid(transaction)
+  }
+
+  private static func herdrLegacyMigrationIsValid(
+    _ transaction: EnvironmentTransaction
+  ) -> Bool {
+    guard transaction.herdrLegacyMigration != false else { return false }
+    guard transaction.herdrLegacyMigration == true else { return true }
+    return transaction.operation == .apply
+      && transaction.previousOwnership?.herdr == nil
+      && transaction.proposedOwnership?.herdrEnabled == true
+      && transaction.proposedOwnership?.herdr?.migratedLegacy == true
   }
 
   private static func piReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
@@ -1015,6 +1153,21 @@ struct EnvironmentProviderInspector: Sendable {
         ) { createdDirectories.insert(directory.path) }
       }
 
+      let herdr = try inspectHerdr(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        ownership: ownership?.herdr,
+        previouslyEnabled: ownership?.herdrEnabled == true
+      )
+      if let entry = herdr.entry { inspections.append(entry) }
+      if herdr.proposedOwnership != nil, herdr.proposedOwnership?.directoryLink == nil {
+        for directory in try missingParentDirectories(
+          of: homeDirectory.appending(path: ".config/herdr/config.toml"),
+          homeDirectory: homeDirectory
+        ) { createdDirectories.insert(directory.path) }
+      }
+
       let pi = try inspectPi(
         composition: composition,
         homeDirectory: homeDirectory,
@@ -1152,6 +1305,7 @@ struct EnvironmentProviderInspector: Sendable {
             selected: entries,
             btop: btop.proposedOwnership,
             codex: codex.proposedOwnership,
+            herdr: herdr.proposedOwnership,
             pi: pi.proposedOwnership,
             tuicr: tuicr.proposedOwnership
           ) : nil,
@@ -1163,6 +1317,8 @@ struct EnvironmentProviderInspector: Sendable {
         btopExternalEvidence: btop.externalEvidence,
         proposedCodexOwnership: codex.proposedOwnership,
         codexExternalEvidence: codex.externalEvidence,
+        proposedHerdrOwnership: herdr.proposedOwnership,
+        herdrExternalEvidence: herdr.externalEvidence,
         proposedPiOwnership: pi.proposedOwnership,
         piExternalEvidence: pi.externalEvidence,
         proposedTuicrOwnership: tuicr.proposedOwnership,
@@ -1181,6 +1337,8 @@ struct EnvironmentProviderInspector: Sendable {
         btopExternalEvidence: nil,
         proposedCodexOwnership: nil,
         codexExternalEvidence: nil,
+        proposedHerdrOwnership: nil,
+        herdrExternalEvidence: nil,
         proposedPiOwnership: nil,
         piExternalEvidence: nil,
         proposedTuicrOwnership: nil,
@@ -1563,6 +1721,7 @@ struct EnvironmentProviderInspector: Sendable {
     selected: [EnvironmentManagedEntry],
     btop: EnvironmentBtopOwnership?,
     codex: EnvironmentCodexOwnership?,
+    herdr: EnvironmentHerdrOwnership?,
     pi: EnvironmentPiOwnership?,
     tuicr: EnvironmentTuicrOwnership?
   ) throws -> String {
@@ -1587,6 +1746,9 @@ struct EnvironmentProviderInspector: Sendable {
     if let codex {
       targets[EnvironmentEntryID.codexConfiguration.rawValue] = "key-owned:\(codex.path)"
     }
+    if let herdr {
+      targets["herdr_configuration"] = "key-owned:\(herdr.path)"
+    }
     if let pi {
       targets[EnvironmentEntryID.piConfiguration.rawValue] = "key-owned:\(pi.path)"
     }
@@ -1608,6 +1770,7 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.tools.btop ? "btop" : "btop-disabled",
         composition.profile.tools.yazi ? "yazi" : "yazi-disabled",
         composition.profile.presets.codex ? "codex" : "codex-disabled",
+        composition.profile.presets.herdr ? "herdr" : "herdr-disabled",
         composition.profile.presets.pi ? "pi" : "pi-disabled",
         composition.profile.presets.tuicr ? "tuicr" : "tuicr-disabled",
       ],
@@ -1691,6 +1854,140 @@ struct EnvironmentProviderInspector: Sendable {
       )
     }
     return present == requiredIDs
+  }
+
+  private func inspectHerdr(
+    composition: EnvironmentComposition,
+    homeDirectory: URL,
+    stateRoot: URL,
+    ownership: EnvironmentHerdrOwnership?,
+    previouslyEnabled: Bool
+  ) throws -> (
+    entry: EnvironmentEntryInspection?,
+    proposedOwnership: EnvironmentHerdrOwnership?,
+    externalEvidence: EnvironmentEntryEvidence?
+  ) {
+    guard composition.profile.presets.herdr || ownership != nil else {
+      return (nil, nil, nil)
+    }
+    let url = homeDirectory.appending(path: ".config/herdr/config.toml")
+    let transaction = EnvironmentHerdrFileTransaction(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    )
+    if let ownership {
+      if previouslyEnabled {
+        try transaction.preflight(ownership)
+      } else {
+        try transaction.preflightOriginal(ownership)
+      }
+      let enabling = composition.profile.presets.herdr
+      let proposed =
+        enabling
+        ? ownership.replacingManagedTheme(try HerdrAdapter.desiredTheme(root: stateRoot))
+        : ownership
+      return (
+        EnvironmentEntryInspection(
+          id: "herdr_configuration",
+          path: url.path,
+          status: enabling == previouslyEnabled
+            ? (enabling ? "managed" : "external") : "restoration_required",
+          ownership: "macarchy",
+          message: enabling
+            ? "The Herdr theme surface is managed."
+            : "The disabled Herdr theme surface is restored to its original boundary.",
+          evidence: nil
+        ),
+        proposed,
+        nil
+      )
+    }
+    guard composition.profile.presets.herdr else { return (nil, nil, nil) }
+
+    let adapter = HerdrAdapter(
+      root: stateRoot,
+      configurationURL: url,
+      executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+      controlIsAvailable: { true }
+    )
+    let evidence = try capture(url, directoryLink: nil)
+    let herdrDirectory = url.deletingLastPathComponent()
+    let hasExternalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+    let directoryEvidence =
+      hasExternalAncestor ? try capture(herdrDirectory, directoryLink: nil) : nil
+    if hasExternalAncestor {
+      guard directoryEvidence?.kind == .symbolicLink,
+        try !hasSymlinkAncestor(herdrDirectory, stoppingAt: homeDirectory)
+      else {
+        throw EnvironmentLifecycleError.blocked(
+          "only the reviewed ~/.config/herdr directory-symlink topology is writable"
+        )
+      }
+    }
+    guard evidence.kind != .symbolicLink else {
+      throw EnvironmentLifecycleError.blocked(
+        "Herdr config.toml itself must not be a symbolic link"
+      )
+    }
+    let resolved = url.resolvingSymlinksInPath()
+    let legacy = try adapter.legacyOwnershipEvidence()
+    let desired = try HerdrAdapter.desiredTheme(root: stateRoot)
+    let original: String
+    let current: String
+    let migratedLegacy: Bool
+    if let legacy {
+      original = legacy.originalConfiguration
+      current = legacy.currentConfiguration
+      migratedLegacy = true
+      guard
+        try EnvironmentHerdrDocument.matchesManaged(
+          current, desired: desired, source: url
+        )
+      else {
+        throw EnvironmentLifecycleError.drift(
+          "authenticated legacy Herdr state does not match the active generation"
+        )
+      }
+    } else if evidence.kind == .regularFile {
+      current = try configurationText(at: url, evidence: evidence)
+      original = current
+      migratedLegacy = false
+    } else if evidence.kind == .absent, !hasExternalAncestor {
+      current = ""
+      original = ""
+      migratedLegacy = false
+    } else {
+      throw EnvironmentLifecycleError.blocked(
+        "Herdr configuration cannot be safely adopted"
+      )
+    }
+    let proposed = try EnvironmentHerdrDocument.ownership(
+      original: original,
+      source: url,
+      resolvedSource: resolved,
+      originalFileExisted: evidence.kind == .regularFile,
+      directoryLink: directoryEvidence,
+      migratedLegacy: migratedLegacy,
+      managedTheme: desired
+    )
+    return (
+      EnvironmentEntryInspection(
+        id: "herdr_configuration",
+        path: url.path,
+        status: migratedLegacy
+          ? "migration_required"
+          : (evidence.kind == .absent ? "install_required" : "adoption_required"),
+        ownership: migratedLegacy ? "legacy_adapter" : "external",
+        message: migratedLegacy
+          ? "Authenticated complete legacy Herdr ownership will migrate into the environment."
+          : (hasExternalAncestor
+            ? "The reviewed Herdr directory symlink will be preserved while its resolved config target is adopted."
+            : "The Herdr theme surface requires reviewed adoption."),
+        evidence: evidence
+      ),
+      proposed,
+      evidence.kind == .absent ? nil : evidence
+    )
   }
 
   private func inspectCodex(
@@ -2889,30 +3186,47 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private let inspector = EnvironmentProviderInspector()
 
   func recoverLocked() throws -> Bool {
+    let result = try prepareRecoveryLocked()
+    guard result.runtimeTarget == nil else {
+      throw EnvironmentLifecycleError.blocked(
+        "interrupted Herdr runtime restoration must be reloaded before recovery can finish"
+      )
+    }
+    return result.recovered
+  }
+
+  func prepareRecoveryLocked() throws -> (
+    recovered: Bool, runtimeTarget: EnvironmentHerdrRuntimeTarget?
+  ) {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    guard let transaction = try store.readTransaction() else { return false }
+    guard let transaction = try store.readTransaction() else { return (false, nil) }
     try validate(transaction.previousOwnership)
     try validate(transaction.proposedOwnership)
     switch transaction.direction {
     case .forward:
       switch transaction.operation {
-      case .apply:
+      case .apply, .herdrTheme:
         guard let proposed = transaction.proposedOwnership else {
           throw EnvironmentLifecycleError.blocked("apply recovery has no proposed ownership")
         }
-        _ = try EnvironmentGenerationStore(stateRoot: stateRoot).manifest(
-          generationID: proposed.generationID
-        )
+        if transaction.operation == .apply {
+          _ = try EnvironmentGenerationStore(stateRoot: stateRoot).manifest(
+            generationID: proposed.generationID
+          )
+        }
         try transition(
           from: transaction.previousOwnership,
           to: proposed,
           btopReplacementName: transaction.btopReplacementName,
           codexReplacementName: transaction.codexReplacementName,
+          herdrReplacementName: transaction.herdrReplacementName,
           piReplacementName: transaction.piReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
-        try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
-        try EnvironmentGenerationStore(stateRoot: stateRoot).select(proposed.generationID)
+        if transaction.operation == .apply {
+          try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
+          try EnvironmentGenerationStore(stateRoot: stateRoot).select(proposed.generationID)
+        }
         try store.writeOwnership(proposed)
       case .teardown:
         try transition(
@@ -2920,23 +3234,22 @@ struct EnvironmentTransactionCoordinator: Sendable {
           to: nil,
           btopReplacementName: transaction.btopReplacementName,
           codexReplacementName: transaction.codexReplacementName,
+          herdrReplacementName: transaction.herdrReplacementName,
           piReplacementName: transaction.piReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
-        try EnvironmentThemeBridgeState(
-          entries: transaction.previousOwnership?.originalThemeBridges ?? []
-        ).restore()
-        try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(nil)
-        try store.writeOwnership(nil)
       }
     case .rollback:
+      let preserveLegacyHerdr = try shouldPreserveLegacyHerdr(transaction)
       try transition(
         from: transaction.proposedOwnership,
         to: transaction.previousOwnership,
         btopReplacementName: transaction.btopReplacementName,
         codexReplacementName: transaction.codexReplacementName,
+        herdrReplacementName: transaction.herdrReplacementName,
         piReplacementName: transaction.piReplacementName,
-        tuicrReplacementName: transaction.tuicrReplacementName
+        tuicrReplacementName: transaction.tuicrReplacementName,
+        preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
       )
       try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
         transaction.previousCurrentDestination
@@ -2944,8 +3257,81 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try restoreRollbackThemeBridges(transaction)
       try store.writeOwnership(transaction.previousOwnership)
     }
+
+    if let target = transaction.herdrRuntimeTarget,
+      transaction.herdrRuntimeVerified != true
+    {
+      return (true, target)
+    }
+
+    switch (transaction.direction, transaction.operation) {
+    case (.forward, .apply), (.forward, .herdrTheme):
+      if let proposed = transaction.proposedOwnership,
+        proposed.herdr?.migratedLegacy == true, !proposed.herdrEnabled
+      {
+        try discardHerdrLegacyEvidence()
+      }
+    case (.forward, .teardown):
+      try EnvironmentThemeBridgeState(
+        entries: transaction.previousOwnership?.originalThemeBridges ?? []
+      ).restore()
+      try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(nil)
+      try store.writeOwnership(nil)
+      if transaction.previousOwnership?.herdr?.migratedLegacy == true {
+        try discardHerdrLegacyEvidence()
+      }
+    case (.rollback, _):
+      break
+    }
     try store.removeTransaction()
-    return true
+    return (true, nil)
+  }
+
+  func pendingHerdrRuntimeTargetLocked() throws -> EnvironmentHerdrRuntimeTarget? {
+    guard let transaction = try EnvironmentStateStore(stateRoot: stateRoot).readTransaction(),
+      transaction.herdrRuntimeVerified != true
+    else { return nil }
+    return transaction.herdrRuntimeTarget
+  }
+
+  func markHerdrRuntimeVerifiedLocked(_ target: EnvironmentHerdrRuntimeTarget) throws {
+    let store = EnvironmentStateStore(stateRoot: stateRoot)
+    guard let transaction = try store.readTransaction(),
+      transaction.herdrRuntimeTarget == target,
+      transaction.herdrRuntimeVerified != true
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "no matching Herdr runtime restoration is pending"
+      )
+    }
+    try store.writeTransaction(transaction.withHerdrRuntimeVerified)
+  }
+
+  func preflightManagedHerdr(
+    _ desired: GeneratedHerdrTheme,
+    requireActiveMatch: Bool
+  ) throws {
+    let store = EnvironmentStateStore(stateRoot: stateRoot)
+    guard try store.readTransaction() == nil else {
+      throw EnvironmentLifecycleError.blocked(
+        "an interrupted environment transaction must be recovered first"
+      )
+    }
+    guard let ownership = try store.readOwnership(), ownership.herdrEnabled,
+      let herdr = ownership.herdr
+    else {
+      throw EnvironmentLifecycleError.blocked("aggregate Herdr ownership is not active")
+    }
+    _ = try desired.validated()
+    try EnvironmentHerdrFileTransaction(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    ).preflight(herdr)
+    if requireActiveMatch, herdr.managedTheme != desired {
+      throw EnvironmentLifecycleError.drift(
+        "Herdr ownership does not match the active theme generation"
+      )
+    }
   }
 
   func applyLocked(
@@ -3003,6 +3389,14 @@ struct EnvironmentTransactionCoordinator: Sendable {
       else {
         throw EnvironmentLifecycleError.blocked(
           "Codex external tuple changed after planning; run environment plan again"
+        )
+      }
+    }
+    if let expected = inspection.herdrExternalEvidence {
+      let url = homeDirectory.appending(path: ".config/herdr/config.toml")
+      guard try inspector.capture(url, directoryLink: nil) == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "Herdr configuration changed after planning; run environment plan again"
         )
       }
     }
@@ -3087,9 +3481,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
       originalThemeBridges: originalThemeBridges,
       btop: inspection.proposedBtopOwnership,
       codex: inspection.proposedCodexOwnership,
+      herdr: inspection.proposedHerdrOwnership,
       pi: inspection.proposedPiOwnership,
       tuicr: inspection.proposedTuicrOwnership,
       codexEnabled: composition.profile.presets.codex,
+      herdrEnabled: composition.profile.presets.herdr,
       piEnabled: composition.profile.presets.pi,
       tuicrEnabled: composition.profile.presets.tuicr,
       enabledThemeAdapterIDs: composition.profile.selectedThemeAdapterIDs
@@ -3098,9 +3494,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let ownershipChanged =
       previous?.records != proposed.records || previous?.btop != proposed.btop
       || previous?.codex != proposed.codex
+      || previous?.herdr != proposed.herdr
       || previous?.pi != proposed.pi
       || previous?.tuicr != proposed.tuicr
       || previous?.codexEnabled != proposed.codexEnabled
+      || previous?.herdrEnabled != proposed.herdrEnabled
       || previous?.piEnabled != proposed.piEnabled
       || previous?.tuicrEnabled != proposed.tuicrEnabled
       || previous?.enabledThemeAdapterIDs != proposed.enabledThemeAdapterIDs
@@ -3112,6 +3510,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let codexReplacementName =
       previous?.codex != nil || proposed.codex != nil
       ? ".macarchy-environment-codex-\(UUID().uuidString.lowercased()).replacement" : nil
+    let herdrReplacementName =
+      previous?.herdr != nil || proposed.herdr != nil
+      ? ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement" : nil
     let piReplacementName =
       previous?.pi != nil || proposed.pi != nil
       ? ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement" : nil
@@ -3127,6 +3528,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       rollbackThemeBridges: themeBridges.entries,
       btopReplacementName: btopReplacementName,
       codexReplacementName: codexReplacementName,
+      herdrReplacementName: herdrReplacementName,
+      herdrRuntimeTarget: requiredHerdrRuntimeTarget(from: previous, to: proposed),
+      herdrLegacyMigration:
+        previous?.herdr == nil && proposed.herdr?.migratedLegacy == true ? true : nil,
       piReplacementName: piReplacementName,
       tuicrReplacementName: tuicrReplacementName
     )
@@ -3140,6 +3545,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           to: proposed,
           btopReplacementName: btopReplacementName,
           codexReplacementName: codexReplacementName,
+          herdrReplacementName: herdrReplacementName,
           piReplacementName: piReplacementName,
           tuicrReplacementName: tuicrReplacementName
         )
@@ -3157,13 +3563,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
       do {
+        let preserveLegacyHerdr = try shouldPreserveLegacyHerdr(transaction)
         try transition(
           from: proposed,
           to: previous,
           btopReplacementName: btopReplacementName,
           codexReplacementName: codexReplacementName,
+          herdrReplacementName: herdrReplacementName,
           piReplacementName: piReplacementName,
-          tuicrReplacementName: tuicrReplacementName
+          tuicrReplacementName: tuicrReplacementName,
+          preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
         )
         try generationStore.restoreCurrent(previousCurrent)
         try EnvironmentThemeBridgeState(entries: themeBridges.entries).restore()
@@ -3179,6 +3588,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   func finishApplyLocked(composition: EnvironmentComposition) throws {
+    if try pendingHerdrRuntimeTargetLocked() != nil {
+      throw EnvironmentLifecycleError.blocked(
+        "Herdr runtime activation is not verified"
+      )
+    }
     let inspection = inspector.inspect(
       composition: composition,
       homeDirectory: homeDirectory,
@@ -3191,17 +3605,23 @@ struct EnvironmentTransactionCoordinator: Sendable {
         inspection.blockedMessage ?? "provider verification failed before transaction completion"
       )
     }
+    if let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership(),
+      ownership.herdr?.migratedLegacy == true, !ownership.herdrEnabled
+    {
+      try discardHerdrLegacyEvidence()
+    }
     try faultInjector(.authorityPublished)
     try EnvironmentStateStore(stateRoot: stateRoot).removeTransaction()
   }
 
   func rollbackApplyLocked() throws {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    guard let transaction = try store.readTransaction(), transaction.operation == .apply else {
-      throw EnvironmentLifecycleError.blocked("no environment apply transaction can be rolled back")
+    guard let transaction = try store.readTransaction() else {
+      throw EnvironmentLifecycleError.blocked("no environment transaction can be rolled back")
     }
     try validate(transaction.previousOwnership)
     try validate(transaction.proposedOwnership)
+    let preserveLegacyHerdr = try shouldPreserveLegacyHerdr(transaction)
     let rollback = transaction.rollingBack
     try store.writeTransaction(rollback)
     try transition(
@@ -3209,15 +3629,19 @@ struct EnvironmentTransactionCoordinator: Sendable {
       to: rollback.previousOwnership,
       btopReplacementName: rollback.btopReplacementName,
       codexReplacementName: rollback.codexReplacementName,
+      herdrReplacementName: rollback.herdrReplacementName,
       piReplacementName: rollback.piReplacementName,
-      tuicrReplacementName: rollback.tuicrReplacementName
+      tuicrReplacementName: rollback.tuicrReplacementName,
+      preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
     )
     try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
       rollback.previousCurrentDestination
     )
     try restoreRollbackThemeBridges(rollback)
     try store.writeOwnership(rollback.previousOwnership)
-    try store.removeTransaction()
+    if rollback.herdrRuntimeTarget == nil {
+      try store.removeTransaction()
+    }
   }
 
   func teardownLocked(dryRun: Bool) throws -> (changed: Bool, message: String) {
@@ -3273,6 +3697,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       codexReplacementName: ownership.codex.map { _ in
         ".macarchy-environment-codex-\(UUID().uuidString.lowercased()).replacement"
       },
+      herdrReplacementName: ownership.herdr.map { _ in
+        ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement"
+      },
+      herdrRuntimeTarget: requiredHerdrRuntimeTarget(from: ownership, to: nil),
       piReplacementName: ownership.pi.map { _ in
         ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement"
       },
@@ -3286,14 +3714,80 @@ struct EnvironmentTransactionCoordinator: Sendable {
       to: nil,
       btopReplacementName: transaction.btopReplacementName,
       codexReplacementName: transaction.codexReplacementName,
+      herdrReplacementName: transaction.herdrReplacementName,
       piReplacementName: transaction.piReplacementName,
       tuicrReplacementName: transaction.tuicrReplacementName
     )
-    try EnvironmentThemeBridgeState(entries: ownership.originalThemeBridges).restore()
-    try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(nil)
-    try store.writeOwnership(nil)
-    try store.removeTransaction()
+    if transaction.herdrRuntimeTarget == nil {
+      _ = try prepareRecoveryLocked()
+    }
     return (true, "The exact adopted provider entries were restored.")
+  }
+
+  func beginHerdrThemeTransitionLocked(_ desired: GeneratedHerdrTheme) throws -> Bool {
+    let store = EnvironmentStateStore(stateRoot: stateRoot)
+    guard try store.readTransaction() == nil else {
+      throw EnvironmentLifecycleError.blocked(
+        "an interrupted environment transaction must be recovered first"
+      )
+    }
+    guard let previous = try store.readOwnership(), previous.herdrEnabled,
+      let herdr = previous.herdr
+    else {
+      throw EnvironmentLifecycleError.blocked("aggregate Herdr ownership is not active")
+    }
+    try EnvironmentHerdrFileTransaction(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    ).preflight(herdr)
+    let desired = try desired.validated()
+    guard herdr.managedTheme != desired else { return false }
+    let proposed = previous.replacingHerdr(herdr.replacingManagedTheme(desired))
+    let transaction = EnvironmentTransaction(
+      operation: .herdrTheme,
+      previousOwnership: previous,
+      proposedOwnership: proposed,
+      previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: stateRoot)
+        .currentDestination(),
+      herdrReplacementName:
+        ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement",
+      herdrRuntimeTarget: .managed
+    )
+    try store.writeTransaction(transaction)
+    do {
+      try transition(
+        from: previous,
+        to: proposed,
+        btopReplacementName: nil,
+        codexReplacementName: nil,
+        herdrReplacementName: transaction.herdrReplacementName,
+        piReplacementName: nil,
+        tuicrReplacementName: nil
+      )
+      try store.writeOwnership(proposed)
+      return true
+    } catch {
+      let transitionError = error
+      do {
+        try store.writeTransaction(transaction.rollingBack)
+        try transition(
+          from: proposed,
+          to: previous,
+          btopReplacementName: nil,
+          codexReplacementName: nil,
+          herdrReplacementName: transaction.herdrReplacementName,
+          piReplacementName: nil,
+          tuicrReplacementName: nil
+        )
+        try store.writeOwnership(previous)
+        try store.removeTransaction()
+      } catch {
+        throw EnvironmentLifecycleError.blocked(
+          "Herdr theme transition failed and rollback requires recovery: \(error)"
+        )
+      }
+      throw transitionError
+    }
   }
 
   private func transition(
@@ -3301,21 +3795,39 @@ struct EnvironmentTransactionCoordinator: Sendable {
     to new: EnvironmentOwnership?,
     btopReplacementName: String?,
     codexReplacementName: String?,
+    herdrReplacementName: String?,
     piReplacementName: String?,
-    tuicrReplacementName: String?
+    tuicrReplacementName: String?,
+    preserveLegacyHerdrOnRemoval: Bool = false
   ) throws {
     let oldByID = Dictionary(uniqueKeysWithValues: (old?.records ?? []).map { ($0.id, $0) })
     let newByID = Dictionary(uniqueKeysWithValues: (new?.records ?? []).map { ($0.id, $0) })
     let codexTransaction = EnvironmentCodexFileTransaction(homeDirectory: homeDirectory)
+    let herdrTransaction = EnvironmentHerdrFileTransaction(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    )
     let piTransaction = EnvironmentPiFileTransaction(homeDirectory: homeDirectory)
     let tuicrTransaction = EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
     let transitionedPiBeforeLinks = old?.pi != nil
     let transitionedCodexBeforeLinks = old?.codex != nil
+    let transitionedHerdrBeforeLinks = old?.herdr != nil
     if transitionedCodexBeforeLinks {
       guard let codexReplacementName else {
         throw EnvironmentLifecycleError.blocked("Codex transaction has no replacement identity")
       }
       try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
+    }
+    if transitionedHerdrBeforeLinks {
+      guard let herdrReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Herdr transaction has no replacement identity")
+      }
+      try herdrTransaction.transition(
+        from: old,
+        to: new,
+        replacementName: herdrReplacementName,
+        preserveLegacyManagedOnRemoval: preserveLegacyHerdrOnRemoval
+      )
     }
     if transitionedPiBeforeLinks {
       guard let piReplacementName else {
@@ -3379,6 +3891,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
       }
       try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
     }
+    if !transitionedHerdrBeforeLinks, new?.herdr != nil {
+      guard let herdrReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Herdr transaction has no replacement identity")
+      }
+      try herdrTransaction.transition(
+        from: old,
+        to: new,
+        replacementName: herdrReplacementName
+      )
+    }
     if !transitionedPiBeforeLinks, new?.pi != nil {
       guard let piReplacementName else {
         throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
@@ -3398,6 +3920,30 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let obsoleteDirectories = Set(old?.createdDirectories ?? [])
       .subtracting(new?.createdDirectories ?? [])
     try removeCreatedDirectories(Array(obsoleteDirectories))
+  }
+
+  private func shouldPreserveLegacyHerdr(_ transaction: EnvironmentTransaction) throws -> Bool {
+    guard transaction.herdrLegacyMigration == true,
+      transaction.operation == .apply,
+      transaction.previousOwnership?.herdr == nil,
+      transaction.proposedOwnership?.herdrEnabled == true,
+      transaction.proposedOwnership?.herdr?.migratedLegacy == true
+    else { return false }
+    return try HerdrAdapter(
+      root: stateRoot,
+      configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+      executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+      controlIsAvailable: { true }
+    ).authenticatedLegacyOwnershipMatchesCurrentGeneration()
+  }
+
+  private func discardHerdrLegacyEvidence() throws {
+    try HerdrAdapter(
+      root: stateRoot,
+      configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+      executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+      controlIsAvailable: { true }
+    ).discardLegacyOwnershipEvidence()
   }
 
   private func restoreReleasedThemeBridges(
@@ -3464,6 +4010,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Codex path")
       }
     }
+    if let herdr = ownership.herdr {
+      let expected = homeDirectory.appending(path: ".config/herdr/config.toml").path
+      guard herdr.path == expected else {
+        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Herdr path")
+      }
+    }
     if let pi = ownership.pi {
       let expected = homeDirectory.appending(path: ".pi/agent/settings.json").path
       guard pi.path == expected else {
@@ -3487,6 +4039,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
           }
           return paths
         }
+        + [
+          homeDirectory.appending(path: ".config").path,
+          homeDirectory.appending(path: ".config/herdr").path,
+        ]
     )
     guard Set(ownership.createdDirectories).isSubset(of: allowedDirectories) else {
       throw EnvironmentLifecycleError.blocked("ownership contains an unexpected created directory")
@@ -3545,6 +4101,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try inspector.codexExternalTupleIsExact(
           homeDirectory: homeDirectory, stateRoot: stateRoot)
       else { throw EnvironmentLifecycleError.drift("externally owned Codex tuple") }
+    }
+    if let herdr = ownership.herdr {
+      let transaction = EnvironmentHerdrFileTransaction(
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot
+      )
+      if ownership.herdrEnabled {
+        try transaction.preflight(herdr)
+      } else {
+        try transaction.preflightOriginal(herdr)
+      }
     }
     if let pi = ownership.pi {
       try EnvironmentPiFileTransaction(homeDirectory: homeDirectory).preflight(pi)

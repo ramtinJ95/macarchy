@@ -311,6 +311,10 @@ struct ThemeSetCommandTests {
         request.arguments == ["--version"]
       {
         output = PiAdapter.minimumVersion
+      } else if request.executableURL == HerdrAdapter.liveExecutableURL,
+        request.arguments == ["--version"]
+      {
+        output = "herdr \(HerdrAdapter.minimumVersion)"
       } else {
         output = ""
       }

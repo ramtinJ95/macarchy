@@ -6,11 +6,15 @@ enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
   case cannotReadDesiredTheme(URL)
   case cannotReadOwnership(URL)
   case controlUnavailable(URL)
+  case configurationOverrideUnsupported
+  case invalidReloadResponse(String)
   case invalidThemeConfiguration
   case invalidGeneratedTheme
+  case invalidVersion(String)
   case invalidOwnership
   case automaticThemeSwitching
   case unsupportedTheme(String)
+  case unsupportedVersion(String)
   case ownershipConflict(String)
   case backupUnavailable(URL)
   case wrongThemeSelection(expected: String, actual: String?)
@@ -25,16 +29,24 @@ enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
       "Cannot read Herdr ownership evidence at \(url.path)"
     case .controlUnavailable(let url):
       "Herdr is not executable at \(url.path)"
+    case .configurationOverrideUnsupported:
+      "HERDR_CONFIG_PATH is unsupported; Herdr must use ~/.config/herdr/config.toml"
+    case .invalidReloadResponse(let value):
+      "Herdr returned an ambiguous config reload response: \(value)"
     case .invalidThemeConfiguration:
       "Herdr configuration must contain one canonical [theme] table, at most one canonical [theme.custom] table, and editable owned keys"
     case .invalidGeneratedTheme:
       "Generated Herdr theme is invalid"
+    case .invalidVersion(let value):
+      "Herdr returned an unparseable version: \(value)"
     case .invalidOwnership:
       "Herdr ownership evidence is invalid"
     case .automaticThemeSwitching:
       "Herdr theme.auto_switch must remain false while Macarchy owns the theme selector"
     case .unsupportedTheme(let name):
-      "Herdr 0.8 theme \"\(name)\" is not allowlisted"
+      "Herdr theme \"\(name)\" is not allowlisted"
+    case .unsupportedVersion(let value):
+      "Herdr \(value) is unsupported; version \(HerdrAdapter.minimumVersion) or newer is required"
     case .ownershipConflict(let reason):
       "Herdr theme ownership conflict: \(reason)"
     case .backupUnavailable(let url):
@@ -48,9 +60,9 @@ enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
 package struct GeneratedHerdrTheme: Codable, Equatable, Sendable {
   static let currentSchemaVersion = 1
 
-  let schemaVersion: Int
-  let name: String
-  let custom: [String: String]
+  package let schemaVersion: Int
+  package let name: String
+  package let custom: [String: String]
 
   init(name: String, custom: [String: String] = [:]) {
     schemaVersion = Self.currentSchemaVersion
@@ -58,7 +70,7 @@ package struct GeneratedHerdrTheme: Codable, Equatable, Sendable {
     self.custom = custom
   }
 
-  func validated() throws -> Self {
+  package func validated() throws -> Self {
     guard schemaVersion == Self.currentSchemaVersion,
       HerdrAdapter.supportedThemes.contains(name),
       custom.isEmpty || Set(custom.keys) == HerdrAdapter.customKeySet,
@@ -80,22 +92,48 @@ package enum HerdrMutationCheckpoint: Equatable, Sendable {
   case configurationWritten
 }
 
+package struct HerdrLegacyOwnershipEvidence: Equatable, Sendable {
+  package let originalConfiguration: String
+  package let currentConfiguration: String
+}
+
+package struct HerdrManagedMode: Sendable {
+  package let preflight: @Sendable (GeneratedHerdrTheme) throws -> Void
+  package let inspect: @Sendable (GeneratedHerdrTheme) throws -> String
+  package let reconcile: @Sendable (GeneratedHerdrTheme) throws -> String
+
+  package init(
+    preflight: @escaping @Sendable (GeneratedHerdrTheme) throws -> Void,
+    inspect: @escaping @Sendable (GeneratedHerdrTheme) throws -> String,
+    reconcile: @escaping @Sendable (GeneratedHerdrTheme) throws -> String
+  ) {
+    self.preflight = preflight
+    self.inspect = inspect
+    self.reconcile = reconcile
+  }
+}
+
 package struct HerdrAdapter: Sendable {
-  static let id = "herdr"
-  static let outputPath = "generated/herdr.txt"
+  package static let id = "herdr"
+  package static let outputPath = "generated/herdr.txt"
   static let rendererVersion = 3
-  static var liveExecutableURL: URL {
+  package static var liveExecutableURL: URL {
+    executableURL(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+  }
+
+  package static func executableURL(homeDirectory: URL) -> URL {
     preferredExternalOrHomebrewExecutableURL(
-      homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+      homeDirectory: homeDirectory,
       externalRelativePath: ".local/bin/herdr",
       homebrewExecutableName: "herdr"
     )
   }
+  package static let minimumVersion = "0.8.0"
 
   static let supportedThemes = Set([
     "catppuccin", "tokyo-night", "kanagawa",
   ])
-  static let customKeys = [
+  package static let customKeys = [
     "accent", "panel_bg", "surface0", "surface1", "surface_dim", "overlay0", "overlay1",
     "text", "subtext0", "mauve", "green", "yellow", "red", "blue", "teal", "peach",
   ]
@@ -107,7 +145,26 @@ package struct HerdrAdapter: Sendable {
   let executableURL: URL
   let controlIsAvailable: @Sendable () -> Bool
   let processRunner: ProcessRunner
+  let managedMode: HerdrManagedMode?
   var faultInjector: @Sendable (HerdrMutationCheckpoint) throws -> Void = { _ in }
+
+  package init(
+    root: URL,
+    configurationURL: URL,
+    executableURL: URL,
+    controlIsAvailable: @escaping @Sendable () -> Bool,
+    processRunner: ProcessRunner = .live,
+    managedMode: HerdrManagedMode? = nil,
+    faultInjector: @escaping @Sendable (HerdrMutationCheckpoint) throws -> Void = { _ in }
+  ) {
+    self.root = root
+    self.configurationURL = configurationURL
+    self.executableURL = executableURL
+    self.controlIsAvailable = controlIsAvailable
+    self.processRunner = processRunner
+    self.managedMode = managedMode
+    self.faultInjector = faultInjector
+  }
 
   private var desiredThemeURL: URL {
     root.appending(path: "current/\(Self.outputPath)")
@@ -122,24 +179,45 @@ package struct HerdrAdapter: Sendable {
   }
 
   func preflight() throws {
+    try requireCanonicalConfigurationPath()
+    _ = try supportedVersion()
+    if let managedMode, let desired = try currentDesiredTheme() {
+      try managedMode.preflight(desired)
+      return
+    }
     _ = try validatedConfiguration()
   }
 
   func preflight(package: ThemePackage) throws {
+    try requireCanonicalConfigurationPath()
+    _ = try supportedVersion()
+    let desired = try Self.desiredTheme(for: package)
+    if let managedMode {
+      try managedMode.preflight(desired)
+      return
+    }
     let parsed = try validatedConfiguration()
-    _ = try Self.desiredTheme(for: package)
     try verifyTransitionPossible(parsed)
   }
 
-  func inspection() -> AdapterInspection {
+  func inspection(includeRuntimeChecks: Bool = false) -> AdapterInspection {
     // Keep inspection nonmutating; an in-flight ownership record is visible as drift.
     do {
+      try requireCanonicalConfigurationPath()
+      if includeRuntimeChecks { _ = try supportedVersion() }
       let parsed = try validatedConfiguration()
       guard let desired = try currentDesiredTheme() else {
         return AdapterInspection(
           adapterID: Self.id,
           requirement: .required,
           message: "Herdr configuration is ready for an active theme"
+        )
+      }
+      if let managedMode {
+        return AdapterInspection(
+          adapterID: Self.id,
+          requirement: .required,
+          message: try managedMode.inspect(desired)
         )
       }
       try verifyCurrentTheme(desired, parsed: parsed)
@@ -172,6 +250,15 @@ package struct HerdrAdapter: Sendable {
       }
 
       do {
+        if let managedMode {
+          guard let desired = try currentDesiredTheme() else {
+            throw HerdrAdapterError.cannotReadDesiredTheme(desiredThemeURL)
+          }
+          return AdapterOutcome(
+            status: .applied,
+            message: try managedMode.reconcile(desired)
+          )
+        }
         try ActivationLock(root: root).withLock {
           guard let desired = try currentDesiredTheme() else {
             throw HerdrAdapterError.cannotReadDesiredTheme(desiredThemeURL)
@@ -185,33 +272,48 @@ package struct HerdrAdapter: Sendable {
         )
       }
 
-      let reload = try processRunner.run(
-        ProcessRequest(
-          executableURL: executableURL,
-          arguments: ["server", "reload-config"],
-          timeout: 2
-        )
-      )
-      if reload.terminationStatus == 0 {
-        return AdapterOutcome(status: .applied, message: "Herdr reloaded the active theme")
-      }
-
-      let status = try processRunner.run(
-        ProcessRequest(executableURL: executableURL, arguments: ["status", "server"], timeout: 1)
-      )
-      if status.terminationStatus == 0,
-        status.output.split(separator: "\n").contains("status: stopped")
-      {
-        return AdapterOutcome(
-          status: .applied,
-          message: "Herdr will use the active theme on next launch"
-        )
-      }
+      let reload = try reloadCurrentConfiguration(checkVersion: false, subject: "theme")
       return AdapterOutcome(
-        status: .failed,
-        message: reload.output.isEmpty ? "Herdr rejected its config reload" : reload.output
+        status: reload.succeeded ? .applied : .failed,
+        message: reload.message
       )
     }
+  }
+
+  package func reloadCurrentConfiguration(
+    checkVersion: Bool = true,
+    subject: String = "configuration"
+  ) throws -> (succeeded: Bool, message: String) {
+    try requireCanonicalConfigurationPath()
+    if checkVersion { _ = try supportedVersion() }
+    let reload = try processRunner.run(
+      ProcessRequest(
+        executableURL: executableURL,
+        arguments: ["server", "reload-config"],
+        timeout: 2
+      )
+    )
+    if reload.terminationStatus == 0, Self.reloadResponseIsUnambiguousSuccess(reload.output) {
+      return (true, "Herdr reloaded the active \(subject)")
+    }
+    if reload.terminationStatus == 0 {
+      return (false, String(describing: HerdrAdapterError.invalidReloadResponse(reload.output)))
+    }
+
+    let status = try processRunner.run(
+      ProcessRequest(executableURL: executableURL, arguments: ["status", "server"], timeout: 1)
+    )
+    let statusLines = status.output.split(whereSeparator: \Character.isNewline)
+    if status.terminationStatus == 0,
+      statusLines.count == 1,
+      statusLines[0].trimmingCharacters(in: .whitespaces) == "status: stopped"
+    {
+      return (true, "Herdr will use the active \(subject) on next launch")
+    }
+    return (
+      false,
+      reload.output.isEmpty ? "Herdr rejected its config reload" : reload.output
+    )
   }
 
   static func render(package: ThemePackage) throws -> String {
@@ -225,6 +327,128 @@ package struct HerdrAdapter: Sendable {
 
   package static func validateConfiguration(_ configuration: String) throws {
     _ = try parseConfiguration(configuration)
+  }
+
+  package static func desiredTheme(root: URL) throws -> GeneratedHerdrTheme {
+    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let url = root.appending(path: "current/\(outputPath)").resolvingSymlinksInPath()
+    let data = try BoundedRegularFile.read(at: url).data
+    return try decodeGeneratedTheme(
+      data,
+      rendererVersion: manifest.rendererVersions[id, default: 0]
+    )
+  }
+
+  package func legacyOwnershipEvidence() throws -> HerdrLegacyOwnershipEvidence? {
+    guard try authenticatedLegacyOwnershipMatchesCurrentGeneration() else { return nil }
+    guard let state = try readOwnership() else {
+      throw HerdrAdapterError.invalidOwnership
+    }
+    let current = try readConfiguration()
+    let currentParsed = try Self.parseConfiguration(current.text)
+    guard currentParsed.surface == state.desired else {
+      throw HerdrAdapterError.ownershipConflict(
+        "legacy adapter evidence does not authenticate the current theme surface"
+      )
+    }
+    let originalData = try BoundedRegularFile.read(at: backupURL).data
+    guard let original = String(data: originalData, encoding: .utf8) else {
+      throw HerdrAdapterError.backupUnavailable(backupURL)
+    }
+    return HerdrLegacyOwnershipEvidence(
+      originalConfiguration: original,
+      currentConfiguration: current.text
+    )
+  }
+
+  package func authenticatedLegacyOwnershipMatchesCurrentGeneration() throws -> Bool {
+    let hasOwnership = FileManager.default.fileExists(atPath: ownershipURL.path)
+    let hasBackup = FileManager.default.fileExists(atPath: backupURL.path)
+    guard hasOwnership || hasBackup else { return false }
+    guard hasOwnership, hasBackup, let state = try readOwnership(), state.before == nil else {
+      throw HerdrAdapterError.ownershipConflict(
+        "legacy adapter evidence is incomplete or interrupted"
+      )
+    }
+    try verifyBackup(state.backupDigest)
+    let expected = try Self.desiredTheme(root: root)
+    guard state.desired.matches(expected) else {
+      throw HerdrAdapterError.ownershipConflict(
+        "legacy adapter evidence does not match the active generation"
+      )
+    }
+    let originalData = try BoundedRegularFile.read(at: backupURL).data
+    guard let original = String(data: originalData, encoding: .utf8) else {
+      throw HerdrAdapterError.backupUnavailable(backupURL)
+    }
+    let originalParsed = try Self.parseConfiguration(original)
+    guard originalParsed.selection == Self.importedBaseTheme, originalParsed.custom.isEmpty else {
+      throw HerdrAdapterError.ownershipConflict(
+        "legacy original is not the authenticated Catppuccin selector boundary"
+      )
+    }
+    return true
+  }
+
+  package func discardLegacyOwnershipEvidence() throws {
+    for url in [ownershipURL, backupURL] {
+      var metadata = stat()
+      guard lstat(url.path, &metadata) == 0 else {
+        if errno == ENOENT { continue }
+        throw HerdrAdapterError.cannotReadOwnership(url)
+      }
+      guard metadata.st_mode & S_IFMT == S_IFREG else {
+        throw HerdrAdapterError.ownershipConflict(
+          "legacy adapter evidence is not a regular file"
+        )
+      }
+      try FileManager.default.removeItem(at: url)
+    }
+  }
+
+  package static func parseVersion(_ output: String) -> [Int]? {
+    let tokens = output.split(whereSeparator: \Character.isWhitespace)
+    guard tokens.count == 2, tokens[0] == "herdr" else { return nil }
+    let components = tokens[1].split(separator: ".", omittingEmptySubsequences: false)
+    guard components.count == 3,
+      components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) })
+    else { return nil }
+    let version = components.compactMap { Int($0) }
+    return version.count == 3 ? version : nil
+  }
+
+  package func supportedVersion() throws -> String {
+    let result = try processRunner.run(
+      ProcessRequest(executableURL: executableURL, arguments: ["--version"], timeout: 2)
+    )
+    guard result.terminationStatus == 0, let version = Self.parseVersion(result.output) else {
+      throw HerdrAdapterError.invalidVersion(result.output)
+    }
+    let minimum = Self.parseVersion("herdr \(Self.minimumVersion)")!
+    guard !version.lexicographicallyPrecedes(minimum) else {
+      throw HerdrAdapterError.unsupportedVersion(result.output)
+    }
+    return version.map(String.init).joined(separator: ".")
+  }
+
+  package static func reloadResponseIsUnambiguousSuccess(_ output: String) -> Bool {
+    let requiredFields = ["id", "result", "diagnostics", "status", "type"]
+    guard
+      requiredFields.allSatisfy({
+        output.components(separatedBy: "\"\($0)\"").count == 2
+      })
+    else { return false }
+    guard let data = output.data(using: .utf8),
+      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      Set(object.keys) == ["id", "result"],
+      object["id"] as? String == "cli:server:reload-config",
+      let result = object["result"] as? [String: Any],
+      Set(result.keys) == ["diagnostics", "status", "type"],
+      result["type"] as? String == "config_reload",
+      result["status"] as? String == "applied",
+      (result["diagnostics"] as? [Any])?.isEmpty == true
+    else { return false }
+    return true
   }
 
   private static func desiredTheme(for package: ThemePackage) throws -> GeneratedHerdrTheme {
@@ -325,6 +549,12 @@ package struct HerdrAdapter: Sendable {
     }
     let configuration = try readConfiguration()
     return try Self.parseConfiguration(configuration.text)
+  }
+
+  private func requireCanonicalConfigurationPath() throws {
+    guard ProcessInfo.processInfo.environment["HERDR_CONFIG_PATH"] == nil else {
+      throw HerdrAdapterError.configurationOverrideUnsupported
+    }
   }
 
   private func verifyTransitionPossible(_ parsed: ParsedConfiguration) throws {
@@ -511,9 +741,14 @@ package struct HerdrAdapter: Sendable {
     return sha256Digest(backup.data) == digest
   }
 
-  private struct ManagedSurface: Codable, Equatable, Sendable {
-    let name: String?
-    let custom: [String: String]
+  package struct ManagedSurface: Codable, Equatable, Sendable {
+    package let name: String?
+    package let custom: [String: String]
+
+    package init(name: String?, custom: [String: String]) {
+      self.name = name
+      self.custom = custom
+    }
 
     func matches(_ desired: GeneratedHerdrTheme) -> Bool {
       name == desired.name && custom == desired.custom
@@ -620,15 +855,15 @@ package struct HerdrAdapter: Sendable {
     try data.write(to: ownershipURL, options: .atomic)
   }
 
-  private struct ParsedConfiguration {
-    let themeHeaderIndex: Int
-    let customHeaderIndex: Int?
-    let nameIndex: Int?
-    let customIndices: [String: Int]
-    let selection: String?
-    let custom: [String: String]
+  package struct ParsedConfiguration {
+    package let themeHeaderIndex: Int
+    package let customHeaderIndex: Int?
+    package let nameIndex: Int?
+    package let customIndices: [String: Int]
+    package let selection: String?
+    package let custom: [String: String]
 
-    var surface: ManagedSurface {
+    package var surface: ManagedSurface {
       ManagedSurface(
         name: selection,
         custom: custom
@@ -657,7 +892,7 @@ package struct HerdrAdapter: Sendable {
     case other
   }
 
-  private static func parseConfiguration(_ configuration: String) throws -> ParsedConfiguration {
+  package static func parseConfiguration(_ configuration: String) throws -> ParsedConfiguration {
     let document: ConfigurationDocument
     do {
       document = try TOMLDecoder().decode(ConfigurationDocument.self, from: configuration)
@@ -780,44 +1015,66 @@ package struct HerdrAdapter: Sendable {
     return (key, String(content))
   }
 
-  private static func replacingManagedSurface(
+  package static func replacingManagedSurface(
     in configuration: String,
     parsed: ParsedConfiguration,
     with desired: ManagedSurface
   ) throws -> String {
-    var lines = configuration.components(separatedBy: "\n")
     guard let name = desired.name else { throw HerdrAdapterError.invalidOwnership }
+    let newline =
+      tomlPhysicalLines(configuration).first(where: { !$0.terminator.isEmpty })?.terminator
+      ?? "\n"
     let replacement = "name = \"\(name)\""
+    var updated = configuration
     if let nameIndex = parsed.nameIndex {
-      let current = lines[nameIndex]
+      let lines = tomlPhysicalLines(updated)
+      guard nameIndex < lines.count else { throw HerdrAdapterError.invalidThemeConfiguration }
+      let line = lines[nameIndex]
+      let current = String(updated[line.contentRange])
       let indentation = current.prefix { $0 == " " || $0 == "\t" }
-      lines[nameIndex] = String(indentation) + replacement + commentSuffix(in: current)
+      updated.replaceSubrange(
+        line.contentRange,
+        with: String(indentation) + replacement + commentSuffix(in: current)
+      )
     } else {
-      lines.insert(replacement, at: parsed.themeHeaderIndex + 1)
+      let lines = tomlPhysicalLines(updated)
+      guard parsed.themeHeaderIndex < lines.count else {
+        throw HerdrAdapterError.invalidThemeConfiguration
+      }
+      let header = lines[parsed.themeHeaderIndex]
+      let insertion =
+        (header.terminator.isEmpty ? newline : "") + replacement + newline
+      updated.insert(contentsOf: insertion, at: header.fullRange.upperBound)
     }
 
-    let afterName = try parseConfiguration(lines.joined(separator: "\n"))
+    let afterName = try parseConfiguration(updated)
+    let namedLines = tomlPhysicalLines(updated)
     for index in afterName.customIndices.values.sorted(by: >) {
-      lines.remove(at: index)
+      guard index < namedLines.count else { throw HerdrAdapterError.invalidThemeConfiguration }
+      updated.removeSubrange(namedLines[index].fullRange)
     }
 
     guard !desired.custom.isEmpty else {
-      return lines.joined(separator: "\n")
+      return updated
     }
 
-    let reparsed = try parseConfiguration(lines.joined(separator: "\n"))
-    let customLines = customKeys.map { key in
-      "\(key) = \"\(desired.custom[key]!)\""
-    }
+    let reparsed = try parseConfiguration(updated)
+    let customLines =
+      customKeys.map { key in
+        "\(key) = \"\(desired.custom[key]!)\""
+      }.joined(separator: newline) + newline
     if let header = reparsed.customHeaderIndex {
-      lines.insert(contentsOf: customLines, at: header + 1)
-      return lines.joined(separator: "\n")
+      let lines = tomlPhysicalLines(updated)
+      guard header < lines.count else { throw HerdrAdapterError.invalidThemeConfiguration }
+      let headerLine = lines[header]
+      let insertion = (headerLine.terminator.isEmpty ? newline : "") + customLines
+      updated.insert(contentsOf: insertion, at: headerLine.fullRange.upperBound)
+      return updated
     }
 
-    var updated = lines.joined(separator: "\n")
-    if !updated.hasSuffix("\n") { updated.append("\n") }
-    if !updated.hasSuffix("\n\n") { updated.append("\n") }
-    updated += "[theme.custom]\n" + customLines.joined(separator: "\n") + "\n"
+    if !updated.hasSuffix("\n"), !updated.hasSuffix("\r") { updated.append(newline) }
+    if !updated.hasSuffix(newline + newline) { updated.append(newline) }
+    updated += "[theme.custom]" + newline + customLines
     return updated
   }
 

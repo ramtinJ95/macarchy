@@ -4,6 +4,10 @@ import Testing
 
 @testable import ThemeCore
 
+private let agentTUIHerdrReloadSuccess =
+  #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"#
+  + #""status":"applied","type":"config_reload"}}"#
+
 extension AdapterContractTests {
   @Test
   func piPublishesAValidCustomThemeThroughItsWatchedCanonicalLink() async throws {
@@ -82,7 +86,12 @@ extension AdapterContractTests {
       controlIsAvailable: { true },
       processRunner: ProcessRunner { request in
         requests.withLock { $0.append(request) }
-        return ProcessResult(terminationStatus: 0, output: "")
+        return request.arguments == ["--version"]
+          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          : ProcessResult(
+            terminationStatus: 0,
+            output: agentTUIHerdrReloadSuccess
+          )
       }
     )
     let herdrOutcome = try await herdr.reconciliation().run()
@@ -100,9 +109,14 @@ extension AdapterContractTests {
         == [
           ProcessRequest(
             executableURL: HerdrAdapter.liveExecutableURL,
+            arguments: ["--version"],
+            timeout: 2
+          ),
+          ProcessRequest(
+            executableURL: HerdrAdapter.liveExecutableURL,
             arguments: ["server", "reload-config"],
             timeout: 2
-          )
+          ),
         ]
     )
 
@@ -175,6 +189,9 @@ extension AdapterContractTests {
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
       processRunner: ProcessRunner { request in
+        if request.arguments == ["--version"] {
+          return ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+        }
         if request.arguments == ["server", "reload-config"] {
           let attempt = reloadAttempts.withLock {
             $0 += 1
@@ -182,7 +199,9 @@ extension AdapterContractTests {
           }
           return ProcessResult(
             terminationStatus: attempt == 1 ? 1 : 0,
-            output: attempt == 1 ? "reload denied" : ""
+            output: attempt == 1
+              ? "reload denied"
+              : agentTUIHerdrReloadSuccess
           )
         }
         return ProcessResult(terminationStatus: 0, output: "status: running")
@@ -199,9 +218,11 @@ extension AdapterContractTests {
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
       processRunner: ProcessRunner { request in
-        request.arguments == ["status", "server"]
-          ? ProcessResult(terminationStatus: 0, output: "status: stopped")
-          : ProcessResult(terminationStatus: 1, output: "server unavailable")
+        request.arguments == ["--version"]
+          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          : request.arguments == ["status", "server"]
+            ? ProcessResult(terminationStatus: 0, output: "status: stopped")
+            : ProcessResult(terminationStatus: 1, output: "server unavailable")
       }
     )
     let stoppedOutcome = try await stopped.reconciliation().run()
@@ -238,7 +259,7 @@ extension AdapterContractTests {
       configurationURL: configuration,
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+      processRunner: successfulHerdrProcessRunner(),
       faultInjector: { checkpoint in
         if checkpoint == .configurationWritten {
           throw ReconciliationTestError.expectedInterruption
@@ -252,7 +273,7 @@ extension AdapterContractTests {
       configurationURL: configuration,
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+      processRunner: successfulHerdrProcessRunner()
     )
     #expect(try await adapter.reconciliation().run().status == .applied)
     #expect(
@@ -330,7 +351,7 @@ extension AdapterContractTests {
         configurationURL: configuration,
         executableURL: HerdrAdapter.liveExecutableURL,
         controlIsAvailable: { true },
-        processRunner: .live
+        processRunner: successfulHerdrProcessRunner()
       )
 
       #expect(throws: HerdrAdapterError.self) {
@@ -361,7 +382,7 @@ extension AdapterContractTests {
       configurationURL: configuration,
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+      processRunner: successfulHerdrProcessRunner(),
       faultInjector: { checkpoint in
         if checkpoint == .ownershipPrepared {
           throw ReconciliationTestError.expectedInterruption
@@ -381,7 +402,7 @@ extension AdapterContractTests {
       configurationURL: configuration,
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+      processRunner: successfulHerdrProcessRunner()
     )
     #expect(try await retry.reconciliation().run().status == .applied)
     #expect(try String(contentsOf: backup, encoding: .utf8) == original)
@@ -459,7 +480,7 @@ extension AdapterContractTests {
       configurationURL: herdrConfiguration,
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
-      processRunner: .live
+      processRunner: successfulHerdrProcessRunner()
     )
     #expect(herdr.inspection().status == .drifted)
     try "[theme]\nname = 42\n".write(
@@ -473,4 +494,15 @@ extension AdapterContractTests {
     #expect(herdr.inspection().status == .failed)
   }
 
+}
+
+private func successfulHerdrProcessRunner() -> ProcessRunner {
+  ProcessRunner { request in
+    request.arguments == ["--version"]
+      ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+      : ProcessResult(
+        terminationStatus: 0,
+        output: agentTUIHerdrReloadSuccess
+      )
+  }
 }

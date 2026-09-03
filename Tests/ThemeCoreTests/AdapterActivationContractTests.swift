@@ -4,6 +4,10 @@ import Testing
 
 @testable import ThemeCore
 
+private let activationHerdrReloadSuccess =
+  #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"#
+  + #""status":"applied","type":"config_reload"}}"#
+
 extension AdapterContractTests {
   @Test
   func activationPublishesBeforeAdapterProcessesAndPersistsTheirResults() async throws {
@@ -37,6 +41,7 @@ extension AdapterContractTests {
       }
       if request.executableURL != PiAdapter.liveExecutableURL
         && request.executableURL != CodexAdapter.liveExecutableURL
+        && request.executableURL != HerdrAdapter.liveExecutableURL
         || request.arguments != ["--version"]
       {
         #expect(published)
@@ -66,7 +71,12 @@ extension AdapterContractTests {
         )
       }
       if request.executableURL == HerdrAdapter.liveExecutableURL {
-        return ProcessResult(terminationStatus: 0, output: "")
+        return request.arguments == ["--version"]
+          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          : ProcessResult(
+            terminationStatus: 0,
+            output: activationHerdrReloadSuccess
+          )
       }
       if request.executableURL == PiAdapter.liveExecutableURL,
         request.arguments == ["--version"]
@@ -411,6 +421,14 @@ extension AdapterContractTests {
         {
           return ProcessResult(terminationStatus: 0, output: PiAdapter.minimumVersion)
         }
+        if request.executableURL == HerdrAdapter.liveExecutableURL,
+          request.arguments == ["--version"]
+        {
+          return ProcessResult(
+            terminationStatus: 0,
+            output: "herdr \(HerdrAdapter.minimumVersion)"
+          )
+        }
         let manifest = try ThemeActivator(root: root, faultInjector: { _ in }).activate(
           package: tokyoNight
         )
@@ -499,7 +517,6 @@ extension AdapterContractTests {
       atomically: true,
       encoding: .utf8
     )
-    let processCalls = Mutex(0)
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: try Self.consumerPaths(
@@ -508,9 +525,13 @@ extension AdapterContractTests {
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
       ),
       processRunner: ProcessRunner { request in
-        processCalls.withLock { $0 += 1 }
         if request.executableURL == HerdrAdapter.liveExecutableURL {
-          return ProcessResult(terminationStatus: 0, output: "")
+          return request.arguments == ["--version"]
+            ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+            : ProcessResult(
+              terminationStatus: 0,
+              output: activationHerdrReloadSuccess
+            )
         }
         if request.executableURL == NeovimAdapter.liveExecutableURL {
           return ProcessResult(
@@ -552,7 +573,6 @@ extension AdapterContractTests {
     #expect(
       try coordinator.inspectAdapters(["herdr", "neovim"]).map(\.status) == [.ready, .ready]
     )
-    #expect(processCalls.withLock { $0 } == 2)
   }
 
   @Test
