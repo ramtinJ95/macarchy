@@ -15,13 +15,21 @@ struct ReconcileCommandRunner: Sendable {
     preview: { adapterIDs, stateRoot, consumerPaths in
       try ThemeActivationCoordinator(
         root: stateRoot,
-        consumerPaths: consumerPaths
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths
+        )
       ).previewReconciliation(adapterIDs)
     },
     reconcile: { adapterIDs, stateRoot, consumerPaths in
       try await ThemeActivationCoordinator(
         root: stateRoot,
-        consumerPaths: consumerPaths
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths
+        )
       ).reconcile(adapterIDs: adapterIDs)
     }
   )

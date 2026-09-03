@@ -306,6 +306,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
         "eza": options.tools.eza,
         "yazi": options.tools.yazi,
       ],
+      presets: ["tuicr": options.presets.tuicr],
       artifacts: Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
     let encoder = JSONEncoder()
@@ -1045,11 +1046,12 @@ private struct EnvironmentInputIdentity: Encodable {
   let history: String
   let editor: String
   let tools: [String: Bool]
+  let presets: [String: Bool]
   let artifacts: [String: String]
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
-    case terminal, shell, prompt, history, editor, tools, artifacts
+    case terminal, shell, prompt, history, editor, tools, presets, artifacts
   }
 }
 

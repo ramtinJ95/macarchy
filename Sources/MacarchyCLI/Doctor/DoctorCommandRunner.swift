@@ -4,14 +4,37 @@ import ThemeCore
 struct DoctorCommandRunner: Sendable {
   let read: @Sendable (URL) throws -> ThemeStatusSnapshot
   let inspect: @Sendable (URL, ThemeConsumerPaths) throws -> [AdapterInspection]
+  let enabledAdapterIDs: @Sendable (URL, ThemeConsumerPaths) throws -> Set<String>
+
+  init(
+    read: @escaping @Sendable (URL) throws -> ThemeStatusSnapshot,
+    inspect: @escaping @Sendable (URL, ThemeConsumerPaths) throws -> [AdapterInspection],
+    enabledAdapterIDs: @escaping @Sendable (URL, ThemeConsumerPaths) throws -> Set<String> = {
+      _, _ in Set(ThemeActivationCoordinator.adapterRequirements.keys)
+    }
+  ) {
+    self.read = read
+    self.inspect = inspect
+    self.enabledAdapterIDs = enabledAdapterIDs
+  }
 
   static let live = DoctorCommandRunner(
     read: readThemeStatusSnapshot,
     inspect: { stateRoot, consumerPaths in
       try ThemeActivationCoordinator(
         root: stateRoot,
-        consumerPaths: consumerPaths
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths
+        )
       ).inspectAdapters([], includeRuntimeChecks: true)
+    },
+    enabledAdapterIDs: { stateRoot, consumerPaths in
+      try ThemeRuntimeSelection.enabledAdapterIDs(
+        stateRoot: stateRoot,
+        consumerPaths: consumerPaths
+      )
     }
   )
 
@@ -20,7 +43,22 @@ struct DoctorCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
-    var findings = canonicalFindings(stateRoot: stateRoot)
+    let enabled: Set<String>
+    do {
+      enabled = try enabledAdapterIDs(stateRoot, consumerPaths)
+    } catch {
+      let report = DoctorReport(
+        findings: [
+          DoctorFinding(
+            id: "adapter.inventory",
+            status: .failure,
+            message: String(describing: error)
+          )
+        ]
+      )
+      return (try report.render(json: json), false)
+    }
+    var findings = canonicalFindings(stateRoot: stateRoot, enabledAdapterIDs: enabled)
     do {
       findings.append(
         contentsOf: try inspect(stateRoot, consumerPaths).map { inspection in
@@ -44,7 +82,10 @@ struct DoctorCommandRunner: Sendable {
     return (try report.render(json: json), report.succeeded)
   }
 
-  private func canonicalFindings(stateRoot: URL) -> [DoctorFinding] {
+  private func canonicalFindings(
+    stateRoot: URL,
+    enabledAdapterIDs: Set<String>
+  ) -> [DoctorFinding] {
     do {
       switch try read(stateRoot) {
       case .reconciliationFailure(let manifest, let error):
@@ -92,6 +133,9 @@ struct DoctorCommandRunner: Sendable {
               )
               continue
             }
+            guard enabledAdapterIDs.contains(result.adapterID) else {
+              continue
+            }
             if result.requirement != requirement {
               findings.append(
                 DoctorFinding(
@@ -105,7 +149,7 @@ struct DoctorCommandRunner: Sendable {
               findings.append(reconciliationFinding(result))
             }
           }
-          for adapterID in ThemeActivationCoordinator.adapterRequirements.keys.sorted()
+          for adapterID in enabledAdapterIDs.sorted()
           where !record.results.contains(where: { $0.adapterID == adapterID }) {
             findings.append(
               DoctorFinding(

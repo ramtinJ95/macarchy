@@ -727,6 +727,9 @@ extension SetupOwnershipManager {
     guard replacementName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
       throw posixError("remove displaced \(label)", target)
     }
+    guard fsync(parentDescriptor) == 0 else {
+      throw posixError("sync replaced \(label) parent", target)
+    }
   }
 
   func openPinnedParent(

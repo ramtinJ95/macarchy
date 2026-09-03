@@ -30,13 +30,27 @@ struct ThemeBackgroundCommandRunner: Sendable {
       try ReconciliationStatusStore(root: root).activeManifest()
     },
     preflight: { package, backgroundID, root, consumerPaths in
-      try ThemeActivationCoordinator(root: root, consumerPaths: consumerPaths).preflight(
+      try ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: root,
+          consumerPaths: consumerPaths
+        )
+      ).preflight(
         package: package,
         requestedBackgroundID: backgroundID
       )
     },
     activate: { package, backgroundID, root, consumerPaths, expectedGenerationID in
-      try await ThemeActivationCoordinator(root: root, consumerPaths: consumerPaths).activate(
+      try await ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: consumerPaths,
+        enabledAdapterIDs: try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: root,
+          consumerPaths: consumerPaths
+        )
+      ).activate(
         package: package,
         expectedActiveGenerationID: expectedGenerationID,
         requestedBackgroundID: backgroundID

@@ -476,6 +476,63 @@ struct ReconcileDoctorCommandTests {
     #expect(execution.output.contains("Requirement is optional, expected required."))
   }
 
+  @Test
+  func doctorRequiresEveryEnabledAdapterAndIgnoresDisabledInventory() throws {
+    let manifest = testManifest()
+    let record = try ReconciliationRecord(
+      manifest: manifest,
+      results: [
+        AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
+        AdapterResult(adapterID: "tuicr", requirement: .required, status: .restartRequired),
+      ]
+    )
+    let missingOptional = DoctorCommandRunner(
+      read: { _ in .state(manifest: manifest, reconciliation: .current(record)) },
+      inspect: { _, _ in [AdapterInspection(adapterID: "kitty", requirement: .required)] },
+      enabledAdapterIDs: { _, _ in ["kitty", "spicetify"] }
+    )
+
+    let missing = try missingOptional.execute(
+      stateRoot: stateRoot,
+      consumerPaths: consumerPaths,
+      json: false
+    )
+    #expect(!missing.succeeded)
+    #expect(missing.output.contains("reconciliation.spicetify [failure]"))
+
+    let disabledTuicr = DoctorCommandRunner(
+      read: { _ in .state(manifest: manifest, reconciliation: .current(record)) },
+      inspect: { _, _ in [AdapterInspection(adapterID: "kitty", requirement: .required)] },
+      enabledAdapterIDs: { _, _ in ["kitty"] }
+    )
+    #expect(
+      try disabledTuicr.execute(
+        stateRoot: stateRoot,
+        consumerPaths: consumerPaths,
+        json: false
+      ).succeeded
+    )
+
+    let unknownRecord = try ReconciliationRecord(
+      manifest: manifest,
+      results: record.results + [
+        AdapterResult(adapterID: "unknown", requirement: .optional, status: .applied)
+      ]
+    )
+    let unknown = DoctorCommandRunner(
+      read: { _ in .state(manifest: manifest, reconciliation: .current(unknownRecord)) },
+      inspect: { _, _ in [AdapterInspection(adapterID: "kitty", requirement: .required)] },
+      enabledAdapterIDs: { _, _ in ["kitty"] }
+    )
+    let unknownResult = try unknown.execute(
+      stateRoot: stateRoot,
+      consumerPaths: consumerPaths,
+      json: false
+    )
+    #expect(!unknownResult.succeeded)
+    #expect(unknownResult.output.contains("Status contains an unknown adapter result."))
+  }
+
   private func expectReconcileGoldens(
     runner: ReconcileCommandRunner,
     basename: String,

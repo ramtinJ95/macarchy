@@ -15,6 +15,9 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
   case btopConfiguration = "btop_configuration"
   case btopTheme = "btop_theme"
   case ezaTheme = "eza_theme"
+  case tuicrConfiguration = "tuicr_configuration"
+  case tuicrTheme = "tuicr_theme"
+  case tuicrSyntax = "tuicr_syntax"
   case yaziConfiguration = "yazi_configuration"
   case yaziThemeSelection = "yazi_theme_selection"
   case yaziFlavor = "yazi_flavor"
@@ -100,13 +103,19 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let createdDirectories: [String]
   let originalThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btop: EnvironmentBtopOwnership?
+  let tuicr: EnvironmentTuicrOwnership?
+  let tuicrEnabled: Bool
+  let enabledThemeAdapterIDs: [String]?
 
   init(
     generationID: String,
     records: [EnvironmentOwnershipRecord],
     createdDirectories: [String],
     originalThemeBridges: [EnvironmentThemeBridgeState.Entry],
-    btop: EnvironmentBtopOwnership? = nil
+    btop: EnvironmentBtopOwnership? = nil,
+    tuicr: EnvironmentTuicrOwnership? = nil,
+    tuicrEnabled: Bool = false,
+    enabledThemeAdapterIDs: [String]? = nil
   ) {
     schemaVersion = Self.currentSchemaVersion
     self.generationID = generationID
@@ -114,6 +123,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.createdDirectories = createdDirectories.sorted()
     self.originalThemeBridges = originalThemeBridges.sorted { $0.path < $1.path }
     self.btop = btop
+    self.tuicr = tuicr
+    self.tuicrEnabled = tuicrEnabled
+    self.enabledThemeAdapterIDs = enabledThemeAdapterIDs?.sorted()
   }
 
   enum CodingKeys: String, CodingKey {
@@ -123,15 +135,47 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case createdDirectories = "created_directories"
     case originalThemeBridges = "original_theme_bridges"
     case btop
+    case tuicr
+    case tuicrEnabled = "tuicr_enabled"
+    case enabledThemeAdapterIDs = "enabled_theme_adapter_ids"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    generationID = try container.decode(String.self, forKey: .generationID)
+    records = try container.decode([EnvironmentOwnershipRecord].self, forKey: .records)
+    createdDirectories = try container.decode([String].self, forKey: .createdDirectories)
+    originalThemeBridges = try container.decode(
+      [EnvironmentThemeBridgeState.Entry].self,
+      forKey: .originalThemeBridges
+    )
+    btop = try container.decodeIfPresent(EnvironmentBtopOwnership.self, forKey: .btop)
+    tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
+    tuicrEnabled = try container.decodeIfPresent(Bool.self, forKey: .tuicrEnabled) ?? false
+    enabledThemeAdapterIDs = try container.decodeIfPresent(
+      [String].self,
+      forKey: .enabledThemeAdapterIDs
+    )
   }
 
   var hasValidShape: Bool {
+    let knownThemeAdapterIDs = Set(ThemeActivationCoordinator.adapterRequirements.keys)
+    let hasValidThemeAdapterInventory =
+      enabledThemeAdapterIDs.map { adapterIDs in
+        adapterIDs == adapterIDs.sorted()
+          && Set(adapterIDs).count == adapterIDs.count
+          && Set(adapterIDs).isSubset(of: knownThemeAdapterIDs)
+          && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
+      } ?? true
     guard schemaVersion == Self.currentSchemaVersion,
       EnvironmentGenerationStore.isGenerationID(generationID),
       Set(records.map(\.id)).count == records.count,
       Set(createdDirectories).count == createdDirectories.count,
       Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count,
-      btop?.hasValidShape ?? true
+      btop?.hasValidShape ?? true,
+      tuicr?.hasValidShape ?? true,
+      hasValidThemeAdapterInventory
     else { return false }
 
     return records.allSatisfy { record in
@@ -182,6 +226,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let previousThemeGenerationID: String?
   let rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btopReplacementName: String?
+  let tuicrReplacementName: String?
 
   init(
     operation: EnvironmentTransactionOperation,
@@ -191,7 +236,8 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     previousCurrentDestination: String?,
     previousThemeGenerationID: String? = nil,
     rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry] = [],
-    btopReplacementName: String? = nil
+    btopReplacementName: String? = nil,
+    tuicrReplacementName: String? = nil
   ) {
     schemaVersion = Self.currentSchemaVersion
     self.operation = operation
@@ -202,6 +248,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.previousThemeGenerationID = previousThemeGenerationID
     self.rollbackThemeBridges = rollbackThemeBridges
     self.btopReplacementName = btopReplacementName
+    self.tuicrReplacementName = tuicrReplacementName
   }
 
   var rollingBack: Self {
@@ -213,7 +260,8 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       previousCurrentDestination: previousCurrentDestination,
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: rollbackThemeBridges,
-      btopReplacementName: btopReplacementName
+      btopReplacementName: btopReplacementName,
+      tuicrReplacementName: tuicrReplacementName
     )
   }
 
@@ -226,6 +274,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case previousThemeGenerationID = "previous_theme_generation_id"
     case rollbackThemeBridges = "rollback_theme_bridges"
     case btopReplacementName = "btop_replacement_name"
+    case tuicrReplacementName = "tuicr_replacement_name"
   }
 }
 
@@ -389,6 +438,8 @@ struct EnvironmentProviderInspection: Sendable {
   let createdDirectories: [String]
   let proposedBtopOwnership: EnvironmentBtopOwnership?
   let btopExternalEvidence: EnvironmentEntryEvidence?
+  let proposedTuicrOwnership: EnvironmentTuicrOwnership?
+  let tuicrExternalEvidence: EnvironmentEntryEvidence?
 
   var isBlocked: Bool {
     blockedMessage != nil
@@ -443,6 +494,7 @@ struct EnvironmentStateStore: Sendable {
           stateRoot: stateRoot
         )
         && Self.btopReplacementIsValid(value)
+        && Self.tuicrReplacementIsValid(value)
     }
   }
 
@@ -584,6 +636,18 @@ struct EnvironmentStateStore: Sendable {
       && !name.contains("/")
       && name.utf8.count <= 128
   }
+
+  private static func tuicrReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let required =
+      transaction.previousOwnership?.tuicr != nil
+      || transaction.proposedOwnership?.tuicr != nil
+    guard required else { return transaction.tuicrReplacementName == nil }
+    guard let name = transaction.tuicrReplacementName else { return false }
+    return name.hasPrefix(".macarchy-environment-tuicr-")
+      && name.hasSuffix(".replacement")
+      && !name.contains("/")
+      && name.utf8.count <= 128
+  }
 }
 
 struct EnvironmentProviderInspector: Sendable {
@@ -639,7 +703,28 @@ struct EnvironmentProviderInspector: Sendable {
       if composition.profile.tools.yazi {
         legacyIDs.formUnion(["yazi.selector", "yazi.flavor-link", "yazi.syntax-link"])
       }
-      let conflicts = try SetupOwnershipManager().readRecords(context: setupContext)
+      let setupRecords = try SetupOwnershipManager().readRecords(context: setupContext)
+      let legacyTuicrIDs = Set([
+        SetupOwnershipManager.tuicrSelectorID,
+        SetupOwnershipManager.tuicrThemeLinkID,
+        SetupOwnershipManager.tuicrSyntaxLinkID,
+      ])
+      let presentLegacyTuicrIDs = Set(setupRecords.map(\.id)).intersection(legacyTuicrIDs)
+      guard presentLegacyTuicrIDs.isEmpty || presentLegacyTuicrIDs == legacyTuicrIDs else {
+        throw EnvironmentLifecycleError.blocked(
+          "legacy setup-owned tuicr integration is incomplete: \(presentLegacyTuicrIDs.sorted().joined(separator: ", "))"
+        )
+      }
+      let legacyTuicrOwned = presentLegacyTuicrIDs == legacyTuicrIDs
+      let externallyAuthoritativeTuicr =
+        ownership?.tuicrEnabled == true
+        && ownership?.tuicr == nil
+        && ownership?.records.contains(where: {
+          $0.id == .tuicrTheme || $0.id == .tuicrSyntax
+        }) != true
+        && !legacyTuicrOwned
+      let conflicts =
+        setupRecords
         .map(\.id).filter { legacyIDs.contains($0) }
       guard conflicts.isEmpty else {
         throw EnvironmentLifecycleError.blocked(
@@ -784,6 +869,63 @@ struct EnvironmentProviderInspector: Sendable {
         }
       }
 
+      let tuicr = try inspectTuicr(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        ownership: ownership?.tuicr,
+        legacyOwned: legacyTuicrOwned,
+        externallyAuthoritative: externallyAuthoritativeTuicr
+      )
+      if let entry = tuicr.entry { inspections.append(entry) }
+      if legacyTuicrOwned {
+        for entry in allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        where entry.id == .tuicrTheme || entry.id == .tuicrSyntax {
+          guard try managedEntryIsExact(entry) else {
+            throw EnvironmentLifecycleError.drift(
+              "legacy setup-owned \(entry.id.rawValue)"
+            )
+          }
+          inspections.append(
+            EnvironmentEntryInspection(
+              id: entry.id.rawValue,
+              path: entry.url.path,
+              status: "external",
+              ownership: "legacy_setup",
+              message: "The working legacy setup-owned tuicr link is preserved.",
+              evidence: nil
+            )
+          )
+        }
+      }
+      if externallyAuthoritativeTuicr, !composition.profile.presets.tuicr {
+        for entry in allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        where entry.id == .tuicrTheme || entry.id == .tuicrSyntax {
+          let captured = try capture(entry.url, directoryLink: nil)
+          guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
+            throw EnvironmentLifecycleError.drift(
+              "externally owned \(entry.id.rawValue)"
+            )
+          }
+          inspections.append(
+            EnvironmentEntryInspection(
+              id: entry.id.rawValue,
+              path: entry.url.path,
+              status: "external",
+              ownership: "external_exact",
+              message: "The exact tuicr tuple remains externally owned until disablement.",
+              evidence: captured
+            )
+          )
+        }
+      }
+      if tuicr.proposedOwnership != nil {
+        for directory in try missingParentDirectories(
+          of: homeDirectory.appending(path: ".config/tuicr/config.toml"),
+          homeDirectory: homeDirectory
+        ) { createdDirectories.insert(directory.path) }
+      }
+
       for record in ownership?.records ?? [] where !entries.contains(where: { $0.id == record.id })
       {
         let entry = managedEntry(from: record)
@@ -811,14 +953,17 @@ struct EnvironmentProviderInspector: Sendable {
             composition: composition,
             entries: inspections,
             selected: entries,
-            btop: btop.proposedOwnership
+            btop: btop.proposedOwnership,
+            tuicr: tuicr.proposedOwnership
           ) : nil,
         blockedMessage: nil,
         desiredEntries: entries,
         externalEvidence: evidence,
         createdDirectories: createdDirectories.sorted(),
         proposedBtopOwnership: btop.proposedOwnership,
-        btopExternalEvidence: btop.externalEvidence
+        btopExternalEvidence: btop.externalEvidence,
+        proposedTuicrOwnership: tuicr.proposedOwnership,
+        tuicrExternalEvidence: tuicr.externalEvidence
       )
     } catch {
       return EnvironmentProviderInspection(
@@ -830,7 +975,9 @@ struct EnvironmentProviderInspector: Sendable {
         externalEvidence: [:],
         createdDirectories: [],
         proposedBtopOwnership: nil,
-        btopExternalEvidence: nil
+        btopExternalEvidence: nil,
+        proposedTuicrOwnership: nil,
+        tuicrExternalEvidence: nil
       )
     }
   }
@@ -854,6 +1001,7 @@ struct EnvironmentProviderInspector: Sendable {
     if profile.tools.yazi {
       enabled.formUnion([.yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax])
     }
+    if profile.presets.tuicr { enabled.formUnion([.tuicrTheme, .tuicrSyntax]) }
     return allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .filter { enabled.contains($0.id) }
   }
@@ -921,6 +1069,18 @@ struct EnvironmentProviderInspector: Sendable {
         url: home.appending(path: ".config/btop/themes/\(BtopAdapter.themeFileName)"),
         kind: .symbolicLink,
         target: state.appending(path: "current/\(BtopAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .tuicrTheme,
+        url: home.appending(path: ".config/tuicr/themes/\(TuicrAdapter.themeName).toml"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(TuicrAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .tuicrSyntax,
+        url: home.appending(path: ".config/tuicr/themes/\(TuicrAdapter.themeName).tmTheme"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(TextMateThemeArtifact.outputPath)").path
       ),
       EnvironmentManagedEntry(
         id: .yaziConfiguration,
@@ -1180,7 +1340,8 @@ struct EnvironmentProviderInspector: Sendable {
     composition: EnvironmentComposition,
     entries: [EnvironmentEntryInspection],
     selected: [EnvironmentManagedEntry],
-    btop: EnvironmentBtopOwnership?
+    btop: EnvironmentBtopOwnership?,
+    tuicr: EnvironmentTuicrOwnership?
   ) throws -> String {
     struct Payload: Encodable {
       let schemaVersion: Int
@@ -1200,6 +1361,9 @@ struct EnvironmentProviderInspector: Sendable {
     if let btop {
       targets[EnvironmentEntryID.btopConfiguration.rawValue] = "provider-writable:\(btop.path)"
     }
+    if let tuicr {
+      targets[EnvironmentEntryID.tuicrConfiguration.rawValue] = "key-owned:\(tuicr.path)"
+    }
     let payload = Payload(
       schemaVersion: 1,
       inputDigest: composition.inputDigest,
@@ -1214,6 +1378,7 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.tools.eza ? "eza" : "eza-disabled",
         composition.profile.tools.btop ? "btop" : "btop-disabled",
         composition.profile.tools.yazi ? "yazi" : "yazi-disabled",
+        composition.profile.presets.tuicr ? "tuicr" : "tuicr-disabled",
       ],
       entries: entries.filter { targets[$0.id] != nil }.map {
         Payload.Entry(
@@ -1235,7 +1400,8 @@ struct EnvironmentProviderInspector: Sendable {
     composition: EnvironmentComposition
   ) throws -> Bool {
     switch entry.id {
-    case .atuinTheme, .batTheme, .btopTheme, .ezaTheme, .yaziFlavor, .yaziSyntax:
+    case .atuinTheme, .batTheme, .btopTheme, .ezaTheme, .tuicrTheme, .tuicrSyntax,
+      .yaziFlavor, .yaziSyntax:
       return evidence.kind == .symbolicLink && evidence.linkDestination == entry.target
     case .batConfiguration:
       guard evidence.kind == .regularFile else { return false }
@@ -1272,6 +1438,7 @@ struct EnvironmentProviderInspector: Sendable {
   private static func isDailyToolEntry(_ id: EnvironmentEntryID) -> Bool {
     switch id {
     case .batConfiguration, .batTheme, .btopConfiguration, .btopTheme, .ezaTheme,
+      .tuicrConfiguration, .tuicrTheme, .tuicrSyntax,
       .yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax:
       true
     case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim:
@@ -1498,6 +1665,316 @@ struct EnvironmentProviderInspector: Sendable {
     )
   }
 
+  private func inspectTuicr(
+    composition: EnvironmentComposition,
+    homeDirectory: URL,
+    stateRoot: URL,
+    ownership: EnvironmentTuicrOwnership?,
+    legacyOwned: Bool,
+    externallyAuthoritative: Bool
+  ) throws -> (
+    entry: EnvironmentEntryInspection?,
+    proposedOwnership: EnvironmentTuicrOwnership?,
+    externalEvidence: EnvironmentEntryEvidence?
+  ) {
+    guard
+      composition.profile.presets.tuicr || ownership != nil || legacyOwned
+        || externallyAuthoritative
+    else {
+      return (nil, nil, nil)
+    }
+    let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
+    if legacyOwned {
+      let evidence = try capture(url, directoryLink: nil)
+      guard evidence.kind == .regularFile,
+        try EnvironmentTuicrDocument.matchesManaged(
+          configurationText(at: url, evidence: evidence),
+          source: url
+        )
+      else {
+        throw EnvironmentLifecycleError.drift("legacy setup-owned tuicr selector")
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "legacy_setup",
+          message: "The working legacy setup-owned tuicr integration is preserved.",
+          evidence: evidence
+        ), nil, nil
+      )
+    }
+    if let ownership {
+      guard ownership.path == url.path,
+        try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+      else { throw EnvironmentLifecycleError.blocked("tuicr ownership path is invalid") }
+      let evidence = try capture(url, directoryLink: nil)
+      let exact: Bool
+      if evidence.kind == .regularFile {
+        exact = try EnvironmentTuicrDocument.matchesManaged(
+          configurationText(at: url, evidence: evidence), source: url)
+      } else {
+        exact = false
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+          path: url.path,
+          status: exact
+            ? (composition.profile.presets.tuicr ? "managed" : "restoration_required")
+            : "drifted",
+          ownership: "macarchy",
+          message: exact
+            ? (composition.profile.presets.tuicr
+              ? "The tuicr theme key is managed."
+              : "The disabled tuicr theme key will be restored.")
+            : "The owned tuicr theme key drifted.",
+          evidence: nil
+        ),
+        composition.profile.presets.tuicr ? ownership : nil,
+        nil
+      )
+    }
+    if externallyAuthoritative {
+      let evidence = try capture(url, directoryLink: nil)
+      guard
+        try tuicrExternalTupleIsExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot,
+          configurationEvidence: evidence
+        )
+      else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+            path: url.path,
+            status: "drifted",
+            ownership: "external_exact",
+            message: "The externally owned tuicr tuple drifted.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "external_exact",
+          message: "The exact tuicr tuple remains externally owned until disablement.",
+          evidence: evidence
+        ), nil, nil
+      )
+    }
+    guard composition.profile.presets.tuicr else { return (nil, nil, nil) }
+    let evidence = try capture(url, directoryLink: nil)
+    let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+    let externalConfiguration = evidence.kind == .symbolicLink || externalAncestor
+    if externalConfiguration {
+      let text = try externalTuicrConfigurationText(
+        at: url,
+        evidence: evidence,
+        hasExternalAncestor: externalAncestor
+      )
+      guard try EnvironmentTuicrDocument.matchesManaged(text, source: url) else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "A divergent tuicr selector is behind an externally owned symlink.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      guard
+        try tuicrLinksAreExternalExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot
+        )
+      else {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "The externally owned tuicr selector requires both exact canonical links.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+          path: url.path,
+          status: "external",
+          ownership: "external_exact",
+          message: "The exact tuicr selector and canonical links remain externally owned.",
+          evidence: evidence
+        ), nil, evidence
+      )
+    }
+    if evidence.kind == .regularFile {
+      let text = try configurationText(at: url, evidence: evidence)
+      if try EnvironmentTuicrDocument.matchesManaged(text, source: url) {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+            path: url.path,
+            status: "external",
+            ownership: "external_exact",
+            message: "The exact tuicr theme key remains externally owned.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      if externalAncestor {
+        return (
+          EnvironmentEntryInspection(
+            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+            path: url.path,
+            status: "unsupported",
+            ownership: "external",
+            message: "A divergent tuicr selector is below a symlink-owned directory.",
+            evidence: evidence
+          ), nil, nil
+        )
+      }
+      let proposed = try EnvironmentTuicrDocument.ownership(for: text, source: url)
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+          path: url.path,
+          status: "adoption_required",
+          ownership: "external",
+          message: "The existing tuicr theme key requires reviewed adoption.",
+          evidence: evidence
+        ),
+        EnvironmentTuicrOwnership(
+          path: url.path,
+          originalFileExisted: true,
+          originalSelector: proposed.originalSelector,
+          insertedSeparatorBefore: proposed.insertedSeparatorBefore
+        ), evidence
+      )
+    }
+    if evidence.kind == .absent, !externalAncestor {
+      return (
+        EnvironmentEntryInspection(
+          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+          path: url.path,
+          status: "install_required",
+          ownership: "external",
+          message: "The minimal tuicr theme selector will be installed.",
+          evidence: evidence
+        ),
+        EnvironmentTuicrOwnership(
+          path: url.path,
+          originalFileExisted: false,
+          originalSelector: nil,
+          insertedSeparatorBefore: false
+        ), evidence
+      )
+    }
+    return (
+      EnvironmentEntryInspection(
+        id: EnvironmentEntryID.tuicrConfiguration.rawValue,
+        path: url.path,
+        status: "unsupported",
+        ownership: "external",
+        message: "The tuicr configuration cannot be safely adopted.",
+        evidence: evidence
+      ), nil, nil
+    )
+  }
+
+  func tuicrExternalTupleIsExact(
+    homeDirectory: URL,
+    stateRoot: URL,
+    configurationEvidence: EnvironmentEntryEvidence? = nil
+  ) throws -> Bool {
+    let configuration = homeDirectory.appending(path: ".config/tuicr/config.toml")
+    let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
+    let externalAncestor = try hasSymlinkAncestor(configuration, stoppingAt: homeDirectory)
+    guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
+    let text =
+      evidence.kind == .symbolicLink || externalAncestor
+      ? try externalTuicrConfigurationText(
+        at: configuration,
+        evidence: evidence,
+        hasExternalAncestor: externalAncestor
+      )
+      : try configurationText(at: configuration, evidence: evidence)
+    return try EnvironmentTuicrDocument.matchesManaged(text, source: configuration)
+      && tuicrLinksAreExternalExact(homeDirectory: homeDirectory, stateRoot: stateRoot)
+  }
+
+  private func tuicrLinksAreExternalExact(
+    homeDirectory: URL,
+    stateRoot: URL
+  ) throws -> Bool {
+    for entry in allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+    where entry.id == .tuicrTheme || entry.id == .tuicrSyntax {
+      let evidence = try capture(entry.url, directoryLink: nil)
+      guard evidence.kind == .symbolicLink, evidence.linkDestination == entry.target else {
+        return false
+      }
+    }
+    return true
+  }
+
+  private func externalTuicrConfigurationText(
+    at url: URL,
+    evidence: EnvironmentEntryEvidence,
+    hasExternalAncestor: Bool
+  ) throws -> String {
+    guard evidence.kind == .symbolicLink || hasExternalAncestor else {
+      return try configurationText(at: url, evidence: evidence)
+    }
+    let firstTarget = try resolvedTuicrTarget(url)
+    let data: Data
+    do {
+      data = try BoundedRegularFile.read(at: firstTarget).data
+    } catch {
+      throw EnvironmentLifecycleError.blocked(
+        "tuicr configuration symlink target is not a bounded regular file: \(error)"
+      )
+    }
+    let secondTarget = try resolvedTuicrTarget(url)
+    guard firstTarget == secondTarget,
+      try capture(url, directoryLink: nil) == evidence
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "tuicr configuration symlink chain changed during inspection"
+      )
+    }
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw EnvironmentLifecycleError.blocked(
+        "tuicr configuration symlink target is not UTF-8: \(firstTarget.path)"
+      )
+    }
+    return text
+  }
+
+  private func resolvedTuicrTarget(_ url: URL) throws -> URL {
+    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
+    let resolved = url.path.withCString { Darwin.realpath($0, &buffer) }
+    guard resolved != nil else {
+      throw EnvironmentLifecycleError.system(
+        "resolve tuicr configuration symlink chain", url, errno)
+    }
+    let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+    guard let path = String(bytes: bytes, encoding: .utf8) else {
+      throw EnvironmentLifecycleError.blocked(
+        "tuicr configuration symlink chain is not valid UTF-8"
+      )
+    }
+    return URL(filePath: path).standardizedFileURL
+  }
+
   private func nativeDirectoryInventory(
     link: URL,
     destination: String,
@@ -1656,9 +2133,14 @@ struct EnvironmentProviderInspector: Sendable {
   }
 }
 
+enum EnvironmentTransactionCheckpoint: Equatable, Sendable {
+  case authorityPublished
+}
+
 struct EnvironmentTransactionCoordinator: Sendable {
   let homeDirectory: URL
   let stateRoot: URL
+  var faultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = { _ in }
   private let inspector = EnvironmentProviderInspector()
 
   func recoverLocked() throws -> Bool {
@@ -1679,7 +2161,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: transaction.previousOwnership,
           to: proposed,
-          btopReplacementName: transaction.btopReplacementName
+          btopReplacementName: transaction.btopReplacementName,
+          tuicrReplacementName: transaction.tuicrReplacementName
         )
         try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
         try EnvironmentGenerationStore(stateRoot: stateRoot).select(proposed.generationID)
@@ -1688,7 +2171,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: transaction.previousOwnership,
           to: nil,
-          btopReplacementName: transaction.btopReplacementName
+          btopReplacementName: transaction.btopReplacementName,
+          tuicrReplacementName: transaction.tuicrReplacementName
         )
         try EnvironmentThemeBridgeState(
           entries: transaction.previousOwnership?.originalThemeBridges ?? []
@@ -1700,7 +2184,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try transition(
         from: transaction.proposedOwnership,
         to: transaction.previousOwnership,
-        btopReplacementName: transaction.btopReplacementName
+        btopReplacementName: transaction.btopReplacementName,
+        tuicrReplacementName: transaction.tuicrReplacementName
       )
       try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
         transaction.previousCurrentDestination
@@ -1798,10 +2283,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
         ).union(inspection.createdDirectories)
       ),
       originalThemeBridges: originalThemeBridges,
-      btop: inspection.proposedBtopOwnership
+      btop: inspection.proposedBtopOwnership,
+      tuicr: inspection.proposedTuicrOwnership,
+      tuicrEnabled: composition.profile.presets.tuicr,
+      enabledThemeAdapterIDs: composition.profile.selectedThemeAdapterIDs
     )
     let generationChanged = previous?.generationID != proposed.generationID
-    let ownershipChanged = previous?.records != proposed.records || previous?.btop != proposed.btop
+    let ownershipChanged =
+      previous?.records != proposed.records || previous?.btop != proposed.btop
+      || previous?.tuicr != proposed.tuicr
+      || previous?.tuicrEnabled != proposed.tuicrEnabled
+      || previous?.enabledThemeAdapterIDs != proposed.enabledThemeAdapterIDs
     let changed = generationChanged || ownershipChanged
 
     // Re-capture every external entry after staging and before publishing the claim.
@@ -1825,9 +2317,20 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
+    if let expected = inspection.tuicrExternalEvidence {
+      let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
+      guard try inspector.capture(url, directoryLink: nil) == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "tuicr configuration changed after planning; run environment plan again"
+        )
+      }
+    }
     let btopReplacementName =
       previous?.btop != nil || proposed.btop != nil
       ? ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement" : nil
+    let tuicrReplacementName =
+      previous?.tuicr != nil || proposed.tuicr != nil
+      ? ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement" : nil
     let transaction = EnvironmentTransaction(
       operation: .apply,
       previousOwnership: previous,
@@ -1835,7 +2338,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
       previousCurrentDestination: previousCurrent,
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: themeBridges.entries,
-      btopReplacementName: btopReplacementName
+      btopReplacementName: btopReplacementName,
+      tuicrReplacementName: tuicrReplacementName
     )
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     try store.writeTransaction(transaction)
@@ -1845,7 +2349,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: previous,
           to: proposed,
-          btopReplacementName: btopReplacementName
+          btopReplacementName: btopReplacementName,
+          tuicrReplacementName: tuicrReplacementName
         )
         try restoreReleasedThemeBridges(from: previous, to: proposed)
         try store.writeOwnership(proposed)
@@ -1864,7 +2369,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: proposed,
           to: previous,
-          btopReplacementName: btopReplacementName
+          btopReplacementName: btopReplacementName,
+          tuicrReplacementName: tuicrReplacementName
         )
         try generationStore.restoreCurrent(previousCurrent)
         try EnvironmentThemeBridgeState(entries: themeBridges.entries).restore()
@@ -1892,6 +2398,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         inspection.blockedMessage ?? "provider verification failed before transaction completion"
       )
     }
+    try faultInjector(.authorityPublished)
     try EnvironmentStateStore(stateRoot: stateRoot).removeTransaction()
   }
 
@@ -1907,7 +2414,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     try transition(
       from: rollback.proposedOwnership,
       to: rollback.previousOwnership,
-      btopReplacementName: rollback.btopReplacementName
+      btopReplacementName: rollback.btopReplacementName,
+      tuicrReplacementName: rollback.tuicrReplacementName
     )
     try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
       rollback.previousCurrentDestination
@@ -1966,13 +2474,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
       ).entries,
       btopReplacementName: ownership.btop.map { _ in
         ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement"
+      },
+      tuicrReplacementName: ownership.tuicr.map { _ in
+        ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement"
       }
     )
     try store.writeTransaction(transaction)
     try transition(
       from: ownership,
       to: nil,
-      btopReplacementName: transaction.btopReplacementName
+      btopReplacementName: transaction.btopReplacementName,
+      tuicrReplacementName: transaction.tuicrReplacementName
     )
     try EnvironmentThemeBridgeState(entries: ownership.originalThemeBridges).restore()
     try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(nil)
@@ -1984,10 +2496,23 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private func transition(
     from old: EnvironmentOwnership?,
     to new: EnvironmentOwnership?,
-    btopReplacementName: String?
+    btopReplacementName: String?,
+    tuicrReplacementName: String?
   ) throws {
     let oldByID = Dictionary(uniqueKeysWithValues: (old?.records ?? []).map { ($0.id, $0) })
     let newByID = Dictionary(uniqueKeysWithValues: (new?.records ?? []).map { ($0.id, $0) })
+    let tuicrTransaction = EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
+    let transitionedTuicrBeforeLinks = old?.tuicr != nil
+    if transitionedTuicrBeforeLinks {
+      guard let tuicrReplacementName else {
+        throw EnvironmentLifecycleError.blocked("tuicr transaction has no replacement identity")
+      }
+      try tuicrTransaction.transition(
+        from: old,
+        to: new,
+        replacementName: tuicrReplacementName
+      )
+    }
 
     for record in old?.records.reversed() ?? [] where newByID[record.id] == nil {
       do {
@@ -2026,6 +2551,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       ).transition(from: old, to: new, replacementName: btopReplacementName)
+    }
+    if !transitionedTuicrBeforeLinks, new?.tuicr != nil {
+      guard let tuicrReplacementName else {
+        throw EnvironmentLifecycleError.blocked("tuicr transaction has no replacement identity")
+      }
+      try tuicrTransaction.transition(
+        from: old,
+        to: new,
+        replacementName: tuicrReplacementName
+      )
     }
     let obsoleteDirectories = Set(old?.createdDirectories ?? [])
       .subtracting(new?.createdDirectories ?? [])
@@ -2090,6 +2625,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         throw EnvironmentLifecycleError.blocked("ownership contains an unexpected btop path")
       }
     }
+    if let tuicr = ownership.tuicr {
+      let expected = homeDirectory.appending(path: ".config/tuicr/config.toml").path
+      guard tuicr.path == expected else {
+        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected tuicr path")
+      }
+    }
     let allowedDirectories = Set(
       allowed.values.map { $0.url.deletingLastPathComponent().path }
         + allowed.values.flatMap { entry -> [String] in
@@ -2148,6 +2689,22 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       else {
         throw EnvironmentLifecycleError.drift(url.path)
+      }
+    }
+    if let tuicr = ownership.tuicr {
+      try EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory).preflight(tuicr)
+    } else if ownership.tuicrEnabled,
+      !ownership.records.contains(where: {
+        $0.id == .tuicrTheme || $0.id == .tuicrSyntax
+      })
+    {
+      guard
+        try inspector.tuicrExternalTupleIsExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot
+        )
+      else {
+        throw EnvironmentLifecycleError.drift("externally owned tuicr tuple")
       }
     }
   }
