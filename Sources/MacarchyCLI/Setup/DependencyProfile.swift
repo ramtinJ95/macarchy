@@ -129,6 +129,7 @@ struct DependencyProfile: Sendable {
     let selected = capabilities.compactMap { capability -> DependencyCapability? in
       let selectedPreset: Bool
       switch capability.id {
+      case CodexAdapter.id: selectedPreset = portableProfile.environment.presets.codex
       case PiAdapter.id: selectedPreset = portableProfile.environment.presets.pi
       case TuicrAdapter.id: selectedPreset = portableProfile.environment.presets.tuicr
       default: return capability
@@ -376,7 +377,7 @@ struct SetupCommandRunner: Sendable {
       try SetupOwnershipManager().setup(
         homeDirectory: homeDirectory,
         dryRun: dryRun,
-        excluding: [.pi, .tuicr]
+        excluding: [.codex, .pi, .tuicr]
       )
     },
     setupKeybindings: { profileURL, profileRequired, homeDirectory, dryRun, adopt in
