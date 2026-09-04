@@ -105,6 +105,16 @@ print -r -- "$themes" | grep -q '^kanagawa-wave'
 print -r -- "$themes" | grep -q '^tokyo-night'
 
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+  "$binary" setup plan --json > "$temporary_directory/setup-plan.json"
+grep -q '"operation" : "setup_plan"' "$temporary_directory/setup-plan.json"
+grep -q '"outcome" : "ready"' "$temporary_directory/setup-plan.json"
+grep -q '"mutated" : false' "$temporary_directory/setup-plan.json"
+grep -q '"id" : "catppuccin-mocha"' "$temporary_directory/setup-plan.json"
+grep -q '"operation" : "desktop_plan"' "$temporary_directory/setup-plan.json"
+grep -q '"operation" : "environment_plan"' "$temporary_directory/setup-plan.json"
+print "unified setup plan smoke passed"
+
+HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" keybindings list \
   --skhd-config "$layout/share/macarchy/keybindings/defaults.skhdrc" \
   --catalog "$layout/share/macarchy/keybindings/metadata.toml" \
