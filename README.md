@@ -54,15 +54,15 @@ brew trust --formula ramtinj95/tap/macarchy
 HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
   HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
   brew install --formula --no-ask ramtinj95/tap/macarchy
-macarchy setup plan
-macarchy setup apply --install-dependencies
+macarchy setup guided
 ```
 
 The formula installs the immutable arm64 release archive and its bundled
-themes, normalized-theme contract, changelog, and license. The unified setup
-plan is read-only: it reports the selected providers, missing packages,
-configuration and service actions, permissions, adoption evidence, and manual
-boundaries before any mutation.
+themes, normalized-theme contract, changelog, and license. Guided setup creates
+a sparse portable profile, shows the unified plan, and asks before adoption,
+dependency installation, or provider mutation. The profile-driven plan remains
+read-only: it reports selected providers, missing packages, configuration and
+service actions, permissions, adoption evidence, and manual boundaries.
 
 ## Try it from source
 
@@ -110,6 +110,7 @@ macarchy environment doctor [--profile <path>] [--json]
 macarchy environment teardown [--dry-run] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
+macarchy setup guided [--output-profile <path>] [--machine-profile <path>]
 macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--json]
 macarchy setup apply [--profile <path>] [--machine-profile <path>] [--install-dependencies] [--adoption-file <path>] [--yabai-adopt <digest>] [--keybindings-adopt <digest>] [--sketchybar-adopt <digest>] [--environment-adopt <digest>] [--json]
 macarchy setup status [--profile <path>] [--machine-profile <path>] [--json]
@@ -750,6 +751,21 @@ flow](https://slack.com/help/articles/205166337-Change-your-Slack-theme) rather
 than editing Slack's private Electron storage.
 
 ## Unified setup lifecycle
+
+`macarchy setup guided` asks about every core provider and daily tool, then
+offers each optional preset. Core choices default on and presets default off.
+It writes only choices that differ from those defaults to a new portable
+profile, normally `~/.config/macarchy/profile.toml`; `--output-profile` selects
+another destination. Guided setup never follows or replaces an existing file,
+link, or directory. Use the noninteractive profile-driven commands below when a
+profile already exists.
+
+After writing the profile, guided setup prints the same unified plan described
+below. Missing external prerequisites stop the flow for explicit remediation.
+Each adoption digest requires a separate default-no confirmation, missing
+Homebrew dependencies require installation confirmation, and applying the plan
+requires a final default-no confirmation. Cancelling or encountering a blocked
+plan retains the new profile for review.
 
 `macarchy setup plan` compiles built-in defaults, the optional portable
 `~/.config/macarchy/profile.toml`, and the optional machine-local
