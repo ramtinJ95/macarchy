@@ -330,7 +330,7 @@ struct DesktopAggregateCommandTests {
   }
 
   @Test
-  func roleOptOutRestoresAllClaimedProvidersThroughAggregateApply() async throws {
+  func roleOptOutReleasesOnlyItsProviderBeforeTheRemainingDesktopRoles() async throws {
     let fixture = try DesktopAggregateFixture(topBarEnabled: true)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let applied = try await fixture.applyRunner.executeAggregate(
@@ -346,15 +346,20 @@ struct DesktopAggregateCommandTests {
       json: true
     )
     #expect(applied.succeeded)
+    #expect(try YabaiOwnershipStore(stateRoot: fixture.state).read() != nil)
+    #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() != nil)
+    #expect(fixture.yabaiLifecycle.isRunning)
+    #expect(fixture.sketchyBarLifecycle.isRunning)
+    let keybindingLifecycleChanges = fixture.keybindingLifecycle.calls.withLock {
+      $0.filter { $0 == "restart" || $0 == "reload" }
+    }
     try """
     schema_version = 1
-    [desktop]
-    provider = "disabled"
     [top_bar]
     provider = "disabled"
     """.write(to: fixture.profile, atomically: true, encoding: .utf8)
 
-    let disabled = try await fixture.applyRunner.executeAggregate(
+    let topBarDisabled = try await fixture.applyRunner.executeAggregate(
       resourcesRoot: fixture.desktopResources,
       keybindingsResourcesRoot: fixture.keybindingResources,
       profileURL: fixture.profile,
@@ -367,9 +372,50 @@ struct DesktopAggregateCommandTests {
       json: true
     )
 
-    #expect(disabled.succeeded)
+    #expect(topBarDisabled.succeeded)
+    #expect(try YabaiOwnershipStore(stateRoot: fixture.state).read() != nil)
+    #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() == nil)
+    #expect(
+      KeybindingProviderInspector().inspect(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.state,
+        generation: KeybindingGenerationInspector().inspect(stateRoot: fixture.state)
+      ).status == .managed
+    )
+    #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+    #expect(fixture.yabaiLifecycle.isRunning)
+    #expect(
+      fixture.keybindingLifecycle.calls.withLock {
+        $0.filter { $0 == "restart" || $0 == "reload" }
+      } == keybindingLifecycleChanges
+    )
+    #expect(!fixture.sketchyBarLifecycle.isRunning)
+
+    try """
+    schema_version = 1
+    [desktop]
+    provider = "disabled"
+    [top_bar]
+    provider = "disabled"
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+
+    let allDisabled = try await fixture.applyRunner.executeAggregate(
+      resourcesRoot: fixture.desktopResources,
+      keybindingsResourcesRoot: fixture.keybindingResources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
+      adopt: nil,
+      keybindingsAdopt: nil,
+      json: true
+    )
+
+    #expect(allDisabled.succeeded)
     #expect(try YabaiOwnershipStore(stateRoot: fixture.state).read() == nil)
     #expect(try SketchyBarOwnershipStore(stateRoot: fixture.state).read() == nil)
+    #expect(!fixture.yabaiLifecycle.isRunning)
     #expect(
       KeybindingProviderInspector().inspect(
         homeDirectory: fixture.home,
@@ -463,6 +509,7 @@ private struct DesktopAggregateFixture {
   let keybindingResources: URL
   let yabaiLifecycle = AggregateYabaiLifecycle()
   let sketchyBarLifecycle = AggregateSketchyBarLifecycle()
+  let keybindingLifecycle = LifecycleFixture()
   let theme: AggregateThemeController
   let keybindings: DesktopKeybindingOrchestrator
   let sketchyBarCore: SketchyBarCoreRuntimeController
@@ -506,9 +553,7 @@ private struct DesktopAggregateFixture {
       withIntermediateDirectories: true
     )
     try profileText.write(to: profile, atomically: true, encoding: .utf8)
-    let keybindingRunner = KeybindingsApplyCommandRunner(
-      lifecycle: LifecycleFixture().controller
-    )
+    let keybindingRunner = KeybindingsApplyCommandRunner(lifecycle: keybindingLifecycle.controller)
     keybindings = DesktopKeybindingOrchestrator(
       runner: keybindingRunner,
       planner: keybindingRunner.planner
@@ -564,6 +609,8 @@ private struct DesktopAggregateFixture {
 
 private final class AggregateYabaiLifecycle: Sendable {
   private let running = Mutex(false)
+
+  var isRunning: Bool { running.withLock { $0 } }
 
   var controller: YabaiLifecycleController {
     YabaiLifecycleController(
