@@ -659,7 +659,7 @@ extension SetupOwnershipManager {
     id: String,
     target: URL
   ) throws -> PiSelectionState {
-    let document = try PiSettingsJSONDocument(data: data, id: id, target: target)
+    let document = try StrictJSONObjectDocument(data: data, id: id, target: target)
     guard let member = document.members.first(where: { $0.key == key }) else {
       return .absent
     }
@@ -683,7 +683,7 @@ extension SetupOwnershipManager {
       return original
     }
 
-    let document = try PiSettingsJSONDocument(data: original, id: id, target: target)
+    let document = try StrictJSONObjectDocument(data: original, id: id, target: target)
     let insertionIndex: Int
     var insertion = Array("\"\(key)\": \"\(value)\"".utf8)
     if let first = document.members.first {
@@ -715,7 +715,7 @@ extension SetupOwnershipManager {
     id: String,
     target: URL
   ) throws -> Data {
-    let document = try PiSettingsJSONDocument(data: original, id: id, target: target)
+    let document = try StrictJSONObjectDocument(data: original, id: id, target: target)
     guard
       let memberIndex = document.members.firstIndex(where: { $0.key == key }),
       try piSelectionState(original, key: key, value: value, id: id, target: target) == .exact
@@ -822,10 +822,10 @@ private enum PiSelectionState: Equatable {
   case exact
 }
 
-// Pi rewrites this whole file when unrelated settings change. Keep only the root member ranges
-// needed for the selector edit; recurse solely to reject duplicate keys and trailing commas before
-// JSONSerialization performs the remaining semantic validation.
-struct PiSettingsJSONDocument {
+// Capture root member ranges for Pi's byte-preserving selector edit. The complete recursive parse
+// also rejects duplicate keys and trailing commas before JSONSerialization performs semantic
+// validation, so other strict setup JSON inputs can reuse the same syntax boundary.
+struct StrictJSONObjectDocument {
   struct Member {
     let key: String
     let keyRange: Range<Int>
