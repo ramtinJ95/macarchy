@@ -18,6 +18,14 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   existing desktop and environment owners with one layered model, installs
   only explicitly approved selected Homebrew requirements, reports partial
   failures, and leaves Homebrew packages and unrelated state untouched.
+- Added machine-bound unified adoption approvals through explicit component
+  options or one strict JSON approval file. Unified apply validates the complete
+  approval set against the current plan before mutation and delegates each
+  digest to its existing component owner for revalidation.
+- Added a strict unified setup transaction and lock. Later apply failures and
+  interrupted applies roll provider stages back in reverse order; interrupted
+  teardown resumes forward, and pending recovery blocks plan, status, doctor,
+  and dry-run mutation without hiding partial ownership.
 
 ### Changed
 

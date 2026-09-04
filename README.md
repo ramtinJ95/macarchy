@@ -111,7 +111,7 @@ macarchy environment teardown [--dry-run] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--json]
-macarchy setup apply [--profile <path>] [--machine-profile <path>] [--install-dependencies] [--json]
+macarchy setup apply [--profile <path>] [--machine-profile <path>] [--install-dependencies] [--adoption-file <path>] [--yabai-adopt <digest>] [--keybindings-adopt <digest>] [--sketchybar-adopt <digest>] [--environment-adopt <digest>] [--json]
 macarchy setup status [--profile <path>] [--machine-profile <path>] [--json]
 macarchy setup doctor [--profile <path>] [--machine-profile <path>] [--json]
 macarchy setup teardown [--profile <path>] [--machine-profile <path>] [--dry-run] [--json]
@@ -779,7 +779,41 @@ same layered model to bootstrap the canonical theme and converge desktop and
 environment providers in order. Missing selected formulae and casks are
 installed only when `--install-dependencies` is supplied; Homebrew remains the
 package owner and mutator. Existing state that requires adoption is rejected by
-this clean-machine path rather than claimed implicitly.
+default rather than claimed implicitly. To approve the exact machine state
+shown by the current plan, pass its digests with `--yabai-adopt`,
+`--keybindings-adopt`, `--sketchybar-adopt`, and
+`--environment-adopt`.
+
+Several approvals can instead be kept in one bounded JSON file and supplied
+with `--adoption-file`; omit keys for components that do not require adoption:
+
+```json
+{
+  "schema_version": 1,
+  "yabai": "<digest from setup plan>",
+  "keybindings": "<digest from setup plan>",
+  "sketchybar": "<digest from setup plan>",
+  "environment": "<digest from setup plan>"
+}
+```
+
+The file and named options are mutually exclusive. Adoption digests authorize
+the exact files, links, and provider state observed on one machine; stale or
+copied evidence fails against a newly compiled plan. Keep portable intent in
+`profile.toml` and machine-specific intent in `machine.toml` rather than
+persisting adoption authorization in either profile.
+
+Unified provider mutation is journaled separately from each provider's own
+transaction. Apply recompiles the reviewed plan after acquiring the setup lock
+and stops without mutation if it changed. If a later apply stage fails, started
+stages are preflighted and rolled back in reverse order; the apply reports
+`rolled_back` rather than convergence. An interrupted apply is rolled back
+before another apply can start, while an interrupted teardown resumes forward in
+environment/desktop/theme order. `setup plan`, `setup status`, and
+`setup doctor` remain blocked while recovery is pending, and teardown
+`--dry-run` reports `recovery_required` without changing the journal. Recovery
+also refuses a different home or consumer-path context. Homebrew packages stay
+outside this rollback boundary and remain externally owned.
 
 `macarchy setup status` and `macarchy setup doctor` inspect the same theme,
 desktop, environment, capability, and ownership boundaries. A successful
