@@ -7,6 +7,19 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Added the read-only unified `macarchy setup plan`, which composes built-in
+  defaults, an optional portable profile, and an optional machine-local overlay
+  before reporting providers, packages, files, services, permissions, adoption
+  evidence, and manual boundaries.
+
+### Changed
+
+- Replaced the unreleased flat `macarchy setup` command and its direct
+  dependency-installation flags with the unified planning surface. Existing
+  provider-specific commands remain the mutation path until unified apply ships.
+
 ## [0.6.2] - 2026-09-04
 
 ### Fixed

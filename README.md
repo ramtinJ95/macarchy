@@ -26,10 +26,9 @@ See the [changelog](CHANGELOG.md) for release details.
 - Reconciles supported applications without hiding failures or restart limits.
 - Diagnoses canonical state, generated artifacts, application seams, and stale
   reconciliation results.
-- Establishes allowlisted setup integrations without taking ownership of
-  existing dotfiles.
-- Records every setup-owned change so teardown can reverse only what Macarchy
-  created.
+- Plans package, configuration, service, permission, and ownership changes
+  before mutation.
+- Records managed changes so teardown can reverse only what Macarchy created.
 
 Current integrations include macOS appearance, wallpaper, Kitty, SketchyBar,
 bat, eza, btop, Yazi, Atuin, Neovim, Starship, Pi, Herdr, tuicr, Codex CLI, and
@@ -55,14 +54,14 @@ brew trust --formula ramtinj95/tap/macarchy
 HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
   HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
   brew install --formula --no-ask ramtinj95/tap/macarchy
-macarchy setup
-macarchy doctor
+macarchy setup plan
 ```
 
 The formula installs the immutable arm64 release archive and its bundled
-themes, normalized-theme contract, changelog, and license. Setup reports
-missing personal profile capabilities and establishes only the allowlisted
-integration seams it can own safely.
+themes, normalized-theme contract, changelog, and license. The unified setup
+plan is read-only: it reports the selected providers, missing packages,
+configuration and service actions, permissions, adoption evidence, and manual
+boundaries before any mutation.
 
 ## Try it from source
 
@@ -110,8 +109,7 @@ macarchy environment doctor [--profile <path>] [--json]
 macarchy environment teardown [--dry-run] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
-macarchy setup [--dry-run] [--json]
-macarchy setup --install-dependencies [--dry-run]
+macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--json]
 macarchy teardown [--dry-run] [--json]
 macarchy update status [--json]
 macarchy update check [--json]
@@ -219,8 +217,8 @@ separate external `themes` directory link, and the nested exact theme
 link—remains `external_exact` and is never written through or adopted; partial
 or divergent external tuples block. Codex loads theme changes only in a fresh
 TUI launch, so apply and theme reconciliation report `restart_required` and
-never restart a running session. New `macarchy setup` runs install a selected
-missing cask but leave Codex integration configuration to `environment apply`.
+never restart a running session. `macarchy setup plan` reports a selected
+missing cask while leaving Codex integration configuration to `environment apply`.
 
 Selected Herdr uses the approved official Homebrew `herdr` formula when the
 command is missing. A compatible pre-existing `~/.local/bin/herdr` remains
@@ -244,9 +242,9 @@ ownership of a second live configuration. A running Herdr server must return
 the exact successful reload result with no diagnostics; partial or ambiguous
 responses fail and roll the environment change back. A stopped server reports
 that the configuration will take effect on next launch. Macarchy never starts,
-stops, restarts, configures, or otherwise owns the Herdr service. New
-`macarchy setup` runs install a selected missing formula but leave Herdr
-configuration to `environment apply`.
+stops, restarts, configures, or otherwise owns the Herdr service. The unified
+setup plan reports a selected missing formula while leaving Herdr configuration
+to `environment apply`.
 
 Pi is a manual prerequisite: install it yourself with
 `npm install --global @earendil-works/pi-coding-agent`. Macarchy reports that
@@ -265,10 +263,11 @@ metadata and reports the accepted `restart_required` boundary instead. Existing
 Pi sessions then need Pi's `/reload` action or a new launch to use the active
 palette.
 
-Run `macarchy setup --install-dependencies` after selecting tuicr to review and
-install its approved Homebrew formula. `environment apply` never installs
-software; it reports and blocks before configuration mutation when a selected
-executable or compatible Pi, Herdr, or Codex version is missing. For tuicr, the
+Run `macarchy setup plan` after selecting tuicr to review its approved Homebrew
+formula and install that formula before `environment apply`. Environment apply
+never installs software; it reports and blocks before configuration mutation
+when a selected executable or compatible Pi, Herdr, or Codex version is
+missing. For tuicr, the
 environment lifecycle owns only the root `theme` selector in
 `~/.config/tuicr/config.toml` and the `macarchy-current.toml` palette and
 `macarchy-current.tmTheme` syntax links under `~/.config/tuicr/themes`. It
@@ -355,8 +354,9 @@ and reports trusted hook behavior as semantically unverifiable.
 ## Managed desktop shell
 
 The default desktop outcome combines no-SA yabai tiling, the authoritative
-managed skhd shortcuts, and a Space-aware themed SketchyBar. Run setup first to
-inspect the `yabai`, `skhd`, and `sketchybar` package prerequisites. The
+managed skhd shortcuts, and a Space-aware themed SketchyBar. Run
+`macarchy setup plan` first to inspect the `yabai`, `skhd`, and
+`sketchybar` package prerequisites. The
 third-party Homebrew formulae remain an explicit trust decision; Macarchy never
 runs `brew trust`. yabai and skhd also require the user-granted Accessibility
 permission reported by `desktop doctor`.
@@ -744,42 +744,33 @@ theme**, paste the payload, and apply it. This manual boundary follows
 flow](https://slack.com/help/articles/205166337-Change-your-Slack-theme) rather
 than editing Slack's private Electron storage.
 
-## Setup without dotfile takeover
+## Unified setup planning
 
-`macarchy setup` inspects the supported personal dependency profile and the
-configuration seams Macarchy needs. It is non-mutating unless an allowlisted
-integration is missing from an eligible ordinary local path.
+`macarchy setup plan` compiles built-in defaults, the optional portable
+`~/.config/macarchy/profile.toml`, and the optional machine-local
+`~/.config/macarchy/machine.toml` into one effective core model. An explicit
+`--profile` or `--machine-profile` path must exist; an absent default file is an
+empty layer.
 
-Correct pre-existing configuration remains external and unclaimed. Except for
-the reviewed aggregate Herdr directory-symlink seam described above, Macarchy
-does not write through GNU Stow or other symlink-owned configuration. When it
-does make a change, it writes a private backup and a strict ownership record
-before atomically replacing a file or creating an exact canonical link.
+The machine layer uses the same strict schema as the portable profile. Its
+declared fields replace portable fields individually, arrays replace as whole
+values, and omitted fields continue to inherit portable intent or built-in
+defaults. Relative native inputs resolve beside the layer that declares them,
+so machine-only paths do not leak into a dotfiles-owned portable profile.
 
-The setup surface still covers these theme-only seams when the corresponding
-behavioral provider has not been adopted by `macarchy environment`:
+The plan delegates to the existing keybinding, desktop, and environment
+planners and reports their complete machine-readable results under
+`components`. Its summary exposes selected providers, the active theme or
+clean-machine Catppuccin Mocha default, scoped Homebrew formulae and casks,
+external trust or npm prerequisites, owned file boundaries, service lifecycle,
+Accessibility and Automation boundaries, and per-domain adoption digests.
+Missing packages are planned work; malformed or contradictory profile input,
+unsafe ownership, drift, or interrupted component state blocks the plan before
+actions are emitted.
 
-- Kitty's stable bridge include;
-- bat's theme selector and canonical theme link;
-- eza's configuration-directory environment directive and theme link;
-- btop's canonical theme link, while its runtime-writable selector must remain
-  externally managed;
-- Yazi's TOML flavor selector plus flavor and syntax-theme links; and
-- Atuin's TOML theme selector and canonical theme link.
-
-Once aggregate environment ownership exists, setup reports Kitty, Starship,
-and Atuin as delegated to that lifecycle and does not run a parallel mutation
-path. Existing setup ownership of those seams must be torn down before the
-aggregate environment can adopt them.
-
-New setup runs never claim Spicetify configuration. Complete legacy setup
-ownership remains usable until explicitly disabled and torn down; all new
-selector and color-link adoption belongs to `environment apply`.
-
-Yazi's `flavors/macarchy-current.yazi` directory is an external structural
-prerequisite. Setup may own the exact links inside it, but it does not claim the
-directory. TOML edits preserve unrelated bytes and formatting, reject malformed
-or conflicting selectors, and support interruption-safe resume.
+Planning does not write files, run lifecycle mutations, install software, or
+change canonical state. Existing component commands remain the mutation path
+until the unified setup apply slice is complete.
 
 `macarchy teardown` first checks every ownership record. It then restores only
 recorded file edits and removes only recorded links. User themes, generated
@@ -798,7 +789,7 @@ Reinstalling preserves the state under `~/.config/macarchy`:
 HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
   HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
   brew install --formula --no-ask ramtinj95/tap/macarchy
-macarchy setup
+macarchy setup plan
 macarchy doctor
 ```
 
@@ -815,11 +806,6 @@ HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 \
 
 This is a reinstall, not an automatic rollback claim. Purging
 `~/.config/macarchy` is deliberately not part of teardown or uninstall.
-
-Dependency installation is separately authorized with
-`--install-dependencies`. Macarchy reports the exact Homebrew formulae and casks
-before mutation, does not edit a Brewfile, and leaves npm installation and
-third-party Homebrew trust as explicit external actions.
 
 ## Activation and recovery
 
