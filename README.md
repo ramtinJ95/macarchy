@@ -172,7 +172,7 @@ provider = "neovim" # or "disabled"
 ```
 
 Optional presets are closed, typed opt-ins and remain disabled when the profile
-is absent. Codex CLI, Herdr, Pi, and tuicr theme integrations are selected
+is absent. Codex CLI, Herdr, Pi, Slack, Spicetify, and tuicr integrations are selected
 independently:
 
 ```toml
@@ -180,8 +180,28 @@ independently:
 codex = true
 herdr = true
 pi = true
+slack = true
+spicetify = true
 tuicr = true
 ```
+
+Selected Spicetify requires `spicetify-cli` 2.44.0 or newer and a Spotify app
+with a parseable bundle version. Missing dependencies use the approved
+Homebrew formula and cask; compatible existing installations remain external.
+After reviewed adoption of only `current_theme` and `color_scheme`, Macarchy
+owns those selectors and an absent exact `Themes/text/color.ini` link. A
+complete exact Stow tuple remains external and unclaimed. Refresh uses
+`spicetify --no-restart refresh`: Spotify is never opened, quit, signalled, or
+restarted. A running client reports `restart_required`; a closed client remains
+closed and receives the palette on its next launch. Backup/apply/restore remain
+manual Spicetify operations.
+
+Selected Slack requires the official app at version 4.51.191 or newer and a
+valid renderer-v2 four-color canonical payload. Apply changes no Slack state;
+it publishes only selection authority and reports `manual_required` with the
+exact payload and per-workspace import path. Disable and teardown remove only
+that authority. `macarchy theme get slack` remains available even when the
+preset is disabled.
 
 Selected Codex CLI uses the approved official Homebrew `codex` cask when the
 command is missing. A compatible pre-existing `/opt/homebrew/bin/codex`,
@@ -708,10 +728,11 @@ reported as a personal-use warning; imported assets are not release-eligible
 without verified rights.
 
 Slack does not expose a supported theme automation API, configuration file, or
-preferences deep link. Every committed activation therefore prints a
-four-color payload for Slack's window background, selected items, presence
-indication, and notification badges, and stores the same value in the active
-generation as `generated/slack.txt`. Slack maps these values to its supported
+preferences deep link. Every canonical generation stores a four-color payload
+for Slack's window background, selected items, presence indication, and
+notification badges as inert `generated/slack.txt` data. A committed activation
+prints it proactively only while applied Slack preset authority is enabled.
+Slack maps these values to its supported
 color palettes rather than preserving arbitrary colors exactly, as described
 in [Slack's redesign](https://slack.design/articles/a-new-visual-language-for-slack/).
 Run `macarchy theme get slack` at any time to print only that active import
@@ -750,6 +771,10 @@ Once aggregate environment ownership exists, setup reports Kitty, Starship,
 and Atuin as delegated to that lifecycle and does not run a parallel mutation
 path. Existing setup ownership of those seams must be torn down before the
 aggregate environment can adopt them.
+
+New setup runs never claim Spicetify configuration. Complete legacy setup
+ownership remains usable until explicitly disabled and torn down; all new
+selector and color-link adoption belongs to `environment apply`.
 
 Yazi's `flavors/macarchy-current.yazi` directory is an external structural
 prerequisite. Setup may own the exact links inside it, but it does not claim the
@@ -809,8 +834,9 @@ or fail explicitly. Unknown drift is never overwritten by a best-effort
 fallback. The canonical `current` pointer and its validated generation remain
 authoritative; notifications and reload commands are only update mechanisms.
 
-Spicetify is optional. Macarchy refreshes its generated colors and restarts
-Spotify only when Spotify was already running; a closed client remains closed.
+Spicetify and Slack are disabled without applied preset authority. Their
+generated artifacts remain deterministic canonical data, but only selected
+Spicetify reconciliation and selected Slack notices run proactively.
 
 ## Development
 
