@@ -7,6 +7,134 @@ import Testing
 
 struct UnifiedSetupPlanTests {
   @Test
+  func sparsePortableProfileProducesTheSameDelegatedIntentAcrossMachineRoots() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profileText = """
+      schema_version = 1
+      [yabai]
+      window_gap = 11
+      [kitty]
+      font_size = 13
+      [zsh]
+      hook = "portable.zsh"
+      [tools]
+      btop = false
+      """
+    let firstProfile = root.appending(path: "first/dotfiles/profile.toml")
+    let secondProfile = root.appending(path: "second/dotfiles/profile.toml")
+    for profile in [firstProfile, secondProfile] {
+      try FileManager.default.createDirectory(
+        at: profile.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      try profileText.write(to: profile, atomically: true, encoding: .utf8)
+      try "portable-hook-marker=1\n".write(
+        to: profile.deletingLastPathComponent().appending(path: "portable.zsh"),
+        atomically: true,
+        encoding: .utf8
+      )
+    }
+    let firstContext = try liveContext(root: root, machine: "first", profile: firstProfile)
+    let secondContext = try liveContext(root: root, machine: "second", profile: secondProfile)
+    let first = try readyPlan(firstContext)
+    let second = try readyPlan(secondContext)
+    let firstComponents = try #require(first.report.components)
+    let secondComponents = try #require(second.report.components)
+    let firstYabairc = try #require(
+      firstComponents.desktop.report["rendered_yabairc"]?.string
+    )
+    let secondYabairc = try #require(
+      secondComponents.desktop.report["rendered_yabairc"]?.string
+    )
+    let firstEnvironment = try normalizedArtifacts(
+      firstComponents.environment.report,
+      home: firstContext.homeDirectory
+    )
+    let secondEnvironment = try normalizedArtifacts(
+      secondComponents.environment.report,
+      home: secondContext.homeDirectory
+    )
+
+    #expect(first.report.providers == second.report.providers)
+    #expect(first.report.fieldOrigins == second.report.fieldOrigins)
+    #expect(firstYabairc.contains("window_gap 11"))
+    #expect(firstYabairc == secondYabairc)
+    #expect(firstComponents.desktop.report["keybindings"]?["outcome"]?.string == "ready")
+    #expect(secondComponents.desktop.report["keybindings"]?["outcome"]?.string == "ready")
+    #expect(
+      try normalizedArtifacts(
+        firstComponents.desktop.report["sketchybar"],
+        home: firstContext.homeDirectory
+      )
+        == normalizedArtifacts(
+          secondComponents.desktop.report["sketchybar"],
+          home: secondContext.homeDirectory
+        )
+    )
+    #expect(firstEnvironment == secondEnvironment)
+    #expect(firstEnvironment["kitty/kitty.conf"]?.contains("font_size 13") == true)
+    #expect(firstEnvironment["zsh/.zshrc"]?.contains("portable-hook-marker=1") == true)
+    #expect(firstEnvironment["btop/btop.conf"] == nil)
+    #expect(!first.model.capabilities.map(\.id).contains("btop"))
+    #expect(first.report.files.map(\.path) != second.report.files.map(\.path))
+  }
+
+  @Test
+  func machineProfileChangesOnlyItsDeclaredProviderExceptions() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = root.appending(path: "profile.toml")
+    try "schema_version = 1\n[tools]\nbtop = false\n".write(
+      to: profile,
+      atomically: true,
+      encoding: .utf8
+    )
+    let standardContext = try liveContext(root: root, machine: "standard", profile: profile)
+    let exceptionalContext = try liveContext(root: root, machine: "exceptional", profile: profile)
+    try """
+    schema_version = 1
+    [top_bar]
+    provider = "disabled"
+    [terminal]
+    provider = "disabled"
+    """.write(to: exceptionalContext.machineProfileURL, atomically: true, encoding: .utf8)
+    let standard = try readyPlan(standardContext)
+    let exceptional = try readyPlan(exceptionalContext)
+    let exceptionalComponents = try #require(exceptional.report.components)
+    let exceptionalEnvironmentArtifacts = try #require(
+      exceptionalComponents.environment.report["rendered_artifacts"]?.object
+    )
+
+    #expect(
+      standard.report.providers.merging(["top_bar": "disabled", "terminal": "disabled"]) {
+        _, new in new
+      } == exceptional.report.providers
+    )
+    #expect(exceptional.report.fieldOrigins["tools.btop"] == "portable")
+    #expect(exceptional.report.fieldOrigins["top_bar.provider"] == "machine")
+    #expect(exceptional.report.fieldOrigins["terminal.provider"] == "machine")
+    #expect(
+      Set(standard.model.capabilities.map(\.id)).subtracting(["kitty", "sketchybar"])
+        == Set(exceptional.model.capabilities.map(\.id))
+    )
+    #expect(!standard.model.capabilities.map(\.id).contains("btop"))
+    #expect(
+      standard.report.components?.desktop.report["sketchybar"]?["rendered_artifacts"]?.object
+        != nil
+    )
+    #expect(
+      exceptionalComponents.desktop.report["sketchybar"]?["rendered_artifacts"]?.object == nil
+    )
+    #expect(
+      exceptionalComponents.environment.report["terminal_provider"]?.string == "disabled"
+    )
+    #expect(
+      exceptionalEnvironmentArtifacts["kitty/kitty.conf"] == nil
+    )
+  }
+
+  @Test
   func liveUnifiedPlanUsesTheMachineOverlayAndRemainsReadOnly() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -328,6 +456,56 @@ struct UnifiedSetupPlanTests {
       stateRoot: state,
       homeDirectory: home
     )
+  }
+
+  private func liveContext(
+    root: URL,
+    machine: String,
+    profile: URL
+  ) throws -> UnifiedSetupPlanContext {
+    let home = root.appending(path: "\(machine)/home", directoryHint: .isDirectory)
+    let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+    return UnifiedSetupPlanContext(
+      themesRoot: repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory),
+      keybindingsResourcesRoot: repositoryRoot.appending(
+        path: "Keybindings", directoryHint: .isDirectory),
+      desktopResourcesRoot: repositoryRoot.appending(
+        path: "Desktop", directoryHint: .isDirectory),
+      environmentResourcesRoot: repositoryRoot.appending(
+        path: "Environment", directoryHint: .isDirectory),
+      profileURL: profile,
+      profileRequired: true,
+      machineProfileURL: state.appending(path: "machine.toml"),
+      machineProfileRequired: false,
+      stateRoot: state,
+      homeDirectory: home
+    )
+  }
+
+  private func readyPlan(
+    _ context: UnifiedSetupPlanContext
+  ) throws -> (model: UnifiedSetupDesiredModel, report: UnifiedSetupPlanReport) {
+    let preparation = try UnifiedSetupPlanCommandRunner.live.prepare(context: context)
+    guard case .ready(let model, let report) = preparation else {
+      throw SetupComponentReportError(description: "Expected a ready unified setup plan")
+    }
+    return (model, report)
+  }
+
+  private func normalizedArtifacts(
+    _ report: JSONValue?,
+    home: URL
+  ) throws -> [String: String] {
+    let artifacts = try #require(report?["rendered_artifacts"]?.object)
+    var normalized = [String: String]()
+    for (path, value) in artifacts {
+      normalized[path] = try #require(value.string).replacingOccurrences(
+        of: home.path,
+        with: "$HOME"
+      )
+    }
+    return normalized
   }
 
   private func inventory(_ root: URL) throws -> [String] {

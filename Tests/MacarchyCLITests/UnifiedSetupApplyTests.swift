@@ -11,7 +11,17 @@ struct UnifiedSetupApplyTests {
   func cleanApplyUsesOneLayeredModelAndRunsStagesInOrder() async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
-    try fixture.writeMachineProfile("schema_version = 1\n[kitty]\nfont_size = 15\n")
+    try fixture.writeMachineProfile(
+      """
+      schema_version = 1
+      [kitty]
+      font_size = 15
+      [top_bar]
+      provider = "disabled"
+      [history]
+      provider = "disabled"
+      """
+    )
     let calls = Mutex([String]())
     let runner = fixture.runner(
       available: { _ in true },
@@ -29,6 +39,7 @@ struct UnifiedSetupApplyTests {
       },
       desktop: { _, profile, _, _ in
         #expect(profile.environment.kitty.fontSize == 15)
+        #expect(profile.topBar == .disabled)
         calls.withLock { $0.append("desktop") }
         return try applyComponent(
           #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
@@ -36,6 +47,7 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, profile, _, _ in
         #expect(profile.environment.kitty.fontSize == 15)
+        #expect(profile.environment.history == .disabled)
         calls.withLock { $0.append("environment") }
         return try applyComponent(
           #"{"operation":"environment_apply","outcome":"applied","mutated":true,"message":"environment changed"}"#
