@@ -7,6 +7,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-04
+
 ### Added
 
 - Added `environment plan` with typed Kitty, zsh, Starship, and Atuin provider
@@ -16,6 +18,18 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   profile-selected prerequisites, immutable generations, reviewed multi-entry
   adoption, theme reconciliation, fresh-shell verification, interrupted-state
   recovery, drift-safe rollback, and exact restoration of retained entries.
+- Added package-owned managed defaults and full environment lifecycle for bat,
+  eza, btop, and Yazi, with bounded native customization and restoration.
+- Added hybrid Neovim ownership with a curated managed baseline or a complete
+  profile-relative native configuration composed with Macarchy's theme seam.
+- Added the optional tuicr environment preset with approved Homebrew setup,
+  bounded theme configuration, external-ownership preservation, and an honest
+  fresh-launch boundary.
+- Added the optional Pi environment preset with bounded theme ownership and a
+  manual npm prerequisite that Macarchy reports but never installs.
+- Added the optional Codex CLI environment preset with approved Homebrew cask
+  setup, bounded theme configuration, and explicit external/private-state
+  ownership boundaries.
 - Added the optional first-class Herdr environment preset with strict version
   and live-reload contracts, bounded 16-token theme ownership, reviewed Stow
   target adoption, legacy-journal migration, and exact disable restoration.
@@ -293,7 +307,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ramtinJ95/macarchy/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ramtinJ95/macarchy/compare/v0.4.3...v0.5.0
 [0.4.3]: https://github.com/ramtinJ95/macarchy/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/ramtinJ95/macarchy/compare/v0.4.1...v0.4.2

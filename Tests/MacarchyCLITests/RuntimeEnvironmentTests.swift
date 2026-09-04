@@ -28,7 +28,7 @@ struct RuntimeEnvironmentTests {
     #expect(
       try runtime.buildInformation()
         == MacarchyBuildInformation(
-          version: "0.5.0-dev",
+          version: "0.6.0-dev",
           revision: "unknown",
           platform: "macos-arm64",
           installation: .development
@@ -129,22 +129,22 @@ struct RuntimeEnvironmentTests {
   @Test
   func versionCommandHasStableHumanAndJSONContracts() throws {
     let information = MacarchyBuildInformation(
-      version: "0.5.0",
+      version: "0.6.0",
       revision: revision,
       platform: "macos-arm64",
       installation: .unmanaged
     )
     let runner = VersionCommandRunner(buildInformation: { information })
 
-    #expect(try runner.executeConcise() == "0.5.0")
+    #expect(try runner.executeConcise() == "0.6.0")
     #expect(
       try runner.execute(json: false)
-        == "Macarchy 0.5.0 (\(revision), macos-arm64, unmanaged)"
+        == "Macarchy 0.6.0 (\(revision), macos-arm64, unmanaged)"
     )
     let json = try runner.execute(json: true)
     let object = try jsonObject(json)
     #expect(object["schema_version"] as? Int == 1)
-    #expect(object["version"] as? String == "0.5.0")
+    #expect(object["version"] as? String == "0.6.0")
     #expect(object["revision"] as? String == revision)
     #expect(object["platform"] as? String == "macos-arm64")
     #expect(object["installation"] as? String == "unmanaged")
@@ -155,7 +155,7 @@ struct RuntimeEnvironmentTests {
   }
 
   private var packagedBuildInformation: String {
-    "{\"schema_version\":1,\"version\":\"0.5.0\",\"revision\":\"\(revision)\"}\n"
+    "{\"schema_version\":1,\"version\":\"0.6.0\",\"revision\":\"\(revision)\"}\n"
   }
 
   private func packagedLayout(
