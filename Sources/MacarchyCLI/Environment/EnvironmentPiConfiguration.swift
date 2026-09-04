@@ -128,14 +128,14 @@ struct EnvironmentPiDocument {
   }
 
   static func member(in data: Data, source: URL = URL(filePath: "/pi-settings.json")) throws
-    -> PiSettingsJSONDocument.Member?
+    -> StrictJSONObjectDocument.Member?
   {
     try parsed(data, source: source).members.first { $0.key == PiAdapter.selectionKey }
   }
 
-  private static func parsed(_ data: Data, source: URL) throws -> PiSettingsJSONDocument {
+  private static func parsed(_ data: Data, source: URL) throws -> StrictJSONObjectDocument {
     do {
-      return try PiSettingsJSONDocument(
+      return try StrictJSONObjectDocument(
         data: data,
         id: SetupOwnershipManager.piSelectorID,
         target: source
