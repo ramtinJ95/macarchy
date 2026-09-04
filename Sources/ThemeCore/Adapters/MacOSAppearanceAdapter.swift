@@ -1,10 +1,10 @@
 import Foundation
 
-enum MacOSAppearanceAdapterError: Error, CustomStringConvertible, Sendable {
+package enum MacOSAppearanceAdapterError: Error, CustomStringConvertible, Sendable {
   case controlUnavailable
   case unreadablePreference(String)
 
-  var description: String {
+  package var description: String {
     switch self {
     case .controlUnavailable:
       "macOS appearance control is unavailable at /usr/bin/osascript"
@@ -14,8 +14,8 @@ enum MacOSAppearanceAdapterError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-struct MacOSAppearanceAdapter: Sendable {
-  static let id = "macos-appearance"
+package struct MacOSAppearanceAdapter: Sendable {
+  package static let id = "macos-appearance"
   private static let controlURL = URL(filePath: "/usr/bin/osascript")
 
   private let activationLock: ActivationLock
@@ -35,7 +35,7 @@ struct MacOSAppearanceAdapter: Sendable {
     self.processRunner = processRunner
   }
 
-  static func live(root: URL, processRunner: ProcessRunner = .live) -> Self {
+  package static func live(root: URL, processRunner: ProcessRunner = .live) -> Self {
     Self(
       root: root,
       controlIsAvailable: {
@@ -46,14 +46,24 @@ struct MacOSAppearanceAdapter: Sendable {
     )
   }
 
-  func preflight() throws -> ThemeAppearance {
+  package func preflight() throws -> ThemeAppearance {
     guard controlIsAvailable() else {
       throw MacOSAppearanceAdapterError.controlUnavailable
     }
     return try currentAppearance()
   }
 
-  func inspection(desiredAppearance: ThemeAppearance?) -> AdapterInspection {
+  package func apply(_ desiredAppearance: ThemeAppearance) async throws -> AdapterResult {
+    let outcome = try await reconciliation { desiredAppearance }.run()
+    return AdapterResult(
+      adapterID: Self.id,
+      requirement: .required,
+      status: outcome.status,
+      message: outcome.message
+    )
+  }
+
+  package func inspection(desiredAppearance: ThemeAppearance?) -> AdapterInspection {
     do {
       let observed = try preflight()
       if let desiredAppearance, observed != desiredAppearance {

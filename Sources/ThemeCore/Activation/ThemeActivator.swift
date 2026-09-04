@@ -35,6 +35,23 @@ package struct ThemeCommittedActivationError: Error, CustomStringConvertible, Se
   }
 }
 
+package enum ThemeDeactivationError: Error, CustomStringConvertible, Sendable {
+  case activeGenerationChanged(expected: String, active: String)
+  case invalidReconciliation(String)
+  case system(operation: String, url: URL, code: Int32)
+
+  package var description: String {
+    switch self {
+    case .activeGenerationChanged(let expected, let active):
+      "Cannot remove setup theme generation '\(expected)' while '\(active)' is active"
+    case .invalidReconciliation(let reason):
+      "Cannot remove setup theme with invalid reconciliation state: \(reason)"
+    case .system(let operation, let url, let code):
+      "Cannot \(operation) \(url.path) (errno \(code)): \(String(cString: strerror(code)))"
+    }
+  }
+}
+
 package struct ActivationLock: Sendable {
   // lockf is process-scoped, so sibling threads also need a mutex.
   private static let processMutex = Mutex<Void>(())
@@ -129,6 +146,13 @@ public struct ThemeActivator: Sendable {
   }
 
   public func activate(package: ThemePackage) throws -> GenerationManifest {
+    try activate(package: package, onCommittedLocked: { _ in })
+  }
+
+  package func activate(
+    package: ThemePackage,
+    onCommittedLocked: (GenerationManifest) throws -> Void
+  ) throws -> GenerationManifest {
     let background =
       package.backgrounds.first.map {
         PreparedThemeBackground(
@@ -139,8 +163,110 @@ public struct ThemeActivator: Sendable {
     return try activate(
       package: package,
       expectedActiveGenerationID: nil,
-      preparedBackground: { background }
+      preparedBackground: { background },
+      onCommittedLocked: onCommittedLocked
     )
+  }
+
+  package func deactivate(
+    expectedGenerationID: String,
+    dryRun: Bool
+  ) throws -> String? {
+    let cleanupError: String? = try activationLock.withLock {
+      let statusStore = ReconciliationStatusStore(root: root)
+      let manifest = try statusStore.activeManifest()
+      guard manifest.generationID == expectedGenerationID else {
+        throw ThemeDeactivationError.activeGenerationChanged(
+          expected: expectedGenerationID,
+          active: manifest.generationID
+        )
+      }
+      do {
+        switch try statusStore.read() {
+        case .missing:
+          break
+        case .current(let record) where record.generationID == expectedGenerationID:
+          break
+        case .current, .stale:
+          throw ThemeDeactivationError.invalidReconciliation(
+            "status does not describe the setup-owned active generation"
+          )
+        }
+      } catch let error as ThemeDeactivationError {
+        throw error
+      } catch {
+        throw ThemeDeactivationError.invalidReconciliation(String(describing: error))
+      }
+      if dryRun { return nil }
+
+      let currentURL = root.appending(path: "current")
+      let generationURL = root.appending(
+        path: "generations/\(expectedGenerationID)",
+        directoryHint: .isDirectory
+      )
+      let statusURL = root.appending(path: "state/reconciliation.json")
+      let nonce = UUID().uuidString.lowercased()
+      let currentClaim = root.appending(path: ".setup-teardown-current-\(nonce)")
+      let generationClaim = generationURL.deletingLastPathComponent().appending(
+        path: ".setup-teardown-\(expectedGenerationID)-\(nonce)",
+        directoryHint: .isDirectory
+      )
+      let statusClaim = statusURL.deletingLastPathComponent().appending(
+        path: ".setup-teardown-reconciliation-\(nonce).json"
+      )
+
+      try rename(currentURL, to: currentClaim, operation: "claim current theme pointer")
+      do {
+        try rename(generationURL, to: generationClaim, operation: "claim theme generation")
+      } catch let claimError {
+        do {
+          try rename(currentClaim, to: currentURL, operation: "restore current theme pointer")
+        } catch {
+          throw error
+        }
+        throw claimError
+      }
+      var statusClaimed = false
+      if FileManager.default.fileExists(atPath: statusURL.path) {
+        do {
+          try rename(statusURL, to: statusClaim, operation: "claim reconciliation status")
+          statusClaimed = true
+        } catch let claimError {
+          do {
+            try rename(generationClaim, to: generationURL, operation: "restore theme generation")
+            try rename(currentClaim, to: currentURL, operation: "restore current theme pointer")
+          } catch {
+            throw error
+          }
+          throw claimError
+        }
+      }
+
+      var cleanupError: String?
+      do {
+        try FileManager.default.removeItem(at: currentClaim)
+        if statusClaimed { try FileManager.default.removeItem(at: statusClaim) }
+        makeWritableForRemoval(generationClaim)
+        try FileManager.default.removeItem(at: generationClaim)
+      } catch {
+        cleanupError = String(describing: error)
+      }
+      return cleanupError
+    }
+
+    if !dryRun { postDarwinNotification(ThemeChanged.darwinNotificationName) }
+    return cleanupError
+  }
+
+  private func rename(_ source: URL, to destination: URL, operation: String) throws {
+    let result = source.path.withCString { sourcePath in
+      destination.path.withCString { destinationPath in
+        Darwin.rename(sourcePath, destinationPath)
+      }
+    }
+    guard result == 0 else {
+      throw ThemeDeactivationError.system(operation: operation, url: source, code: errno)
+    }
   }
 
   package func activate(
