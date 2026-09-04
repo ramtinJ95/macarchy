@@ -24,10 +24,10 @@ struct SetupCommandTests {
       ids(in: .requiredAdapter, profile: profile)
         == [
           "atuin", "bat", "btop", "codex", "eza", "herdr", "neovim", "pi", "starship", "tuicr",
-          "yazi",
+          "yazi", "spicetify", "spotify",
         ]
     )
-    #expect(ids(in: .optionalAdapter, profile: profile) == ["spicetify", "spotify"])
+    #expect(ids(in: .optionalAdapter, profile: profile) == ["slack"])
   }
 
   @Test
@@ -88,7 +88,7 @@ struct SetupCommandTests {
     #expect(!requiredExecution.succeeded)
     #expect(requiredReport.outcome == "missing_required_capabilities")
     #expect(requiredReport.summary?.missingRequiredCount == 1)
-    #expect(requiredReport.summary?.missingOptionalCount == 1)
+    #expect(requiredReport.summary?.missingOptionalCount == 0)
     #expect(!requiredReport.mutationAttempted)
 
     let optionalExecution = try runner(missing: ["spicetify", "spotify"]).execute(
@@ -103,7 +103,7 @@ struct SetupCommandTests {
     #expect(optionalExecution.succeeded)
     #expect(optionalReport.outcome == "ready")
     #expect(optionalReport.summary?.missingRequiredCount == 0)
-    #expect(optionalReport.summary?.missingOptionalCount == 2)
+    #expect(optionalReport.summary?.missingOptionalCount == 0)
   }
 
   @Test
@@ -147,10 +147,9 @@ struct SetupCommandTests {
       plan.formulae
         == [
           "atuin", "bat", "btop", "eza", "neovim", "starship", "yazi",
-          "spicetify-cli",
         ]
     )
-    #expect(plan.casks == ["kitty", "spotify"])
+    #expect(plan.casks == ["kitty"])
     #expect(
       plan.external.map(\.capabilityId)
         == ["macos-26", "arm64", "homebrew", "sketchybar", "skhd", "yabai"]
@@ -276,7 +275,7 @@ struct SetupCommandTests {
   }
 
   @Test
-  func zeroExitStillFailsWhenAPlannedOptionalCapabilityRemainsMissing() throws {
+  func disabledPresetDependencyIsNotPlannedOrVerified() throws {
     let runner = SetupCommandRunner(
       resolveProfile: DependencyProfile.named,
       capabilityIsAvailable: { $0.id != "spicetify" },
@@ -296,10 +295,10 @@ struct SetupCommandTests {
     )
     let report = try decode(execution.output)
 
-    #expect(!execution.succeeded)
-    #expect(report.outcome == "dependency_installation_verification_failed")
-    #expect(report.dependencyInstallation.failure?.kind == "verification_failed")
-    #expect(report.dependencyInstallation.failure?.capabilityIds == ["spicetify"])
+    #expect(execution.succeeded)
+    #expect(report.outcome == "ready")
+    #expect(report.dependencyInstallation.failure == nil)
+    #expect(report.capabilities?.contains { $0.id == "spicetify" } == false)
   }
 
   @Test
@@ -569,6 +568,45 @@ struct SetupCommandTests {
     #expect(report.integrations?.map(\.id).contains(SetupOwnershipManager.integrationID) == true)
     #expect(
       report.integrations?.map(\.id).contains(KeybindingProviderInspector.ownershipID) == true)
+  }
+
+  @Test
+  func selectedFinalPresetsAddOnlyTheirApprovedHomebrewPackages() throws {
+    let home = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: home) }
+    let profile = home.appending(path: ".config/macarchy/profile.toml")
+    try FileManager.default.createDirectory(
+      at: profile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try """
+    schema_version = 1
+    [presets]
+    slack = true
+    spicetify = true
+    """.write(to: profile, atomically: true, encoding: .utf8)
+    let missing = Set([SlackAdapter.id, SpicetifyAdapter.id, "spotify"])
+    let runner = SetupCommandRunner(
+      resolveProfile: DependencyProfile.named,
+      capabilityIsAvailable: { !missing.contains($0.id) },
+      processRunner: unexpectedProcessRunner(),
+      writePreMutationPlan: unexpectedPlanWriter(),
+      setupIntegrations: externalIntegrations()
+    )
+
+    let execution = try runner.execute(
+      profileName: "personal",
+      homeDirectory: home,
+      installDependencies: true,
+      dryRun: true,
+      json: true
+    )
+    let report = try decode(execution.output)
+
+    #expect(!execution.succeeded)
+    #expect(report.dependencyInstallation.plan.formulae == ["spicetify-cli"])
+    #expect(report.dependencyInstallation.plan.casks == ["slack", "spotify"])
+    #expect(report.summary?.missingRequiredCount == 3)
+    #expect(report.summary?.missingOptionalCount == 0)
+    #expect(report.capabilities?.filter { missing.contains($0.id) }.count == 3)
   }
 
   private func runner(missing: Set<String>) -> SetupCommandRunner {
