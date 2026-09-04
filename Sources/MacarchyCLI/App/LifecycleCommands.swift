@@ -60,7 +60,7 @@ extension Macarchy {
   struct Setup: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Plan and converge the complete curated Macarchy core.",
-      subcommands: [Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self]
+      subcommands: [Guided.self, Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self]
     )
 
     struct ProfileOptions: ParsableArguments {
@@ -124,6 +124,53 @@ extension Macarchy {
         return try UnifiedSetupAdoptionFile.load(
           at: URL(filePath: adoptionFile).standardizedFileURL
         )
+      }
+    }
+
+    struct Guided: AsyncParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Create a sparse portable profile and optionally apply its reviewed plan."
+      )
+
+      @Option(
+        name: .customLong("output-profile"),
+        help: "New portable profile path. Defaults to ~/.config/macarchy/profile.toml."
+      )
+      var outputProfile: String?
+
+      @Option(
+        name: .customLong("machine-profile"),
+        help: "Machine-local profile overlay. Defaults to ~/.config/macarchy/machine.toml."
+      )
+      var machineProfile: String?
+
+      @OptionGroup var state: StateOptions
+
+      mutating func run() async throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let profileURL =
+          outputProfile.map { URL(filePath: $0).standardizedFileURL }
+          ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+        let machineProfileURL =
+          machineProfile.map { URL(filePath: $0).standardizedFileURL }
+          ?? home.appending(path: ".config/macarchy/machine.toml").standardizedFileURL
+        let execution = try await GuidedSetupCommandRunner.live().execute(
+          context: UnifiedSetupPlanContext(
+            themesRoot: RuntimeEnvironment.live.builtInThemesURL,
+            keybindingsResourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
+            desktopResourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
+            environmentResourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
+            profileURL: profileURL,
+            profileRequired: true,
+            machineProfileURL: machineProfileURL,
+            machineProfileRequired: machineProfile != nil,
+            stateRoot: state.stateRootURL,
+            homeDirectory: home
+          ),
+          consumerPaths: state.consumerPaths
+        )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
       }
     }
 
