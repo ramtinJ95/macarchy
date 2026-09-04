@@ -1,28 +1,11 @@
 import Foundation
 import ThemeCore
 
-enum DependencyCapabilityCategory: String, CaseIterable, Encodable, Sendable {
+enum DependencyCapabilityCategory: String, Encodable, Sendable {
   case platformRuntime = "platform_runtime"
   case desktopSubstrate = "desktop_substrate"
   case requiredAdapter = "required_adapter"
   case optionalAdapter = "optional_adapter"
-
-  var title: String {
-    switch self {
-    case .platformRuntime:
-      "Platform and hard runtime"
-    case .desktopSubstrate:
-      "Retained desktop substrate"
-    case .requiredAdapter:
-      "Required enabled adapters"
-    case .optionalAdapter:
-      "Optional adapters"
-    }
-  }
-
-  var isRequired: Bool {
-    self != .optionalAdapter
-  }
 }
 
 enum DependencyCapabilityProbe: Sendable {
@@ -106,10 +89,6 @@ struct DependencyCapability: Sendable {
   let probes: [DependencyCapabilityProbe]
   let remediation: DependencyRemediation
 
-  var required: Bool {
-    category.isRequired
-  }
-
   var requirement: String {
     probes.map(\.description).joined(separator: "; ")
   }
@@ -120,38 +99,44 @@ struct DependencyCapability: Sendable {
 }
 
 struct DependencyProfile: Sendable {
-  static let availableNames = ["personal"]
-
-  let name: String
   let capabilities: [DependencyCapability]
 
-  func selected(by portableProfile: PortableProfile) -> DependencyProfile {
-    let selected = capabilities.compactMap { capability -> DependencyCapability? in
-      let selectedPreset: Bool
-      switch capability.id {
-      case CodexAdapter.id: selectedPreset = portableProfile.environment.presets.codex
-      case HerdrAdapter.id: selectedPreset = portableProfile.environment.presets.herdr
-      case PiAdapter.id: selectedPreset = portableProfile.environment.presets.pi
-      case SlackAdapter.id: selectedPreset = portableProfile.environment.presets.slack
-      case SpicetifyAdapter.id, "spotify":
-        selectedPreset = portableProfile.environment.presets.spicetify
-      case TuicrAdapter.id: selectedPreset = portableProfile.environment.presets.tuicr
-      default: return capability
-      }
-      guard selectedPreset else { return nil }
-      return DependencyCapability(
-        id: capability.id,
-        category: .requiredAdapter,
-        probes: capability.probes,
-        remediation: capability.remediation
-      )
-    }
-    return DependencyProfile(name: name, capabilities: selected)
+  func selectedForDesktop(_ profile: PortableProfile) -> [DependencyCapability] {
+    var ids = Set(["macos-26", "arm64", "homebrew"])
+    if profile.desktop.provider == .yabaiSkhd { ids.formUnion(["skhd", "yabai"]) }
+    if profile.topBar == .sketchybar { ids.insert("sketchybar") }
+    return selected(ids)
   }
 
-  static func named(_ name: String, homeDirectory: URL) -> DependencyProfile? {
-    guard name == "personal" else { return nil }
-    return personal(homeDirectory: homeDirectory)
+  func selectedForEnvironment(_ profile: EnvironmentProfile) -> [DependencyCapability] {
+    guard !profile.isEntirelyDisabled else { return [] }
+    var ids = Set(["macos-26", "arm64"])
+    if profile.terminal == .kitty { ids.insert("kitty") }
+    if profile.prompt == .starship { ids.insert("starship") }
+    if profile.history == .atuin { ids.insert("atuin") }
+    if profile.editor == .neovim { ids.insert("neovim") }
+    if profile.tools.bat { ids.insert("bat") }
+    if profile.tools.btop { ids.insert("btop") }
+    if profile.tools.eza { ids.insert("eza") }
+    if profile.tools.yazi { ids.insert("yazi") }
+    if profile.presets.codex { ids.insert(CodexAdapter.id) }
+    if profile.presets.herdr { ids.insert(HerdrAdapter.id) }
+    if profile.presets.pi { ids.insert(PiAdapter.id) }
+    if profile.presets.slack { ids.insert(SlackAdapter.id) }
+    if profile.presets.spicetify { ids.formUnion([SpicetifyAdapter.id, "spotify"]) }
+    if profile.presets.tuicr { ids.insert(TuicrAdapter.id) }
+    return selected(ids)
+  }
+
+  func selectedForSetup(_ profile: PortableProfile) -> [DependencyCapability] {
+    let ids = Set(
+      (selectedForDesktop(profile) + selectedForEnvironment(profile.environment)).map(\.id)
+    )
+    return selected(ids)
+  }
+
+  private func selected(_ ids: Set<String>) -> [DependencyCapability] {
+    capabilities.filter { ids.contains($0.id) }
   }
 
   static func personal(homeDirectory: URL) -> DependencyProfile {
@@ -200,7 +185,6 @@ struct DependencyProfile: Sendable {
     }
 
     let profile = DependencyProfile(
-      name: "personal",
       capabilities: [
         DependencyCapability(
           id: "macos-26",
@@ -348,259 +332,21 @@ struct DependencyProfile: Sendable {
   }
 }
 
-struct SetupCommandRunner: Sendable {
-  let resolveProfile: @Sendable (String, URL) -> DependencyProfile?
-  let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
-  let processRunner: ProcessRunner
-  let writePreMutationPlan: @Sendable (String) throws -> Void
-  let setupIntegrations: @Sendable (URL, Bool) throws -> [SetupIntegrationResult]
-  let setupKeybindings: @Sendable (URL, Bool, URL, Bool, String?) throws -> SetupIntegrationResult?
-
-  init(
-    resolveProfile: @escaping @Sendable (String, URL) -> DependencyProfile?,
-    capabilityIsAvailable: @escaping @Sendable (DependencyCapability) -> Bool,
-    processRunner: ProcessRunner,
-    writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
-    setupIntegrations: @escaping @Sendable (URL, Bool) throws -> [SetupIntegrationResult],
-    setupKeybindings:
-      @escaping @Sendable (URL, Bool, URL, Bool, String?) throws -> SetupIntegrationResult? = {
-        _, _, _, _, _ in nil
-      }
-  ) {
-    self.resolveProfile = resolveProfile
-    self.capabilityIsAvailable = capabilityIsAvailable
-    self.processRunner = processRunner
-    self.writePreMutationPlan = writePreMutationPlan
-    self.setupIntegrations = setupIntegrations
-    self.setupKeybindings = setupKeybindings
-  }
-
-  static let live = SetupCommandRunner(
-    resolveProfile: DependencyProfile.named,
-    capabilityIsAvailable: { $0.isAvailable() },
-    processRunner: .live,
-    writePreMutationPlan: { output in
-      try FileHandle.standardError.write(contentsOf: Data("\(output)\n".utf8))
-    },
-    setupIntegrations: { homeDirectory, dryRun in
-      try SetupOwnershipManager().setup(
-        homeDirectory: homeDirectory,
-        dryRun: dryRun,
-        excluding: [.codex, .herdr, .pi, .tuicr]
-      )
-    },
-    setupKeybindings: { profileURL, profileRequired, homeDirectory, dryRun, adopt in
-      try KeybindingsApplyCommandRunner.live.setupIntegration(
-        resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
-        profileURL: profileURL,
-        profileRequired: profileRequired,
-        stateRoot: homeDirectory.appending(
-          path: ".config/macarchy",
-          directoryHint: .isDirectory
-        ),
-        homeDirectory: homeDirectory,
-        adopt: adopt,
-        dryRun: dryRun
-      )
-    }
-  )
-
-  func execute(
-    profileName: String,
-    homeDirectory: URL,
-    installDependencies: Bool,
-    dryRun: Bool,
-    keybindingProfileURL: URL? = nil,
-    keybindingProfileRequired: Bool = false,
-    adoptKeybindings: String? = nil,
-    json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
-    guard let dependencyProfile = resolveProfile(profileName, homeDirectory) else {
-      let report = SetupReport.unknownProfile(
-        profileName,
-        installDependencies: installDependencies,
-        dryRun: dryRun
-      )
-      return (try report.render(json: json), false)
-    }
-
-    let portableProfile = try PortableProfileLoader().load(
-      at: keybindingProfileURL
-        ?? homeDirectory.appending(path: ".config/macarchy/profile.toml"),
-      required: keybindingProfileRequired
-    )
-    let profile = dependencyProfile.selected(by: portableProfile)
-
-    return try apply(
-      SetupPreparation(
-        profile: profile,
-        homeDirectory: homeDirectory,
-        installDependencies: installDependencies,
-        dryRun: dryRun,
-        keybindingProfileURL:
-          keybindingProfileURL
-          ?? homeDirectory.appending(path: ".config/macarchy/profile.toml"),
-        keybindingProfileRequired: keybindingProfileRequired,
-        adoptKeybindings: adoptKeybindings,
-        capabilities: inspect(profile)
-      ),
-      json: json
-    )
-  }
-
-  private func apply(
-    _ preparation: SetupPreparation,
-    json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
-    var capabilities = preparation.capabilities
-    let installPlan = HomebrewInstallPlan(capabilities: capabilities)
-    var commandResults = [HomebrewCommandResult]()
-    var failure: SetupInstallationFailure?
-    var mutationAttempted = false
-
-    if preparation.installDependencies, !preparation.dryRun {
-      let missingPrerequisites = capabilities.filter {
-        $0.category == .platformRuntime && $0.status == .missing
-      }.map(\.id)
-      if !missingPrerequisites.isEmpty {
-        failure = .blocked(missingPrerequisites)
-      } else if !installPlan.requests.isEmpty {
-        try writePreMutationPlan(
-          try installPlan.preMutationOutput(
-            profileName: preparation.profile.name,
-            json: json
-          )
-        )
-        for request in installPlan.requests {
-          mutationAttempted = true
-          let result: HomebrewCommandResult
-          do {
-            result = HomebrewCommandResult(
-              request: request,
-              result: try processRunner.run(request)
-            )
-          } catch {
-            result = HomebrewCommandResult(request: request, launchError: error)
-          }
-          commandResults.append(result)
-          guard result.succeeded else {
-            failure = .command(result)
-            break
-          }
-        }
-
-        capabilities = inspect(preparation.profile)
-        if failure == nil {
-          let unresolved = capabilities.filter {
-            installPlan.homebrewCapabilityIDs.contains($0.id) && $0.status == .missing
-          }.map(\.id)
-          if !unresolved.isEmpty {
-            failure = .verification(unresolved)
-          }
-        }
-      }
-    }
-
-    let keybindingPreview = try setupKeybindings(
-      preparation.keybindingProfileURL,
-      preparation.keybindingProfileRequired,
-      preparation.homeDirectory,
-      true,
-      preparation.adoptKeybindings
-    )
-
-    var integrations: [SetupIntegrationResult]
-    do {
-      integrations = try setupIntegrations(preparation.homeDirectory, preparation.dryRun)
-    } catch {
-      integrations = SetupOwnershipManager.failureResults(
-        error,
-        homeDirectory: preparation.homeDirectory
-      )
-    }
-    if preparation.dryRun {
-      if let keybindingPreview { integrations.append(keybindingPreview) }
-    } else if integrations.allSatisfy(\.succeeded), failure == nil,
-      keybindingPreview?.succeeded != false
-    {
-      if let keybindings = try setupKeybindings(
-        preparation.keybindingProfileURL,
-        preparation.keybindingProfileRequired,
-        preparation.homeDirectory,
-        false,
-        preparation.adoptKeybindings
-      ) {
-        integrations.append(keybindings)
-      }
-    } else if let keybindingPreview {
-      integrations.append(keybindingPreview)
-    }
-    mutationAttempted = mutationAttempted || integrations.contains(where: \.mutationAttempted)
-
-    let report = SetupReport.profile(
-      preparation.profile.name,
-      installDependencies: preparation.installDependencies,
-      dryRun: preparation.dryRun,
-      capabilities: capabilities,
-      installPlan: installPlan,
-      commandResults: commandResults,
-      mutationAttempted: mutationAttempted,
-      installationFailure: failure,
-      integrations: integrations
-    )
-    return (try report.render(json: json), report.succeeded)
-  }
-
-  private func inspect(_ profile: DependencyProfile) -> [SetupCapability] {
-    profile.capabilities.map { capability in
-      SetupCapability(
-        id: capability.id,
-        category: capability.category,
-        required: capability.required,
-        status: capabilityIsAvailable(capability) ? .present : .missing,
-        requirement: capability.requirement,
-        remediation: capability.remediation
-      )
-    }
-  }
-}
-
-private struct SetupPreparation {
-  let profile: DependencyProfile
-  let homeDirectory: URL
-  let installDependencies: Bool
-  let dryRun: Bool
-  let keybindingProfileURL: URL
-  let keybindingProfileRequired: Bool
-  let adoptKeybindings: String?
-  let capabilities: [SetupCapability]
-}
-
 struct HomebrewInstallPlan: Encodable, Sendable {
-  static let environment = [
-    "HOMEBREW_NO_AUTOREMOVE": "1",
-    "HOMEBREW_NO_INSTALL_CLEANUP": "1",
-    "HOMEBREW_NO_INSTALL_UPGRADE": "1",
-  ]
-
   let formulae: [String]
   let casks: [String]
   let external: [ExternalDependencyRemediation]
-  let homebrewCapabilityIDs: Set<String>
 
   init(capabilities: [SetupCapability]) {
     var formulae = [String]()
     var casks = [String]()
     var external = [ExternalDependencyRemediation]()
-    var homebrewCapabilityIDs = Set<String>()
     for capability in capabilities where capability.status == .missing {
       switch capability.remediation {
       case .formula(let package):
         formulae.append(package)
-        homebrewCapabilityIDs.insert(capability.id)
       case .cask(let package):
         casks.append(package)
-        homebrewCapabilityIDs.insert(capability.id)
       case .external(let instruction):
         external.append(
           ExternalDependencyRemediation(
@@ -613,30 +359,6 @@ struct HomebrewInstallPlan: Encodable, Sendable {
     self.formulae = formulae
     self.casks = casks
     self.external = external
-    self.homebrewCapabilityIDs = homebrewCapabilityIDs
-  }
-
-  var requests: [ProcessRequest] {
-    var requests = [ProcessRequest]()
-    if !formulae.isEmpty {
-      requests.append(
-        ProcessRequest(
-          executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
-          arguments: ["install", "--formula", "--no-ask"] + formulae,
-          environmentOverrides: Self.environment
-        )
-      )
-    }
-    if !casks.isEmpty {
-      requests.append(
-        ProcessRequest(
-          executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
-          arguments: ["install", "--cask", "--no-ask"] + casks,
-          environmentOverrides: Self.environment
-        )
-      )
-    }
-    return requests
   }
 
   var humanOutput: String {
@@ -654,15 +376,6 @@ struct HomebrewInstallPlan: Encodable, Sendable {
       )
     }
     return lines.joined(separator: "\n")
-  }
-
-  func preMutationOutput(profileName: String, json: Bool) throws -> String {
-    if json {
-      return try renderJSON(
-        SetupPreMutationPlanJSON(profile: profileName, plan: self)
-      )
-    }
-    return humanOutput
   }
 
   enum CodingKeys: String, CodingKey {
@@ -685,319 +398,7 @@ struct SetupCapability: Encodable, Sendable {
 
   let id: String
   let category: DependencyCapabilityCategory
-  let required: Bool
   let status: Status
   let requirement: String
   let remediation: DependencyRemediation
-}
-
-struct HomebrewCommandResult: Encodable, Sendable {
-  enum Outcome: String, Encodable, Sendable {
-    case exited
-    case launchFailed = "launch_failed"
-  }
-
-  let executable: String
-  let arguments: [String]
-  let outcome: Outcome
-  let terminationStatus: Int32?
-  let output: String?
-  let error: String?
-
-  init(request: ProcessRequest, result: ProcessResult) {
-    executable = request.executableURL.path
-    arguments = request.arguments
-    outcome = .exited
-    terminationStatus = result.terminationStatus
-    output = result.output.isEmpty ? nil : result.output
-    error = nil
-  }
-
-  init(request: ProcessRequest, launchError: Error) {
-    executable = request.executableURL.path
-    arguments = request.arguments
-    outcome = .launchFailed
-    terminationStatus = nil
-    output = nil
-    error = String(describing: launchError)
-  }
-
-  var succeeded: Bool {
-    outcome == .exited && terminationStatus == 0
-  }
-
-  var failureDescription: String {
-    switch outcome {
-    case .launchFailed:
-      return
-        "Could not launch \(executable) \(arguments.joined(separator: " ")): \(error ?? "unknown error")"
-    case .exited:
-      let status = terminationStatus.map(String.init) ?? "unknown"
-      return output ?? "Homebrew exited with status \(status)"
-    }
-  }
-}
-
-struct SetupInstallationFailure: Encodable, Sendable {
-  enum Kind: String, Encodable, Sendable {
-    case blockedPrerequisites = "blocked_prerequisites"
-    case commandFailed = "command_failed"
-    case verificationFailed = "verification_failed"
-  }
-
-  let kind: Kind
-  let message: String
-  let capabilityIDs: [String]?
-
-  enum CodingKeys: String, CodingKey {
-    case kind
-    case message
-    case capabilityIDs = "capability_ids"
-  }
-
-  static func blocked(_ capabilityIDs: [String]) -> SetupInstallationFailure {
-    SetupInstallationFailure(
-      kind: .blockedPrerequisites,
-      message: "Dependency installation requires all platform/runtime capabilities.",
-      capabilityIDs: capabilityIDs
-    )
-  }
-
-  static func command(_ result: HomebrewCommandResult) -> SetupInstallationFailure {
-    SetupInstallationFailure(
-      kind: .commandFailed,
-      message: result.failureDescription,
-      capabilityIDs: nil
-    )
-  }
-
-  static func verification(_ capabilityIDs: [String]) -> SetupInstallationFailure {
-    SetupInstallationFailure(
-      kind: .verificationFailed,
-      message: "Homebrew completed, but planned capabilities remain missing.",
-      capabilityIDs: capabilityIDs
-    )
-  }
-}
-
-private enum SetupReport {
-  enum Outcome: String, Encodable {
-    case dependencyInstallationBlocked = "dependency_installation_blocked"
-    case dependencyInstallationFailed = "dependency_installation_failed"
-    case dependencyInstallationVerificationFailed =
-      "dependency_installation_verification_failed"
-    case integrationFailed = "integration_failed"
-    case missingRequiredCapabilities = "missing_required_capabilities"
-    case ready
-    case unknownProfile = "unknown_profile"
-  }
-
-  case profile(
-    String,
-    installDependencies: Bool,
-    dryRun: Bool,
-    capabilities: [SetupCapability],
-    installPlan: HomebrewInstallPlan,
-    commandResults: [HomebrewCommandResult],
-    mutationAttempted: Bool,
-    installationFailure: SetupInstallationFailure?,
-    integrations: [SetupIntegrationResult]
-  )
-  case unknownProfile(String, installDependencies: Bool, dryRun: Bool)
-
-  var succeeded: Bool {
-    switch self {
-    case .profile(
-      _, _, _, let capabilities, _, _, _, let installationFailure, let integrations
-    ):
-      return installationFailure == nil
-        && !capabilities.contains { $0.required && $0.status == .missing }
-        && integrations.allSatisfy(\.succeeded)
-    case .unknownProfile:
-      return false
-    }
-  }
-
-  func render(json: Bool) throws -> String {
-    if json {
-      return try renderJSON(jsonReport)
-    }
-
-    switch self {
-    case .profile(
-      let name,
-      let installDependencies,
-      let dryRun,
-      let capabilities,
-      let installPlan,
-      let commandResults,
-      let mutationAttempted,
-      let installationFailure,
-      let integrations
-    ):
-      var lines = ["Macarchy setup profile '\(name)'\(dryRun ? " (dry run)" : ""):"]
-      for category in DependencyCapabilityCategory.allCases {
-        lines.append("\(category.title):")
-        lines.append(
-          contentsOf: capabilities.filter { $0.category == category }.map { capability in
-            "- \(capability.id) [\(capability.status.rawValue)]: \(capability.requirement)"
-          }
-        )
-      }
-      lines.append(installPlan.humanOutput)
-
-      if let installationFailure {
-        lines.append(
-          "Dependency installation \(installationFailure.kind.rawValue): \(installationFailure.message)"
-        )
-        if let capabilityIDs = installationFailure.capabilityIDs {
-          lines.append("- Capabilities: \(capabilityIDs.joined(separator: ", "))")
-        }
-      } else if !installDependencies {
-        lines.append("Dependency installation was not requested.")
-      } else if dryRun {
-        lines.append("Dependency installation was not run (dry run).")
-      } else if commandResults.isEmpty {
-        lines.append(
-          installPlan.external.isEmpty
-            ? "No dependency installation was needed."
-            : "Only external remediation remains; Homebrew was not run."
-        )
-      } else {
-        lines.append("Homebrew installation commands completed and were verified.")
-      }
-
-      lines.append("Integrations:")
-      lines.append(
-        contentsOf: integrations.map {
-          "- \($0.id) [\($0.status.rawValue)]: \($0.message)"
-        }
-      )
-
-      let summary = SetupSummary(capabilities: capabilities)
-      lines.append(
-        "Summary: \(summary.presentCount) present, \(summary.missingRequiredCount) missing "
-          + "required, \(summary.missingOptionalCount) missing optional."
-      )
-      lines.append(mutationAttempted ? "Setup mutation attempted." : "No changes made.")
-      return lines.joined(separator: "\n")
-    case .unknownProfile(let name, _, _):
-      return [
-        "Unknown dependency profile '\(name)'.",
-        "Available profiles: \(DependencyProfile.availableNames.joined(separator: ", ")).",
-        "No changes made.",
-      ].joined(separator: "\n")
-    }
-  }
-
-  private var jsonReport: SetupJSONReport {
-    switch self {
-    case .profile(
-      let name,
-      let installDependencies,
-      let dryRun,
-      let capabilities,
-      let installPlan,
-      let commandResults,
-      let mutationAttempted,
-      let installationFailure,
-      let integrations
-    ):
-      return SetupJSONReport(
-        outcome: outcome(
-          capabilities: capabilities,
-          installationFailure: installationFailure,
-          integrations: integrations
-        ),
-        profile: name,
-        dryRun: dryRun,
-        mutationAttempted: mutationAttempted,
-        capabilities: capabilities,
-        summary: SetupSummary(capabilities: capabilities),
-        dependencyInstallation: SetupInstallationReport(
-          requested: installDependencies,
-          plan: installPlan,
-          commands: commandResults,
-          failure: installationFailure
-        ),
-        integrations: integrations
-      )
-    case .unknownProfile(let name, let installDependencies, let dryRun):
-      return SetupJSONReport(
-        outcome: .unknownProfile,
-        profile: name,
-        dryRun: dryRun,
-        mutationAttempted: false,
-        availableProfiles: DependencyProfile.availableNames,
-        dependencyInstallation: SetupInstallationReport(
-          requested: installDependencies,
-          plan: HomebrewInstallPlan(capabilities: []),
-          commands: [],
-          failure: nil
-        ),
-        error: "Unknown dependency profile"
-      )
-    }
-  }
-
-  private func outcome(
-    capabilities: [SetupCapability],
-    installationFailure: SetupInstallationFailure?,
-    integrations: [SetupIntegrationResult]
-  ) -> Outcome {
-    switch installationFailure?.kind {
-    case .blockedPrerequisites:
-      return .dependencyInstallationBlocked
-    case .commandFailed:
-      return .dependencyInstallationFailed
-    case .verificationFailed:
-      return .dependencyInstallationVerificationFailed
-    case nil:
-      if capabilities.contains(where: { $0.required && $0.status == .missing }) {
-        return .missingRequiredCapabilities
-      }
-      return integrations.allSatisfy(\.succeeded) ? .ready : .integrationFailed
-    }
-  }
-}
-
-private struct SetupSummary: Encodable {
-  let presentCount: Int
-  let missingRequiredCount: Int
-  let missingOptionalCount: Int
-
-  init(capabilities: [SetupCapability]) {
-    presentCount = capabilities.count { $0.status == .present }
-    missingRequiredCount = capabilities.count { $0.required && $0.status == .missing }
-    missingOptionalCount = capabilities.count { !$0.required && $0.status == .missing }
-  }
-}
-
-private struct SetupInstallationReport: Encodable {
-  let requested: Bool
-  let plan: HomebrewInstallPlan
-  let commands: [HomebrewCommandResult]
-  let failure: SetupInstallationFailure?
-}
-
-private struct SetupJSONReport: Encodable {
-  let schemaVersion = 1
-  let operation = "setup"
-  let outcome: SetupReport.Outcome
-  let profile: String
-  let dryRun: Bool
-  let mutationAttempted: Bool
-  var capabilities: [SetupCapability]? = nil
-  var summary: SetupSummary? = nil
-  var availableProfiles: [String]? = nil
-  var dependencyInstallation: SetupInstallationReport
-  var integrations: [SetupIntegrationResult]? = nil
-  var error: String? = nil
-}
-
-private struct SetupPreMutationPlanJSON: Encodable {
-  let schemaVersion = 1
-  let operation = "setup_dependency_installation_plan"
-  let profile: String
-  let plan: HomebrewInstallPlan
 }

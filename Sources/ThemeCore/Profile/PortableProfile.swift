@@ -156,27 +156,121 @@ package struct PortableProfile: Equatable, Sendable {
   )
 }
 
+package enum PortableProfileLayerKind: String, Sendable {
+  case portable
+  case machine
+}
+
+package struct PortableProfileLayer: Equatable, Sendable {
+  package let kind: PortableProfileLayerKind
+  package let sourceURL: URL
+  package let present: Bool
+  package let declaredFields: [String]
+}
+
+package struct LayeredPortableProfile: Equatable, Sendable {
+  package let profile: PortableProfile
+  package let layers: [PortableProfileLayer]
+  package let fieldOrigins: [String: PortableProfileLayerKind]
+}
+
 package struct PortableProfileLoader: Sendable {
   package init() {}
 
-  package func load(at source: URL, required: Bool) throws -> PortableProfile {
-    var metadata = stat()
-    guard lstat(source.path, &metadata) == 0 else {
-      if errno == ENOENT, !required { return .defaults }
-      throw KeybindingProfileError.cannotRead(source, Self.systemError(errno))
-    }
+  private static let allowedTables = Set([
+    "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
+    "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
+    "editor", "neovim", "tools", "presets", "btop", "yazi",
+  ])
 
-    let resolved = source.resolvingSymlinksInPath().standardizedFileURL
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(at: resolved, maximumSize: 65_536).data
-    } catch {
-      throw KeybindingProfileError.cannotRead(source, String(describing: error))
+  private static let allowedFields = Set([
+    "schema_version",
+    "keybindings.override",
+    "keybindings.metadata",
+    "keybindings.disabled",
+    "desktop.provider",
+    "yabai.layout",
+    "yabai.split_ratio",
+    "yabai.top_padding",
+    "yabai.bottom_padding",
+    "yabai.left_padding",
+    "yabai.right_padding",
+    "yabai.window_gap",
+    "yabai.mouse_follows_focus",
+    "yabai.hook",
+    "top_bar.provider",
+    "sketchybar.left",
+    "sketchybar.center",
+    "sketchybar.right",
+    "sketchybar.hook",
+    "terminal.provider",
+    "kitty.font_family",
+    "kitty.font_size",
+    "kitty.background_opacity",
+    "kitty.background_blur",
+    "kitty.override",
+    "shell.provider",
+    "zsh.editor",
+    "zsh.hook",
+    "prompt.provider",
+    "starship.behavior",
+    "history.provider",
+    "atuin.search_mode",
+    "atuin.keymap_mode",
+    "atuin.enter_accept",
+    "atuin.daemon",
+    "atuin.configuration",
+    "editor.provider",
+    "neovim.configuration",
+    "tools.bat",
+    "tools.eza",
+    "tools.btop",
+    "tools.yazi",
+    "presets.codex",
+    "presets.herdr",
+    "presets.pi",
+    "presets.slack",
+    "presets.spicetify",
+    "presets.tuicr",
+    "btop.vim_keys",
+    "yazi.show_hidden",
+  ])
+
+  package func load(at source: URL, required: Bool) throws -> PortableProfile {
+    guard let loaded = try read(at: source, required: required) else { return .defaults }
+    return try decode(loaded.text, source: source, resolvedSource: loaded.resolvedSource)
+  }
+
+  package func load(
+    portableAt portableURL: URL,
+    portableRequired: Bool,
+    machineAt machineURL: URL,
+    machineRequired: Bool
+  ) throws -> LayeredPortableProfile {
+    let portable = try loadLayer(
+      at: portableURL,
+      kind: .portable,
+      required: portableRequired
+    )
+    let machine = try loadLayer(
+      at: machineURL,
+      kind: .machine,
+      required: machineRequired
+    )
+    let merged = try merge(portable: portable, machine: machine)
+    var origins: [String: PortableProfileLayerKind] = Dictionary(
+      uniqueKeysWithValues: portable.summary.declaredFields.map {
+        ($0, PortableProfileLayerKind.portable)
+      }
+    )
+    for field in machine.summary.declaredFields {
+      origins[field] = .machine
     }
-    guard let text = String(data: data, encoding: .utf8) else {
-      throw KeybindingProfileError.invalid(source, "profile is not valid UTF-8")
-    }
-    return try decode(text, source: source, resolvedSource: resolved)
+    return LayeredPortableProfile(
+      profile: merged,
+      layers: [portable.summary, machine.summary],
+      fieldOrigins: origins
+    )
   }
 
   package func decode(
@@ -184,84 +278,25 @@ package struct PortableProfileLoader: Sendable {
     source: URL,
     resolvedSource: URL? = nil
   ) throws -> PortableProfile {
-    let index: TOMLSourceIndex
-    do {
-      index = try TOMLSourceIndex(
-        text: text,
-        file: source,
-        syntaxRole: "Macarchy profile"
-      )
-    } catch {
-      throw KeybindingProfileError.invalid(source, String(describing: error))
-    }
+    let index = try sourceIndex(text, source: source)
+    return try decode(text, source: source, resolvedSource: resolvedSource, index: index)
+  }
 
-    let allowedTables = Set([
-      "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
-      "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
-      "editor", "neovim",
-      "tools", "presets", "btop", "yazi",
-    ])
+  private func decode(
+    _ text: String,
+    source: URL,
+    resolvedSource: URL?,
+    index: TOMLSourceIndex
+  ) throws -> PortableProfile {
     if let table = index.tables.first(where: {
-      !allowedTables.contains($0.path) || $0.isArray
+      !Self.allowedTables.contains($0.path) || $0.isArray
     }) {
       throw KeybindingProfileError.invalid(
         source,
         "line \(table.line), column \(table.column): unknown table '\(table.path)'"
       )
     }
-    let allowedFields = Set([
-      "schema_version",
-      "keybindings.override",
-      "keybindings.metadata",
-      "keybindings.disabled",
-      "desktop.provider",
-      "yabai.layout",
-      "yabai.split_ratio",
-      "yabai.top_padding",
-      "yabai.bottom_padding",
-      "yabai.left_padding",
-      "yabai.right_padding",
-      "yabai.window_gap",
-      "yabai.mouse_follows_focus",
-      "yabai.hook",
-      "top_bar.provider",
-      "sketchybar.left",
-      "sketchybar.center",
-      "sketchybar.right",
-      "sketchybar.hook",
-      "terminal.provider",
-      "kitty.font_family",
-      "kitty.font_size",
-      "kitty.background_opacity",
-      "kitty.background_blur",
-      "kitty.override",
-      "shell.provider",
-      "zsh.editor",
-      "zsh.hook",
-      "prompt.provider",
-      "starship.behavior",
-      "history.provider",
-      "atuin.search_mode",
-      "atuin.keymap_mode",
-      "atuin.enter_accept",
-      "atuin.daemon",
-      "atuin.configuration",
-      "editor.provider",
-      "neovim.configuration",
-      "tools.bat",
-      "tools.eza",
-      "tools.btop",
-      "tools.yazi",
-      "presets.codex",
-      "presets.herdr",
-      "presets.pi",
-      "presets.slack",
-      "presets.spicetify",
-      "presets.tuicr",
-      "btop.vim_keys",
-      "yazi.show_hidden",
-    ])
-    if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
+    if let field = index.fields.first(where: { !Self.allowedFields.contains($0.path) }) {
       throw KeybindingProfileError.invalid(
         source,
         "line \(field.line), column \(field.column): unknown key '\(field.path)'"
@@ -296,7 +331,12 @@ package struct PortableProfileLoader: Sendable {
     )
     let topBar = try topBar(document.topBar, source: sourceURL)
     let sketchyBar = try sketchyBar(document.sketchyBar, source: sourceURL, base: base)
-    let environment = try environment(document, source: sourceURL, base: base)
+    let environment = try environment(
+      document,
+      declaredTables: Set(index.tables.map(\.path)),
+      source: sourceURL,
+      base: base
+    )
     return PortableProfile(
       sourceURL: sourceURL,
       keybindings: keybindings,
@@ -456,6 +496,7 @@ package struct PortableProfileLoader: Sendable {
 
   private func environment(
     _ document: PortableProfileDocument,
+    declaredTables: Set<String>,
     source: URL,
     base: URL
   ) throws -> EnvironmentProfile {
@@ -465,13 +506,6 @@ package struct PortableProfileLoader: Sendable {
       field: "terminal.provider",
       source: source
     )
-    if terminal == .disabled, document.kitty != nil {
-      throw KeybindingProfileError.invalid(
-        source,
-        "[kitty] cannot customize a disabled terminal provider"
-      )
-    }
-
     let shell = try selection(
       document.shell?.provider ?? ShellProviderSelection.zsh.rawValue,
       as: ShellProviderSelection.self,
@@ -490,29 +524,28 @@ package struct PortableProfileLoader: Sendable {
       field: "history.provider",
       source: source
     )
-    let hasShellCustomization =
-      document.zsh != nil || document.starship != nil || document.atuin != nil
-      || declaredPrompt != .disabled && document.prompt != nil
-      || declaredHistory != .disabled && document.history != nil
-    if shell == .disabled, hasShellCustomization {
-      throw KeybindingProfileError.invalid(
-        source,
-        "zsh, prompt, and history customization requires shell.provider = \"zsh\""
-      )
-    }
-    if declaredPrompt == .disabled, document.starship != nil {
-      throw KeybindingProfileError.invalid(
-        source,
-        "[starship] cannot customize a disabled prompt provider"
-      )
-    }
-    if declaredHistory == .disabled, document.atuin != nil {
-      throw KeybindingProfileError.invalid(
-        source,
-        "[atuin] cannot customize a disabled history provider"
-      )
-    }
-
+    let editor = try selection(
+      document.editor?.provider ?? EditorProviderSelection.neovim.rawValue,
+      as: EditorProviderSelection.self,
+      field: "editor.provider",
+      source: source
+    )
+    let tools = DailyToolsProfile(
+      bat: document.tools?.bat ?? true,
+      eza: document.tools?.eza ?? true,
+      btop: document.tools?.btop ?? true,
+      yazi: document.tools?.yazi ?? true
+    )
+    try validateEnvironment(
+      terminal: terminal,
+      shell: shell,
+      prompt: declaredPrompt,
+      history: declaredHistory,
+      editor: editor,
+      tools: tools,
+      declaredTables: declaredTables,
+      source: source
+    )
     let kitty = try kitty(document.kitty, source: source, base: base)
     let zsh = try zsh(document.zsh, source: source, base: base)
     let starship = StarshipProfileOptions(
@@ -526,18 +559,6 @@ package struct PortableProfileLoader: Sendable {
       }
     )
     let atuin = try atuin(document.atuin, source: source, base: base)
-    let editor = try selection(
-      document.editor?.provider ?? EditorProviderSelection.neovim.rawValue,
-      as: EditorProviderSelection.self,
-      field: "editor.provider",
-      source: source
-    )
-    if editor == .disabled, document.neovim != nil {
-      throw KeybindingProfileError.invalid(
-        source,
-        "[neovim] cannot customize a disabled editor provider"
-      )
-    }
     let neovim = NeovimProfileOptions(
       configurationDirectoryURL: try document.neovim?.configuration.map {
         try Self.resolvePortablePath(
@@ -548,24 +569,6 @@ package struct PortableProfileLoader: Sendable {
         )
       }
     )
-    let tools = DailyToolsProfile(
-      bat: document.tools?.bat ?? true,
-      eza: document.tools?.eza ?? true,
-      btop: document.tools?.btop ?? true,
-      yazi: document.tools?.yazi ?? true
-    )
-    if !tools.btop, document.btop != nil {
-      throw KeybindingProfileError.invalid(
-        source,
-        "[btop] cannot customize a disabled daily tool"
-      )
-    }
-    if !tools.yazi, document.yazi != nil {
-      throw KeybindingProfileError.invalid(
-        source,
-        "[yazi] cannot customize a disabled daily tool"
-      )
-    }
     return EnvironmentProfile(
       terminal: terminal,
       shell: shell,
@@ -744,6 +747,429 @@ package struct PortableProfileLoader: Sendable {
 
   private static func systemError(_ code: Int32) -> String {
     "\(String(cString: strerror(code))) (errno \(code))"
+  }
+
+  private struct LoadedSource {
+    let text: String
+    let resolvedSource: URL
+  }
+
+  private struct LoadedLayer {
+    let summary: PortableProfileLayer
+    let profile: PortableProfile
+    let declaredTables: Set<String>
+  }
+
+  private func read(at source: URL, required: Bool) throws -> LoadedSource? {
+    var metadata = stat()
+    guard lstat(source.path, &metadata) == 0 else {
+      if errno == ENOENT, !required { return nil }
+      throw KeybindingProfileError.cannotRead(source, Self.systemError(errno))
+    }
+
+    let resolved = source.resolvingSymlinksInPath().standardizedFileURL
+    let data: Data
+    do {
+      data = try BoundedRegularFile.read(at: resolved, maximumSize: 65_536).data
+    } catch {
+      throw KeybindingProfileError.cannotRead(source, String(describing: error))
+    }
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw KeybindingProfileError.invalid(source, "profile is not valid UTF-8")
+    }
+    return LoadedSource(text: text, resolvedSource: resolved)
+  }
+
+  private func sourceIndex(_ text: String, source: URL) throws -> TOMLSourceIndex {
+    do {
+      return try TOMLSourceIndex(
+        text: text,
+        file: source,
+        syntaxRole: "Macarchy profile"
+      )
+    } catch {
+      throw KeybindingProfileError.invalid(source, String(describing: error))
+    }
+  }
+
+  private func loadLayer(
+    at source: URL,
+    kind: PortableProfileLayerKind,
+    required: Bool
+  ) throws -> LoadedLayer {
+    guard let loaded = try read(at: source, required: required) else {
+      return LoadedLayer(
+        summary: PortableProfileLayer(
+          kind: kind,
+          sourceURL: source.standardizedFileURL,
+          present: false,
+          declaredFields: []
+        ),
+        profile: .defaults,
+        declaredTables: []
+      )
+    }
+    let index = try sourceIndex(loaded.text, source: source)
+    let profile = try decode(
+      loaded.text,
+      source: source,
+      resolvedSource: loaded.resolvedSource,
+      index: index
+    )
+    return LoadedLayer(
+      summary: PortableProfileLayer(
+        kind: kind,
+        sourceURL: source.standardizedFileURL,
+        present: true,
+        declaredFields: index.fields.map(\.path).filter { $0 != "schema_version" }.sorted()
+      ),
+      profile: profile,
+      declaredTables: Set(index.tables.map(\.path))
+    )
+  }
+
+  private func merge(
+    portable: LoadedLayer,
+    machine: LoadedLayer
+  ) throws -> PortableProfile {
+    let machineFields = Set(machine.summary.declaredFields)
+    let portableFields = Set(portable.summary.declaredFields)
+    func value<T>(_ field: String, _ portableValue: T, _ machineValue: T) -> T {
+      machineFields.contains(field) ? machineValue : portableValue
+    }
+    func declaredValue<T>(
+      _ field: String,
+      _ portableValue: T,
+      _ machineValue: T,
+      default defaultValue: T
+    ) -> T {
+      if machineFields.contains(field) { return machineValue }
+      if portableFields.contains(field) { return portableValue }
+      return defaultValue
+    }
+
+    let portableProfile = portable.profile
+    let machineProfile = machine.profile
+    let sourceURL =
+      machine.summary.present
+      ? machine.summary.sourceURL
+      : portableProfile.sourceURL
+    let keybindingSourceURL =
+      machineFields.contains { $0.hasPrefix("keybindings.") }
+      ? machine.summary.sourceURL
+      : portableProfile.keybindings.sourceURL
+    let keybindings = KeybindingProfile(
+      sourceURL: keybindingSourceURL,
+      overrideURL: value(
+        "keybindings.override",
+        portableProfile.keybindings.overrideURL,
+        machineProfile.keybindings.overrideURL
+      ),
+      metadataURL: value(
+        "keybindings.metadata",
+        portableProfile.keybindings.metadataURL,
+        machineProfile.keybindings.metadataURL
+      ),
+      disabledIdentities: value(
+        "keybindings.disabled",
+        portableProfile.keybindings.disabledIdentities,
+        machineProfile.keybindings.disabledIdentities
+      )
+    )
+    let yabai = YabaiProfileOptions(
+      layout: value(
+        "yabai.layout", portableProfile.desktop.yabai.layout, machineProfile.desktop.yabai.layout),
+      splitRatio: value(
+        "yabai.split_ratio",
+        portableProfile.desktop.yabai.splitRatio,
+        machineProfile.desktop.yabai.splitRatio
+      ),
+      topPadding: value(
+        "yabai.top_padding",
+        portableProfile.desktop.yabai.topPadding,
+        machineProfile.desktop.yabai.topPadding
+      ),
+      bottomPadding: value(
+        "yabai.bottom_padding",
+        portableProfile.desktop.yabai.bottomPadding,
+        machineProfile.desktop.yabai.bottomPadding
+      ),
+      leftPadding: value(
+        "yabai.left_padding",
+        portableProfile.desktop.yabai.leftPadding,
+        machineProfile.desktop.yabai.leftPadding
+      ),
+      rightPadding: value(
+        "yabai.right_padding",
+        portableProfile.desktop.yabai.rightPadding,
+        machineProfile.desktop.yabai.rightPadding
+      ),
+      windowGap: value(
+        "yabai.window_gap",
+        portableProfile.desktop.yabai.windowGap,
+        machineProfile.desktop.yabai.windowGap
+      ),
+      mouseFollowsFocus: value(
+        "yabai.mouse_follows_focus",
+        portableProfile.desktop.yabai.mouseFollowsFocus,
+        machineProfile.desktop.yabai.mouseFollowsFocus
+      ),
+      hookURL: value(
+        "yabai.hook", portableProfile.desktop.yabai.hookURL, machineProfile.desktop.yabai.hookURL)
+    )
+    let sketchyBarHookFromMachine = machineFields.contains("sketchybar.hook")
+    let sketchyBar = SketchyBarProfileOptions(
+      left: value(
+        "sketchybar.left", portableProfile.sketchyBar.left, machineProfile.sketchyBar.left),
+      center: value(
+        "sketchybar.center", portableProfile.sketchyBar.center, machineProfile.sketchyBar.center),
+      right: value(
+        "sketchybar.right", portableProfile.sketchyBar.right, machineProfile.sketchyBar.right),
+      hookURL: value(
+        "sketchybar.hook",
+        portableProfile.sketchyBar.hookURL,
+        machineProfile.sketchyBar.hookURL
+      ),
+      hookRootURL: sketchyBarHookFromMachine
+        ? machineProfile.sketchyBar.hookRootURL
+        : portableProfile.sketchyBar.hookRootURL
+    )
+
+    let declaredPrompt = declaredValue(
+      "prompt.provider",
+      portableProfile.environment.prompt,
+      machineProfile.environment.prompt,
+      default: PortableProfile.defaults.environment.prompt
+    )
+    let declaredHistory = declaredValue(
+      "history.provider",
+      portableProfile.environment.history,
+      machineProfile.environment.history,
+      default: PortableProfile.defaults.environment.history
+    )
+    let shell = value(
+      "shell.provider",
+      portableProfile.environment.shell,
+      machineProfile.environment.shell
+    )
+    let tools = DailyToolsProfile(
+      bat: value(
+        "tools.bat", portableProfile.environment.tools.bat, machineProfile.environment.tools.bat),
+      eza: value(
+        "tools.eza", portableProfile.environment.tools.eza, machineProfile.environment.tools.eza),
+      btop: value(
+        "tools.btop", portableProfile.environment.tools.btop, machineProfile.environment.tools.btop),
+      yazi: value(
+        "tools.yazi", portableProfile.environment.tools.yazi, machineProfile.environment.tools.yazi)
+    )
+    let terminal = value(
+      "terminal.provider",
+      portableProfile.environment.terminal,
+      machineProfile.environment.terminal
+    )
+    let editor = value(
+      "editor.provider",
+      portableProfile.environment.editor,
+      machineProfile.environment.editor
+    )
+    let declaredTables = portable.declaredTables.union(machine.declaredTables)
+    try validateEnvironment(
+      terminal: terminal,
+      shell: shell,
+      prompt: declaredPrompt,
+      history: declaredHistory,
+      editor: editor,
+      tools: tools,
+      declaredTables: declaredTables,
+      source: sourceURL ?? portable.summary.sourceURL
+    )
+    let environment = EnvironmentProfile(
+      terminal: terminal,
+      shell: shell,
+      prompt: shell == .disabled ? .disabled : declaredPrompt,
+      history: shell == .disabled ? .disabled : declaredHistory,
+      editor: editor,
+      kitty: KittyProfileOptions(
+        fontFamily: value(
+          "kitty.font_family",
+          portableProfile.environment.kitty.fontFamily,
+          machineProfile.environment.kitty.fontFamily
+        ),
+        fontSize: value(
+          "kitty.font_size",
+          portableProfile.environment.kitty.fontSize,
+          machineProfile.environment.kitty.fontSize
+        ),
+        backgroundOpacity: value(
+          "kitty.background_opacity",
+          portableProfile.environment.kitty.backgroundOpacity,
+          machineProfile.environment.kitty.backgroundOpacity
+        ),
+        backgroundBlur: value(
+          "kitty.background_blur",
+          portableProfile.environment.kitty.backgroundBlur,
+          machineProfile.environment.kitty.backgroundBlur
+        ),
+        overrideDirectoryURL: value(
+          "kitty.override",
+          portableProfile.environment.kitty.overrideDirectoryURL,
+          machineProfile.environment.kitty.overrideDirectoryURL
+        )
+      ),
+      zsh: ZshProfileOptions(
+        editor: value(
+          "zsh.editor", portableProfile.environment.zsh.editor,
+          machineProfile.environment.zsh.editor),
+        hookURL: value(
+          "zsh.hook", portableProfile.environment.zsh.hookURL,
+          machineProfile.environment.zsh.hookURL)
+      ),
+      starship: StarshipProfileOptions(
+        behaviorURL: value(
+          "starship.behavior",
+          portableProfile.environment.starship.behaviorURL,
+          machineProfile.environment.starship.behaviorURL
+        )
+      ),
+      atuin: AtuinProfileOptions(
+        searchMode: value(
+          "atuin.search_mode",
+          portableProfile.environment.atuin.searchMode,
+          machineProfile.environment.atuin.searchMode
+        ),
+        keymapMode: value(
+          "atuin.keymap_mode",
+          portableProfile.environment.atuin.keymapMode,
+          machineProfile.environment.atuin.keymapMode
+        ),
+        enterAccept: value(
+          "atuin.enter_accept",
+          portableProfile.environment.atuin.enterAccept,
+          machineProfile.environment.atuin.enterAccept
+        ),
+        daemon: value(
+          "atuin.daemon",
+          portableProfile.environment.atuin.daemon,
+          machineProfile.environment.atuin.daemon
+        ),
+        configurationURL: value(
+          "atuin.configuration",
+          portableProfile.environment.atuin.configurationURL,
+          machineProfile.environment.atuin.configurationURL
+        )
+      ),
+      neovim: NeovimProfileOptions(
+        configurationDirectoryURL: value(
+          "neovim.configuration",
+          portableProfile.environment.neovim.configurationDirectoryURL,
+          machineProfile.environment.neovim.configurationDirectoryURL
+        )
+      ),
+      tools: tools,
+      presets: PresetsProfile(
+        codex: value(
+          "presets.codex", portableProfile.environment.presets.codex,
+          machineProfile.environment.presets.codex),
+        herdr: value(
+          "presets.herdr", portableProfile.environment.presets.herdr,
+          machineProfile.environment.presets.herdr),
+        pi: value(
+          "presets.pi", portableProfile.environment.presets.pi,
+          machineProfile.environment.presets.pi),
+        slack: value(
+          "presets.slack", portableProfile.environment.presets.slack,
+          machineProfile.environment.presets.slack),
+        spicetify: value(
+          "presets.spicetify",
+          portableProfile.environment.presets.spicetify,
+          machineProfile.environment.presets.spicetify
+        ),
+        tuicr: value(
+          "presets.tuicr", portableProfile.environment.presets.tuicr,
+          machineProfile.environment.presets.tuicr)
+      ),
+      btop: BtopProfileOptions(
+        vimKeys: value(
+          "btop.vim_keys",
+          portableProfile.environment.btop.vimKeys,
+          machineProfile.environment.btop.vimKeys
+        )
+      ),
+      yazi: YaziProfileOptions(
+        showHidden: value(
+          "yazi.show_hidden",
+          portableProfile.environment.yazi.showHidden,
+          machineProfile.environment.yazi.showHidden
+        )
+      )
+    )
+    let result = PortableProfile(
+      sourceURL: sourceURL,
+      keybindings: keybindings,
+      desktop: DesktopProfile(
+        provider: value(
+          "desktop.provider", portableProfile.desktop.provider, machineProfile.desktop.provider),
+        yabai: yabai
+      ),
+      topBar: value("top_bar.provider", portableProfile.topBar, machineProfile.topBar),
+      sketchyBar: sketchyBar,
+      environment: environment
+    )
+    return result
+  }
+
+  private func validateEnvironment(
+    terminal: TerminalProviderSelection,
+    shell: ShellProviderSelection,
+    prompt: PromptProviderSelection,
+    history: HistoryProviderSelection,
+    editor: EditorProviderSelection,
+    tools: DailyToolsProfile,
+    declaredTables: Set<String>,
+    source: URL
+  ) throws {
+    if terminal == .disabled, declaredTables.contains("kitty") {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[kitty] cannot customize a disabled terminal provider"
+      )
+    }
+    let hasShellCustomization =
+      declaredTables.contains("zsh")
+      || declaredTables.contains("starship")
+      || declaredTables.contains("atuin")
+      || prompt != .disabled && declaredTables.contains("prompt")
+      || history != .disabled && declaredTables.contains("history")
+    if shell == .disabled, hasShellCustomization {
+      throw KeybindingProfileError.invalid(
+        source,
+        "zsh, prompt, and history customization requires shell.provider = \"zsh\""
+      )
+    }
+    if prompt == .disabled, declaredTables.contains("starship") {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[starship] cannot customize a disabled prompt provider"
+      )
+    }
+    if history == .disabled, declaredTables.contains("atuin") {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[atuin] cannot customize a disabled history provider"
+      )
+    }
+    if editor == .disabled, declaredTables.contains("neovim") {
+      throw KeybindingProfileError.invalid(
+        source,
+        "[neovim] cannot customize a disabled editor provider"
+      )
+    }
+    if !tools.btop, declaredTables.contains("btop") {
+      throw KeybindingProfileError.invalid(source, "[btop] cannot customize a disabled daily tool")
+    }
+    if !tools.yazi, declaredTables.contains("yazi") {
+      throw KeybindingProfileError.invalid(source, "[yazi] cannot customize a disabled daily tool")
+    }
   }
 }
 

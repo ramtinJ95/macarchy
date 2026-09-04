@@ -35,7 +35,9 @@ struct KeybindingsPlanCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     ignoreTransaction: Bool = false,
-    effectiveBehavior suppliedBehavior: KeybindingEffectiveBehavior? = nil
+    effectiveBehavior suppliedBehavior: KeybindingEffectiveBehavior? = nil,
+    profile: PortableProfile? = nil,
+    requireRunningProcess: Bool = true
   ) throws -> KeybindingsPlanPreparation {
     let effectiveState =
       suppliedBehavior
@@ -45,7 +47,8 @@ struct KeybindingsPlanCommandRunner: Sendable {
         profileRequired: profileRequired,
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
-        ignoreTransaction: ignoreTransaction
+        ignoreTransaction: ignoreTransaction,
+        profile: profile
       )
     let effectiveConfiguration = effectiveState.configuration
     let generation = effectiveState.generation
@@ -97,7 +100,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
         )
       )
     }
-    if provider.status != .blocked {
+    if requireRunningProcess, provider.status != .blocked {
       switch effectiveState.process.status {
       case .running:
         break

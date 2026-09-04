@@ -71,12 +71,14 @@ package struct KeybindingEffectiveStateInspector: Sendable {
     resourcesRoot: URL,
     profileURL: URL,
     profileRequired: Bool,
-    stateRoot: URL
+    stateRoot: URL,
+    profile suppliedProfile: KeybindingProfile? = nil
   ) -> KeybindingEffectiveState {
     let configuration = loadConfiguration(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
-      profileRequired: profileRequired
+      profileRequired: profileRequired,
+      profile: suppliedProfile
     )
     let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
     return KeybindingEffectiveState(
@@ -89,7 +91,8 @@ package struct KeybindingEffectiveStateInspector: Sendable {
   package func loadConfiguration(
     resourcesRoot: URL,
     profileURL: URL,
-    profileRequired: Bool
+    profileRequired: Bool,
+    profile suppliedProfile: KeybindingProfile? = nil
   ) -> KeybindingEffectiveConfiguration {
     let defaultsURL = resourcesRoot.appending(path: "defaults.skhdrc")
     let defaultMetadataURL = resourcesRoot.appending(path: "metadata.toml")
@@ -109,17 +112,21 @@ package struct KeybindingEffectiveStateInspector: Sendable {
     )
 
     let profile: KeybindingProfile?
-    do {
-      profile = try KeybindingProfileLoader().load(at: profileURL, required: profileRequired)
-    } catch {
-      profile = nil
-      diagnostics.append(
-        diagnostic(
-          code: "profile_invalid",
-          source: profileURL,
-          message: String(describing: error)
+    if let suppliedProfile {
+      profile = suppliedProfile
+    } else {
+      do {
+        profile = try KeybindingProfileLoader().load(at: profileURL, required: profileRequired)
+      } catch {
+        profile = nil
+        diagnostics.append(
+          diagnostic(
+            code: "profile_invalid",
+            source: profileURL,
+            message: String(describing: error)
+          )
         )
-      )
+      }
     }
 
     var overrideText: String?

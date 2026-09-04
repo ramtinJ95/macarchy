@@ -25,26 +25,8 @@ struct EnvironmentPrerequisiteInspector: Sendable {
 
   static let live = Self(
     { profile, homeDirectory in
-      guard !profile.isEntirelyDisabled else { return [] }
-      let selected = Set(
-        ["macos-26", "arm64"]
-          + (profile.terminal == .kitty ? ["kitty"] : [])
-          + (profile.prompt == .starship ? ["starship"] : [])
-          + (profile.history == .atuin ? ["atuin"] : [])
-          + (profile.editor == .neovim ? ["neovim"] : [])
-          + (profile.presets.codex ? ["codex"] : [])
-          + (profile.presets.herdr ? ["herdr"] : [])
-          + (profile.presets.pi ? ["pi"] : [])
-          + (profile.presets.slack ? ["slack"] : [])
-          + (profile.presets.spicetify ? ["spicetify", "spotify"] : [])
-          + (profile.presets.tuicr ? ["tuicr"] : [])
-          + (profile.tools.bat ? ["bat"] : [])
-          + (profile.tools.eza ? ["eza"] : [])
-          + (profile.tools.btop ? ["btop"] : [])
-          + (profile.tools.yazi ? ["yazi"] : [])
-      )
-      var results = DependencyProfile.personal(homeDirectory: homeDirectory).capabilities
-        .filter { selected.contains($0.id) }
+      var results = DependencyProfile.personal(homeDirectory: homeDirectory)
+        .selectedForEnvironment(profile)
         .map {
           EnvironmentPrerequisiteStatus(
             id: $0.id,

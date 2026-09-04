@@ -356,6 +356,158 @@ struct KeybindingProfileTests {
     }
   }
 
+  @Test
+  func machineProfileOverlaysFieldsAndResolvesItsPathsBesideItself() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portableDirectory = root.appending(path: "portable", directoryHint: .isDirectory)
+    let machineDirectory = root.appending(path: "machine", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: portableDirectory,
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: machineDirectory,
+      withIntermediateDirectories: true
+    )
+    let portable = portableDirectory.appending(path: "profile.toml")
+    let machine = machineDirectory.appending(path: "machine.toml")
+    try """
+    schema_version = 1
+    [keybindings]
+    override = "portable.skhdrc"
+    disabled = ["alt-k"]
+    [kitty]
+    font_family = "Portable Font"
+    font_size = 13
+    [zsh]
+    hook = "portable.zsh"
+    [tools]
+    bat = false
+    """.write(to: portable, atomically: true, encoding: .utf8)
+    try """
+    schema_version = 1
+    [keybindings]
+    disabled = []
+    [kitty]
+    font_size = 15
+    override = "kitty"
+    [zsh]
+    editor = "nvim"
+    [tools]
+    bat = true
+    """.write(to: machine, atomically: true, encoding: .utf8)
+
+    let layered = try PortableProfileLoader().load(
+      portableAt: portable,
+      portableRequired: true,
+      machineAt: machine,
+      machineRequired: true
+    )
+    let profile = layered.profile
+
+    #expect(profile.keybindings.disabledIdentities.isEmpty)
+    #expect(
+      profile.keybindings.overrideURL == portableDirectory.appending(path: "portable.skhdrc")
+    )
+    #expect(profile.environment.kitty.fontFamily == "Portable Font")
+    #expect(profile.environment.kitty.fontSize == 15)
+    #expect(
+      profile.environment.kitty.overrideDirectoryURL
+        == machineDirectory.appending(path: "kitty")
+    )
+    #expect(profile.environment.zsh.hookURL == portableDirectory.appending(path: "portable.zsh"))
+    #expect(profile.environment.zsh.editor == "nvim")
+    #expect(profile.environment.tools.bat)
+    #expect(layered.layers.map(\.present) == [true, true])
+    #expect(layered.fieldOrigins["kitty.font_family"] == .portable)
+    #expect(layered.fieldOrigins["kitty.font_size"] == .machine)
+    #expect(layered.fieldOrigins["keybindings.disabled"] == .machine)
+  }
+
+  @Test
+  func layeredProfileRejectsAnEffectiveCrossLayerContradiction() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portable = root.appending(path: "profile.toml")
+    let machine = root.appending(path: "machine.toml")
+    try "schema_version = 1\n[kitty]\nfont_size = 13\n".write(
+      to: portable,
+      atomically: true,
+      encoding: .utf8
+    )
+    try "schema_version = 1\n[terminal]\nprovider = \"disabled\"\n".write(
+      to: machine,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    #expect(throws: KeybindingProfileError.self) {
+      _ = try PortableProfileLoader().load(
+        portableAt: portable,
+        portableRequired: true,
+        machineAt: machine,
+        machineRequired: true
+      )
+    }
+  }
+
+  @Test
+  func machineReenablingShellRestoresUndeclaredPromptAndHistoryDefaults() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portable = root.appending(path: "profile.toml")
+    let machine = root.appending(path: "machine.toml")
+    try "schema_version = 1\n[shell]\nprovider = \"disabled\"\n".write(
+      to: portable,
+      atomically: true,
+      encoding: .utf8
+    )
+    try "schema_version = 1\n[shell]\nprovider = \"zsh\"\n".write(
+      to: machine,
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let layered = try PortableProfileLoader().load(
+      portableAt: portable,
+      portableRequired: true,
+      machineAt: machine,
+      machineRequired: true
+    )
+
+    #expect(layered.profile.environment.shell == .zsh)
+    #expect(layered.profile.environment.prompt == .starship)
+    #expect(layered.profile.environment.history == .atuin)
+    #expect(layered.profile.keybindings.sourceURL == portable)
+  }
+
+  @Test
+  func absentOptionalLayersUseDefaultsButAnExplicitMissingMachineProfileFails() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portable = root.appending(path: "profile.toml")
+    let machine = root.appending(path: "machine.toml")
+    let layered = try PortableProfileLoader().load(
+      portableAt: portable,
+      portableRequired: false,
+      machineAt: machine,
+      machineRequired: false
+    )
+
+    #expect(layered.profile == .defaults)
+    #expect(layered.layers.map(\.present) == [false, false])
+    #expect(layered.fieldOrigins.isEmpty)
+    #expect(throws: KeybindingProfileError.self) {
+      _ = try PortableProfileLoader().load(
+        portableAt: portable,
+        portableRequired: false,
+        machineAt: machine,
+        machineRequired: true
+      )
+    }
+  }
+
   private func temporaryDirectory() throws -> URL {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-keybinding-profile-tests-\(UUID().uuidString)",

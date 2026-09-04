@@ -94,26 +94,21 @@ struct SetupOwnershipTests {
       withDestinationURL: externalBat
     )
 
-    let execution = try setupRunner(ownershipManager: SetupOwnershipManager()).execute(
-      profileName: "personal",
-      homeDirectory: fixture.home,
-      installDependencies: false,
-      dryRun: false,
-      json: true
-    )
-    let report = try decode(SetupReport.self, execution.output)
-
-    #expect(!execution.succeeded)
-    #expect(report.outcome == "integration_failed")
-    expectStatuses(report.integrations, ["bat.selector": "failed"])
-    #expect(report.integrations.first?.target == fixture.batConfiguration.path)
-    #expect(report.integrations.first?.mutationAttempted == false)
+    do {
+      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+      Issue.record("Expected the missing bat selector to block setup")
+    } catch {
+      let results = SetupOwnershipManager.failureResults(error, homeDirectory: fixture.home)
+      expectStatuses(results, ["bat.selector": .failed])
+      #expect(results.first?.target == fixture.batConfiguration.path)
+      #expect(results.first?.mutationAttempted == false)
+    }
     #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
   @Test
-  func setupReportsEarlierMutationWhenALaterThemeLinkConflicts() throws {
+  func setupPreservesEarlierMutationWhenALaterThemeLinkConflicts() throws {
     let fixture = try Fixture(configuration: "", externalBatEza: false)
     defer { fixture.remove() }
     try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
@@ -123,25 +118,16 @@ struct SetupOwnershipTests {
     )
     try Data("user-owned theme\n".utf8).write(to: fixture.batThemeLink)
 
-    let execution = try setupRunner(ownershipManager: SetupOwnershipManager()).execute(
-      profileName: "personal",
-      homeDirectory: fixture.home,
-      installDependencies: false,
-      dryRun: false,
-      json: true
-    )
-    let report = try decode(SetupReport.self, execution.output)
-
-    #expect(!execution.succeeded)
-    #expect(report.outcome == "integration_failed")
-    #expect(report.mutationAttempted)
-    expectStatuses(
-      report.integrations,
-      ["kitty.include": "external", "bat.selector": "owned", "bat.theme-link": "failed"]
-    )
-    #expect(report.integrations.first { $0.id == "kitty.include" }?.mutationAttempted == false)
-    #expect(report.integrations.first { $0.id == "bat.selector" }?.mutationAttempted == true)
-    #expect(report.integrations.first { $0.id == "bat.theme-link" }?.mutationAttempted == false)
+    do {
+      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+      Issue.record("Expected the conflicting bat theme link to block setup")
+    } catch {
+      let results = SetupOwnershipManager.failureResults(error, homeDirectory: fixture.home)
+      expectStatuses(
+        results,
+        ["kitty.include": .external, "bat.selector": .owned, "bat.theme-link": .failed]
+      )
+    }
     #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
     #expect(try String(contentsOf: fixture.batThemeLink, encoding: .utf8) == "user-owned theme\n")
     #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
@@ -298,29 +284,15 @@ struct SetupOwnershipTests {
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
-    let setup = try setupRunner(ownershipManager: SetupOwnershipManager()).execute(
-      profileName: "personal",
-      homeDirectory: fixture.home,
-      installDependencies: false,
-      dryRun: false,
-      json: true
-    )
-    let setupReport = try decode(SetupReport.self, setup.output)
-    let setupJSON = try #require(
-      JSONSerialization.jsonObject(with: Data(setup.output.utf8)) as? [String: Any]
-    )
+    let setup = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
     let manifest = try decode(
       OwnershipManifest.self,
       String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
     )
 
-    #expect(setup.succeeded)
-    #expect(setupJSON["integration"] == nil)
-    #expect(setupReport.outcome == "ready")
-    #expect(setupReport.mutationAttempted)
-    var setupReportStatuses = externalFixtureStatuses.mapValues { $0.rawValue }
-    setupReportStatuses["kitty.include"] = "owned"
-    expectStatuses(setupReport.integrations, setupReportStatuses)
+    var setupStatuses = externalFixtureStatuses
+    setupStatuses["kitty.include"] = .owned
+    expectStatuses(setup, setupStatuses)
     #expect(manifest.schemaVersion == 1)
     #expect(manifest.records.map(\.phase) == ["applied"])
     #expect(try fixture.configuration() == "font_size 13\n\(fixture.includeDirective)\n")
@@ -401,19 +373,6 @@ struct SetupOwnershipTests {
         dryRun: false
       )
     }
-    let execution = try setupRunner(ownershipManager: SetupOwnershipManager()).execute(
-      profileName: "personal",
-      homeDirectory: fixture.home,
-      installDependencies: false,
-      dryRun: false,
-      json: true
-    )
-    let report = try decode(SetupReport.self, execution.output)
-    #expect(!execution.succeeded)
-    #expect(report.outcome == "integration_failed")
-    expectStatuses(report.integrations, ["kitty.include": "failed"])
-    #expect(report.integrations.first?.message == expected.description)
-    #expect(report.integrations.first?.mutationAttempted == false)
     #expect(try fixture.configuration() == "font_size 13\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
@@ -467,21 +426,6 @@ struct SetupOwnershipTests {
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
-  private func setupRunner(ownershipManager: SetupOwnershipManager) -> SetupCommandRunner {
-    SetupCommandRunner(
-      resolveProfile: DependencyProfile.named,
-      capabilityIsAvailable: { _ in true },
-      processRunner: ProcessRunner { _ in
-        Issue.record("Homebrew must not run")
-        return ProcessResult(terminationStatus: 1, output: "unexpected")
-      },
-      writePreMutationPlan: { _ in Issue.record("No Homebrew plan is expected") },
-      setupIntegrations: { homeDirectory, dryRun in
-        try ownershipManager.setup(homeDirectory: homeDirectory, dryRun: dryRun)
-      }
-    )
-  }
-
   private func expectOwnershipError(
     _ expected: SetupOwnershipError,
     operation: () throws -> Void
@@ -495,10 +439,4 @@ struct SetupOwnershipTests {
       Issue.record("Expected \(expected), got \(error)")
     }
   }
-}
-
-private struct SetupReport: Decodable {
-  let outcome: String
-  let mutationAttempted: Bool
-  let integrations: [IntegrationReport]
 }

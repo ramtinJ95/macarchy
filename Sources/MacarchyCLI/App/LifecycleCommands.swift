@@ -59,44 +59,55 @@ extension Macarchy {
 
   struct Setup: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Prepare dependencies and supported integration seams."
+      abstract: "Plan and converge the complete curated Macarchy core.",
+      subcommands: [Plan.self]
     )
 
-    @Option(name: .customLong("dependency-profile"), help: "Dependency profile to inspect.")
-    var dependencyProfile = "personal"
-
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
-
-    @Option(help: "Exact keybinding adoption evidence digest from the reviewed setup plan.")
-    var adoptKeybindings: String?
-
-    @Flag(help: "Install missing Homebrew dependencies for the selected profile.")
-    var installDependencies = false
-
-    @Flag(help: "Describe setup readiness without making changes.")
-    var dryRun = false
-
-    @Flag(help: "Emit machine-readable output.")
-    var json = false
-
-    mutating func run() throws {
-      let home = FileManager.default.homeDirectoryForCurrentUser
-      let execution = try SetupCommandRunner.live.execute(
-        profileName: dependencyProfile,
-        homeDirectory: home,
-        installDependencies: installDependencies,
-        dryRun: dryRun,
-        keybindingProfileURL:
-          profile.map { URL(filePath: $0).standardizedFileURL }
-          ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL,
-        keybindingProfileRequired: profile != nil,
-        adoptKeybindings: adoptKeybindings,
-        json: json
+    struct Plan: ParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Compile and inspect the complete core setup without making changes."
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
+
+      @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
+      var profile: String?
+
+      @Option(
+        name: .customLong("machine-profile"),
+        help: "Machine-local profile overlay. Defaults to ~/.config/macarchy/machine.toml."
+      )
+      var machineProfile: String?
+
+      @Option(help: "Canonical Macarchy state directory.")
+      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+      @Flag(help: "Emit machine-readable output.")
+      var json = false
+
+      mutating func run() throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let execution = try UnifiedSetupPlanCommandRunner.live.execute(
+          context: UnifiedSetupPlanContext(
+            themesRoot: RuntimeEnvironment.live.builtInThemesURL,
+            keybindingsResourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
+            desktopResourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
+            environmentResourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
+            profileURL: profile.map { URL(filePath: $0).standardizedFileURL }
+              ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL,
+            profileRequired: profile != nil,
+            machineProfileURL: machineProfile.map { URL(filePath: $0).standardizedFileURL }
+              ?? home.appending(path: ".config/macarchy/machine.toml").standardizedFileURL,
+            machineProfileRequired: machineProfile != nil,
+            stateRoot: URL(
+              filePath: stateRoot,
+              directoryHint: .isDirectory
+            ).standardizedFileURL,
+            homeDirectory: home
+          ),
+          json: json
+        )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
       }
     }
   }

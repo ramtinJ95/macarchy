@@ -24,21 +24,27 @@ struct DesktopPlanCommandRunner: Sendable {
     homeDirectory: URL,
     json: Bool,
     scope: DesktopPlanScope = .allProviders,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    profile suppliedProfile: PortableProfile? = nil,
+    requireRunningKeybindingProcess: Bool = true
   ) throws -> (output: String, succeeded: Bool) {
     var diagnostics: [DesktopPlanDiagnostic] = []
     let profile: PortableProfile?
-    do {
-      profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
-    } catch {
-      profile = nil
-      diagnostics.append(
-        DesktopPlanDiagnostic(
-          code: "profile_invalid",
-          source: profileURL.path,
-          message: String(describing: error)
+    if let suppliedProfile {
+      profile = suppliedProfile
+    } else {
+      do {
+        profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
+      } catch {
+        profile = nil
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "profile_invalid",
+            source: profileURL.path,
+            message: String(describing: error)
+          )
         )
-      )
+      }
     }
 
     let yabaiEnabled = profile?.desktop.provider == .yabaiSkhd
@@ -64,7 +70,9 @@ struct DesktopPlanCommandRunner: Sendable {
           profileURL: profileURL,
           profileRequired: profileRequired,
           stateRoot: stateRoot,
-          homeDirectory: homeDirectory
+          homeDirectory: homeDirectory,
+          profile: profile,
+          requireRunningProcess: requireRunningKeybindingProcess
         )
         if yabaiEnabled, keybindingPlan?.succeeded == false {
           diagnostics.append(
