@@ -285,7 +285,8 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    ignoreTransaction: Bool = false
+    ignoreTransaction: Bool = false,
+    profile: PortableProfile? = nil
   ) -> KeybindingEffectiveBehavior {
     var previous: InspectedState?
     for _ in 0..<3 {
@@ -295,7 +296,8 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
         profileRequired: profileRequired,
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
-        ignoreTransaction: ignoreTransaction
+        ignoreTransaction: ignoreTransaction,
+        profile: profile
       )
       if let previous, previous.identity == observed.identity { return observed.behavior }
       previous = observed
@@ -320,13 +322,15 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    ignoreTransaction: Bool
+    ignoreTransaction: Bool,
+    profile: PortableProfile?
   ) -> InspectedState {
     let desired = KeybindingEffectiveStateInspector().inspect(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
       profileRequired: profileRequired,
-      stateRoot: stateRoot
+      stateRoot: stateRoot,
+      profile: profile?.keybindings
     )
     let provider = KeybindingProviderInspector().inspect(
       homeDirectory: homeDirectory,

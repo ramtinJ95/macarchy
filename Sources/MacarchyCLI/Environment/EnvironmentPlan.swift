@@ -24,22 +24,27 @@ struct EnvironmentPlanCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL? = nil,
-    json: Bool
+    json: Bool,
+    profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
-    do {
-      profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
-    } catch {
-      let report = EnvironmentPlanReport.blocked(
-        profile: profileURL,
-        resourcesRoot: resourcesRoot,
-        diagnostic: EnvironmentPlanDiagnostic(
-          code: "profile_invalid",
-          source: profileURL.path,
-          message: String(describing: error)
+    if let suppliedProfile {
+      profile = suppliedProfile
+    } else {
+      do {
+        profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
+      } catch {
+        let report = EnvironmentPlanReport.blocked(
+          profile: profileURL,
+          resourcesRoot: resourcesRoot,
+          diagnostic: EnvironmentPlanDiagnostic(
+            code: "profile_invalid",
+            source: profileURL.path,
+            message: String(describing: error)
+          )
         )
-      )
-      return (try report.render(json: json), false)
+        return (try report.render(json: json), false)
+      }
     }
 
     let composition: EnvironmentComposition

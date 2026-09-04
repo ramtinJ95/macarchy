@@ -121,54 +121,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
   #endif
 
-  func setupIntegration(
-    resourcesRoot: URL,
-    profileURL: URL,
-    profileRequired: Bool,
-    stateRoot: URL,
-    homeDirectory: URL,
-    adopt: String?,
-    dryRun: Bool
-  ) throws -> SetupIntegrationResult {
-    let execution =
-      if dryRun {
-        try preview(
-          resourcesRoot: resourcesRoot,
-          profileURL: profileURL,
-          profileRequired: profileRequired,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          adopt: adopt,
-          json: true,
-          preflightLifecycle: false
-        )
-      } else {
-        try execute(
-          resourcesRoot: resourcesRoot,
-          profileURL: profileURL,
-          profileRequired: profileRequired,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          adopt: adopt,
-          json: true
-        )
-      }
-    let report = try JSONDecoder().decode(
-      KeybindingsApplySetupPayload.self,
-      from: Data(execution.output.utf8)
-    )
-    return SetupIntegrationResult(
-      id: KeybindingProviderInspector.ownershipID,
-      status:
-        execution.succeeded
-        ? (dryRun ? .planned : .owned) : .failed,
-      target: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
-      message: report.message,
-      mutationAttempted: report.mutated,
-      lifecycle: report.lifecycle
-    )
-  }
-
   func teardownLocked(
     stateRoot: URL,
     homeDirectory: URL,
@@ -1738,12 +1690,6 @@ private struct KeybindingsApplyReport: Encodable {
       - \(message)
       """
   }
-}
-
-private struct KeybindingsApplySetupPayload: Decodable {
-  let mutated: Bool
-  let lifecycle: KeybindingLifecycleAction
-  let message: String
 }
 
 enum KeybindingsApplyError: Error, CustomStringConvertible, Sendable {

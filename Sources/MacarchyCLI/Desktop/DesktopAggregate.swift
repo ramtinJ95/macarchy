@@ -100,13 +100,8 @@ struct DesktopPrerequisiteInspector: Sendable {
   static let assumed = Self { _, _ in [] }
 
   static let live = Self { profile, homeDirectory in
-    let selected = Set(
-      ["macos-26", "arm64", "homebrew"]
-        + (profile.desktop.provider == .yabaiSkhd ? ["skhd", "yabai"] : [])
-        + (profile.topBar == .sketchybar ? ["sketchybar"] : [])
-    )
-    return DependencyProfile.personal(homeDirectory: homeDirectory).capabilities
-      .filter { selected.contains($0.id) }
+    DependencyProfile.personal(homeDirectory: homeDirectory)
+      .selectedForDesktop(profile)
       .map {
         DesktopPrerequisiteStatus(
           id: $0.id,
@@ -155,7 +150,9 @@ struct DesktopKeybindingOrchestrator: Sendable {
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
-    homeDirectory: URL
+    homeDirectory: URL,
+    profile: PortableProfile? = nil,
+    requireRunningProcess: Bool = true
   ) throws -> DesktopKeybindingPlan {
     Self.summary(
       try planner.prepare(
@@ -163,7 +160,9 @@ struct DesktopKeybindingOrchestrator: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        homeDirectory: homeDirectory
+        homeDirectory: homeDirectory,
+        profile: profile,
+        requireRunningProcess: requireRunningProcess
       )
     )
   }
