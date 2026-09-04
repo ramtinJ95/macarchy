@@ -3,8 +3,12 @@ import Foundation
 enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
   case cannotReadConfiguration(URL)
   case controlUnavailable(URL)
+  case invalidRuntimeEvidence(String)
+  case invalidSpotifyVersion(String)
+  case invalidVersion(String)
   case invalidConfiguration(URL)
   case processInspectionFailed(String)
+  case unsupportedVersion(String)
   case wrongColorScheme(String)
   case wrongTheme(String)
 
@@ -14,10 +18,18 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
       "Cannot read Spicetify configuration at \(url.path)"
     case .controlUnavailable(let url):
       "Spicetify is not executable at \(url.path)"
+    case .invalidRuntimeEvidence(let reason):
+      "Spicetify runtime evidence is invalid: \(reason)"
+    case .invalidSpotifyVersion(let value):
+      "Spotify bundle version '\(value)' is not parseable"
+    case .invalidVersion(let value):
+      "Spicetify version '\(value)' is not a parseable X.Y.Z triplet"
     case .invalidConfiguration(let url):
       "Spicetify configuration at \(url.path) must be valid provider INI with one [Setting] table and one current_theme and color_scheme key"
     case .processInspectionFailed(let output):
       output.isEmpty ? "Cannot determine whether Spotify is running" : output
+    case .unsupportedVersion(let value):
+      "Spicetify \(value) is unsupported; version \(SpicetifyAdapter.minimumVersion) or newer is required"
     case .wrongColorScheme(let expected):
       "Spicetify color_scheme must be \"\(expected)\""
     case .wrongTheme(let expected):
@@ -27,12 +39,14 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
 }
 
 package struct SpicetifyAdapter: Sendable {
-  static let id = "spicetify"
+  package static let id = "spicetify"
   package static let outputPath = "generated/spicetify.ini"
   static let rendererVersion = 1
   package static let colorSchemeName = "MacarchyCurrent"
   package static let themeName = "text"
+  package static let minimumVersion = "2.44.0"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/spicetify")
+  package static let liveSpotifyBundleURL = URL(filePath: "/Applications/Spotify.app")
 
   package struct ConfigurationSelection: Equatable, Sendable {
     package let theme: String?
@@ -41,16 +55,15 @@ package struct SpicetifyAdapter: Sendable {
     package let rawColorScheme: String?
   }
 
-  private static let applicationLauncherURL = URL(filePath: "/usr/bin/open")
   private static let processLookupURL = URL(filePath: "/usr/bin/pgrep")
-  private static let processCheckAttempts = 20
 
   let root: URL
   let configurationDirectoryURL: URL
   let executableURL: URL
   let controlIsAvailable: @Sendable () -> Bool
   let processRunner: ProcessRunner
-  let waitBetweenProcessChecks: @Sendable () async throws -> Void
+  let spicetifyVersionProvider: @Sendable () throws -> String
+  let spotifyVersionProvider: @Sendable () throws -> String
 
   init(
     root: URL,
@@ -58,16 +71,18 @@ package struct SpicetifyAdapter: Sendable {
     executableURL: URL,
     controlIsAvailable: @escaping @Sendable () -> Bool,
     processRunner: ProcessRunner,
-    waitBetweenProcessChecks: @escaping @Sendable () async throws -> Void = {
-      try await Task.sleep(for: .milliseconds(250))
-    }
+    spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
+      SpicetifyAdapter.minimumVersion
+    },
+    spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" }
   ) {
     self.root = root
     self.configurationDirectoryURL = configurationDirectoryURL
     self.executableURL = executableURL
     self.controlIsAvailable = controlIsAvailable
     self.processRunner = processRunner
-    self.waitBetweenProcessChecks = waitBetweenProcessChecks
+    self.spicetifyVersionProvider = spicetifyVersionProvider
+    self.spotifyVersionProvider = spotifyVersionProvider
   }
 
   private var configurationURL: URL {
@@ -85,6 +100,8 @@ package struct SpicetifyAdapter: Sendable {
     guard controlIsAvailable() else {
       throw SpicetifyAdapterError.controlUnavailable(executableURL)
     }
+    _ = try supportedVersion()
+    _ = try supportedSpotifyVersion()
     try colorSchemeLink.validate()
     let selection = try selectedTheme()
     guard selection.theme == Self.themeName else {
@@ -100,14 +117,14 @@ package struct SpicetifyAdapter: Sendable {
       try preflight()
       return AdapterInspection(
         adapterID: Self.id,
-        requirement: .optional,
+        requirement: .required,
         message:
-          "Spicetify uses the generated palette; applying it restarts a running Spotify client"
+          "Spicetify and Spotify are compatible and the generated palette seam is exact"
       )
     } catch {
       return AdapterInspection(
         adapterID: Self.id,
-        requirement: .optional,
+        requirement: .required,
         status: Self.isIntegrationDrift(error) ? .drifted : .failed,
         message: String(describing: error)
       )
@@ -115,14 +132,14 @@ package struct SpicetifyAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .optional) {
-      try await SpicetifyLock(root: root).withLock {
-        try await reconcile()
+    AdapterReconciliation(id: Self.id, requirement: .required) {
+      try SpicetifyLock(root: root).withLock {
+        try reconcile()
       }
     }
   }
 
-  private func reconcile() async throws -> AdapterOutcome {
+  private func reconcile() throws -> AdapterOutcome {
     do {
       try preflight()
     } catch {
@@ -132,105 +149,67 @@ package struct SpicetifyAdapter: Sendable {
       )
     }
 
-    let runningPIDs = try spotifyPIDs()
-
-    let refresh = try processRunner.run(
-      ProcessRequest(
-        executableURL: executableURL,
-        arguments: ["--no-restart", "refresh"],
-        timeout: 30
-      )
-    )
-    guard refresh.terminationStatus == 0 else {
-      return AdapterOutcome(
-        status: .failed,
-        message: refresh.output.isEmpty
-          ? "Spicetify refresh exited with status \(refresh.terminationStatus)"
-          : refresh.output
+    let spicetifyVersion = try supportedVersion()
+    let spotifyVersion = try supportedSpotifyVersion()
+    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    guard let colorDigest = manifest.artifacts[Self.outputPath] else {
+      throw SpicetifyAdapterError.invalidRuntimeEvidence(
+        "the active generation has no \(Self.outputPath) digest"
       )
     }
-
-    guard let runningPIDs else {
+    let running = try spotifyPIDs() != nil
+    let desired = SpicetifyRuntimeEvidence(
+      generationID: manifest.generationID,
+      colorDigest: colorDigest,
+      spicetifyVersion: spicetifyVersion,
+      spotifyVersion: spotifyVersion,
+      result: running ? .restartRequired : .applied
+    )
+    if try readRuntimeEvidence() == desired {
       return AdapterOutcome(
-        status: .applied,
-        message: "Spotify will use the active palette on next launch"
+        status: desired.result.adapterStatus,
+        message: desired.result.message(noChange: true)
       )
     }
 
-    let restart = try processRunner.run(
-      ProcessRequest(executableURL: executableURL, arguments: ["restart"], timeout: 5)
-    )
-    guard restart.terminationStatus == 0 else {
-      return AdapterOutcome(
-        status: .failed,
-        message: restart.output.isEmpty
-          ? "Spicetify could not restart Spotify"
-          : restart.output
-      )
-    }
-    let restartedPIDs = try await waitForReplacement(of: runningPIDs)
-    if restartedPIDs != nil {
-      return AdapterOutcome(
-        status: .applied,
-        message: "Spicetify refreshed the active palette and restarted Spotify"
-      )
-    }
-
-    let launch = try processRunner.run(
-      ProcessRequest(
-        executableURL: Self.applicationLauncherURL,
-        arguments: ["-g", "-a", "Spotify"],
-        timeout: 2
-      )
-    )
-    guard launch.terminationStatus == 0 else {
-      return AdapterOutcome(
-        status: .failed,
-        message: launch.output.isEmpty ? "Cannot relaunch Spotify" : launch.output
-      )
-    }
-    guard try await waitForSpotifyLaunch() else {
-      return AdapterOutcome(
-        status: .failed,
-        message: "Spicetify refreshed the palette, but Spotify did not relaunch"
-      )
-    }
-    return AdapterOutcome(
-      status: .applied,
-      message: "Spicetify refreshed the active palette and restarted Spotify"
-    )
+    try refresh()
+    try writeRuntimeEvidence(desired)
+    return AdapterOutcome(status: desired.result.adapterStatus, message: desired.result.message())
   }
 
-  private func waitForReplacement(of oldPIDs: Set<Int32>) async throws -> Set<Int32>? {
-    var replacementObserved = false
-    for attempt in 0..<Self.processCheckAttempts {
-      guard let currentPIDs = try spotifyPIDs() else { return nil }
-      if currentPIDs.isDisjoint(with: oldPIDs) {
-        if replacementObserved { return currentPIDs }
-        replacementObserved = true
-      } else {
-        replacementObserved = false
+  package func refreshRestoredConfiguration(
+    clearRuntimeEvidence: Bool
+  ) throws -> SpicetifyRuntimeResult {
+    try SpicetifyLock(root: root).withLock {
+      guard controlIsAvailable() else {
+        throw SpicetifyAdapterError.controlUnavailable(executableURL)
       }
-      if attempt + 1 < Self.processCheckAttempts { try await waitBetweenProcessChecks() }
-    }
-    if replacementObserved { return nil }
-    throw SpicetifyAdapterError.processInspectionFailed(
-      "Spicetify did not replace the running Spotify client"
-    )
-  }
-
-  private func waitForSpotifyLaunch() async throws -> Bool {
-    var processObserved = false
-    for attempt in 0..<Self.processCheckAttempts {
-      if try spotifyPIDs() != nil {
-        if processObserved { return true }
-        processObserved = true
+      let spicetifyVersion = try supportedVersion()
+      let spotifyVersion = try supportedSpotifyVersion()
+      let running = try spotifyPIDs() != nil
+      try refresh()
+      let result: SpicetifyRuntimeResult = running ? .restartRequired : .applied
+      if clearRuntimeEvidence {
+        try removeRuntimeEvidence()
       } else {
-        processObserved = false
+        let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+        guard let colorDigest = manifest.artifacts[Self.outputPath] else {
+          throw SpicetifyAdapterError.invalidRuntimeEvidence(
+            "the active generation has no \(Self.outputPath) digest"
+          )
+        }
+        try writeRuntimeEvidence(
+          SpicetifyRuntimeEvidence(
+            generationID: manifest.generationID,
+            colorDigest: colorDigest,
+            spicetifyVersion: spicetifyVersion,
+            spotifyVersion: spotifyVersion,
+            result: result
+          )
+        )
       }
-      if attempt + 1 < Self.processCheckAttempts { try await waitBetweenProcessChecks() }
+      return result
     }
-    return false
   }
 
   static func render(package: ThemePackage) -> String {
@@ -402,6 +381,127 @@ package struct SpicetifyAdapter: Sendable {
     return Set(pids)
   }
 
+  package func supportedVersion() throws -> String {
+    let value = try spicetifyVersionProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let parsed = Self.parseTriplet(value) else {
+      throw SpicetifyAdapterError.invalidVersion(value)
+    }
+    guard parsed >= Self.parseTriplet(Self.minimumVersion)! else {
+      throw SpicetifyAdapterError.unsupportedVersion(value)
+    }
+    return parsed.description
+  }
+
+  package func supportedSpotifyVersion() throws -> String {
+    let value = try spotifyVersionProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+    guard Self.parseSpotifyVersion(value) != nil else {
+      throw SpicetifyAdapterError.invalidSpotifyVersion(value)
+    }
+    return value
+  }
+
+  package static func commandVersion(
+    executableURL: URL = liveExecutableURL,
+    processRunner: ProcessRunner = .live
+  ) throws -> String {
+    let result = try processRunner.run(
+      ProcessRequest(executableURL: executableURL, arguments: ["--version"], timeout: 2)
+    )
+    guard result.terminationStatus == 0 else {
+      throw SpicetifyAdapterError.invalidVersion(result.output)
+    }
+    return result.output
+  }
+
+  package static func spotifyBundleVersion(
+    bundleURL: URL = liveSpotifyBundleURL
+  ) throws -> String {
+    let plistURL = bundleURL.appending(path: "Contents/Info.plist")
+    let data = try BoundedRegularFile.read(at: plistURL, maximumSize: 1_048_576).data
+    let value = try PropertyListSerialization.propertyList(from: data, format: nil)
+    guard let dictionary = value as? [String: Any],
+      let version = dictionary["CFBundleShortVersionString"] as? String
+        ?? dictionary["CFBundleVersion"] as? String,
+      parseSpotifyVersion(version) != nil
+    else { throw SpicetifyAdapterError.invalidSpotifyVersion(plistURL.path) }
+    return version
+  }
+
+  private func refresh() throws {
+    let result = try processRunner.run(
+      ProcessRequest(
+        executableURL: executableURL,
+        arguments: ["--no-restart", "refresh"],
+        timeout: 30
+      )
+    )
+    guard result.terminationStatus == 0 else {
+      throw SpicetifyAdapterError.invalidRuntimeEvidence(
+        result.output.isEmpty
+          ? "refresh exited with status \(result.terminationStatus)" : result.output
+      )
+    }
+  }
+
+  private var runtimeEvidenceURL: URL {
+    root.appending(path: "state/spicetify.json")
+  }
+
+  private func readRuntimeEvidence() throws -> SpicetifyRuntimeEvidence? {
+    do {
+      let data = try BoundedRegularFile.read(at: runtimeEvidenceURL, maximumSize: 16_384).data
+      let evidence = try JSONDecoder().decode(SpicetifyRuntimeEvidence.self, from: data)
+      guard evidence.hasValidShape else {
+        throw SpicetifyAdapterError.invalidRuntimeEvidence("receipt has an invalid shape")
+      }
+      return evidence
+    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
+      return nil
+    } catch let error as SpicetifyAdapterError {
+      throw error
+    } catch {
+      throw SpicetifyAdapterError.invalidRuntimeEvidence(String(describing: error))
+    }
+  }
+
+  private func writeRuntimeEvidence(_ evidence: SpicetifyRuntimeEvidence) throws {
+    let directory = runtimeEvidenceURL.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    var data = try encoder.encode(evidence)
+    data.append(0x0a)
+    try data.write(to: runtimeEvidenceURL, options: .atomic)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600], ofItemAtPath: runtimeEvidenceURL.path)
+  }
+
+  private func removeRuntimeEvidence() throws {
+    do { try FileManager.default.removeItem(at: runtimeEvidenceURL) } catch CocoaError
+      .fileNoSuchFile
+    { return }
+  }
+
+  private static func parseSpotifyVersion(_ value: String) -> [Int]? {
+    let components = value.split(separator: ".", omittingEmptySubsequences: false)
+    let parsed = components.compactMap { Int($0) }
+    guard components.count >= 3,
+      components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }),
+      parsed.count == components.count
+    else { return nil }
+    return parsed
+  }
+
+  private static func parseTriplet(_ value: String) -> SpicetifyVersion? {
+    let candidate = value.split(whereSeparator: \.isWhitespace).last.map(String.init) ?? value
+    let normalized = candidate.hasPrefix("v") ? String(candidate.dropFirst()) : candidate
+    let components = normalized.split(separator: ".", omittingEmptySubsequences: false)
+    guard components.count == 3,
+      let major = Int(components[0]), let minor = Int(components[1]), let patch = Int(components[2])
+    else { return nil }
+    return SpicetifyVersion(major: major, minor: minor, patch: patch)
+  }
+
   private static func color(_ color: SRGBColor) -> Substring {
     color.rawValue.dropFirst()
   }
@@ -414,5 +514,64 @@ package struct SpicetifyAdapter: Sendable {
     default:
       false
     }
+  }
+}
+
+private struct SpicetifyVersion: Comparable {
+  let major: Int
+  let minor: Int
+  let patch: Int
+
+  var description: String { "\(major).\(minor).\(patch)" }
+
+  static func < (lhs: Self, rhs: Self) -> Bool {
+    if lhs.major != rhs.major { return lhs.major < rhs.major }
+    if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+    return lhs.patch < rhs.patch
+  }
+}
+
+package enum SpicetifyRuntimeResult: String, Codable {
+  case applied
+  case restartRequired = "restart_required"
+
+  package var adapterStatus: AdapterStatus {
+    self == .applied ? .applied : .restartRequired
+  }
+
+  package func message(noChange: Bool = false) -> String {
+    switch self {
+    case .applied:
+      noChange
+        ? "Spicetify runtime evidence already matches; Spotify will use the palette on next launch"
+        : "Spicetify refreshed the palette; Spotify will use it on next launch"
+    case .restartRequired:
+      noChange
+        ? "Spicetify runtime evidence already matches; restart running Spotify manually to repaint"
+        : "Spicetify refreshed without restarting Spotify; restart the running client manually to repaint"
+    }
+  }
+}
+
+private struct SpicetifyRuntimeEvidence: Codable, Equatable {
+  let schemaVersion = 1
+  let generationID: String
+  let colorDigest: String
+  let spicetifyVersion: String
+  let spotifyVersion: String
+  let result: SpicetifyRuntimeResult
+
+  enum CodingKeys: String, CodingKey {
+    case schemaVersion = "schema_version"
+    case generationID = "generation_id"
+    case colorDigest = "color_digest"
+    case spicetifyVersion = "spicetify_version"
+    case spotifyVersion = "spotify_version"
+    case result
+  }
+
+  var hasValidShape: Bool {
+    schemaVersion == 1 && isGenerationID(generationID) && isSHA256Digest(colorDigest)
+      && !spicetifyVersion.isEmpty && !spotifyVersion.isEmpty
   }
 }

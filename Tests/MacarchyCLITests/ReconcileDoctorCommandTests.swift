@@ -111,11 +111,11 @@ struct ReconcileDoctorCommandTests {
   }
 
   @Test
-  func optionalInspectionProblemsRemainVisibleWithoutFailingCommands() async throws {
+  func selectedSpicetifyInspectionProblemsAreRequiredFailures() async throws {
     let manifest = testManifest()
     let inspection = AdapterInspection(
       adapterID: "spicetify",
-      requirement: .optional,
+      requirement: .required,
       status: .failed,
       message: "executable is unavailable"
     )
@@ -130,8 +130,8 @@ struct ReconcileDoctorCommandTests {
       dryRun: true,
       json: false
     )
-    #expect(reconciliation.succeeded)
-    #expect(reconciliation.output.contains("spicetify [optional]: failed"))
+    #expect(!reconciliation.succeeded)
+    #expect(reconciliation.output.contains("spicetify [required]: failed"))
 
     let record = try ReconciliationRecord(
       manifest: manifest,
@@ -151,7 +151,7 @@ struct ReconcileDoctorCommandTests {
         AdapterResult(adapterID: "neovim", requirement: .required, status: .applied),
         AdapterResult(adapterID: "pi", requirement: .required, status: .applied),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
-        AdapterResult(adapterID: "spicetify", requirement: .optional, status: .failed),
+        AdapterResult(adapterID: "spicetify", requirement: .required, status: .failed),
         AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "tuicr", requirement: .required, status: .restartRequired),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
@@ -167,8 +167,8 @@ struct ReconcileDoctorCommandTests {
       consumerPaths: consumerPaths,
       json: false
     )
-    #expect(diagnosis.succeeded)
-    #expect(diagnosis.output.contains("spicetify.integration [warning]"))
+    #expect(!diagnosis.succeeded)
+    #expect(diagnosis.output.contains("spicetify.integration [failure]"))
   }
 
   @Test
@@ -296,7 +296,7 @@ struct ReconcileDoctorCommandTests {
         AdapterResult(adapterID: "neovim", requirement: .required, status: .applied),
         AdapterResult(adapterID: "pi", requirement: .required, status: .applied),
         AdapterResult(adapterID: "sketchybar", requirement: .required, status: .applied),
-        AdapterResult(adapterID: "spicetify", requirement: .optional, status: .applied),
+        AdapterResult(adapterID: "spicetify", requirement: .required, status: .applied),
         AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "tuicr", requirement: .required, status: .restartRequired),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
@@ -323,7 +323,7 @@ struct ReconcileDoctorCommandTests {
           AdapterInspection(adapterID: "neovim", requirement: .required),
           AdapterInspection(adapterID: "pi", requirement: .required),
           AdapterInspection(adapterID: "sketchybar", requirement: .required),
-          AdapterInspection(adapterID: "spicetify", requirement: .optional),
+          AdapterInspection(adapterID: "spicetify", requirement: .required),
           AdapterInspection(adapterID: "starship", requirement: .required),
           AdapterInspection(adapterID: "tuicr", requirement: .required),
           AdapterInspection(
@@ -366,7 +366,7 @@ struct ReconcileDoctorCommandTests {
           status: .drifted,
           message: "SketchyBar colors module is missing the generated palette import"
         ),
-        AdapterResult(adapterID: "spicetify", requirement: .optional, status: .failed),
+        AdapterResult(adapterID: "spicetify", requirement: .required, status: .failed),
         AdapterResult(adapterID: "starship", requirement: .required, status: .applied),
         AdapterResult(adapterID: "tuicr", requirement: .required, status: .restartRequired),
         AdapterResult(adapterID: "wallpaper", requirement: .required, status: .applied),
@@ -410,7 +410,7 @@ struct ReconcileDoctorCommandTests {
           ),
           AdapterInspection(
             adapterID: "spicetify",
-            requirement: .optional,
+            requirement: .required,
             status: .failed,
             message: "Spicetify is unavailable"
           ),

@@ -19,6 +19,7 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
   case codexTheme = "codex_theme"
   case piConfiguration = "pi_configuration"
   case piTheme = "pi_theme"
+  case spicetifyColor = "spicetify_color"
   case tuicrConfiguration = "tuicr_configuration"
   case tuicrTheme = "tuicr_theme"
   case tuicrSyntax = "tuicr_syntax"
@@ -110,10 +111,13 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let codex: EnvironmentCodexOwnership?
   let herdr: EnvironmentHerdrOwnership?
   let pi: EnvironmentPiOwnership?
+  let spicetify: EnvironmentSpicetifyOwnership?
   let tuicr: EnvironmentTuicrOwnership?
   let codexEnabled: Bool
   let herdrEnabled: Bool
   let piEnabled: Bool
+  let slackEnabled: Bool
+  let spicetifyEnabled: Bool
   let tuicrEnabled: Bool
   let enabledThemeAdapterIDs: [String]?
 
@@ -126,10 +130,13 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     codex: EnvironmentCodexOwnership? = nil,
     herdr: EnvironmentHerdrOwnership? = nil,
     pi: EnvironmentPiOwnership? = nil,
+    spicetify: EnvironmentSpicetifyOwnership? = nil,
     tuicr: EnvironmentTuicrOwnership? = nil,
     codexEnabled: Bool = false,
     herdrEnabled: Bool = false,
     piEnabled: Bool = false,
+    slackEnabled: Bool = false,
+    spicetifyEnabled: Bool = false,
     tuicrEnabled: Bool = false,
     enabledThemeAdapterIDs: [String]? = nil
   ) {
@@ -142,10 +149,13 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.codex = codex
     self.herdr = herdr
     self.pi = pi
+    self.spicetify = spicetify
     self.tuicr = tuicr
     self.codexEnabled = codexEnabled
     self.herdrEnabled = herdrEnabled
     self.piEnabled = piEnabled
+    self.slackEnabled = slackEnabled
+    self.spicetifyEnabled = spicetifyEnabled
     self.tuicrEnabled = tuicrEnabled
     self.enabledThemeAdapterIDs = enabledThemeAdapterIDs?.sorted()
   }
@@ -160,10 +170,13 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case codex
     case herdr
     case pi
+    case spicetify
     case tuicr
     case codexEnabled = "codex_enabled"
     case herdrEnabled = "herdr_enabled"
     case piEnabled = "pi_enabled"
+    case slackEnabled = "slack_enabled"
+    case spicetifyEnabled = "spicetify_enabled"
     case tuicrEnabled = "tuicr_enabled"
     case enabledThemeAdapterIDs = "enabled_theme_adapter_ids"
   }
@@ -182,10 +195,14 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     codex = try container.decodeIfPresent(EnvironmentCodexOwnership.self, forKey: .codex)
     herdr = try container.decodeIfPresent(EnvironmentHerdrOwnership.self, forKey: .herdr)
     pi = try container.decodeIfPresent(EnvironmentPiOwnership.self, forKey: .pi)
+    spicetify = try container.decodeIfPresent(
+      EnvironmentSpicetifyOwnership.self, forKey: .spicetify)
     tuicr = try container.decodeIfPresent(EnvironmentTuicrOwnership.self, forKey: .tuicr)
     codexEnabled = try container.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? false
     herdrEnabled = try container.decodeIfPresent(Bool.self, forKey: .herdrEnabled) ?? false
     piEnabled = try container.decodeIfPresent(Bool.self, forKey: .piEnabled) ?? false
+    slackEnabled = try container.decodeIfPresent(Bool.self, forKey: .slackEnabled) ?? false
+    spicetifyEnabled = try container.decodeIfPresent(Bool.self, forKey: .spicetifyEnabled) ?? false
     tuicrEnabled = try container.decodeIfPresent(Bool.self, forKey: .tuicrEnabled) ?? false
     enabledThemeAdapterIDs = try container.decodeIfPresent(
       [String].self,
@@ -203,6 +220,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && adapterIDs.contains(CodexAdapter.id) == codexEnabled
           && adapterIDs.contains(HerdrAdapter.id) == herdrEnabled
           && adapterIDs.contains(PiAdapter.id) == piEnabled
+          && adapterIDs.contains(SpicetifyAdapter.id) == spicetifyEnabled
           && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
       } ?? true
     guard schemaVersion == Self.currentSchemaVersion,
@@ -214,6 +232,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       codex?.hasValidShape ?? true,
       herdr?.hasValidShape ?? true,
       pi?.hasValidShape ?? true,
+      spicetify?.hasValidShape ?? true,
       tuicr?.hasValidShape ?? true,
       hasValidThemeAdapterInventory
     else { return false }
@@ -253,10 +272,13 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       codex: codex,
       herdr: herdr,
       pi: pi,
+      spicetify: spicetify,
       tuicr: tuicr,
       codexEnabled: codexEnabled,
       herdrEnabled: herdrEnabled,
       piEnabled: piEnabled,
+      slackEnabled: slackEnabled,
+      spicetifyEnabled: spicetifyEnabled,
       tuicrEnabled: tuicrEnabled,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs
     )
@@ -277,6 +299,26 @@ enum EnvironmentTransactionDirection: String, Codable, Sendable {
 enum EnvironmentHerdrRuntimeTarget: String, Codable, Equatable, Sendable {
   case managed
   case original
+}
+
+enum EnvironmentSpicetifyRuntimeTarget: String, Codable, Equatable, Sendable {
+  case managed
+  case original
+}
+
+private func requiredSpicetifyRuntimeTarget(
+  from old: EnvironmentOwnership?,
+  to new: EnvironmentOwnership?
+) -> EnvironmentSpicetifyRuntimeTarget? {
+  let wasEnabled = old?.spicetifyEnabled == true
+  let willBeEnabled = new?.spicetifyEnabled == true
+  if wasEnabled != willBeEnabled { return willBeEnabled ? .managed : .original }
+  if wasEnabled,
+    old?.generationID != new?.generationID || old?.spicetify != new?.spicetify
+  {
+    return .managed
+  }
+  return nil
 }
 
 private func requiredHerdrRuntimeTarget(
@@ -308,6 +350,9 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let herdrRuntimeVerified: Bool?
   let herdrLegacyMigration: Bool?
   let piReplacementName: String?
+  let spicetifyReplacementName: String?
+  let spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
+  let spicetifyRuntimeVerified: Bool?
   let tuicrReplacementName: String?
 
   init(
@@ -325,6 +370,9 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     herdrRuntimeVerified: Bool? = nil,
     herdrLegacyMigration: Bool? = nil,
     piReplacementName: String? = nil,
+    spicetifyReplacementName: String? = nil,
+    spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget? = nil,
+    spicetifyRuntimeVerified: Bool? = nil,
     tuicrReplacementName: String? = nil
   ) {
     schemaVersion = Self.currentSchemaVersion
@@ -342,6 +390,9 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.herdrRuntimeVerified = herdrRuntimeVerified
     self.herdrLegacyMigration = herdrLegacyMigration
     self.piReplacementName = piReplacementName
+    self.spicetifyReplacementName = spicetifyReplacementName
+    self.spicetifyRuntimeTarget = spicetifyRuntimeTarget
+    self.spicetifyRuntimeVerified = spicetifyRuntimeVerified
     self.tuicrReplacementName = tuicrReplacementName
   }
 
@@ -366,6 +417,12 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       herdrRuntimeVerified: nil,
       herdrLegacyMigration: herdrLegacyMigration,
       piReplacementName: piReplacementName,
+      spicetifyReplacementName: spicetifyReplacementName,
+      spicetifyRuntimeTarget: requiredSpicetifyRuntimeTarget(
+        from: proposedOwnership,
+        to: previousOwnership
+      ),
+      spicetifyRuntimeVerified: nil,
       tuicrReplacementName: tuicrReplacementName
     )
   }
@@ -386,6 +443,32 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       herdrRuntimeVerified: true,
       herdrLegacyMigration: herdrLegacyMigration,
       piReplacementName: piReplacementName,
+      spicetifyReplacementName: spicetifyReplacementName,
+      spicetifyRuntimeTarget: spicetifyRuntimeTarget,
+      spicetifyRuntimeVerified: spicetifyRuntimeVerified,
+      tuicrReplacementName: tuicrReplacementName
+    )
+  }
+
+  var withSpicetifyRuntimeVerified: Self {
+    Self(
+      operation: operation,
+      direction: direction,
+      previousOwnership: previousOwnership,
+      proposedOwnership: proposedOwnership,
+      previousCurrentDestination: previousCurrentDestination,
+      previousThemeGenerationID: previousThemeGenerationID,
+      rollbackThemeBridges: rollbackThemeBridges,
+      btopReplacementName: btopReplacementName,
+      codexReplacementName: codexReplacementName,
+      herdrReplacementName: herdrReplacementName,
+      herdrRuntimeTarget: herdrRuntimeTarget,
+      herdrRuntimeVerified: herdrRuntimeVerified,
+      herdrLegacyMigration: herdrLegacyMigration,
+      piReplacementName: piReplacementName,
+      spicetifyReplacementName: spicetifyReplacementName,
+      spicetifyRuntimeTarget: spicetifyRuntimeTarget,
+      spicetifyRuntimeVerified: true,
       tuicrReplacementName: tuicrReplacementName
     )
   }
@@ -405,6 +488,9 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case herdrRuntimeVerified = "herdr_runtime_verified"
     case herdrLegacyMigration = "herdr_legacy_migration"
     case piReplacementName = "pi_replacement_name"
+    case spicetifyReplacementName = "spicetify_replacement_name"
+    case spicetifyRuntimeTarget = "spicetify_runtime_target"
+    case spicetifyRuntimeVerified = "spicetify_runtime_verified"
     case tuicrReplacementName = "tuicr_replacement_name"
   }
 }
@@ -575,6 +661,8 @@ struct EnvironmentProviderInspection: Sendable {
   let herdrExternalEvidence: EnvironmentEntryEvidence?
   let proposedPiOwnership: EnvironmentPiOwnership?
   let piExternalEvidence: EnvironmentEntryEvidence?
+  let proposedSpicetifyOwnership: EnvironmentSpicetifyOwnership?
+  let spicetifyExternalEvidence: EnvironmentEntryEvidence?
   let proposedTuicrOwnership: EnvironmentTuicrOwnership?
   let tuicrExternalEvidence: EnvironmentEntryEvidence?
 
@@ -636,6 +724,8 @@ struct EnvironmentStateStore: Sendable {
         && Self.herdrReplacementIsValid(value)
         && Self.herdrRuntimeIsValid(value)
         && Self.piReplacementIsValid(value)
+        && Self.spicetifyReplacementIsValid(value)
+        && Self.spicetifyRuntimeIsValid(value)
         && Self.tuicrReplacementIsValid(value)
     }
   }
@@ -851,6 +941,33 @@ struct EnvironmentStateStore: Sendable {
     )
   }
 
+  private static func spicetifyReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let required =
+      transaction.previousOwnership?.spicetify != nil
+      || transaction.proposedOwnership?.spicetify != nil
+    return replacementIsValid(
+      transaction.spicetifyReplacementName,
+      required: required,
+      prefix: ".macarchy-environment-spicetify-"
+    )
+  }
+
+  private static func spicetifyRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    let expected =
+      transaction.direction == .forward
+      ? requiredSpicetifyRuntimeTarget(
+        from: transaction.previousOwnership,
+        to: transaction.proposedOwnership
+      )
+      : requiredSpicetifyRuntimeTarget(
+        from: transaction.proposedOwnership,
+        to: transaction.previousOwnership
+      )
+    return transaction.spicetifyRuntimeTarget == expected
+      && (transaction.spicetifyRuntimeVerified == nil
+        || transaction.spicetifyRuntimeVerified == true)
+  }
+
   private static func replacementIsValid(
     _ name: String?,
     required: Bool,
@@ -867,6 +984,11 @@ struct EnvironmentStateStore: Sendable {
 
 struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
+  let slackPreset: EnvironmentSlackPreset
+
+  init(slackPreset: EnvironmentSlackPreset = EnvironmentSlackPreset()) {
+    self.slackPreset = slackPreset
+  }
 
   func inspect(
     composition: EnvironmentComposition,
@@ -933,6 +1055,12 @@ struct EnvironmentProviderInspector: Sendable {
       ])
       let legacyPiOwned = try Self.hasCompleteLegacyIntegration(
         named: "Pi", requiredIDs: legacyPiIDs, setupIDs: setupIDs)
+      let legacySpicetifyIDs = Set([
+        SetupOwnershipManager.spicetifySelectorsID,
+        SetupOwnershipManager.spicetifyColorLinkID,
+      ])
+      let legacySpicetifyOwned = try Self.hasCompleteLegacyIntegration(
+        named: "Spicetify", requiredIDs: legacySpicetifyIDs, setupIDs: setupIDs)
       let legacyCodexIDs = Set([
         SetupOwnershipManager.codexSelectorID,
         SetupOwnershipManager.codexThemeLinkID,
@@ -949,6 +1077,11 @@ struct EnvironmentProviderInspector: Sendable {
         && ownership?.pi == nil
         && ownership?.records.contains(where: { $0.id == .piTheme }) != true
         && !legacyPiOwned
+      let externallyAuthoritativeSpicetify =
+        ownership?.spicetifyEnabled == true
+        && ownership?.spicetify == nil
+        && ownership?.records.contains(where: { $0.id == .spicetifyColor }) != true
+        && !legacySpicetifyOwned
       let externallyAuthoritativeTuicr =
         ownership?.tuicrEnabled == true
         && ownership?.tuicr == nil
@@ -1011,6 +1144,19 @@ struct EnvironmentProviderInspector: Sendable {
           )
           continue
         }
+        if entry.id == .spicetifyColor, let captured, captured.kind != .absent {
+          inspections.append(
+            EnvironmentEntryInspection(
+              id: entry.id.rawValue,
+              path: entry.url.path,
+              status: "unsupported",
+              ownership: "external",
+              message: "A divergent Spicetify color.ini is never adopted or replaced.",
+              evidence: captured
+            )
+          )
+          continue
+        }
         if hasExternalAncestor {
           if Self.isDailyToolEntry(entry.id) {
             inspections.append(
@@ -1056,6 +1202,25 @@ struct EnvironmentProviderInspector: Sendable {
           throw EnvironmentLifecycleError.blocked(
             "provider inspection lost external evidence for \(entry.id.rawValue)"
           )
+        }
+        if entry.id == .spicetifyColor, captured.kind == .absent,
+          try !missingParentDirectories(
+            of: entry.url,
+            homeDirectory: homeDirectory
+          ).isEmpty
+        {
+          inspections.append(
+            EnvironmentEntryInspection(
+              id: entry.id.rawValue,
+              path: entry.url.path,
+              status: "unsupported",
+              ownership: "external",
+              message:
+                "Spicetify's Themes/text directory must already exist; Macarchy never owns it.",
+              evidence: captured
+            )
+          )
+          continue
         }
         evidence[entry.id] = captured
         for directory in try missingParentDirectories(of: entry.url, homeDirectory: homeDirectory) {
@@ -1219,6 +1384,71 @@ struct EnvironmentProviderInspector: Sendable {
         ) { createdDirectories.insert(directory.path) }
       }
 
+      let spicetify = try inspectSpicetify(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        ownership: ownership?.spicetify,
+        legacyOwned: legacySpicetifyOwned,
+        externallyAuthoritative: externallyAuthoritativeSpicetify
+      )
+      if let entry = spicetify.entry { inspections.append(entry) }
+      if legacySpicetifyOwned {
+        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .first { $0.id == .spicetifyColor }!
+        guard try managedEntryIsExact(entry) else {
+          throw EnvironmentLifecycleError.drift("legacy setup-owned spicetify_color")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: "external",
+            ownership: "legacy_setup",
+            message: "The working legacy setup-owned Spicetify color link is preserved.",
+            evidence: nil
+          )
+        )
+      }
+      if externallyAuthoritativeSpicetify, !composition.profile.presets.spicetify {
+        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .first { $0.id == .spicetifyColor }!
+        let captured = try capture(entry.url, directoryLink: nil)
+        guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
+          throw EnvironmentLifecycleError.drift("externally owned spicetify_color")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: "external",
+            ownership: "external_exact",
+            message: "The exact Spicetify tuple remains externally owned until disablement.",
+            evidence: captured
+          )
+        )
+      }
+
+      if composition.profile.presets.slack {
+        inspections.append(
+          slackPreset.entry(
+            stateRoot: stateRoot,
+            applied: ownership?.slackEnabled == true
+          )
+        )
+      } else if ownership?.slackEnabled == true {
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: EnvironmentSlackPreset.manualEntryID,
+            path: EnvironmentSlackPreset.bundleURL.path,
+            status: "restoration_required",
+            ownership: "macarchy_authority",
+            message: "Slack manual-import authority will be removed without touching Slack.",
+            evidence: nil
+          )
+        )
+      }
+
       let tuicr = try inspectTuicr(
         composition: composition,
         homeDirectory: homeDirectory,
@@ -1307,6 +1537,7 @@ struct EnvironmentProviderInspector: Sendable {
             codex: codex.proposedOwnership,
             herdr: herdr.proposedOwnership,
             pi: pi.proposedOwnership,
+            spicetify: spicetify.proposedOwnership,
             tuicr: tuicr.proposedOwnership
           ) : nil,
         blockedMessage: nil,
@@ -1321,6 +1552,8 @@ struct EnvironmentProviderInspector: Sendable {
         herdrExternalEvidence: herdr.externalEvidence,
         proposedPiOwnership: pi.proposedOwnership,
         piExternalEvidence: pi.externalEvidence,
+        proposedSpicetifyOwnership: spicetify.proposedOwnership,
+        spicetifyExternalEvidence: spicetify.externalEvidence,
         proposedTuicrOwnership: tuicr.proposedOwnership,
         tuicrExternalEvidence: tuicr.externalEvidence
       )
@@ -1341,6 +1574,8 @@ struct EnvironmentProviderInspector: Sendable {
         herdrExternalEvidence: nil,
         proposedPiOwnership: nil,
         piExternalEvidence: nil,
+        proposedSpicetifyOwnership: nil,
+        spicetifyExternalEvidence: nil,
         proposedTuicrOwnership: nil,
         tuicrExternalEvidence: nil
       )
@@ -1368,6 +1603,7 @@ struct EnvironmentProviderInspector: Sendable {
     }
     if profile.presets.codex { enabled.insert(.codexTheme) }
     if profile.presets.pi { enabled.insert(.piTheme) }
+    if profile.presets.spicetify { enabled.insert(.spicetifyColor) }
     if profile.presets.tuicr { enabled.formUnion([.tuicrTheme, .tuicrSyntax]) }
     return allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .filter { enabled.contains($0.id) }
@@ -1448,6 +1684,12 @@ struct EnvironmentProviderInspector: Sendable {
         url: home.appending(path: ".pi/agent/themes/\(PiAdapter.themeName).json"),
         kind: .symbolicLink,
         target: state.appending(path: "current/\(PiAdapter.outputPath)").path
+      ),
+      EnvironmentManagedEntry(
+        id: .spicetifyColor,
+        url: home.appending(path: ".config/spicetify/Themes/text/color.ini"),
+        kind: .symbolicLink,
+        target: state.appending(path: "current/\(SpicetifyAdapter.outputPath)").path
       ),
       EnvironmentManagedEntry(
         id: .tuicrTheme,
@@ -1723,6 +1965,7 @@ struct EnvironmentProviderInspector: Sendable {
     codex: EnvironmentCodexOwnership?,
     herdr: EnvironmentHerdrOwnership?,
     pi: EnvironmentPiOwnership?,
+    spicetify: EnvironmentSpicetifyOwnership?,
     tuicr: EnvironmentTuicrOwnership?
   ) throws -> String {
     struct Payload: Encodable {
@@ -1752,6 +1995,9 @@ struct EnvironmentProviderInspector: Sendable {
     if let pi {
       targets[EnvironmentEntryID.piConfiguration.rawValue] = "key-owned:\(pi.path)"
     }
+    if let spicetify {
+      targets["spicetify_configuration"] = "key-owned:\(spicetify.path)"
+    }
     if let tuicr {
       targets[EnvironmentEntryID.tuicrConfiguration.rawValue] = "key-owned:\(tuicr.path)"
     }
@@ -1772,6 +2018,8 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.presets.codex ? "codex" : "codex-disabled",
         composition.profile.presets.herdr ? "herdr" : "herdr-disabled",
         composition.profile.presets.pi ? "pi" : "pi-disabled",
+        composition.profile.presets.slack ? "slack" : "slack-disabled",
+        composition.profile.presets.spicetify ? "spicetify" : "spicetify-disabled",
         composition.profile.presets.tuicr ? "tuicr" : "tuicr-disabled",
       ],
       entries: entries.filter { targets[$0.id] != nil }.map {
@@ -1794,7 +2042,8 @@ struct EnvironmentProviderInspector: Sendable {
     composition: EnvironmentComposition
   ) throws -> Bool {
     switch entry.id {
-    case .atuinTheme, .batTheme, .btopTheme, .codexTheme, .ezaTheme, .piTheme, .tuicrTheme,
+    case .atuinTheme, .batTheme, .btopTheme, .codexTheme, .ezaTheme, .piTheme,
+      .spicetifyColor, .tuicrTheme,
       .tuicrSyntax,
       .yaziFlavor, .yaziSyntax:
       return evidence.kind == .symbolicLink && evidence.linkDestination == entry.target
@@ -1834,7 +2083,8 @@ struct EnvironmentProviderInspector: Sendable {
     switch id {
     case .batConfiguration, .batTheme, .btopConfiguration, .btopTheme, .codexConfiguration,
       .codexTheme, .ezaTheme,
-      .piConfiguration, .piTheme, .tuicrConfiguration, .tuicrTheme, .tuicrSyntax,
+      .piConfiguration, .piTheme, .spicetifyColor, .tuicrConfiguration, .tuicrTheme,
+      .tuicrSyntax,
       .yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax:
       true
     case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim:
@@ -3182,24 +3432,38 @@ enum EnvironmentTransactionCheckpoint: Equatable, Sendable {
 struct EnvironmentTransactionCoordinator: Sendable {
   let homeDirectory: URL
   let stateRoot: URL
-  var faultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = { _ in }
-  private let inspector = EnvironmentProviderInspector()
+  var faultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
+  private let inspector: EnvironmentProviderInspector
+
+  init(
+    homeDirectory: URL,
+    stateRoot: URL,
+    faultInjector: @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = { _ in },
+    inspector: EnvironmentProviderInspector = EnvironmentProviderInspector()
+  ) {
+    self.homeDirectory = homeDirectory
+    self.stateRoot = stateRoot
+    self.faultInjector = faultInjector
+    self.inspector = inspector
+  }
 
   func recoverLocked() throws -> Bool {
     let result = try prepareRecoveryLocked()
-    guard result.runtimeTarget == nil else {
+    guard result.runtimeTarget == nil, result.spicetifyRuntimeTarget == nil else {
       throw EnvironmentLifecycleError.blocked(
-        "interrupted Herdr runtime restoration must be reloaded before recovery can finish"
+        "interrupted provider runtime restoration must finish before recovery can finish"
       )
     }
     return result.recovered
   }
 
   func prepareRecoveryLocked() throws -> (
-    recovered: Bool, runtimeTarget: EnvironmentHerdrRuntimeTarget?
+    recovered: Bool,
+    runtimeTarget: EnvironmentHerdrRuntimeTarget?,
+    spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
   ) {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    guard let transaction = try store.readTransaction() else { return (false, nil) }
+    guard let transaction = try store.readTransaction() else { return (false, nil, nil) }
     try validate(transaction.previousOwnership)
     try validate(transaction.proposedOwnership)
     switch transaction.direction {
@@ -3221,6 +3485,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           codexReplacementName: transaction.codexReplacementName,
           herdrReplacementName: transaction.herdrReplacementName,
           piReplacementName: transaction.piReplacementName,
+          spicetifyReplacementName: transaction.spicetifyReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
         if transaction.operation == .apply {
@@ -3236,6 +3501,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           codexReplacementName: transaction.codexReplacementName,
           herdrReplacementName: transaction.herdrReplacementName,
           piReplacementName: transaction.piReplacementName,
+          spicetifyReplacementName: transaction.spicetifyReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName
         )
       }
@@ -3248,6 +3514,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         codexReplacementName: transaction.codexReplacementName,
         herdrReplacementName: transaction.herdrReplacementName,
         piReplacementName: transaction.piReplacementName,
+        spicetifyReplacementName: transaction.spicetifyReplacementName,
         tuicrReplacementName: transaction.tuicrReplacementName,
         preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
       )
@@ -3261,7 +3528,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
     if let target = transaction.herdrRuntimeTarget,
       transaction.herdrRuntimeVerified != true
     {
-      return (true, target)
+      return (true, target, pendingSpicetifyRuntimeTarget(transaction))
+    }
+    if let target = pendingSpicetifyRuntimeTarget(transaction) {
+      return (true, nil, target)
     }
 
     switch (transaction.direction, transaction.operation) {
@@ -3284,7 +3554,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
       break
     }
     try store.removeTransaction()
-    return (true, nil)
+    return (true, nil, nil)
+  }
+
+  private func pendingSpicetifyRuntimeTarget(
+    _ transaction: EnvironmentTransaction
+  ) -> EnvironmentSpicetifyRuntimeTarget? {
+    transaction.spicetifyRuntimeVerified == true ? nil : transaction.spicetifyRuntimeTarget
   }
 
   func pendingHerdrRuntimeTargetLocked() throws -> EnvironmentHerdrRuntimeTarget? {
@@ -3305,6 +3581,27 @@ struct EnvironmentTransactionCoordinator: Sendable {
       )
     }
     try store.writeTransaction(transaction.withHerdrRuntimeVerified)
+  }
+
+  func pendingSpicetifyRuntimeTargetLocked() throws -> EnvironmentSpicetifyRuntimeTarget? {
+    guard let transaction = try EnvironmentStateStore(stateRoot: stateRoot).readTransaction()
+    else { return nil }
+    return pendingSpicetifyRuntimeTarget(transaction)
+  }
+
+  func markSpicetifyRuntimeVerifiedLocked(
+    _ target: EnvironmentSpicetifyRuntimeTarget
+  ) throws {
+    let store = EnvironmentStateStore(stateRoot: stateRoot)
+    guard let transaction = try store.readTransaction(),
+      transaction.spicetifyRuntimeTarget == target,
+      transaction.spicetifyRuntimeVerified != true
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "no matching Spicetify runtime restoration is pending"
+      )
+    }
+    try store.writeTransaction(transaction.withSpicetifyRuntimeVerified)
   }
 
   func preflightManagedHerdr(
@@ -3408,6 +3705,21 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
+    if let expected = inspection.spicetifyExternalEvidence {
+      let url = homeDirectory.appending(path: ".config/spicetify/config-xpui.ini")
+      let tupleIsExact =
+        try inspection.proposedSpicetifyOwnership != nil
+        || inspector.spicetifyExternalTupleIsExact(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot,
+          configurationEvidence: expected
+        )
+      guard try inspector.capture(url, directoryLink: nil) == expected, tupleIsExact else {
+        throw EnvironmentLifecycleError.blocked(
+          "Spicetify external tuple changed after planning; run environment plan again"
+        )
+      }
+    }
     if let expected = inspection.tuicrExternalEvidence {
       let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
       guard try inspector.capture(url, directoryLink: nil) == expected else {
@@ -3483,10 +3795,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
       codex: inspection.proposedCodexOwnership,
       herdr: inspection.proposedHerdrOwnership,
       pi: inspection.proposedPiOwnership,
+      spicetify: inspection.proposedSpicetifyOwnership,
       tuicr: inspection.proposedTuicrOwnership,
       codexEnabled: composition.profile.presets.codex,
       herdrEnabled: composition.profile.presets.herdr,
       piEnabled: composition.profile.presets.pi,
+      slackEnabled: composition.profile.presets.slack,
+      spicetifyEnabled: composition.profile.presets.spicetify,
       tuicrEnabled: composition.profile.presets.tuicr,
       enabledThemeAdapterIDs: composition.profile.selectedThemeAdapterIDs
     )
@@ -3496,10 +3811,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.codex != proposed.codex
       || previous?.herdr != proposed.herdr
       || previous?.pi != proposed.pi
+      || previous?.spicetify != proposed.spicetify
       || previous?.tuicr != proposed.tuicr
       || previous?.codexEnabled != proposed.codexEnabled
       || previous?.herdrEnabled != proposed.herdrEnabled
       || previous?.piEnabled != proposed.piEnabled
+      || previous?.slackEnabled != proposed.slackEnabled
+      || previous?.spicetifyEnabled != proposed.spicetifyEnabled
       || previous?.tuicrEnabled != proposed.tuicrEnabled
       || previous?.enabledThemeAdapterIDs != proposed.enabledThemeAdapterIDs
     let changed = generationChanged || ownershipChanged
@@ -3516,6 +3834,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let piReplacementName =
       previous?.pi != nil || proposed.pi != nil
       ? ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement" : nil
+    let spicetifyReplacementName =
+      previous?.spicetify != nil || proposed.spicetify != nil
+      ? ".macarchy-environment-spicetify-\(UUID().uuidString.lowercased()).replacement" : nil
     let tuicrReplacementName =
       previous?.tuicr != nil || proposed.tuicr != nil
       ? ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement" : nil
@@ -3533,6 +3854,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
       herdrLegacyMigration:
         previous?.herdr == nil && proposed.herdr?.migratedLegacy == true ? true : nil,
       piReplacementName: piReplacementName,
+      spicetifyReplacementName: spicetifyReplacementName,
+      spicetifyRuntimeTarget: requiredSpicetifyRuntimeTarget(from: previous, to: proposed),
       tuicrReplacementName: tuicrReplacementName
     )
     let store = EnvironmentStateStore(stateRoot: stateRoot)
@@ -3547,6 +3870,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           codexReplacementName: codexReplacementName,
           herdrReplacementName: herdrReplacementName,
           piReplacementName: piReplacementName,
+          spicetifyReplacementName: spicetifyReplacementName,
           tuicrReplacementName: tuicrReplacementName
         )
         try restoreReleasedThemeBridges(from: previous, to: proposed)
@@ -3571,6 +3895,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           codexReplacementName: codexReplacementName,
           herdrReplacementName: herdrReplacementName,
           piReplacementName: piReplacementName,
+          spicetifyReplacementName: spicetifyReplacementName,
           tuicrReplacementName: tuicrReplacementName,
           preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
         )
@@ -3591,6 +3916,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
     if try pendingHerdrRuntimeTargetLocked() != nil {
       throw EnvironmentLifecycleError.blocked(
         "Herdr runtime activation is not verified"
+      )
+    }
+    if try pendingSpicetifyRuntimeTargetLocked() != nil {
+      throw EnvironmentLifecycleError.blocked(
+        "Spicetify runtime refresh is not verified"
       )
     }
     let inspection = inspector.inspect(
@@ -3631,6 +3961,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       codexReplacementName: rollback.codexReplacementName,
       herdrReplacementName: rollback.herdrReplacementName,
       piReplacementName: rollback.piReplacementName,
+      spicetifyReplacementName: rollback.spicetifyReplacementName,
       tuicrReplacementName: rollback.tuicrReplacementName,
       preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
     )
@@ -3639,7 +3970,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     )
     try restoreRollbackThemeBridges(rollback)
     try store.writeOwnership(rollback.previousOwnership)
-    if rollback.herdrRuntimeTarget == nil {
+    if rollback.herdrRuntimeTarget == nil, rollback.spicetifyRuntimeTarget == nil {
       try store.removeTransaction()
     }
   }
@@ -3704,6 +4035,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       piReplacementName: ownership.pi.map { _ in
         ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement"
       },
+      spicetifyReplacementName: ownership.spicetify.map { _ in
+        ".macarchy-environment-spicetify-\(UUID().uuidString.lowercased()).replacement"
+      },
+      spicetifyRuntimeTarget: requiredSpicetifyRuntimeTarget(from: ownership, to: nil),
       tuicrReplacementName: ownership.tuicr.map { _ in
         ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement"
       }
@@ -3716,9 +4051,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       codexReplacementName: transaction.codexReplacementName,
       herdrReplacementName: transaction.herdrReplacementName,
       piReplacementName: transaction.piReplacementName,
+      spicetifyReplacementName: transaction.spicetifyReplacementName,
       tuicrReplacementName: transaction.tuicrReplacementName
     )
-    if transaction.herdrRuntimeTarget == nil {
+    if transaction.herdrRuntimeTarget == nil, transaction.spicetifyRuntimeTarget == nil {
       _ = try prepareRecoveryLocked()
     }
     return (true, "The exact adopted provider entries were restored.")
@@ -3762,6 +4098,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         codexReplacementName: nil,
         herdrReplacementName: transaction.herdrReplacementName,
         piReplacementName: nil,
+        spicetifyReplacementName: nil,
         tuicrReplacementName: nil
       )
       try store.writeOwnership(proposed)
@@ -3777,6 +4114,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
           codexReplacementName: nil,
           herdrReplacementName: transaction.herdrReplacementName,
           piReplacementName: nil,
+          spicetifyReplacementName: nil,
           tuicrReplacementName: nil
         )
         try store.writeOwnership(previous)
@@ -3797,6 +4135,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     codexReplacementName: String?,
     herdrReplacementName: String?,
     piReplacementName: String?,
+    spicetifyReplacementName: String?,
     tuicrReplacementName: String?,
     preserveLegacyHerdrOnRemoval: Bool = false
   ) throws {
@@ -3808,8 +4147,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       stateRoot: stateRoot
     )
     let piTransaction = EnvironmentPiFileTransaction(homeDirectory: homeDirectory)
+    let spicetifyTransaction = EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory)
     let tuicrTransaction = EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
     let transitionedPiBeforeLinks = old?.pi != nil
+    let transitionedSpicetifyBeforeLinks = old?.spicetify != nil
     let transitionedCodexBeforeLinks = old?.codex != nil
     let transitionedHerdrBeforeLinks = old?.herdr != nil
     if transitionedCodexBeforeLinks {
@@ -3834,6 +4175,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
         throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
       }
       try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
+    }
+    if transitionedSpicetifyBeforeLinks {
+      guard let spicetifyReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Spicetify transaction has no replacement identity")
+      }
+      try spicetifyTransaction.transition(
+        from: old, to: new, replacementName: spicetifyReplacementName)
     }
     let transitionedTuicrBeforeLinks = old?.tuicr != nil
     if transitionedTuicrBeforeLinks {
@@ -3906,6 +4254,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
         throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
       }
       try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
+    }
+    if !transitionedSpicetifyBeforeLinks, new?.spicetify != nil {
+      guard let spicetifyReplacementName else {
+        throw EnvironmentLifecycleError.blocked("Spicetify transaction has no replacement identity")
+      }
+      try spicetifyTransaction.transition(
+        from: old, to: new, replacementName: spicetifyReplacementName)
     }
     if !transitionedTuicrBeforeLinks, new?.tuicr != nil {
       guard let tuicrReplacementName else {
@@ -4022,6 +4377,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
         throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Pi path")
       }
     }
+    if let spicetify = ownership.spicetify {
+      let expected = homeDirectory.appending(path: ".config/spicetify/config-xpui.ini").path
+      guard spicetify.path == expected else {
+        throw EnvironmentLifecycleError.blocked(
+          "ownership contains an unexpected Spicetify path")
+      }
+    }
     if let tuicr = ownership.tuicr {
       let expected = homeDirectory.appending(path: ".config/tuicr/config.toml").path
       guard tuicr.path == expected else {
@@ -4124,6 +4486,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
           stateRoot: stateRoot
         )
       else { throw EnvironmentLifecycleError.drift("externally owned Pi tuple") }
+    }
+    if let spicetify = ownership.spicetify {
+      try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory).preflight(spicetify)
+    } else if ownership.spicetifyEnabled,
+      !ownership.records.contains(where: { $0.id == .spicetifyColor })
+    {
+      guard
+        try inspector.spicetifyExternalTupleIsExact(
+          homeDirectory: homeDirectory, stateRoot: stateRoot)
+      else { throw EnvironmentLifecycleError.drift("externally owned Spicetify tuple") }
     }
     if let tuicr = ownership.tuicr {
       try EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory).preflight(tuicr)

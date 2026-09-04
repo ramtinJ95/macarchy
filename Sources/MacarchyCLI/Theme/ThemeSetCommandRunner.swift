@@ -6,6 +6,7 @@ struct ThemeSetCommandRunner: Sendable {
   let activate:
     @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths, String?) async throws
       -> ThemeActivationResult
+  let slackIsEnabled: @Sendable (URL) throws -> Bool
 
   static let live = ThemeSetCommandRunner(
     preflight: { package, backgroundID, stateRoot, consumerPaths in
@@ -23,8 +24,24 @@ struct ThemeSetCommandRunner: Sendable {
         expectedActiveGenerationID: expectedActiveGenerationID,
         requestedBackgroundID: backgroundID
       )
+    },
+    slackIsEnabled: { stateRoot in
+      try ThemeRuntimeSelection.slackIsEnabled(stateRoot: stateRoot)
     }
   )
+
+  init(
+    preflight: @escaping @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths) throws -> Void,
+    activate:
+      @escaping @Sendable (
+        ThemePackage, String?, URL, ThemeConsumerPaths, String?
+      ) async throws -> ThemeActivationResult,
+    slackIsEnabled: @escaping @Sendable (URL) throws -> Bool = { _ in true }
+  ) {
+    self.preflight = preflight
+    self.activate = activate
+    self.slackIsEnabled = slackIsEnabled
+  }
 
   func execute(
     repository: ThemeRepository,
@@ -93,6 +110,7 @@ struct ThemeSetCommandRunner: Sendable {
         report = .precommitFailure(themeID: package.id, error: error)
       }
     } else {
+      let slackTheme = try slackIsEnabled(stateRoot) ? SlackAdapter.render(package: package) : nil
       do {
         report = .committed(
           try await activate(
@@ -102,7 +120,7 @@ struct ThemeSetCommandRunner: Sendable {
             consumerPaths,
             expectedActiveGenerationID
           ),
-          slackTheme: SlackAdapter.render(package: package)
+          slackTheme: slackTheme
         )
       } catch let error as ThemeActivationError {
         if case .activeGenerationChanged = error { throw error }
@@ -111,13 +129,13 @@ struct ThemeSetCommandRunner: Sendable {
         report = .committedActivationError(
           manifest: error.manifest,
           cause: error.cause,
-          slackTheme: SlackAdapter.render(package: package)
+          slackTheme: slackTheme
         )
       } catch let error as ThemeCommittedWithReconciliationError {
         report = .committedError(
           manifest: error.manifest,
           cause: error.cause,
-          slackTheme: SlackAdapter.render(package: package)
+          slackTheme: slackTheme
         )
       } catch {
         report = .precommitFailure(themeID: package.id, error: error)

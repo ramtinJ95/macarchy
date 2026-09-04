@@ -252,10 +252,13 @@ struct ConsumerSetupPlanTests {
       uniqueKeysWithValues: records.map { ($0.id, $0.kind) }
     )
 
-    #expect(resumedOwnership == expectedOwnershipKinds())
+    var expected = expectedOwnershipKinds()
+    expected.removeValue(forKey: "spicetify.selectors")
+    expected.removeValue(forKey: "spicetify.color-link")
+    #expect(resumedOwnership == expected)
     #expect(
       Set(records.map(\.kind))
-        == Set([.regularFile, .symbolicLink, .jsonSelector, .spicetifySelection])
+        == Set([.regularFile, .symbolicLink, .jsonSelector])
     )
   }
 

@@ -23,11 +23,41 @@ struct EnvironmentHerdrRuntimeReloader: Sendable {
   }
 }
 
+struct EnvironmentSpicetifyRuntimeRefresher: Sendable {
+  let refresh: @Sendable (URL, URL, Bool) throws -> String
+
+  static let assumed = Self { _, _, _ in
+    "Spicetify runtime refresh was assumed by the caller."
+  }
+  static let live = Self { stateRoot, homeDirectory, clearEvidence in
+    try SpicetifyAdapter.live(
+      root: stateRoot,
+      configurationDirectoryURL: homeDirectory.appending(path: ".config/spicetify")
+    ).refreshRestoredConfiguration(clearRuntimeEvidence: clearEvidence).message()
+  }
+}
+
+private func requiresSpicetifyRuntimePrerequisites(
+  stateRoot: URL,
+  desiredEnabled: Bool?
+) throws -> Bool {
+  let store = EnvironmentStateStore(stateRoot: stateRoot)
+  if let transaction = try store.readTransaction(),
+    transaction.spicetifyRuntimeTarget != nil,
+    transaction.spicetifyRuntimeVerified != true
+  {
+    return true
+  }
+  guard try store.readOwnership()?.spicetifyEnabled == true else { return false }
+  return desiredEnabled != true
+}
+
 private func recoverEnvironmentTransaction(
   coordinator: EnvironmentTransactionCoordinator,
   stateRoot: URL,
   homeDirectory: URL,
-  runtime: EnvironmentHerdrRuntimeReloader
+  runtime: EnvironmentHerdrRuntimeReloader,
+  spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
 ) throws -> Bool {
   let preparation = try ActivationLock(root: stateRoot).withLock {
     try coordinator.prepareRecoveryLocked()
@@ -37,6 +67,18 @@ private func recoverEnvironmentTransaction(
     _ = try runtime.reload(stateRoot, homeDirectory)
     try ActivationLock(root: stateRoot).withLock {
       try coordinator.markHerdrRuntimeVerifiedLocked(target)
+      _ = try coordinator.prepareRecoveryLocked()
+    }
+  }
+  if preparation.spicetifyRuntimeTarget != nil {
+    _ = try verifyPendingSpicetifyRuntime(
+      coordinator: coordinator,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      runtime: spicetifyRuntime,
+      adapterWasReconciled: false
+    )
+    try ActivationLock(root: stateRoot).withLock {
       _ = try coordinator.prepareRecoveryLocked()
     }
   }
@@ -69,7 +111,8 @@ private func rollbackEnvironmentTransaction(
   coordinator: EnvironmentTransactionCoordinator,
   stateRoot: URL,
   homeDirectory: URL,
-  runtime: EnvironmentHerdrRuntimeReloader
+  runtime: EnvironmentHerdrRuntimeReloader,
+  spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
 ) throws {
   try ActivationLock(root: stateRoot).withLock {
     try coordinator.rollbackApplyLocked()
@@ -84,6 +127,45 @@ private func rollbackEnvironmentTransaction(
       _ = try coordinator.prepareRecoveryLocked()
     }
   }
+  if try verifyPendingSpicetifyRuntime(
+    coordinator: coordinator,
+    stateRoot: stateRoot,
+    homeDirectory: homeDirectory,
+    runtime: spicetifyRuntime,
+    adapterWasReconciled: false
+  ) != nil {
+    try ActivationLock(root: stateRoot).withLock {
+      _ = try coordinator.prepareRecoveryLocked()
+    }
+  }
+}
+
+private func verifyPendingSpicetifyRuntime(
+  coordinator: EnvironmentTransactionCoordinator,
+  stateRoot: URL,
+  homeDirectory: URL,
+  runtime: EnvironmentSpicetifyRuntimeRefresher,
+  adapterWasReconciled: Bool
+) throws -> DesktopThemeAdapterStatus? {
+  let target = try ActivationLock(root: stateRoot).withLock {
+    try coordinator.pendingSpicetifyRuntimeTargetLocked()
+  }
+  guard let target else { return nil }
+  let message: String
+  if target == .managed, adapterWasReconciled {
+    message = "Spicetify refreshed the managed configuration."
+  } else {
+    message = try runtime.refresh(stateRoot, homeDirectory, target == .original)
+  }
+  try ActivationLock(root: stateRoot).withLock {
+    try coordinator.markSpicetifyRuntimeVerifiedLocked(target)
+  }
+  return DesktopThemeAdapterStatus(
+    adapterID: SpicetifyAdapter.id,
+    requirement: "required",
+    status: "applied",
+    message: message
+  )
 }
 
 struct EnvironmentNeovimPreparer: Sendable {
@@ -170,6 +252,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let verifier: EnvironmentSessionVerifier
   let neovim: EnvironmentNeovimPreparer
   let herdrRuntime: EnvironmentHerdrRuntimeReloader
+  let spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
 
   static let live = Self(
@@ -177,7 +260,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
     theme: .live,
     verifier: .live,
     neovim: .live,
-    herdrRuntime: .live
+    herdrRuntime: .live,
+    spicetifyRuntime: .live
   )
 
   init(
@@ -186,6 +270,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     verifier: EnvironmentSessionVerifier,
     neovim: EnvironmentNeovimPreparer = .assumed,
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
+    spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed,
     transactionFaultInjector:
       @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = {
         _ in
@@ -196,6 +281,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.verifier = verifier
     self.neovim = neovim
     self.herdrRuntime = herdrRuntime
+    self.spicetifyRuntime = spicetifyRuntime
     self.transactionFaultInjector = transactionFaultInjector
   }
 
@@ -227,7 +313,25 @@ struct EnvironmentApplyCommandRunner: Sendable {
       )
     }
 
-    let prerequisiteState = prerequisites.inspect(profile.environment, homeDirectory)
+    let requiresCurrentSpicetifyRuntime: Bool
+    do {
+      requiresCurrentSpicetifyRuntime = try requiresSpicetifyRuntimePrerequisites(
+        stateRoot: stateRoot,
+        desiredEnabled: profile.environment.presets.spicetify
+      )
+    } catch {
+      return try failure(
+        profileURL: profileURL,
+        profile: profile.environment,
+        message: String(describing: error),
+        mutated: false,
+        json: json
+      )
+    }
+    var prerequisiteState = prerequisites.inspect(profile.environment, homeDirectory)
+    if requiresCurrentSpicetifyRuntime, !profile.environment.presets.spicetify {
+      prerequisiteState += prerequisites.inspectSpicetifyRuntime(homeDirectory)
+    }
     let missing = prerequisiteState.filter { $0.status == "missing" }
     guard missing.isEmpty else {
       return try failure(
@@ -281,12 +385,13 @@ struct EnvironmentApplyCommandRunner: Sendable {
           coordinator: coordinator,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          runtime: herdrRuntime
+          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
         )
         let result = try ActivationLock(root: stateRoot).withLock {
           try coordinator.teardownLocked(dryRun: false)
         }
         let restoredHerdr: DesktopThemeAdapterStatus?
+        let restoredSpicetify: DesktopThemeAdapterStatus?
         do {
           restoredHerdr = try verifyPendingHerdrRuntime(
             coordinator: coordinator,
@@ -294,7 +399,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
             homeDirectory: homeDirectory,
             runtime: herdrRuntime
           )
-          if restoredHerdr != nil {
+          restoredSpicetify = try verifyPendingSpicetifyRuntime(
+            coordinator: coordinator,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            runtime: spicetifyRuntime,
+            adapterWasReconciled: false
+          )
+          if restoredHerdr != nil || restoredSpicetify != nil {
             try ActivationLock(root: stateRoot).withLock {
               _ = try coordinator.prepareRecoveryLocked()
             }
@@ -306,7 +418,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
               coordinator: coordinator,
               stateRoot: stateRoot,
               homeDirectory: homeDirectory,
-              runtime: herdrRuntime
+              runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
             )
           } catch {
             throw EnvironmentLifecycleError.blocked(
@@ -330,7 +442,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           homeDirectory: homeDirectory,
           consumerPaths: consumerPaths,
           includeVerification: true,
-          observedTheme: restoredHerdr.map { [$0] },
+          observedTheme: [restoredHerdr, restoredSpicetify].compactMap { $0 },
           successfulOutcome: result.changed ? "applied" : "no_change",
           mutated: result.changed,
           successMessage: result.message,
@@ -360,7 +472,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         coordinator: coordinator,
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
-        runtime: herdrRuntime
+        runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
       )
       if recovered {
         return try failure(
@@ -500,11 +612,35 @@ struct EnvironmentApplyCommandRunner: Sendable {
       } else {
         appliedTheme = herdrActivation.map { [$0] } ?? []
       }
+      _ = try verifyPendingSpicetifyRuntime(
+        coordinator: coordinator,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        runtime: spicetifyRuntime,
+        adapterWasReconciled: appliedTheme.contains {
+          $0.adapterID == SpicetifyAdapter.id && $0.status != "failed"
+        }
+      )
       verification =
         (neovimVerification.map { [$0] } ?? [])
         + verifier.verify(profile.environment, homeDirectory)
-      guard verification.allSatisfy({ $0.status == "verified" }) else {
-        let failures = verification.filter { $0.status != "verified" }.map(\.message)
+        + (profile.environment.presets.slack
+          ? [
+            EnvironmentVerification(
+              id: SlackAdapter.id,
+              status: "manual_required",
+              message:
+                "Manual import is required for each Slack workspace. \(SlackAdapter.importInstructions)"
+            )
+          ] : [])
+      guard
+        verification.allSatisfy({
+          $0.status == "verified" || $0.status == "manual_required"
+        })
+      else {
+        let failures = verification.filter {
+          $0.status != "verified" && $0.status != "manual_required"
+        }.map(\.message)
         throw EnvironmentLifecycleError.blocked(failures.joined(separator: "; "))
       }
       try ActivationLock(root: stateRoot).withLock {
@@ -516,7 +652,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           coordinator: coordinator,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          runtime: herdrRuntime
+          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
         )
       } catch {
         return try failure(
@@ -611,12 +747,24 @@ struct EnvironmentApplyCommandRunner: Sendable {
 }
 
 struct EnvironmentTeardownCommandRunner: Sendable {
+  let prerequisites: EnvironmentPrerequisiteInspector
   let herdrRuntime: EnvironmentHerdrRuntimeReloader
+  let spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
 
-  static let live = Self(herdrRuntime: .live)
+  static let live = Self(
+    prerequisites: .live,
+    herdrRuntime: .live,
+    spicetifyRuntime: .live
+  )
 
-  init(herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed) {
+  init(
+    prerequisites: EnvironmentPrerequisiteInspector = .assumed,
+    herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
+    spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed
+  ) {
+    self.prerequisites = prerequisites
     self.herdrRuntime = herdrRuntime
+    self.spicetifyRuntime = spicetifyRuntime
   }
 
   func execute(
@@ -625,6 +773,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
     dryRun: Bool,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
+    var prerequisiteState = [EnvironmentPrerequisiteStatus]()
     do {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
       let hasManagedState =
@@ -652,6 +801,32 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         )
         return (try report.render(json: json), true)
       }
+      if try requiresSpicetifyRuntimePrerequisites(
+        stateRoot: stateRoot,
+        desiredEnabled: nil
+      ) {
+        prerequisiteState = prerequisites.inspectSpicetifyRuntime(homeDirectory)
+        let missing = prerequisiteState.filter { $0.status == "missing" }
+        guard missing.isEmpty else {
+          let message = "Missing prerequisites: \(missing.map(\.id).joined(separator: ", "))."
+          let report = EnvironmentLifecycleReport(
+            operation: "environment_teardown",
+            outcome: "blocked",
+            mutated: false,
+            profile: nil,
+            providers: [:],
+            generation: EnvironmentGenerationReport(status: "unknown", message: message),
+            transactionStatus: store.transactionExists ? "recovery_required" : "clear",
+            adoptionEvidenceDigest: nil,
+            prerequisites: prerequisiteState,
+            entries: [],
+            theme: [],
+            verification: [],
+            message: message
+          )
+          return (try report.render(json: json), false)
+        }
+      }
       let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
       let lifecycleLockDescriptor = try lifecycleLock.acquire()
       defer { lifecycleLock.release(lifecycleLockDescriptor) }
@@ -664,13 +839,14 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           coordinator: coordinator,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          runtime: herdrRuntime
+          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
         )
       }
       let result = try ActivationLock(root: stateRoot).withLock {
         try coordinator.teardownLocked(dryRun: dryRun)
       }
       let restoredHerdr: DesktopThemeAdapterStatus?
+      let restoredSpicetify: DesktopThemeAdapterStatus?
       do {
         restoredHerdr = try verifyPendingHerdrRuntime(
           coordinator: coordinator,
@@ -678,7 +854,14 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           homeDirectory: homeDirectory,
           runtime: herdrRuntime
         )
-        if restoredHerdr != nil {
+        restoredSpicetify = try verifyPendingSpicetifyRuntime(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: spicetifyRuntime,
+          adapterWasReconciled: false
+        )
+        if restoredHerdr != nil || restoredSpicetify != nil {
           try ActivationLock(root: stateRoot).withLock {
             _ = try coordinator.prepareRecoveryLocked()
           }
@@ -690,7 +873,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
             coordinator: coordinator,
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
-            runtime: herdrRuntime
+            runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
           )
         } catch {
           throw EnvironmentLifecycleError.blocked(
@@ -713,9 +896,9 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         ),
         transactionStatus: "clear",
         adoptionEvidenceDigest: nil,
-        prerequisites: [],
+        prerequisites: prerequisiteState,
         entries: [],
-        theme: restoredHerdr.map { [$0] } ?? [],
+        theme: ([restoredHerdr, restoredSpicetify].compactMap { $0 }),
         verification: [],
         message: result.message
       )
@@ -734,7 +917,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
           ? "recovery_required" : "clear",
         adoptionEvidenceDigest: nil,
-        prerequisites: [],
+        prerequisites: prerequisiteState,
         entries: [],
         theme: [],
         verification: [],

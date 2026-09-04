@@ -275,7 +275,7 @@ package struct ConsumerCatalog: Sendable {
             throw ConsumerCatalogError.invalidDependencyRole(entry.id.rawValue)
           }
         case .optionalAdapter:
-          guard entry.mode.requirement == .optional else {
+          guard entry.mode.requirement == .optional || isManual else {
             throw ConsumerCatalogError.invalidDependencyRole(entry.id.rawValue)
           }
         }
@@ -564,6 +564,7 @@ package struct ConsumerCatalog: Sendable {
             path: SlackAdapter.outputPath, string: SlackAdapter.render(package: package))
         ]
       },
+      dependencies: [.init(id: SlackAdapter.id, role: .optionalAdapter)],
       manualNotice: ConsumerManualNotice(
         summary:
           "Slack theme requires manual import; Slack exposes no supported theme automation API.",
@@ -575,7 +576,7 @@ package struct ConsumerCatalog: Sendable {
     ),
     ConsumerCatalogEntry(
       id: .spicetify,
-      mode: .runtime(.spicetify, requirement: .optional),
+      mode: .runtime(.spicetify, requirement: .required),
       renderer: ConsumerRendererRegistration(
         id: SpicetifyAdapter.id,
         version: SpicetifyAdapter.rendererVersion,
@@ -587,8 +588,8 @@ package struct ConsumerCatalog: Sendable {
         ]
       },
       dependencies: [
-        .init(id: SpicetifyAdapter.id, role: .optionalAdapter),
-        .init(id: "spotify", role: .optionalAdapter),
+        .init(id: SpicetifyAdapter.id, role: .requiredAdapter),
+        .init(id: "spotify", role: .requiredAdapter),
       ],
       setupManaged: true
     ),

@@ -61,7 +61,7 @@ struct SpicetifySetupTests {
   }
 
   @Test
-  func centralSetupAndTeardownRoundTripPresentSpicetifySeams() throws {
+  func centralSetupLeavesNewSpicetifyConfigurationForEnvironmentOwnership() throws {
     let fixture = try Fixture(configuration: "")
     defer { fixture.remove() }
     try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
@@ -84,36 +84,73 @@ struct SpicetifySetupTests {
       dryRun: false
     )
 
-    var setupStatuses = externalFixtureStatuses
-    setupStatuses["spicetify.selectors"] = .owned
-    setupStatuses["spicetify.color-link"] = .owned
-    expectStatuses(setup, setupStatuses)
-    #expect(
-      try FileManager.default.destinationOfSymbolicLink(
-        atPath: context.spicetifyColorLink.path
-      ) == context.spicetifyColorDestination.path
-    )
+    expectStatuses(setup, externalFixtureStatuses)
+    #expect(!setup.first { $0.id == "spicetify.selectors" }!.mutationAttempted)
+    #expect(!setup.first { $0.id == "spicetify.color-link" }!.mutationAttempted)
     #expect(try Data(contentsOf: userCSS) == css)
+    #expect(try Data(contentsOf: context.spicetifyConfiguration) == original)
+    #expect(!FileManager.default.fileExists(atPath: context.spicetifyColorLink.path))
 
     let teardown = try SetupOwnershipManager().teardown(
       homeDirectory: fixture.home,
       dryRun: false
     )
 
-    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
+    let teardownStatuses = externalFixtureStatuses.mapValues { _ in
       SetupIntegrationResult.Status.none
     }
-    teardownStatuses["spicetify.selectors"] = .removed
-    teardownStatuses["spicetify.color-link"] = .removed
     expectStatuses(teardown, teardownStatuses)
     #expect(try Data(contentsOf: context.spicetifyConfiguration) == original)
     #expect(try Data(contentsOf: userCSS) == css)
-    #expect(throws: (any Error).self) {
-      _ = try FileManager.default.destinationOfSymbolicLink(
-        atPath: context.spicetifyColorLink.path
-      )
-    }
+    #expect(!FileManager.default.fileExists(atPath: context.spicetifyColorLink.path))
     #expect(!FileManager.default.fileExists(atPath: context.manifestURL.path))
+  }
+
+  @Test
+  func centralSetupBlocksBothPartialLegacyOwnershipShapesBeforeProviderMutation() throws {
+    let original = Data(
+      "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 1\n".utf8
+    )
+    for retainedID in [
+      SetupOwnershipManager.spicetifySelectorsID,
+      SetupOwnershipManager.spicetifyColorLinkID,
+    ] {
+      let fixture = try SpicetifySetupFixture(configuration: original)
+      defer { fixture.remove() }
+      _ = try fixture.setup(dryRun: false)
+      let manager = SetupOwnershipManager()
+      let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
+      let completeRecords = try manager.readRecords(context: context)
+      let retained = try #require(completeRecords.first { $0.id == retainedID })
+      try manager.persist(records: [retained], context: context)
+
+      if retainedID == SetupOwnershipManager.spicetifySelectorsID {
+        try FileManager.default.removeItem(at: fixture.colorLink)
+      } else {
+        try FileManager.default.removeItem(at: fixture.selectorsBackup)
+        try original.write(to: fixture.configuration, options: .atomic)
+      }
+      let beforeManifest = try Data(contentsOf: fixture.manifest)
+      let beforeConfiguration = try Data(contentsOf: fixture.configuration)
+      let beforeLink = try? fixture.colorLinkDestination()
+      var excluded = Set(manager.consumerSetupPlans(context: context).map(\.consumerID))
+      excluded.remove(.spicetify)
+
+      #expect(
+        throws: SetupOwnershipError.invalidManifest(
+          "legacy Spicetify ownership must contain both spicetify.selectors and spicetify.color-link"
+        )
+      ) {
+        _ = try manager.setup(
+          homeDirectory: fixture.home,
+          dryRun: false,
+          excluding: excluded
+        )
+      }
+      #expect(try Data(contentsOf: fixture.manifest) == beforeManifest)
+      #expect(try Data(contentsOf: fixture.configuration) == beforeConfiguration)
+      #expect((try? fixture.colorLinkDestination()) == beforeLink)
+    }
   }
 
   @Test
@@ -299,6 +336,10 @@ struct SpicetifySetupTests {
     let setupFinished = DispatchSemaphore(value: 0)
     let reconciliationError = Mutex<String?>(nil)
     let setupError = Mutex<String?>(nil)
+    let package = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
+    )
+    _ = try ThemeActivator(root: fixture.stateRoot).activate(package: package)
     let adapter = SpicetifyAdapter(
       root: fixture.stateRoot,
       configurationDirectoryURL: fixture.configuration.deletingLastPathComponent(),
@@ -311,7 +352,9 @@ struct SpicetifySetupTests {
         refreshEntered.signal()
         releaseLock.wait()
         return ProcessResult(terminationStatus: 0, output: "")
-      }
+      },
+      spicetifyVersionProvider: { "2.44.0" },
+      spotifyVersionProvider: { "1.2.50" }
     )
 
     Task(executorPreference: BlockingTaskExecutor(label: "spicetify-setup-overlap")) {
@@ -711,6 +754,6 @@ private final class SpicetifySetupFixture: @unchecked Sendable {
   }
 
   func remove() {
-    try? FileManager.default.removeItem(at: root)
+    removeSpicetifyTestRoot(root)
   }
 }
