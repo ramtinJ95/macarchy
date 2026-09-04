@@ -309,7 +309,7 @@ struct TuicrPresetLifecycleTests {
         tuicrEnabled: true
       )
     )
-    let malformedTeardown = try fixture.teardown()
+    let malformedTeardown = try await fixture.teardown()
     #expect(!malformedTeardown.succeeded)
     #expect(malformedTeardown.output.contains("invalid"))
     #expect(try fixture.link(fixture.themeLink) == fixture.themeDestination.path)
@@ -332,7 +332,7 @@ struct TuicrPresetLifecycleTests {
       restored == "wrap = false\r\ntheme = \"personal\" # keep me\r\nmouse = false\r\n"
     )
 
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
     #expect(teardown.succeeded)
     #expect(
       try String(contentsOf: fixture.configuration, encoding: .utf8)
@@ -513,7 +513,7 @@ struct TuicrPresetLifecycleTests {
     let driftedStatus = try fixture.status()
     #expect(!driftedStatus.succeeded)
     #expect(!fixture.applySyncPreview().succeeded)
-    let driftedTeardown = try fixture.teardown()
+    let driftedTeardown = try await fixture.teardown()
     #expect(!driftedTeardown.succeeded)
     #expect(try fixture.link(fixture.themeLink) == fixture.themeDestination.path)
     #expect(try fixture.link(fixture.syntaxLink) == fixture.syntaxDestination.path)
@@ -612,7 +612,7 @@ struct TuicrPresetLifecycleTests {
 
     try fixture.writeProfile(tuicr: true)
     #expect(try await fixture.apply().succeeded)
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
     #expect(teardown.succeeded)
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
     #expect(try fixture.externalTupleSnapshot() == original)
@@ -957,10 +957,11 @@ private struct TuicrFixture {
     )
   }
 
-  func teardown() throws -> (output: String, succeeded: Bool) {
-    try EnvironmentTeardownCommandRunner().execute(
+  func teardown() async throws -> (output: String, succeeded: Bool) {
+    try await EnvironmentTeardownCommandRunner().execute(
       stateRoot: state,
       homeDirectory: home,
+      consumerPaths: testConsumerPaths(),
       dryRun: false,
       json: true
     )

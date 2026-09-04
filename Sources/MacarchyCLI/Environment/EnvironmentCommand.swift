@@ -148,14 +148,12 @@ struct EnvironmentCommand: ParsableCommand {
     }
   }
 
-  struct Teardown: ParsableCommand {
+  struct Teardown: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Restore the exact provider entries adopted by the environment lifecycle."
     )
 
-    @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    @OptionGroup var state: Macarchy.StateOptions
 
     @Flag(help: "Preview exact restoration without mutation.")
     var dryRun = false
@@ -163,10 +161,11 @@ struct EnvironmentCommand: ParsableCommand {
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
-    mutating func run() throws {
-      let execution = try EnvironmentTeardownCommandRunner.live.execute(
-        stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
+    mutating func run() async throws {
+      let execution = try await EnvironmentTeardownCommandRunner.live.execute(
+        stateRoot: state.stateRootURL,
         homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+        consumerPaths: state.consumerPaths,
         dryRun: dryRun,
         json: json
       )
