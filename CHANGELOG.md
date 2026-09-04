@@ -19,6 +19,13 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Added the optional first-class Herdr environment preset with strict version
   and live-reload contracts, bounded 16-token theme ownership, reviewed Stow
   target adoption, legacy-journal migration, and exact disable restoration.
+- Added the optional Spicetify environment preset with strict CLI and Spotify
+  version evidence, selector-only reviewed adoption, exact external Stow
+  tuples, serialized no-restart refresh, correlated no-op evidence, and
+  recoverable exact disable restoration.
+- Added the optional Slack environment preset with official-app and renderer-v2
+  payload readiness, applied manual-import authority, exact per-workspace
+  instructions, and no Slack process or private-state mutation.
 - Added the first-class default desktop shell: deterministic no-SA yabai
   tiling, managed skhd shortcuts, and a clean-room Space-aware themed
   SketchyBar with role opt-outs and sparse portable profile controls.
