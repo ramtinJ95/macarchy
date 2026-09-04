@@ -92,6 +92,41 @@ extension Macarchy {
       }
     }
 
+    struct AdoptionOptions: ParsableArguments {
+      @Option(help: "Versioned JSON file containing machine-bound adoption approvals.")
+      var adoptionFile: String?
+
+      @Option(help: "Exact yabai adoption digest from the reviewed setup plan.")
+      var yabaiAdopt: String?
+
+      @Option(help: "Exact skhd adoption digest from the reviewed setup plan.")
+      var keybindingsAdopt: String?
+
+      @Option(help: "Exact SketchyBar adoption digest from the reviewed setup plan.")
+      var sketchybarAdopt: String?
+
+      @Option(help: "Exact environment adoption digest from the reviewed setup plan.")
+      var environmentAdopt: String?
+
+      func resolve() throws -> UnifiedSetupAdoptionApprovals {
+        let commandLine = UnifiedSetupAdoptionApprovals(
+          yabai: yabaiAdopt,
+          keybindings: keybindingsAdopt,
+          sketchybar: sketchybarAdopt,
+          environment: environmentAdopt
+        )
+        guard let adoptionFile else { return commandLine }
+        guard commandLine.values.isEmpty else {
+          throw ValidationError(
+            "--adoption-file cannot be combined with named adoption options."
+          )
+        }
+        return try UnifiedSetupAdoptionFile.load(
+          at: URL(filePath: adoptionFile).standardizedFileURL
+        )
+      }
+    }
+
     struct Plan: ParsableCommand {
       static let configuration = CommandConfiguration(
         abstract: "Compile and inspect the complete core setup without making changes."
@@ -128,6 +163,7 @@ extension Macarchy {
 
       @OptionGroup var profile: ProfileOptions
       @OptionGroup var state: StateOptions
+      @OptionGroup var adoption: AdoptionOptions
 
       @Flag(help: "Install only selected missing Homebrew formulae and casks.")
       var installDependencies = false
@@ -140,6 +176,7 @@ extension Macarchy {
           context: profile.context(stateRoot: state.stateRootURL),
           consumerPaths: state.consumerPaths,
           installDependencies: installDependencies,
+          adoptions: try adoption.resolve(),
           json: json
         )
         print(execution.output)

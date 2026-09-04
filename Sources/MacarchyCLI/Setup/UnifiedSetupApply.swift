@@ -3,7 +3,12 @@ import ThemeCore
 
 struct UnifiedSetupApplyCommandRunner: Sendable {
   typealias ComponentApply =
-    @Sendable (UnifiedSetupPlanContext, PortableProfile, ThemeConsumerPaths) async throws
+    @Sendable (
+      UnifiedSetupPlanContext,
+      PortableProfile,
+      ThemeConsumerPaths,
+      UnifiedSetupAdoptionApprovals
+    ) async throws
     -> SetupComponentExecution
   typealias ThemeApply =
     @Sendable (ThemePackage, URL) async throws -> SetupComponentExecution
@@ -16,6 +21,34 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let themeApply: ThemeApply
   let desktopApply: ComponentApply
   let environmentApply: ComponentApply
+  let transactionTeardown: UnifiedSetupTeardownCommandRunner
+  let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
+
+  init(
+    planner: UnifiedSetupPlanCommandRunner,
+    themeInspection: @escaping UnifiedSetupThemeInspection,
+    processRunner: ProcessRunner,
+    capabilityIsAvailable: @escaping @Sendable (DependencyCapability) -> Bool,
+    writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
+    themeApply: @escaping ThemeApply,
+    desktopApply: @escaping ComponentApply,
+    environmentApply: @escaping ComponentApply,
+    transactionTeardown: UnifiedSetupTeardownCommandRunner = .live,
+    faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
+      _ in
+    }
+  ) {
+    self.planner = planner
+    self.themeInspection = themeInspection
+    self.processRunner = processRunner
+    self.capabilityIsAvailable = capabilityIsAvailable
+    self.writePreMutationPlan = writePreMutationPlan
+    self.themeApply = themeApply
+    self.desktopApply = desktopApply
+    self.environmentApply = environmentApply
+    self.transactionTeardown = transactionTeardown
+    self.faultInjector = faultInjector
+  }
 
   static let live = Self(
     planner: .live,
@@ -85,7 +118,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         (output: report.render(json: true), succeeded: report.succeeded)
       )
     },
-    desktopApply: { context, profile, consumerPaths in
+    desktopApply: { context, profile, consumerPaths, adoptions in
       try await SetupComponentExecution(
         DesktopApplyCommandRunner.live.executeAggregate(
           resourcesRoot: context.desktopResourcesRoot,
@@ -95,14 +128,15 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           stateRoot: context.stateRoot,
           homeDirectory: context.homeDirectory,
           consumerPaths: consumerPaths,
-          adopt: nil,
-          keybindingsAdopt: nil,
+          adopt: adoptions.yabai,
+          keybindingsAdopt: adoptions.keybindings,
+          sketchyBarAdopt: adoptions.sketchybar,
           json: true,
           profile: profile
         )
       )
     },
-    environmentApply: { context, profile, consumerPaths in
+    environmentApply: { context, profile, consumerPaths, adoptions in
       try await SetupComponentExecution(
         EnvironmentApplyCommandRunner.live.execute(
           resourcesRoot: context.environmentResourcesRoot,
@@ -111,7 +145,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           stateRoot: context.stateRoot,
           homeDirectory: context.homeDirectory,
           consumerPaths: consumerPaths,
-          adopt: nil,
+          adopt: adoptions.environment,
           json: true,
           profile: profile
         )
@@ -123,8 +157,28 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
     installDependencies: Bool,
+    adoptions: UnifiedSetupAdoptionApprovals = .none,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
+    let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
+    do {
+      if try transactionStore.read() != nil {
+        return try await recoverInterrupted(
+          context: context,
+          consumerPaths: consumerPaths,
+          json: json
+        )
+      }
+    } catch {
+      return try result(
+        outcome: "recovery_required",
+        mutated: false,
+        plan: nil,
+        message: String(describing: error),
+        json: json
+      )
+    }
+
     let preparation: UnifiedSetupPreparation
     do {
       preparation = try planner.prepare(context: context)
@@ -139,19 +193,21 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     }
     guard case .ready(let model, let plan) = preparation else {
       return try result(
-        outcome: "blocked",
+        outcome: preparation.report.outcome,
         mutated: false,
         plan: preparation.report,
         message: "The unified setup plan is blocked.",
         json: json
       )
     }
-    guard plan.adoption.isEmpty else {
+    do {
+      try adoptions.validate(required: plan.adoption)
+    } catch {
       return try result(
         outcome: "blocked",
         mutated: false,
         plan: plan,
-        message: "Existing state requires adoption; unified adoption is added in M4 Slice 3.",
+        message: String(describing: error),
         json: json
       )
     }
@@ -198,146 +254,268 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
 
     try writePreMutationPlan(try plan.render(json: json))
 
-    let packages = install(model.packages)
-    guard packages.succeeded else {
-      return try result(
-        outcome: "failed",
-        mutated: packages.mutated,
-        plan: plan,
-        packages: packages,
-        message: packages.message,
-        json: json
-      )
-    }
-    let unresolved = DependencyProfile.personal(homeDirectory: context.homeDirectory)
-      .selectedForSetup(model.profile)
-      .filter { !capabilityIsAvailable($0) }
-      .map(\.id)
-    guard unresolved.isEmpty else {
-      return try result(
-        outcome: "failed",
-        mutated: packages.mutated,
-        plan: plan,
-        packages: packages,
-        message: "Selected capabilities remain missing: \(unresolved.joined(separator: ", ")).",
-        json: json
-      )
-    }
+    do {
+      return try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+        let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
+        guard try store.read() == nil else {
+          throw UnifiedSetupTransactionError.recoveryRequired(
+            "another unified setup operation started after preflight"
+          )
+        }
+        let currentPreparation: UnifiedSetupPreparation
+        do {
+          currentPreparation = try planner.prepare(context: context)
+        } catch {
+          return try result(
+            outcome: "blocked",
+            mutated: false,
+            plan: nil,
+            message: "Setup revalidation failed: \(error)",
+            json: json
+          )
+        }
+        guard case .ready(let currentModel, let currentPlan) = currentPreparation else {
+          return try result(
+            outcome: currentPreparation.report.outcome,
+            mutated: false,
+            plan: currentPreparation.report,
+            message: "The unified setup plan changed before mutation.",
+            json: json
+          )
+        }
+        guard try currentPlan.render(json: true) == plan.render(json: true) else {
+          return try result(
+            outcome: "blocked",
+            mutated: false,
+            plan: currentPlan,
+            message: "The unified setup plan changed before mutation; review it and retry.",
+            json: json
+          )
+        }
+        let currentOwnership: SetupCoreOwnership?
+        do {
+          currentOwnership = try SetupCoreOwnershipStore(stateRoot: context.stateRoot).read()
+        } catch {
+          return try result(
+            outcome: "blocked",
+            mutated: false,
+            plan: currentPlan,
+            message: String(describing: error),
+            json: json
+          )
+        }
+        let currentTheme = themeInspection(currentModel, currentOwnership, context.stateRoot)
+        guard currentTheme.succeeded else {
+          return try result(
+            outcome: "blocked",
+            mutated: false,
+            plan: currentPlan,
+            message: currentTheme.message,
+            json: json
+          )
+        }
 
-    var mutated = packages.mutated
-    let theme: UnifiedSetupApplyStage
-    if model.theme.status == "activation_required" {
-      do {
-        theme = try stage(
-          await themeApply(model.themePackage, context.stateRoot),
-          mutationField: "committed",
-          successMessage: "The curated default theme is active."
+        let packages = install(currentModel.packages)
+        guard packages.succeeded else {
+          return try result(
+            outcome: "failed",
+            mutated: packages.mutated,
+            plan: currentPlan,
+            packages: packages,
+            message: packages.message,
+            json: json
+          )
+        }
+        let unresolved = DependencyProfile.personal(homeDirectory: context.homeDirectory)
+          .selectedForSetup(currentModel.profile)
+          .filter { !capabilityIsAvailable($0) }
+          .map(\.id)
+        guard unresolved.isEmpty else {
+          return try result(
+            outcome: "failed",
+            mutated: packages.mutated,
+            plan: currentPlan,
+            packages: packages,
+            message: "Selected capabilities remain missing: \(unresolved.joined(separator: ", ")).",
+            json: json
+          )
+        }
+        let plannedStages = Set(
+          currentPlan.actions.compactMap { UnifiedSetupTransactionStage(rawValue: $0.stage) }
         )
-      } catch {
+        var transaction: UnifiedSetupTransaction?
+        func start(_ stage: UnifiedSetupTransactionStage) throws {
+          let next = UnifiedSetupTransaction(
+            operation: .apply,
+            stages: (transaction?.stages ?? []) + [stage],
+            desiredAppearance: currentModel.themePackage.appearance,
+            contextDigest: unifiedSetupContextDigest(
+              context: context,
+              consumerPaths: consumerPaths
+            )
+          )
+          try store.write(next)
+          transaction = next
+        }
+
+        var mutated = packages.mutated
+        let theme: UnifiedSetupApplyStage
+        if currentModel.theme.status == "activation_required" {
+          try start(.theme)
+          do {
+            theme = try stage(
+              await themeApply(currentModel.themePackage, context.stateRoot),
+              mutationField: "committed",
+              successMessage: "The curated default theme is active."
+            )
+          } catch {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: true,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              message: "Theme activation failed before a result was available: \(error)",
+              json: json
+            )
+          }
+          mutated = mutated || theme.mutated
+          guard theme.succeeded else {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: mutated,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              theme: theme,
+              message: "Theme activation did not converge.",
+              json: json
+            )
+          }
+          try faultInjector(.themeApplied)
+        } else {
+          theme = .noChange("Preserved active theme '\(currentModel.theme.id)'.")
+        }
+
+        let desktop: UnifiedSetupApplyStage
+        if plannedStages.contains(.desktop) {
+          try start(.desktop)
+          do {
+            desktop = try stage(
+              await desktopApply(context, currentModel.profile, consumerPaths, adoptions),
+              mutationField: "mutated",
+              successMessage: "Desktop providers converged."
+            )
+          } catch {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: true,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              theme: theme,
+              message: "Desktop apply failed before a result was available: \(error)",
+              json: json
+            )
+          }
+          mutated = mutated || desktop.mutated
+          guard desktop.succeeded else {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: mutated,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              theme: theme,
+              desktop: desktop,
+              message: "Desktop apply did not converge; later stages were not run.",
+              json: json
+            )
+          }
+          try faultInjector(.desktopApplied)
+        } else {
+          desktop = .noChange("Preserved converged desktop providers.")
+        }
+
+        let environment: UnifiedSetupApplyStage
+        if plannedStages.contains(.environment) {
+          try start(.environment)
+          do {
+            environment = try stage(
+              await environmentApply(context, currentModel.profile, consumerPaths, adoptions),
+              mutationField: "mutated",
+              successMessage: "The daily tool environment converged."
+            )
+          } catch {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: true,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              theme: theme,
+              desktop: desktop,
+              message: "Environment apply failed before a result was available: \(error)",
+              json: json
+            )
+          }
+          mutated = mutated || environment.mutated
+          guard environment.succeeded else {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: mutated,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              theme: theme,
+              desktop: desktop,
+              environment: environment,
+              message: "Environment apply did not converge.",
+              json: json
+            )
+          }
+          try faultInjector(.environmentApplied)
+        } else {
+          environment = .noChange("Preserved the converged daily tool environment.")
+        }
+
+        if let transaction {
+          try store.write(transaction.replacing(phase: .committing))
+          try store.remove()
+        }
+
         return try result(
-          outcome: "failed",
-          mutated: true,
-          plan: plan,
-          packages: packages,
-          message: "Theme activation failed before a result was available: \(error)",
-          json: json
-        )
-      }
-      mutated = mutated || theme.mutated
-      guard theme.succeeded else {
-        return try result(
-          outcome: "failed",
+          outcome: mutated ? "applied" : "no_change",
           mutated: mutated,
-          plan: plan,
+          plan: currentPlan,
           packages: packages,
           theme: theme,
-          message: "Theme activation did not converge.",
+          desktop: desktop,
+          environment: environment,
+          message: mutated
+            ? "The selected Macarchy core converged."
+            : "The selected Macarchy core is already converged.",
           json: json
         )
       }
-    } else {
-      theme = .noChange("Preserved active theme '\(model.theme.id)'.")
-    }
-
-    let desktop: UnifiedSetupApplyStage
-    do {
-      desktop = try stage(
-        await desktopApply(context, model.profile, consumerPaths),
-        mutationField: "mutated",
-        successMessage: "Desktop providers converged."
-      )
+    } catch let error as UnifiedSetupInterruptionError {
+      throw error
     } catch {
+      let recoveryPending = (try? transactionStore.read()) != nil
       return try result(
-        outcome: "failed",
-        mutated: true,
+        outcome: recoveryPending ? "recovery_required" : "failed",
+        mutated: recoveryPending || (installDependencies && !model.packages.requests.isEmpty),
         plan: plan,
-        packages: packages,
-        theme: theme,
-        message: "Desktop apply failed before a result was available: \(error)",
+        message: String(describing: error),
         json: json
       )
     }
-    mutated = mutated || desktop.mutated
-    guard desktop.succeeded else {
-      return try result(
-        outcome: "failed",
-        mutated: mutated,
-        plan: plan,
-        packages: packages,
-        theme: theme,
-        desktop: desktop,
-        message: "Desktop apply did not converge; later stages were not run.",
-        json: json
-      )
-    }
-
-    let environment: UnifiedSetupApplyStage
-    do {
-      environment = try stage(
-        await environmentApply(context, model.profile, consumerPaths),
-        mutationField: "mutated",
-        successMessage: "The daily tool environment converged."
-      )
-    } catch {
-      return try result(
-        outcome: "failed",
-        mutated: true,
-        plan: plan,
-        packages: packages,
-        theme: theme,
-        desktop: desktop,
-        message: "Environment apply failed before a result was available: \(error)",
-        json: json
-      )
-    }
-    mutated = mutated || environment.mutated
-    guard environment.succeeded else {
-      return try result(
-        outcome: "failed",
-        mutated: mutated,
-        plan: plan,
-        packages: packages,
-        theme: theme,
-        desktop: desktop,
-        environment: environment,
-        message: "Environment apply did not converge.",
-        json: json
-      )
-    }
-
-    return try result(
-      outcome: mutated ? "applied" : "no_change",
-      mutated: mutated,
-      plan: plan,
-      packages: packages,
-      theme: theme,
-      desktop: desktop,
-      environment: environment,
-      message: mutated
-        ? "The selected Macarchy core converged."
-        : "The selected Macarchy core is already converged.",
-      json: json
-    )
   }
 
   private func install(_ plan: HomebrewInstallPlan) -> UnifiedSetupPackageApply {
@@ -372,6 +550,118 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       commands: commands,
       message: "Selected Homebrew dependencies were installed."
     )
+  }
+
+  private func failureAfterRollback(
+    transaction: UnifiedSetupTransaction?,
+    mutated: Bool,
+    context: UnifiedSetupPlanContext,
+    consumerPaths: ThemeConsumerPaths,
+    plan: UnifiedSetupPlanReport,
+    packages: UnifiedSetupPackageApply,
+    theme: UnifiedSetupApplyStage? = nil,
+    desktop: UnifiedSetupApplyStage? = nil,
+    environment: UnifiedSetupApplyStage? = nil,
+    message: String,
+    json: Bool
+  ) async throws -> (output: String, succeeded: Bool) {
+    guard let transaction else {
+      return try result(
+        outcome: "failed",
+        mutated: mutated,
+        plan: plan,
+        packages: packages,
+        theme: theme,
+        desktop: desktop,
+        environment: environment,
+        message: message,
+        json: json
+      )
+    }
+    do {
+      _ = try await transactionTeardown.recover(
+        transaction: transaction,
+        context: context,
+        consumerPaths: consumerPaths
+      )
+      return try result(
+        outcome: "rolled_back",
+        mutated: true,
+        plan: plan,
+        packages: packages,
+        theme: theme,
+        desktop: desktop,
+        environment: environment,
+        message: "\(message) Completed setup stages were rolled back.",
+        json: json
+      )
+    } catch {
+      return try result(
+        outcome: "recovery_required",
+        mutated: true,
+        plan: plan,
+        packages: packages,
+        theme: theme,
+        desktop: desktop,
+        environment: environment,
+        message: "\(message) Rollback requires recovery: \(error)",
+        json: json
+      )
+    }
+  }
+
+  private func recoverInterrupted(
+    context: UnifiedSetupPlanContext,
+    consumerPaths: ThemeConsumerPaths,
+    json: Bool
+  ) async throws -> (output: String, succeeded: Bool) {
+    do {
+      let recovered = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+        guard
+          let transaction = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read()
+        else {
+          throw UnifiedSetupTransactionError.recoveryRequired(
+            "the interrupted transaction disappeared before recovery"
+          )
+        }
+        return (
+          transaction: transaction,
+          result: try await transactionTeardown.recover(
+            transaction: transaction,
+            context: context,
+            consumerPaths: consumerPaths
+          )
+        )
+      }
+      if recovered.transaction.operation == .apply,
+        recovered.transaction.phase == .committing
+      {
+        return try result(
+          outcome: "applied",
+          mutated: recovered.result.mutated,
+          plan: nil,
+          message: "Interrupted unified apply had committed; transaction cleanup completed.",
+          json: json
+        )
+      }
+      return try result(
+        outcome: recovered.transaction.operation == .apply ? "rolled_back" : "blocked",
+        mutated: recovered.result.mutated,
+        plan: nil,
+        message: recovered.transaction.operation == .apply
+          ? "Interrupted unified apply was rolled back; review the current plan before retrying."
+          : "Interrupted teardown was completed; review the current plan before applying.",
+        json: json
+      )
+    } catch {
+      return try result(
+        outcome: "recovery_required",
+        mutated: true,
+        plan: nil,
+        message: String(describing: error),
+        json: json
+      )
+    }
   }
 
   private func stage(
