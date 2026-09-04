@@ -26,6 +26,10 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   interrupted applies roll provider stages back in reverse order; interrupted
   teardown resumes forward, and pending recovery blocks plan, status, doctor,
   and dry-run mutation without hiding partial ownership.
+- Added `macarchy setup guided`, which records defaults-with-opt-outs as a new
+  sparse portable profile, presents the unified plan, stops for external
+  prerequisites, and requires explicit adoption, dependency-installation, and
+  final apply confirmations.
 
 ### Changed
 
