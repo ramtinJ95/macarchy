@@ -28,4 +28,31 @@ struct DependencyProfileTests {
     #expect(capabilities.first { $0.id == "atuin" }?.isAvailable() == true)
     #expect(capabilities.first { $0.id == "herdr" }?.isAvailable() == true)
   }
+
+  @Test
+  func homebrewRequestsSeparateFormulaeAndCasksAndDisableGlobalSideEffects() {
+    let plan = HomebrewInstallPlan(
+      capabilities: [
+        SetupCapability(
+          id: "bat",
+          category: .requiredAdapter,
+          status: .missing,
+          requirement: "bat",
+          remediation: .formula("bat")
+        ),
+        SetupCapability(
+          id: "codex",
+          category: .optionalAdapter,
+          status: .missing,
+          requirement: "codex",
+          remediation: .cask("codex")
+        ),
+      ]
+    )
+
+    #expect(plan.requests.count == 2)
+    #expect(plan.requests[0].arguments == ["install", "--formula", "--no-ask", "bat"])
+    #expect(plan.requests[1].arguments == ["install", "--cask", "--no-ask", "codex"])
+    #expect(plan.requests.allSatisfy { $0.environmentOverrides == HomebrewInstallPlan.environment })
+  }
 }

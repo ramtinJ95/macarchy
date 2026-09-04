@@ -333,6 +333,12 @@ struct DependencyProfile: Sendable {
 }
 
 struct HomebrewInstallPlan: Encodable, Sendable {
+  static let environment = [
+    "HOMEBREW_NO_AUTOREMOVE": "1",
+    "HOMEBREW_NO_INSTALL_CLEANUP": "1",
+    "HOMEBREW_NO_INSTALL_UPGRADE": "1",
+  ]
+
   let formulae: [String]
   let casks: [String]
   let external: [ExternalDependencyRemediation]
@@ -359,6 +365,29 @@ struct HomebrewInstallPlan: Encodable, Sendable {
     self.formulae = formulae
     self.casks = casks
     self.external = external
+  }
+
+  var requests: [ProcessRequest] {
+    var requests = [ProcessRequest]()
+    if !formulae.isEmpty {
+      requests.append(
+        ProcessRequest(
+          executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
+          arguments: ["install", "--formula", "--no-ask"] + formulae,
+          environmentOverrides: Self.environment
+        )
+      )
+    }
+    if !casks.isEmpty {
+      requests.append(
+        ProcessRequest(
+          executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
+          arguments: ["install", "--cask", "--no-ask"] + casks,
+          environmentOverrides: Self.environment
+        )
+      )
+    }
+    return requests
   }
 
   var humanOutput: String {
