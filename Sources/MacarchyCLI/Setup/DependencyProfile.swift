@@ -132,6 +132,9 @@ struct DependencyProfile: Sendable {
       case CodexAdapter.id: selectedPreset = portableProfile.environment.presets.codex
       case HerdrAdapter.id: selectedPreset = portableProfile.environment.presets.herdr
       case PiAdapter.id: selectedPreset = portableProfile.environment.presets.pi
+      case SlackAdapter.id: selectedPreset = portableProfile.environment.presets.slack
+      case SpicetifyAdapter.id, "spotify":
+        selectedPreset = portableProfile.environment.presets.spicetify
       case TuicrAdapter.id: selectedPreset = portableProfile.environment.presets.tuicr
       default: return capability
       }
@@ -299,6 +302,11 @@ struct DependencyProfile: Sendable {
           remediation: .external(
             "Run: npm install --global @earendil-works/pi-coding-agent"
           )
+        ),
+        consumerCapability(
+          .slack,
+          probes: [.exists(URL(filePath: "/Applications/Slack.app"))],
+          remediation: .cask("slack")
         ),
         consumerCapability(
           .starship,
