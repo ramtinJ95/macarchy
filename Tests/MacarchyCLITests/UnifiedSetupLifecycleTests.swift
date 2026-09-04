@@ -110,7 +110,7 @@ struct UnifiedSetupLifecycleTests {
       planner: fixture.planner(),
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun ? "preview" : "apply")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+        return try teardownComponent(dryRun: dryRun, mutated: !dryRun, previewOutcome: "ready")
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "apply")") }
@@ -144,9 +144,186 @@ struct UnifiedSetupLifecycleTests {
       calls.withLock { $0 }
         == [
           "environment:preview", "desktop:preview", "theme:preview",
+          "environment:preview", "desktop:preview", "theme:preview",
           "environment:apply", "desktop:apply", "theme:apply",
         ]
     )
+  }
+
+  @Test
+  func interruptedTeardownResumesForwardFromItsRecordedStage() async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let paths = testConsumerPaths()
+    let generationID = "g-\(UUID().uuidString.lowercased())"
+    try SetupCoreOwnershipStore(stateRoot: fixture.state).write(
+      SetupCoreOwnership(themeGenerationID: generationID, originalAppearance: .light)
+    )
+    let calls = Mutex([String]())
+    let didInterrupt = Mutex(false)
+    let runner = UnifiedSetupTeardownCommandRunner(
+      planner: fixture.planner(),
+      environmentTeardown: { _, _, dryRun in
+        calls.withLock { $0.append("environment:\(dryRun ? "preview" : "apply")") }
+        return try teardownComponent(dryRun: dryRun, mutated: !dryRun, previewOutcome: "ready")
+      },
+      desktopTeardown: { _, _, dryRun in
+        calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "apply")") }
+        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+      },
+      themeTeardown: { _, _, _, dryRun in
+        calls.withLock { $0.append("theme:\(dryRun ? "preview" : "apply")") }
+        return UnifiedSetupTeardownStage(
+          succeeded: true,
+          mutated: !dryRun,
+          outcome: dryRun ? "planned" : "restored",
+          message: "theme",
+          details: nil
+        )
+      },
+      faultInjector: { checkpoint in
+        guard case .environmentTornDown = checkpoint else { return }
+        let shouldInterrupt = didInterrupt.withLock { interrupted in
+          guard !interrupted else { return false }
+          interrupted = true
+          return true
+        }
+        if shouldInterrupt { throw UnifiedSetupInterruptionError.injected }
+      }
+    )
+
+    await #expect(throws: UnifiedSetupInterruptionError.self) {
+      try await runner.execute(
+        context: fixture.context,
+        consumerPaths: paths,
+        dryRun: false,
+        json: true
+      )
+    }
+    #expect(
+      try UnifiedSetupTransactionStore(stateRoot: fixture.state).read()?.stages
+        == [.environment, .desktop, .theme]
+    )
+
+    let execution = try await runner.execute(
+      context: fixture.context,
+      consumerPaths: paths,
+      dryRun: false,
+      json: true
+    )
+    let report = try jsonObject(execution.output)
+
+    #expect(execution.succeeded)
+    #expect(report["outcome"] as? String == "restored")
+    #expect(
+      calls.withLock { $0 }
+        == [
+          "environment:preview", "desktop:preview", "theme:preview",
+          "environment:preview", "desktop:preview", "theme:preview", "environment:apply",
+          "environment:preview", "desktop:preview", "theme:preview",
+          "environment:apply", "desktop:apply", "theme:apply",
+        ]
+    )
+    #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)
+  }
+
+  @Test
+  func pendingRecoveryBlocksInspectionAndDryRunWithoutMutation() async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let paths = testConsumerPaths()
+    let store = UnifiedSetupTransactionStore(stateRoot: fixture.state)
+    let transaction = UnifiedSetupTransaction(
+      operation: .apply,
+      stages: [.theme],
+      desiredAppearance: .dark,
+      contextDigest: unifiedSetupContextDigest(context: fixture.context, consumerPaths: paths)
+    )
+    try store.write(transaction)
+    let unexpectedComponent: UnifiedSetupTeardownCommandRunner.ComponentTeardown = { _, _, _ in
+      Issue.record("Blocked recovery must not invoke component recovery")
+      return try applyComponent("{}")
+    }
+    let teardown = UnifiedSetupTeardownCommandRunner(
+      planner: fixture.planner(),
+      environmentTeardown: unexpectedComponent,
+      desktopTeardown: unexpectedComponent,
+      themeTeardown: { _, _, _, _ in
+        Issue.record("Blocked recovery must not invoke theme recovery")
+        return .noChange("unexpected")
+      }
+    )
+    let unexpectedInspection: UnifiedSetupInspectionCommandRunner.ComponentInspection = {
+      _, _, _, _ in
+      Issue.record("Pending recovery must block delegated inspection")
+      return try applyComponent("{}")
+    }
+    let inspection = UnifiedSetupInspectionCommandRunner(
+      planner: fixture.planner(),
+      themeInspection: { _, _, _ in
+        Issue.record("Pending recovery must block theme inspection")
+        return UnifiedSetupThemeLifecycleStatus(
+          succeeded: false,
+          status: "unexpected",
+          generationID: nil,
+          message: "unexpected"
+        )
+      },
+      desktopInspection: unexpectedInspection,
+      environmentInspection: unexpectedInspection
+    )
+
+    let plan = try fixture.planner().execute(context: fixture.context, json: true)
+    let planReport = try jsonObject(plan.output)
+    let preview = try await teardown.execute(
+      context: fixture.context,
+      consumerPaths: paths,
+      dryRun: true,
+      json: true
+    )
+    let previewReport = try jsonObject(preview.output)
+
+    #expect(!plan.succeeded)
+    #expect(planReport["outcome"] as? String == "recovery_required")
+    #expect(
+      (planReport["diagnostics"] as? [[String: Any]])?.first?["code"] as? String
+        == "setup_recovery_required"
+    )
+    for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
+      let result = try inspection.execute(
+        operation: operation,
+        context: fixture.context,
+        consumerPaths: paths,
+        json: true
+      )
+      #expect(!result.succeeded)
+      #expect(try jsonObject(result.output)["outcome"] as? String == "recovery_required")
+    }
+    #expect(!preview.succeeded)
+    #expect(previewReport["outcome"] as? String == "recovery_required")
+    #expect(try store.read() == transaction)
+
+    let original = fixture.context
+    let mismatched = UnifiedSetupPlanContext(
+      themesRoot: original.themesRoot,
+      keybindingsResourcesRoot: original.keybindingsResourcesRoot,
+      desktopResourcesRoot: original.desktopResourcesRoot,
+      environmentResourcesRoot: original.environmentResourcesRoot,
+      profileURL: original.profileURL,
+      profileRequired: original.profileRequired,
+      machineProfileURL: original.machineProfileURL,
+      machineProfileRequired: original.machineProfileRequired,
+      stateRoot: original.stateRoot,
+      homeDirectory: fixture.root.appending(path: "different-home")
+    )
+    await #expect(throws: UnifiedSetupTransactionError.self) {
+      try await teardown.recover(
+        transaction: transaction,
+        context: mismatched,
+        consumerPaths: paths
+      )
+    }
+    #expect(try store.read() == transaction)
   }
 
   @Test
@@ -217,10 +394,14 @@ struct UnifiedSetupLifecycleTests {
   }
 }
 
-private func teardownComponent(dryRun: Bool, mutated: Bool) throws -> SetupComponentExecution {
+func teardownComponent(
+  dryRun: Bool,
+  mutated: Bool,
+  previewOutcome: String = "planned"
+) throws -> SetupComponentExecution {
   try applyComponent(
     """
-    {"outcome":"\(dryRun ? "planned" : mutated ? "restored" : "no_change")","mutated":\(mutated),"message":"component"}
+    {"outcome":"\(dryRun ? previewOutcome : mutated ? "restored" : "no_change")","mutated":\(mutated),"message":"component"}
     """
   )
 }
