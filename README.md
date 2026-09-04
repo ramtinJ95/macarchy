@@ -55,6 +55,7 @@ HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
   HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
   brew install --formula --no-ask ramtinj95/tap/macarchy
 macarchy setup plan
+macarchy setup apply --install-dependencies
 ```
 
 The formula installs the immutable arm64 release archive and its bundled
@@ -110,6 +111,10 @@ macarchy environment teardown [--dry-run] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--json]
+macarchy setup apply [--profile <path>] [--machine-profile <path>] [--install-dependencies] [--json]
+macarchy setup status [--profile <path>] [--machine-profile <path>] [--json]
+macarchy setup doctor [--profile <path>] [--machine-profile <path>] [--json]
+macarchy setup teardown [--profile <path>] [--machine-profile <path>] [--dry-run] [--json]
 macarchy teardown [--dry-run] [--json]
 macarchy update status [--json]
 macarchy update check [--json]
@@ -744,7 +749,7 @@ theme**, paste the payload, and apply it. This manual boundary follows
 flow](https://slack.com/help/articles/205166337-Change-your-Slack-theme) rather
 than editing Slack's private Electron storage.
 
-## Unified setup planning
+## Unified setup lifecycle
 
 `macarchy setup plan` compiles built-in defaults, the optional portable
 `~/.config/macarchy/profile.toml`, and the optional machine-local
@@ -769,8 +774,19 @@ unsafe ownership, drift, or interrupted component state blocks the plan before
 actions are emitted.
 
 Planning does not write files, run lifecycle mutations, install software, or
-change canonical state. Existing component commands remain the mutation path
-until the unified setup apply slice is complete.
+change canonical state. After reviewing it, `macarchy setup apply` uses that
+same layered model to bootstrap the canonical theme and converge desktop and
+environment providers in order. Missing selected formulae and casks are
+installed only when `--install-dependencies` is supplied; Homebrew remains the
+package owner and mutator. Existing state that requires adoption is rejected by
+this clean-machine path rather than claimed implicitly.
+
+`macarchy setup status` and `macarchy setup doctor` inspect the same theme,
+desktop, environment, capability, and ownership boundaries. A successful
+repeat apply is a no-op. Preview `macarchy setup teardown --dry-run` before
+restoring setup-owned environment, desktop, and canonical-theme state in
+reverse order. Teardown retains Homebrew packages and does not remove an active
+theme that predates unified setup.
 
 `macarchy teardown` first checks every ownership record. It then restores only
 recorded file edits and removes only recorded links. User themes, generated

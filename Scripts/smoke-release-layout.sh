@@ -114,6 +114,42 @@ grep -q '"operation" : "desktop_plan"' "$temporary_directory/setup-plan.json"
 grep -q '"operation" : "environment_plan"' "$temporary_directory/setup-plan.json"
 print "unified setup plan smoke passed"
 
+cat > "$temporary_directory/disabled-profile.toml" <<'EOF'
+schema_version = 1
+[desktop]
+provider = "disabled"
+[top_bar]
+provider = "disabled"
+[terminal]
+provider = "disabled"
+[shell]
+provider = "disabled"
+[editor]
+provider = "disabled"
+[tools]
+bat = false
+eza = false
+btop = false
+yazi = false
+EOF
+for operation in status doctor; do
+  HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+    "$binary" setup "$operation" \
+    --profile "$temporary_directory/disabled-profile.toml" \
+    --json > "$temporary_directory/setup-$operation.json"
+  grep -q "\"operation\" : \"setup_$operation\"" \
+    "$temporary_directory/setup-$operation.json"
+  grep -q '"outcome" : "absent"' "$temporary_directory/setup-$operation.json"
+done
+HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+  "$binary" setup teardown \
+  --profile "$temporary_directory/disabled-profile.toml" \
+  --dry-run --json > "$temporary_directory/setup-teardown.json"
+grep -q '"operation" : "setup_teardown"' "$temporary_directory/setup-teardown.json"
+grep -q '"outcome" : "no_change"' "$temporary_directory/setup-teardown.json"
+grep -q '"packages" : "retained_external"' "$temporary_directory/setup-teardown.json"
+print "unified setup inspection and teardown smoke passed"
+
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" keybindings list \
   --skhd-config "$layout/share/macarchy/keybindings/defaults.skhdrc" \
@@ -194,20 +230,6 @@ else
 fi
 print "environment plan smoke passed"
 
-cat > "$temporary_directory/environment-disabled.toml" <<'EOF'
-schema_version = 1
-[terminal]
-provider = "disabled"
-[shell]
-provider = "disabled"
-[editor]
-provider = "disabled"
-[tools]
-bat = false
-eza = false
-btop = false
-yazi = false
-EOF
 for operation in apply status doctor teardown; do
   if [[ $operation == teardown ]]; then
     HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
@@ -216,7 +238,7 @@ for operation in apply status doctor teardown; do
   else
     HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
       "$binary" environment "$operation" \
-      --profile "$temporary_directory/environment-disabled.toml" \
+      --profile "$temporary_directory/disabled-profile.toml" \
       --json > "$temporary_directory/environment-$operation.json"
   fi
   grep -q "\"operation\" : \"environment_$operation\"" \
