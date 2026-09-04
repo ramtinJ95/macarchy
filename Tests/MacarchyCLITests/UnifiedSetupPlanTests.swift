@@ -44,6 +44,7 @@ struct UnifiedSetupPlanTests {
       (components["environment"] as? [String: Any])?["report"] as? [String: Any]
     )
     let artifacts = try #require(environment["rendered_artifacts"] as? [String: String])
+    let adoption = try #require(report["adoption"] as? [[String: Any]])
 
     #expect(execution.succeeded)
     #expect(report["outcome"] as? String == "ready")
@@ -55,6 +56,7 @@ struct UnifiedSetupPlanTests {
       environment["outcome"] as? String == "ready"
     )
     #expect(artifacts["kitty/kitty.conf"]?.contains("font_size 15") == true)
+    #expect(adoption.isEmpty)
     #expect(try inventory(root) == before)
   }
 
@@ -182,7 +184,7 @@ struct UnifiedSetupPlanTests {
     )
     #expect((packages["formulae"] as? [String])?.contains("bat") == true)
     #expect((packages["casks"] as? [String]) == ["kitty"])
-    #expect(Set(adoption.compactMap { $0["id"] }) == ["keybindings", "sketchybar", "environment"])
+    #expect(Set(adoption.compactMap { $0["id"] }) == ["keybindings", "environment"])
     #expect(permissions.contains { $0["id"] == "yabai_accessibility" })
     #expect(
       calls.withLock { $0 }

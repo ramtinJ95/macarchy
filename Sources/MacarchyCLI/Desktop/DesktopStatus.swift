@@ -37,7 +37,8 @@ struct DesktopStatusCommandRunner: Sendable {
     homeDirectory: URL,
     json: Bool,
     consumerPaths: ThemeConsumerPaths? = nil,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState?
     var diagnostics: [String] = []
@@ -47,7 +48,8 @@ struct DesktopStatusCommandRunner: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        macarchyExecutableURL: macarchyExecutableURL
+        macarchyExecutableURL: macarchyExecutableURL,
+        profile: suppliedProfile
       )
     } catch {
       desired = nil
@@ -197,7 +199,8 @@ struct DesktopStatusCommandRunner: Sendable {
           profileURL: profileURL,
           profileRequired: profileRequired,
           stateRoot: stateRoot,
-          homeDirectory: homeDirectory
+          homeDirectory: homeDirectory,
+          profile: desired?.profile
         )
       } catch {
         keybindingState = nil

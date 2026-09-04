@@ -521,12 +521,15 @@ struct EnvironmentStatusCommandRunner: Sendable {
     successfulOutcome: String? = nil,
     mutated: Bool = false,
     successMessage: String? = nil,
-    json: Bool
+    json: Bool,
+    profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
     let composition: EnvironmentComposition
     do {
-      profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
+      profile =
+        try suppliedProfile
+        ?? PortableProfileLoader().load(at: profileURL, required: profileRequired)
       composition = try EnvironmentConfigurationComposer().compose(
         resourcesRoot: resourcesRoot,
         profile: profile,
@@ -682,7 +685,8 @@ struct EnvironmentDoctorCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
-    json: Bool
+    json: Bool,
+    profile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     try status.execute(
       operation: "environment_doctor",
@@ -693,7 +697,8 @@ struct EnvironmentDoctorCommandRunner: Sendable {
       homeDirectory: homeDirectory,
       consumerPaths: consumerPaths,
       includeVerification: true,
-      json: json
+      json: json,
+      profile: profile
     )
   }
 }

@@ -382,7 +382,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL,
     adopt: String? = nil,
     json: Bool,
-    preflightLifecycle: Bool = true
+    preflightLifecycle: Bool = true,
+    profile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     do {
       guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
@@ -395,7 +396,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        homeDirectory: homeDirectory
+        homeDirectory: homeDirectory,
+        profile: profile
       )
       if effectiveBehavior.transaction.status == .invalid {
         throw KeybindingsApplyError.blocked(effectiveBehavior.transaction.message)
@@ -427,7 +429,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
         ignoreTransaction: true,
-        effectiveBehavior: effectiveBehavior
+        effectiveBehavior: effectiveBehavior,
+        profile: profile
       )
       guard preparation.outcome != "blocked", preparation.composition != nil else {
         throw KeybindingsApplyError.blocked(
@@ -554,7 +557,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     adopt: String?,
-    deferFinalization: Bool
+    deferFinalization: Bool,
+    profile: PortableProfile? = nil
   ) throws -> SetupIntegrationResult {
     guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
       throw KeybindingsApplyError.blocked(
@@ -569,7 +573,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
       homeDirectory: homeDirectory,
       adopt: adopt,
       evidence: Mutex(KeybindingsApplyEvidence()),
-      deferFinalization: deferFinalization
+      deferFinalization: deferFinalization,
+      profile: profile
     )
     return SetupIntegrationResult(
       id: KeybindingProviderInspector.ownershipID,
@@ -648,7 +653,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL,
     adopt: String?,
     evidence: borrowing Mutex<KeybindingsApplyEvidence>,
-    deferFinalization: Bool
+    deferFinalization: Bool,
+    profile: PortableProfile? = nil
   ) throws -> KeybindingsApplyReport {
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
     try recoverInterruptedApply(
@@ -663,7 +669,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
       profileRequired: profileRequired,
       stateRoot: stateRoot,
       homeDirectory: homeDirectory,
-      adopt: adopt
+      adopt: adopt,
+      profile: profile
     )
 
     if prepared.preparation.outcome == "no_change" {
@@ -728,7 +735,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        homeDirectory: homeDirectory
+        homeDirectory: homeDirectory,
+        profile: profile
       )
       if !deferFinalization {
         try finalizeApply(
@@ -825,14 +833,16 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    adopt: String?
+    adopt: String?,
+    profile: PortableProfile? = nil
   ) throws -> PreparedKeybindingsApply {
     var preparation = try planner.prepare(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
       profileRequired: profileRequired,
       stateRoot: stateRoot,
-      homeDirectory: homeDirectory
+      homeDirectory: homeDirectory,
+      profile: profile
     )
     guard preparation.outcome != "blocked", var composition = preparation.composition else {
       throw KeybindingsApplyError.blocked(preparation.blockingMessages.joined(separator: "; "))
@@ -867,7 +877,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
           profileURL: profileURL,
           profileRequired: profileRequired,
           stateRoot: stateRoot,
-          homeDirectory: homeDirectory
+          homeDirectory: homeDirectory,
+          profile: profile
         )
         guard preparation.outcome != "blocked", let finalComposition = preparation.composition
         else {
@@ -962,7 +973,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
-    homeDirectory: URL
+    homeDirectory: URL,
+    profile: PortableProfile? = nil
   ) throws {
     let verified = try planner.prepare(
       resourcesRoot: resourcesRoot,
@@ -970,7 +982,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
       profileRequired: profileRequired,
       stateRoot: stateRoot,
       homeDirectory: homeDirectory,
-      ignoreTransaction: true
+      ignoreTransaction: true,
+      profile: profile
     )
     guard verified.effectiveBehavior.status == .converged else {
       throw KeybindingsApplyError.postcondition(
