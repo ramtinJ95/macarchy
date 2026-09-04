@@ -45,7 +45,7 @@ struct TuicrPresetLifecycleTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, TuicrAdapter.id,
+          CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, SpicetifyAdapter.id, TuicrAdapter.id,
         ])
     )
 
@@ -242,7 +242,10 @@ struct TuicrPresetLifecycleTests {
       try ThemeRuntimeSelection.enabledAdapterIDs(
         stateRoot: fixture.state,
         homeDirectory: fixture.home
-      ) == Set(ThemeActivationCoordinator.adapterRequirements.keys)
+      )
+        == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
+          SpicetifyAdapter.id
+        ])
     )
   }
 

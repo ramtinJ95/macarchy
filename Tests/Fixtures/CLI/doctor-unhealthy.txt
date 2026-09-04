@@ -12,7 +12,7 @@ Macarchy doctor:
 - reconciliation.neovim [ok]: applied
 - reconciliation.pi [ok]: applied
 - reconciliation.sketchybar [failure]: drifted: SketchyBar colors module is missing the generated palette import
-- reconciliation.spicetify [warning]: failed
+- reconciliation.spicetify [failure]: failed
 - reconciliation.starship [ok]: applied
 - reconciliation.tuicr [ok]: restart_required
 - reconciliation.wallpaper [ok]: applied
@@ -28,7 +28,7 @@ Macarchy doctor:
 - neovim.integration [ok]: Integration preflight passed.
 - pi.integration [failure]: Pi settings must select theme "macarchy-current"
 - sketchybar.integration [failure]: SketchyBar colors module is missing the generated palette import
-- spicetify.integration [warning]: Spicetify is unavailable
+- spicetify.integration [failure]: Spicetify is unavailable
 - starship.integration [ok]: Integration preflight passed.
 - tuicr.integration [ok]: Integration preflight passed.
 - wallpaper.integration [ok]: Wallpaper and presentation options are readable for 1 current display(s); inactive Spaces require lazy reconciliation; yabai space_changed is configured to reconcile each Space lazily through /test/macarchy; the yabai signal is loaded

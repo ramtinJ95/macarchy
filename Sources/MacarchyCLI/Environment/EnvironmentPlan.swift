@@ -78,7 +78,9 @@ struct EnvironmentPlanCommandRunner: Sendable {
       } ?? []
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
     let themeDiagnostic: EnvironmentPlanDiagnostic?
-    if requiresActiveTheme, !composition.profile.selectedThemeAdapterIDs.isEmpty {
+    if requiresActiveTheme,
+      !composition.profile.selectedThemeAdapterIDs.isEmpty || composition.profile.presets.slack
+    {
       do {
         _ = try ReconciliationStatusStore(root: stateRoot).activeManifest()
         themeDiagnostic = nil
@@ -169,6 +171,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
       "codex": profile.presets.codex ? "enabled" : "disabled",
       "herdr": profile.presets.herdr ? "enabled" : "disabled",
       "pi": profile.presets.pi ? "enabled" : "disabled",
+      "slack": profile.presets.slack ? "enabled" : "disabled",
+      "spicetify": profile.presets.spicetify ? "enabled" : "disabled",
       "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]
   }
@@ -287,6 +291,24 @@ struct EnvironmentPlanCommandRunner: Sendable {
         EnvironmentPlanAction(
           id: "configure_pi",
           message: "Configure Pi's root theme member and watched canonical theme link."
+        )
+      )
+    }
+    if profile.presets.spicetify {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_spicetify",
+          message:
+            "Own only ordinary current_theme/color_scheme selectors or accept a complete exact Stow tuple, create only an absent color.ini link, and run an awaited --no-restart refresh."
+        )
+      )
+    }
+    if profile.presets.slack {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "publish_slack_manual_import",
+          message:
+            "Publish Slack manual-import authority and the exact per-workspace action: \(SlackAdapter.importInstructions)"
         )
       )
     }

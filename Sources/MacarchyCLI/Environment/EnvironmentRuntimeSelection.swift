@@ -10,6 +10,10 @@ enum ThemeRuntimeSelection {
     SetupOwnershipManager.piSelectorID,
     SetupOwnershipManager.piThemeLinkID,
   ])
+  private static let legacySpicetifyIDs = Set([
+    SetupOwnershipManager.spicetifySelectorsID,
+    SetupOwnershipManager.spicetifyColorLinkID,
+  ])
   private static let legacyTuicrIDs = Set([
     SetupOwnershipManager.tuicrSelectorID,
     SetupOwnershipManager.tuicrThemeLinkID,
@@ -24,6 +28,8 @@ enum ThemeRuntimeSelection {
       named: "Codex", requiredIDs: legacyCodexIDs, setupIDs: setupIDs)
     let legacyPi = try hasCompleteLegacyIntegration(
       named: "Pi", requiredIDs: legacyPiIDs, setupIDs: setupIDs)
+    let legacySpicetify = try hasCompleteLegacyIntegration(
+      named: "Spicetify", requiredIDs: legacySpicetifyIDs, setupIDs: setupIDs)
     let legacyTuicr = try hasCompleteLegacyIntegration(
       named: "tuicr", requiredIDs: legacyTuicrIDs, setupIDs: setupIDs)
 
@@ -35,6 +41,7 @@ enum ThemeRuntimeSelection {
       enabled.remove(CodexAdapter.id)
       enabled.remove(HerdrAdapter.id)
       enabled.remove(PiAdapter.id)
+      enabled.remove(SpicetifyAdapter.id)
       enabled.remove(TuicrAdapter.id)
       let herdr = HerdrAdapter(
         root: stateRoot,
@@ -48,6 +55,7 @@ enum ThemeRuntimeSelection {
     }
     if legacyCodex { enabled.insert(CodexAdapter.id) }
     if legacyPi { enabled.insert(PiAdapter.id) }
+    if legacySpicetify { enabled.insert(SpicetifyAdapter.id) }
     if legacyTuicr { enabled.insert(TuicrAdapter.id) }
     return enabled
   }
@@ -57,7 +65,11 @@ enum ThemeRuntimeSelection {
       return Set(explicit)
     }
     var enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
+    enabled.remove(SpicetifyAdapter.id)
     enabled.remove(TuicrAdapter.id)
+    if ownership.spicetifyEnabled {
+      enabled.insert(SpicetifyAdapter.id)
+    }
     if ownership.tuicrEnabled {
       enabled.insert(TuicrAdapter.id)
     }
@@ -229,6 +241,10 @@ enum ThemeRuntimeSelection {
   static func piIsEnabled(stateRoot: URL, consumerPaths: ThemeConsumerPaths) throws -> Bool {
     try enabledAdapterIDs(stateRoot: stateRoot, consumerPaths: consumerPaths)
       .contains(PiAdapter.id)
+  }
+
+  static func slackIsEnabled(stateRoot: URL) throws -> Bool {
+    try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()?.slackEnabled == true
   }
 
   static func piThemeLinkRefreshIsAllowed(

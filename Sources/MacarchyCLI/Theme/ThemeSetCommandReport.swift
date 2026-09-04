@@ -13,13 +13,13 @@ enum ThemeSetReport {
 
   case dryRun(themeID: String)
   case precommitFailure(themeID: String, error: String)
-  case committed(result: ThemeActivationResult, requiredFailure: Bool, slackTheme: String)
+  case committed(result: ThemeActivationResult, requiredFailure: Bool, slackTheme: String?)
   case committedActivationError(
     manifest: GenerationManifest,
     cause: String,
-    slackTheme: String
+    slackTheme: String?
   )
-  case committedError(manifest: GenerationManifest, cause: String, slackTheme: String)
+  case committedError(manifest: GenerationManifest, cause: String, slackTheme: String?)
 
   var succeeded: Bool {
     switch self {
@@ -31,7 +31,7 @@ enum ThemeSetReport {
     }
   }
 
-  static func committed(_ result: ThemeActivationResult, slackTheme: String) -> Self {
+  static func committed(_ result: ThemeActivationResult, slackTheme: String?) -> Self {
     let requiredFailure = hasRequiredReconciliationFailure(result.reconciliation.results)
     return .committed(
       result: result,
@@ -115,7 +115,7 @@ enum ThemeSetReport {
         generationID: result.manifest.generationID,
         reconciliation: result.reconciliation.results,
         notice: result.notice,
-        slackTheme: slackTheme.trimmingCharacters(in: .whitespacesAndNewlines),
+        slackTheme: slackTheme?.trimmingCharacters(in: .whitespacesAndNewlines),
         error: requiredFailure ? "Required reconciliation did not complete successfully" : nil
       )
     case .committedActivationError(let manifest, let cause, let slackTheme):
@@ -124,7 +124,7 @@ enum ThemeSetReport {
         outcome: .committedActivationError,
         committed: true,
         generationID: manifest.generationID,
-        slackTheme: slackTheme.trimmingCharacters(in: .whitespacesAndNewlines),
+        slackTheme: slackTheme?.trimmingCharacters(in: .whitespacesAndNewlines),
         error: cause
       )
     case .committedError(let manifest, let cause, let slackTheme):
@@ -133,7 +133,7 @@ enum ThemeSetReport {
         outcome: .committedReconciliationError,
         committed: true,
         generationID: manifest.generationID,
-        slackTheme: slackTheme.trimmingCharacters(in: .whitespacesAndNewlines),
+        slackTheme: slackTheme?.trimmingCharacters(in: .whitespacesAndNewlines),
         error: cause
       )
     }

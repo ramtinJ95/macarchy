@@ -68,7 +68,7 @@
     {
       "id" : "reconciliation.spicetify",
       "message" : "failed",
-      "status" : "warning"
+      "status" : "failure"
     },
     {
       "id" : "reconciliation.starship",
@@ -148,7 +148,7 @@
     {
       "id" : "spicetify.integration",
       "message" : "Spicetify is unavailable",
-      "status" : "warning"
+      "status" : "failure"
     },
     {
       "id" : "starship.integration",

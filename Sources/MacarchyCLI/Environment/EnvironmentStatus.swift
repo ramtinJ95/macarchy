@@ -10,158 +10,260 @@ struct EnvironmentPrerequisiteStatus: Encodable, Equatable, Sendable {
 
 struct EnvironmentPrerequisiteInspector: Sendable {
   let inspect: @Sendable (EnvironmentProfile, URL) -> [EnvironmentPrerequisiteStatus]
+  let inspectSpicetifyRuntime: @Sendable (URL) -> [EnvironmentPrerequisiteStatus]
+
+  init(
+    _ inspect: @escaping @Sendable (EnvironmentProfile, URL) -> [EnvironmentPrerequisiteStatus],
+    spicetifyRuntime:
+      @escaping @Sendable (URL) -> [EnvironmentPrerequisiteStatus] = { _ in [] }
+  ) {
+    self.inspect = inspect
+    inspectSpicetifyRuntime = spicetifyRuntime
+  }
 
   static let assumed = Self { _, _ in [] }
 
-  static let live = Self { profile, homeDirectory in
-    guard !profile.isEntirelyDisabled else { return [] }
-    let selected = Set(
-      ["macos-26", "arm64"]
-        + (profile.terminal == .kitty ? ["kitty"] : [])
-        + (profile.prompt == .starship ? ["starship"] : [])
-        + (profile.history == .atuin ? ["atuin"] : [])
-        + (profile.editor == .neovim ? ["neovim"] : [])
-        + (profile.presets.codex ? ["codex"] : [])
-        + (profile.presets.herdr ? ["herdr"] : [])
-        + (profile.presets.pi ? ["pi"] : [])
-        + (profile.presets.tuicr ? ["tuicr"] : [])
-        + (profile.tools.bat ? ["bat"] : [])
-        + (profile.tools.eza ? ["eza"] : [])
-        + (profile.tools.btop ? ["btop"] : [])
-        + (profile.tools.yazi ? ["yazi"] : [])
-    )
-    var results = DependencyProfile.personal(homeDirectory: homeDirectory).capabilities
-      .filter { selected.contains($0.id) }
-      .map {
-        EnvironmentPrerequisiteStatus(
-          id: $0.id,
-          status: $0.isAvailable() ? "present" : "missing",
-          requirement: $0.requirement,
-          remediation: remediation($0.remediation)
-        )
-      }
-    if profile.presets.pi,
-      let index = results.firstIndex(where: { $0.id == PiAdapter.id }),
-      results[index].status == "present"
-    {
-      let executable = PiAdapter.liveExecutableURL
-      do {
-        let version = try PiAdapter(
-          root: homeDirectory.appending(path: ".config/macarchy"),
-          configurationDirectoryURL: homeDirectory.appending(path: ".pi/agent"),
-          executableURL: executable,
-          controlIsAvailable: { true },
-          processRunner: .live
-        ).supportedVersion()
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: PiAdapter.id,
-          status: "present",
-          requirement:
-            "Pi \(version) satisfies the required version >= \(PiAdapter.minimumVersion)",
-          remediation: results[index].remediation
-        )
-      } catch {
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: PiAdapter.id,
-          status: "missing",
-          requirement:
-            "Pi must report a parseable version >= \(PiAdapter.minimumVersion): \(error)",
-          remediation: results[index].remediation
-        )
-      }
-    }
-    if profile.presets.codex,
-      let index = results.firstIndex(where: { $0.id == CodexAdapter.id }),
-      results[index].status == "present"
-    {
-      let executable = CodexAdapter.liveExecutableURL
-      do {
-        let version = try CodexAdapter(
-          root: homeDirectory.appending(path: ".config/macarchy"),
-          configurationDirectoryURL: homeDirectory.appending(path: ".codex"),
-          executableURL: executable,
-          controlIsAvailable: { true },
-          processRunner: .live
-        ).supportedVersion()
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: CodexAdapter.id,
-          status: "present",
-          requirement:
-            "Codex \(version) satisfies the required version >= \(CodexAdapter.minimumVersion)",
-          remediation: results[index].remediation
-        )
-      } catch {
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: CodexAdapter.id,
-          status: "missing",
-          requirement:
-            "Codex must report 'codex-cli X.Y.Z' >= \(CodexAdapter.minimumVersion): \(error)",
-          remediation: results[index].remediation
-        )
-      }
-    }
-    if profile.presets.herdr,
-      let index = results.firstIndex(where: { $0.id == HerdrAdapter.id }),
-      results[index].status == "present"
-    {
-      if ProcessInfo.processInfo.environment["HERDR_CONFIG_PATH"] != nil {
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: HerdrAdapter.id,
-          status: "missing",
-          requirement:
-            "Herdr must use canonical ~/.config/herdr/config.toml; HERDR_CONFIG_PATH is unsupported and uninspectable",
-          remediation: "Unset HERDR_CONFIG_PATH and run the command again."
-        )
-      } else {
+  static let live = Self(
+    { profile, homeDirectory in
+      guard !profile.isEntirelyDisabled else { return [] }
+      let selected = Set(
+        ["macos-26", "arm64"]
+          + (profile.terminal == .kitty ? ["kitty"] : [])
+          + (profile.prompt == .starship ? ["starship"] : [])
+          + (profile.history == .atuin ? ["atuin"] : [])
+          + (profile.editor == .neovim ? ["neovim"] : [])
+          + (profile.presets.codex ? ["codex"] : [])
+          + (profile.presets.herdr ? ["herdr"] : [])
+          + (profile.presets.pi ? ["pi"] : [])
+          + (profile.presets.slack ? ["slack"] : [])
+          + (profile.presets.spicetify ? ["spicetify", "spotify"] : [])
+          + (profile.presets.tuicr ? ["tuicr"] : [])
+          + (profile.tools.bat ? ["bat"] : [])
+          + (profile.tools.eza ? ["eza"] : [])
+          + (profile.tools.btop ? ["btop"] : [])
+          + (profile.tools.yazi ? ["yazi"] : [])
+      )
+      var results = DependencyProfile.personal(homeDirectory: homeDirectory).capabilities
+        .filter { selected.contains($0.id) }
+        .map {
+          EnvironmentPrerequisiteStatus(
+            id: $0.id,
+            status: $0.isAvailable() ? "present" : "missing",
+            requirement: $0.requirement,
+            remediation: remediation($0.remediation)
+          )
+        }
+      if profile.presets.pi,
+        let index = results.firstIndex(where: { $0.id == PiAdapter.id }),
+        results[index].status == "present"
+      {
+        let executable = PiAdapter.liveExecutableURL
         do {
-          let version = try HerdrAdapter(
+          let version = try PiAdapter(
             root: homeDirectory.appending(path: ".config/macarchy"),
-            configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
-            executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+            configurationDirectoryURL: homeDirectory.appending(path: ".pi/agent"),
+            executableURL: executable,
             controlIsAvailable: { true },
             processRunner: .live
           ).supportedVersion()
           results[index] = EnvironmentPrerequisiteStatus(
-            id: HerdrAdapter.id,
+            id: PiAdapter.id,
             status: "present",
             requirement:
-              "Herdr \(version) satisfies the required version >= \(HerdrAdapter.minimumVersion)",
+              "Pi \(version) satisfies the required version >= \(PiAdapter.minimumVersion)",
             remediation: results[index].remediation
           )
         } catch {
           results[index] = EnvironmentPrerequisiteStatus(
-            id: HerdrAdapter.id,
+            id: PiAdapter.id,
             status: "missing",
             requirement:
-              "Herdr must report 'herdr X.Y.Z' >= \(HerdrAdapter.minimumVersion): \(error)",
+              "Pi must report a parseable version >= \(PiAdapter.minimumVersion): \(error)",
             remediation: results[index].remediation
           )
         }
       }
-    }
-    if profile.shell == .zsh {
-      let zsh = URL(filePath: "/bin/zsh")
-      results.append(
-        EnvironmentPrerequisiteStatus(
-          id: "zsh",
-          status: FileManager.default.isExecutableFile(atPath: zsh.path) ? "present" : "missing",
-          requirement: "/bin/zsh must be executable",
-          remediation: "Run Macarchy on a supported macOS installation."
+      if profile.presets.codex,
+        let index = results.firstIndex(where: { $0.id == CodexAdapter.id }),
+        results[index].status == "present"
+      {
+        let executable = CodexAdapter.liveExecutableURL
+        do {
+          let version = try CodexAdapter(
+            root: homeDirectory.appending(path: ".config/macarchy"),
+            configurationDirectoryURL: homeDirectory.appending(path: ".codex"),
+            executableURL: executable,
+            controlIsAvailable: { true },
+            processRunner: .live
+          ).supportedVersion()
+          results[index] = EnvironmentPrerequisiteStatus(
+            id: CodexAdapter.id,
+            status: "present",
+            requirement:
+              "Codex \(version) satisfies the required version >= \(CodexAdapter.minimumVersion)",
+            remediation: results[index].remediation
+          )
+        } catch {
+          results[index] = EnvironmentPrerequisiteStatus(
+            id: CodexAdapter.id,
+            status: "missing",
+            requirement:
+              "Codex must report 'codex-cli X.Y.Z' >= \(CodexAdapter.minimumVersion): \(error)",
+            remediation: results[index].remediation
+          )
+        }
+      }
+      if profile.presets.herdr,
+        let index = results.firstIndex(where: { $0.id == HerdrAdapter.id }),
+        results[index].status == "present"
+      {
+        if ProcessInfo.processInfo.environment["HERDR_CONFIG_PATH"] != nil {
+          results[index] = EnvironmentPrerequisiteStatus(
+            id: HerdrAdapter.id,
+            status: "missing",
+            requirement:
+              "Herdr must use canonical ~/.config/herdr/config.toml; HERDR_CONFIG_PATH is unsupported and uninspectable",
+            remediation: "Unset HERDR_CONFIG_PATH and run the command again."
+          )
+        } else {
+          do {
+            let version = try HerdrAdapter(
+              root: homeDirectory.appending(path: ".config/macarchy"),
+              configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+              executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+              controlIsAvailable: { true },
+              processRunner: .live
+            ).supportedVersion()
+            results[index] = EnvironmentPrerequisiteStatus(
+              id: HerdrAdapter.id,
+              status: "present",
+              requirement:
+                "Herdr \(version) satisfies the required version >= \(HerdrAdapter.minimumVersion)",
+              remediation: results[index].remediation
+            )
+          } catch {
+            results[index] = EnvironmentPrerequisiteStatus(
+              id: HerdrAdapter.id,
+              status: "missing",
+              requirement:
+                "Herdr must report 'herdr X.Y.Z' >= \(HerdrAdapter.minimumVersion): \(error)",
+              remediation: results[index].remediation
+            )
+          }
+        }
+      }
+      if profile.presets.spicetify {
+        results = validateSpicetifyRuntime(results)
+      }
+      if profile.presets.slack,
+        let index = results.firstIndex(where: { $0.id == SlackAdapter.id }),
+        results[index].status == "present"
+      {
+        do {
+          let version = try EnvironmentSlackPreset().supportedVersion()
+          results[index] = EnvironmentPrerequisiteStatus(
+            id: SlackAdapter.id,
+            status: "present",
+            requirement:
+              "Slack \(version) satisfies the required version >= \(SlackAdapter.minimumVersion)",
+            remediation: results[index].remediation
+          )
+        } catch {
+          results[index] = EnvironmentPrerequisiteStatus(
+            id: SlackAdapter.id,
+            status: "missing",
+            requirement:
+              "Slack must have bundle version >= \(SlackAdapter.minimumVersion): \(error)",
+            remediation: results[index].remediation
+          )
+        }
+      }
+      if profile.shell == .zsh {
+        let zsh = URL(filePath: "/bin/zsh")
+        results.append(
+          EnvironmentPrerequisiteStatus(
+            id: "zsh",
+            status: FileManager.default.isExecutableFile(atPath: zsh.path) ? "present" : "missing",
+            requirement: "/bin/zsh must be executable",
+            remediation: "Run Macarchy on a supported macOS installation."
+          )
         )
-      )
-    }
-    if profile.editor == .neovim {
-      let git = URL(filePath: "/usr/bin/git")
-      results.append(
-        EnvironmentPrerequisiteStatus(
-          id: "git",
-          status: FileManager.default.isExecutableFile(atPath: git.path) ? "present" : "missing",
-          requirement: "/usr/bin/git must be executable for pinned Neovim plugins",
-          remediation: "Install the supported macOS Command Line Tools."
+      }
+      if profile.editor == .neovim {
+        let git = URL(filePath: "/usr/bin/git")
+        results.append(
+          EnvironmentPrerequisiteStatus(
+            id: "git",
+            status: FileManager.default.isExecutableFile(atPath: git.path) ? "present" : "missing",
+            requirement: "/usr/bin/git must be executable for pinned Neovim plugins",
+            remediation: "Install the supported macOS Command Line Tools."
+          )
         )
-      )
+      }
+      return results.sorted { $0.id < $1.id }
+    },
+    spicetifyRuntime: { homeDirectory in
+      let selected = Set([SpicetifyAdapter.id, "spotify"])
+      let results = DependencyProfile.personal(homeDirectory: homeDirectory).capabilities
+        .filter { selected.contains($0.id) }
+        .map {
+          EnvironmentPrerequisiteStatus(
+            id: $0.id,
+            status: $0.isAvailable() ? "present" : "missing",
+            requirement: $0.requirement,
+            remediation: remediation($0.remediation)
+          )
+        }
+      return validateSpicetifyRuntime(results).sorted { $0.id < $1.id }
+    })
+
+  private static func validateSpicetifyRuntime(
+    _ statuses: [EnvironmentPrerequisiteStatus]
+  ) -> [EnvironmentPrerequisiteStatus] {
+    var results = statuses
+    if let index = results.firstIndex(where: { $0.id == SpicetifyAdapter.id }),
+      results[index].status == "present"
+    {
+      do {
+        let version = try SpicetifyAdapter.supportedCommandVersion()
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: SpicetifyAdapter.id,
+          status: "present",
+          requirement:
+            "Spicetify \(version) satisfies the required version >= \(SpicetifyAdapter.minimumVersion)",
+          remediation: results[index].remediation
+        )
+      } catch {
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: SpicetifyAdapter.id,
+          status: "missing",
+          requirement:
+            "Spicetify must report a parseable X.Y.Z >= \(SpicetifyAdapter.minimumVersion): \(error)",
+          remediation: results[index].remediation
+        )
+      }
     }
-    return results.sorted { $0.id < $1.id }
+    if let index = results.firstIndex(where: { $0.id == "spotify" }),
+      results[index].status == "present"
+    {
+      do {
+        let version = try SpicetifyAdapter.spotifyBundleVersion()
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: "spotify",
+          status: "present",
+          requirement: "Spotify has parseable bundle version \(version)",
+          remediation: results[index].remediation
+        )
+      } catch {
+        results[index] = EnvironmentPrerequisiteStatus(
+          id: "spotify",
+          status: "missing",
+          requirement: "Spotify must have a parseable bundle version: \(error)",
+          remediation: results[index].remediation
+        )
+      }
+    }
+    return results
   }
 
   private static func remediation(_ remediation: DependencyRemediation) -> String {
@@ -182,7 +284,7 @@ extension EnvironmentProfile {
       && editor == .disabled
       && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
       && !presets.codex && !presets.pi && !presets.tuicr
-      && !presets.herdr
+      && !presets.herdr && !presets.slack && !presets.spicetify
   }
 
   var selectedThemeAdapterIDs: [String] {
@@ -197,6 +299,7 @@ extension EnvironmentProfile {
       + (presets.codex ? ["codex"] : [])
       + (presets.herdr ? ["herdr"] : [])
       + (presets.pi ? ["pi"] : [])
+      + (presets.spicetify ? ["spicetify"] : [])
       + (presets.tuicr ? ["tuicr"] : [])
   }
 }
@@ -507,7 +610,9 @@ struct EnvironmentStatusCommandRunner: Sendable {
       && themeState.allSatisfy {
         $0.status == "ready" || $0.status == "applied" || $0.status == "restart_required"
       }
-    let verificationReady = verification.allSatisfy { $0.status == "verified" }
+    let verificationReady = verification.allSatisfy {
+      $0.status == "verified" || $0.status == "manual_required"
+    }
     let converged =
       !missing && providerReady && generationReady && themeReady
       && verificationReady && transactionStatus == "clear"
@@ -550,6 +655,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
       "codex": profile.presets.codex ? "enabled" : "disabled",
       "herdr": profile.presets.herdr ? "enabled" : "disabled",
       "pi": profile.presets.pi ? "enabled" : "disabled",
+      "slack": profile.presets.slack ? "enabled" : "disabled",
+      "spicetify": profile.presets.spicetify ? "enabled" : "disabled",
       "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]
   }

@@ -1,7 +1,8 @@
 import Foundation
 import ThemeCore
 
-func renderSlackManualImport(_ theme: String) -> [String] {
+func renderSlackManualImport(_ theme: String?) -> [String] {
+  guard let theme else { return [] }
   guard let notice = ConsumerCatalog.shared.manualNotice(for: .slack) else {
     preconditionFailure("Slack manual notice is missing from the consumer catalog")
   }

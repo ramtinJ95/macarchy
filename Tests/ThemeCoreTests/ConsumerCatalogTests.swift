@@ -24,7 +24,7 @@ struct ConsumerCatalogTests {
           "neovim:required",
           "pi:required",
           "sketchybar:required",
-          "spicetify:optional",
+          "spicetify:required",
           "starship:required",
           "tuicr:required",
           "wallpaper:required",

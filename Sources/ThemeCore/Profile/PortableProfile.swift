@@ -108,6 +108,8 @@ package struct PresetsProfile: Equatable, Sendable {
   package let codex: Bool
   package let herdr: Bool
   package let pi: Bool
+  package let slack: Bool
+  package let spicetify: Bool
   package let tuicr: Bool
 }
 
@@ -253,6 +255,8 @@ package struct PortableProfileLoader: Sendable {
       "presets.codex",
       "presets.herdr",
       "presets.pi",
+      "presets.slack",
+      "presets.spicetify",
       "presets.tuicr",
       "btop.vim_keys",
       "yazi.show_hidden",
@@ -578,6 +582,8 @@ package struct PortableProfileLoader: Sendable {
         codex: document.presets?.codex ?? false,
         herdr: document.presets?.herdr ?? false,
         pi: document.presets?.pi ?? false,
+        slack: document.presets?.slack ?? false,
+        spicetify: document.presets?.spicetify ?? false,
         tuicr: document.presets?.tuicr ?? false
       ),
       btop: BtopProfileOptions(vimKeys: document.btop?.vimKeys),
@@ -790,7 +796,14 @@ extension EnvironmentProfile {
     ),
     neovim: NeovimProfileOptions(configurationDirectoryURL: nil),
     tools: DailyToolsProfile(bat: true, eza: true, btop: true, yazi: true),
-    presets: PresetsProfile(codex: false, herdr: false, pi: false, tuicr: false),
+    presets: PresetsProfile(
+      codex: false,
+      herdr: false,
+      pi: false,
+      slack: false,
+      spicetify: false,
+      tuicr: false
+    ),
     btop: BtopProfileOptions(vimKeys: nil),
     yazi: YaziProfileOptions(showHidden: nil)
   )
@@ -963,6 +976,8 @@ private struct PresetsDocument: Decodable {
   let codex: Bool?
   let herdr: Bool?
   let pi: Bool?
+  let slack: Bool?
+  let spicetify: Bool?
   let tuicr: Bool?
 }
 

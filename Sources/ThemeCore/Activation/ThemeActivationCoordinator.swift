@@ -113,7 +113,13 @@ package struct ThemeActivationCoordinator: Sendable {
       enabledAdapterIDs: enabledAdapterIDs,
       herdrManagedMode: herdrManagedMode,
       piSelectionIsApplied: piSelectionIsApplied,
-      piThemeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed
+      piThemeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed,
+      spicetifyVersionProvider: {
+        try SpicetifyAdapter.commandVersion(processRunner: .live)
+      },
+      spotifyVersionProvider: {
+        try SpicetifyAdapter.spotifyBundleVersion()
+      }
     )
   }
 
@@ -133,7 +139,11 @@ package struct ThemeActivationCoordinator: Sendable {
     enabledAdapterIDs: Set<String>? = nil,
     herdrManagedMode: HerdrManagedMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
-    piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
+    piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true },
+    spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
+      SpicetifyAdapter.minimumVersion
+    },
+    spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" }
   ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
@@ -234,7 +244,9 @@ package struct ThemeActivationCoordinator: Sendable {
       configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL,
       executableURL: SpicetifyAdapter.liveExecutableURL,
       controlIsAvailable: { controlIsAvailable(SpicetifyAdapter.liveExecutableURL) },
-      processRunner: processRunner
+      processRunner: processRunner,
+      spicetifyVersionProvider: spicetifyVersionProvider,
+      spotifyVersionProvider: spotifyVersionProvider
     )
     starship = StarshipAdapter(
       root: root,
@@ -593,7 +605,7 @@ package struct ThemeActivationCoordinator: Sendable {
     case .spicetify:
       return ConfiguredAdapter(
         entry: entry,
-        preflight: { _ in },
+        preflight: { _ in try spicetify.preflight() },
         inspection: spicetify.inspection,
         reconciliation: spicetify.reconciliation
       )

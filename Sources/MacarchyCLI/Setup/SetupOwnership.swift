@@ -19,6 +19,7 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
   case corruptBackup(URL)
   case environmentCodexOwnershipActive
   case environmentPiOwnershipActive
+  case environmentSpicetifyOwnershipActive
   case environmentTuicrOwnershipActive
   case invalidManifest(String)
   case invalidConfiguration(String, URL, String)
@@ -54,6 +55,8 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
       "Applied environment ownership still enables Codex; set [presets].codex = false and run 'macarchy environment apply' before setup teardown"
     case .environmentPiOwnershipActive:
       "Applied environment ownership still enables Pi; set [presets].pi = false and run 'macarchy environment apply' to disable or migrate it before setup teardown"
+    case .environmentSpicetifyOwnershipActive:
+      "Applied environment ownership still enables Spicetify; set [presets].spicetify = false and run 'macarchy environment apply' before setup teardown"
     case .environmentTuicrOwnershipActive:
       "Applied environment ownership still enables tuicr; set [presets].tuicr = false and run 'macarchy environment apply' to disable or migrate it before setup teardown"
     case .invalidManifest(let reason):
@@ -235,6 +238,8 @@ struct SetupOwnershipManager: Sendable {
         identity = (tuicrSelectorID, context.tuicrConfiguration.path)
       case .environmentCodexOwnershipActive:
         identity = (codexSelectorID, context.codexConfiguration.path)
+      case .environmentSpicetifyOwnershipActive:
+        identity = (spicetifySelectorsID, context.spicetifyConfiguration.path)
       case .system(_, let url, _):
         identity = integrationIdentity(for: url, context: context)
       case .invalidManifest:
@@ -319,10 +324,44 @@ struct SetupOwnershipManager: Sendable {
     excluding excludedConsumers: Set<ConsumerID>
   ) throws -> [SetupIntegrationResult] {
     var records = try readRecords(context: context)
+    let spicetifyIDs = Set([Self.spicetifySelectorsID, Self.spicetifyColorLinkID])
+    let recordedSpicetifyIDs = Set(records.map(\.id)).intersection(spicetifyIDs)
+    guard recordedSpicetifyIDs.isEmpty || recordedSpicetifyIDs == spicetifyIDs else {
+      throw SetupOwnershipError.invalidManifest(
+        "legacy Spicetify ownership must contain both spicetify.selectors and spicetify.color-link"
+      )
+    }
+    let hasLegacySpicetifyOwnership = recordedSpicetifyIDs == spicetifyIDs
     var results = [SetupIntegrationResult]()
     do {
       for plan in consumerSetupPlans(context: context)
       where !excludedConsumers.contains(plan.consumerID) {
+        if plan.consumerID == .spicetify, !hasLegacySpicetifyOwnership {
+          // New Spicetify configuration belongs to the aggregate environment
+          // lifecycle. Retain this setup plan only to validate and tear down
+          // complete legacy ownership records.
+          results.append(
+            SetupIntegrationResult(
+              id: Self.spicetifySelectorsID,
+              status: .disabled,
+              target: context.spicetifyConfiguration.path,
+              message:
+                "Spicetify selector ownership is disabled in setup; use the environment preset lifecycle.",
+              mutationAttempted: false
+            )
+          )
+          results.append(
+            SetupIntegrationResult(
+              id: Self.spicetifyColorLinkID,
+              status: .disabled,
+              target: context.spicetifyColorLink.path,
+              message:
+                "Spicetify color-link ownership is disabled in setup; use the environment preset lifecycle.",
+              mutationAttempted: false
+            )
+          )
+          continue
+        }
         results.append(contentsOf: try plan.setup(dryRun, &records))
       }
       return Self.orderedResults(results, context: context)
@@ -365,6 +404,10 @@ struct SetupOwnershipManager: Sendable {
     let legacyPiIDs = Set([Self.piSelectorID, Self.piThemeLinkID])
     if legacyPiIDs.isSubset(of: setupIDs), environment?.piEnabled == true {
       throw SetupOwnershipError.environmentPiOwnershipActive
+    }
+    let legacySpicetifyIDs = Set([Self.spicetifySelectorsID, Self.spicetifyColorLinkID])
+    if legacySpicetifyIDs.isSubset(of: setupIDs), environment?.spicetifyEnabled == true {
+      throw SetupOwnershipError.environmentSpicetifyOwnershipActive
     }
     let legacyTuicrIDs = Set([
       Self.tuicrSelectorID,
