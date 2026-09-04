@@ -763,6 +763,24 @@ values, and omitted fields continue to inherit portable intent or built-in
 defaults. Relative native inputs resolve beside the layer that declares them,
 so machine-only paths do not leak into a dotfiles-owned portable profile.
 
+Keep the sparse portable file with the dotfiles reused on each Mac. A machine
+that should not run the managed top bar can add only this local `machine.toml`;
+no hostname branch or copy of the portable settings is needed:
+
+```toml
+schema_version = 1
+
+[top_bar]
+provider = "disabled"
+```
+
+Run `setup plan` with the same portable profile on each Mac and review its local
+prerequisites and adoption evidence before applying. A role opt-out is a
+desired-state transition: apply restores or removes only that role's owned
+provider state while other managed roles remain converged. Unknown providers,
+unsupported values, and contradictory combinations in the merged effective
+profile block before actions or mutation.
+
 The plan delegates to the existing keybinding, desktop, and environment
 planners and reports their complete machine-readable results under
 `components`. Its summary exposes selected providers, the active theme or
