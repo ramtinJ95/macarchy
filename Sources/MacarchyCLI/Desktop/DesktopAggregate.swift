@@ -173,7 +173,8 @@ struct DesktopKeybindingOrchestrator: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    adopt: String?
+    adopt: String?,
+    profile: PortableProfile? = nil
   ) throws -> DesktopKeybindingPlan {
     let execution = try runner.preview(
       resourcesRoot: resourcesRoot,
@@ -182,14 +183,16 @@ struct DesktopKeybindingOrchestrator: Sendable {
       stateRoot: stateRoot,
       homeDirectory: homeDirectory,
       adopt: adopt,
-      json: true
+      json: true,
+      profile: profile
     )
     var result = try plan(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
       profileRequired: profileRequired,
       stateRoot: stateRoot,
-      homeDirectory: homeDirectory
+      homeDirectory: homeDirectory,
+      profile: profile
     )
     if !execution.succeeded {
       result = DesktopKeybindingPlan(
@@ -212,7 +215,8 @@ struct DesktopKeybindingOrchestrator: Sendable {
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
-    adopt: String?
+    adopt: String?,
+    profile: PortableProfile? = nil
   ) throws -> SetupIntegrationResult {
     try runner.applyIntegrationLocked(
       resourcesRoot: resourcesRoot,
@@ -221,7 +225,8 @@ struct DesktopKeybindingOrchestrator: Sendable {
       stateRoot: stateRoot,
       homeDirectory: homeDirectory,
       adopt: adopt,
-      deferFinalization: true
+      deferFinalization: true,
+      profile: profile
     )
   }
 

@@ -27,7 +27,8 @@ struct DesktopDoctorCommandRunner: Sendable {
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
     json: Bool,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState
     do {
@@ -36,7 +37,8 @@ struct DesktopDoctorCommandRunner: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        macarchyExecutableURL: macarchyExecutableURL
+        macarchyExecutableURL: macarchyExecutableURL,
+        profile: suppliedProfile
       )
     } catch {
       let report = DoctorReport(
@@ -87,7 +89,8 @@ struct DesktopDoctorCommandRunner: Sendable {
             profileURL: profileURL,
             profileRequired: profileRequired,
             stateRoot: stateRoot,
-            homeDirectory: homeDirectory
+            homeDirectory: homeDirectory,
+            profile: desired.profile
           )
           findings.append(
             DoctorFinding(

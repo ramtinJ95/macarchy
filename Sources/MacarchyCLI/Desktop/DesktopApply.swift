@@ -169,7 +169,8 @@ struct DesktopApplyCommandRunner: Sendable {
     keybindingsAdopt: String?,
     sketchyBarAdopt: String? = nil,
     json: Bool,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    profile suppliedProfile: PortableProfile? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState
     do {
@@ -178,7 +179,8 @@ struct DesktopApplyCommandRunner: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        macarchyExecutableURL: macarchyExecutableURL
+        macarchyExecutableURL: macarchyExecutableURL,
+        profile: suppliedProfile
       )
     } catch {
       let report = DesktopAggregateMutationReport.failure(
@@ -237,6 +239,7 @@ struct DesktopApplyCommandRunner: Sendable {
           adopt: adopt,
           keybindingsAdopt: keybindingsAdopt,
           sketchyBarAdopt: sketchyBarAdopt,
+          profile: desired.profile,
           coordinator: coordinator
         )
         let store = DesktopAggregateTransactionStore(stateRoot: stateRoot)
@@ -271,7 +274,8 @@ struct DesktopApplyCommandRunner: Sendable {
                   profileRequired: profileRequired,
                   stateRoot: stateRoot,
                   homeDirectory: homeDirectory,
-                  adopt: keybindingsAdopt
+                  adopt: keybindingsAdopt,
+                  profile: desired.profile
                 )
               } else {
                 try keybindings.teardownLocked(
@@ -424,6 +428,7 @@ struct DesktopApplyCommandRunner: Sendable {
     adopt: String?,
     keybindingsAdopt: String?,
     sketchyBarAdopt: String?,
+    profile: PortableProfile,
     coordinator: DesktopAggregateCoordinator
   ) throws {
     let missing = prerequisites.inspect(desired.profile, homeDirectory).filter {
@@ -462,7 +467,8 @@ struct DesktopApplyCommandRunner: Sendable {
           profileRequired: profileRequired,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          adopt: keybindingsAdopt
+          adopt: keybindingsAdopt,
+          profile: profile
         )
         guard preview.succeeded else {
           throw DesktopAggregateError.invalidState(preview.message)
@@ -823,26 +829,20 @@ struct DesktopTeardownCommandRunner: Sendable {
     )
     if dryRun {
       do {
-        let preview = try ActivationLock(root: stateRoot).withLock {
-          let sketchyBar = try coordinator.sketchyBarTransaction(
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory
-          ).teardownLocked(dryRun: true)
-          let keybinding = try keybindings?.teardownLocked(
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            dryRun: true
-          )
-          let yabai = try coordinator.teardownYabaiLocked(
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            dryRun: true
-          )
-          return (sketchyBar, keybinding, yabai)
-        }
-        let sketchyBar = preview.0
-        let keybinding = preview.1
-        let yabai = preview.2
+        let sketchyBar = try coordinator.sketchyBarTransaction(
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        ).teardownLocked(dryRun: true)
+        let keybinding = try keybindings?.teardownLocked(
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          dryRun: true
+        )
+        let yabai = try coordinator.teardownYabaiLocked(
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          dryRun: true
+        )
         let report = DesktopAggregateTeardownReport(
           outcome: sketchyBar.changed || keybinding?.status == .planned || yabai.changed
             ? "planned" : "no_change",
@@ -1085,9 +1085,12 @@ struct DesktopDesiredState: Sendable {
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    profile suppliedProfile: PortableProfile? = nil
   ) throws -> Self {
-    let profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
+    let profile =
+      try suppliedProfile
+      ?? PortableProfileLoader().load(at: profileURL, required: profileRequired)
     let yabaiComposition: YabaiComposition? =
       if profile.desktop.provider == .yabaiSkhd {
         try YabaiConfigurationComposer().compose(

@@ -14,6 +14,32 @@ struct UnifiedSetupPlanContext: Sendable {
   let homeDirectory: URL
 }
 
+struct UnifiedSetupDesiredModel: Sendable {
+  let profile: PortableProfile
+  let layers: [SetupProfileLayerReport]
+  let fieldOrigins: [String: String]
+  let themePackage: ThemePackage
+  let theme: UnifiedSetupThemePlan
+  let capabilities: [SetupCapability]
+  let packages: HomebrewInstallPlan
+}
+
+enum UnifiedSetupPreparation {
+  case ready(UnifiedSetupDesiredModel, UnifiedSetupPlanReport)
+  case blocked(UnifiedSetupPlanReport)
+
+  var report: UnifiedSetupPlanReport {
+    switch self {
+    case .ready(_, let report), .blocked(let report): report
+    }
+  }
+
+  var succeeded: Bool {
+    if case .ready = self { return true }
+    return false
+  }
+}
+
 struct UnifiedSetupPlanCommandRunner: Sendable {
   typealias ComponentPlanner =
     @Sendable (
@@ -64,6 +90,11 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
+    let preparation = try prepare(context: context)
+    return (try preparation.report.render(json: json), preparation.succeeded)
+  }
+
+  func prepare(context: UnifiedSetupPlanContext) throws -> UnifiedSetupPreparation {
     let layered: LayeredPortableProfile
     do {
       layered = try PortableProfileLoader().load(
@@ -73,26 +104,28 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         machineRequired: context.machineProfileRequired
       )
     } catch {
-      let report = UnifiedSetupPlanReport.blocked(
-        layers: profileFailureLayers(context: context, error: error),
-        fieldOrigins: [:],
-        error: String(describing: error)
+      return .blocked(
+        UnifiedSetupPlanReport.blocked(
+          layers: profileFailureLayers(context: context, error: error),
+          fieldOrigins: [:],
+          error: String(describing: error)
+        )
       )
-      return (try report.render(json: json), false)
     }
 
-    let theme: UnifiedSetupThemePlan
+    let themeSelection: (package: ThemePackage, plan: UnifiedSetupThemePlan)
     do {
-      theme = try themePlan(context: context)
+      themeSelection = try themePlan(context: context)
     } catch {
-      let report = UnifiedSetupPlanReport.blocked(
-        layers: layered.layers.map(SetupProfileLayerReport.init),
-        fieldOrigins: Dictionary(
-          uniqueKeysWithValues: layered.fieldOrigins.map { ($0.key, $0.value.rawValue) }
-        ),
-        error: String(describing: error)
+      return .blocked(
+        UnifiedSetupPlanReport.blocked(
+          layers: layered.layers.map(SetupProfileLayerReport.init),
+          fieldOrigins: Dictionary(
+            uniqueKeysWithValues: layered.fieldOrigins.map { ($0.key, $0.value.rawValue) }
+          ),
+          error: String(describing: error)
+        )
       )
-      return (try report.render(json: json), false)
     }
 
     let profile = layered.profile
@@ -107,8 +140,17 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
           remediation: capability.remediation
         )
       }
-    let installPlan = HomebrewInstallPlan(capabilities: capabilities)
-
+    let model = UnifiedSetupDesiredModel(
+      profile: profile,
+      layers: layered.layers.map(SetupProfileLayerReport.init),
+      fieldOrigins: Dictionary(
+        uniqueKeysWithValues: layered.fieldOrigins.map { ($0.key, $0.value.rawValue) }
+      ),
+      themePackage: themeSelection.package,
+      theme: themeSelection.plan,
+      capabilities: capabilities,
+      packages: HomebrewInstallPlan(capabilities: capabilities)
+    )
     let desktop = try desktopPlanner(context, profile)
     let environment = try environmentPlanner(context, profile)
     let components = SetupComponentPlans(
@@ -126,20 +168,18 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
     }
     let actions = try plannedActions(
-      installPlan: installPlan,
-      theme: theme,
+      installPlan: model.packages,
+      theme: model.theme,
       components: components
     )
     let report = UnifiedSetupPlanReport(
       outcome: diagnostics.isEmpty ? (actions.isEmpty ? "no_change" : "ready") : "blocked",
-      layers: layered.layers.map(SetupProfileLayerReport.init),
-      fieldOrigins: Dictionary(
-        uniqueKeysWithValues: layered.fieldOrigins.map { ($0.key, $0.value.rawValue) }
-      ),
+      layers: model.layers,
+      fieldOrigins: model.fieldOrigins,
       providers: providers(profile),
-      theme: theme,
-      capabilities: capabilities,
-      packages: installPlan,
+      theme: model.theme,
+      capabilities: model.capabilities,
+      packages: model.packages,
       files: try plannedFiles(
         profile: profile,
         components: components,
@@ -148,12 +188,13 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       services: services(profile),
       permissions: permissions(profile),
       adoption: try adoptionEvidence(components),
-      manualBoundaries: manualBoundaries(profile: profile, installPlan: installPlan),
+      manualBoundaries: manualBoundaries(profile: profile, installPlan: model.packages),
       actions: diagnostics.isEmpty ? actions : [],
       components: components,
       diagnostics: diagnostics
     )
-    return (try report.render(json: json), diagnostics.isEmpty)
+    guard diagnostics.isEmpty else { return .blocked(report) }
+    return .ready(model, report)
   }
 
   private func componentFailureMessage(
@@ -208,7 +249,9 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     ]
   }
 
-  private func themePlan(context: UnifiedSetupPlanContext) throws -> UnifiedSetupThemePlan {
+  private func themePlan(
+    context: UnifiedSetupPlanContext
+  ) throws -> (package: ThemePackage, plan: UnifiedSetupThemePlan) {
     let themeID: String
     let source: String
     let currentGenerationID: String?
@@ -233,15 +276,18 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       package: package,
       generationID: "setup-plan"
     )
-    return UnifiedSetupThemePlan(
-      id: package.id,
-      displayName: package.displayName,
-      source: source,
-      status: source == "active" ? "preserve" : "activation_required",
-      packagePath: package.packageURL.path,
-      appearance: package.appearance.rawValue,
-      backgroundCount: package.backgrounds.count,
-      currentGenerationID: currentGenerationID
+    return (
+      package,
+      UnifiedSetupThemePlan(
+        id: package.id,
+        displayName: package.displayName,
+        source: source,
+        status: source == "active" ? "preserve" : "activation_required",
+        packagePath: package.packageURL.path,
+        appearance: package.appearance.rawValue,
+        backgroundCount: package.backgrounds.count,
+        currentGenerationID: currentGenerationID
+      )
     )
   }
 
@@ -400,13 +446,15 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     _ components: SetupComponentPlans
   ) throws -> [UnifiedSetupAdoptionEvidence] {
     var result = [UnifiedSetupAdoptionEvidence]()
-    func append(_ id: String, _ digest: String?) {
-      guard let digest else { return }
+    func append(_ id: String, status: String, digest: String?) {
+      guard status == "adoption_required", let digest else { return }
       result.append(UnifiedSetupAdoptionEvidence(id: id, digest: digest))
     }
+    let keybindings = try components.desktop.report.required("keybindings", at: "desktop")
     append(
       "keybindings",
-      try components.desktop.report.required("keybindings", at: "desktop").optionalString(
+      status: try keybindings.requiredString("provider_status", at: "desktop.keybindings"),
+      digest: try keybindings.optionalString(
         "adoption_evidence_digest",
         at: "desktop.keybindings"
       )
@@ -414,25 +462,26 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     let yabaiProvider = try components.desktop.report.requiredObject("provider", at: "desktop")
     append(
       "yabai",
-      try yabaiProvider.optionalString("adoption_evidence_digest", at: "desktop.provider")
+      status: try yabaiProvider.requiredString("status", at: "desktop.provider"),
+      digest: try yabaiProvider.optionalString("adoption_evidence_digest", at: "desktop.provider")
     )
     if let sketchyBar = components.desktop.report["sketchybar"] {
       let provider = try sketchyBar.requiredObject("provider", at: "desktop.sketchybar")
       append(
         "sketchybar",
-        try provider.optionalString(
+        status: try provider.requiredString("status", at: "desktop.sketchybar.provider"),
+        digest: try provider.optionalString(
           "adoption_evidence_digest",
           at: "desktop.sketchybar.provider"
         )
       )
     }
-    append(
-      "environment",
-      try components.environment.report.optionalString(
-        "adoption_evidence_digest",
-        at: "environment"
-      )
-    )
+    if let digest = try components.environment.report.optionalString(
+      "adoption_evidence_digest",
+      at: "environment"
+    ) {
+      result.append(UnifiedSetupAdoptionEvidence(id: "environment", digest: digest))
+    }
     return result
   }
 
@@ -490,14 +539,18 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 struct SetupComponentExecution: Encodable, Sendable {
   let succeeded: Bool
   let report: JSONValue
+  let outcome: String
 
   init(_ execution: (output: String, succeeded: Bool)) throws {
     succeeded = execution.succeeded
     report = try JSONDecoder().decode(JSONValue.self, from: Data(execution.output.utf8))
     _ = try report.requiredObject(at: "component")
-    _ = try report.requiredString("outcome", at: "component")
+    outcome = try report.requiredString("outcome", at: "component")
   }
 
+  enum CodingKeys: CodingKey {
+    case succeeded, report
+  }
 }
 
 struct SetupComponentPlans: Encodable, Sendable {
@@ -579,7 +632,7 @@ struct UnifiedSetupPlanDiagnostic: Encodable, Sendable {
   let message: String
 }
 
-private struct UnifiedSetupPlanReport: Encodable {
+struct UnifiedSetupPlanReport: Encodable {
   let schemaVersion = 1
   let operation = "setup_plan"
   let outcome: String
@@ -741,7 +794,7 @@ enum JSONValue: Codable, Sendable {
   }
 }
 
-private struct SetupComponentReportError: Error, CustomStringConvertible {
+struct SetupComponentReportError: Error, CustomStringConvertible {
   let description: String
 }
 

@@ -360,12 +360,15 @@ struct EnvironmentApplyCommandRunner: Sendable {
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
     adopt: String?,
-    json: Bool
+    json: Bool,
+    profile suppliedProfile: PortableProfile? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
     let composition: EnvironmentComposition
     do {
-      profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
+      profile =
+        try suppliedProfile
+        ?? PortableProfileLoader().load(at: profileURL, required: profileRequired)
       composition = try EnvironmentConfigurationComposer().compose(
         resourcesRoot: resourcesRoot,
         profile: profile,
@@ -442,7 +445,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
             mutated: false,
             successMessage:
               "Every daily tool role is disabled; no managed state was changed.",
-            json: json
+            json: json,
+            profile: profile
           )
         }
         let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
@@ -545,7 +549,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           successfulOutcome: result.changed ? "applied" : "no_change",
           mutated: result.changed,
           successMessage: restored.message,
-          json: json
+          json: json,
+          profile: profile
         )
       } catch {
         return try failure(
@@ -811,7 +816,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
       successMessage: applyResult.changed
         ? "The daily tool environment was published and verified."
         : "The daily tool environment was already converged.",
-      json: json
+      json: json,
+      profile: profile
     )
   }
 
