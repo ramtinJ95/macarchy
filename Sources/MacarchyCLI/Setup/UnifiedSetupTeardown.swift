@@ -13,6 +13,23 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   let environmentTeardown: ComponentTeardown
   let desktopTeardown: ComponentTeardown
   let themeTeardown: ThemeTeardown
+  let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
+
+  init(
+    planner: UnifiedSetupPlanCommandRunner,
+    environmentTeardown: @escaping ComponentTeardown,
+    desktopTeardown: @escaping ComponentTeardown,
+    themeTeardown: @escaping ThemeTeardown,
+    faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
+      _ in
+    }
+  ) {
+    self.planner = planner
+    self.environmentTeardown = environmentTeardown
+    self.desktopTeardown = desktopTeardown
+    self.themeTeardown = themeTeardown
+    self.faultInjector = faultInjector
+  }
 
   static let live = Self(
     planner: .live,
@@ -141,6 +158,77 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     dryRun: Bool,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
+    let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
+    let pendingTransaction: UnifiedSetupTransaction?
+    do {
+      pendingTransaction = try transactionStore.read()
+    } catch {
+      return try result(
+        outcome: "recovery_required",
+        mutated: false,
+        dryRun: dryRun,
+        plan: nil,
+        message: String(describing: error),
+        json: json
+      )
+    }
+    if let transaction = pendingTransaction {
+      if dryRun {
+        return try result(
+          outcome: "recovery_required",
+          mutated: false,
+          dryRun: true,
+          plan: nil,
+          message:
+            "An interrupted unified \(transaction.operation.rawValue) must recover before teardown preview.",
+          json: json
+        )
+      }
+      do {
+        let recovered = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+          guard
+            let current = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read()
+          else {
+            throw UnifiedSetupTransactionError.recoveryRequired(
+              "the interrupted transaction disappeared before recovery"
+            )
+          }
+          return (
+            transaction: current,
+            result: try await recover(
+              transaction: current,
+              context: context,
+              consumerPaths: consumerPaths
+            )
+          )
+        }
+        if recovered.transaction.operation == .teardown {
+          return try result(
+            outcome: "restored",
+            mutated: recovered.result.mutated,
+            dryRun: dryRun,
+            plan: nil,
+            environment: recovered.result.environment,
+            desktop: recovered.result.desktop,
+            theme: recovered.result.theme,
+            message: "Interrupted unified teardown completed in reverse apply order.",
+            json: json
+          )
+        }
+      } catch let error as UnifiedSetupInterruptionError {
+        throw error
+      } catch {
+        return try result(
+          outcome: "recovery_required",
+          mutated: true,
+          dryRun: false,
+          plan: nil,
+          message: String(describing: error),
+          json: json
+        )
+      }
+    }
+
     let preparation: UnifiedSetupPreparation
     do {
       preparation = try planner.prepare(context: context)
@@ -156,7 +244,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     }
     guard case .ready(let model, let plan) = preparation else {
       return try result(
-        outcome: "blocked",
+        outcome: preparation.report.outcome,
         mutated: false,
         dryRun: dryRun,
         plan: preparation.report,
@@ -263,115 +351,166 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     }
 
-    var mutated = false
-    let environment: UnifiedSetupTeardownStage
-    do {
-      environment = try stage(
-        await environmentTeardown(context, consumerPaths, false),
-        dryRun: false
-      )
-    } catch {
+    let stages: [UnifiedSetupTransactionStage] = [
+      environmentPreview.outcome == "planned" ? .environment : nil,
+      desktopPreview.outcome == "planned" ? .desktop : nil,
+      themePreview.outcome == "planned" ? .theme : nil,
+    ].compactMap { $0 }
+    guard !stages.isEmpty else {
       return try result(
-        outcome: "failed",
-        mutated: true,
+        outcome: "no_change",
+        mutated: false,
         dryRun: false,
         plan: plan,
-        message: "Environment teardown failed before a result was available: \(error)",
+        environment: environmentPreview,
+        desktop: desktopPreview,
+        theme: themePreview,
+        message: "No Macarchy-owned core lifecycle state exists.",
         json: json
       )
     }
-    mutated = environment.mutated
-    guard environment.succeeded else {
-      return try result(
-        outcome: "failed",
-        mutated: mutated,
-        dryRun: false,
-        plan: plan,
-        environment: environment,
-        message: "Environment teardown did not converge; later stages were not run.",
-        json: json
-      )
-    }
-
-    let desktop: UnifiedSetupTeardownStage
-    do {
-      desktop = try stage(
-        await desktopTeardown(context, consumerPaths, false),
-        dryRun: false
-      )
-    } catch {
-      return try result(
-        outcome: "failed",
-        mutated: true,
-        dryRun: false,
-        plan: plan,
-        environment: environment,
-        message: "Desktop teardown failed before a result was available: \(error)",
-        json: json
-      )
-    }
-    mutated = mutated || desktop.mutated
-    guard desktop.succeeded else {
-      return try result(
-        outcome: "failed",
-        mutated: mutated,
-        dryRun: false,
-        plan: plan,
-        environment: environment,
-        desktop: desktop,
-        message: "Desktop teardown did not converge; theme teardown was not run.",
-        json: json
-      )
-    }
-
-    let theme: UnifiedSetupTeardownStage
-    do {
-      theme = try await themeTeardown(
-        context.stateRoot,
-        ownership,
-        model.themePackage.appearance,
-        false
-      )
-    } catch {
-      return try result(
-        outcome: "failed",
-        mutated: true,
-        dryRun: false,
-        plan: plan,
-        environment: environment,
-        desktop: desktop,
-        message: "Theme teardown failed: \(error)",
-        json: json
-      )
-    }
-    mutated = mutated || theme.mutated
-    guard theme.succeeded else {
-      return try result(
-        outcome: "failed",
-        mutated: mutated,
-        dryRun: false,
-        plan: plan,
-        environment: environment,
-        desktop: desktop,
-        theme: theme,
-        message: "Theme teardown requires recovery.",
-        json: json
-      )
-    }
-
-    return try result(
-      outcome: mutated ? "restored" : "no_change",
-      mutated: mutated,
-      dryRun: false,
-      plan: plan,
-      environment: environment,
-      desktop: desktop,
-      theme: theme,
-      message: mutated
-        ? "Restored the setup-owned core in reverse order; Homebrew packages were retained."
-        : "No Macarchy-owned core lifecycle state exists.",
-      json: json
+    let transaction = UnifiedSetupTransaction(
+      operation: .teardown,
+      stages: stages,
+      desiredAppearance: model.themePackage.appearance,
+      contextDigest: unifiedSetupContextDigest(context: context, consumerPaths: consumerPaths)
     )
+    do {
+      let recovery = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+        let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
+        guard try store.read() == nil else {
+          throw UnifiedSetupTransactionError.recoveryRequired(
+            "another unified setup operation started after preflight"
+          )
+        }
+        try store.write(transaction)
+        return try await recover(
+          transaction: transaction,
+          context: context,
+          consumerPaths: consumerPaths
+        )
+      }
+      return try result(
+        outcome: "restored",
+        mutated: recovery.mutated,
+        dryRun: false,
+        plan: plan,
+        environment: recovery.environment ?? environmentPreview,
+        desktop: recovery.desktop ?? desktopPreview,
+        theme: recovery.theme ?? themePreview,
+        message:
+          "Restored the setup-owned core in reverse order; Homebrew packages were retained.",
+        json: json
+      )
+    } catch let error as UnifiedSetupInterruptionError {
+      throw error
+    } catch {
+      return try result(
+        outcome: "recovery_required",
+        mutated: true,
+        dryRun: false,
+        plan: plan,
+        message: String(describing: error),
+        json: json
+      )
+    }
+  }
+
+  func recover(
+    transaction: UnifiedSetupTransaction,
+    context: UnifiedSetupPlanContext,
+    consumerPaths: ThemeConsumerPaths
+  ) async throws -> UnifiedSetupRecoveryResult {
+    guard
+      transaction.contextDigest
+        == unifiedSetupContextDigest(context: context, consumerPaths: consumerPaths)
+    else {
+      throw UnifiedSetupTransactionError.recoveryRequired(
+        "the home or consumer paths differ from the interrupted operation"
+      )
+    }
+    let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
+    if transaction.phase == .committing {
+      try store.remove()
+      return UnifiedSetupRecoveryResult()
+    }
+
+    let stages: [UnifiedSetupTransactionStage] =
+      transaction.operation == .apply
+      ? Array(transaction.stages.reversed())
+      : transaction.stages
+    for stageID in stages {
+      let preview = try await run(
+        stageID,
+        context: context,
+        consumerPaths: consumerPaths,
+        desiredAppearance: transaction.desiredAppearance,
+        dryRun: true
+      )
+      guard preview.succeeded else {
+        throw UnifiedSetupTransactionError.recoveryRequired(
+          "\(stageID.rawValue) preflight failed: \(preview.message)"
+        )
+      }
+    }
+
+    var result = UnifiedSetupRecoveryResult()
+    var remaining = transaction.stages
+    for stageID in stages {
+      let execution = try await run(
+        stageID,
+        context: context,
+        consumerPaths: consumerPaths,
+        desiredAppearance: transaction.desiredAppearance,
+        dryRun: false
+      )
+      guard execution.succeeded else {
+        throw UnifiedSetupTransactionError.recoveryRequired(
+          "\(stageID.rawValue) recovery failed: \(execution.message)"
+        )
+      }
+      result.record(execution, for: stageID)
+      if transaction.operation == .teardown {
+        switch stageID {
+        case .environment: try faultInjector(.environmentTornDown)
+        case .desktop: try faultInjector(.desktopTornDown)
+        case .theme: try faultInjector(.themeTornDown)
+        }
+      }
+      remaining.removeAll { $0 == stageID }
+      try store.write(transaction.replacing(stages: remaining))
+    }
+    try store.write(transaction.replacing(phase: .committing, stages: []))
+    try store.remove()
+    return result
+  }
+
+  private func run(
+    _ stageID: UnifiedSetupTransactionStage,
+    context: UnifiedSetupPlanContext,
+    consumerPaths: ThemeConsumerPaths,
+    desiredAppearance: ThemeAppearance,
+    dryRun: Bool
+  ) async throws -> UnifiedSetupTeardownStage {
+    switch stageID {
+    case .environment:
+      return try stage(
+        await environmentTeardown(context, consumerPaths, dryRun),
+        dryRun: dryRun
+      )
+    case .desktop:
+      return try stage(
+        await desktopTeardown(context, consumerPaths, dryRun),
+        dryRun: dryRun
+      )
+    case .theme:
+      return try await themeTeardown(
+        context.stateRoot,
+        SetupCoreOwnershipStore(stateRoot: context.stateRoot).read(),
+        desiredAppearance,
+        dryRun
+      )
+    }
   }
 
   private func stage(
@@ -392,7 +531,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     return UnifiedSetupTeardownStage(
       succeeded: execution.succeeded,
       mutated: mutated,
-      outcome: execution.outcome,
+      outcome: dryRun && execution.outcome == "ready" ? "planned" : execution.outcome,
       message: execution.report["message"]?.string ?? "Delegated teardown completed.",
       details: execution.report
     )

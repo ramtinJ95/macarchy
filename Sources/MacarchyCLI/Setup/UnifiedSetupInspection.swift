@@ -110,7 +110,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     guard case .ready(let model, let plan) = preparation else {
       return try result(
         operation: operation,
-        outcome: "blocked",
+        outcome: preparation.report.outcome,
         plan: preparation.report,
         theme: nil,
         message: "The unified setup plan is blocked.",

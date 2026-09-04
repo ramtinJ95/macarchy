@@ -2,13 +2,26 @@ import Darwin
 import Dispatch
 import Foundation
 
-struct ProcessScopedFileLock<LockError: Error>: Sendable {
+package struct ProcessScopedFileLock<LockError: Error>: Sendable {
   let filename: String
   let cannotCreateRunDirectory: @Sendable (URL, String) -> LockError
   let operationError: @Sendable (String, Int32) -> LockError
   private let semaphore = DispatchSemaphore(value: 1)
 
-  func withLock<Output>(root: URL, _ operation: () throws -> Output) throws -> Output {
+  package init(
+    filename: String,
+    cannotCreateRunDirectory: @escaping @Sendable (URL, String) -> LockError,
+    operationError: @escaping @Sendable (String, Int32) -> LockError
+  ) {
+    self.filename = filename
+    self.cannotCreateRunDirectory = cannotCreateRunDirectory
+    self.operationError = operationError
+  }
+
+  package func withLock<Output>(
+    root: URL,
+    _ operation: () throws -> Output
+  ) throws -> Output {
     semaphore.wait()
     defer { semaphore.signal() }
     let descriptor = try acquire(root: root)
@@ -16,7 +29,7 @@ struct ProcessScopedFileLock<LockError: Error>: Sendable {
     return try operation()
   }
 
-  func withLock<Output: Sendable>(
+  package func withLock<Output: Sendable>(
     root: URL,
     _ operation: @Sendable () async throws -> Output
   ) async throws -> Output {

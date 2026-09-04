@@ -95,6 +95,21 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   }
 
   func prepare(context: UnifiedSetupPlanContext) throws -> UnifiedSetupPreparation {
+    do {
+      if let transaction = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() {
+        return .blocked(
+          UnifiedSetupPlanReport.recoveryRequired(
+            error:
+              "Interrupted unified \(transaction.operation.rawValue) is in \(transaction.phase.rawValue) recovery."
+          )
+        )
+      }
+    } catch {
+      return .blocked(
+        UnifiedSetupPlanReport.recoveryRequired(error: String(describing: error))
+      )
+    }
+
     let layered: LayeredPortableProfile
     do {
       layered = try PortableProfileLoader().load(
@@ -657,8 +672,34 @@ struct UnifiedSetupPlanReport: Encodable {
     fieldOrigins: [String: String],
     error: String
   ) -> Self {
-    Self(
+    unavailable(
       outcome: "blocked",
+      layers: layers,
+      fieldOrigins: fieldOrigins,
+      code: "setup_input_invalid",
+      error: error
+    )
+  }
+
+  static func recoveryRequired(error: String) -> Self {
+    unavailable(
+      outcome: "recovery_required",
+      layers: [],
+      fieldOrigins: [:],
+      code: "setup_recovery_required",
+      error: error
+    )
+  }
+
+  private static func unavailable(
+    outcome: String,
+    layers: [SetupProfileLayerReport],
+    fieldOrigins: [String: String],
+    code: String,
+    error: String
+  ) -> Self {
+    Self(
+      outcome: outcome,
       layers: layers,
       fieldOrigins: fieldOrigins,
       providers: [:],
@@ -674,7 +715,7 @@ struct UnifiedSetupPlanReport: Encodable {
       components: nil,
       diagnostics: [
         UnifiedSetupPlanDiagnostic(
-          code: "setup_input_invalid",
+          code: code,
           source: "setup",
           message: error
         )
