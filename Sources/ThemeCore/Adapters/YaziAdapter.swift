@@ -5,6 +5,7 @@ enum YaziAdapterError: Error, CustomStringConvertible, Sendable {
   case configurationTooLarge(URL)
   case controlUnavailable(URL)
   case missingFlavorSelection(String)
+  case unexpectedConfigurationLink(URL, actual: String, expected: String)
 
   var description: String {
     switch self {
@@ -16,6 +17,9 @@ enum YaziAdapterError: Error, CustomStringConvertible, Sendable {
       "Yazi control is not executable at \(url.path)"
     case .missingFlavorSelection(let selection):
       "Yazi theme configuration must select \(selection)"
+    case .unexpectedConfigurationLink(let url, let actual, let expected):
+      "Yazi theme configuration at \(url.path) is a symbolic link to \(actual); "
+        + "only the Macarchy-managed link to \(expected) is accepted"
     }
   }
 }
@@ -27,6 +31,10 @@ package struct YaziAdapter: Sendable {
   package static let flavorName = "macarchy-current"
   package static let selectionTable = "flavor"
   package static let selectionKey = "dark"
+  /// The only symbolic-link destination accepted for the Yazi theme selection
+  /// leaf, relative to the Macarchy state root. Environment apply installs
+  /// `~/.config/yazi/theme.toml` as a link to exactly this path.
+  package static let managedThemeConfigurationPath = "environment/current/yazi/theme.toml"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/yazi")
   static let liveControlURL = URL(filePath: "/opt/homebrew/bin/ya")
 
@@ -232,10 +240,19 @@ package struct YaziAdapter: Sendable {
   }
 
   private func readThemeConfiguration() throws -> String {
-    try AdapterConfigurationFile.readUTF8(
+    let managedDestination = root.appending(path: Self.managedThemeConfigurationPath)
+    return try AdapterConfigurationFile.readUTF8(
       at: themeConfigurationURL,
+      managedDestination: managedDestination,
       tooLarge: YaziAdapterError.configurationTooLarge(themeConfigurationURL),
-      unreadable: YaziAdapterError.cannotReadConfiguration(themeConfigurationURL)
+      unreadable: YaziAdapterError.cannotReadConfiguration(themeConfigurationURL),
+      unexpectedLink: {
+        YaziAdapterError.unexpectedConfigurationLink(
+          themeConfigurationURL,
+          actual: $0,
+          expected: managedDestination.path
+        )
+      }
     )
   }
 

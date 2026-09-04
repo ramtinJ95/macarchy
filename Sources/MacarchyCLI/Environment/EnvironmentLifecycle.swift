@@ -1653,7 +1653,7 @@ struct EnvironmentProviderInspector: Sendable {
         id: .batConfiguration,
         url: home.appending(path: ".config/bat/config"),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/bat/config").path
+        target: state.appending(path: BatAdapter.managedConfigurationPath).path
       ),
       EnvironmentManagedEntry(
         id: .batTheme,
@@ -1713,7 +1713,7 @@ struct EnvironmentProviderInspector: Sendable {
         id: .yaziThemeSelection,
         url: home.appending(path: ".config/yazi/theme.toml"),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/yazi/theme.toml").path
+        target: state.appending(path: YaziAdapter.managedThemeConfigurationPath).path
       ),
       EnvironmentManagedEntry(
         id: .yaziFlavor,

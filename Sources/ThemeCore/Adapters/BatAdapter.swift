@@ -5,6 +5,7 @@ enum BatAdapterError: Error, CustomStringConvertible, Sendable {
   case configurationTooLarge(URL)
   case controlUnavailable(URL)
   case missingThemeDirective(String)
+  case unexpectedConfigurationLink(URL, actual: String, expected: String)
 
   var description: String {
     switch self {
@@ -16,6 +17,9 @@ enum BatAdapterError: Error, CustomStringConvertible, Sendable {
       "bat is not executable at \(url.path)"
     case .missingThemeDirective(let directive):
       "bat configuration must contain '\(directive)'"
+    case .unexpectedConfigurationLink(let url, let actual, let expected):
+      "bat configuration at \(url.path) is a symbolic link to \(actual); "
+        + "only the Macarchy-managed link to \(expected) is accepted"
     }
   }
 }
@@ -25,6 +29,10 @@ package struct BatAdapter: Sendable {
   package static let themeName = TextMateThemeArtifact.themeName
   package static let themeDirective = "--theme=\"\(themeName)\""
   package static let themeFileName = "\(themeName).tmTheme"
+  /// The only symbolic-link destination accepted for the bat configuration
+  /// leaf, relative to the Macarchy state root. Environment apply installs
+  /// `~/.config/bat/config` as a link to exactly this path.
+  package static let managedConfigurationPath = "environment/current/bat/config"
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/bat")
 
   let root: URL
@@ -97,10 +105,19 @@ package struct BatAdapter: Sendable {
   }
 
   private func readConfiguration() throws -> String {
-    try AdapterConfigurationFile.readUTF8(
+    let managedDestination = root.appending(path: Self.managedConfigurationPath)
+    return try AdapterConfigurationFile.readUTF8(
       at: configurationURL,
+      managedDestination: managedDestination,
       tooLarge: BatAdapterError.configurationTooLarge(configurationURL),
-      unreadable: BatAdapterError.cannotReadConfiguration(configurationURL)
+      unreadable: BatAdapterError.cannotReadConfiguration(configurationURL),
+      unexpectedLink: {
+        BatAdapterError.unexpectedConfigurationLink(
+          configurationURL,
+          actual: $0,
+          expected: managedDestination.path
+        )
+      }
     )
   }
 
