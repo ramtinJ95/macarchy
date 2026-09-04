@@ -168,6 +168,73 @@ private func verifyPendingSpicetifyRuntime(
   )
 }
 
+/// Restored runtime evidence merged with the reconciliation evidence recorded for the consumer
+/// set that becomes default once the managed environment stops narrowing it.
+private struct EnvironmentRestoredThemeState {
+  let theme: [DesktopThemeAdapterStatus]
+  let message: String
+  let succeeded: Bool
+}
+
+/// Reconciles the default consumer set after teardown restored it, so the recorded evidence
+/// covers every enabled consumer instead of the narrower set the environment owned. Throws when
+/// the reconciliation attempt itself could not run.
+private func reconcileRestoredDefaultConsumers(
+  theme: DesktopThemeController?,
+  stateRoot: URL,
+  homeDirectory: URL,
+  consumerPaths: ThemeConsumerPaths,
+  restored: [DesktopThemeAdapterStatus],
+  restorationMessage: String
+) async throws -> EnvironmentRestoredThemeState {
+  guard let theme,
+    try EnvironmentStateStore(stateRoot: stateRoot).readOwnership() == nil
+  else {
+    return EnvironmentRestoredThemeState(
+      theme: restored,
+      message: restorationMessage,
+      succeeded: true
+    )
+  }
+  var hasActiveTheme = true
+  do {
+    _ = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+  } catch ReconciliationStatusError.noActiveGeneration {
+    hasActiveTheme = false
+  }
+  let adapterIDs =
+    hasActiveTheme
+    ? try ThemeRuntimeSelection.enabledAdapterIDs(
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory
+    ).sorted() : []
+  guard !adapterIDs.isEmpty else {
+    return EnvironmentRestoredThemeState(
+      theme: restored,
+      message:
+        "\(restorationMessage) No canonical theme is active, so no reconciliation evidence was recorded.",
+      succeeded: true
+    )
+  }
+  let reconciliation = try await theme.reconcile(adapterIDs, stateRoot, consumerPaths)
+  let reconciledIDs = Set(reconciliation.results.map(\.adapterID))
+  return EnvironmentRestoredThemeState(
+    theme: (restored.filter { !reconciledIDs.contains($0.adapterID) } + reconciliation.results)
+      .sorted { $0.adapterID < $1.adapterID },
+    message: reconciliation.succeeded
+      ? "\(restorationMessage) The default consumer set was reconciled with the active canonical theme."
+      : "\(restorationMessage) Required theme reconciliation of the default consumer set failed; run 'macarchy reconcile'.",
+    succeeded: reconciliation.succeeded
+  )
+}
+
+private func defaultConsumerReconciliationFailureMessage(
+  _ restorationMessage: String,
+  _ error: any Error
+) -> String {
+  "\(restorationMessage) The default consumer set could not be reconciled; run 'macarchy reconcile': \(error)"
+}
+
 struct EnvironmentNeovimPreparer: Sendable {
   let prepare: @Sendable (EnvironmentProfile, URL) -> EnvironmentVerification?
 
@@ -429,6 +496,38 @@ struct EnvironmentApplyCommandRunner: Sendable {
             "teardown runtime activation failed and was rolled back: \(activationError)"
           )
         }
+        let restored: EnvironmentRestoredThemeState
+        do {
+          restored = try await reconcileRestoredDefaultConsumers(
+            theme: theme,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            consumerPaths: consumerPaths,
+            restored: [restoredHerdr, restoredSpicetify].compactMap { $0 },
+            restorationMessage: result.message
+          )
+        } catch {
+          return try failure(
+            profileURL: profileURL,
+            profile: profile.environment,
+            prerequisites: prerequisiteState,
+            theme: [restoredHerdr, restoredSpicetify].compactMap { $0 },
+            message: defaultConsumerReconciliationFailureMessage(result.message, error),
+            mutated: result.changed,
+            json: json
+          )
+        }
+        guard restored.succeeded else {
+          return try failure(
+            profileURL: profileURL,
+            profile: profile.environment,
+            prerequisites: prerequisiteState,
+            theme: restored.theme,
+            message: restored.message,
+            mutated: result.changed,
+            json: json
+          )
+        }
         return try EnvironmentStatusCommandRunner(
           prerequisites: prerequisites,
           theme: theme,
@@ -442,10 +541,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
           homeDirectory: homeDirectory,
           consumerPaths: consumerPaths,
           includeVerification: true,
-          observedTheme: [restoredHerdr, restoredSpicetify].compactMap { $0 },
+          observedTheme: restored.theme,
           successfulOutcome: result.changed ? "applied" : "no_change",
           mutated: result.changed,
-          successMessage: result.message,
+          successMessage: restored.message,
           json: json
         )
       } catch {
@@ -722,6 +821,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     prerequisites: [EnvironmentPrerequisiteStatus] = [],
     entries: [EnvironmentEntryInspection] = [],
     adoptionEvidenceDigest: String? = nil,
+    theme: [DesktopThemeAdapterStatus] = [],
     message: String,
     mutated: Bool,
     transactionStatus: String = "clear",
@@ -738,7 +838,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       adoptionEvidenceDigest: adoptionEvidenceDigest,
       prerequisites: prerequisites,
       entries: entries,
-      theme: [],
+      theme: theme,
       verification: [],
       message: message
     )
@@ -748,21 +848,25 @@ struct EnvironmentApplyCommandRunner: Sendable {
 
 struct EnvironmentTeardownCommandRunner: Sendable {
   let prerequisites: EnvironmentPrerequisiteInspector
+  let theme: DesktopThemeController?
   let herdrRuntime: EnvironmentHerdrRuntimeReloader
   let spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
 
   static let live = Self(
     prerequisites: .live,
+    theme: .live,
     herdrRuntime: .live,
     spicetifyRuntime: .live
   )
 
   init(
     prerequisites: EnvironmentPrerequisiteInspector = .assumed,
+    theme: DesktopThemeController? = nil,
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
     spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed
   ) {
     self.prerequisites = prerequisites
+    self.theme = theme
     self.herdrRuntime = herdrRuntime
     self.spicetifyRuntime = spicetifyRuntime
   }
@@ -770,9 +874,10 @@ struct EnvironmentTeardownCommandRunner: Sendable {
   func execute(
     stateRoot: URL,
     homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) async throws -> (output: String, succeeded: Bool) {
     var prerequisiteState = [EnvironmentPrerequisiteStatus]()
     do {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
@@ -884,23 +989,53 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           "teardown runtime activation failed and was rolled back: \(activationError)"
         )
       }
-      let report = EnvironmentLifecycleReport(
-        operation: "environment_teardown",
+      var themeState = [restoredHerdr, restoredSpicetify].compactMap { $0 }
+      var message = result.message
+      if !dryRun {
+        let restored: EnvironmentRestoredThemeState
+        do {
+          restored = try await reconcileRestoredDefaultConsumers(
+            theme: theme,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            consumerPaths: consumerPaths,
+            restored: themeState,
+            restorationMessage: result.message
+          )
+        } catch {
+          return (
+            try Self.report(
+              outcome: "blocked",
+              mutated: true,
+              generationStatus: "absent",
+              prerequisites: prerequisiteState,
+              theme: themeState,
+              message: defaultConsumerReconciliationFailureMessage(result.message, error)
+            ).render(json: json), false
+          )
+        }
+        themeState = restored.theme
+        message = restored.message
+        guard restored.succeeded else {
+          return (
+            try Self.report(
+              outcome: "blocked",
+              mutated: true,
+              generationStatus: "absent",
+              prerequisites: prerequisiteState,
+              theme: themeState,
+              message: message
+            ).render(json: json), false
+          )
+        }
+      }
+      let report = Self.report(
         outcome: dryRun ? "ready" : result.changed ? "restored" : "absent",
         mutated: !dryRun && result.changed,
-        profile: nil,
-        providers: [:],
-        generation: EnvironmentGenerationReport(
-          status: dryRun ? "unchanged" : "absent",
-          message: result.message
-        ),
-        transactionStatus: "clear",
-        adoptionEvidenceDigest: nil,
+        generationStatus: dryRun ? "unchanged" : "absent",
         prerequisites: prerequisiteState,
-        entries: [],
-        theme: ([restoredHerdr, restoredSpicetify].compactMap { $0 }),
-        verification: [],
-        message: result.message
+        theme: themeState,
+        message: message
       )
       return (try report.render(json: json), true)
     } catch {
@@ -925,5 +1060,30 @@ struct EnvironmentTeardownCommandRunner: Sendable {
       )
       return (try report.render(json: json), false)
     }
+  }
+
+  private static func report(
+    outcome: String,
+    mutated: Bool,
+    generationStatus: String,
+    prerequisites: [EnvironmentPrerequisiteStatus],
+    theme: [DesktopThemeAdapterStatus],
+    message: String
+  ) -> EnvironmentLifecycleReport {
+    EnvironmentLifecycleReport(
+      operation: "environment_teardown",
+      outcome: outcome,
+      mutated: mutated,
+      profile: nil,
+      providers: [:],
+      generation: EnvironmentGenerationReport(status: generationStatus, message: message),
+      transactionStatus: "clear",
+      adoptionEvidenceDigest: nil,
+      prerequisites: prerequisites,
+      entries: [],
+      theme: theme,
+      verification: [],
+      message: message
+    )
   }
 }

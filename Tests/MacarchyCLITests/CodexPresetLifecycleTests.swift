@@ -78,7 +78,7 @@ struct CodexPresetLifecycleTests {
       ).contains(CodexAdapter.id)
     )
 
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
     #expect(teardown.succeeded)
     #expect(try jsonObject(teardown.output)["outcome"] as? String == "absent")
   }
@@ -105,7 +105,7 @@ struct CodexPresetLifecycleTests {
       + "[tui]\r\ntheme = \"macarchy-current\"\r\nanimations = false\r\n"
     try providerRewrite.write(to: fixture.configuration, atomically: true, encoding: .utf8)
 
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     let expected =
       "model = \"gpt-5.4\"\r\n"
       + "approval_policy = \"on-request\"\r\n"
@@ -148,7 +148,7 @@ struct CodexPresetLifecycleTests {
       try String(contentsOf: ordinary.configuration, encoding: .utf8)
         == "model = \"gpt-5\"\n[tui]\ntheme = \"macarchy-current\"\n"
     )
-    #expect(try ordinary.teardown().succeeded)
+    #expect(try await ordinary.teardown().succeeded)
     #expect(try String(contentsOf: ordinary.configuration, encoding: .utf8) == "model = \"gpt-5\"")
 
     let providerRewrite = try CodexFixture(configuration: nil)
@@ -157,7 +157,7 @@ struct CodexPresetLifecycleTests {
     #expect(try await providerRewrite.apply().succeeded)
     try "[tui]\ntheme = \"macarchy-current\"\nanimations = false\n".write(
       to: providerRewrite.configuration, atomically: true, encoding: .utf8)
-    #expect(try providerRewrite.teardown().succeeded)
+    #expect(try await providerRewrite.teardown().succeeded)
     #expect(
       try String(contentsOf: providerRewrite.configuration, encoding: .utf8)
         == "[tui]\nanimations = false\n"
@@ -190,7 +190,8 @@ struct CodexPresetLifecycleTests {
     try "[tui]\ntheme = \"wrong\"\n".write(
       to: drift.configuration, atomically: true, encoding: .utf8)
     #expect(try !drift.status().succeeded)
-    #expect(try !drift.teardown().succeeded)
+    let driftedTeardown = try await drift.teardown()
+    #expect(!driftedTeardown.succeeded)
     #expect(try drift.linkDestination() == drift.themeDestination.path)
   }
 
@@ -258,7 +259,7 @@ struct CodexPresetLifecycleTests {
     #expect(try fixture.externalSnapshot() == before)
     try fixture.writeProfile(enabled: true)
     #expect(try await fixture.apply().succeeded)
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     #expect(try fixture.externalSnapshot() == before)
   }
 
@@ -307,7 +308,7 @@ struct CodexPresetLifecycleTests {
       try EnvironmentStateStore(stateRoot: rollback.state).readOwnership()?.codexEnabled == true
     )
     #expect(try rollback.linkDestination() == rollback.themeDestination.path)
-    #expect(try rollback.teardown().succeeded)
+    #expect(try await rollback.teardown().succeeded)
   }
 
   @Test
@@ -518,9 +519,14 @@ private struct CodexFixture {
     )
   }
 
-  func teardown() throws -> (output: String, succeeded: Bool) {
-    try EnvironmentTeardownCommandRunner().execute(
-      stateRoot: state, homeDirectory: home, dryRun: false, json: true)
+  func teardown() async throws -> (output: String, succeeded: Bool) {
+    try await EnvironmentTeardownCommandRunner().execute(
+      stateRoot: state,
+      homeDirectory: home,
+      consumerPaths: testConsumerPaths(),
+      dryRun: false,
+      json: true
+    )
   }
 
   func linkDestination() throws -> String {

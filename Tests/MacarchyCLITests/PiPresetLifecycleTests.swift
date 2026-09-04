@@ -32,7 +32,7 @@ struct PiPresetLifecycleTests {
       atomically: true,
       encoding: .utf8
     )
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     #expect(
       try String(contentsOf: fixture.settings, encoding: .utf8)
         == "{\"lastModel\": \"private-value\"}\n"
@@ -172,7 +172,7 @@ struct PiPresetLifecycleTests {
     #expect(
       try EnvironmentPiDocument.matchesManaged(
         Data(contentsOf: fixture.settings), source: fixture.settings))
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     #expect(!FileManager.default.fileExists(atPath: fixture.settings.path))
   }
 
@@ -232,7 +232,7 @@ struct PiPresetLifecycleTests {
 
     try fixture.writeProfile(pi: true)
     #expect(try await fixture.apply().succeeded)
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
     #expect(try fixture.externalTupleSnapshot() == original)
   }
@@ -291,7 +291,8 @@ struct PiPresetLifecycleTests {
       encoding: .utf8
     )
     #expect(try !fixture.status().succeeded)
-    #expect(try !fixture.teardown().succeeded)
+    let driftedTeardown = try await fixture.teardown()
+    #expect(!driftedTeardown.succeeded)
     #expect(try fixture.linkDestination() == fixture.themeDestination.path)
     #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
 
@@ -572,10 +573,11 @@ private struct PiFixture {
     )
   }
 
-  func teardown() throws -> (output: String, succeeded: Bool) {
-    try EnvironmentTeardownCommandRunner().execute(
+  func teardown() async throws -> (output: String, succeeded: Bool) {
+    try await EnvironmentTeardownCommandRunner().execute(
       stateRoot: state,
       homeDirectory: home,
+      consumerPaths: testConsumerPaths(),
       dryRun: false,
       json: true
     )

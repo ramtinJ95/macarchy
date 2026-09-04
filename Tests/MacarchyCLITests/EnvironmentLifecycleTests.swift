@@ -89,7 +89,7 @@ struct EnvironmentLifecycleTests {
     #expect(status.succeeded)
     #expect(try jsonObject(status.output)["outcome"] as? String == "converged")
 
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
     #expect(teardown.succeeded)
     #expect(try fixture.entryEvidence() == originalEntries)
     #expect(try String(contentsOf: fixture.atuinHistory, encoding: .utf8) == "history\n")
@@ -98,6 +98,191 @@ struct EnvironmentLifecycleTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: fixture.state.appending(path: "environment/current").path))
+  }
+
+  @Test
+  func teardownRestoresReconciliationEvidenceForTheDefaultConsumerSet() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.activateTheme()
+    let home = fixture.home
+    let statusStore = ReconciliationStatusStore(root: fixture.state)
+    let defaultAdapterIDs = try ThemeRuntimeSelection.enabledAdapterIDs(
+      stateRoot: fixture.state,
+      homeDirectory: home
+    ).sorted()
+    #expect(defaultAdapterIDs.contains(MacOSAppearanceAdapter.id))
+    #expect(defaultAdapterIDs.contains(SketchyBarAdapter.id))
+    _ = try statusStore.persist(
+      manifest: try statusStore.activeManifest(),
+      results: defaultAdapterIDs.map(appliedAdapterResult)
+    )
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+
+    #expect(
+      try await fixture.apply(
+        adopt: digest,
+        theme: recordingThemeController()
+      ).succeeded
+    )
+
+    // Environment apply records only the adapters the applied environment owns.
+    guard case .current(let applied) = try statusStore.read() else {
+      Issue.record("environment apply left no correlated reconciliation record")
+      return
+    }
+    #expect(
+      applied.results.map(\.adapterID)
+        == ["atuin", "bat", "btop", "eza", "kitty", "starship", "yazi"]
+    )
+
+    let teardownRequests = Mutex<[[String]]>([])
+    let teardown = try await fixture.teardown(
+      theme: recordingThemeController { adapterIDs in
+        teardownRequests.withLock { $0.append(adapterIDs) }
+      }
+    )
+
+    #expect(teardown.succeeded)
+    #expect(teardownRequests.withLock { $0 } == [defaultAdapterIDs])
+    guard case .current(let restored) = try statusStore.read() else {
+      Issue.record("teardown left no correlated reconciliation record")
+      return
+    }
+    #expect(restored.results.map(\.adapterID) == defaultAdapterIDs)
+    let doctor = try DoctorCommandRunner(
+      read: readThemeStatusSnapshot,
+      inspect: { _, _ in [] },
+      enabledAdapterIDs: { stateRoot, _ in
+        try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: stateRoot,
+          homeDirectory: home
+        )
+      }
+    ).execute(stateRoot: fixture.state, consumerPaths: testConsumerPaths(), json: false)
+    #expect(doctor.succeeded)
+    #expect(!doctor.output.contains("has no result"))
+  }
+
+  @Test
+  func applyingAnEntirelyDisabledProfileRestoresDefaultReconciliationEvidence() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.activateTheme()
+    let home = fixture.home
+    let statusStore = ReconciliationStatusStore(root: fixture.state)
+    let defaultAdapterIDs = try ThemeRuntimeSelection.enabledAdapterIDs(
+      stateRoot: fixture.state,
+      homeDirectory: home
+    ).sorted()
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    #expect(
+      try await fixture.apply(
+        adopt: digest,
+        theme: recordingThemeController()
+      ).succeeded
+    )
+
+    // Applying an entirely disabled profile tears the managed environment down, so the record
+    // left by the narrower applied set must be replaced by the restored default consumer set.
+    try """
+    schema_version = 1
+    [terminal]
+    provider = "disabled"
+    [shell]
+    provider = "disabled"
+    [editor]
+    provider = "disabled"
+    [tools]
+    bat = false
+    eza = false
+    btop = false
+    yazi = false
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    let requests = Mutex<[[String]]>([])
+
+    let apply = try await fixture.apply(
+      adopt: nil,
+      theme: recordingThemeController { adapterIDs in
+        requests.withLock { $0.append(adapterIDs) }
+      }
+    )
+
+    #expect(apply.succeeded)
+    #expect(try jsonObject(apply.output)["outcome"] as? String == "applied")
+    #expect(requests.withLock { $0 } == [defaultAdapterIDs])
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
+    guard case .current(let restored) = try statusStore.read() else {
+      Issue.record("the disabled transition left no correlated reconciliation record")
+      return
+    }
+    #expect(restored.results.map(\.adapterID) == defaultAdapterIDs)
+    let doctor = try DoctorCommandRunner(
+      read: readThemeStatusSnapshot,
+      inspect: { _, _ in [] },
+      enabledAdapterIDs: { stateRoot, _ in
+        try ThemeRuntimeSelection.enabledAdapterIDs(
+          stateRoot: stateRoot,
+          homeDirectory: home
+        )
+      }
+    ).execute(stateRoot: fixture.state, consumerPaths: testConsumerPaths(), json: false)
+    #expect(doctor.succeeded)
+    #expect(!doctor.output.contains("has no result"))
+  }
+
+  @Test
+  func teardownReportsAFailedDefaultReconciliationAfterRestoringEntries() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.activateTheme()
+    let originalEntries = try fixture.entryEvidence()
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    #expect(
+      try await fixture.apply(
+        adopt: digest,
+        theme: recordingThemeController()
+      ).succeeded
+    )
+    let failing = DesktopThemeController(
+      reconcile: { adapterIDs, _, _ in
+        DesktopThemeReconciliation(
+          generationID: "g-00000000-0000-0000-0000-000000000000",
+          results: adapterIDs.map {
+            DesktopThemeAdapterStatus(
+              adapterID: $0,
+              requirement: "required",
+              status: "failed",
+              message: "injected"
+            )
+          },
+          succeeded: false
+        )
+      },
+      inspect: { _, _, _ in [] }
+    )
+
+    let teardown = try await fixture.teardown(theme: failing)
+
+    #expect(!teardown.succeeded)
+    let report = try jsonObject(teardown.output)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(report["transaction_status"] as? String == "clear")
+    #expect(
+      (report["message"] as? String)?.contains(
+        "Required theme reconciliation of the default consumer set failed"
+      ) == true
+    )
+    #expect((report["theme"] as? [Any])?.isEmpty == false)
+    #expect(try fixture.entryEvidence() == originalEntries)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
+    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
   }
 
   @Test
@@ -171,7 +356,7 @@ struct EnvironmentLifecycleTests {
         encoding: .utf8
       ) == "vim.o.number = true\n"
     )
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     #expect(try inspector.capture(entry, directoryLink: .neovim) == original)
   }
 
@@ -253,7 +438,7 @@ struct EnvironmentLifecycleTests {
     try managed.write(to: configuration, atomically: true, encoding: .utf8)
     #expect(try await fixture.apply(adopt: nil).succeeded)
     #expect(try fixture.status().succeeded)
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
 
     let restored = try String(contentsOf: configuration, encoding: .utf8)
     #expect(
@@ -278,7 +463,7 @@ struct EnvironmentLifecycleTests {
     providerState += "custom_graph_symbol = \"block\"\n"
     try providerState.write(to: configuration, atomically: true, encoding: .utf8)
 
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     let released = try String(contentsOf: configuration, encoding: .utf8)
     #expect(released == "custom_graph_symbol = \"block\"\n")
   }
@@ -359,7 +544,7 @@ struct EnvironmentLifecycleTests {
     try FileManager.default.removeItem(at: fixture.zshEntry)
     try "drift\n".write(to: fixture.zshEntry, atomically: true, encoding: .utf8)
 
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
 
     #expect(!teardown.succeeded)
     #expect(FileManager.default.fileExists(atPath: fixture.kittyEntry.path))
@@ -395,7 +580,7 @@ struct EnvironmentLifecycleTests {
     #expect(apply.succeeded)
     #expect(
       FileManager.default.fileExists(atPath: fixture.home.appending(path: ".config/atuin").path))
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
     #expect(teardown.succeeded)
     #expect(!FileManager.default.fileExists(atPath: fixture.kittyEntry.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.zshEntry.path))
@@ -478,13 +663,13 @@ struct EnvironmentLifecycleTests {
       )
     )
 
-    let preview = try fixture.teardown(dryRun: true)
+    let preview = try await fixture.teardown(dryRun: true)
 
     #expect(!preview.succeeded)
     #expect(store.transactionExists)
     #expect(try fixture.isManaged())
 
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
 
     #expect(teardown.succeeded)
     #expect(try fixture.entryEvidence() == originalEntries)
@@ -514,7 +699,7 @@ struct EnvironmentLifecycleTests {
     )
     try FileManager.default.removeItem(at: fixture.kittyEntry.appending(path: "kitty.conf"))
 
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
 
     #expect(teardown.succeeded)
     #expect(try fixture.entryEvidence() == originalEntries)
@@ -956,7 +1141,7 @@ struct EnvironmentLifecycleTests {
     )
 
     #expect(try await fixture.apply(adopt: digest).succeeded)
-    #expect(try fixture.teardown().succeeded)
+    #expect(try await fixture.teardown().succeeded)
     #expect(try fixture.entryEvidence() == originalEntries)
     #expect(
       try String(contentsOf: fixture.zshEntry, encoding: .utf8)
@@ -978,7 +1163,7 @@ struct EnvironmentLifecycleTests {
 
     let status = try fixture.status()
     let apply = try await fixture.apply(adopt: nil)
-    let teardown = try fixture.teardown()
+    let teardown = try await fixture.teardown()
 
     #expect(!status.succeeded)
     #expect(!apply.succeeded)
@@ -1048,6 +1233,44 @@ struct EnvironmentLifecycleTests {
     #expect(try String(contentsOf: kittyBridge, encoding: .utf8) == "managed kitty\n")
     #expect(try String(contentsOf: starshipBridge, encoding: .utf8) == "original starship\n")
   }
+}
+
+private func appliedAdapterResult(_ adapterID: String) -> AdapterResult {
+  AdapterResult(
+    adapterID: adapterID,
+    requirement: ThemeActivationCoordinator.adapterRequirements[adapterID] ?? .required,
+    status: .applied
+  )
+}
+
+/// Persists the requested adapter results the way a real selected reconciliation does, so the
+/// recorded evidence reflects exactly which consumers each lifecycle step reconciled.
+private func recordingThemeController(
+  record: @escaping @Sendable ([String]) -> Void = { _ in }
+) -> DesktopThemeController {
+  DesktopThemeController(
+    reconcile: { adapterIDs, stateRoot, _ in
+      record(adapterIDs)
+      let store = ReconciliationStatusStore(root: stateRoot)
+      let record = try store.persist(
+        manifest: try store.activeManifest(),
+        results: adapterIDs.map(appliedAdapterResult)
+      )
+      return DesktopThemeReconciliation(
+        generationID: record.generationID,
+        results: record.results.map {
+          DesktopThemeAdapterStatus(
+            adapterID: $0.adapterID,
+            requirement: $0.requirement.rawValue,
+            status: $0.status.rawValue,
+            message: $0.message
+          )
+        },
+        succeeded: true
+      )
+    },
+    inspect: { _, _, _ in [] }
+  )
 }
 
 private struct EnvironmentLifecycleFixture {
@@ -1203,10 +1426,14 @@ private struct EnvironmentLifecycleFixture {
     )
   }
 
-  func teardown(dryRun: Bool = false) throws -> (output: String, succeeded: Bool) {
-    try EnvironmentTeardownCommandRunner().execute(
+  func teardown(
+    dryRun: Bool = false,
+    theme: DesktopThemeController? = nil
+  ) async throws -> (output: String, succeeded: Bool) {
+    try await EnvironmentTeardownCommandRunner(theme: theme).execute(
       stateRoot: state,
       homeDirectory: home,
+      consumerPaths: testConsumerPaths(),
       dryRun: dryRun,
       json: true
     )

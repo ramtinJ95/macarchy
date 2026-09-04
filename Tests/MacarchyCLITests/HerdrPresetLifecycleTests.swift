@@ -489,7 +489,7 @@ struct HerdrPresetLifecycleTests {
   }
 
   @Test
-  func interruptedTeardownCommandReloadsBeforeRemovingAuthority() throws {
+  func interruptedTeardownCommandReloadsBeforeRemovingAuthority() async throws {
     let fixture = try HerdrFixture(configuration: nil)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     _ = try fixture.apply(enabled: true)
@@ -499,7 +499,7 @@ struct HerdrPresetLifecycleTests {
     ).teardownLocked(dryRun: false)
     let reloads = Mutex(0)
 
-    let result = try EnvironmentTeardownCommandRunner(
+    let result = try await EnvironmentTeardownCommandRunner(
       herdrRuntime: EnvironmentHerdrRuntimeReloader { _, _ in
         let ownership = try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()
         #expect(ownership != nil)
@@ -509,6 +509,7 @@ struct HerdrPresetLifecycleTests {
     ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
       dryRun: false,
       json: true
     )
@@ -520,12 +521,12 @@ struct HerdrPresetLifecycleTests {
   }
 
   @Test
-  func teardownReportsTheStoppedServerNextLaunchBoundary() throws {
+  func teardownReportsTheStoppedServerNextLaunchBoundary() async throws {
     let fixture = try HerdrFixture(configuration: nil)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     _ = try fixture.apply(enabled: true)
     let reloads = Mutex(0)
-    let result = try EnvironmentTeardownCommandRunner(
+    let result = try await EnvironmentTeardownCommandRunner(
       herdrRuntime: EnvironmentHerdrRuntimeReloader { _, _ in
         reloads.withLock { $0 += 1 }
         return "Herdr will use the active configuration on next launch"
@@ -533,6 +534,7 @@ struct HerdrPresetLifecycleTests {
     ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
       dryRun: false,
       json: true
     )

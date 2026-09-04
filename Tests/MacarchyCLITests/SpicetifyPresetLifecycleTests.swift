@@ -230,7 +230,7 @@ struct SpicetifyPresetLifecycleTests {
   }
 
   @Test
-  func teardownPreflightsRestorationDependenciesBeforeMutation() throws {
+  func teardownPreflightsRestorationDependenciesBeforeMutation() async throws {
     let fixture = try SpicetifyPresetFixture(
       configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
     defer { removeSpicetifyTestRoot(fixture.root) }
@@ -245,7 +245,7 @@ struct SpicetifyPresetLifecycleTests {
     let inspections = Mutex(0)
     let refreshes = Mutex(0)
 
-    let result = try EnvironmentTeardownCommandRunner(
+    let result = try await EnvironmentTeardownCommandRunner(
       prerequisites: missingSpicetifyRuntimePrerequisites {
         inspections.withLock { $0 += 1 }
       },
@@ -256,6 +256,7 @@ struct SpicetifyPresetLifecycleTests {
     ).execute(
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
       dryRun: false,
       json: true
     )
