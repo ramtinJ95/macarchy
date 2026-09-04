@@ -10,6 +10,61 @@ import Testing
 @Suite(.serialized)
 struct ActivationSliceTests {
   @Test
+  func setupDeactivationValidatesThenRemovesOnlyTheExpectedActiveGeneration() throws {
+    try withTemporaryRoot(named: "macarchy-deactivation-tests") { root in
+      let activator = testActivator(root: root)
+      let manifest = try activator.activate(package: catppuccinPackage())
+      _ = try ReconciliationStatusStore(root: root).persist(
+        manifest: manifest,
+        results: [
+          AdapterResult(
+            adapterID: "macos-appearance",
+            requirement: .required,
+            status: .applied
+          )
+        ]
+      )
+
+      _ = try activator.deactivate(
+        expectedGenerationID: manifest.generationID,
+        dryRun: true
+      )
+      #expect(
+        try ReconciliationStatusStore(root: root).activeManifest().generationID
+          == manifest.generationID
+      )
+
+      #expect(throws: ThemeDeactivationError.self) {
+        try activator.deactivate(
+          expectedGenerationID: "g-\(UUID().uuidString.lowercased())",
+          dryRun: false
+        )
+      }
+      #expect(
+        try ReconciliationStatusStore(root: root).activeManifest().generationID
+          == manifest.generationID
+      )
+
+      let cleanupError = try activator.deactivate(
+        expectedGenerationID: manifest.generationID,
+        dryRun: false
+      )
+      #expect(cleanupError == nil)
+      #expect(!FileManager.default.fileExists(atPath: root.appending(path: "current").path))
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: root.appending(path: "generations/\(manifest.generationID)").path
+        )
+      )
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: root.appending(path: "state/reconciliation.json").path
+        )
+      )
+    }
+  }
+
+  @Test
   func schemaOneActiveGenerationRemainsReadableAcrossBackgroundManifestUpgrade() throws {
     try withTemporaryRoot(named: "macarchy-activation-tests") { root in
       let current = try testActivator(root: root).activate(package: catppuccinPackage())
