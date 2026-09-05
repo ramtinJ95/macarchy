@@ -190,6 +190,11 @@ private struct TuicrValidationDocument: Decodable {
 }
 
 struct EnvironmentTuicrFileTransaction: Sendable {
+  private static let filesystem = EnvironmentPresetFilesystem(
+    configurationLabel: "tuicr configuration",
+    residueLabel: "tuicr transaction residue"
+  )
+
   private enum ExpectedState {
     case original(EnvironmentTuicrOwnership)
     case managed
@@ -222,13 +227,13 @@ struct EnvironmentTuicrFileTransaction: Sendable {
       if try matches(current, target, ownership: ownership, at: url),
         try matches(residueData, source, ownership: ownership, at: residue)
       {
-        try remove(residue)
+        try Self.filesystem.remove(residue)
         return
       }
       if try matches(current, source, ownership: ownership, at: url),
         try matches(residueData, target, ownership: ownership, at: residue)
       {
-        try remove(residue)
+        try Self.filesystem.remove(residue)
       } else {
         throw EnvironmentLifecycleError.drift("tuicr replacement residue")
       }
@@ -249,7 +254,7 @@ struct EnvironmentTuicrFileTransaction: Sendable {
       if let current {
         try replace(data, current: current, at: url, replacementName: replacementName)
       } else {
-        try create(data, at: url, replacementName: replacementName)
+        try Self.filesystem.create(data, at: url, replacementName: replacementName)
       }
     case .original(let original):
       guard let current else { return }
@@ -329,67 +334,11 @@ struct EnvironmentTuicrFileTransaction: Sendable {
     }
   }
 
-  private func create(_ data: Data, at url: URL, replacementName: String) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let temporary = url.deletingLastPathComponent().appending(path: replacementName)
-    try PinnedFilesystem.writeNewRegularFile(
-      parentDescriptor: parent,
-      name: replacementName,
-      url: temporary,
-      data: data,
-      mode: 0o600
-    )
-    var removeTemporary = true
-    defer {
-      if removeTemporary {
-        _ = replacementName.withCString { Darwin.unlinkat(parent, $0, 0) }
-      }
-    }
-    let published = replacementName.withCString { source in
-      url.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard published == 0 else {
-      throw EnvironmentLifecycleError.system("publish tuicr configuration", url, errno)
-    }
-    removeTemporary = false
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync tuicr configuration parent", url, errno)
-    }
-  }
-
   private func claimAndRemove(at url: URL, replacementName: String, expected: Data) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let claimed = url.lastPathComponent.withCString { source in
-      replacementName.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
+    try Self.filesystem.claimAndRemove(at: url, replacementName: replacementName) { residue in
+      guard try read(residue) == expected else {
+        throw EnvironmentLifecycleError.drift("claimed tuicr configuration")
       }
-    }
-    guard claimed == 0 else {
-      throw EnvironmentLifecycleError.system("claim tuicr configuration", url, errno)
-    }
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync claimed tuicr configuration", url, errno)
-    }
-    let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    guard try read(residue) == expected else {
-      throw EnvironmentLifecycleError.drift("claimed tuicr configuration")
-    }
-    try remove(residue)
-  }
-
-  private func remove(_ url: URL) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let removed = url.lastPathComponent.withCString { Darwin.unlinkat(parent, $0, 0) }
-    guard removed == 0 || errno == ENOENT else {
-      throw EnvironmentLifecycleError.system("remove tuicr transaction residue", url, errno)
-    }
-    if removed == 0, fsync(parent) != 0 {
-      throw EnvironmentLifecycleError.system("sync tuicr transaction residue", url, errno)
     }
   }
 }
