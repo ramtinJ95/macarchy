@@ -61,6 +61,15 @@ enum DependencyRemediation: Encodable, Sendable {
   case external(String, formula: String? = nil)
   case formula(String)
 
+  static func externallyTrustedFormula(_ package: String) -> DependencyRemediation {
+    .external(
+      "Run: brew trust --formula \(package) && "
+        + "HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 "
+        + "HOMEBREW_NO_INSTALL_UPGRADE=1 brew install --formula \(package)",
+      formula: package
+    )
+  }
+
   var homebrewPackage: HomebrewPackageIdentity? {
     switch self {
     case .formula(let name): HomebrewPackageIdentity(kind: .formula, name: name)
@@ -143,15 +152,6 @@ struct DependencyProfile: Sendable {
       [.executable(URL(filePath: path))]
     }
 
-    func externallyTrustedFormula(_ package: String) -> DependencyRemediation {
-      .external(
-        "Run: brew trust --formula \(package) && "
-          + "HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 "
-          + "HOMEBREW_NO_INSTALL_UPGRADE=1 brew install --formula \(package)",
-        formula: package
-      )
-    }
-
     func consumerCapability(
       _ consumerID: ConsumerID,
       dependencyID: String? = nil,
@@ -215,19 +215,19 @@ struct DependencyProfile: Sendable {
         consumerCapability(
           .sketchyBar,
           probes: executable("/opt/homebrew/bin/sketchybar"),
-          remediation: externallyTrustedFormula("felixkratz/formulae/sketchybar")
+          remediation: .externallyTrustedFormula("felixkratz/formulae/sketchybar")
         ),
         DependencyCapability(
           id: "skhd",
           category: .desktopSubstrate,
           probes: executable("/opt/homebrew/bin/skhd"),
-          remediation: externallyTrustedFormula("asmvik/formulae/skhd")
+          remediation: .externallyTrustedFormula("asmvik/formulae/skhd")
         ),
         DependencyCapability(
           id: "yabai",
           category: .desktopSubstrate,
           probes: executable("/opt/homebrew/bin/yabai"),
-          remediation: externallyTrustedFormula("asmvik/formulae/yabai")
+          remediation: .externallyTrustedFormula("asmvik/formulae/yabai")
         ),
         consumerCapability(
           .atuin,

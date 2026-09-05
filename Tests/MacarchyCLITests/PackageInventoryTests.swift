@@ -70,8 +70,9 @@ struct PackageInventoryTests {
           requirement: capability.requirement, remediation: capability.remediation
         )
       ], observation: observation)
-    #expect(report.proposed[0].homebrewStatus == "missing")
-    #expect(report.proposed[0].externallySatisfiedCapabilities == ["atuin"])
+    let atuin = try #require(report.proposed.first { $0.identity.name == "atuin" })
+    #expect(atuin.homebrewStatus == "missing")
+    #expect(atuin.externallySatisfiedCapabilities == ["atuin"])
   }
 
   @Test
@@ -93,8 +94,9 @@ struct PackageInventoryTests {
     #expect(observation.packages.allSatisfy { $0.identity == nil && $0.issue != nil })
     #expect(observation.packages.first { $0.token == "bat" }?.issue?.contains("Ambiguous") == true)
     let report = inventory([capability("bat", .formula("bat"))], observation: observation)
-    #expect(report.proposed[0].homebrewStatus == "unknown")
-    #expect(report.proposed[0].externallySatisfiedCapabilities.isEmpty)
+    let bat = try #require(report.proposed.first { $0.identity.name == "bat" })
+    #expect(bat.homebrewStatus == "unknown")
+    #expect(bat.externallySatisfiedCapabilities.isEmpty)
     #expect(report.unresolvedInstallations.count == 4)
   }
 
@@ -132,7 +134,7 @@ struct PackageInventoryTests {
       let observation = fixture.reader(formulae: output).read()
       #expect(observation.status == "unavailable")
       let report = inventory([capability("bat", .formula("bat"))], observation: observation)
-      #expect(report.proposed[0].homebrewStatus == "unknown")
+      #expect(report.proposed.allSatisfy { $0.homebrewStatus == "unknown" })
       #expect(!report.observation.issues.isEmpty)
     }
   }
@@ -190,8 +192,8 @@ struct PackageInventoryTests {
       capabilities: capabilities, fieldOrigins: ["tools.bat": "portable", "tools.eza": "machine"],
       layers: layers, observation: observation
     )
-    let formula = try #require(report.proposed.first { $0.identity.kind == .formula })
-    #expect(report.proposed.count == 2)
+    let formula = try #require(report.proposed.first { $0.identity.key == "formula:bat" })
+    #expect(report.proposed.contains { $0.identity.key == "cask:bat" })
     #expect(formula.requirements.map(\.capabilityID) == ["bat", "eza"])
     #expect(formula.requirements.map(\.layer) == ["portable", "machine"])
     #expect(
@@ -207,6 +209,102 @@ struct PackageInventoryTests {
     )
     #expect(try renderJSON(report) == renderJSON(reordered))
     #expect(report.humanOutput == reordered.humanOutput)
+  }
+
+  @Test
+  func defaultPreviewContainsTheApprovedSetWithoutExpandingApply() throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    var planner = fixture.planner(available: { _ in false })
+    planner.packageInventoryReader = { HomebrewPackageObservation(packages: [], issues: []) }
+    let prepared = try planner.prepare(context: fixture.context).report
+    let report = planner.inspectedReport(prepared)
+    let packages = try #require(report.packageInventory)
+    let expectedFormulae = Set([
+      "asmvik/formulae/skhd", "asmvik/formulae/yabai", "atuin", "azure-cli", "bat", "btop",
+      "cmake", "eza", "fd", "felixkratz/formulae/sketchybar", "fzf", "gh", "git", "go",
+      "hashicorp/tap/terraform", "helm", "herdr", "hugo", "ifstat", "jq", "kind",
+      "kubernetes-cli", "lazydocker", "lazygit", "lua", "mosh", "neovim", "node", "ollama",
+      "pkgconf", "poppler", "resvg", "ripgrep", "rustup", "sevenzip", "starship", "stow",
+      "switchaudio-osx", "tmux", "tree-sitter", "tree-sitter-cli", "unar", "uv", "wget",
+      "yazi", "zig", "zoxide",
+    ])
+    let expectedCasks = Set([
+      "anki", "cursor", "docker", "flameshot", "font-blex-mono-nerd-font",
+      "font-meslo-lg-nerd-font", "font-sketchybar-app-font", "font-symbols-only-nerd-font",
+      "google-chrome", "kitty", "slack", "spotify", "tailscale", "zen", "zoom",
+    ])
+    #expect(
+      Set(packages.proposed.filter { $0.identity.kind == .formula }.map(\.identity.name))
+        == expectedFormulae)
+    #expect(
+      Set(packages.proposed.filter { $0.identity.kind == .cask }.map(\.identity.name))
+        == expectedCasks)
+    #expect(packages.proposed.count == 62)
+    #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 51)
+    #expect(packages.proposed.allSatisfy { $0.homebrewStatus == "missing" })
+    #expect(packages.proposed.map(\.identity.key) == packages.proposed.map(\.identity.key).sorted())
+    for name in ["herdr", "slack", "spotify"] {
+      let package = try #require(packages.proposed.first { $0.identity.name == name })
+      #expect(package.requirements.isEmpty)
+      #expect(!report.capabilities.contains { $0.id == name })
+    }
+    let terraform = try #require(packages.proposed.first { $0.identity.token == "terraform" })
+    guard case .external(let instruction, let formula) = terraform.standardDeclaration?.remediation
+    else {
+      Issue.record("Terraform must retain the manual third-party trust boundary")
+      return
+    }
+    #expect(formula == "hashicorp/tap/terraform")
+    #expect(instruction.contains("brew trust --formula hashicorp/tap/terraform"))
+    #expect(packages.humanOutput.contains("Apply does not yet provision the standard baseline"))
+    #expect(
+      Set(report.packages.formulae)
+        == Set(["atuin", "bat", "btop", "eza", "neovim", "starship", "yazi"]))
+    #expect(report.packages.casks == ["kitty"])
+  }
+
+  @Test
+  func standardPackagesRetainIndependentPresetProvenanceAndObservation() throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    try """
+    schema_version = 1
+    [presets]
+    herdr = true
+    spicetify = true
+    """.write(to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    try fixture.writeMachineProfile("schema_version = 1\n[presets]\nslack = true\n")
+    var planner = fixture.planner()
+    planner.packageInventoryReader = {
+      HomebrewPackageObservation(
+        packages: [
+          HomebrewInstalledPackage(
+            kind: .formula, token: "git",
+            identity: HomebrewPackageIdentity(kind: .formula, name: "git"),
+            versions: ["1"], receiptPaths: [], issue: nil)
+        ], issues: [])
+    }
+    let report = planner.inspectedReport(try planner.prepare(context: fixture.context).report)
+    let packages = try #require(report.packageInventory)
+    #expect(packages.proposed.count == 63)  // Only spicetify-cli adds a package.
+    for (name, field, layer, source) in [
+      ("herdr", "presets.herdr", "portable", fixture.context.profileURL.path),
+      ("spotify", "presets.spicetify", "portable", fixture.context.profileURL.path),
+      ("slack", "presets.slack", "machine", fixture.context.machineProfileURL.path),
+    ] {
+      let package = try #require(packages.proposed.first { $0.identity.name == name })
+      #expect(package.standardDeclaration != nil)
+      #expect(package.requirements.count == 1)
+      #expect(package.requirements[0].selectionField == field)
+      #expect(package.requirements[0].layer == layer)
+      #expect(package.requirements[0].sourcePath == source)
+      #expect(package.externallySatisfiedCapabilities == [name])
+    }
+    let git = try #require(packages.proposed.first { $0.identity.name == "git" })
+    #expect(git.homebrewStatus == "installed")
+    #expect(git.requirements.isEmpty)
+    #expect(packages.outsideProposedRequirements.isEmpty)
   }
 
   @Test
@@ -227,6 +325,8 @@ struct PackageInventoryTests {
     let report = planner.inspectedReport(preparation.report)
     let packages = try #require(report.packageInventory)
     #expect(!packages.proposed.contains { ["bat", "sketchybar"].contains($0.identity.token) })
+    #expect(packages.proposed.count == 60)
+    #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 51)
     let yabai = try #require(packages.proposed.first { $0.identity.token == "yabai" })
     #expect(yabai.identity.name == "asmvik/formulae/yabai")
     #expect(yabai.requirements[0].selectionField == "desktop.provider")
@@ -251,6 +351,12 @@ struct PackageInventoryTests {
     let planJSON = try JSONDecoder().decode(JSONValue.self, from: Data(plan.output.utf8))
     #expect(planJSON["package_inventory"]?["observation"]?["status"]?.string == "unavailable")
     #expect(planJSON["package_inventory"]?["observation"]?["issues"]?.array?.count == 1)
+    let proposed = try #require(planJSON["package_inventory"]?["proposed"]?.array)
+    #expect(proposed.count == 62)
+    #expect(proposed.allSatisfy { $0["homebrew_status"]?.string == "unknown" })
+    #expect(
+      planJSON["package_inventory"]?["provisioning"]?.string
+        == "preview_only_existing_apply_unchanged")
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: planner, themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
       desktopInspection: { _, _, _, _ in try applyComponent("{}") },
@@ -267,7 +373,8 @@ struct PackageInventoryTests {
     )
     let decoded = try JSONDecoder().decode(JSONValue.self, from: Data(statusJSON.output.utf8))
     #expect(
-      decoded["plan"]?["package_inventory"]?["observation"]?["status"]?.string == "unavailable")
+      try renderJSON(decoded["plan"]?["package_inventory"])
+        == renderJSON(planJSON["package_inventory"]))
     #expect(calls.withLock { $0 } == 3)
   }
 
