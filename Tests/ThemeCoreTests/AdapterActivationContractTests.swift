@@ -284,18 +284,12 @@ extension AdapterContractTests {
         try? FileManager.default.removeItem(at: root)
       }
       let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
-      let kittyConfiguration = root.appending(path: "kitty.conf")
-      try "include \(root.path)/state/adapters/kitty.conf\n".write(
-        to: kittyConfiguration,
-        atomically: true,
-        encoding: .utf8
-      )
-      let sketchyBarConfiguration = try Self.sketchyBarConfiguration(root: root)
       let consumerPaths = try Self.consumerPaths(
         root: root,
-        kittyConfigurationURL: kittyConfiguration,
-        sketchyBarConfigurationURL: sketchyBarConfiguration
+        adapterIDs: [adapterID]
       )
+      let kittyConfiguration = consumerPaths.kittyConfigurationURL
+      let sketchyBarConfiguration = consumerPaths.sketchyBarConfigurationURL
       if adapterID == "bat" {
         try "--theme=\"other\"\n".write(
           to: consumerPaths.batConfigurationDirectoryURL.appending(path: "config"),
@@ -355,6 +349,61 @@ extension AdapterContractTests {
         ) == "generations/\(previous.generationID)"
       )
     }
+  }
+
+  @Test
+  func disabledConsumersWithMissingOrInvalidConfigurationDoNotBlockActivation() async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let consumerPaths = try Self.consumerPaths(root: root, adapterIDs: [KittyAdapter.id])
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: root.path) == ["kitty.conf"]
+    )
+    let disabledConfiguration = consumerPaths.batConfigurationDirectoryURL.appending(path: "config")
+    try FileManager.default.createDirectory(
+      at: consumerPaths.batConfigurationDirectoryURL, withIntermediateDirectories: true)
+    let invalidBytes = Data("--theme=\"other\"\n".utf8)
+    try invalidBytes.write(to: disabledConfiguration)
+    let requests = Mutex([ProcessRequest]())
+    let coordinator = ThemeActivationCoordinator(
+      root: root,
+      consumerPaths: consumerPaths,
+      processRunner: ProcessRunner { request in
+        requests.withLock { $0.append(request) }
+        return ProcessResult(terminationStatus: 1, output: "no matching process")
+      },
+      wallpaperControl: Self.wallpaperControl(),
+      wallpaperSignal: try Self.wallpaperSignal(root: root),
+      enabledAdapterIDs: [KittyAdapter.id]
+    )
+
+    let activation = try await coordinator.activate(package: catppuccinPackage())
+    let store = ReconciliationStatusStore(root: root)
+
+    let active = try store.activeManifest()
+    #expect(active.generationID == activation.manifest.generationID)
+    #expect(active.themeID == activation.manifest.themeID)
+    #expect(
+      activation.reconciliation.results
+        == [AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)]
+    )
+    #expect(try store.read() == .current(activation.reconciliation))
+    #expect(
+      requests.withLock { $0 }
+        == [
+          ProcessRequest(
+            executableURL: URL(filePath: "/usr/bin/killall"),
+            arguments: ["-USR1", "kitty"]),
+          ProcessRequest(
+            executableURL: URL(filePath: "/usr/bin/killall"),
+            arguments: ["-0", "kitty"]),
+        ]
+    )
+    #expect(try Data(contentsOf: disabledConfiguration) == invalidBytes)
+    #expect(try coordinator.inspectAdapters([]).map(\.adapterID) == [KittyAdapter.id])
   }
 
   @Test
@@ -511,18 +560,11 @@ extension AdapterContractTests {
         AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)
       ]
     )
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: try Self.consumerPaths(
         root: root,
-        kittyConfigurationURL: configurationURL,
-        sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
+        adapterIDs: [HerdrAdapter.id, KittyAdapter.id, NeovimAdapter.id]
       ),
       processRunner: ProcessRunner { request in
         if request.executableURL == HerdrAdapter.liveExecutableURL {
