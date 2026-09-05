@@ -539,15 +539,12 @@ private struct PiFixture {
     """.write(to: profile, atomically: true, encoding: .utf8)
   }
 
+  private var lifecycle: PresetLifecycleTestHarness {
+    PresetLifecycleTestHarness(profile: profile, state: state, home: home)
+  }
+
   func plan() throws -> (output: String, succeeded: Bool) {
-    try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
-      resourcesRoot: repositoryRoot.appending(path: "Environment"),
-      profileURL: profile,
-      profileRequired: true,
-      stateRoot: state,
-      homeDirectory: home,
-      json: true
-    )
+    try lifecycle.plan()
   }
 
   func apply(
@@ -556,45 +553,29 @@ private struct PiFixture {
     theme: DesktopThemeController? = nil,
     faultInjector: @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = { _ in }
   ) async throws -> (output: String, succeeded: Bool) {
-    try await EnvironmentApplyCommandRunner(
-      prerequisites: prerequisites,
-      theme: theme ?? themeController,
-      verifier: .assumed,
-      transactionFaultInjector: faultInjector
-    ).execute(
-      resourcesRoot: repositoryRoot.appending(path: "Environment"),
-      profileURL: profile,
-      profileRequired: true,
-      stateRoot: state,
-      homeDirectory: home,
+    try await lifecycle.apply(
+      runner: EnvironmentApplyCommandRunner(
+        prerequisites: prerequisites,
+        theme: theme ?? themeController,
+        verifier: .assumed,
+        transactionFaultInjector: faultInjector
+      ),
       consumerPaths: consumerPaths,
-      adopt: adopt,
-      json: true
+      adopt: adopt
     )
   }
 
   func teardown() async throws -> (output: String, succeeded: Bool) {
-    try await EnvironmentTeardownCommandRunner().execute(
-      stateRoot: state,
-      homeDirectory: home,
-      consumerPaths: testConsumerPaths(),
-      dryRun: false,
-      json: true
-    )
+    try await lifecycle.teardown(consumerPaths: testConsumerPaths())
   }
 
   func status() throws -> (output: String, succeeded: Bool) {
-    try EnvironmentStatusCommandRunner(
-      prerequisites: .assumed,
-      theme: themeController
-    ).execute(
-      resourcesRoot: repositoryRoot.appending(path: "Environment"),
-      profileURL: profile,
-      profileRequired: true,
-      stateRoot: state,
-      homeDirectory: home,
-      consumerPaths: consumerPaths,
-      json: true
+    try lifecycle.status(
+      runner: EnvironmentStatusCommandRunner(
+        prerequisites: .assumed,
+        theme: themeController
+      ),
+      consumerPaths: consumerPaths
     )
   }
 
