@@ -20,6 +20,7 @@ struct UnifiedSetupDesiredModel: Sendable {
   let fieldOrigins: [String: String]
   let themePackage: ThemePackage
   let theme: UnifiedSetupThemePlan
+  let enabledThemeAdapterIDs: [String]
   let capabilities: [SetupCapability]
   let packages: HomebrewInstallPlan
 }
@@ -163,6 +164,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       ),
       themePackage: themeSelection.package,
       theme: themeSelection.plan,
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs(profile),
       capabilities: capabilities,
       packages: HomebrewInstallPlan(capabilities: capabilities)
     )
@@ -317,6 +319,14 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       "terminal": environment.terminal.rawValue,
       "top_bar": profile.topBar.rawValue,
     ]
+  }
+
+  private func enabledThemeAdapterIDs(_ profile: PortableProfile) -> [String] {
+    var result = Set(profile.environment.selectedThemeAdapterIDs)
+    result.insert(MacOSAppearanceAdapter.id)
+    if profile.desktop.provider == .yabaiSkhd { result.insert("wallpaper") }
+    if profile.topBar == .sketchybar { result.insert("sketchybar") }
+    return result.sorted()
   }
 
   private func services(_ profile: PortableProfile) -> [UnifiedSetupService] {

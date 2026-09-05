@@ -70,9 +70,16 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
         )
       },
-      environment: { _, profile, _, _ in
+      environment: { _, profile, _, _, enabledThemeAdapterIDs in
         #expect(profile.environment.kitty.fontSize == 15)
         #expect(profile.environment.history == .disabled)
+        #expect(
+          enabledThemeAdapterIDs
+            == [
+              "bat", "btop", "eza", "kitty", "macos-appearance", "neovim", "starship",
+              "wallpaper", "yazi",
+            ]
+        )
         calls.withLock { $0.append("environment") }
         return try applyComponent(
           #"{"operation":"environment_apply","outcome":"applied","mutated":true,"message":"environment changed"}"#
@@ -127,7 +134,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"desktop_apply","outcome":"no_change","mutated":false,"message":"desktop ready"}"#
         )
       },
-      environment: { _, _, _, received in
+      environment: { _, _, _, received, _ in
         #expect(received == approvals)
         calls.withLock { $0.append("environment") }
         return try applyComponent(
@@ -166,7 +173,7 @@ struct UnifiedSetupApplyTests {
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       }
@@ -261,7 +268,7 @@ struct UnifiedSetupApplyTests {
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       }
@@ -314,7 +321,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"desktop_apply","outcome":"no_change","mutated":false,"message":"desktop ready"}"#
         )
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
         return try applyComponent(
           #"{"operation":"environment_apply","outcome":"no_change","mutated":false,"message":"environment ready"}"#
@@ -392,7 +399,7 @@ struct UnifiedSetupApplyTests {
           succeeded: false
         )
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         environmentCalls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
@@ -479,7 +486,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"desktop_apply","outcome":"applied","mutated":true}"#
         )
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         try applyComponent(
           #"{"operation":"environment_apply","outcome":"failed","mutated":true,"message":"environment failed"}"#,
           succeeded: false
@@ -564,7 +571,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"desktop_apply","outcome":"applied","mutated":true}"#
         )
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         Issue.record("Environment must not run before the injected interruption")
         return try applyComponent("{}")
       },
@@ -598,7 +605,7 @@ struct UnifiedSetupApplyTests {
         Issue.record("Recovery must finish before a replacement apply starts")
         return try applyComponent("{}")
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         Issue.record("Recovery must finish before a replacement apply starts")
         return try applyComponent("{}")
       },
@@ -644,7 +651,7 @@ struct UnifiedSetupApplyTests {
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       }
@@ -692,7 +699,7 @@ struct UnifiedSetupApplyTests {
         Issue.record("A no-change plan must not invoke desktop mutation")
         return try applyComponent("{}")
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         Issue.record("A no-change plan must not invoke environment mutation")
         return try applyComponent("{}")
       }
@@ -776,7 +783,7 @@ final class ApplyFixture: @unchecked Sendable {
     writePlan: @escaping @Sendable (String) throws -> Void = { _ in },
     theme: @escaping UnifiedSetupApplyCommandRunner.ThemeApply,
     desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
-    environment: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
+    environment: @escaping UnifiedSetupApplyCommandRunner.EnvironmentApply,
     transactionTeardown: UnifiedSetupTeardownCommandRunner? = nil,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in

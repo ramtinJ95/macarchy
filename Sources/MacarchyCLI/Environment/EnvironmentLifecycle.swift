@@ -3636,7 +3636,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     inspection: EnvironmentProviderInspection,
     adoptionDigest: String?,
     previousThemeGenerationID: String? = nil,
-    themeBridges: EnvironmentThemeBridgeState
+    themeBridges: EnvironmentThemeBridgeState,
+    enabledThemeAdapterIDs: [String]? = nil
   ) throws -> (changed: Bool, generationID: String) {
     if try recoverLocked() {
       throw EnvironmentLifecycleError.blocked(
@@ -3803,7 +3804,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
       slackEnabled: composition.profile.presets.slack,
       spicetifyEnabled: composition.profile.presets.spicetify,
       tuicrEnabled: composition.profile.presets.tuicr,
-      enabledThemeAdapterIDs: composition.profile.selectedThemeAdapterIDs
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs
+        ?? composition.profile.selectedThemeAdapterIDs
     )
     let generationChanged = previous?.generationID != proposed.generationID
     let ownershipChanged =

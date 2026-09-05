@@ -10,6 +10,15 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       UnifiedSetupAdoptionApprovals
     ) async throws
     -> SetupComponentExecution
+  typealias EnvironmentApply =
+    @Sendable (
+      UnifiedSetupPlanContext,
+      PortableProfile,
+      ThemeConsumerPaths,
+      UnifiedSetupAdoptionApprovals,
+      [String]
+    ) async throws
+    -> SetupComponentExecution
   typealias ThemeApply =
     @Sendable (ThemePackage, URL) async throws -> SetupComponentExecution
 
@@ -20,7 +29,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let themeApply: ThemeApply
   let desktopApply: ComponentApply
-  let environmentApply: ComponentApply
+  let environmentApply: EnvironmentApply
   let transactionTeardown: UnifiedSetupTeardownCommandRunner
   let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
 
@@ -32,7 +41,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
     themeApply: @escaping ThemeApply,
     desktopApply: @escaping ComponentApply,
-    environmentApply: @escaping ComponentApply,
+    environmentApply: @escaping EnvironmentApply,
     transactionTeardown: UnifiedSetupTeardownCommandRunner = .live,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
@@ -137,7 +146,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         )
       )
     },
-    environmentApply: { context, profile, consumerPaths, adoptions in
+    environmentApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in
       try await SetupComponentExecution(
         EnvironmentApplyCommandRunner.live.execute(
           resourcesRoot: context.environmentResourcesRoot,
@@ -149,6 +158,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           adopt: adoptions.environment,
           json: true,
           deferFinalization: true,
+          enabledThemeAdapterIDs: enabledThemeAdapterIDs,
           profile: profile
         )
       )
@@ -448,7 +458,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           try start(.environment)
           do {
             environment = try stage(
-              await environmentApply(context, currentModel.profile, consumerPaths, adoptions),
+              await environmentApply(
+                context,
+                currentModel.profile,
+                consumerPaths,
+                adoptions,
+                currentModel.enabledThemeAdapterIDs
+              ),
               mutationField: "mutated",
               successMessage: "The daily tool environment converged."
             )
