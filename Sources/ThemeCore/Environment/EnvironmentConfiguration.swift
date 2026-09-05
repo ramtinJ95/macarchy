@@ -60,26 +60,9 @@ package enum EnvironmentConfigurationError: Error, CustomStringConvertible, Send
 }
 
 package struct EnvironmentConfigurationComposer: Sendable {
-  private struct NeovimNativeTree {
-    var artifacts: [EnvironmentConfigurationArtifact]
-    var hasLegacyThemeLink: Bool
-  }
 
   private static let maximumOverrideEntries = 128
   private static let maximumOverrideBytes = 4 * 1_048_576
-  private static let maximumNeovimEntries = 512
-  private static let maximumNeovimBytes = 8 * 1_048_576
-  private static let neovimStateRootPlaceholder = "__MACARCHY_STATE_ROOT_LUA__"
-  // Opaque digests recognize only the approved ADR-0027 personal seam without
-  // shipping those legacy bytes as package defaults.
-  private static let legacyNeovimThemeArtifactDigests = [
-    "neovim/colors/macarchy-imported.lua":
-      "sha256:745b13db920f25e2bd60465601db2ee42c859824a5612727ecfbcd783b31b0d3",
-    "neovim/lua/config/macarchy-theme.lua":
-      "sha256:23935f4b2d4e660d96a6f6b37feba3ba1b85c06fc4bfe3f6f0cbbf9e48bd6d1f",
-    "neovim/lua/plugins/colorscheme.lua":
-      "sha256:4d9099e154b158a8d06e1970be3b2dffc77dcceb4608e4b7c37049619e0ed443",
-  ]
 
   package init() {}
 
@@ -94,22 +77,13 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
     var neovimConfigurationURL: URL?
     if options.editor == .neovim {
-      let packaged = resourcesRoot.appending(
-        path: "neovim/default",
-        directoryHint: .isDirectory
+      let neovim = try EnvironmentNeovimConfiguration().compose(
+        resourcesRoot: resourcesRoot,
+        configurationDirectoryURL: options.neovim.configurationDirectoryURL,
+        stateRoot: stateRoot
       )
-      let source = options.neovim.configurationDirectoryURL ?? packaged
-      neovimConfigurationURL = source
-      artifacts.append(
-        contentsOf: try readNeovimConfiguration(
-          at: source,
-          themeRoot: resourcesRoot.appending(
-            path: "neovim/theme",
-            directoryHint: .isDirectory
-          ),
-          stateRoot: stateRoot
-        )
-      )
+      neovimConfigurationURL = neovim.source
+      artifacts.append(contentsOf: neovim.artifacts)
     }
 
     if options.tools.bat {
@@ -377,316 +351,6 @@ package struct EnvironmentConfigurationComposer: Sendable {
     }
     return files.map {
       EnvironmentConfigurationArtifact(path: "kitty/override/\($0.relative)", contents: $0.text)
-    }
-  }
-
-  private func readNeovimConfiguration(
-    at source: URL,
-    themeRoot: URL,
-    stateRoot: URL
-  ) throws -> [EnvironmentConfigurationArtifact] {
-    let packagedTheme = try readNativeTree(
-      at: themeRoot,
-      targetRoot: "neovim",
-      allowLegacyThemeLink: false
-    )
-    let theme = try renderNeovimTheme(
-      packagedTheme.artifacts,
-      source: themeRoot,
-      stateRoot: stateRoot
-    )
-    let reserved = Dictionary(uniqueKeysWithValues: theme.map { ($0.path, $0) })
-    let nativeTree = try readNativeTree(
-      at: source,
-      targetRoot: "neovim",
-      allowLegacyThemeLink: true
-    )
-    var configuration = nativeTree.artifacts
-    let reservedArtifacts = configuration.filter { reserved[$0.path] != nil }
-    let legacyPaths = Set(Self.legacyNeovimThemeArtifactDigests.keys)
-    let exactLegacyPaths = Set(
-      reservedArtifacts.lazy.filter(recognizedLegacyNeovimThemeArtifact).map(\.path)
-    )
-    let hasReservedSeam = nativeTree.hasLegacyThemeLink || !reservedArtifacts.isEmpty
-    let hasCompleteLegacySeam =
-      nativeTree.hasLegacyThemeLink
-      && reservedArtifacts.count == legacyPaths.count
-      && exactLegacyPaths == legacyPaths
-    if hasReservedSeam && !hasCompleteLegacySeam {
-      throw EnvironmentConfigurationError.invalid(
-        source,
-        "Neovim configuration has a partial or conflicting reserved theme seam"
-      )
-    }
-    if hasCompleteLegacySeam {
-      configuration.removeAll { legacyPaths.contains($0.path) }
-    }
-    guard configuration.contains(where: { $0.path == "neovim/init.lua" }) else {
-      throw EnvironmentConfigurationError.invalid(
-        source,
-        "Neovim configuration must contain init.lua"
-      )
-    }
-    guard configuration.contains(where: { $0.path == "neovim/lazy-lock.json" }) else {
-      throw EnvironmentConfigurationError.invalid(
-        source,
-        "Neovim configuration must provide lazy-lock.json"
-      )
-    }
-    var effective = configuration + theme
-    try pinNeovimThemePlugins(
-      in: &effective,
-      source: source,
-      packagedLock: themeRoot.deletingLastPathComponent()
-        .appending(path: "default/lazy-lock.json")
-    )
-    return effective
-  }
-
-  private func renderNeovimTheme(
-    _ artifacts: [EnvironmentConfigurationArtifact],
-    source: URL,
-    stateRoot: URL
-  ) throws -> [EnvironmentConfigurationArtifact] {
-    let renderedPaths = [
-      "neovim/lua/config/macarchy-theme.lua",
-      "neovim/lua/macarchy/current.lua",
-    ]
-    let replacement = NeovimAdapter.luaStringLiteral(stateRoot.standardizedFileURL.path)
-    var rendered = artifacts
-    for path in renderedPaths {
-      guard let index = rendered.firstIndex(where: { $0.path == path }),
-        let text = rendered[index].textContents
-      else {
-        throw EnvironmentConfigurationError.invalid(
-          source,
-          "packaged Neovim theme is missing renderable artifact \(path)"
-        )
-      }
-      let pieces = text.components(separatedBy: Self.neovimStateRootPlaceholder)
-      guard pieces.count == 2 else {
-        throw EnvironmentConfigurationError.invalid(
-          source,
-          "packaged Neovim theme artifact \(path) must contain exactly one state-root placeholder"
-        )
-      }
-      rendered[index] = EnvironmentConfigurationArtifact(
-        path: path,
-        contents: pieces.joined(separator: replacement)
-      )
-    }
-    if let unresolved = rendered.first(where: {
-      $0.textContents?.contains(Self.neovimStateRootPlaceholder) == true
-    }) {
-      throw EnvironmentConfigurationError.invalid(
-        source,
-        "packaged Neovim theme has an unexpected state-root placeholder in \(unresolved.path)"
-      )
-    }
-    return rendered
-  }
-
-  private func pinNeovimThemePlugins(
-    in artifacts: inout [EnvironmentConfigurationArtifact],
-    source: URL,
-    packagedLock: URL
-  ) throws {
-    guard let index = artifacts.firstIndex(where: { $0.path == "neovim/lazy-lock.json" })
-    else { return }
-    let packaged = try readJSONDictionary(
-      try BoundedRegularFile.read(at: packagedLock).data,
-      source: packagedLock
-    )
-    var selected = try readJSONDictionary(artifacts[index].data, source: source)
-    for plugin in ["aether", "catppuccin", "kanagawa.nvim", "tokyonight.nvim"] {
-      guard let pin = packaged[plugin] else {
-        throw EnvironmentConfigurationError.invalid(
-          packagedLock,
-          "packaged Neovim lock is missing \(plugin)"
-        )
-      }
-      selected[plugin] = pin
-    }
-    let data =
-      try JSONSerialization.data(
-        withJSONObject: selected,
-        options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      ) + Data([0x0A])
-    artifacts[index] = EnvironmentConfigurationArtifact(
-      path: "neovim/lazy-lock.json",
-      data: data
-    )
-  }
-
-  private func readJSONDictionary(_ data: Data, source: URL) throws -> [String: Any] {
-    do {
-      guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-      else {
-        throw EnvironmentConfigurationError.invalid(
-          source,
-          "Neovim lazy-lock.json must contain an object"
-        )
-      }
-      return value
-    } catch let error as EnvironmentConfigurationError {
-      throw error
-    } catch {
-      throw EnvironmentConfigurationError.invalid(
-        source,
-        "Neovim lazy-lock.json is invalid JSON"
-      )
-    }
-  }
-
-  private func recognizedLegacyNeovimThemeArtifact(
-    _ artifact: EnvironmentConfigurationArtifact
-  ) -> Bool {
-    Self.legacyNeovimThemeArtifactDigests[artifact.path] == artifact.digest
-  }
-
-  private func readNativeTree(
-    at root: URL,
-    targetRoot: String,
-    allowLegacyThemeLink: Bool
-  ) throws -> NeovimNativeTree {
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(at: root)
-    } catch {
-      throw EnvironmentConfigurationError.cannotRead(root, String(describing: error))
-    }
-    defer { Darwin.close(descriptor) }
-    var artifacts: [EnvironmentConfigurationArtifact] = []
-    var entries = 0
-    var bytes = 0
-    var hasLegacyThemeLink = false
-    try walkNativeTree(
-      root: root,
-      directory: root,
-      descriptor: descriptor,
-      relativeDirectory: "",
-      targetRoot: targetRoot,
-      allowLegacyThemeLink: allowLegacyThemeLink,
-      artifacts: &artifacts,
-      entries: &entries,
-      bytes: &bytes,
-      hasLegacyThemeLink: &hasLegacyThemeLink
-    )
-    return NeovimNativeTree(
-      artifacts: artifacts,
-      hasLegacyThemeLink: hasLegacyThemeLink
-    )
-  }
-
-  private func walkNativeTree(
-    root: URL,
-    directory: URL,
-    descriptor: Int32,
-    relativeDirectory: String,
-    targetRoot: String,
-    allowLegacyThemeLink: Bool,
-    artifacts: inout [EnvironmentConfigurationArtifact],
-    entries: inout Int,
-    bytes: inout Int,
-    hasLegacyThemeLink: inout Bool
-  ) throws {
-    let listing = try PinnedFilesystem.directoryEntries(
-      descriptor: descriptor,
-      url: directory,
-      limit: max(0, Self.maximumNeovimEntries - entries)
-    )
-    guard !listing.truncated else {
-      throw EnvironmentConfigurationError.invalid(
-        root,
-        "Neovim configuration contains more than \(Self.maximumNeovimEntries) entries"
-      )
-    }
-    for name in listing.entries {
-      entries += 1
-      guard entries <= Self.maximumNeovimEntries else {
-        throw EnvironmentConfigurationError.invalid(
-          root,
-          "Neovim configuration contains more than \(Self.maximumNeovimEntries) entries"
-        )
-      }
-      let child = directory.appending(path: name)
-      let metadata = try PinnedFilesystem.metadata(
-        parentDescriptor: descriptor,
-        name: name,
-        url: child
-      )
-      let relative =
-        relativeDirectory.isEmpty ? name : relativeDirectory + "/" + name
-      switch metadata.st_mode & S_IFMT {
-      case S_IFDIR:
-        let childDescriptor = try PinnedFilesystem.openDirectory(
-          parentDescriptor: descriptor,
-          name: name,
-          url: child
-        )
-        do {
-          defer { Darwin.close(childDescriptor) }
-          try walkNativeTree(
-            root: root,
-            directory: child,
-            descriptor: childDescriptor,
-            relativeDirectory: relative,
-            targetRoot: targetRoot,
-            allowLegacyThemeLink: allowLegacyThemeLink,
-            artifacts: &artifacts,
-            entries: &entries,
-            bytes: &bytes,
-            hasLegacyThemeLink: &hasLegacyThemeLink
-          )
-        }
-      case S_IFREG:
-        let data = try PinnedFilesystem.readRegularFile(
-          parentDescriptor: descriptor,
-          name: name,
-          url: child,
-          maximumSize: BoundedRegularFile.maximumSize
-        ).data
-        bytes += data.count
-        guard bytes <= Self.maximumNeovimBytes else {
-          throw EnvironmentConfigurationError.invalid(
-            root,
-            "Neovim configuration exceeds \(Self.maximumNeovimBytes) bytes"
-          )
-        }
-        artifacts.append(
-          EnvironmentConfigurationArtifact(
-            path: "\(targetRoot)/\(relative)",
-            data: data
-          )
-        )
-      case S_IFLNK
-      where
-        allowLegacyThemeLink && relative == "lua/macarchy/current.lua":
-        let destination = try PinnedFilesystem.symlinkDestination(
-          parentDescriptor: descriptor,
-          name: name,
-          url: child
-        )
-        guard destination.hasPrefix("/"),
-          destination.hasSuffix("/.config/macarchy/current/generated/neovim.lua")
-        else {
-          throw EnvironmentConfigurationError.invalid(
-            root,
-            "reserved Neovim theme link has an unexpected destination"
-          )
-        }
-        hasLegacyThemeLink = true
-      case S_IFLNK:
-        throw EnvironmentConfigurationError.invalid(
-          root,
-          "Neovim configuration contains symbolic link \(relative)"
-        )
-      default:
-        throw EnvironmentConfigurationError.invalid(
-          root,
-          "Neovim configuration contains unsupported entry \(relative)"
-        )
-      }
     }
   }
 
@@ -1041,6 +705,162 @@ package struct EnvironmentConfigurationComposer: Sendable {
     return sha256Digest(Data(canonical.utf8))
   }
 
+}
+
+struct EnvironmentNativeTreeReader {
+  struct Tree {
+    var artifacts: [EnvironmentConfigurationArtifact]
+    var hasLegacyThemeLink: Bool
+  }
+
+  private static let maximumNeovimEntries = 512
+  private static let maximumNeovimBytes = 8 * 1_048_576
+
+  func read(
+    at root: URL,
+    targetRoot: String,
+    allowLegacyThemeLink: Bool
+  ) throws -> Tree {
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: root)
+    } catch {
+      throw EnvironmentConfigurationError.cannotRead(root, String(describing: error))
+    }
+    defer { Darwin.close(descriptor) }
+    var artifacts: [EnvironmentConfigurationArtifact] = []
+    var entries = 0
+    var bytes = 0
+    var hasLegacyThemeLink = false
+    try walkNativeTree(
+      root: root,
+      directory: root,
+      descriptor: descriptor,
+      relativeDirectory: "",
+      targetRoot: targetRoot,
+      allowLegacyThemeLink: allowLegacyThemeLink,
+      artifacts: &artifacts,
+      entries: &entries,
+      bytes: &bytes,
+      hasLegacyThemeLink: &hasLegacyThemeLink
+    )
+    return Tree(
+      artifacts: artifacts,
+      hasLegacyThemeLink: hasLegacyThemeLink
+    )
+  }
+
+  private func walkNativeTree(
+    root: URL,
+    directory: URL,
+    descriptor: Int32,
+    relativeDirectory: String,
+    targetRoot: String,
+    allowLegacyThemeLink: Bool,
+    artifacts: inout [EnvironmentConfigurationArtifact],
+    entries: inout Int,
+    bytes: inout Int,
+    hasLegacyThemeLink: inout Bool
+  ) throws {
+    let listing = try PinnedFilesystem.directoryEntries(
+      descriptor: descriptor,
+      url: directory,
+      limit: max(0, Self.maximumNeovimEntries - entries)
+    )
+    guard !listing.truncated else {
+      throw EnvironmentConfigurationError.invalid(
+        root,
+        "Neovim configuration contains more than \(Self.maximumNeovimEntries) entries"
+      )
+    }
+    for name in listing.entries {
+      entries += 1
+      guard entries <= Self.maximumNeovimEntries else {
+        throw EnvironmentConfigurationError.invalid(
+          root,
+          "Neovim configuration contains more than \(Self.maximumNeovimEntries) entries"
+        )
+      }
+      let child = directory.appending(path: name)
+      let metadata = try PinnedFilesystem.metadata(
+        parentDescriptor: descriptor,
+        name: name,
+        url: child
+      )
+      let relative =
+        relativeDirectory.isEmpty ? name : relativeDirectory + "/" + name
+      switch metadata.st_mode & S_IFMT {
+      case S_IFDIR:
+        let childDescriptor = try PinnedFilesystem.openDirectory(
+          parentDescriptor: descriptor,
+          name: name,
+          url: child
+        )
+        do {
+          defer { Darwin.close(childDescriptor) }
+          try walkNativeTree(
+            root: root,
+            directory: child,
+            descriptor: childDescriptor,
+            relativeDirectory: relative,
+            targetRoot: targetRoot,
+            allowLegacyThemeLink: allowLegacyThemeLink,
+            artifacts: &artifacts,
+            entries: &entries,
+            bytes: &bytes,
+            hasLegacyThemeLink: &hasLegacyThemeLink
+          )
+        }
+      case S_IFREG:
+        let data = try PinnedFilesystem.readRegularFile(
+          parentDescriptor: descriptor,
+          name: name,
+          url: child,
+          maximumSize: BoundedRegularFile.maximumSize
+        ).data
+        bytes += data.count
+        guard bytes <= Self.maximumNeovimBytes else {
+          throw EnvironmentConfigurationError.invalid(
+            root,
+            "Neovim configuration exceeds \(Self.maximumNeovimBytes) bytes"
+          )
+        }
+        artifacts.append(
+          EnvironmentConfigurationArtifact(
+            path: "\(targetRoot)/\(relative)",
+            data: data
+          )
+        )
+      case S_IFLNK
+      where
+        allowLegacyThemeLink && relative == "lua/macarchy/current.lua":
+        let destination = try PinnedFilesystem.symlinkDestination(
+          parentDescriptor: descriptor,
+          name: name,
+          url: child
+        )
+        guard destination.hasPrefix("/"),
+          destination.hasSuffix("/.config/macarchy/current/generated/neovim.lua")
+        else {
+          throw EnvironmentConfigurationError.invalid(
+            root,
+            "reserved Neovim theme link has an unexpected destination"
+          )
+        }
+        hasLegacyThemeLink = true
+      case S_IFLNK:
+        throw EnvironmentConfigurationError.invalid(
+          root,
+          "Neovim configuration contains symbolic link \(relative)"
+        )
+      default:
+        throw EnvironmentConfigurationError.invalid(
+          root,
+          "Neovim configuration contains unsupported entry \(relative)"
+        )
+      }
+    }
+  }
 }
 
 private struct EnvironmentInputIdentity: Encodable {
