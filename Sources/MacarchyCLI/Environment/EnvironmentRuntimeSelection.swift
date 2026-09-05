@@ -79,7 +79,8 @@ enum ThemeRuntimeSelection {
   static func activationCoordinator(
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
-    herdrRuntime: EnvironmentHerdrRuntimeReloader = .live
+    herdrRuntime: EnvironmentHerdrRuntimeReloader = .live,
+    enabledAdapterIDs: Set<String>? = nil
   ) throws -> ThemeActivationCoordinator {
     let homeDirectory = consumerPaths.piConfigurationDirectoryURL
       .deletingLastPathComponent()
@@ -92,16 +93,19 @@ enum ThemeRuntimeSelection {
         homeDirectory: homeDirectory,
         runtime: herdrRuntime
       ) : nil
+    let enabledAdapterIDs =
+      try enabledAdapterIDs
+      ?? Self.enabledAdapterIDs(
+        stateRoot: stateRoot,
+        consumerPaths: consumerPaths
+      )
     return try ThemeActivationCoordinator(
       root: stateRoot,
       consumerPaths: Self.consumerPaths(
         stateRoot: stateRoot,
         consumerPaths: consumerPaths
       ),
-      enabledAdapterIDs: enabledAdapterIDs(
-        stateRoot: stateRoot,
-        consumerPaths: consumerPaths
-      ),
+      enabledAdapterIDs: enabledAdapterIDs,
       herdrManagedMode: herdrManagedMode,
       piSelectionIsApplied: {
         try piIsEnabled(stateRoot: stateRoot, consumerPaths: consumerPaths)

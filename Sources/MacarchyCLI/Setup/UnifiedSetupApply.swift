@@ -7,14 +7,6 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       UnifiedSetupPlanContext,
       PortableProfile,
       ThemeConsumerPaths,
-      UnifiedSetupAdoptionApprovals
-    ) async throws
-    -> SetupComponentExecution
-  typealias EnvironmentApply =
-    @Sendable (
-      UnifiedSetupPlanContext,
-      PortableProfile,
-      ThemeConsumerPaths,
       UnifiedSetupAdoptionApprovals,
       [String]
     ) async throws
@@ -29,7 +21,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let themeApply: ThemeApply
   let desktopApply: ComponentApply
-  let environmentApply: EnvironmentApply
+  let environmentApply: ComponentApply
   let transactionTeardown: UnifiedSetupTeardownCommandRunner
   let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
 
@@ -41,7 +33,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
     themeApply: @escaping ThemeApply,
     desktopApply: @escaping ComponentApply,
-    environmentApply: @escaping EnvironmentApply,
+    environmentApply: @escaping ComponentApply,
     transactionTeardown: UnifiedSetupTeardownCommandRunner = .live,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
@@ -127,9 +119,14 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         (output: report.render(json: true), succeeded: report.succeeded)
       )
     },
-    desktopApply: { context, profile, consumerPaths, adoptions in
+    desktopApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in
       try await SetupComponentExecution(
-        DesktopApplyCommandRunner.live.executeAggregate(
+        DesktopApplyCommandRunner(
+          lifecycle: .live,
+          keybindings: .live,
+          prerequisites: .live,
+          theme: .live(enabling: Set(enabledThemeAdapterIDs))
+        ).executeAggregate(
           resourcesRoot: context.desktopResourcesRoot,
           keybindingsResourcesRoot: context.keybindingsResourcesRoot,
           profileURL: context.profileURL,
@@ -416,7 +413,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           try start(.desktop)
           do {
             desktop = try stage(
-              await desktopApply(context, currentModel.profile, consumerPaths, adoptions),
+              await desktopApply(
+                context,
+                currentModel.profile,
+                consumerPaths,
+                adoptions,
+                currentModel.enabledThemeAdapterIDs
+              ),
               mutationField: "mutated",
               successMessage: "Desktop providers converged."
             )
