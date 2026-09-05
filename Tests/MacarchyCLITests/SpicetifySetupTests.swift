@@ -6,7 +6,22 @@ import Testing
 @testable import MacarchyCLI
 @testable import ThemeCore
 
-@Suite(.serialized)
+// Setup takes the process-wide Spicetify lock synchronously. A lock holder in
+// another suite may need the cooperative pool to resume and release it.
+private struct SpicetifySetupBlockingScope: SuiteTrait, TestTrait, TestScoping {
+  let isRecursive = true
+  static let executor = BlockingTaskExecutor(label: "spicetify-setup-tests")
+
+  func provideScope(
+    for test: Test,
+    testCase: Test.Case?,
+    performing function: @Sendable () async throws -> Void
+  ) async throws {
+    try await withTaskExecutorPreference(Self.executor, operation: function)
+  }
+}
+
+@Suite(.serialized, SpicetifySetupBlockingScope())
 struct SpicetifySetupTests {
   @Test
   func absentOptionalProviderIsExplicitlyDisabledAndSuccessful() throws {
@@ -321,15 +336,7 @@ struct SpicetifySetupTests {
 
   @Test
   func setupWaitsForTheSharedSpicetifyLock() async throws {
-    let executor = BlockingTaskExecutor(label: "spicetify-setup-overlap")
-    // The coordinator also waits synchronously; leave the cooperative pool free
-    // for other tests that must resume before releasing the process-wide lock.
-    try await Task(executorPreference: executor) {
-      try await sharedSpicetifyLockScenario(executor: executor)
-    }.value
-  }
-
-  private func sharedSpicetifyLockScenario(executor: BlockingTaskExecutor) async throws {
+    let executor = SpicetifySetupBlockingScope.executor
     // Synchronous boundary for bounded gates on the explicitly preferred executor.
     func wait(_ semaphore: DispatchSemaphore, timeout: DispatchTime) -> DispatchTimeoutResult {
       semaphore.wait(timeout: timeout)

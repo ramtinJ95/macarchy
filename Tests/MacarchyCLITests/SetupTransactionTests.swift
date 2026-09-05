@@ -456,6 +456,15 @@ extension SetupOwnershipTests {
 
   @Test
   func setupWaitsForActivationPreflightAndCanonicalCommit() async throws {
+    // Other suites can synchronously wait on the held activation lock. Keep its
+    // release coordinator off the cooperative pool those waiters can occupy.
+    let executor = BlockingTaskExecutor(label: "setup-activation-overlap")
+    try await withTaskExecutorPreference(executor) {
+      try await setupActivationOverlapScenario()
+    }
+  }
+
+  private func setupActivationOverlapScenario() async throws {
     let fixture = try Fixture(configuration: "font_size 13\n")
     defer { fixture.remove() }
     let package = try ThemePackageLoader().load(

@@ -4,6 +4,20 @@ import Testing
 
 @testable import ThemeCore
 
+// Direct reconciliation calls take a synchronous lock. Its blocking test double
+// and the coordinator that releases it must not compete for cooperative workers.
+private struct SpicetifyAdapterBlockingScope: TestTrait, TestScoping {
+  private static let executor = BlockingTaskExecutor(label: "spicetify-adapter-tests")
+
+  func provideScope(
+    for test: Test,
+    testCase: Test.Case?,
+    performing function: @Sendable () async throws -> Void
+  ) async throws {
+    try await withTaskExecutorPreference(Self.executor, operation: function)
+  }
+}
+
 extension AdapterContractTests {
   @Test
   func spicetifyRefreshIsAwaitedRequiredAndNeverRestartsSpotify() async throws {
@@ -60,7 +74,7 @@ extension AdapterContractTests {
     #expect(!observed.contains { $0.executableURL == URL(filePath: "/usr/bin/open") })
   }
 
-  @Test
+  @Test(SpicetifyAdapterBlockingScope())
   func spicetifyRuntimeEvidenceMakesMatchingRepeatANoopAndVersionsInvalidateIt() async throws {
     let root = try temporaryDirectory()
     defer {
@@ -136,7 +150,7 @@ extension AdapterContractTests {
     #expect(drifted.inspection().status == .drifted)
   }
 
-  @Test
+  @Test(SpicetifyAdapterBlockingScope())
   func spicetifySerializesOverlappingReconciliations() async throws {
     let root = try temporaryDirectory()
     defer {
