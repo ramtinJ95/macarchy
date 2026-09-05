@@ -5,7 +5,6 @@ public enum SlackAdapter: Sendable {
   package static let outputPath = "generated/slack.txt"
   package static let rendererVersion = 2
   package static let minimumVersion = "4.51.191"
-  package static let liveBundleURL = URL(filePath: "/Applications/Slack.app")
   package static let importInstructions =
     "Slack: Preferences > Appearance > Custom theme > Theme colors > Import theme."
 
