@@ -454,17 +454,27 @@ extension SetupOwnershipTests {
     )
   }
 
-  @Test
-  func setupWaitsForActivationPreflightAndCanonicalCommit() async throws {
+  @Test(arguments: [false, true])
+  func setupWaitsForActivationPreflightAndCanonicalCommit(abortCoordinator: Bool) async throws {
     // Other suites can synchronously wait on the held activation lock. Keep its
     // release coordinator off the cooperative pool those waiters can occupy.
+    // The entire scenario must stay synchronous: Task.sleep can depend on that
+    // pool even when the sleeping task prefers a Dispatch executor.
     let executor = BlockingTaskExecutor(label: "setup-activation-overlap")
     try await withTaskExecutorPreference(executor) {
-      try await setupActivationOverlapScenario()
+      if abortCoordinator {
+        #expect(throws: OverlapCoordinatorFailure.self) {
+          try setupActivationOverlapScenario(abortCoordinator: true)
+        }
+      } else {
+        try setupActivationOverlapScenario(abortCoordinator: false)
+      }
     }
   }
 
-  private func setupActivationOverlapScenario() async throws {
+  private struct OverlapCoordinatorFailure: Error {}
+
+  private func setupActivationOverlapScenario(abortCoordinator: Bool) throws {
     let fixture = try Fixture(configuration: "font_size 13\n")
     defer { fixture.remove() }
     let package = try ThemePackageLoader().load(
@@ -473,18 +483,26 @@ extension SetupOwnershipTests {
     )
     let stateRoot = fixture.stateRoot
     let home = fixture.home
-    let preflightEntered = Mutex(false)
+    let preflightEntered = DispatchSemaphore(value: 0)
     let releasePreflight = DispatchSemaphore(value: 0)
-    let activationCompleted = Mutex(false)
+    let workers = DispatchGroup()
+    defer {
+      // Release and join before fixture removal, including a failed assertion
+      // or injected coordinator error before the ordinary release point.
+      releasePreflight.signal()
+      #expect(workers.wait(timeout: .now() + 5) == .success)
+    }
     let activationResult = Mutex<Result<GenerationManifest, any Error>?>(nil)
+    workers.enter()
     DispatchQueue.global().async {
+      defer { workers.leave() }
       let result = Result {
         try ThemeActivator(root: stateRoot).activate(
           package: package,
           expectedActiveGenerationID: nil,
           preparedBackground: {
-            preflightEntered.withLock { $0 = true }
-            releasePreflight.wait()
+            preflightEntered.signal()
+            try #require(releasePreflight.wait(timeout: .now() + 5) == .success)
             let background = try #require(package.backgrounds.first)
             return PreparedThemeBackground(
               selection: GenerationBackground(id: background.id, format: background.format),
@@ -494,15 +512,13 @@ extension SetupOwnershipTests {
         )
       }
       activationResult.withLock { $0 = result }
-      activationCompleted.withLock { $0 = true }
     }
-    for _ in 0..<100 where !preflightEntered.withLock({ $0 }) {
-      try await Task.sleep(for: .milliseconds(5))
-    }
-    try #require(preflightEntered.withLock { $0 })
+    try #require(preflightEntered.wait(timeout: .now() + 0.5) == .success)
     let setupCompleted = Mutex(false)
     let setupResult = Mutex<Result<[SetupIntegrationResult], any Error>?>(nil)
+    workers.enter()
     DispatchQueue.global().async {
+      defer { workers.leave() }
       let result = Result {
         try SetupOwnershipManager().setup(
           homeDirectory: home,
@@ -513,15 +529,13 @@ extension SetupOwnershipTests {
       setupCompleted.withLock { $0 = true }
     }
 
-    try await Task.sleep(for: .milliseconds(25))
+    Thread.sleep(forTimeInterval: 0.025)
     #expect(!setupCompleted.withLock { $0 })
     #expect(try fixture.configuration() == "font_size 13\n")
+    if abortCoordinator { throw OverlapCoordinatorFailure() }
     releasePreflight.signal()
 
-    for _ in 0..<1000
-    where !activationCompleted.withLock({ $0 }) || !setupCompleted.withLock({ $0 }) {
-      try await Task.sleep(for: .milliseconds(5))
-    }
+    try #require(workers.wait(timeout: .now() + 5) == .success)
     _ = try #require(activationResult.withLock { $0 }).get()
     #expect(try #require(setupResult.withLock { $0 }).get().first?.status == .owned)
     #expect(try fixture.configuration().contains(fixture.includeDirective))
