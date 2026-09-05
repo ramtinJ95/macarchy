@@ -773,6 +773,20 @@ plan retains the new profile for review.
 `--profile` or `--machine-profile` path must exist; an absent default file is an
 empty layer.
 
+`setup plan`, `setup status`, and `setup doctor` also report a read-only
+`package_inventory` (nested under `plan` for status/doctor). It separates selected
+providers' proposed package requirements and profile provenance from Homebrew
+installation records and runtime availability. A working external executable
+does not establish a Homebrew installation. Local listings are corroborated
+with inert receipts; package Ruby is not loaded, metadata is not refreshed,
+and aliases or old tap identities are not silently resolved. Unavailable,
+ambiguous, or unsupported observations remain explicit.
+
+This inventory is informational: it does not adopt packages, change apply's
+existing installation behavior or core readiness result, import a Brewfile, or
+provision a broader workstation package set. Installed packages outside the
+proposed requirements remain outside this package slice's management scope.
+
 The machine layer uses the same strict schema as the portable profile. Its
 declared fields replace portable fields individually, arrays replace as whole
 values, and omitted fields continue to inherit portable intent or built-in

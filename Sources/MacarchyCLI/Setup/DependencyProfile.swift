@@ -58,8 +58,17 @@ enum DependencyRemediation: Encodable, Sendable {
   }
 
   case cask(String)
-  case external(String)
+  case external(String, formula: String? = nil)
   case formula(String)
+
+  var homebrewPackage: HomebrewPackageIdentity? {
+    switch self {
+    case .formula(let name): HomebrewPackageIdentity(kind: .formula, name: name)
+    case .cask(let name): HomebrewPackageIdentity(kind: .cask, name: name)
+    case .external(_, let formula):
+      formula.map { HomebrewPackageIdentity(kind: .formula, name: $0) }
+    }
+  }
 
   func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
@@ -70,9 +79,10 @@ enum DependencyRemediation: Encodable, Sendable {
     case .formula(let package):
       try container.encode(Kind.formula, forKey: .kind)
       try container.encode(package, forKey: .package)
-    case .external(let instruction):
+    case .external(let instruction, let formula):
       try container.encode(Kind.external, forKey: .kind)
       try container.encode(instruction, forKey: .instruction)
+      try container.encodeIfPresent(formula, forKey: .package)
     }
   }
 
@@ -137,7 +147,8 @@ struct DependencyProfile: Sendable {
       .external(
         "Run: brew trust --formula \(package) && "
           + "HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 "
-          + "HOMEBREW_NO_INSTALL_UPGRADE=1 brew install --formula \(package)"
+          + "HOMEBREW_NO_INSTALL_UPGRADE=1 brew install --formula \(package)",
+        formula: package
       )
     }
 
@@ -342,7 +353,7 @@ struct HomebrewInstallPlan: Encodable, Sendable {
         formulae.append(package)
       case .cask(let package):
         casks.append(package)
-      case .external(let instruction):
+      case .external(let instruction, _):
         external.append(
           ExternalDependencyRemediation(
             capabilityID: capability.id,

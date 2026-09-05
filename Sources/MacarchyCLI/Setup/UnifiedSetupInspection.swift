@@ -107,11 +107,12 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
         json: json
       )
     }
-    guard case .ready(let model, let plan) = preparation else {
+    let plan = planner.inspectedReport(preparation.report)
+    guard case .ready(let model, _) = preparation else {
       return try result(
         operation: operation,
         outcome: preparation.report.outcome,
-        plan: preparation.report,
+        plan: plan,
         theme: nil,
         message: "The unified setup plan is blocked.",
         json: json
@@ -259,6 +260,7 @@ private struct UnifiedSetupInspectionReport: Encodable {
     if let theme { lines.append("- theme [\(theme.status)]: \(theme.message)") }
     if let desktop { lines.append("- desktop [\(desktop.outcome)]") }
     if let environment { lines.append("- environment [\(environment.outcome)]") }
+    if let inventory = plan?.packageInventory { lines.append(inventory.humanOutput) }
     return lines.joined(separator: "\n")
   }
 

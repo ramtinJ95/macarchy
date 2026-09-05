@@ -50,6 +50,9 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let desktopPlanner: ComponentPlanner
   let environmentPlanner: ComponentPlanner
+  var packageInventoryReader: @Sendable () -> HomebrewPackageObservation = {
+    .unavailable("Package inventory reader is not configured.")
+  }
 
   static let live = UnifiedSetupPlanCommandRunner(
     capabilityIsAvailable: { $0.isAvailable() },
@@ -84,7 +87,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         profile: profile
       )
       return try SetupComponentExecution(execution)
-    }
+    },
+    packageInventoryReader: { HomebrewPackageInventoryReader.live.read() }
   )
 
   func execute(
@@ -92,7 +96,19 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     let preparation = try prepare(context: context)
-    return (try preparation.report.render(json: json), preparation.succeeded)
+    return (try inspectedReport(preparation.report).render(json: json), preparation.succeeded)
+  }
+
+  /// Enrich read-only output, not apply's desired model or approval comparison.
+  /// Receipt uncertainty is visible here but does not change the legacy mutator.
+  func inspectedReport(_ report: UnifiedSetupPlanReport) -> UnifiedSetupPlanReport {
+    guard report.theme != nil else { return report }
+    var report = report
+    report.packageInventory = SetupPackageInventory(
+      capabilities: report.capabilities, fieldOrigins: report.fieldOrigins,
+      layers: report.layers, observation: packageInventoryReader()
+    )
+    return report
   }
 
   func prepare(context: UnifiedSetupPlanContext) throws -> UnifiedSetupPreparation {
@@ -747,6 +763,7 @@ struct UnifiedSetupPlanReport: Encodable {
   let actions: [UnifiedSetupAction]
   let components: SetupComponentPlans?
   let diagnostics: [UnifiedSetupPlanDiagnostic]
+  var packageInventory: SetupPackageInventory? = nil
 
   static func blocked(
     layers: [SetupProfileLayerReport],
@@ -830,6 +847,7 @@ struct UnifiedSetupPlanReport: Encodable {
       "- \($0.id) [\($0.status.rawValue)]: \($0.requirement)"
     }
     lines.append(packages.humanOutput)
+    if let packageInventory { lines.append(packageInventory.humanOutput) }
     lines.append(files.isEmpty ? "Files: none" : "Files:")
     lines += files.map { "- \($0.id) [\($0.status), \($0.ownership)]: \($0.path)" }
     lines.append(services.isEmpty ? "Services: none" : "Services:")

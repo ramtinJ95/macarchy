@@ -119,7 +119,7 @@ struct DesktopPrerequisiteInspector: Sendable {
       "Install Homebrew cask \(package)."
     case .formula(let package):
       "Install Homebrew formula \(package)."
-    case .external(let instruction):
+    case .external(let instruction, _):
       instruction
     }
   }
