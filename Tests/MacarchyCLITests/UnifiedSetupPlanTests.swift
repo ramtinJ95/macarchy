@@ -148,7 +148,9 @@ struct UnifiedSetupPlanTests {
     )
     let before = try inventory(root)
 
-    let execution = try UnifiedSetupPlanCommandRunner.live.execute(
+    var runner = UnifiedSetupPlanCommandRunner.live
+    runner.packageInventoryReader = { HomebrewPackageObservation(packages: [], issues: []) }
+    let execution = try runner.execute(
       context: UnifiedSetupPlanContext(
         themesRoot: repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory),
         keybindingsResourcesRoot: repositoryRoot.appending(
