@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import Synchronization
 import Testing
@@ -21,6 +22,18 @@ private struct SpicetifyAdapterBlockingScope: TestTrait, TestScoping {
 extension AdapterContractTests {
   @Test
   func spicetifyRefreshIsAwaitedRequiredAndNeverRestartsSpotify() async throws {
+    let executor = BlockingTaskExecutor(label: "spicetify-refresh-await")
+    // The coordinator waits synchronously too; keep the cooperative pool free.
+    try await Task(executorPreference: executor) {
+      try await awaitedSpicetifyRefreshScenario(executor: executor)
+    }.value
+  }
+
+  private func awaitedSpicetifyRefreshScenario(executor: BlockingTaskExecutor) async throws {
+    func wait(_ semaphore: DispatchSemaphore, timeout: DispatchTime) -> DispatchTimeoutResult {
+      semaphore.wait(timeout: timeout)
+    }
+
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -30,6 +43,9 @@ extension AdapterContractTests {
     let configuration = try spicetifyConfiguration(root: root).directory
     let requests = Mutex([ProcessRequest]())
     let finished = Mutex(false)
+    let refreshEntered = DispatchSemaphore(value: 0)
+    let releaseRefresh = DispatchSemaphore(value: 0)
+    let reconciliationCompleted = DispatchSemaphore(value: 0)
     let adapter = SpicetifyAdapter(
       root: root,
       configurationDirectoryURL: configuration,
@@ -40,7 +56,8 @@ extension AdapterContractTests {
         if request.executableURL == URL(filePath: "/usr/bin/pgrep") {
           return ProcessResult(terminationStatus: 0, output: "123\n")
         }
-        Thread.sleep(forTimeInterval: 0.1)
+        refreshEntered.signal()
+        try #require(releaseRefresh.wait(timeout: .now() + 5) == .success)
         finished.withLock { $0 = true }
         return ProcessResult(terminationStatus: 0, output: "")
       },
@@ -48,15 +65,24 @@ extension AdapterContractTests {
       spotifyVersionProvider: { "1.2.97.3" }
     )
 
-    let task = Task {
-      try await ThemeReconciler(statusStore: ReconciliationStatusStore(root: root)).reconcile(
-        manifest: manifest,
-        adapters: [adapter.reconciliation()]
-      )
+    let record = try await withThrowingTaskGroup(of: ReconciliationRecord.self) { group in
+      // Release on every exit; the group joins before deferred fixture removal.
+      defer { releaseRefresh.signal() }
+      group.addTask(executorPreference: executor) { @Sendable in
+        defer { reconciliationCompleted.signal() }
+        let record = try await ThemeReconciler(statusStore: ReconciliationStatusStore(root: root))
+          .reconcile(manifest: manifest, adapters: [adapter.reconciliation()])
+        #expect(finished.withLock { $0 })
+        return record
+      }
+      try #require(wait(refreshEntered, timeout: .now() + 5) == .success)
+      #expect(requests.withLock { $0.count == 2 })
+      #expect(!finished.withLock { $0 })
+      #expect(wait(reconciliationCompleted, timeout: .now()) == .timedOut)
+      releaseRefresh.signal()
+      try #require(wait(reconciliationCompleted, timeout: .now() + 5) == .success)
+      return try #require(try await group.next())
     }
-    try await waitUntil { requests.withLock { $0.count == 2 } }
-    #expect(!finished.withLock { $0 })
-    let record = try await task.value
     #expect(
       record.results == [
         AdapterResult(

@@ -3,7 +3,8 @@ import Testing
 
 @testable import ThemeCore
 
-extension AdapterContractTests {
+@Suite
+struct OrdinaryAdapterRuntimeTests {
   @Test
   func ordinaryAdapterRuntimeMapsTypedPreflightFailuresAndSkipsConcreteWork() async throws {
     for isIntegrationDrift in [true, false] {
