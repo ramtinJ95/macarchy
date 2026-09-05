@@ -834,9 +834,6 @@ package struct PortableProfileLoader: Sendable {
   ) throws -> PortableProfile {
     let machineFields = Set(machine.summary.declaredFields)
     let portableFields = Set(portable.summary.declaredFields)
-    func value<T>(_ field: String, _ portableValue: T, _ machineValue: T) -> T {
-      machineFields.contains(field) ? machineValue : portableValue
-    }
     func declaredValue<T>(
       _ field: String,
       _ portableValue: T,
@@ -850,90 +847,18 @@ package struct PortableProfileLoader: Sendable {
 
     let portableProfile = portable.profile
     let machineProfile = machine.profile
+    let roles = RoleMerger(
+      portableProfile: portableProfile,
+      machineProfile: machineProfile,
+      machineFields: machineFields
+    )
     let sourceURL =
       machine.summary.present
       ? machine.summary.sourceURL
       : portableProfile.sourceURL
-    let keybindingSourceURL =
-      machineFields.contains { $0.hasPrefix("keybindings.") }
-      ? machine.summary.sourceURL
-      : portableProfile.keybindings.sourceURL
-    let keybindings = KeybindingProfile(
-      sourceURL: keybindingSourceURL,
-      overrideURL: value(
-        "keybindings.override",
-        portableProfile.keybindings.overrideURL,
-        machineProfile.keybindings.overrideURL
-      ),
-      metadataURL: value(
-        "keybindings.metadata",
-        portableProfile.keybindings.metadataURL,
-        machineProfile.keybindings.metadataURL
-      ),
-      disabledIdentities: value(
-        "keybindings.disabled",
-        portableProfile.keybindings.disabledIdentities,
-        machineProfile.keybindings.disabledIdentities
-      )
-    )
-    let yabai = YabaiProfileOptions(
-      layout: value(
-        "yabai.layout", portableProfile.desktop.yabai.layout, machineProfile.desktop.yabai.layout),
-      splitRatio: value(
-        "yabai.split_ratio",
-        portableProfile.desktop.yabai.splitRatio,
-        machineProfile.desktop.yabai.splitRatio
-      ),
-      topPadding: value(
-        "yabai.top_padding",
-        portableProfile.desktop.yabai.topPadding,
-        machineProfile.desktop.yabai.topPadding
-      ),
-      bottomPadding: value(
-        "yabai.bottom_padding",
-        portableProfile.desktop.yabai.bottomPadding,
-        machineProfile.desktop.yabai.bottomPadding
-      ),
-      leftPadding: value(
-        "yabai.left_padding",
-        portableProfile.desktop.yabai.leftPadding,
-        machineProfile.desktop.yabai.leftPadding
-      ),
-      rightPadding: value(
-        "yabai.right_padding",
-        portableProfile.desktop.yabai.rightPadding,
-        machineProfile.desktop.yabai.rightPadding
-      ),
-      windowGap: value(
-        "yabai.window_gap",
-        portableProfile.desktop.yabai.windowGap,
-        machineProfile.desktop.yabai.windowGap
-      ),
-      mouseFollowsFocus: value(
-        "yabai.mouse_follows_focus",
-        portableProfile.desktop.yabai.mouseFollowsFocus,
-        machineProfile.desktop.yabai.mouseFollowsFocus
-      ),
-      hookURL: value(
-        "yabai.hook", portableProfile.desktop.yabai.hookURL, machineProfile.desktop.yabai.hookURL)
-    )
-    let sketchyBarHookFromMachine = machineFields.contains("sketchybar.hook")
-    let sketchyBar = SketchyBarProfileOptions(
-      left: value(
-        "sketchybar.left", portableProfile.sketchyBar.left, machineProfile.sketchyBar.left),
-      center: value(
-        "sketchybar.center", portableProfile.sketchyBar.center, machineProfile.sketchyBar.center),
-      right: value(
-        "sketchybar.right", portableProfile.sketchyBar.right, machineProfile.sketchyBar.right),
-      hookURL: value(
-        "sketchybar.hook",
-        portableProfile.sketchyBar.hookURL,
-        machineProfile.sketchyBar.hookURL
-      ),
-      hookRootURL: sketchyBarHookFromMachine
-        ? machineProfile.sketchyBar.hookRootURL
-        : portableProfile.sketchyBar.hookRootURL
-    )
+    let keybindings = roles.mergeKeybindings(machineSourceURL: machine.summary.sourceURL)
+    let yabai = roles.mergeYabai()
+    let sketchyBar = roles.mergeSketchyBar()
 
     let declaredPrompt = declaredValue(
       "prompt.provider",
@@ -947,27 +872,18 @@ package struct PortableProfileLoader: Sendable {
       machineProfile.environment.history,
       default: PortableProfile.defaults.environment.history
     )
-    let shell = value(
+    let shell = roles.value(
       "shell.provider",
       portableProfile.environment.shell,
       machineProfile.environment.shell
     )
-    let tools = DailyToolsProfile(
-      bat: value(
-        "tools.bat", portableProfile.environment.tools.bat, machineProfile.environment.tools.bat),
-      eza: value(
-        "tools.eza", portableProfile.environment.tools.eza, machineProfile.environment.tools.eza),
-      btop: value(
-        "tools.btop", portableProfile.environment.tools.btop, machineProfile.environment.tools.btop),
-      yazi: value(
-        "tools.yazi", portableProfile.environment.tools.yazi, machineProfile.environment.tools.yazi)
-    )
-    let terminal = value(
+    let tools = roles.mergeDailyTools()
+    let terminal = roles.value(
       "terminal.provider",
       portableProfile.environment.terminal,
       machineProfile.environment.terminal
     )
-    let editor = value(
+    let editor = roles.value(
       "editor.provider",
       portableProfile.environment.editor,
       machineProfile.environment.editor
@@ -983,139 +899,273 @@ package struct PortableProfileLoader: Sendable {
       declaredTables: declaredTables,
       source: sourceURL ?? portable.summary.sourceURL
     )
-    let environment = EnvironmentProfile(
+    let environment = roles.mergeEnvironment(
       terminal: terminal,
       shell: shell,
-      prompt: shell == .disabled ? .disabled : declaredPrompt,
-      history: shell == .disabled ? .disabled : declaredHistory,
+      declaredPrompt: declaredPrompt,
+      declaredHistory: declaredHistory,
       editor: editor,
-      kitty: KittyProfileOptions(
-        fontFamily: value(
-          "kitty.font_family",
-          portableProfile.environment.kitty.fontFamily,
-          machineProfile.environment.kitty.fontFamily
-        ),
-        fontSize: value(
-          "kitty.font_size",
-          portableProfile.environment.kitty.fontSize,
-          machineProfile.environment.kitty.fontSize
-        ),
-        backgroundOpacity: value(
-          "kitty.background_opacity",
-          portableProfile.environment.kitty.backgroundOpacity,
-          machineProfile.environment.kitty.backgroundOpacity
-        ),
-        backgroundBlur: value(
-          "kitty.background_blur",
-          portableProfile.environment.kitty.backgroundBlur,
-          machineProfile.environment.kitty.backgroundBlur
-        ),
-        overrideDirectoryURL: value(
-          "kitty.override",
-          portableProfile.environment.kitty.overrideDirectoryURL,
-          machineProfile.environment.kitty.overrideDirectoryURL
-        )
-      ),
-      zsh: ZshProfileOptions(
-        editor: value(
-          "zsh.editor", portableProfile.environment.zsh.editor,
-          machineProfile.environment.zsh.editor),
-        hookURL: value(
-          "zsh.hook", portableProfile.environment.zsh.hookURL,
-          machineProfile.environment.zsh.hookURL)
-      ),
-      starship: StarshipProfileOptions(
-        behaviorURL: value(
-          "starship.behavior",
-          portableProfile.environment.starship.behaviorURL,
-          machineProfile.environment.starship.behaviorURL
-        )
-      ),
-      atuin: AtuinProfileOptions(
-        searchMode: value(
-          "atuin.search_mode",
-          portableProfile.environment.atuin.searchMode,
-          machineProfile.environment.atuin.searchMode
-        ),
-        keymapMode: value(
-          "atuin.keymap_mode",
-          portableProfile.environment.atuin.keymapMode,
-          machineProfile.environment.atuin.keymapMode
-        ),
-        enterAccept: value(
-          "atuin.enter_accept",
-          portableProfile.environment.atuin.enterAccept,
-          machineProfile.environment.atuin.enterAccept
-        ),
-        daemon: value(
-          "atuin.daemon",
-          portableProfile.environment.atuin.daemon,
-          machineProfile.environment.atuin.daemon
-        ),
-        configurationURL: value(
-          "atuin.configuration",
-          portableProfile.environment.atuin.configurationURL,
-          machineProfile.environment.atuin.configurationURL
-        )
-      ),
-      neovim: NeovimProfileOptions(
-        configurationDirectoryURL: value(
-          "neovim.configuration",
-          portableProfile.environment.neovim.configurationDirectoryURL,
-          machineProfile.environment.neovim.configurationDirectoryURL
-        )
-      ),
-      tools: tools,
-      presets: PresetsProfile(
-        codex: value(
-          "presets.codex", portableProfile.environment.presets.codex,
-          machineProfile.environment.presets.codex),
-        herdr: value(
-          "presets.herdr", portableProfile.environment.presets.herdr,
-          machineProfile.environment.presets.herdr),
-        pi: value(
-          "presets.pi", portableProfile.environment.presets.pi,
-          machineProfile.environment.presets.pi),
-        slack: value(
-          "presets.slack", portableProfile.environment.presets.slack,
-          machineProfile.environment.presets.slack),
-        spicetify: value(
-          "presets.spicetify",
-          portableProfile.environment.presets.spicetify,
-          machineProfile.environment.presets.spicetify
-        ),
-        tuicr: value(
-          "presets.tuicr", portableProfile.environment.presets.tuicr,
-          machineProfile.environment.presets.tuicr)
-      ),
-      btop: BtopProfileOptions(
-        vimKeys: value(
-          "btop.vim_keys",
-          portableProfile.environment.btop.vimKeys,
-          machineProfile.environment.btop.vimKeys
-        )
-      ),
-      yazi: YaziProfileOptions(
-        showHidden: value(
-          "yazi.show_hidden",
-          portableProfile.environment.yazi.showHidden,
-          machineProfile.environment.yazi.showHidden
-        )
-      )
+      tools: tools
     )
     let result = PortableProfile(
       sourceURL: sourceURL,
       keybindings: keybindings,
       desktop: DesktopProfile(
-        provider: value(
+        provider: roles.value(
           "desktop.provider", portableProfile.desktop.provider, machineProfile.desktop.provider),
         yabai: yabai
       ),
-      topBar: value("top_bar.provider", portableProfile.topBar, machineProfile.topBar),
+      topBar: roles.value("top_bar.provider", portableProfile.topBar, machineProfile.topBar),
       sketchyBar: sketchyBar,
       environment: environment
     )
     return result
+  }
+
+  // Pure role assembly over already-decoded paths and explicit machine fields.
+  // Cross-role validation stays in merge, before environment options are assembled.
+  private struct RoleMerger {
+    let portableProfile: PortableProfile
+    let machineProfile: PortableProfile
+    let machineFields: Set<String>
+
+    func value<T>(_ field: String, _ portableValue: T, _ machineValue: T) -> T {
+      machineFields.contains(field) ? machineValue : portableValue
+    }
+
+    func mergeKeybindings(machineSourceURL: URL) -> KeybindingProfile {
+      let keybindingSourceURL =
+        machineFields.contains { $0.hasPrefix("keybindings.") }
+        ? machineSourceURL
+        : portableProfile.keybindings.sourceURL
+      return KeybindingProfile(
+        sourceURL: keybindingSourceURL,
+        overrideURL: value(
+          "keybindings.override",
+          portableProfile.keybindings.overrideURL,
+          machineProfile.keybindings.overrideURL
+        ),
+        metadataURL: value(
+          "keybindings.metadata",
+          portableProfile.keybindings.metadataURL,
+          machineProfile.keybindings.metadataURL
+        ),
+        disabledIdentities: value(
+          "keybindings.disabled",
+          portableProfile.keybindings.disabledIdentities,
+          machineProfile.keybindings.disabledIdentities
+        )
+      )
+    }
+
+    func mergeYabai() -> YabaiProfileOptions {
+      return YabaiProfileOptions(
+        layout: value(
+          "yabai.layout", portableProfile.desktop.yabai.layout, machineProfile.desktop.yabai.layout),
+        splitRatio: value(
+          "yabai.split_ratio",
+          portableProfile.desktop.yabai.splitRatio,
+          machineProfile.desktop.yabai.splitRatio
+        ),
+        topPadding: value(
+          "yabai.top_padding",
+          portableProfile.desktop.yabai.topPadding,
+          machineProfile.desktop.yabai.topPadding
+        ),
+        bottomPadding: value(
+          "yabai.bottom_padding",
+          portableProfile.desktop.yabai.bottomPadding,
+          machineProfile.desktop.yabai.bottomPadding
+        ),
+        leftPadding: value(
+          "yabai.left_padding",
+          portableProfile.desktop.yabai.leftPadding,
+          machineProfile.desktop.yabai.leftPadding
+        ),
+        rightPadding: value(
+          "yabai.right_padding",
+          portableProfile.desktop.yabai.rightPadding,
+          machineProfile.desktop.yabai.rightPadding
+        ),
+        windowGap: value(
+          "yabai.window_gap",
+          portableProfile.desktop.yabai.windowGap,
+          machineProfile.desktop.yabai.windowGap
+        ),
+        mouseFollowsFocus: value(
+          "yabai.mouse_follows_focus",
+          portableProfile.desktop.yabai.mouseFollowsFocus,
+          machineProfile.desktop.yabai.mouseFollowsFocus
+        ),
+        hookURL: value(
+          "yabai.hook", portableProfile.desktop.yabai.hookURL, machineProfile.desktop.yabai.hookURL)
+      )
+    }
+
+    func mergeSketchyBar() -> SketchyBarProfileOptions {
+      let sketchyBarHookFromMachine = machineFields.contains("sketchybar.hook")
+      return SketchyBarProfileOptions(
+        left: value(
+          "sketchybar.left", portableProfile.sketchyBar.left, machineProfile.sketchyBar.left),
+        center: value(
+          "sketchybar.center", portableProfile.sketchyBar.center, machineProfile.sketchyBar.center),
+        right: value(
+          "sketchybar.right", portableProfile.sketchyBar.right, machineProfile.sketchyBar.right),
+        hookURL: value(
+          "sketchybar.hook",
+          portableProfile.sketchyBar.hookURL,
+          machineProfile.sketchyBar.hookURL
+        ),
+        hookRootURL: sketchyBarHookFromMachine
+          ? machineProfile.sketchyBar.hookRootURL
+          : portableProfile.sketchyBar.hookRootURL
+      )
+    }
+
+    func mergeDailyTools() -> DailyToolsProfile {
+      return DailyToolsProfile(
+        bat: value(
+          "tools.bat", portableProfile.environment.tools.bat, machineProfile.environment.tools.bat),
+        eza: value(
+          "tools.eza", portableProfile.environment.tools.eza, machineProfile.environment.tools.eza),
+        btop: value(
+          "tools.btop", portableProfile.environment.tools.btop,
+          machineProfile.environment.tools.btop),
+        yazi: value(
+          "tools.yazi", portableProfile.environment.tools.yazi,
+          machineProfile.environment.tools.yazi)
+      )
+    }
+
+    func mergeEnvironment(
+      terminal: TerminalProviderSelection,
+      shell: ShellProviderSelection,
+      declaredPrompt: PromptProviderSelection,
+      declaredHistory: HistoryProviderSelection,
+      editor: EditorProviderSelection,
+      tools: DailyToolsProfile
+    ) -> EnvironmentProfile {
+      return EnvironmentProfile(
+        terminal: terminal,
+        shell: shell,
+        prompt: shell == .disabled ? .disabled : declaredPrompt,
+        history: shell == .disabled ? .disabled : declaredHistory,
+        editor: editor,
+        kitty: KittyProfileOptions(
+          fontFamily: value(
+            "kitty.font_family",
+            portableProfile.environment.kitty.fontFamily,
+            machineProfile.environment.kitty.fontFamily
+          ),
+          fontSize: value(
+            "kitty.font_size",
+            portableProfile.environment.kitty.fontSize,
+            machineProfile.environment.kitty.fontSize
+          ),
+          backgroundOpacity: value(
+            "kitty.background_opacity",
+            portableProfile.environment.kitty.backgroundOpacity,
+            machineProfile.environment.kitty.backgroundOpacity
+          ),
+          backgroundBlur: value(
+            "kitty.background_blur",
+            portableProfile.environment.kitty.backgroundBlur,
+            machineProfile.environment.kitty.backgroundBlur
+          ),
+          overrideDirectoryURL: value(
+            "kitty.override",
+            portableProfile.environment.kitty.overrideDirectoryURL,
+            machineProfile.environment.kitty.overrideDirectoryURL
+          )
+        ),
+        zsh: ZshProfileOptions(
+          editor: value(
+            "zsh.editor", portableProfile.environment.zsh.editor,
+            machineProfile.environment.zsh.editor),
+          hookURL: value(
+            "zsh.hook", portableProfile.environment.zsh.hookURL,
+            machineProfile.environment.zsh.hookURL)
+        ),
+        starship: StarshipProfileOptions(
+          behaviorURL: value(
+            "starship.behavior",
+            portableProfile.environment.starship.behaviorURL,
+            machineProfile.environment.starship.behaviorURL
+          )
+        ),
+        atuin: AtuinProfileOptions(
+          searchMode: value(
+            "atuin.search_mode",
+            portableProfile.environment.atuin.searchMode,
+            machineProfile.environment.atuin.searchMode
+          ),
+          keymapMode: value(
+            "atuin.keymap_mode",
+            portableProfile.environment.atuin.keymapMode,
+            machineProfile.environment.atuin.keymapMode
+          ),
+          enterAccept: value(
+            "atuin.enter_accept",
+            portableProfile.environment.atuin.enterAccept,
+            machineProfile.environment.atuin.enterAccept
+          ),
+          daemon: value(
+            "atuin.daemon",
+            portableProfile.environment.atuin.daemon,
+            machineProfile.environment.atuin.daemon
+          ),
+          configurationURL: value(
+            "atuin.configuration",
+            portableProfile.environment.atuin.configurationURL,
+            machineProfile.environment.atuin.configurationURL
+          )
+        ),
+        neovim: NeovimProfileOptions(
+          configurationDirectoryURL: value(
+            "neovim.configuration",
+            portableProfile.environment.neovim.configurationDirectoryURL,
+            machineProfile.environment.neovim.configurationDirectoryURL
+          )
+        ),
+        tools: tools,
+        presets: PresetsProfile(
+          codex: value(
+            "presets.codex", portableProfile.environment.presets.codex,
+            machineProfile.environment.presets.codex),
+          herdr: value(
+            "presets.herdr", portableProfile.environment.presets.herdr,
+            machineProfile.environment.presets.herdr),
+          pi: value(
+            "presets.pi", portableProfile.environment.presets.pi,
+            machineProfile.environment.presets.pi),
+          slack: value(
+            "presets.slack", portableProfile.environment.presets.slack,
+            machineProfile.environment.presets.slack),
+          spicetify: value(
+            "presets.spicetify",
+            portableProfile.environment.presets.spicetify,
+            machineProfile.environment.presets.spicetify
+          ),
+          tuicr: value(
+            "presets.tuicr", portableProfile.environment.presets.tuicr,
+            machineProfile.environment.presets.tuicr)
+        ),
+        btop: BtopProfileOptions(
+          vimKeys: value(
+            "btop.vim_keys",
+            portableProfile.environment.btop.vimKeys,
+            machineProfile.environment.btop.vimKeys
+          )
+        ),
+        yazi: YaziProfileOptions(
+          showHidden: value(
+            "yazi.show_hidden",
+            portableProfile.environment.yazi.showHidden,
+            machineProfile.environment.yazi.showHidden
+          )
+        )
+      )
+    }
   }
 
   private func validateEnvironment(
