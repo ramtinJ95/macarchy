@@ -188,6 +188,12 @@ extension Macarchy {
       @Flag(help: "Emit machine-readable output.")
       var json = false
 
+      @Flag(
+        help:
+          "Download official metadata into disposable scratch and inspect native formula dependencies; never install."
+      )
+      var packageImpact = false
+
       mutating func run() throws {
         let execution = try UnifiedSetupPlanCommandRunner.live.execute(
           context: profile.context(
@@ -196,7 +202,8 @@ extension Macarchy {
               directoryHint: .isDirectory
             ).standardizedFileURL
           ),
-          json: json
+          json: json,
+          packageImpact: packageImpact
         )
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }

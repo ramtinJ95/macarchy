@@ -53,6 +53,9 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   var packageInventoryReader: @Sendable () -> HomebrewPackageObservation = {
     .unavailable("Package inventory reader is not configured.")
   }
+  var packageImpactReader: @Sendable ([HomebrewPackageIdentity]) -> SetupPackageImpact = {
+    SetupPackageImpact(identities: $0, issue: "Package impact reader is not configured.")
+  }
 
   static let live = UnifiedSetupPlanCommandRunner(
     capabilityIsAvailable: { $0.isAvailable() },
@@ -88,15 +91,24 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
       return try SetupComponentExecution(execution)
     },
-    packageInventoryReader: { HomebrewPackageInventoryReader.live.read() }
+    packageInventoryReader: { HomebrewPackageInventoryReader.live.read() },
+    packageImpactReader: { HomebrewPackageImpactReader().read($0) }
   )
 
   func execute(
     context: UnifiedSetupPlanContext,
-    json: Bool
+    json: Bool,
+    packageImpact: Bool = false
   ) throws -> (output: String, succeeded: Bool) {
     let preparation = try prepare(context: context)
-    return (try inspectedReport(preparation.report).render(json: json), preparation.succeeded)
+    var report = inspectedReport(preparation.report)
+    if packageImpact, let inventory = report.packageInventory {
+      report.packageImpact = packageImpactReader(inventory.proposed.map(\.identity))
+    }
+    return (
+      try report.render(json: json),
+      preparation.succeeded && report.packageImpact?.status != "unavailable"
+    )
   }
 
   /// Enrich read-only output, not apply's desired model or approval comparison.
@@ -764,6 +776,7 @@ struct UnifiedSetupPlanReport: Encodable {
   let components: SetupComponentPlans?
   let diagnostics: [UnifiedSetupPlanDiagnostic]
   var packageInventory: SetupPackageInventory? = nil
+  var packageImpact: SetupPackageImpact? = nil
 
   static func blocked(
     layers: [SetupProfileLayerReport],
@@ -848,6 +861,7 @@ struct UnifiedSetupPlanReport: Encodable {
     }
     lines.append(packages.humanOutput)
     if let packageInventory { lines.append(packageInventory.humanOutput) }
+    if let packageImpact { lines.append(packageImpact.humanOutput) }
     lines.append(files.isEmpty ? "Files: none" : "Files:")
     lines += files.map { "- \($0.id) [\($0.status), \($0.ownership)]: \($0.path)" }
     lines.append(services.isEmpty ? "Services: none" : "Services:")
