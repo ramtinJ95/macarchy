@@ -512,7 +512,8 @@ struct TuicrPresetLifecycleTests {
     )
     let driftedStatus = try fixture.status()
     #expect(!driftedStatus.succeeded)
-    #expect(!fixture.applySyncPreview().succeeded)
+    let preview: (output: String, succeeded: Bool) = (try? fixture.plan()) ?? ("", false)
+    #expect(!preview.succeeded)
     let driftedTeardown = try await fixture.teardown()
     #expect(!driftedTeardown.succeeded)
     #expect(try fixture.link(fixture.themeLink) == fixture.themeDestination.path)
@@ -548,6 +549,33 @@ struct TuicrPresetLifecycleTests {
     #expect(try String(contentsOf: fixture.configuration, encoding: .utf8) == "wrap = true\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.themeLink.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.syntaxLink.path))
+  }
+
+  @Test(arguments: [ExternalTuicrLayout.configurationSymlink, .directorySymlink])
+  func externalTupleSnapshotIncludesBothThemeLinks(layout: ExternalTuicrLayout) throws {
+    let fixture = try TuicrFixture(configuration: nil)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.installExternalTuple(layout: layout, selector: "macarchy-current")
+    let snapshot = try fixture.externalTupleSnapshot()
+
+    #expect(snapshot.entries.count == (layout == .configurationSymlink ? 7 : 9))
+    for (link, destination) in [
+      (fixture.themeLink, fixture.themeDestination),
+      (fixture.syntaxLink, fixture.syntaxDestination),
+    ] {
+      let entry = try #require(snapshot.entries[link.path])
+      #expect(entry.mode & UInt32(S_IFMT) == UInt32(S_IFLNK))
+      #expect(entry.linkDestination == destination.path)
+      let externalLink = fixture.root.appending(
+        path: "dotfiles/tuicr/themes/\(link.lastPathComponent)"
+      )
+      switch layout {
+      case .configurationSymlink:
+        #expect(snapshot.entries[externalLink.path] == nil)
+      case .directorySymlink:
+        #expect(snapshot.entries[externalLink.path] == entry)
+      }
+    }
   }
 
   @Test(arguments: [ExternalTuicrLayout.configurationSymlink, .directorySymlink])
@@ -882,8 +910,8 @@ private struct TuicrFixture {
       external,
       external.appending(path: "config.toml"),
       external.appending(path: "themes", directoryHint: .isDirectory),
-      external.appending(path: "themes/(themeLink.lastPathComponent)"),
-      external.appending(path: "themes/(syntaxLink.lastPathComponent)"),
+      external.appending(path: "themes/\(themeLink.lastPathComponent)"),
+      external.appending(path: "themes/\(syntaxLink.lastPathComponent)"),
     ]
     var entries = [String: ExternalTuicrSnapshot.Entry]()
     for path in paths {
@@ -931,10 +959,6 @@ private struct TuicrFixture {
       consumerPaths: testConsumerPaths(),
       adopt: adopt
     )
-  }
-
-  func applySyncPreview() -> (output: String, succeeded: Bool) {
-    (try? plan()) ?? ("", false)
   }
 
   func status() throws -> (output: String, succeeded: Bool) {
