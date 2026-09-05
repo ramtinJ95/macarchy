@@ -774,18 +774,27 @@ plan retains the new profile for review.
 empty layer.
 
 `setup plan`, `setup status`, and `setup doctor` also report a read-only
-`package_inventory` (nested under `plan` for status/doctor). It separates selected
-providers' proposed package requirements and profile provenance from Homebrew
-installation records and runtime availability. A working external executable
-does not establish a Homebrew installation. Local listings are corroborated
+`package_inventory` (nested under `plan` for status/doctor). It previews 51
+additional standard declarations plus selected provider requirements: 62 packages
+with default providers (47 formulae and 15 casks). Provider opt-outs still remove
+their package requirements. Each package retains any built-in standard declaration
+and contributing provider's profile provenance separately. Standard Slack,
+Spotify and Herdr packages do not enable their optional behavior/theme presets.
+
+The report separates declarations from Homebrew installation records and runtime
+availability; package-only declarations have no runtime probe. A working external
+executable does not establish a Homebrew installation. Local listings are corroborated
 with inert receipts; package Ruby is not loaded, metadata is not refreshed,
 and aliases or old tap identities are not silently resolved. Unavailable,
 ambiguous, or unsupported observations remain explicit.
 
-This inventory is informational: it does not adopt packages, change apply's
-existing installation behavior or core readiness result, import a Brewfile, or
-provision a broader workstation package set. Installed packages outside the
-proposed requirements remain outside this package slice's management scope.
+This is a **preview only**: apply does not yet provision the standard baseline.
+It does not adopt packages, change existing provider dependency installation or
+core readiness, or import a Brewfile. Installer compatibility and dependency
+effects are not verified by this report. Third-party trust remains manual;
+installation does not authorize permissions, accounts, services/helpers,
+model/toolchain downloads or shell hooks. Installed packages outside the proposed
+set remain outside this package slice's management scope.
 
 The machine layer uses the same strict schema as the portable profile. Its
 declared fields replace portable fields individually, arrays replace as whole
