@@ -677,20 +677,8 @@ struct UnifiedSetupApplyTests {
   @Test
   func repeatedApplyPreservesTheSetupThemeAndReportsNoChange() async throws {
     let fixture = try ApplyFixture()
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
-    )
-    let manifest = try ThemeActivator(root: fixture.state).activate(package: package)
-    try SetupCoreOwnershipStore(stateRoot: fixture.state).write(
-      SetupCoreOwnership(themeGenerationID: manifest.generationID, originalAppearance: .light)
-    )
-    defer {
-      _ = try? ThemeActivator(root: fixture.state).deactivate(
-        expectedGenerationID: manifest.generationID,
-        dryRun: false
-      )
-      fixture.cleanup()
-    }
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
     let runner = fixture.runner(
       available: { _ in true },
       theme: { _, _ in
@@ -761,6 +749,17 @@ final class ApplyFixture: @unchecked Sendable {
       atomically: true,
       encoding: .utf8
     )
+  }
+
+  func activateSetupOwnedTheme() throws -> GenerationManifest {
+    let package = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
+    )
+    let manifest = try ThemeActivator(root: state).activate(package: package)
+    try SetupCoreOwnershipStore(stateRoot: state).write(
+      SetupCoreOwnership(themeGenerationID: manifest.generationID, originalAppearance: .light)
+    )
+    return manifest
   }
 
   func runner(
@@ -877,7 +876,13 @@ final class ApplyFixture: @unchecked Sendable {
     )
   }
 
-  func cleanup() {
+  func cleanup(expectedThemeGenerationID: String? = nil) {
+    if let expectedThemeGenerationID {
+      _ = try? ThemeActivator(root: state).deactivate(
+        expectedGenerationID: expectedThemeGenerationID,
+        dryRun: false
+      )
+    }
     try? FileManager.default.removeItem(at: root)
   }
 }

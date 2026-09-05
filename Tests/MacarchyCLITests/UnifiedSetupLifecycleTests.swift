@@ -41,20 +41,8 @@ struct UnifiedSetupLifecycleTests {
   @Test
   func statusRequiresThemeEvidenceBeforeReportingTheManagedCoreAsConverged() throws {
     let fixture = try ApplyFixture()
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
-    )
-    let manifest = try ThemeActivator(root: fixture.state).activate(package: package)
-    try SetupCoreOwnershipStore(stateRoot: fixture.state).write(
-      SetupCoreOwnership(themeGenerationID: manifest.generationID, originalAppearance: .light)
-    )
-    defer {
-      _ = try? ThemeActivator(root: fixture.state).deactivate(
-        expectedGenerationID: manifest.generationID,
-        dryRun: false
-      )
-      fixture.cleanup()
-    }
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
     guard case .ready(let model, _) = try fixture.planner().prepare(context: fixture.context) else {
       Issue.record("Expected a ready unified model")
       return
