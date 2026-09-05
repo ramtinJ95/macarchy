@@ -1,6 +1,28 @@
 import Foundation
 import ThemeCore
 
+extension EnvironmentProfile {
+  var dailyToolPresentation: [String: String] {
+    [
+      "bat": tools.bat ? "enabled" : "disabled",
+      "btop": tools.btop ? "enabled" : "disabled",
+      "eza": tools.eza ? "enabled" : "disabled",
+      "yazi": tools.yazi ? "enabled" : "disabled",
+    ]
+  }
+
+  var presetPresentation: [String: String] {
+    [
+      "codex": presets.codex ? "enabled" : "disabled",
+      "herdr": presets.herdr ? "enabled" : "disabled",
+      "pi": presets.pi ? "enabled" : "disabled",
+      "slack": presets.slack ? "enabled" : "disabled",
+      "spicetify": presets.spicetify ? "enabled" : "disabled",
+      "tuicr": presets.tuicr ? "enabled" : "disabled",
+    ]
+  }
+}
+
 struct EnvironmentPlanCommandRunner: Sendable {
   static let live = EnvironmentPlanCommandRunner(
     prerequisites: .live,
@@ -129,8 +151,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
       promptProvider: composition.profile.prompt.rawValue,
       historyProvider: composition.profile.history.rawValue,
       editorProvider: composition.profile.editor.rawValue,
-      dailyTools: Self.dailyTools(composition.profile),
-      presets: Self.presets(composition.profile),
+      dailyTools: composition.profile.dailyToolPresentation,
+      presets: composition.profile.presetPresentation,
       packagedDefaults: resourcesRoot.path,
       kittyOverride: composition.kittyOverrideURL?.path,
       zshHook: composition.zshHookURL?.path,
@@ -160,26 +182,6 @@ struct EnvironmentPlanCommandRunner: Sendable {
       diagnostics: diagnostics
     )
     return (try report.render(json: json), !blocked)
-  }
-
-  fileprivate static func dailyTools(_ profile: EnvironmentProfile) -> [String: String] {
-    [
-      "bat": profile.tools.bat ? "enabled" : "disabled",
-      "btop": profile.tools.btop ? "enabled" : "disabled",
-      "eza": profile.tools.eza ? "enabled" : "disabled",
-      "yazi": profile.tools.yazi ? "enabled" : "disabled",
-    ]
-  }
-
-  fileprivate static func presets(_ profile: EnvironmentProfile) -> [String: String] {
-    [
-      "codex": profile.presets.codex ? "enabled" : "disabled",
-      "herdr": profile.presets.herdr ? "enabled" : "disabled",
-      "pi": profile.presets.pi ? "enabled" : "disabled",
-      "slack": profile.presets.slack ? "enabled" : "disabled",
-      "spicetify": profile.presets.spicetify ? "enabled" : "disabled",
-      "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
-    ]
   }
 
   private static func actions(
@@ -397,8 +399,8 @@ private struct EnvironmentPlanReport: Encodable {
       promptProvider: environment?.prompt.rawValue,
       historyProvider: environment?.history.rawValue,
       editorProvider: environment?.editor.rawValue,
-      dailyTools: environment.map(EnvironmentPlanCommandRunner.dailyTools) ?? [:],
-      presets: environment.map(EnvironmentPlanCommandRunner.presets) ?? [:],
+      dailyTools: environment?.dailyToolPresentation ?? [:],
+      presets: environment?.presetPresentation ?? [:],
       packagedDefaults: resourcesRoot.path,
       kittyOverride: environment?.kitty.overrideDirectoryURL?.path,
       zshHook: environment?.zsh.hookURL?.path,
