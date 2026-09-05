@@ -115,31 +115,15 @@ struct EnvironmentProviderInspector: Sendable {
       }
       let setupRecords = try SetupOwnershipManager().readRecords(context: setupContext)
       let setupIDs = Set(setupRecords.map(\.id))
-      let legacyTuicrIDs = Set([
-        SetupOwnershipManager.tuicrSelectorID,
-        SetupOwnershipManager.tuicrThemeLinkID,
-        SetupOwnershipManager.tuicrSyntaxLinkID,
-      ])
-      let legacyTuicrOwned = try Self.hasCompleteLegacyIntegration(
-        named: "tuicr", requiredIDs: legacyTuicrIDs, setupIDs: setupIDs)
-      let legacyPiIDs = Set([
-        SetupOwnershipManager.piSelectorID,
-        SetupOwnershipManager.piThemeLinkID,
-      ])
-      let legacyPiOwned = try Self.hasCompleteLegacyIntegration(
-        named: "Pi", requiredIDs: legacyPiIDs, setupIDs: setupIDs)
-      let legacySpicetifyIDs = Set([
-        SetupOwnershipManager.spicetifySelectorsID,
-        SetupOwnershipManager.spicetifyColorLinkID,
-      ])
-      let legacySpicetifyOwned = try Self.hasCompleteLegacyIntegration(
-        named: "Spicetify", requiredIDs: legacySpicetifyIDs, setupIDs: setupIDs)
-      let legacyCodexIDs = Set([
-        SetupOwnershipManager.codexSelectorID,
-        SetupOwnershipManager.codexThemeLinkID,
-      ])
-      let legacyCodexOwned = try Self.hasCompleteLegacyIntegration(
-        named: "Codex", requiredIDs: legacyCodexIDs, setupIDs: setupIDs)
+      let legacyTuicrOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+        named: "tuicr", requiredIDs: EnvironmentLegacyIntegration.tuicrIDs, setupIDs: setupIDs)
+      let legacyPiOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+        named: "Pi", requiredIDs: EnvironmentLegacyIntegration.piIDs, setupIDs: setupIDs)
+      let legacySpicetifyOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+        named: "Spicetify", requiredIDs: EnvironmentLegacyIntegration.spicetifyIDs,
+        setupIDs: setupIDs)
+      let legacyCodexOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+        named: "Codex", requiredIDs: EnvironmentLegacyIntegration.codexIDs, setupIDs: setupIDs)
       let externallyAuthoritativeCodex =
         ownership?.codexEnabled == true
         && ownership?.codex == nil
@@ -1163,20 +1147,6 @@ struct EnvironmentProviderInspector: Sendable {
     case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim:
       false
     }
-  }
-
-  private static func hasCompleteLegacyIntegration(
-    named name: String,
-    requiredIDs: Set<String>,
-    setupIDs: Set<String>
-  ) throws -> Bool {
-    let present = setupIDs.intersection(requiredIDs)
-    guard present.isEmpty || present == requiredIDs else {
-      throw EnvironmentLifecycleError.blocked(
-        "legacy setup-owned \(name) integration is incomplete: \(present.sorted().joined(separator: ", "))"
-      )
-    }
-    return present == requiredIDs
   }
 
   private func inspectCodex(

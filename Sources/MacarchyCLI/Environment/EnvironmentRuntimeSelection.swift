@@ -2,36 +2,19 @@ import Foundation
 import ThemeCore
 
 enum ThemeRuntimeSelection {
-  private static let legacyCodexIDs = Set([
-    SetupOwnershipManager.codexSelectorID,
-    SetupOwnershipManager.codexThemeLinkID,
-  ])
-  private static let legacyPiIDs = Set([
-    SetupOwnershipManager.piSelectorID,
-    SetupOwnershipManager.piThemeLinkID,
-  ])
-  private static let legacySpicetifyIDs = Set([
-    SetupOwnershipManager.spicetifySelectorsID,
-    SetupOwnershipManager.spicetifyColorLinkID,
-  ])
-  private static let legacyTuicrIDs = Set([
-    SetupOwnershipManager.tuicrSelectorID,
-    SetupOwnershipManager.tuicrThemeLinkID,
-    SetupOwnershipManager.tuicrSyntaxLinkID,
-  ])
-
   static func enabledAdapterIDs(stateRoot: URL, homeDirectory: URL) throws -> Set<String> {
     let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
     let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     let setupIDs = Set(try SetupOwnershipManager().readRecords(context: context).map(\.id))
-    let legacyCodex = try hasCompleteLegacyIntegration(
-      named: "Codex", requiredIDs: legacyCodexIDs, setupIDs: setupIDs)
-    let legacyPi = try hasCompleteLegacyIntegration(
-      named: "Pi", requiredIDs: legacyPiIDs, setupIDs: setupIDs)
-    let legacySpicetify = try hasCompleteLegacyIntegration(
-      named: "Spicetify", requiredIDs: legacySpicetifyIDs, setupIDs: setupIDs)
-    let legacyTuicr = try hasCompleteLegacyIntegration(
-      named: "tuicr", requiredIDs: legacyTuicrIDs, setupIDs: setupIDs)
+    let legacyCodex = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+      named: "Codex", requiredIDs: EnvironmentLegacyIntegration.codexIDs, setupIDs: setupIDs)
+    let legacyPi = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+      named: "Pi", requiredIDs: EnvironmentLegacyIntegration.piIDs, setupIDs: setupIDs)
+    let legacySpicetify = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+      named: "Spicetify", requiredIDs: EnvironmentLegacyIntegration.spicetifyIDs, setupIDs: setupIDs
+    )
+    let legacyTuicr = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+      named: "tuicr", requiredIDs: EnvironmentLegacyIntegration.tuicrIDs, setupIDs: setupIDs)
 
     var enabled: Set<String>
     if let ownership {
@@ -264,23 +247,9 @@ enum ThemeRuntimeSelection {
         .readRecords(context: SetupOwnershipManager.Context(homeDirectory: home))
         .map(\.id)
     )
-    let legacyPi = try hasCompleteLegacyIntegration(
-      named: "Pi", requiredIDs: legacyPiIDs, setupIDs: setupIDs)
+    let legacyPi = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
+      named: "Pi", requiredIDs: EnvironmentLegacyIntegration.piIDs, setupIDs: setupIDs)
     return ownership?.records.contains(where: { $0.id == .piTheme }) == true
       || legacyPi
-  }
-
-  private static func hasCompleteLegacyIntegration(
-    named name: String,
-    requiredIDs: Set<String>,
-    setupIDs: Set<String>
-  ) throws -> Bool {
-    let present = setupIDs.intersection(requiredIDs)
-    guard present.isEmpty || present == requiredIDs else {
-      throw EnvironmentLifecycleError.blocked(
-        "legacy setup-owned \(name) integration is incomplete: \(present.sorted().joined(separator: ", "))"
-      )
-    }
-    return present == requiredIDs
   }
 }
