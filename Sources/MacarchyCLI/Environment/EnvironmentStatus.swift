@@ -291,7 +291,7 @@ extension ThemeConsumerPaths {
     ThemeConsumerPaths(
       kittyConfigurationURL: homeDirectory.appending(path: ".config/kitty/kitty.conf"),
       sketchyBarConfigurationURL: sketchyBarConfigurationURL,
-      shellConfigurationURL: homeDirectory.appending(path: ".zshrc").resolvingSymlinksInPath(),
+      shellConfigurationURL: homeDirectory.appending(path: ".zshrc"),
       ezaConfigurationDirectoryURL: homeDirectory.appending(path: ".config/eza"),
       batConfigurationDirectoryURL: homeDirectory.appending(path: ".config/bat"),
       batCacheDirectoryURL: batCacheDirectoryURL,

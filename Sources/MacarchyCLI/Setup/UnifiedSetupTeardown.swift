@@ -511,25 +511,9 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       return result
     }
 
-    let stages = transaction.stages
-    for stageID in stages {
-      let preview = try await run(
-        stageID,
-        context: context,
-        consumerPaths: consumerPaths,
-        desiredAppearance: transaction.desiredAppearance,
-        dryRun: true
-      )
-      guard preview.succeeded else {
-        throw UnifiedSetupTransactionError.recoveryRequired(
-          "\(stageID.rawValue) preflight failed: \(preview.message)"
-        )
-      }
-    }
-
     var result = UnifiedSetupRecoveryResult()
     var remaining = transaction.stages
-    for stageID in stages {
+    for stageID in transaction.stages {
       let execution = try await run(
         stageID,
         context: context,

@@ -217,7 +217,7 @@ package struct EzaAdapter: Sendable {
 
   private func readShellConfiguration() throws -> String {
     try AdapterConfigurationFile.readUTF8(
-      at: shellConfigurationURL,
+      at: shellConfigurationURL.resolvingSymlinksInPath(),
       tooLarge: EzaAdapterError.configurationTooLarge(shellConfigurationURL),
       unreadable: EzaAdapterError.cannotReadShellConfiguration(shellConfigurationURL)
     )

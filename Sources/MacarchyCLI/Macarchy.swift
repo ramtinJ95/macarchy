@@ -115,7 +115,7 @@ struct Macarchy: AsyncParsableCommand {
       ThemeConsumerPaths(
         kittyConfigurationURL: URL(filePath: kittyConfig),
         sketchyBarConfigurationURL: URL(filePath: sketchyBarConfig),
-        shellConfigurationURL: URL(filePath: shellConfig).resolvingSymlinksInPath(),
+        shellConfigurationURL: URL(filePath: shellConfig),
         ezaConfigurationDirectoryURL: URL(filePath: ezaConfigDir, directoryHint: .isDirectory),
         batConfigurationDirectoryURL: URL(filePath: batConfigDir, directoryHint: .isDirectory),
         batCacheDirectoryURL: URL(filePath: batCacheDir, directoryHint: .isDirectory),
