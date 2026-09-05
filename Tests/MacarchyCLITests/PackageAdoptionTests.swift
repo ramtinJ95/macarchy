@@ -1,3 +1,5 @@
+import Darwin
+import Dispatch
 import Foundation
 import Testing
 
@@ -202,6 +204,69 @@ struct PackageAdoptionTests {
     #expect(entries[0].versions == ["1"] && entries[0].receipts.count == 1)
     #expect(entries[1].versions == ["1", "2"] && entries[1].receipts.count == 2)
     #expect((try await fixture.run(runner, targets: targets)).outcome == "no_change")
+  }
+
+  @Test(
+    .enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_PACKAGE_ADOPTION"] == "1")
+  )
+  func realCLIAdoptsOnlyInstalledJQIntoDisposableState() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-real-package-adoption-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = root.appending(path: "profile.toml")
+    try "schema_version = 1\n".write(to: profile, atomically: true, encoding: .utf8)
+    let state = root.appending(path: "state")
+    let executable = URL(filePath: FileManager.default.currentDirectoryPath)
+      .appending(path: ".build/debug/macarchy")
+    let arguments = [
+      "setup", "adopt-packages", "formula:jq", "--state-root", state.path,
+      "--profile", profile.path, "--machine-profile", profile.path, "--json",
+    ]
+    func run(_ extra: [String] = []) throws -> JSONValue {
+      // Keep the deadline without the timed ProcessRunner's wait-before-drain
+      // pipe limit on JSON output.
+      let output = root.appending(path: "cli-output.json")
+      try Data().write(to: output)
+      let handle = try FileHandle(forWritingTo: output)
+      defer { try? handle.close() }
+      let process = Process()
+      process.executableURL = executable
+      process.arguments = arguments + extra
+      process.standardOutput = handle
+      process.standardError = handle
+      let completion = DispatchSemaphore(value: 0)
+      process.terminationHandler = { _ in completion.signal() }
+      try process.run()
+      if completion.wait(timeout: .now() + 30) == .timedOut {
+        process.terminate()
+        if completion.wait(timeout: .now() + 1) == .timedOut {
+          Darwin.kill(process.processIdentifier, SIGKILL)
+        }
+        process.waitUntilExit()
+        throw SetupPackageAdoptionError("Real adoption CLI exceeded 30 seconds.")
+      }
+      let data = try BoundedRegularFile.read(at: output).data
+      try #require(
+        process.terminationStatus == 0, Comment(rawValue: String(decoding: data, as: UTF8.self)))
+      return try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+    let preview = try run()
+    #expect(preview["outcome"]?.string == "preview")
+    #expect(!FileManager.default.fileExists(atPath: state.path))
+    let approval = try #require(preview["approval_digest"]?.string)
+    let receipt = try #require(preview["candidates"]?.array?.first?["receipts"]?.array?.first)
+    #expect(receipt["path"]?.string?.hasPrefix("/opt/homebrew/Cellar/jq/") == true)
+    let adopted = try run(["--approve", approval])
+    #expect(adopted["outcome"]?.string == "adopted")
+    let ledger = state.appending(path: "state/setup/packages.json")
+    let bytes = try Data(contentsOf: ledger)
+    let repeated = try run(["--approve", approval])
+    #expect(repeated["outcome"]?.string == "no_change")
+    #expect(try Data(contentsOf: ledger) == bytes)
+    let decoded = try JSONDecoder().decode(JSONValue.self, from: bytes)
+    #expect(decoded["entries"]?.array?.count == 1)
+    #expect(decoded["entries"]?.array?.first?["identity"]?["name"]?.string == "jq")
   }
 }
 
