@@ -29,7 +29,7 @@ extension EnvironmentProviderInspector {
         EnvironmentEntryInspection(
           id: "spicetify_configuration",
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "legacy_setup",
           message: "The working legacy setup-owned Spicetify selector tuple is preserved.",
           evidence: evidence
@@ -50,8 +50,8 @@ extension EnvironmentProviderInspector {
           id: "spicetify_configuration",
           path: url.path,
           status: exact
-            ? (composition.profile.presets.spicetify ? "managed" : "restoration_required")
-            : "drifted",
+            ? (composition.profile.presets.spicetify ? .managed : .restorationRequired)
+            : .drifted,
           ownership: "macarchy",
           message: exact
             ? (composition.profile.presets.spicetify
@@ -76,7 +76,7 @@ extension EnvironmentProviderInspector {
         EnvironmentEntryInspection(
           id: "spicetify_configuration",
           path: url.path,
-          status: exact ? "external" : "drifted",
+          status: exact ? .external : .drifted,
           ownership: "external_exact",
           message: exact
             ? "The exact Spicetify selector and color-link tuple remains externally owned."
@@ -99,7 +99,7 @@ extension EnvironmentProviderInspector {
         EnvironmentEntryInspection(
           id: "spicetify_configuration",
           path: url.path,
-          status: exact ? "external" : "unsupported",
+          status: exact ? .external : .unsupported,
           ownership: exact ? "external_exact" : "external",
           message: exact
             ? "The complete exact Stow selector and color-link tuple remains externally owned."
@@ -113,7 +113,7 @@ extension EnvironmentProviderInspector {
         EnvironmentEntryInspection(
           id: "spicetify_configuration",
           path: url.path,
-          status: "unsupported",
+          status: .unsupported,
           ownership: "external",
           message:
             "Spicetify config-xpui.ini must already be an ordinary file or a complete exact Stow tuple.",
@@ -136,7 +136,7 @@ extension EnvironmentProviderInspector {
       EnvironmentEntryInspection(
         id: "spicetify_configuration",
         path: url.path,
-        status: "adoption_required",
+        status: .adoptionRequired,
         ownership: "external",
         message:
           "Only current_theme and color_scheme require reviewed adoption; all other Spicetify state remains external.",

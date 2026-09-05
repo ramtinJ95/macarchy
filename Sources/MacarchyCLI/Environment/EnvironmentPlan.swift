@@ -176,7 +176,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
         for: composition.profile,
         adoptionRequired: provider?.adoptionEvidenceDigest != nil,
         restorationRequired: provider?.entries.contains {
-          $0.status == "restoration_required"
+          $0.status == .restorationRequired
         } == true
       ),
       diagnostics: diagnostics
@@ -465,7 +465,7 @@ private struct EnvironmentPlanReport: Encodable {
       "- prerequisite \($0.id) [\($0.status)]: \($0.requirement)"
     }
     for entry in entries {
-      lines.append("- \(entry.id) [\(entry.status)]: \(entry.path) — \(entry.message)")
+      lines.append("- \(entry.id) [\(entry.status.rawValue)]: \(entry.path) — \(entry.message)")
       if let evidence = entry.evidence {
         lines.append(
           "  evidence: kind=\(evidence.kind.rawValue)"

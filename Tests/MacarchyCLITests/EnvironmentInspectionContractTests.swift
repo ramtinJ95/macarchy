@@ -5,6 +5,57 @@ import ThemeCore
 @testable import MacarchyCLI
 
 struct EnvironmentInspectionContractTests {
+  @Test(arguments: [
+    "managed", "external", "drifted", "unsupported", "install_required",
+    "adoption_required", "restoration_required", "migration_required", "authority_required",
+  ])
+  func inspectionStatusesPreserveWireTextAndBlocking(status: String) throws {
+    let entry = EnvironmentEntryInspection(
+      id: "contract", path: "/contract",
+      status: try #require(EnvironmentInspectionStatus(rawValue: status)),
+      ownership: "external_exact",
+      message: "Contract.", evidence: nil)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    #expect(
+      String(decoding: try encoder.encode(entry), as: UTF8.self)
+        == "{\"id\":\"contract\",\"message\":\"Contract.\",\"ownership\":\"external_exact\",\"path\":\"/contract\",\"status\":\"\(status)\"}"
+    )
+    let report = EnvironmentLifecycleReport(
+      operation: "environment_status", outcome: "blocked", mutated: false,
+      profile: nil, providers: [:],
+      generation: EnvironmentGenerationReport(status: "absent", message: "Absent."),
+      transactionStatus: "clear", adoptionEvidenceDigest: nil, prerequisites: [],
+      entries: [entry], theme: [], verification: [], message: "Contract.")
+    #expect(
+      try report.render(json: false) == """
+        Macarchy environment status [blocked]:
+        - Contract.
+        - generation: absent
+        - transaction: clear
+        - contract [\(status)]: /contract — Contract.
+        """)
+    // The report-to-arbitrary-JSON boundary still exposes strings, not enum objects.
+    let json = try jsonObject(report.render(json: true))
+    let entries = try #require(json["entries"] as? [[String: Any]])
+    #expect(entries.first?["status"] as? String == status)
+    #expect(entries.first?["ownership"] as? String == "external_exact")
+
+    for message in [nil, "Blocked independently of entry status."] as [String?] {
+      let inspection = EnvironmentProviderInspection(
+        entries: [entry], ownership: nil, adoptionEvidenceDigest: nil,
+        blockedMessage: message, desiredEntries: [], externalEvidence: [:], createdDirectories: [],
+        proposedBtopOwnership: nil, btopExternalEvidence: nil,
+        proposedCodexOwnership: nil, codexExternalEvidence: nil,
+        proposedHerdrOwnership: nil, herdrExternalEvidence: nil,
+        proposedPiOwnership: nil, piExternalEvidence: nil,
+        proposedSpicetifyOwnership: nil, spicetifyExternalEvidence: nil,
+        proposedTuicrOwnership: nil, tuicrExternalEvidence: nil)
+      #expect(
+        inspection.isBlocked == (message != nil || status == "drifted" || status == "unsupported"))
+    }
+  }
+
   @Test(arguments: [false, true])
   func presentationKeepsSeparatePlanMapsAndFlatStatusMap(selected: Bool) throws {
     let root = FileManager.default.temporaryDirectory.appending(

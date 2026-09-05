@@ -18,7 +18,7 @@ struct SpicetifyPresetLifecycleTests {
     let digest = try #require(inspection.adoptionEvidenceDigest)
     #expect(
       inspection.entries.contains {
-        $0.id == "spicetify_configuration" && $0.status == "adoption_required"
+        $0.id == "spicetify_configuration" && $0.status == .adoptionRequired
       })
     _ = try fixture.apply(enabled: true, inspection: inspection, adoptionDigest: digest)
     let managed = try String(contentsOf: fixture.configuration, encoding: .utf8)

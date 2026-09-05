@@ -37,7 +37,7 @@ extension EnvironmentProviderInspector {
           id: "herdr_configuration",
           path: url.path,
           status: enabling == previouslyEnabled
-            ? (enabling ? "managed" : "external") : "restoration_required",
+            ? (enabling ? .managed : .external) : .restorationRequired,
           ownership: "macarchy",
           message: enabling
             ? "The Herdr theme surface is managed."
@@ -121,8 +121,8 @@ extension EnvironmentProviderInspector {
         id: "herdr_configuration",
         path: url.path,
         status: migratedLegacy
-          ? "migration_required"
-          : (evidence.kind == .absent ? "install_required" : "adoption_required"),
+          ? .migrationRequired
+          : (evidence.kind == .absent ? .installRequired : .adoptionRequired),
         ownership: migratedLegacy ? "legacy_adapter" : "external",
         message: migratedLegacy
           ? "Authenticated complete legacy Herdr ownership will migrate into the environment."
