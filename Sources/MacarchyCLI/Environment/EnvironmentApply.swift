@@ -362,10 +362,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
     adopt: String?,
     json: Bool,
     deferFinalization: Bool = false,
+    enabledThemeAdapterIDs suppliedThemeAdapterIDs: [String]? = nil,
     profile suppliedProfile: PortableProfile? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
     let composition: EnvironmentComposition
+    let enabledThemeAdapterIDs: [String]
     do {
       profile =
         try suppliedProfile
@@ -375,6 +377,21 @@ struct EnvironmentApplyCommandRunner: Sendable {
         profile: profile,
         stateRoot: stateRoot
       )
+      enabledThemeAdapterIDs =
+        suppliedThemeAdapterIDs ?? profile.environment.selectedThemeAdapterIDs
+      let enabled = Set(enabledThemeAdapterIDs)
+      let unknown = enabled.subtracting(ThemeActivationCoordinator.adapterRequirements.keys)
+      guard unknown.isEmpty else {
+        throw EnvironmentLifecycleError.blocked(
+          "unknown enabled theme adapters: \(unknown.sorted().joined(separator: ", "))"
+        )
+      }
+      let missing = Set(profile.environment.selectedThemeAdapterIDs).subtracting(enabled)
+      guard missing.isEmpty, enabled.count == enabledThemeAdapterIDs.count else {
+        throw EnvironmentLifecycleError.blocked(
+          "enabled theme adapters must contain each selected environment adapter exactly once"
+        )
+      }
     } catch {
       return try failure(
         profileURL: profileURL,
@@ -602,9 +619,18 @@ struct EnvironmentApplyCommandRunner: Sendable {
       )
     }
 
-    if theme != nil, !profile.environment.selectedThemeAdapterIDs.isEmpty {
+    var themeAdapterIDs = profile.environment.selectedThemeAdapterIDs
+    if theme != nil, !themeAdapterIDs.isEmpty {
       do {
-        _ = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+        let statusStore = ReconciliationStatusStore(root: stateRoot)
+        if suppliedThemeAdapterIDs != nil,
+          case .current(let record) = try statusStore.read()
+        {
+          let recorded = Set(record.results.map(\.adapterID))
+          themeAdapterIDs = Set(themeAdapterIDs)
+            .union(Set(enabledThemeAdapterIDs).subtracting(recorded))
+            .sorted()
+        }
       } catch {
         return try failure(
           profileURL: profileURL,
@@ -661,7 +687,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           inspection: lockedInspection,
           adoptionDigest: adopt,
           previousThemeGenerationID: previousThemeGenerationID,
-          themeBridges: themeBridgeSnapshot
+          themeBridges: themeBridgeSnapshot,
+          enabledThemeAdapterIDs: enabledThemeAdapterIDs
         )
       }
     } catch {
@@ -695,7 +722,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       if let neovimVerification, neovimVerification.status != "verified" {
         throw EnvironmentLifecycleError.blocked(neovimVerification.message)
       }
-      let nonHerdrAdapterIDs = profile.environment.selectedThemeAdapterIDs.filter {
+      let nonHerdrAdapterIDs = themeAdapterIDs.filter {
         $0 != HerdrAdapter.id
       }
       if let theme, !nonHerdrAdapterIDs.isEmpty {

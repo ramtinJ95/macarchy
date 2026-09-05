@@ -378,7 +378,7 @@ struct DesktopAggregateCommandTests {
           )
         )
       },
-      environment: { _, _, _, _ in
+      environment: { _, _, _, _, _ in
         try applyComponent(
           #"{"operation":"environment_apply","outcome":"failed","mutated":true,"message":"environment failed"}"#,
           succeeded: false

@@ -101,6 +101,55 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test
+  func unifiedApplyKeepsDesktopThemeConsumersEnabled() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.activateTheme()
+    let environmentThemeAdapterIDs = [
+      "atuin", "bat", "btop", "eza", "kitty", "starship", "yazi",
+    ]
+    let enabledThemeAdapterIDs = [
+      "atuin", "bat", "btop", "eza", "kitty", "macos-appearance", "sketchybar", "starship",
+      "wallpaper", "yazi",
+    ]
+    let statusStore = ReconciliationStatusStore(root: fixture.state)
+    _ = try statusStore.persist(
+      manifest: statusStore.activeManifest(),
+      results: environmentThemeAdapterIDs.map(appliedAdapterResult)
+    )
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    let reconciledAdapterIDs = Mutex([String]())
+
+    let apply = try await fixture.apply(
+      adopt: digest,
+      theme: recordingThemeController { adapterIDs in
+        reconciledAdapterIDs.withLock { $0 = adapterIDs }
+      },
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs
+    )
+
+    #expect(apply.succeeded)
+    #expect(reconciledAdapterIDs.withLock { $0 } == enabledThemeAdapterIDs)
+    #expect(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?
+        .enabledThemeAdapterIDs == enabledThemeAdapterIDs
+    )
+    #expect(
+      try ThemeRuntimeSelection.enabledAdapterIDs(
+        stateRoot: fixture.state,
+        homeDirectory: fixture.home
+      ) == Set(enabledThemeAdapterIDs)
+    )
+    guard case .current(let record) = try statusStore.read() else {
+      Issue.record("unified apply left no current reconciliation record")
+      return
+    }
+    #expect(record.results.map(\.adapterID) == enabledThemeAdapterIDs)
+  }
+
+  @Test
   func deferredApplyRetainsItsTransactionUntilExplicitCommit() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1490,7 +1539,8 @@ private struct EnvironmentLifecycleFixture {
     adopt: String?,
     theme: DesktopThemeController? = nil,
     verifier: EnvironmentSessionVerifier = .assumed,
-    neovim: EnvironmentNeovimPreparer = .assumed
+    neovim: EnvironmentNeovimPreparer = .assumed,
+    enabledThemeAdapterIDs: [String]? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     try await EnvironmentApplyCommandRunner(
       prerequisites: prerequisites,
@@ -1505,7 +1555,8 @@ private struct EnvironmentLifecycleFixture {
       homeDirectory: home,
       consumerPaths: testConsumerPaths(),
       adopt: adopt,
-      json: true
+      json: true,
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs
     )
   }
 
