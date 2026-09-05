@@ -320,7 +320,21 @@ struct SpicetifySetupTests {
   }
 
   @Test
-  func setupWaitsForTheSharedSpicetifyLock() throws {
+  func setupWaitsForTheSharedSpicetifyLock() async throws {
+    let executor = BlockingTaskExecutor(label: "spicetify-setup-overlap")
+    // The coordinator also waits synchronously; leave the cooperative pool free
+    // for other tests that must resume before releasing the process-wide lock.
+    try await Task(executorPreference: executor) {
+      try await sharedSpicetifyLockScenario(executor: executor)
+    }.value
+  }
+
+  private func sharedSpicetifyLockScenario(executor: BlockingTaskExecutor) async throws {
+    // Synchronous boundary for bounded gates on the explicitly preferred executor.
+    func wait(_ semaphore: DispatchSemaphore, timeout: DispatchTime) -> DispatchTimeoutResult {
+      semaphore.wait(timeout: timeout)
+    }
+
     let original = Data(
       "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n".utf8
     )
@@ -357,37 +371,45 @@ struct SpicetifySetupTests {
       spotifyVersionProvider: { "1.2.50" }
     )
 
-    Task(executorPreference: BlockingTaskExecutor(label: "spicetify-setup-overlap")) {
-      do {
-        _ = try await adapter.reconciliation().run()
-      } catch {
-        reconciliationError.withLock { $0 = String(describing: error) }
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      // Release even if a prerequisite or file assertion throws. The group joins
+      // both operations before the fixture's deferred removal can run.
+      defer { releaseLock.signal() }
+      group.addTask(executorPreference: executor) { @Sendable in
+        defer { reconciliationFinished.signal() }
+        do {
+          _ = try await adapter.reconciliation().run()
+        } catch {
+          reconciliationError.withLock { $0 = String(describing: error) }
+        }
       }
-      reconciliationFinished.signal()
-    }
-    #expect(refreshEntered.wait(timeout: .now() + 5) == .success)
-    let providerEdit = Data(
-      "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\n".utf8
-    )
-    try providerEdit.write(to: fixture.configuration, options: .atomic)
+      try #require(wait(refreshEntered, timeout: .now() + 5) == .success)
+      let providerEdit = Data(
+        "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\n".utf8
+      )
+      try providerEdit.write(to: fixture.configuration, options: .atomic)
 
-    DispatchQueue.global(qos: .utility).async {
-      setupStarted.signal()
-      do {
-        _ = try fixture.setup(dryRun: false)
-      } catch {
-        setupError.withLock { $0 = String(describing: error) }
+      group.addTask(executorPreference: executor) { @Sendable in
+        defer { setupFinished.signal() }
+        setupStarted.signal()
+        do {
+          _ = try fixture.setup(dryRun: false)
+        } catch {
+          setupError.withLock { $0 = String(describing: error) }
+        }
       }
-      setupFinished.signal()
-    }
-    #expect(setupStarted.wait(timeout: .now() + 5) == .success)
-    #expect(setupFinished.wait(timeout: .now() + 0.1) == .timedOut)
-    #expect(try Data(contentsOf: fixture.configuration) == providerEdit)
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+      try #require(wait(setupStarted, timeout: .now() + 5) == .success)
+      // Started is not proof of a lock attempt; retain the negative window and
+      // the unchanged-file/manifest checks while refresh demonstrably holds it.
+      #expect(wait(setupFinished, timeout: .now() + 0.1) == .timedOut)
+      #expect(try Data(contentsOf: fixture.configuration) == providerEdit)
+      #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
 
-    releaseLock.signal()
-    #expect(reconciliationFinished.wait(timeout: .now() + 5) == .success)
-    #expect(setupFinished.wait(timeout: .now() + 5) == .success)
+      releaseLock.signal()
+      try #require(wait(reconciliationFinished, timeout: .now() + 5) == .success)
+      try #require(wait(setupFinished, timeout: .now() + 5) == .success)
+      try await group.waitForAll()
+    }
     #expect(reconciliationError.withLock { $0 } == nil)
     #expect(setupError.withLock { $0 } == nil)
     #expect(
