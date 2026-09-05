@@ -8,11 +8,15 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   typealias ThemeTeardown =
     @Sendable (URL, SetupCoreOwnership?, ThemeAppearance, Bool) async throws
     -> UnifiedSetupTeardownStage
+  typealias ApplyFinalization =
+    @Sendable (UnifiedSetupPlanContext, Bool) async throws -> UnifiedSetupTeardownStage
 
   let planner: UnifiedSetupPlanCommandRunner
   let environmentTeardown: ComponentTeardown
   let desktopTeardown: ComponentTeardown
   let themeTeardown: ThemeTeardown
+  let environmentApplyFinalization: ApplyFinalization
+  let desktopApplyFinalization: ApplyFinalization
   let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
 
   init(
@@ -20,6 +24,12 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     environmentTeardown: @escaping ComponentTeardown,
     desktopTeardown: @escaping ComponentTeardown,
     themeTeardown: @escaping ThemeTeardown,
+    environmentApplyFinalization: @escaping ApplyFinalization = { _, _ in
+      .noChange("No deferred environment apply exists.")
+    },
+    desktopApplyFinalization: @escaping ApplyFinalization = { _, _ in
+      .noChange("No deferred desktop apply exists.")
+    },
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
     }
@@ -28,6 +38,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     self.environmentTeardown = environmentTeardown
     self.desktopTeardown = desktopTeardown
     self.themeTeardown = themeTeardown
+    self.environmentApplyFinalization = environmentApplyFinalization
+    self.desktopApplyFinalization = desktopApplyFinalization
     self.faultInjector = faultInjector
   }
 
@@ -147,6 +159,48 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         mutated: true,
         outcome: "restored",
         message: "Restored macOS appearance and removed the setup-owned canonical theme.",
+        details: nil
+      )
+    },
+    environmentApplyFinalization: { context, commit in
+      let profile =
+        commit
+        ? try PortableProfileLoader().load(
+          portableAt: context.profileURL,
+          portableRequired: context.profileRequired,
+          machineAt: context.machineProfileURL,
+          machineRequired: context.machineProfileRequired
+        ).profile : nil
+      let changed = try EnvironmentApplyCommandRunner.live.finishDeferredApply(
+        resourcesRoot: commit ? context.environmentResourcesRoot : nil,
+        profile: profile,
+        stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory,
+        commit: commit
+      )
+      return UnifiedSetupTeardownStage(
+        succeeded: true,
+        mutated: changed,
+        outcome: changed ? (commit ? "committed" : "restored") : "no_change",
+        message: changed
+          ? "The deferred environment apply was \(commit ? "committed" : "rolled back")."
+          : "No deferred environment apply exists.",
+        details: nil
+      )
+    },
+    desktopApplyFinalization: { context, commit in
+      let changed = try DesktopApplyCommandRunner.live.finishDeferredAggregateApply(
+        stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory,
+        commit: commit
+      )
+      return UnifiedSetupTeardownStage(
+        succeeded: true,
+        mutated: changed,
+        outcome: changed ? (commit ? "committed" : "restored") : "no_change",
+        message: changed
+          ? "The deferred desktop apply was \(commit ? "committed" : "rolled back")."
+          : "No deferred desktop apply exists.",
         details: nil
       )
     }
@@ -430,15 +484,34 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     }
     let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
-    if transaction.phase == .committing {
+    if transaction.operation == .apply {
+      var result = UnifiedSetupRecoveryResult()
+      var remaining = transaction.stages
+      let commit = transaction.phase == .committing
+      for stageID in transaction.stages.reversed() {
+        let execution = try await finishApply(
+          stageID,
+          context: context,
+          desiredAppearance: transaction.desiredAppearance,
+          commit: commit
+        )
+        guard execution.succeeded else {
+          throw UnifiedSetupTransactionError.recoveryRequired(
+            "\(stageID.rawValue) \(commit ? "commit" : "rollback") failed: \(execution.message)"
+          )
+        }
+        result.record(execution, for: stageID)
+        remaining.removeAll { $0 == stageID }
+        try store.write(transaction.replacing(stages: remaining))
+      }
+      if !commit {
+        try store.write(transaction.replacing(phase: .committing, stages: []))
+      }
       try store.remove()
-      return UnifiedSetupRecoveryResult()
+      return result
     }
 
-    let stages: [UnifiedSetupTransactionStage] =
-      transaction.operation == .apply
-      ? Array(transaction.stages.reversed())
-      : transaction.stages
+    let stages = transaction.stages
     for stageID in stages {
       let preview = try await run(
         stageID,
@@ -470,12 +543,10 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         )
       }
       result.record(execution, for: stageID)
-      if transaction.operation == .teardown {
-        switch stageID {
-        case .environment: try faultInjector(.environmentTornDown)
-        case .desktop: try faultInjector(.desktopTornDown)
-        case .theme: try faultInjector(.themeTornDown)
-        }
+      switch stageID {
+      case .environment: try faultInjector(.environmentTornDown)
+      case .desktop: try faultInjector(.desktopTornDown)
+      case .theme: try faultInjector(.themeTornDown)
       }
       remaining.removeAll { $0 == stageID }
       try store.write(transaction.replacing(stages: remaining))
@@ -483,6 +554,28 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     try store.write(transaction.replacing(phase: .committing, stages: []))
     try store.remove()
     return result
+  }
+
+  private func finishApply(
+    _ stageID: UnifiedSetupTransactionStage,
+    context: UnifiedSetupPlanContext,
+    desiredAppearance: ThemeAppearance,
+    commit: Bool
+  ) async throws -> UnifiedSetupTeardownStage {
+    switch stageID {
+    case .environment:
+      return try await environmentApplyFinalization(context, commit)
+    case .desktop:
+      return try await desktopApplyFinalization(context, commit)
+    case .theme:
+      guard !commit else { return .noChange("The setup-owned theme is committed.") }
+      return try await themeTeardown(
+        context.stateRoot,
+        SetupCoreOwnershipStore(stateRoot: context.stateRoot).read(),
+        desiredAppearance,
+        false
+      )
+    }
   }
 
   private func run(

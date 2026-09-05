@@ -101,6 +101,104 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test
+  func deferredApplyRetainsItsTransactionUntilExplicitCommit() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    let runner = EnvironmentApplyCommandRunner(
+      prerequisites: .assumed,
+      theme: nil,
+      verifier: .assumed
+    )
+    let apply = try await runner.execute(
+      resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
+      adopt: digest,
+      json: true,
+      deferFinalization: true
+    )
+
+    #expect(apply.succeeded)
+    #expect(try jsonObject(apply.output)["transaction_status"] as? String == "pending_commit")
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() != nil)
+    let committed = try runner.finishDeferredApply(
+      resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
+      profile: PortableProfileLoader().load(at: fixture.profile, required: true),
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      commit: true
+    )
+
+    #expect(committed)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readTransaction() == nil)
+    #expect(try fixture.status().succeeded)
+  }
+
+  @Test
+  func deferredManagedUpdateRollsBackToThePriorEnvironmentAuthority() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    let previousOwnership = try #require(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()
+    )
+    let previousCurrent = try #require(
+      try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination()
+    )
+    let originalProfile = try String(contentsOf: fixture.profile, encoding: .utf8)
+    try """
+    schema_version = 1
+    [editor]
+    provider = "disabled"
+    [kitty]
+    font_size = 15
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    let runner = EnvironmentApplyCommandRunner(
+      prerequisites: .assumed,
+      theme: nil,
+      verifier: .assumed
+    )
+    let update = try await runner.execute(
+      resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
+      adopt: nil,
+      json: true,
+      deferFinalization: true
+    )
+
+    #expect(update.succeeded)
+    #expect(
+      try runner.finishDeferredApply(
+        stateRoot: fixture.state,
+        homeDirectory: fixture.home,
+        commit: false
+      )
+    )
+    #expect(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == previousOwnership
+    )
+    #expect(
+      try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination()
+        == previousCurrent
+    )
+    try originalProfile.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    #expect(try fixture.status().succeeded)
+  }
+
+  @Test
   func teardownRestoresReconciliationEvidenceForTheDefaultConsumerSet() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

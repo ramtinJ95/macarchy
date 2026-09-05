@@ -522,6 +522,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     mutated: Bool = false,
     successMessage: String? = nil,
     json: Bool,
+    deferredApplyTransaction: Bool = false,
     profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
@@ -550,9 +551,11 @@ struct EnvironmentStatusCommandRunner: Sendable {
     let prerequisiteState = prerequisites.inspect(profile.environment, homeDirectory)
     let transactionStatus: String
     do {
-      transactionStatus =
-        try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil
-        ? "clear" : "recovery_required"
+      if try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil {
+        transactionStatus = "clear"
+      } else {
+        transactionStatus = deferredApplyTransaction ? "pending_commit" : "recovery_required"
+      }
     } catch {
       transactionStatus = "invalid"
     }
@@ -600,7 +603,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
     }
     let converged =
       !missing && providerReady && generationReady && themeReady
-      && verificationReady && transactionStatus == "clear"
+      && verificationReady
+      && (transactionStatus == "clear" || transactionStatus == "pending_commit")
     let outcome =
       converged
       ? (successfulOutcome ?? "converged")
