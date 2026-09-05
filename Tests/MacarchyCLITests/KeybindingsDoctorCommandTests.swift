@@ -42,7 +42,9 @@ struct KeybindingsDoctorCommandTests {
       json: true
     )
     let expectedHuman = try fixtureContents("CLI/keybindings-doctor.txt")
+      .trimmingCharacters(in: .newlines)
     let expectedJSON = try fixtureContents("CLI/keybindings-doctor.json")
+      .trimmingCharacters(in: .newlines)
 
     #expect(human.succeeded)
     #expect(json.succeeded)
@@ -117,14 +119,5 @@ struct KeybindingsDoctorCommandTests {
         "catalog.load [failure]: /fixtures/keybindings.toml:"
       )
     )
-  }
-
-  private func fixtureContents(_ path: String) throws -> String {
-    let root = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Fixtures", directoryHint: .isDirectory)
-    return try String(contentsOf: root.appending(path: path), encoding: .utf8)
-      .trimmingCharacters(in: .newlines)
   }
 }
