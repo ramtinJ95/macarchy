@@ -144,7 +144,6 @@ struct UnifiedSetupLifecycleTests {
       calls.withLock { $0 }
         == [
           "environment:preview", "desktop:preview", "theme:preview",
-          "environment:preview", "desktop:preview", "theme:preview",
           "environment:apply", "desktop:apply", "theme:apply",
         ]
     )
@@ -165,6 +164,9 @@ struct UnifiedSetupLifecycleTests {
       planner: fixture.planner(),
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun ? "preview" : "apply")") }
+        if dryRun, didInterrupt.withLock({ $0 }) {
+          Issue.record("Recovery must resume the component transaction instead of previewing it")
+        }
         return try teardownComponent(dryRun: dryRun, mutated: !dryRun, previewOutcome: "ready")
       },
       desktopTeardown: { _, _, dryRun in
@@ -219,8 +221,7 @@ struct UnifiedSetupLifecycleTests {
       calls.withLock { $0 }
         == [
           "environment:preview", "desktop:preview", "theme:preview",
-          "environment:preview", "desktop:preview", "theme:preview", "environment:apply",
-          "environment:preview", "desktop:preview", "theme:preview",
+          "environment:apply",
           "environment:apply", "desktop:apply", "theme:apply",
         ]
     )

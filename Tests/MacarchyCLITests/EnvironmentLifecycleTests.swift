@@ -8,17 +8,22 @@ import Testing
 
 struct EnvironmentLifecycleTests {
   @Test
-  func managedConsumerPathsResolveTheOwnedShellLink() throws {
+  func consumerPathsKeepTheLogicalShellPathAcrossLinkChanges() throws {
     let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-environment-consumer-paths-(UUID().uuidString)",
+      path: "macarchy-environment-consumer-paths-\(UUID().uuidString)",
       directoryHint: .isDirectory
     )
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
     let generated = state.appending(path: "environment/current/zsh/.zshrc")
+    let restored = root.appending(path: "dotfiles/.zshrc")
     try FileManager.default.createDirectory(
       at: generated.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try FileManager.default.createDirectory(
+      at: restored.deletingLastPathComponent(),
       withIntermediateDirectories: true
     )
     try "export MACARCHY_MANAGED_SESSION=1\n".write(
@@ -26,17 +31,26 @@ struct EnvironmentLifecycleTests {
       atomically: true,
       encoding: .utf8
     )
+    try "# restored\n".write(to: restored, atomically: true, encoding: .utf8)
+    let shell = home.appending(path: ".zshrc")
     try FileManager.default.createSymbolicLink(
-      at: home.appending(path: ".zshrc"),
+      at: shell,
       withDestinationURL: generated
     )
 
-    let paths = testConsumerPaths().managedEnvironmentPaths(
+    let managedPaths = testConsumerPaths().managedEnvironmentPaths(
       stateRoot: state,
       homeDirectory: home
     )
+    let options = try Macarchy.StateOptions.parse(["--shell-config", shell.path])
+    let before = options.consumerPaths.shellConfigurationURL
 
-    #expect(paths.shellConfigurationURL == generated)
+    try FileManager.default.removeItem(at: shell)
+    try FileManager.default.createSymbolicLink(at: shell, withDestinationURL: restored)
+
+    #expect(managedPaths.shellConfigurationURL == shell)
+    #expect(before == shell)
+    #expect(options.consumerPaths.shellConfigurationURL == before)
   }
 
   @Test

@@ -85,6 +85,42 @@ extension AdapterContractTests {
   }
 
   @Test
+  func ezaReadsAnExternallyLinkedShellConfiguration() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = try Self.consumerPaths(
+      root: root,
+      kittyConfigurationURL: root.appending(path: "kitty.conf"),
+      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
+    )
+    let external = root.appending(path: "dotfiles/.zshrc")
+    try FileManager.default.createDirectory(
+      at: external.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try "export EZA_CONFIG_DIR=\"\(paths.ezaConfigurationDirectoryURL.path)\"\n".write(
+      to: external,
+      atomically: true,
+      encoding: .utf8
+    )
+    try FileManager.default.removeItem(at: paths.shellConfigurationURL)
+    try FileManager.default.createSymbolicLink(
+      at: paths.shellConfigurationURL,
+      withDestinationURL: external
+    )
+    let eza = EzaAdapter(
+      root: root,
+      configurationDirectoryURL: paths.ezaConfigurationDirectoryURL,
+      shellConfigurationURL: paths.shellConfigurationURL,
+      executableURL: URL(filePath: "/test/eza"),
+      controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+    )
+
+    #expect(eza.inspection().status == .ready)
+  }
+
+  @Test
   func invocationBoundAdaptersExposeUnavailableControlsAndRejectedCacheBuilds() async throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
