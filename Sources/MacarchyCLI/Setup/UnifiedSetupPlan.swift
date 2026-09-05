@@ -416,52 +416,36 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   ) throws -> [UnifiedSetupFile] {
     var result = [UnifiedSetupFile]()
     if profile.desktop.provider == .yabaiSkhd {
-      let keybindings = try components.desktop.report.required("keybindings", at: "desktop")
+      let keybindings = try components.desktop.keybindingPlan
       result.append(
         UnifiedSetupFile(
           id: "skhd_entry",
           path: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
-          status: try keybindings.requiredString("provider_status", at: "desktop.keybindings"),
-          ownership: try keybindings.requiredString("ownership", at: "desktop.keybindings")
+          status: try keybindings.providerStatus,
+          ownership: try keybindings.ownership
         )
       )
     }
-    let yabaiProvider = try components.desktop.report.requiredObject(
-      "provider",
-      at: "desktop"
-    )
+    let yabaiProvider = try components.desktop.yabaiPlan
     result.append(
       UnifiedSetupFile(
         id: "yabai_entry",
-        path: try yabaiProvider.requiredString("entry_point", at: "desktop.provider"),
-        status: try yabaiProvider.requiredString("status", at: "desktop.provider"),
-        ownership: try yabaiProvider.requiredString("ownership", at: "desktop.provider")
+        path: try yabaiProvider.entryPoint,
+        status: try yabaiProvider.status,
+        ownership: try yabaiProvider.ownership
       )
     )
-    if let sketchyBar = components.desktop.report["sketchybar"] {
-      let provider = try sketchyBar.requiredObject("provider", at: "desktop.sketchybar")
+    if let provider = try components.desktop.sketchyBarPlan {
       result.append(
         UnifiedSetupFile(
           id: "sketchybar_entry",
-          path: try provider.requiredString("entry_point", at: "desktop.sketchybar.provider"),
-          status: try provider.requiredString("status", at: "desktop.sketchybar.provider"),
-          ownership: try provider.requiredString("ownership", at: "desktop.sketchybar.provider")
+          path: try provider.entryPoint,
+          status: try provider.status,
+          ownership: try provider.ownership
         )
       )
     }
-    let entries = try components.environment.report.requiredArray("entries", at: "environment")
-    for (index, entry) in entries.enumerated() {
-      let path = "environment.entries[\(index)]"
-      let object = try entry.requiredObject(at: path)
-      result.append(
-        UnifiedSetupFile(
-          id: try object.requiredString("id", at: path),
-          path: try object.requiredString("path", at: path),
-          status: try object.requiredString("status", at: path),
-          ownership: try object.requiredString("ownership", at: path)
-        )
-      )
-    }
+    result += try components.environment.environmentFiles
     return result.sorted { lhs, rhs in
       lhs.path == rhs.path ? lhs.id < rhs.id : lhs.path < rhs.path
     }
@@ -475,36 +459,26 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       guard status == "adoption_required", let digest else { return }
       result.append(UnifiedSetupAdoptionEvidence(id: id, digest: digest))
     }
-    let keybindings = try components.desktop.report.required("keybindings", at: "desktop")
+    let keybindings = try components.desktop.keybindingPlan
     append(
       "keybindings",
-      status: try keybindings.requiredString("provider_status", at: "desktop.keybindings"),
-      digest: try keybindings.optionalString(
-        "adoption_evidence_digest",
-        at: "desktop.keybindings"
-      )
+      status: try keybindings.providerStatus,
+      digest: try keybindings.adoptionEvidenceDigest
     )
-    let yabaiProvider = try components.desktop.report.requiredObject("provider", at: "desktop")
+    let yabaiProvider = try components.desktop.yabaiPlan
     append(
       "yabai",
-      status: try yabaiProvider.requiredString("status", at: "desktop.provider"),
-      digest: try yabaiProvider.optionalString("adoption_evidence_digest", at: "desktop.provider")
+      status: try yabaiProvider.status,
+      digest: try yabaiProvider.adoptionEvidenceDigest
     )
-    if let sketchyBar = components.desktop.report["sketchybar"] {
-      let provider = try sketchyBar.requiredObject("provider", at: "desktop.sketchybar")
+    if let provider = try components.desktop.sketchyBarPlan {
       append(
         "sketchybar",
-        status: try provider.requiredString("status", at: "desktop.sketchybar.provider"),
-        digest: try provider.optionalString(
-          "adoption_evidence_digest",
-          at: "desktop.sketchybar.provider"
-        )
+        status: try provider.status,
+        digest: try provider.adoptionEvidenceDigest
       )
     }
-    if let digest = try components.environment.report.optionalString(
-      "adoption_evidence_digest",
-      at: "environment"
-    ) {
+    if let digest = try components.environment.environmentAdoptionEvidenceDigest {
       result.append(UnifiedSetupAdoptionEvidence(id: "environment", digest: digest))
     }
     return result
@@ -544,18 +518,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
     }
     for (componentID, component) in components.all {
-      let actions = try component.report.requiredArray("actions", at: componentID)
-      for (index, action) in actions.enumerated() {
-        let path = "\(componentID).actions[\(index)]"
-        let object = try action.requiredObject(at: path)
-        result.append(
-          UnifiedSetupAction(
-            stage: componentID,
-            id: try object.requiredString("id", at: path),
-            message: try object.requiredString("message", at: path)
-          )
-        )
-      }
+      result += try component.plannedActions(in: componentID)
     }
     return result
   }
@@ -584,6 +547,114 @@ struct SetupComponentPlans: Encodable, Sendable {
 
   var all: [(String, SetupComponentExecution)] {
     [("desktop", desktop), ("environment", environment)]
+  }
+}
+
+// Read-only projections keep the original report authoritative. Validate only at
+// the consuming stage: keybinding ownership, for example, is unused when disabled.
+extension SetupComponentExecution {
+  fileprivate var keybindingPlan: SetupKeybindingPlanProjection {
+    get throws {
+      SetupKeybindingPlanProjection(value: try report.required("keybindings", at: "desktop"))
+    }
+  }
+
+  fileprivate var yabaiPlan: SetupProviderPlanProjection {
+    get throws {
+      SetupProviderPlanProjection(
+        object: try report.requiredObject("provider", at: "desktop"),
+        path: "desktop.provider"
+      )
+    }
+  }
+
+  fileprivate var sketchyBarPlan: SetupProviderPlanProjection? {
+    get throws {
+      guard let sketchyBar = report["sketchybar"] else { return nil }
+      return SetupProviderPlanProjection(
+        object: try sketchyBar.requiredObject("provider", at: "desktop.sketchybar"),
+        path: "desktop.sketchybar.provider"
+      )
+    }
+  }
+
+  fileprivate var environmentFiles: [UnifiedSetupFile] {
+    get throws {
+      try report.requiredArray("entries", at: "environment").enumerated().map { index, entry in
+        try entry.setupFile(at: "environment.entries[\(index)]")
+      }
+    }
+  }
+
+  fileprivate var environmentAdoptionEvidenceDigest: String? {
+    get throws { try report.optionalString("adoption_evidence_digest", at: "environment") }
+  }
+
+  fileprivate func plannedActions(in componentID: String) throws -> [UnifiedSetupAction] {
+    try report.requiredArray("actions", at: componentID).enumerated().map { index, action in
+      try action.setupAction(in: componentID, at: "\(componentID).actions[\(index)]")
+    }
+  }
+}
+
+private struct SetupKeybindingPlanProjection {
+  let value: JSONValue
+
+  // Deliberately do not require an object: the existing keybinding accessor
+  // reports a missing field (not "not an object") for a non-object value.
+  var providerStatus: String {
+    get throws { try value.requiredString("provider_status", at: "desktop.keybindings") }
+  }
+
+  var ownership: String {
+    get throws { try value.requiredString("ownership", at: "desktop.keybindings") }
+  }
+
+  var adoptionEvidenceDigest: String? {
+    get throws { try value.optionalString("adoption_evidence_digest", at: "desktop.keybindings") }
+  }
+}
+
+private struct SetupProviderPlanProjection {
+  let object: [String: JSONValue]
+  let path: String
+
+  var entryPoint: String {
+    get throws { try object.requiredString("entry_point", at: path) }
+  }
+
+  var status: String {
+    get throws { try object.requiredString("status", at: path) }
+  }
+
+  var ownership: String {
+    get throws { try object.requiredString("ownership", at: path) }
+  }
+
+  var adoptionEvidenceDigest: String? {
+    get throws { try object.optionalString("adoption_evidence_digest", at: path) }
+  }
+}
+
+extension JSONValue {
+  fileprivate func setupFile(at path: String) throws -> UnifiedSetupFile {
+    let object = try requiredObject(at: path)
+    return UnifiedSetupFile(
+      id: try object.requiredString("id", at: path),
+      path: try object.requiredString("path", at: path),
+      status: try object.requiredString("status", at: path),
+      ownership: try object.requiredString("ownership", at: path)
+    )
+  }
+
+  fileprivate func setupAction(in componentID: String, at path: String) throws -> UnifiedSetupAction
+  {
+    let object = try requiredObject(at: path)
+    return UnifiedSetupAction(
+      stage: componentID,
+      id: try object.requiredString("id", at: path),
+      message: try object.requiredString("message", at: path)
+    )
   }
 }
 
