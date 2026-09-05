@@ -1,6 +1,10 @@
 import Foundation
 import Testing
 
+let herdrReloadSuccess =
+  #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"#
+  + #""status":"applied","type":"config_reload"}}"#
+
 let repositoryRoot = URL(filePath: #filePath)
   .deletingLastPathComponent()
   .deletingLastPathComponent()

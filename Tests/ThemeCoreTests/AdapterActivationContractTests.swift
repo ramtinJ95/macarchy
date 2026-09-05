@@ -4,10 +4,6 @@ import Testing
 
 @testable import ThemeCore
 
-private let activationHerdrReloadSuccess =
-  #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"#
-  + #""status":"applied","type":"config_reload"}}"#
-
 extension AdapterContractTests {
   @Test
   func activationPublishesBeforeAdapterProcessesAndPersistsTheirResults() async throws {
@@ -75,7 +71,7 @@ extension AdapterContractTests {
           ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
           : ProcessResult(
             terminationStatus: 0,
-            output: activationHerdrReloadSuccess
+            output: herdrReloadSuccess
           )
       }
       if request.executableURL == PiAdapter.liveExecutableURL,
@@ -572,7 +568,7 @@ extension AdapterContractTests {
             ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
             : ProcessResult(
               terminationStatus: 0,
-              output: activationHerdrReloadSuccess
+              output: herdrReloadSuccess
             )
         }
         if request.executableURL == NeovimAdapter.liveExecutableURL {
