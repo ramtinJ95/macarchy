@@ -788,13 +788,41 @@ with inert receipts; package Ruby is not loaded, metadata is not refreshed,
 and aliases or old tap identities are not silently resolved. Unavailable,
 ambiguous, or unsupported observations remain explicit.
 
-This is a **preview only**: apply does not yet provision the standard baseline.
-It does not adopt packages, change existing provider dependency installation or
-core readiness, or import a Brewfile. Installer compatibility and dependency
-effects are not verified by this report. Third-party trust remains manual;
+The inventory is **read-only**: apply does not yet provision the standard baseline
+or implicitly adopt packages. Existing provider dependency installation and core
+readiness are unchanged; no Brewfile is imported. Installer compatibility and
+dependency effects are not verified by this report. Third-party trust remains manual;
 installation does not authorize permissions, accounts, services/helpers,
 model/toolchain downloads or shell hooks. Installed packages outside the proposed
-set remain outside this package slice's management scope.
+set are not implicitly adopted.
+
+`setup adopt-packages` explicitly records ownership of named, already installed
+declarations without installing, upgrading or removing anything:
+
+```sh
+macarchy setup adopt-packages formula:jq cask:slack --json
+macarchy setup adopt-packages formula:jq cask:slack --approve <reviewed-digest> --json
+```
+
+Output is scoped to the named packages, including their receipt evidence and
+declaration provenance; use plan/status/doctor for the full package inventory.
+The first command only previews. Approval binds the named declarations, receipt
+contents and file identities, current adoption ledger, profile paths and local
+home/state context. Macarchy revalidates under the setup lifecycle lock before
+atomically publishing `state/setup/packages.json`. No unrelated theme/provider
+setup runs, and the existing provider `--adoption-file` contract is unchanged.
+An identical repeat is a no-op; dependencies and undeclared packages are never
+implicitly adopted. `--profile`, `--machine-profile` and `--state-root` select the
+same inputs used by other setup commands.
+
+Package inventory reports `adopted`, `unadopted`, `missing`, `changed` or `unknown`.
+Missing, ambiguous and changed evidence blocks adoption; this slice does not
+overwrite an existing adoption after installation drift. Records remain visible
+when a declaration leaves the profile, and configuration teardown retains them.
+An interrupted confirmation after publication reports `commit_unverified` rather
+than pretending to roll back; inspect the inventory before retrying. Receipt
+evidence does not verify installed file integrity or waive later install/update/
+prune impact gates. Homebrew can change independently of Macarchy's setup lock.
 
 `setup plan --package-impact` explicitly downloads official metadata into
 disposable scratch storage and adds `package_impact` to the report. Homebrew's
