@@ -444,7 +444,7 @@ struct EnvironmentLifecycleReport: Encodable {
       )
     }
     for entry in entries {
-      lines.append("- \(entry.id) [\(entry.status)]: \(entry.path) — \(entry.message)")
+      lines.append("- \(entry.id) [\(entry.status.rawValue)]: \(entry.path) — \(entry.message)")
     }
     for adapter in theme {
       lines.append(
@@ -588,7 +588,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     let missing = prerequisiteState.contains { $0.status == "missing" }
     let providerReady =
       !provider.isBlocked
-      && provider.entries.allSatisfy { ["managed", "external"].contains($0.status) }
+      && provider.entries.allSatisfy { [.managed, .external].contains($0.status) }
     let generationReady =
       profile.environment.isEntirelyDisabled
       ? generation.status == .absent

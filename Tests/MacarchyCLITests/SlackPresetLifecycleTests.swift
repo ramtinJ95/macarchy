@@ -14,18 +14,18 @@ struct SlackPresetLifecycleTests {
       try fixture.preset.payload(stateRoot: fixture.state) == "#1e1e2e,#cba6f7,#a6e3a1,#f38ba8\n")
 
     let planned = fixture.preset.entry(stateRoot: fixture.state, applied: false)
-    #expect(planned.status == "authority_required")
+    #expect(planned.status == .authorityRequired)
     #expect(planned.message.contains(SlackAdapter.importInstructions))
     #expect(planned.message.contains("#1e1e2e,#cba6f7,#a6e3a1,#f38ba8"))
     let applied = fixture.preset.entry(stateRoot: fixture.state, applied: true)
-    #expect(applied.status == "external")
+    #expect(applied.status == .external)
     #expect(applied.message.contains("Manual import is required for each workspace"))
 
     for version in ["4.51.190", "4.51", "4.51.191-beta", "unknown"] {
       let rejected = try SlackPresetFixture(version: version)
       defer { try? FileManager.default.removeItem(at: rejected.root) }
       #expect(
-        rejected.preset.entry(stateRoot: rejected.state, applied: false).status == "unsupported")
+        rejected.preset.entry(stateRoot: rejected.state, applied: false).status == .unsupported)
     }
     let newer = try SlackPresetFixture(version: "99.0.0")
     defer { try? FileManager.default.removeItem(at: newer.root) }
@@ -47,7 +47,7 @@ struct SlackPresetLifecycleTests {
     let enabled = try fixture.composition(enabled: true)
     let enabledInspection = inspector.inspect(
       composition: enabled, homeDirectory: fixture.home, stateRoot: fixture.state)
-    #expect(enabledInspection.entries.contains { $0.status == "authority_required" })
+    #expect(enabledInspection.entries.contains { $0.status == .authorityRequired })
     _ = try coordinator.applyLocked(
       composition: enabled,
       inspection: enabledInspection,

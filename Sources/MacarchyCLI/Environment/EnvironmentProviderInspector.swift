@@ -6,7 +6,7 @@ import ThemeCore
 struct EnvironmentEntryInspection: Encodable, Equatable, Sendable {
   let id: String
   let path: String
-  let status: String
+  let status: EnvironmentInspectionStatus
   let ownership: String
   let message: String
   let evidence: EnvironmentEntryEvidence?
@@ -39,7 +39,7 @@ struct EnvironmentProviderInspection: Sendable {
 
   var isBlocked: Bool {
     blockedMessage != nil
-      || entries.contains { $0.status == "drifted" || $0.status == "unsupported" }
+      || entries.contains { $0.status == .drifted || $0.status == .unsupported }
   }
 }
 
@@ -193,7 +193,7 @@ struct EnvironmentProviderInspector: Sendable {
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
               path: entry.url.path,
-              status: "external",
+              status: .external,
               ownership: "external_exact",
               message: "The exact provider seam remains externally owned.",
               evidence: captured
@@ -206,7 +206,7 @@ struct EnvironmentProviderInspector: Sendable {
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
               path: entry.url.path,
-              status: "unsupported",
+              status: .unsupported,
               ownership: "external",
               message: "A divergent Spicetify color.ini is never adopted or replaced.",
               evidence: captured
@@ -220,7 +220,7 @@ struct EnvironmentProviderInspector: Sendable {
               EnvironmentEntryInspection(
                 id: entry.id.rawValue,
                 path: entry.url.path,
-                status: "unsupported",
+                status: .unsupported,
                 ownership: "external",
                 message: "The provider entry is below a symlink-owned parent.",
                 evidence: captured
@@ -245,7 +245,7 @@ struct EnvironmentProviderInspector: Sendable {
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
               path: entry.url.path,
-              status: exact ? "managed" : "drifted",
+              status: exact ? .managed : .drifted,
               ownership: "macarchy",
               message: exact
                 ? "The provider entry is managed." : "The managed provider entry drifted.",
@@ -270,7 +270,7 @@ struct EnvironmentProviderInspector: Sendable {
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
               path: entry.url.path,
-              status: "unsupported",
+              status: .unsupported,
               ownership: "external",
               message:
                 "Spicetify's Themes/text directory must already exist; Macarchy never owns it.",
@@ -288,7 +288,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: entry.id.rawValue,
             path: entry.url.path,
-            status: absent ? "install_required" : "adoption_required",
+            status: absent ? .installRequired : .adoptionRequired,
             ownership: "external",
             message: absent
               ? "The provider entry will be installed."
@@ -343,7 +343,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: entry.id.rawValue,
             path: entry.url.path,
-            status: "external",
+            status: .external,
             ownership: "legacy_setup",
             message: "The working legacy setup-owned Codex theme link is preserved.",
             evidence: nil
@@ -361,7 +361,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: entry.id.rawValue,
             path: entry.url.path,
-            status: "external",
+            status: .external,
             ownership: "external_exact",
             message: "The exact Codex tuple remains externally owned until disablement.",
             evidence: captured
@@ -409,7 +409,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: entry.id.rawValue,
             path: entry.url.path,
-            status: "external",
+            status: .external,
             ownership: "legacy_setup",
             message: "The working legacy setup-owned Pi link is preserved.",
             evidence: nil
@@ -427,7 +427,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: entry.id.rawValue,
             path: entry.url.path,
-            status: "external",
+            status: .external,
             ownership: "external_exact",
             message: "The exact Pi tuple remains externally owned until disablement.",
             evidence: captured
@@ -460,7 +460,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: entry.id.rawValue,
             path: entry.url.path,
-            status: "external",
+            status: .external,
             ownership: "legacy_setup",
             message: "The working legacy setup-owned Spicetify color link is preserved.",
             evidence: nil
@@ -478,7 +478,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: entry.id.rawValue,
             path: entry.url.path,
-            status: "external",
+            status: .external,
             ownership: "external_exact",
             message: "The exact Spicetify tuple remains externally owned until disablement.",
             evidence: captured
@@ -498,7 +498,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentSlackPreset.manualEntryID,
             path: EnvironmentSlackPreset.bundleURL.path,
-            status: "restoration_required",
+            status: .restorationRequired,
             ownership: "macarchy_authority",
             message: "Slack manual-import authority will be removed without touching Slack.",
             evidence: nil
@@ -527,7 +527,7 @@ struct EnvironmentProviderInspector: Sendable {
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
               path: entry.url.path,
-              status: "external",
+              status: .external,
               ownership: "legacy_setup",
               message: "The working legacy setup-owned tuicr link is preserved.",
               evidence: nil
@@ -548,7 +548,7 @@ struct EnvironmentProviderInspector: Sendable {
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
               path: entry.url.path,
-              status: "external",
+              status: .external,
               ownership: "external_exact",
               message: "The exact tuicr tuple remains externally owned until disablement.",
               evidence: captured
@@ -571,7 +571,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: record.id.rawValue,
             path: record.publicPath,
-            status: exact ? "restoration_required" : "drifted",
+            status: exact ? .restorationRequired : .drifted,
             ownership: "macarchy",
             message: exact
               ? "The disabled provider entry will be restored."
@@ -581,7 +581,7 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
 
-      let adoptionRequired = inspections.contains { $0.status == "adoption_required" }
+      let adoptionRequired = inspections.contains { $0.status == .adoptionRequired }
       return EnvironmentProviderInspection(
         entries: inspections.sorted { $0.id < $1.id },
         ownership: ownership,
@@ -1176,7 +1176,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.codexConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "legacy_setup",
           message: "The working legacy setup-owned Codex integration is preserved.",
           evidence: evidence
@@ -1200,8 +1200,8 @@ struct EnvironmentProviderInspector: Sendable {
           id: EnvironmentEntryID.codexConfiguration.rawValue,
           path: url.path,
           status: exact
-            ? (composition.profile.presets.codex ? "managed" : "restoration_required")
-            : "drifted",
+            ? (composition.profile.presets.codex ? .managed : .restorationRequired)
+            : .drifted,
           ownership: "macarchy",
           message: exact
             ? (composition.profile.presets.codex
@@ -1227,7 +1227,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.codexConfiguration.rawValue,
             path: url.path,
-            status: "drifted",
+            status: .drifted,
             ownership: "external_exact",
             message: "The externally owned Codex tuple drifted.",
             evidence: evidence
@@ -1238,7 +1238,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.codexConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "external_exact",
           message: "The exact Codex tuple remains externally owned until disablement.",
           evidence: evidence
@@ -1260,7 +1260,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.codexConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "A divergent Codex selector is behind an externally owned symlink.",
             evidence: evidence
@@ -1275,7 +1275,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.codexConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "The externally owned Codex selector requires the exact theme link.",
             evidence: evidence
@@ -1286,7 +1286,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.codexConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "external_exact",
           message: "The exact Codex selector and theme link remain externally owned.",
           evidence: evidence
@@ -1300,7 +1300,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.codexConfiguration.rawValue,
             path: url.path,
-            status: "external",
+            status: .external,
             ownership: "external_exact",
             message: "The exact Codex [tui].theme key remains externally owned.",
             evidence: evidence
@@ -1312,7 +1312,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.codexConfiguration.rawValue,
           path: url.path,
-          status: "adoption_required",
+          status: .adoptionRequired,
           ownership: "external",
           message: "The existing Codex [tui].theme key requires reviewed adoption.",
           evidence: evidence
@@ -1324,7 +1324,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.codexConfiguration.rawValue,
           path: url.path,
-          status: "install_required",
+          status: .installRequired,
           ownership: "external",
           message: "Minimal Codex [tui].theme configuration will be installed.",
           evidence: evidence
@@ -1343,7 +1343,7 @@ struct EnvironmentProviderInspector: Sendable {
       EnvironmentEntryInspection(
         id: EnvironmentEntryID.codexConfiguration.rawValue,
         path: url.path,
-        status: "unsupported",
+        status: .unsupported,
         ownership: "external",
         message: "The Codex configuration cannot be safely adopted.",
         evidence: evidence
@@ -1432,7 +1432,7 @@ struct EnvironmentProviderInspector: Sendable {
       return EnvironmentEntryInspection(
         id: "eza_environment",
         path: shell.path,
-        status: "unsupported",
+        status: .unsupported,
         ownership: "external",
         message: "Eza requires an external EZA_CONFIG_DIR directive when zsh is disabled.",
         evidence: evidence
@@ -1450,7 +1450,7 @@ struct EnvironmentProviderInspector: Sendable {
     return EnvironmentEntryInspection(
       id: "eza_environment",
       path: shell.path,
-      status: exact ? "external" : "unsupported",
+      status: exact ? .external : .unsupported,
       ownership: "external_exact",
       message: exact
         ? "The external shell selects the managed Eza configuration directory."
@@ -1501,7 +1501,7 @@ struct EnvironmentProviderInspector: Sendable {
           id: EnvironmentEntryID.btopConfiguration.rawValue,
           path: url.path,
           status: exact
-            ? (composition.profile.tools.btop ? "managed" : "restoration_required") : "drifted",
+            ? (composition.profile.tools.btop ? .managed : .restorationRequired) : .drifted,
           ownership: "macarchy",
           message: exact
             ? (composition.profile.tools.btop
@@ -1536,7 +1536,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.btopConfiguration.rawValue,
             path: url.path,
-            status: "external",
+            status: .external,
             ownership: "external_exact",
             message: "The exact btop keys remain externally owned.",
             evidence: evidence
@@ -1548,7 +1548,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.btopConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "Divergent btop keys are below a symlink-owned provider directory.",
             evidence: evidence
@@ -1567,7 +1567,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.btopConfiguration.rawValue,
           path: url.path,
-          status: "adoption_required",
+          status: .adoptionRequired,
           ownership: "external",
           message: "The existing btop keys require reviewed adoption.",
           evidence: evidence
@@ -1586,7 +1586,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.btopConfiguration.rawValue,
           path: url.path,
-          status: "install_required",
+          status: .installRequired,
           ownership: "external",
           message: "The btop baseline will be installed.",
           evidence: evidence
@@ -1597,7 +1597,7 @@ struct EnvironmentProviderInspector: Sendable {
       EnvironmentEntryInspection(
         id: EnvironmentEntryID.btopConfiguration.rawValue,
         path: url.path,
-        status: "unsupported",
+        status: .unsupported,
         ownership: "external",
         message: "The btop configuration cannot be safely adopted.",
         evidence: evidence
@@ -1634,7 +1634,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.piConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "legacy_setup",
           message: "The working legacy setup-owned Pi integration is preserved.",
           evidence: evidence
@@ -1660,7 +1660,7 @@ struct EnvironmentProviderInspector: Sendable {
           id: EnvironmentEntryID.piConfiguration.rawValue,
           path: url.path,
           status: exact
-            ? (composition.profile.presets.pi ? "managed" : "restoration_required") : "drifted",
+            ? (composition.profile.presets.pi ? .managed : .restorationRequired) : .drifted,
           ownership: "macarchy",
           message: exact
             ? (composition.profile.presets.pi
@@ -1686,7 +1686,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.piConfiguration.rawValue,
             path: url.path,
-            status: "drifted",
+            status: .drifted,
             ownership: "external_exact",
             message: "The externally owned Pi tuple drifted.",
             evidence: evidence
@@ -1697,7 +1697,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.piConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "external_exact",
           message: "The exact Pi tuple remains externally owned until disablement.",
           evidence: evidence
@@ -1720,7 +1720,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.piConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "A divergent Pi selector is behind an externally owned symlink.",
             evidence: evidence
@@ -1735,7 +1735,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.piConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "The externally owned Pi selector requires the exact watched theme link.",
             evidence: evidence
@@ -1746,7 +1746,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.piConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "external_exact",
           message: "The exact Pi selector and watched theme link remain externally owned.",
           evidence: evidence
@@ -1760,7 +1760,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.piConfiguration.rawValue,
             path: url.path,
-            status: "external",
+            status: .external,
             ownership: "external_exact",
             message: "The exact Pi theme member remains externally owned.",
             evidence: evidence
@@ -1772,7 +1772,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.piConfiguration.rawValue,
           path: url.path,
-          status: "adoption_required",
+          status: .adoptionRequired,
           ownership: "external",
           message: "The existing Pi theme member requires reviewed adoption.",
           evidence: evidence
@@ -1784,7 +1784,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.piConfiguration.rawValue,
           path: url.path,
-          status: "install_required",
+          status: .installRequired,
           ownership: "external",
           message: "Minimal Pi settings containing only the theme member will be installed.",
           evidence: evidence
@@ -1797,7 +1797,7 @@ struct EnvironmentProviderInspector: Sendable {
       EnvironmentEntryInspection(
         id: EnvironmentEntryID.piConfiguration.rawValue,
         path: url.path,
-        status: "unsupported",
+        status: .unsupported,
         ownership: "external",
         message: "Pi settings cannot be safely adopted.",
         evidence: evidence
@@ -1861,7 +1861,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.tuicrConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "legacy_setup",
           message: "The working legacy setup-owned tuicr integration is preserved.",
           evidence: evidence
@@ -1885,8 +1885,8 @@ struct EnvironmentProviderInspector: Sendable {
           id: EnvironmentEntryID.tuicrConfiguration.rawValue,
           path: url.path,
           status: exact
-            ? (composition.profile.presets.tuicr ? "managed" : "restoration_required")
-            : "drifted",
+            ? (composition.profile.presets.tuicr ? .managed : .restorationRequired)
+            : .drifted,
           ownership: "macarchy",
           message: exact
             ? (composition.profile.presets.tuicr
@@ -1912,7 +1912,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.tuicrConfiguration.rawValue,
             path: url.path,
-            status: "drifted",
+            status: .drifted,
             ownership: "external_exact",
             message: "The externally owned tuicr tuple drifted.",
             evidence: evidence
@@ -1923,7 +1923,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.tuicrConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "external_exact",
           message: "The exact tuicr tuple remains externally owned until disablement.",
           evidence: evidence
@@ -1946,7 +1946,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.tuicrConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "A divergent tuicr selector is behind an externally owned symlink.",
             evidence: evidence
@@ -1963,7 +1963,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.tuicrConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "The externally owned tuicr selector requires both exact canonical links.",
             evidence: evidence
@@ -1974,7 +1974,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.tuicrConfiguration.rawValue,
           path: url.path,
-          status: "external",
+          status: .external,
           ownership: "external_exact",
           message: "The exact tuicr selector and canonical links remain externally owned.",
           evidence: evidence
@@ -1988,7 +1988,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.tuicrConfiguration.rawValue,
             path: url.path,
-            status: "external",
+            status: .external,
             ownership: "external_exact",
             message: "The exact tuicr theme key remains externally owned.",
             evidence: evidence
@@ -2000,7 +2000,7 @@ struct EnvironmentProviderInspector: Sendable {
           EnvironmentEntryInspection(
             id: EnvironmentEntryID.tuicrConfiguration.rawValue,
             path: url.path,
-            status: "unsupported",
+            status: .unsupported,
             ownership: "external",
             message: "A divergent tuicr selector is below a symlink-owned directory.",
             evidence: evidence
@@ -2012,7 +2012,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.tuicrConfiguration.rawValue,
           path: url.path,
-          status: "adoption_required",
+          status: .adoptionRequired,
           ownership: "external",
           message: "The existing tuicr theme key requires reviewed adoption.",
           evidence: evidence
@@ -2030,7 +2030,7 @@ struct EnvironmentProviderInspector: Sendable {
         EnvironmentEntryInspection(
           id: EnvironmentEntryID.tuicrConfiguration.rawValue,
           path: url.path,
-          status: "install_required",
+          status: .installRequired,
           ownership: "external",
           message: "The minimal tuicr theme selector will be installed.",
           evidence: evidence
@@ -2047,7 +2047,7 @@ struct EnvironmentProviderInspector: Sendable {
       EnvironmentEntryInspection(
         id: EnvironmentEntryID.tuicrConfiguration.rawValue,
         path: url.path,
-        status: "unsupported",
+        status: .unsupported,
         ownership: "external",
         message: "The tuicr configuration cannot be safely adopted.",
         evidence: evidence

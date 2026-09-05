@@ -289,7 +289,7 @@ struct HerdrPresetLifecycleTests {
     let inspection = try fixture.inspection(enabled: true)
     #expect(inspection.adoptionEvidenceDigest == nil)
     #expect(
-      inspection.entries.first { $0.id == "herdr_configuration" }?.status == "migration_required")
+      inspection.entries.first { $0.id == "herdr_configuration" }?.status == .migrationRequired)
     _ = try fixture.apply(enabled: true, inspection: inspection)
 
     let managedOwnership = try #require(

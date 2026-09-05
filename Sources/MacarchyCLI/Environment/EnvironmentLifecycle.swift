@@ -529,7 +529,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       stateRoot: stateRoot
     )
     guard !inspection.isBlocked,
-      inspection.entries.allSatisfy({ ["managed", "external"].contains($0.status) })
+      inspection.entries.allSatisfy({ [.managed, .external].contains($0.status) })
     else {
       throw EnvironmentLifecycleError.drift(
         inspection.blockedMessage ?? "provider verification failed before transaction completion"

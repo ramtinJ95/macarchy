@@ -54,7 +54,7 @@ struct EnvironmentSlackPreset: Sendable {
       return EnvironmentEntryInspection(
         id: Self.manualEntryID,
         path: bundleURL.path,
-        status: applied ? "external" : "authority_required",
+        status: applied ? .external : .authorityRequired,
         ownership: "external",
         message: applied
           ? "Slack \(version) is compatible. Manual import is required for each workspace: \(SlackAdapter.importInstructions) Payload: \(payload)"
@@ -65,7 +65,7 @@ struct EnvironmentSlackPreset: Sendable {
       return EnvironmentEntryInspection(
         id: Self.manualEntryID,
         path: bundleURL.path,
-        status: "unsupported",
+        status: .unsupported,
         ownership: "external",
         message: String(describing: error),
         evidence: nil

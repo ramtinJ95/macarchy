@@ -6,6 +6,31 @@ import Testing
 struct EnvironmentPlanCommandTests {
   private let runner = EnvironmentPlanCommandRunner()
 
+  @Test(arguments: [false, true])
+  func textPlanPreservesInspectionStatusWireSpelling(existing: Bool) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let home = root.appending(path: "home")
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    let shell = home.appending(path: ".zshrc")
+    if existing {
+      try "# external shell\n".write(to: shell, atomically: true, encoding: .utf8)
+    }
+    let execution = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+      resourcesRoot: resourcesRoot,
+      profileURL: root.appending(path: "missing-profile.toml"), profileRequired: false,
+      stateRoot: root.appending(path: "state"), homeDirectory: home, json: false)
+    let status = existing ? "adoption_required" : "install_required"
+    let message =
+      existing
+      ? "The provider entry must be adopted with reviewed evidence."
+      : "The provider entry will be installed."
+    #expect(execution.succeeded)
+    #expect(
+      execution.output.components(separatedBy: "\n").contains(
+        "- zsh [\(status)]: \(shell.path) — \(message)"))
+  }
+
   @Test
   func absentProfilePlansCompleteDefaultSessionWithoutMutation() throws {
     let root = try temporaryDirectory()
