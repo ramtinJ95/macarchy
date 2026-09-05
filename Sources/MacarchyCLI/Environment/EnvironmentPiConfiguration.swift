@@ -28,8 +28,13 @@ struct EnvironmentPiDocument {
   )
 
   static func matchesManaged(_ data: Data, source: URL) throws -> Bool {
-    guard let member = try member(in: data, source: source) else { return false }
-    let document = try parsed(data, source: source)
+    try matchesManaged(parsed(data, source: source))
+  }
+
+  private static func matchesManaged(_ document: StrictJSONObjectDocument) -> Bool {
+    guard let member = document.members.first(where: { $0.key == PiAdapter.selectionKey }) else {
+      return false
+    }
     return document.bytes[member.keyRange] == Array("\"\(PiAdapter.selectionKey)\"".utf8)[...]
       && document.bytes[member.valueRange] == Array("\"\(PiAdapter.themeName)\"".utf8)[...]
   }
@@ -80,7 +85,7 @@ struct EnvironmentPiDocument {
   ) throws -> Data {
     let document = try parsed(data, source: source)
     guard let managed = document.members.first(where: { $0.key == PiAdapter.selectionKey }),
-      try matchesManaged(data, source: source)
+      matchesManaged(document)
     else { throw EnvironmentLifecycleError.drift(source.path) }
     let candidate: Data
     if let original = ownership.originalMember {
