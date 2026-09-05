@@ -101,7 +101,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     packageImpact: Bool = false
   ) throws -> (output: String, succeeded: Bool) {
     let preparation = try prepare(context: context)
-    var report = inspectedReport(preparation.report)
+    var report = inspectedReport(preparation.report, context: context)
     if packageImpact, let inventory = report.packageInventory {
       report.packageImpact = packageImpactReader(inventory.proposed.map(\.identity))
     }
@@ -113,14 +113,52 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
   /// Enrich read-only output, not apply's desired model or approval comparison.
   /// Receipt uncertainty is visible here but does not change the legacy mutator.
-  func inspectedReport(_ report: UnifiedSetupPlanReport) -> UnifiedSetupPlanReport {
+  func inspectedReport(
+    _ report: UnifiedSetupPlanReport, context: UnifiedSetupPlanContext
+  ) -> UnifiedSetupPlanReport {
     guard report.theme != nil else { return report }
     var report = report
     report.packageInventory = SetupPackageInventory(
       capabilities: report.capabilities, fieldOrigins: report.fieldOrigins,
-      layers: report.layers, observation: packageInventoryReader()
+      layers: report.layers, observation: packageInventoryReader(),
+      adoptionState: SetupPackageAdoptionStore(
+        stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
+      ).inspect()
     )
     return report
+  }
+
+  /// The same profile and package selection, without theme/provider planning or
+  /// mutation. Package adoption must not require unrelated full setup to pass.
+  func packageInventory(
+    context: UnifiedSetupPlanContext, adoptionState: SetupPackageAdoptionState
+  ) throws -> SetupPackageInventory {
+    let layered = try loadProfile(context: context)
+    return SetupPackageInventory(
+      capabilities: setupCapabilities(
+        profile: layered.profile, homeDirectory: context.homeDirectory),
+      fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue),
+      layers: layered.layers.map(SetupProfileLayerReport.init),
+      observation: packageInventoryReader(), adoptionState: adoptionState
+    )
+  }
+
+  private func loadProfile(context: UnifiedSetupPlanContext) throws -> LayeredPortableProfile {
+    try PortableProfileLoader().load(
+      portableAt: context.profileURL, portableRequired: context.profileRequired,
+      machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired
+    )
+  }
+
+  private func setupCapabilities(profile: PortableProfile, homeDirectory: URL) -> [SetupCapability]
+  {
+    DependencyProfile.personal(homeDirectory: homeDirectory).selectedForSetup(profile).map {
+      SetupCapability(
+        id: $0.id, category: $0.category,
+        status: capabilityIsAvailable($0) ? .present : .missing,
+        requirement: $0.requirement, remediation: $0.remediation
+      )
+    }
   }
 
   func prepare(context: UnifiedSetupPlanContext) throws -> UnifiedSetupPreparation {
@@ -141,12 +179,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
     let layered: LayeredPortableProfile
     do {
-      layered = try PortableProfileLoader().load(
-        portableAt: context.profileURL,
-        portableRequired: context.profileRequired,
-        machineAt: context.machineProfileURL,
-        machineRequired: context.machineProfileRequired
-      )
+      layered = try loadProfile(context: context)
     } catch {
       return .blocked(
         UnifiedSetupPlanReport.blocked(
@@ -173,17 +206,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     }
 
     let profile = layered.profile
-    let capabilities = DependencyProfile.personal(homeDirectory: context.homeDirectory)
-      .selectedForSetup(profile)
-      .map { capability in
-        SetupCapability(
-          id: capability.id,
-          category: capability.category,
-          status: capabilityIsAvailable(capability) ? .present : .missing,
-          requirement: capability.requirement,
-          remediation: capability.remediation
-        )
-      }
+    let capabilities = setupCapabilities(profile: profile, homeDirectory: context.homeDirectory)
     let model = UnifiedSetupDesiredModel(
       profile: profile,
       layers: layered.layers.map(SetupProfileLayerReport.init),

@@ -154,7 +154,7 @@ struct SetupPlanProjectionTests {
     #expect(
       try components.desktop.report["unused"].map(renderJSON) == desktop["unused"].map(renderJSON))
     #expect(
-      try runner.inspectedReport(report).render(json: true)
+      try runner.inspectedReport(report, context: fixture.context).render(json: true)
         == runner.execute(context: fixture.context, json: true).output)
 
     let invalidStatus = fixture.runner(desktop: ["keybindings": .object([:])])

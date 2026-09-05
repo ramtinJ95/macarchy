@@ -218,7 +218,7 @@ struct PackageInventoryTests {
     var planner = fixture.planner(available: { _ in false })
     planner.packageInventoryReader = { HomebrewPackageObservation(packages: [], issues: []) }
     let prepared = try planner.prepare(context: fixture.context).report
-    let report = planner.inspectedReport(prepared)
+    let report = planner.inspectedReport(prepared, context: fixture.context)
     let packages = try #require(report.packageInventory)
     let expectedFormulae = Set([
       "asmvik/formulae/skhd", "asmvik/formulae/yabai", "atuin", "azure-cli", "bat", "btop",
@@ -285,7 +285,8 @@ struct PackageInventoryTests {
             versions: ["1"], receiptPaths: [], issue: nil)
         ], issues: [])
     }
-    let report = planner.inspectedReport(try planner.prepare(context: fixture.context).report)
+    let report = planner.inspectedReport(
+      try planner.prepare(context: fixture.context).report, context: fixture.context)
     let packages = try #require(report.packageInventory)
     #expect(packages.proposed.count == 63)  // Only spicetify-cli adds a package.
     for (name, field, layer, source) in [
@@ -322,7 +323,7 @@ struct PackageInventoryTests {
     """.write(to: fixture.context.profileURL, atomically: true, encoding: .utf8)
     let planner = fixture.planner()
     let preparation = try planner.prepare(context: fixture.context)
-    let report = planner.inspectedReport(preparation.report)
+    let report = planner.inspectedReport(preparation.report, context: fixture.context)
     let packages = try #require(report.packageInventory)
     #expect(!packages.proposed.contains { ["bat", "sketchybar"].contains($0.identity.token) })
     #expect(packages.proposed.count == 60)
@@ -393,7 +394,7 @@ struct PackageInventoryTests {
   }
 }
 
-private struct InventoryFixture {
+struct InventoryFixture {
   let root: URL
 
   init() throws {

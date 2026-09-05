@@ -2,7 +2,8 @@ import Foundation
 import ThemeCore
 
 /// Desired declarations, provider requirements and installation records are not an
-/// applied package ledger. Nothing in this report authorizes package mutation.
+/// applied package ledger. Adoption is read from its separate persisted evidence;
+/// nothing in this report authorizes Homebrew mutation.
 struct SetupPackageInventory: Encodable, Sendable {
   struct Requirement: Encodable, Sendable {
     let capabilityID: String
@@ -20,7 +21,21 @@ struct SetupPackageInventory: Encodable, Sendable {
     let requirements: [Requirement]
     let homebrewStatus: String
     let externallySatisfiedCapabilities: [String]
-    let adoption = "not_applied"
+    let adoption: String
+
+    var declarations: [SetupPackageAdoptionLedger.Declaration] {
+      let standard: [SetupPackageAdoptionLedger.Declaration] =
+        standardDeclaration.map {
+          [.init(source: $0.source, layer: $0.layer, sourcePath: nil, selectionField: nil)]
+        } ?? []
+      return standard
+        + requirements.map {
+          .init(
+            source: $0.capabilityID, layer: $0.layer, sourcePath: $0.sourcePath,
+            selectionField: $0.selectionField
+          )
+        }
+    }
   }
 
   struct StandardDeclaration: Encodable, Sendable {
@@ -72,15 +87,23 @@ struct SetupPackageInventory: Encodable, Sendable {
   let nonHomebrewRequirements: [Requirement]
   let outsideProposedRequirements: [HomebrewInstalledPackage]
   let unresolvedInstallations: [HomebrewInstalledPackage]
+  struct RetainedAdoption: Encodable, Sendable {
+    let entry: SetupPackageAdoptionLedger.Entry
+    let status: String
+  }
+  let retainedAdoptionsOutsideProposed: [RetainedAdoption]
+  let adoptionIssue: String?
   let scope = "standard_baseline_and_provider_requirements"
-  let authority = "observation_only_no_package_adoption"
+  let authority = "read_only_inventory_no_homebrew_mutation"
   let provisioning = "preview_only_existing_apply_unchanged"
 
   init(
     capabilities: [SetupCapability], fieldOrigins: [String: String],
-    layers: [SetupProfileLayerReport], observation: HomebrewPackageObservation
+    layers: [SetupProfileLayerReport], observation: HomebrewPackageObservation,
+    adoptionState: SetupPackageAdoptionState = .available(nil)
   ) {
     self.observation = observation
+    adoptionIssue = adoptionState.issue
     var groups = [HomebrewPackageIdentity: [Requirement]]()
     var nonHomebrew = [Requirement]()
     for capability in capabilities.sorted(by: { $0.id < $1.id }) {
@@ -117,11 +140,22 @@ struct SetupPackageInventory: Encodable, Sendable {
       } else {
         status = "missing"
       }
+      let adoption: String
+      if adoptionState.issue != nil {
+        adoption = "unknown"
+      } else if let entry = adoptionState.ledger?.entries.first(where: { $0.identity == identity })
+      {
+        adoption = entry.status(in: observation)
+      } else {
+        adoption =
+          status == "installed" ? "unadopted" : (status == "missing" ? "missing" : "unknown")
+      }
       return Package(
         identity: identity, standardDeclaration: Self.standardDeclarations[identity],
         requirements: requirements, homebrewStatus: status,
         externallySatisfiedCapabilities: status == "missing"
-          ? requirements.filter { $0.runtime == .present }.map(\.capabilityID) : []
+          ? requirements.filter { $0.runtime == .present }.map(\.capabilityID) : [],
+        adoption: adoption
       )
     }
     nonHomebrewRequirements = nonHomebrew
@@ -131,12 +165,16 @@ struct SetupPackageInventory: Encodable, Sendable {
     }.sorted { $0.identity!.key < $1.identity!.key }
     unresolvedInstallations = observation.packages.filter { $0.identity == nil }
       .sorted { "\($0.kind.rawValue):\($0.token)" < "\($1.kind.rawValue):\($1.token)" }
+    retainedAdoptionsOutsideProposed = (adoptionState.ledger?.entries ?? [])
+      .filter { !identities.contains($0.identity) }
+      .map { RetainedAdoption(entry: $0, status: $0.status(in: observation)) }
   }
 
   var humanOutput: String {
     var lines = [
       "Package inventory [\(observation.status); standard baseline and provider requirements]:",
-      "- Preview only; no package adoption applied. Apply does not yet provision the standard baseline.",
+      "- Read-only inventory; adoption requires setup adopt-packages and explicit approval.",
+      "- Apply does not yet provision the standard baseline or implicitly adopt packages.",
       "- Existing provider dependency installation is unchanged; installer compatibility is not verified here.",
       "- Package-only declarations do not enable behavior/theme presets or prove runtime readiness.",
       "- Packages do not authorize permissions, accounts, services/helpers, model/toolchain downloads or shell hooks.",
@@ -144,7 +182,7 @@ struct SetupPackageInventory: Encodable, Sendable {
       "- Runtime availability is separate; it does not identify which installation supplies an executable.",
     ]
     for package in proposed {
-      lines.append("- \(package.identity.key) [\(package.homebrewStatus); not adopted]")
+      lines.append("- \(package.identity.key) [\(package.homebrewStatus); \(package.adoption)]")
       if let declaration = package.standardDeclaration {
         lines.append(
           "  - standard_baseline from \(declaration.layer): package only; runtime not assessed")
@@ -176,7 +214,7 @@ struct SetupPackageInventory: Encodable, Sendable {
       }
     }
     lines.append(
-      "- Outside proposed requirements (unmanaged by this package slice): "
+      "- Outside current proposed requirements (not implicitly adopted): "
         + (outsideProposedRequirements.isEmpty
           ? "none"
           : outsideProposedRequirements.compactMap { $0.identity?.key }.joined(separator: ", ")))
@@ -185,6 +223,12 @@ struct SetupPackageInventory: Encodable, Sendable {
         "- Unresolved \(package.kind.rawValue):\(package.token): \(package.issue ?? "unknown identity")"
       )
     }
+    for retained in retainedAdoptionsOutsideProposed {
+      lines.append(
+        "- Retained adoption outside current declarations: \(retained.entry.identity.key) [\(retained.status)]; no prune authorized."
+      )
+    }
+    if let adoptionIssue { lines.append("- Adoption evidence unavailable: \(adoptionIssue)") }
     lines += observation.issues.map { "- Inventory unavailable: \($0)" }
     return lines.joined(separator: "\n")
   }

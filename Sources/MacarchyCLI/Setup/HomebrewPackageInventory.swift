@@ -1,8 +1,9 @@
+import Darwin
 import Foundation
 import ThemeCore
 
-struct HomebrewPackageIdentity: Hashable, Encodable, Sendable {
-  enum Kind: String, CaseIterable, Encodable, Sendable {
+struct HomebrewPackageIdentity: Hashable, Codable, Sendable {
+  enum Kind: String, CaseIterable, Codable, Sendable {
     case formula, cask
   }
 
@@ -33,6 +34,15 @@ struct HomebrewInstalledPackage: Encodable, Sendable {
   let versions: [String]
   let receiptPaths: [String]
   let issue: String?
+  var receipts: [HomebrewReceiptEvidence] = []
+}
+
+/// Installation-record evidence, not a hash of installed package contents.
+struct HomebrewReceiptEvidence: Codable, Equatable, Sendable {
+  let path: String
+  let digest: String
+  let device: Int32
+  let inode: UInt64
 }
 
 struct HomebrewPackageObservation: Encodable, Sendable {
@@ -118,6 +128,7 @@ struct HomebrewPackageInventoryReader: Sendable {
     -> HomebrewInstalledPackage
   {
     var receiptPaths = [String]()
+    var receipts = [HomebrewReceiptEvidence]()
     do {
       let base = prefix.appending(path: kind == .formula ? "Cellar" : "Caskroom")
       let directory = base.appending(path: token)
@@ -136,7 +147,9 @@ struct HomebrewPackageInventoryReader: Sendable {
           try requireDirectory(keg)
           let receipt = keg.appending(path: "INSTALL_RECEIPT.json")
           receiptPaths.append(receipt.path)
-          identities.insert(try identity(at: receipt, kind: kind, token: token).identity)
+          let record = try identity(at: receipt, kind: kind, token: token)
+          identities.insert(record.identity)
+          receipts.append(record.evidence)
           versions.append(keg.lastPathComponent)
         }
       } else {
@@ -145,6 +158,7 @@ struct HomebrewPackageInventoryReader: Sendable {
         let receipt = metadata.appending(path: "INSTALL_RECEIPT.json")
         receiptPaths.append(receipt.path)
         let record = try identity(at: receipt, kind: kind, token: token)
+        receipts.append(record.evidence)
         guard let version = record.version, !version.isEmpty,
           version != ".", version != "..", !version.contains("/"),
           !version.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
@@ -158,7 +172,7 @@ struct HomebrewPackageInventoryReader: Sendable {
       }
       return HomebrewInstalledPackage(
         kind: kind, token: token, identity: identity, versions: versions.sorted(),
-        receiptPaths: receiptPaths, issue: nil
+        receiptPaths: receiptPaths, issue: nil, receipts: receipts
       )
     } catch {
       return HomebrewInstalledPackage(
@@ -177,9 +191,27 @@ struct HomebrewPackageInventoryReader: Sendable {
 
   private func identity(
     at url: URL, kind: HomebrewPackageIdentity.Kind, token: String
-  ) throws -> (identity: HomebrewPackageIdentity, version: String?) {
+  ) throws -> (
+    identity: HomebrewPackageIdentity, version: String?, evidence: HomebrewReceiptEvidence
+  ) {
+    let descriptor = Darwin.open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW)
+    guard descriptor >= 0 else { throw InventoryError("Cannot open receipt (errno \(errno)).") }
+    defer { Darwin.close(descriptor) }
+    var before = stat()
+    guard fstat(descriptor, &before) == 0 else {
+      throw InventoryError("Cannot inspect receipt (errno \(errno)).")
+    }
+    let data = try BoundedRegularFile.read(descriptor: descriptor, maximumSize: 65_536).data
+    var after = stat()
+    guard fstat(descriptor, &after) == 0,
+      before.st_size == after.st_size,
+      before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
+      before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec,
+      before.st_ctimespec.tv_sec == after.st_ctimespec.tv_sec,
+      before.st_ctimespec.tv_nsec == after.st_ctimespec.tv_nsec
+    else { throw InventoryError("Receipt changed while being read.") }
     let receipt = try JSONDecoder().decode(
-      Receipt.self, from: BoundedRegularFile.read(at: url, maximumSize: 65_536).data
+      Receipt.self, from: data
     )
     let tap = receipt.source.tap
     let parts = tap.components(separatedBy: "/")
@@ -188,7 +220,13 @@ struct HomebrewPackageInventoryReader: Sendable {
       !(kind == .formula && tap == "homebrew/cask"),
       !(kind == .cask && tap == "homebrew/core")
     else { throw InventoryError("Missing or unsupported Homebrew receipt provenance.") }
-    return (HomebrewPackageIdentity(kind: kind, name: "\(tap)/\(token)"), receipt.source.version)
+    return (
+      HomebrewPackageIdentity(kind: kind, name: "\(tap)/\(token)"), receipt.source.version,
+      HomebrewReceiptEvidence(
+        path: url.path, digest: sha256Digest(data), device: before.st_dev,
+        inode: UInt64(before.st_ino)
+      )
+    )
   }
 
   private struct Receipt: Decodable {

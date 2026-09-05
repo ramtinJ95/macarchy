@@ -107,7 +107,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
         json: json
       )
     }
-    let plan = planner.inspectedReport(preparation.report)
+    let plan = planner.inspectedReport(preparation.report, context: context)
     guard case .ready(let model, _) = preparation else {
       return try result(
         operation: operation,
