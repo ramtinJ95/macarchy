@@ -631,23 +631,16 @@ struct EnvironmentStatusCommandRunner: Sendable {
   }
 
   static func providers(_ profile: EnvironmentProfile) -> [String: String] {
-    [
+    var providers = [
       "terminal": profile.terminal.rawValue,
       "shell": profile.shell.rawValue,
       "prompt": profile.prompt.rawValue,
       "history": profile.history.rawValue,
       "editor": profile.editor.rawValue,
-      "bat": profile.tools.bat ? "enabled" : "disabled",
-      "btop": profile.tools.btop ? "enabled" : "disabled",
-      "eza": profile.tools.eza ? "enabled" : "disabled",
-      "yazi": profile.tools.yazi ? "enabled" : "disabled",
-      "codex": profile.presets.codex ? "enabled" : "disabled",
-      "herdr": profile.presets.herdr ? "enabled" : "disabled",
-      "pi": profile.presets.pi ? "enabled" : "disabled",
-      "slack": profile.presets.slack ? "enabled" : "disabled",
-      "spicetify": profile.presets.spicetify ? "enabled" : "disabled",
-      "tuicr": profile.presets.tuicr ? "enabled" : "disabled",
     ]
+    for (id, selection) in profile.dailyToolPresentation { providers[id] = selection }
+    for (id, selection) in profile.presetPresentation { providers[id] = selection }
+    return providers
   }
 
   private func failure(operation: String, profile: URL, message: String)

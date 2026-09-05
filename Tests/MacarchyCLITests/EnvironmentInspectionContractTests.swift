@@ -5,6 +5,54 @@ import ThemeCore
 @testable import MacarchyCLI
 
 struct EnvironmentInspectionContractTests {
+  @Test(arguments: [false, true])
+  func presentationKeepsSeparatePlanMapsAndFlatStatusMap(selected: Bool) throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-presentation-contract-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profileURL = root.appending(path: "profile.toml")
+    try """
+      schema_version = 1
+      [tools]
+    bat = \(selected)
+    btop = \(!selected)
+    eza = \(!selected)
+    yazi = \(selected)
+    [presets]
+    codex = \(selected)
+    herdr = \(!selected)
+    pi = \(selected)
+    slack = \(!selected)
+    spicetify = \(selected)
+    tuicr = \(!selected)
+    """.write(to: profileURL, atomically: true, encoding: .utf8)
+    let on = selected ? "enabled" : "disabled"
+    let off = selected ? "disabled" : "enabled"
+    let tools = ["bat": on, "btop": off, "eza": off, "yazi": on]
+    let presets = [
+      "codex": on, "herdr": off, "pi": on, "slack": off, "spicetify": on, "tuicr": off,
+    ]
+    let plan = try EnvironmentPlanCommandRunner().execute(
+      resourcesRoot: repositoryRoot.appending(path: "Environment"),
+      profileURL: profileURL, profileRequired: true,
+      stateRoot: root.appending(path: "state"), json: true)
+    let report = try jsonObject(plan.output)
+    #expect(plan.succeeded)
+    #expect(report["daily_tools"] as? [String: String] == tools)
+    #expect(report["presets"] as? [String: String] == presets)
+    #expect(report["providers"] == nil)
+
+    let profile = try PortableProfileLoader().load(at: profileURL, required: true)
+    let status = EnvironmentStatusCommandRunner.providers(profile.environment)
+    #expect(
+      status == [
+        "terminal": "kitty", "shell": "zsh", "prompt": "starship", "history": "atuin",
+        "editor": "neovim", "bat": on, "btop": off, "eza": off, "yazi": on,
+        "codex": on, "herdr": off, "pi": on, "slack": off, "spicetify": on, "tuicr": off,
+      ])
+  }
+
   @Test(arguments: [
     ("Codex", EnvironmentLegacyIntegration.codexIDs),
     ("Pi", EnvironmentLegacyIntegration.piIDs),
