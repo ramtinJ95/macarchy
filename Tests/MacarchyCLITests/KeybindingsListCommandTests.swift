@@ -8,6 +8,7 @@ struct KeybindingsListCommandTests {
   @Test
   func representativeConfigurationMatchesHumanAndJSONGoldens() throws {
     let fixture = try fixtureContents("Skhd/representative.skhdrc")
+      .trimmingCharacters(in: .newlines)
     let runner = KeybindingsListCommandRunner(
       read: { _ in fixture },
       loadCatalog: { _ in .missing }
@@ -18,7 +19,9 @@ struct KeybindingsListCommandTests {
     let human = try runner.execute(configurationURL: source, catalogURL: catalog, json: false)
     let json = try runner.execute(configurationURL: source, catalogURL: catalog, json: true)
     let expectedHuman = try fixtureContents("CLI/keybindings-list.txt")
+      .trimmingCharacters(in: .newlines)
     let expectedJSON = try fixtureContents("CLI/keybindings-list.json")
+      .trimmingCharacters(in: .newlines)
 
     #expect(human.succeeded)
     #expect(json.succeeded)
@@ -136,14 +139,5 @@ struct KeybindingsListCommandTests {
     #expect(bindings.isEmpty)
     #expect(diagnostics.first?["code"] as? String == "configuration_read_failed")
     #expect(diagnostics.first?["message"] as? String == "probe read failed")
-  }
-
-  private func fixtureContents(_ path: String) throws -> String {
-    let root = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Fixtures", directoryHint: .isDirectory)
-    return try String(contentsOf: root.appending(path: path), encoding: .utf8)
-      .trimmingCharacters(in: .newlines)
   }
 }
