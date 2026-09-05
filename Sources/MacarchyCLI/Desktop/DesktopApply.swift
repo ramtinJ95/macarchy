@@ -170,6 +170,7 @@ struct DesktopApplyCommandRunner: Sendable {
     sketchyBarAdopt: String? = nil,
     json: Bool,
     macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    deferFinalization: Bool = false,
     profile suppliedProfile: PortableProfile? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState
@@ -378,29 +379,31 @@ struct DesktopApplyCommandRunner: Sendable {
       }
     }
 
-    do {
-      try ActivationLock(root: stateRoot).withLock {
-        let store = DesktopAggregateTransactionStore(stateRoot: stateRoot)
-        try store.write(
-          DesktopAggregateTransaction(operation: .apply, phase: .committing)
+    if !deferFinalization {
+      do {
+        try ActivationLock(root: stateRoot).withLock {
+          let store = DesktopAggregateTransactionStore(stateRoot: stateRoot)
+          try store.write(
+            DesktopAggregateTransaction(operation: .apply, phase: .committing)
+          )
+          try coordinator.commitApplyLocked(
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory
+          )
+          try store.remove()
+        }
+      } catch {
+        let report = DesktopAggregateMutationReport(
+          outcome: "recovery_required",
+          mutated: true,
+          yabai: mutations.yabai,
+          keybindings: mutations.keybindings,
+          sketchyBar: mutations.sketchyBar,
+          theme: themeResult,
+          message: "desktop changes reached the forward commit boundary: \(error)"
         )
-        try coordinator.commitApplyLocked(
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory
-        )
-        try store.remove()
+        return (try report.render(json: json), false)
       }
-    } catch {
-      let report = DesktopAggregateMutationReport(
-        outcome: "recovery_required",
-        mutated: true,
-        yabai: mutations.yabai,
-        keybindings: mutations.keybindings,
-        sketchyBar: mutations.sketchyBar,
-        theme: themeResult,
-        message: "desktop changes reached the forward commit boundary: \(error)"
-      )
-      return (try report.render(json: json), false)
     }
 
     let changed = mutations.changed || themeResult != nil
@@ -416,6 +419,50 @@ struct DesktopApplyCommandRunner: Sendable {
         : "desktop providers and selected theme adapters are already converged"
     )
     return (try report.render(json: json), true)
+  }
+
+  func finishDeferredAggregateApply(
+    stateRoot: URL,
+    homeDirectory: URL,
+    commit: Bool
+  ) throws -> Bool {
+    try ActivationLock(root: stateRoot).withLock {
+      let store = DesktopAggregateTransactionStore(stateRoot: stateRoot)
+      guard let transaction = try store.read() else { return false }
+      guard transaction.operation == .apply else {
+        throw DesktopAggregateError.recoveryRequired(
+          "the pending desktop aggregate operation is not apply"
+        )
+      }
+      let coordinator = DesktopAggregateCoordinator(
+        lifecycle: lifecycle,
+        sketchyBarLifecycle: sketchyBarLifecycle,
+        sketchyBarCoreRuntime: sketchyBarCoreRuntime,
+        keybindings: keybindings,
+        faultInjector: faultInjector,
+        sketchyBarFaultInjector: sketchyBarFaultInjector
+      )
+      if commit {
+        if transaction.phase == .mutating {
+          try store.write(
+            DesktopAggregateTransaction(operation: .apply, phase: .committing)
+          )
+        }
+        try coordinator.recoverLocked(stateRoot: stateRoot, homeDirectory: homeDirectory)
+      } else {
+        guard transaction.phase == .mutating else {
+          throw DesktopAggregateError.recoveryRequired(
+            "desktop apply crossed its commit boundary"
+          )
+        }
+        try coordinator.rollbackApplyLocked(
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory
+        )
+        try store.remove()
+      }
+      return true
+    }
   }
 
   private func preflightAggregate(

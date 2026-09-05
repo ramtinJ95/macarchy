@@ -23,6 +23,31 @@ struct UnifiedSetupApplyTests {
       """
     )
     let calls = Mutex([String]())
+    let teardown = UnifiedSetupTeardownCommandRunner(
+      planner: fixture.planner(plannedStages: [.desktop, .environment]),
+      environmentTeardown: { _, _, _ in
+        Issue.record("Commit must not invoke environment teardown")
+        return try applyComponent("{}")
+      },
+      desktopTeardown: { _, _, _ in
+        Issue.record("Commit must not invoke desktop teardown")
+        return try applyComponent("{}")
+      },
+      themeTeardown: { _, _, _, _ in
+        Issue.record("Commit must not invoke theme teardown")
+        return .noChange("unexpected")
+      },
+      environmentApplyFinalization: { _, commit in
+        #expect(commit)
+        calls.withLock { $0.append("environment:commit") }
+        return .noChange("environment")
+      },
+      desktopApplyFinalization: { _, commit in
+        #expect(commit)
+        calls.withLock { $0.append("desktop:commit") }
+        return .noChange("desktop")
+      }
+    )
     let runner = fixture.runner(
       available: { _ in true },
       plannedStages: [.desktop, .environment],
@@ -52,7 +77,8 @@ struct UnifiedSetupApplyTests {
         return try applyComponent(
           #"{"operation":"environment_apply","outcome":"applied","mutated":true,"message":"environment changed"}"#
         )
-      }
+      },
+      transactionTeardown: teardown
     )
 
     let execution = try await runner.execute(
@@ -66,7 +92,10 @@ struct UnifiedSetupApplyTests {
     #expect(execution.succeeded)
     #expect(report["outcome"] as? String == "applied")
     #expect(report["mutated"] as? Bool == true)
-    #expect(calls.withLock { $0 } == ["plan", "theme", "desktop", "environment"])
+    #expect(
+      calls.withLock { $0 }
+        == ["plan", "theme", "desktop", "environment", "environment:commit", "desktop:commit"]
+    )
   }
 
   @Test
@@ -332,6 +361,21 @@ struct UnifiedSetupApplyTests {
           message: "theme",
           details: nil
         )
+      },
+      environmentApplyFinalization: { _, _ in
+        Issue.record("Environment was not part of the failed apply")
+        return .noChange("unexpected")
+      },
+      desktopApplyFinalization: { _, commit in
+        #expect(!commit)
+        calls.withLock { $0.append("desktop:rollback") }
+        return UnifiedSetupTeardownStage(
+          succeeded: true,
+          mutated: true,
+          outcome: "restored",
+          message: "desktop",
+          details: nil
+        )
       }
     )
     let runner = fixture.runner(
@@ -369,8 +413,7 @@ struct UnifiedSetupApplyTests {
     #expect(report["environment"] == nil)
     #expect(environmentCalls.withLock { $0 } == 0)
     #expect(
-      calls.withLock { $0 }
-        == ["desktop:preview", "theme:preview", "desktop:rollback", "theme:rollback"]
+      calls.withLock { $0 } == ["desktop:rollback", "theme:rollback"]
     )
     #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)
   }
@@ -397,6 +440,28 @@ struct UnifiedSetupApplyTests {
           mutated: !dryRun,
           outcome: dryRun ? "planned" : "restored",
           message: "theme",
+          details: nil
+        )
+      },
+      environmentApplyFinalization: { _, commit in
+        #expect(!commit)
+        calls.withLock { $0.append("environment:rollback") }
+        return UnifiedSetupTeardownStage(
+          succeeded: true,
+          mutated: true,
+          outcome: "restored",
+          message: "environment",
+          details: nil
+        )
+      },
+      desktopApplyFinalization: { _, commit in
+        #expect(!commit)
+        calls.withLock { $0.append("desktop:rollback") }
+        return UnifiedSetupTeardownStage(
+          succeeded: true,
+          mutated: true,
+          outcome: "restored",
+          message: "desktop",
           details: nil
         )
       }
@@ -436,7 +501,6 @@ struct UnifiedSetupApplyTests {
     #expect(
       calls.withLock { $0 }
         == [
-          "environment:preview", "desktop:preview", "theme:preview",
           "environment:rollback", "desktop:rollback", "theme:rollback",
         ]
     )
@@ -466,6 +530,21 @@ struct UnifiedSetupApplyTests {
           mutated: !dryRun,
           outcome: dryRun ? "planned" : "restored",
           message: "theme",
+          details: nil
+        )
+      },
+      environmentApplyFinalization: { _, _ in
+        Issue.record("Environment was not part of the interrupted apply")
+        return .noChange("unexpected")
+      },
+      desktopApplyFinalization: { _, commit in
+        #expect(!commit)
+        calls.withLock { $0.append("desktop:rollback") }
+        return UnifiedSetupTeardownStage(
+          succeeded: true,
+          mutated: true,
+          outcome: "restored",
+          message: "desktop",
           details: nil
         )
       }
@@ -538,8 +617,7 @@ struct UnifiedSetupApplyTests {
     #expect(
       calls.withLock { $0 }
         == [
-          "theme:apply", "desktop:apply", "desktop:preview", "theme:preview",
-          "desktop:rollback", "theme:rollback",
+          "theme:apply", "desktop:apply", "desktop:rollback", "theme:rollback",
         ]
     )
     #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)

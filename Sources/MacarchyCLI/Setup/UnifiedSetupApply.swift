@@ -132,6 +132,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           keybindingsAdopt: adoptions.keybindings,
           sketchyBarAdopt: adoptions.sketchybar,
           json: true,
+          deferFinalization: true,
           profile: profile
         )
       )
@@ -147,6 +148,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           consumerPaths: consumerPaths,
           adopt: adoptions.environment,
           json: true,
+          deferFinalization: true,
           profile: profile
         )
       )
@@ -486,8 +488,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         }
 
         if let transaction {
-          try store.write(transaction.replacing(phase: .committing))
-          try store.remove()
+          let committing = transaction.replacing(phase: .committing)
+          try store.write(committing)
+          _ = try await transactionTeardown.recover(
+            transaction: committing,
+            context: context,
+            consumerPaths: consumerPaths
+          )
         }
 
         return try result(

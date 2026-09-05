@@ -273,6 +273,180 @@ struct DesktopAggregateCommandTests {
   }
 
   @Test
+  func failedLaterUnifiedStageRestoresThePriorManagedDesktopBoundary() async throws {
+    let fixture = try DesktopAggregateFixture(topBarEnabled: false)
+    let setupFixture = try ApplyFixture()
+    defer {
+      try? FileManager.default.removeItem(at: fixture.root)
+      setupFixture.cleanup()
+    }
+    _ = try await fixture.applyRunner.executeAggregate(
+      resourcesRoot: fixture.desktopResources,
+      keybindingsResourcesRoot: fixture.keybindingResources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
+      adopt: nil,
+      keybindingsAdopt: nil,
+      json: true
+    )
+    let previous = try #require(
+      YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID
+    )
+    try """
+    schema_version = 1
+    [yabai]
+    window_gap = 17
+    [top_bar]
+    provider = "disabled"
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    let context = UnifiedSetupPlanContext(
+      themesRoot: repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory),
+      keybindingsResourcesRoot: fixture.keybindingResources,
+      desktopResourcesRoot: fixture.desktopResources,
+      environmentResourcesRoot: repositoryRoot.appending(
+        path: "Environment", directoryHint: .isDirectory
+      ),
+      profileURL: fixture.profile,
+      profileRequired: true,
+      machineProfileURL: fixture.state.appending(path: "machine.toml"),
+      machineProfileRequired: false,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home
+    )
+    let planner = setupFixture.planner(plannedStages: [.desktop, .environment])
+    let recovery = UnifiedSetupTeardownCommandRunner(
+      planner: planner,
+      environmentTeardown: { _, _, _ in
+        Issue.record("Environment must not run")
+        return try applyComponent("{}")
+      },
+      desktopTeardown: { _, _, dryRun in
+        try SetupComponentExecution(
+          fixture.teardownRunner.executeAggregate(
+            stateRoot: fixture.state,
+            homeDirectory: fixture.home,
+            dryRun: dryRun,
+            json: true
+          )
+        )
+      },
+      themeTeardown: { _, _, _, _ in .noChange("theme") },
+      environmentApplyFinalization: { _, commit in
+        #expect(!commit)
+        return .noChange("environment")
+      },
+      desktopApplyFinalization: { _, commit in
+        let changed = try fixture.applyRunner.finishDeferredAggregateApply(
+          stateRoot: fixture.state,
+          homeDirectory: fixture.home,
+          commit: commit
+        )
+        return UnifiedSetupTeardownStage(
+          succeeded: true,
+          mutated: changed,
+          outcome: changed ? "restored" : "no_change",
+          message: "desktop",
+          details: nil
+        )
+      }
+    )
+    let runner = setupFixture.runner(
+      available: { _ in true },
+      plannedStages: [.desktop, .environment],
+      theme: { _, _ in
+        Issue.record("The active theme must be preserved")
+        return try applyComponent("{}")
+      },
+      desktop: { _, profile, paths, _ in
+        try await SetupComponentExecution(
+          fixture.applyRunner.executeAggregate(
+            resourcesRoot: fixture.desktopResources,
+            keybindingsResourcesRoot: fixture.keybindingResources,
+            profileURL: fixture.profile,
+            profileRequired: true,
+            stateRoot: fixture.state,
+            homeDirectory: fixture.home,
+            consumerPaths: paths,
+            adopt: nil,
+            keybindingsAdopt: nil,
+            json: true,
+            deferFinalization: true,
+            profile: profile
+          )
+        )
+      },
+      environment: { _, _, _, _ in
+        try applyComponent(
+          #"{"operation":"environment_apply","outcome":"failed","mutated":true,"message":"environment failed"}"#,
+          succeeded: false
+        )
+      },
+      transactionTeardown: recovery
+    )
+
+    let execution = try await runner.execute(
+      context: context,
+      consumerPaths: testConsumerPaths(),
+      installDependencies: false,
+      json: true
+    )
+
+    #expect(!execution.succeeded)
+    #expect(try jsonObject(execution.output)["outcome"] as? String == "rolled_back")
+    #expect(YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID == previous)
+    #expect(try YabaiOwnershipStore(stateRoot: fixture.state).read()?.generationID == previous)
+    #expect(
+      YabaiProviderPlanInspector().inspect(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.state,
+        enabled: true
+      ).status == .managed
+    )
+  }
+
+  @Test
+  func deferredDesktopApplyCommitsOnlyWhenUnifiedSetupFinalizesIt() async throws {
+    let fixture = try DesktopAggregateFixture(topBarEnabled: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let apply = try await fixture.applyRunner.executeAggregate(
+      resourcesRoot: fixture.desktopResources,
+      keybindingsResourcesRoot: fixture.keybindingResources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
+      adopt: nil,
+      keybindingsAdopt: nil,
+      json: true,
+      deferFinalization: true
+    )
+
+    #expect(apply.succeeded)
+    #expect(
+      try DesktopAggregateTransactionStore(stateRoot: fixture.state).read()?.phase == .mutating
+    )
+    #expect(
+      try fixture.applyRunner.finishDeferredAggregateApply(
+        stateRoot: fixture.state,
+        homeDirectory: fixture.home,
+        commit: true
+      )
+    )
+    #expect(!DesktopAggregateTransactionStore(stateRoot: fixture.state).exists)
+    #expect(
+      YabaiProviderPlanInspector().inspect(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.state,
+        enabled: true
+      ).status == .managed
+    )
+  }
+
+  @Test
   func interruptedLaterProviderRecoversAllDeferredBoundariesBeforeRetry() async throws {
     let fixture = try DesktopAggregateFixture(topBarEnabled: true)
     defer { try? FileManager.default.removeItem(at: fixture.root) }

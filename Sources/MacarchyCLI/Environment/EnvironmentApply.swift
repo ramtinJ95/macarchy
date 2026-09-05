@@ -361,6 +361,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     adopt: String?,
     json: Bool,
+    deferFinalization: Bool = false,
     profile suppliedProfile: PortableProfile? = nil
   ) async throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
@@ -747,8 +748,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
         }.map(\.message)
         throw EnvironmentLifecycleError.blocked(failures.joined(separator: "; "))
       }
-      try ActivationLock(root: stateRoot).withLock {
-        try coordinator.finishApplyLocked(composition: composition)
+      if !deferFinalization {
+        try ActivationLock(root: stateRoot).withLock {
+          try coordinator.finishApplyLocked(composition: composition)
+        }
       }
     } catch {
       do {
@@ -817,8 +820,61 @@ struct EnvironmentApplyCommandRunner: Sendable {
         ? "The daily tool environment was published and verified."
         : "The daily tool environment was already converged.",
       json: json,
+      deferredApplyTransaction: deferFinalization,
       profile: profile
     )
+  }
+
+  func finishDeferredApply(
+    resourcesRoot: URL? = nil,
+    profile: PortableProfile? = nil,
+    stateRoot: URL,
+    homeDirectory: URL,
+    commit: Bool
+  ) throws -> Bool {
+    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
+    let descriptor = try lifecycleLock.acquire()
+    defer { lifecycleLock.release(descriptor) }
+    let store = EnvironmentStateStore(stateRoot: stateRoot)
+    guard let transaction = try store.readTransaction() else { return false }
+    guard transaction.operation == .apply else {
+      throw EnvironmentLifecycleError.blocked(
+        "the pending environment operation is not apply"
+      )
+    }
+    let coordinator = EnvironmentTransactionCoordinator(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    )
+    if commit {
+      guard transaction.direction == .forward else {
+        throw EnvironmentLifecycleError.blocked(
+          "environment apply already entered rollback"
+        )
+      }
+      guard let resourcesRoot, let profile else {
+        throw EnvironmentLifecycleError.blocked(
+          "deferred environment commit requires the reviewed profile"
+        )
+      }
+      let composition = try EnvironmentConfigurationComposer().compose(
+        resourcesRoot: resourcesRoot,
+        profile: profile,
+        stateRoot: stateRoot
+      )
+      try ActivationLock(root: stateRoot).withLock {
+        try coordinator.finishApplyLocked(composition: composition)
+      }
+    } else {
+      try rollbackEnvironmentTransaction(
+        coordinator: coordinator,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        runtime: herdrRuntime,
+        spicetifyRuntime: spicetifyRuntime
+      )
+    }
+    return true
   }
 
   private func failure(
