@@ -4,10 +4,6 @@ import Testing
 
 @testable import ThemeCore
 
-private let agentTUIHerdrReloadSuccess =
-  #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"#
-  + #""status":"applied","type":"config_reload"}}"#
-
 extension AdapterContractTests {
   @Test
   func piPublishesAValidCustomThemeThroughItsWatchedCanonicalLink() async throws {
@@ -90,7 +86,7 @@ extension AdapterContractTests {
           ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
           : ProcessResult(
             terminationStatus: 0,
-            output: agentTUIHerdrReloadSuccess
+            output: herdrReloadSuccess
           )
       }
     )
@@ -201,7 +197,7 @@ extension AdapterContractTests {
             terminationStatus: attempt == 1 ? 1 : 0,
             output: attempt == 1
               ? "reload denied"
-              : agentTUIHerdrReloadSuccess
+              : herdrReloadSuccess
           )
         }
         return ProcessResult(terminationStatus: 0, output: "status: running")
@@ -502,7 +498,7 @@ private func successfulHerdrProcessRunner() -> ProcessRunner {
       ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
       : ProcessResult(
         terminationStatus: 0,
-        output: agentTUIHerdrReloadSuccess
+        output: herdrReloadSuccess
       )
   }
 }

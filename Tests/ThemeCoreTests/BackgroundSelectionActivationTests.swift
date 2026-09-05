@@ -4,10 +4,6 @@ import Testing
 
 @testable import ThemeCore
 
-private let backgroundHerdrReloadSuccess =
-  #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"#
-  + #""status":"applied","type":"config_reload"}}"#
-
 extension AdapterContractTests {
   @Test
   func backgroundOnlyActivationCarriesEvidenceAndRestoresRememberedSelection() async throws {
@@ -241,7 +237,7 @@ extension AdapterContractTests {
           ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
           : ProcessResult(
             terminationStatus: 0,
-            output: backgroundHerdrReloadSuccess
+            output: herdrReloadSuccess
           )
       }
       if request.executableURL == URL(filePath: "/usr/bin/osascript")
