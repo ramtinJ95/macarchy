@@ -508,6 +508,124 @@ struct KeybindingProfileTests {
     }
   }
 
+  @Test
+  func machineReenablingShellPreservesDeclaredPromptAndHistoryDisablement() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portable = root.appending(path: "profile.toml")
+    let machine = root.appending(path: "machine.toml")
+    try """
+    schema_version = 1
+    [shell]
+    provider = "disabled"
+    [prompt]
+    provider = "disabled"
+    [history]
+    provider = "disabled"
+    """.write(to: portable, atomically: true, encoding: .utf8)
+    try "schema_version = 1\n[shell]\nprovider = \"zsh\"\n".write(
+      to: machine, atomically: true, encoding: .utf8
+    )
+
+    let layered = try PortableProfileLoader().load(
+      portableAt: portable, portableRequired: true,
+      machineAt: machine, machineRequired: true
+    )
+
+    #expect(layered.profile.environment.shell == .zsh)
+    #expect(layered.profile.environment.prompt == .disabled)
+    #expect(layered.profile.environment.history == .disabled)
+    #expect(layered.fieldOrigins["shell.provider"] == .machine)
+    #expect(layered.fieldOrigins["prompt.provider"] == .portable)
+    #expect(layered.fieldOrigins["history.provider"] == .portable)
+  }
+
+  @Test(arguments: [false, true])
+  func layeredBarReplacesArraysAndKeepsHookRootWithItsDeclaringSource(
+    machineDeclaresHook: Bool
+  ) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portable = root.appending(path: "profile.toml")
+    let machineDirectory = root.appending(path: "machine", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(
+      at: machineDirectory, withIntermediateDirectories: true
+    )
+    let machineSource = machineDirectory.appending(path: "machine.toml")
+    let machine = root.appending(path: "machine.toml")
+    try FileManager.default.createSymbolicLink(at: machine, withDestinationURL: machineSource)
+    try """
+    schema_version = 1
+    [sketchybar]
+    left = ["spaces", "clock"]
+    center = ["volume"]
+    right = []
+    hook = "portable.sh"
+    """.write(to: portable, atomically: true, encoding: .utf8)
+    let machineText = """
+      schema_version = 1
+      [sketchybar]
+      left = []
+      right = ["clock", "spaces"]
+      """ + (machineDeclaresHook ? "\nhook = \"machine.sh\"\n" : "\n")
+    try machineText.write(to: machineSource, atomically: true, encoding: .utf8)
+
+    let layered = try PortableProfileLoader().load(
+      portableAt: portable, portableRequired: true,
+      machineAt: machine, machineRequired: true
+    )
+    let bar = layered.profile.sketchyBar
+    let hookRoot = machineDeclaresHook ? machineDirectory : root
+    #expect(bar.left == [])
+    #expect(bar.center == [.volume])
+    #expect(bar.right == [.clock, .spaces])
+    #expect(bar.hookRootURL == hookRoot)
+    #expect(
+      bar.hookURL == hookRoot.appending(path: machineDeclaresHook ? "machine.sh" : "portable.sh"))
+    #expect(layered.profile.sourceURL == machine)
+    #expect(layered.profile.keybindings.sourceURL == portable)
+    #expect(layered.fieldOrigins["sketchybar.left"] == .machine)
+    #expect(layered.fieldOrigins["sketchybar.center"] == .portable)
+    #expect(layered.fieldOrigins["sketchybar.hook"] == (machineDeclaresHook ? .machine : .portable))
+    #expect(layered.fieldOrigins["prompt.provider"] == nil)
+    #expect(layered.fieldOrigins["history.provider"] == nil)
+  }
+
+  @Test(arguments: [false, true])
+  func layeredValidationKeepsIndependentLayerAndCrossRoleErrorOrder(
+    invalidPortable: Bool
+  ) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portable = root.appending(path: "profile.toml")
+    let machine = root.appending(path: "machine.toml")
+    let portableText =
+      "schema_version = 1\n[kitty]\n[zsh]\n"
+      + (invalidPortable ? "[terminal]\nprovider = \"disabled\"\n" : "")
+    try portableText.write(to: portable, atomically: true, encoding: .utf8)
+    try """
+    schema_version = 1
+    [terminal]
+    provider = "disabled"
+    [shell]
+    provider = "disabled"
+    """.write(to: machine, atomically: true, encoding: .utf8)
+
+    do {
+      _ = try PortableProfileLoader().load(
+        portableAt: portable, portableRequired: true,
+        machineAt: machine, machineRequired: true
+      )
+      Issue.record("Expected the terminal contradiction before the shell contradiction")
+    } catch {
+      let source = invalidPortable ? portable : machine
+      #expect(
+        String(describing: error)
+          == "\(source.path): invalid Macarchy profile: [kitty] cannot customize a disabled terminal provider"
+      )
+    }
+  }
+
   private func temporaryDirectory() throws -> URL {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-keybinding-profile-tests-\(UUID().uuidString)",
