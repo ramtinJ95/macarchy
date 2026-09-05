@@ -355,6 +355,33 @@ struct EnvironmentConfigurationTests {
         of: Set(lock.keys)
       ))
     #expect(try Data(contentsOf: spell.appending(path: "personal.spl")) == binary)
+    let packagedLock = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(contentsOf: resourcesRoot.appending(path: "neovim/default/lazy-lock.json"))
+      ) as? [String: Any]
+    )
+    var staleLock = lock
+    for plugin in ["aether", "catppuccin", "kanagawa.nvim", "tokyonight.nvim"] {
+      #expect(lock[plugin] as? [String: String] == packagedLock[plugin] as? [String: String])
+      staleLock[plugin] = ["branch": "personal", "commit": "stale"]
+    }
+    #expect(
+      lockData
+        == (try JSONSerialization.data(
+          withJSONObject: lock,
+          options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        )) + Data([0x0A])
+    )
+    let staleData = try JSONSerialization.data(withJSONObject: staleLock)
+    let lockURL = neovim.appending(path: "lazy-lock.json")
+    try staleData.write(to: lockURL)
+    let repinned = try composer.compose(
+      resourcesRoot: resourcesRoot,
+      profile: profile,
+      stateRoot: root.appending(path: "state")
+    )
+    #expect(repinned == composition)
+    #expect(try Data(contentsOf: lockURL) == staleData)
   }
 
   @Test
@@ -405,6 +432,54 @@ struct EnvironmentConfigurationTests {
         resourcesRoot: resourcesRoot,
         profile: profile,
         stateRoot: root.appending(path: "state")
+      )
+    }
+  }
+
+  @Test(arguments: ["[", "[]"])
+  func nativeNeovimLockRejectsMalformedJSONAndNonObjects(lock: String) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (neovim, profile) = try legacyNeovimConfiguration(in: root)
+    try Data(lock.utf8).write(to: neovim.appending(path: "lazy-lock.json"))
+    let reason =
+      lock == "[]"
+      ? "Neovim lazy-lock.json must contain an object"
+      : "Neovim lazy-lock.json is invalid JSON"
+
+    do {
+      _ = try composer.compose(resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+      Issue.record("invalid Neovim lock was accepted")
+    } catch let error as EnvironmentConfigurationError {
+      #expect(error.sourceURL == neovim)
+      #expect(
+        error.description == EnvironmentConfigurationError.invalid(neovim, reason).description)
+    }
+  }
+
+  @Test(arguments: [
+    "colors/macarchy-imported.lua",
+    "lua/config/macarchy-theme.lua",
+    "lua/plugins/colorscheme.lua",
+  ])
+  func legacyNeovimThemeRecognitionRequiresExactBytes(path: String) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (neovim, profile) = try legacyNeovimConfiguration(in: root)
+    let source = neovim.appending(path: path)
+    try (Data(contentsOf: source) + Data([0x0A])).write(to: source)
+
+    do {
+      _ = try composer.compose(resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+      Issue.record("modified legacy Neovim theme artifact was accepted")
+    } catch let error as EnvironmentConfigurationError {
+      #expect(error.sourceURL == neovim)
+      #expect(
+        error.description
+          == EnvironmentConfigurationError.invalid(
+            neovim,
+            "Neovim configuration has a partial or conflicting reserved theme seam"
+          ).description
       )
     }
   }
