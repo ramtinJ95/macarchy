@@ -111,7 +111,7 @@ macarchy environment teardown [--dry-run] [--json]
 macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup guided [--output-profile <path>] [--machine-profile <path>]
-macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--json]
+macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--package-impact] [--json]
 macarchy setup apply [--profile <path>] [--machine-profile <path>] [--install-dependencies] [--adoption-file <path>] [--yabai-adopt <digest>] [--keybindings-adopt <digest>] [--sketchybar-adopt <digest>] [--environment-adopt <digest>] [--json]
 macarchy setup status [--profile <path>] [--machine-profile <path>] [--json]
 macarchy setup doctor [--profile <path>] [--machine-profile <path>] [--json]
@@ -795,6 +795,25 @@ effects are not verified by this report. Third-party trust remains manual;
 installation does not authorize permissions, accounts, services/helpers,
 model/toolchain downloads or shell hooks. Installed packages outside the proposed
 set remain outside this package slice's management scope.
+
+`setup plan --package-impact` explicitly downloads official metadata into
+disposable scratch storage and adds `package_impact` to the report. Homebrew's
+native formula resolver runs with network access and writes outside scratch
+denied. This optional preview requires `sandbox-exec` on Apple Silicon macOS 26
+and the qualified, unmodified Homebrew revision
+`571381a8a7b42bf38f94c65b6be340466945d217` (`6.0.21-81-g571381a`). Other revisions
+and `brew.env` configurations are not yet qualified; there is no unrestricted
+fallback. Normal plan/status and apply are unchanged.
+
+Resolved formula entries show candidate versions and pending dependencies,
+including whether those dependencies already have Homebrew installations.
+Missing/stale evidence, casks and third-party taps stay explicit. The overall
+report remains **partial**, not a complete installation plan: conflicts,
+dependent repair and apply-time revalidation are still unqualified. It grants
+no installation or adoption authority. An unavailable inspection returns a
+failure exit code while retaining the ordinary inventory. Metadata staging is
+bounded to 180 seconds and 64 MiB of response bodies; no package archives are
+downloaded, taps trusted, or persistent Homebrew configuration changed.
 
 The machine layer uses the same strict schema as the portable profile. Its
 declared fields replace portable fields individually, arrays replace as whole
