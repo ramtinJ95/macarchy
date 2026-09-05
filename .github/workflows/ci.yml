@@ -43,7 +43,26 @@ jobs:
 
       - name: Test
         timeout-minutes: 5
-        run: swift test --skip-build --disable-xctest
+        run: |
+          zmodload zsh/zselect
+          swift test --skip-build --disable-xctest &
+          test_pid=$!
+          (
+            # Builtin wait avoids leaving a sleep subprocess after a fast run.
+            zselect -t 12000 || [[ $? -eq 1 ]]
+            print '::warning::Tests still running after two minutes; capturing owned process stacks.'
+            capture_stacks() {
+              local child
+              for child in $(pgrep -P "$1" || true); do
+                capture_stacks "$child"
+              done
+              sample "$1" 3 -file /dev/stdout || print "Could not sample process $1 (it may have exited)."
+            }
+            capture_stacks "$test_pid"
+          ) &
+          diagnostic_pid=$!
+          trap 'kill "$diagnostic_pid" 2>/dev/null || true; wait "$diagnostic_pid" 2>/dev/null || true' EXIT
+          wait "$test_pid"
 
       - name: Build release
         run: swift build -c release
