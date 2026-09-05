@@ -60,7 +60,10 @@ extension Macarchy {
   struct Setup: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Plan and converge the complete curated Macarchy core.",
-      subcommands: [Guided.self, Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self]
+      subcommands: [
+        Guided.self, Plan.self, AdoptPackages.self, Apply.self, Status.self, Doctor.self,
+        Teardown.self,
+      ]
     )
 
     struct ProfileOptions: ParsableArguments {
@@ -204,6 +207,37 @@ extension Macarchy {
           ),
           json: json,
           packageImpact: packageImpact
+        )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
+      }
+    }
+
+    struct AdoptPackages: AsyncParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract:
+          "Preview or explicitly adopt named installed package declarations without changing Homebrew."
+      )
+
+      @Argument(help: "Exact declared identities, such as formula:jq or cask:slack.")
+      var targets: [String]
+
+      @Option(help: "Exact approval digest from the reviewed package adoption preview.")
+      var approve: String?
+
+      @OptionGroup var profile: ProfileOptions
+
+      @Option(help: "Canonical Macarchy state directory.")
+      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+      @Flag(help: "Emit machine-readable output.")
+      var json = false
+
+      mutating func run() async throws {
+        let execution = try await SetupPackageAdoptionCommandRunner.live.execute(
+          context: profile.context(stateRoot: URL(filePath: stateRoot).standardizedFileURL),
+          targets: targets, approval: approve, json: json
         )
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }
