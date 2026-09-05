@@ -110,21 +110,10 @@ struct DependencyProfile: Sendable {
 
   func selectedForEnvironment(_ profile: EnvironmentProfile) -> [DependencyCapability] {
     guard !profile.isEntirelyDisabled else { return [] }
-    var ids = Set(["macos-26", "arm64"])
-    if profile.terminal == .kitty { ids.insert("kitty") }
-    if profile.prompt == .starship { ids.insert("starship") }
-    if profile.history == .atuin { ids.insert("atuin") }
-    if profile.editor == .neovim { ids.insert("neovim") }
-    if profile.tools.bat { ids.insert("bat") }
-    if profile.tools.btop { ids.insert("btop") }
-    if profile.tools.eza { ids.insert("eza") }
-    if profile.tools.yazi { ids.insert("yazi") }
-    if profile.presets.codex { ids.insert(CodexAdapter.id) }
-    if profile.presets.herdr { ids.insert(HerdrAdapter.id) }
-    if profile.presets.pi { ids.insert(PiAdapter.id) }
+    var ids = Set(profile.selectedThemeAdapterIDs)
+    ids.formUnion(["macos-26", "arm64"])
     if profile.presets.slack { ids.insert(SlackAdapter.id) }
-    if profile.presets.spicetify { ids.formUnion([SpicetifyAdapter.id, "spotify"]) }
-    if profile.presets.tuicr { ids.insert(TuicrAdapter.id) }
+    if profile.presets.spicetify { ids.insert("spotify") }
     return selected(ids)
   }
 
