@@ -360,7 +360,7 @@ struct DesktopAggregateCommandTests {
         Issue.record("The active theme must be preserved")
         return try applyComponent("{}")
       },
-      desktop: { _, profile, paths, _ in
+      desktop: { _, profile, paths, _, _ in
         try await SetupComponentExecution(
           fixture.applyRunner.executeAggregate(
             resourcesRoot: fixture.desktopResources,

@@ -62,9 +62,11 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"theme_set","outcome":"success","committed":true}"#
         )
       },
-      desktop: { _, profile, _, _ in
+      desktop: { _, profile, _, _, enabledThemeAdapterIDs in
         #expect(profile.environment.kitty.fontSize == 15)
         #expect(profile.topBar == .disabled)
+        #expect(enabledThemeAdapterIDs.contains("wallpaper"))
+        #expect(!enabledThemeAdapterIDs.contains("sketchybar"))
         calls.withLock { $0.append("desktop") }
         return try applyComponent(
           #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
@@ -127,7 +129,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"theme_set","outcome":"success","committed":true}"#
         )
       },
-      desktop: { _, _, _, received in
+      desktop: { _, _, _, received, _ in
         #expect(received == approvals)
         calls.withLock { $0.append("desktop") }
         return try applyComponent(
@@ -169,7 +171,7 @@ struct UnifiedSetupApplyTests {
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
@@ -264,7 +266,7 @@ struct UnifiedSetupApplyTests {
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
@@ -315,7 +317,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"theme_set","outcome":"success","committed":true}"#
         )
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop") }
         return try applyComponent(
           #"{"operation":"desktop_apply","outcome":"no_change","mutated":false,"message":"desktop ready"}"#
@@ -393,7 +395,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"theme_set","outcome":"success","committed":true}"#
         )
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         try applyComponent(
           #"{"operation":"desktop_apply","outcome":"failed","mutated":true,"message":"desktop failed"}"#,
           succeeded: false
@@ -481,7 +483,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"theme_set","outcome":"success","committed":true}"#
         )
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         try applyComponent(
           #"{"operation":"desktop_apply","outcome":"applied","mutated":true}"#
         )
@@ -565,7 +567,7 @@ struct UnifiedSetupApplyTests {
           #"{"operation":"theme_set","outcome":"success","committed":true}"#
         )
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop:apply") }
         return try applyComponent(
           #"{"operation":"desktop_apply","outcome":"applied","mutated":true}"#
@@ -601,7 +603,7 @@ struct UnifiedSetupApplyTests {
         Issue.record("Recovery must finish before a replacement apply starts")
         return try applyComponent("{}")
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         Issue.record("Recovery must finish before a replacement apply starts")
         return try applyComponent("{}")
       },
@@ -647,7 +649,7 @@ struct UnifiedSetupApplyTests {
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
         return try applyComponent("{}")
       },
@@ -695,7 +697,7 @@ struct UnifiedSetupApplyTests {
         Issue.record("A repeated apply must preserve the active canonical theme")
         return try applyComponent("{}")
       },
-      desktop: { _, _, _, _ in
+      desktop: { _, _, _, _, _ in
         Issue.record("A no-change plan must not invoke desktop mutation")
         return try applyComponent("{}")
       },
@@ -783,7 +785,7 @@ final class ApplyFixture: @unchecked Sendable {
     writePlan: @escaping @Sendable (String) throws -> Void = { _ in },
     theme: @escaping UnifiedSetupApplyCommandRunner.ThemeApply,
     desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
-    environment: @escaping UnifiedSetupApplyCommandRunner.EnvironmentApply,
+    environment: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
     transactionTeardown: UnifiedSetupTeardownCommandRunner? = nil,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
