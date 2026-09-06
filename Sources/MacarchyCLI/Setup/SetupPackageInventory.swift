@@ -45,43 +45,6 @@ struct SetupPackageInventory: Encodable, Sendable {
     let remediation: DependencyRemediation
   }
 
-  /// Only additional stock declarations belong here. Provider packages continue
-  /// to come from DependencyProfile so disabling a role removes its requirement.
-  private static let standardDeclarations: [HomebrewPackageIdentity: StandardDeclaration] = {
-    let formulae = [
-      "azure-cli", "cmake", "fd", "fzf", "gh", "git", "go", "helm", "herdr", "hugo",
-      "ifstat", "jq", "kind", "kubernetes-cli", "lazydocker", "lazygit", "lua", "mosh",
-      "node", "ollama", "pkgconf", "poppler", "resvg", "ripgrep", "rustup", "sevenzip",
-      "stow", "switchaudio-osx", "tmux", "tree-sitter", "tree-sitter-cli", "unar", "uv",
-      "wget", "zig", "zoxide",
-    ]
-    let casks = [
-      "anki", "cursor", "docker", "flameshot", "font-blex-mono-nerd-font",
-      "font-meslo-lg-nerd-font", "font-sketchybar-app-font", "font-symbols-only-nerd-font",
-      "google-chrome", "slack", "spotify", "tailscale", "zen", "zoom",
-    ]
-    let terraform = "hashicorp/tap/terraform"
-    return Dictionary(
-      uniqueKeysWithValues:
-        formulae.map {
-          (
-            HomebrewPackageIdentity(kind: .formula, name: $0),
-            StandardDeclaration(remediation: .formula($0))
-          )
-        }
-        + casks.map {
-          (
-            HomebrewPackageIdentity(kind: .cask, name: $0),
-            StandardDeclaration(remediation: .cask($0))
-          )
-        } + [
-          (
-            HomebrewPackageIdentity(kind: .formula, name: terraform),
-            StandardDeclaration(remediation: .externallyTrustedFormula(terraform))
-          )
-        ])
-  }()
-
   let observation: HomebrewPackageObservation
   let proposed: [Package]
   let nonHomebrewRequirements: [Requirement]
@@ -102,8 +65,19 @@ struct SetupPackageInventory: Encodable, Sendable {
   init(
     capabilities: [SetupCapability], fieldOrigins: [String: String],
     layers: [SetupProfileLayerReport], observation: HomebrewPackageObservation,
-    adoptionState: SetupPackageAdoptionState = .available(nil)
+    adoptionState: SetupPackageAdoptionState = .available(nil),
+    standardPackages: [HomebrewPackageIdentity] = []
   ) {
+    let standardDeclarations = Dictionary(
+      uniqueKeysWithValues: standardPackages.map {
+        (
+          $0,
+          StandardDeclaration(
+            remediation: $0.kind == .cask
+              ? .cask($0.name)
+              : ($0.name.contains("/") ? .externallyTrustedFormula($0.name) : .formula($0.name)))
+        )
+      })
     self.observation = observation
     adoptionIssue = adoptionState.issue
     var groups = [HomebrewPackageIdentity: [Requirement]]()
@@ -123,7 +97,7 @@ struct SetupPackageInventory: Encodable, Sendable {
         nonHomebrew.append(requirement)
       }
     }
-    let identities = Set(groups.keys).union(Self.standardDeclarations.keys)
+    let identities = Set(groups.keys).union(standardDeclarations.keys)
     proposed = identities.sorted { $0.key < $1.key }.map { identity in
       let requirements = groups[identity] ?? []
       let matches = observation.packages.filter { $0.identity == identity }
@@ -153,7 +127,7 @@ struct SetupPackageInventory: Encodable, Sendable {
           status == "installed" ? "unadopted" : (status == "missing" ? "missing" : "unknown")
       }
       return Package(
-        identity: identity, standardDeclaration: Self.standardDeclarations[identity],
+        identity: identity, standardDeclaration: standardDeclarations[identity],
         requirements: requirements, homebrewStatus: status,
         externallySatisfiedCapabilities: status == "missing"
           ? requirements.filter { $0.runtime == .present }.map(\.capabilityID) : [],

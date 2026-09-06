@@ -872,6 +872,9 @@ final class ApplyFixture: @unchecked Sendable {
           {"outcome":"ready","adoption_evidence_digest":\(jsonString(requiredAdoptions.environment)),"entries":[],"actions":\(actionsJSON(plannedStages.contains(.environment), id: "environment"))}
           """
         )
+      },
+      standardBrewfile: { _ in
+        try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))
       }
     )
   }

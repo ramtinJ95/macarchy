@@ -29,6 +29,7 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/macarchy/keybindings/metadata.toml" ]]
 [[ -f "$layout/share/macarchy/desktop/yabai/defaults.toml" ]]
 [[ -f "$layout/share/macarchy/desktop/sketchybar/defaults.toml" ]]
+[[ -f "$layout/share/macarchy/environment/Brewfile" ]]
 [[ -f "$layout/share/macarchy/environment/kitty/defaults.conf" ]]
 [[ -f "$layout/share/macarchy/environment/zsh/defaults.zsh" ]]
 [[ -f "$layout/share/macarchy/environment/starship/behavior.toml" ]]

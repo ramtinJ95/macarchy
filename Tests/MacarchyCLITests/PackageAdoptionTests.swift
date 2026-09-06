@@ -310,7 +310,10 @@ private struct AdoptionFixture {
     return .init(
       planner: UnifiedSetupPlanCommandRunner(
         capabilityIsAvailable: { _ in false }, desktopPlanner: unrelated,
-        environmentPlanner: unrelated, packageInventoryReader: { reader.read() }
+        environmentPlanner: unrelated, packageInventoryReader: { reader.read() },
+        standardBrewfile: { _ in
+          try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))
+        }
       ))
   }
 
