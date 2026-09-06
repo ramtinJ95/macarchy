@@ -230,7 +230,8 @@ private struct ProjectionFixture {
             output: renderJSON(JSONValue.object(report.merging(environment) { _, new in new })),
             succeeded: true
           ))
-      }
+      },
+      standardBrewfile: { _ in SetupBrewfile(packages: []) }
     )
   }
 }

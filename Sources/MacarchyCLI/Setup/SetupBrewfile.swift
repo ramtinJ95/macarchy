@@ -13,11 +13,15 @@ struct SetupBrewfile: Equatable, Sendable {
   }
 
   static func read(at url: URL) throws -> Self {
-    let data = try BoundedRegularFile.read(at: url).data
-    guard let source = String(data: data, encoding: .utf8) else {
-      throw SetupPackageAdoptionError("Brewfile must be UTF-8: \(url.path)")
+    do {
+      let data = try BoundedRegularFile.read(at: url).data
+      guard let source = String(data: data, encoding: .utf8) else {
+        throw SetupPackageAdoptionError("Brewfile must be UTF-8.")
+      }
+      return try parse(source)
+    } catch {
+      throw SetupPackageAdoptionError("Brewfile \(url.path): \(error)")
     }
-    return try parse(source)
   }
 
   static func parse(_ source: String) throws -> Self {
@@ -55,6 +59,9 @@ struct SetupBrewfile: Equatable, Sendable {
     }
     guard Set(packages).count == packages.count, Set(taps).count == taps.count else {
       throw SetupPackageAdoptionError("Duplicate Brewfile declarations.")
+    }
+    guard packages.count <= 1024, taps.count <= 1024 else {
+      throw SetupPackageAdoptionError("Brewfile exceeds 1024 package declarations or taps.")
     }
     return Self(packages: packages, taps: taps)
   }

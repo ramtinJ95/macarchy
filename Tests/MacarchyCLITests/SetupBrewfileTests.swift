@@ -59,6 +59,16 @@ struct SetupBrewfileTests {
   }
 
   @Test
+  func declarationLimitIsEnforcedAtThePublicInputBoundary() throws {
+    let names = (0..<1024).map { HomebrewPackageIdentity(kind: .formula, name: "tool-\($0)") }
+    let text = SetupBrewfile(packages: names).text
+    #expect(try SetupBrewfile.parse(text).packages.count == 1024)
+    #expect(throws: SetupPackageAdoptionError.self) {
+      try SetupBrewfile.parse(text + "brew \"one-more\"\n")
+    }
+  }
+
+  @Test
   func retiredImpactOptionIsAnExplicitCLIError() {
     #expect(throws: (any Error).self) { try Macarchy.Setup.Plan.parse(["--package-impact"]) }
   }

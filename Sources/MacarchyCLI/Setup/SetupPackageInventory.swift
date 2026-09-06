@@ -18,6 +18,7 @@ struct SetupPackageInventory: Encodable, Sendable {
   struct Package: Encodable, Sendable {
     let identity: HomebrewPackageIdentity
     let standardDeclaration: StandardDeclaration?
+    let personalDeclarations: [SetupPackageAdoptionLedger.Declaration]
     let requirements: [Requirement]
     let homebrewStatus: String
     let externallySatisfiedCapabilities: [String]
@@ -29,6 +30,7 @@ struct SetupPackageInventory: Encodable, Sendable {
           [.init(source: $0.source, layer: $0.layer, sourcePath: nil, selectionField: nil)]
         } ?? []
       return standard
+        + personalDeclarations
         + requirements.map {
           .init(
             source: $0.capabilityID, layer: $0.layer, sourcePath: $0.sourcePath,
@@ -56,9 +58,13 @@ struct SetupPackageInventory: Encodable, Sendable {
   }
   let retainedAdoptionsOutsideProposed: [RetainedAdoption]
   let adoptionIssue: String?
+  let baseline: PackageBaseline
+  let exclusions: [SetupPackageDeclarations.Exclusion]
+  let taps: [SetupPackageDeclarations.Tap]
+  let effectiveBrewfile: String
   var installation: SetupPackageInstallationAttempt.Summary? = nil
   var installationIssue: String? = nil
-  let scope = "standard_baseline_and_provider_requirements"
+  let scope = "declared_packages_and_provider_requirements"
   let authority = "read_only_inventory_no_homebrew_mutation"
   let provisioning = "explicit_bounded_install_packages_existing_apply_unchanged"
 
@@ -66,17 +72,14 @@ struct SetupPackageInventory: Encodable, Sendable {
     capabilities: [SetupCapability], fieldOrigins: [String: String],
     layers: [SetupProfileLayerReport], observation: HomebrewPackageObservation,
     adoptionState: SetupPackageAdoptionState = .available(nil),
-    standardPackages: [HomebrewPackageIdentity] = []
+    declarations: SetupPackageDeclarations
   ) {
-    let standardDeclarations = Dictionary(
-      uniqueKeysWithValues: standardPackages.map {
-        (
-          $0,
-          StandardDeclaration(
-            remediation: $0.kind == .cask
-              ? .cask($0.name)
-              : ($0.name.contains("/") ? .externallyTrustedFormula($0.name) : .formula($0.name)))
-        )
+    baseline = declarations.baseline
+    exclusions = declarations.exclusions
+    taps = declarations.taps
+    let packageSources = Dictionary(
+      uniqueKeysWithValues: declarations.packages.map {
+        ($0.identity, $0.sources)
       })
     self.observation = observation
     adoptionIssue = adoptionState.issue
@@ -97,9 +100,18 @@ struct SetupPackageInventory: Encodable, Sendable {
         nonHomebrew.append(requirement)
       }
     }
-    let identities = Set(groups.keys).union(standardDeclarations.keys)
+    let identities = Set(groups.keys).union(packageSources.keys)
     proposed = identities.sorted { $0.key < $1.key }.map { identity in
       let requirements = groups[identity] ?? []
+      let sources = packageSources[identity] ?? []
+      let standardDeclaration: StandardDeclaration? =
+        sources.contains { $0.source == "standard_baseline" }
+        ? StandardDeclaration(
+          remediation: identity.kind == .cask
+            ? .cask(identity.name)
+            : (identity.name.contains("/")
+              ? .externallyTrustedFormula(identity.name) : .formula(identity.name)))
+        : nil
       let matches = observation.packages.filter { $0.identity == identity }
       let sameToken = observation.packages.filter {
         $0.kind == identity.kind && $0.token == identity.token
@@ -127,7 +139,8 @@ struct SetupPackageInventory: Encodable, Sendable {
           status == "installed" ? "unadopted" : (status == "missing" ? "missing" : "unknown")
       }
       return Package(
-        identity: identity, standardDeclaration: standardDeclarations[identity],
+        identity: identity, standardDeclaration: standardDeclaration,
+        personalDeclarations: sources.filter { $0.source == "personal_brewfile" },
         requirements: requirements, homebrewStatus: status,
         externallySatisfiedCapabilities: status == "missing"
           ? requirements.filter { $0.runtime == .present }.map(\.capabilityID) : [],
@@ -144,13 +157,14 @@ struct SetupPackageInventory: Encodable, Sendable {
     retainedAdoptionsOutsideProposed = (adoptionState.ledger?.entries ?? [])
       .filter { !identities.contains($0.identity) }
       .map { RetainedAdoption(entry: $0, status: $0.status(in: observation)) }
+    effectiveBrewfile = SetupBrewfile(packages: Array(identities), taps: taps.map(\.name)).text
   }
 
   var humanOutput: String {
     var lines = [
-      "Package inventory [\(observation.status); standard baseline and provider requirements]:",
+      "Package inventory [\(observation.status); \(baseline.rawValue) baseline and provider requirements]:",
       "- Read-only inventory; adoption requires setup adopt-packages and explicit approval.",
-      "- Apply does not yet provision the standard baseline or implicitly adopt packages.",
+      "- Apply does not yet provision package-only declarations or implicitly adopt packages.",
       "- Existing provider dependency installation is unchanged; installer compatibility is not verified here.",
       "- Package-only declarations do not enable behavior/theme presets or prove runtime readiness.",
       "- Packages do not authorize permissions, accounts, services/helpers, model/toolchain downloads or shell hooks.",
@@ -165,6 +179,11 @@ struct SetupPackageInventory: Encodable, Sendable {
         if case .external(let instruction, _) = declaration.remediation {
           lines.append("    Manual/trust boundary (trust not inspected): \(instruction)")
         }
+      }
+      for declaration in package.personalDeclarations {
+        lines.append(
+          "  - personal_brewfile from \(declaration.layer): \(declaration.sourcePath ?? "unknown"); package only"
+        )
       }
       for requirement in package.requirements {
         lines.append(
@@ -181,6 +200,14 @@ struct SetupPackageInventory: Encodable, Sendable {
           "  - Runtime satisfied outside a recorded Homebrew installation: "
             + package.externallySatisfiedCapabilities.joined(separator: ", "))
       }
+    }
+    for exclusion in exclusions {
+      lines.append(
+        "- Excluded \(exclusion.identity.key) by \(exclusion.source.layer) (\(exclusion.source.sourcePath ?? "unknown")); no uninstall authorized."
+      )
+    }
+    for tap in taps {
+      lines.append("- Declared tap \(tap.name): acquisition/trust not inspected or changed here.")
     }
     for requirement in nonHomebrewRequirements {
       if case .external(let instruction, _) = requirement.remediation {
@@ -219,6 +246,8 @@ struct SetupPackageInventory: Encodable, Sendable {
       lines.append("- Installation evidence unavailable: \(installationIssue)")
     }
     lines += observation.issues.map { "- Inventory unavailable: \($0)" }
+    lines.append(
+      "Effective Brewfile (declaration intent, not full-install approval):\n\(effectiveBrewfile)")
     return lines.joined(separator: "\n")
   }
 
