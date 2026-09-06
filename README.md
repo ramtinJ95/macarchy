@@ -917,7 +917,52 @@ Brewfile; JSON uses `package_inventory.effective_brewfile`. The existing
 `setup adopt-packages` and `setup install-packages` commands consume the same
 personal declarations. Approval/revalidation uses the effective named scope.
 Inputs are read-only: these commands never rewrite profiles or fragments.
-Full-baseline apply and save-and-apply add/remove commands remain later work.
+Full-baseline apply and persistent removal remain later work.
+
+#### Save and apply a named addition
+
+`setup add-packages` explicitly edits an **existing configured** personal
+fragment, then installs missing official formulae or adopts already installed
+ones without requesting an upgrade:
+
+```sh
+macarchy setup add-packages formula:jq --profile /path/to/profile.toml --json
+macarchy setup add-packages formula:jq --profile /path/to/profile.toml --approve <reviewed-digest> --json
+```
+
+Portable intent is the default. Add `--machine-only` to both commands to target
+the configured machine fragment instead. The preview shows the actual edit path,
+complete before/after text, named adoption receipts and native installation
+scope. It performs no writes. Approval binds source bytes/identity/metadata,
+profile inputs and package evidence; stale approval blocks before editing.
+
+Only missing literal declarations are appended: comments and unrelated lines
+remain intact, and replacement preserves existing file metadata. The fragment
+remains user-owned; no setup ownership claim, Git operation or synchronization
+is performed. Profiles themselves are never rewritten. A symlinked profile is
+resolved using the normal profile-loading rules. The edited fragment must have
+a regular, non-symlink path and one hard link; two layers sharing one fragment
+must be separated first.
+
+Missing profile/Brewfile wiring, unsupported syntax, selected-layer exclusions
+and machine exclusions that defeat a portable addition block with instructions.
+This first add path does not create profiles, remove exclusions, edit two files,
+install casks/taps or run full setup. Configure or edit those inputs explicitly,
+then obtain a fresh preview.
+
+Intent is saved **before** package actions. A failure reports `pending`, retains
+the saved intent and includes completed/failed stage reports. Preview again to
+converge only the named pending work; interrupted native attempts first require
+`setup install-packages --recover`. If installation changes an already-installed
+candidate's receipts, adopting it requires a fresh preview rather than silently
+renewing that consent. Repeat after convergence is a no-op.
+
+An unconfirmed file publication starts no package action. A retained sibling
+`.Brewfile.macarchy-add-packages` (using the actual fragment basename) blocks
+retry: inspect it and the target, preserve the intended source, and resolve the
+residue manually before obtaining fresh approval. No automatic source rollback
+or recovery is claimed. File publication and native effects are not one global
+transaction; Homebrew retains the execution boundary below.
 
 #### Native installation boundary
 
