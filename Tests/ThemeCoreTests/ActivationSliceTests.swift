@@ -9,6 +9,40 @@ import Testing
 
 @Suite(.serialized)
 struct ActivationSliceTests {
+  @Test(arguments: ["state", "generations"])
+  func setupDeactivationRestoresClaimsWhenAParentIsReadOnly(directory: String) throws {
+    try withTemporaryRoot(named: "macarchy-deactivation-status-tests") { root in
+      let activator = testActivator(root: root)
+      let manifest = try activator.activate(package: catppuccinPackage())
+      let store = ReconciliationStatusStore(root: root)
+      _ = try store.persist(manifest: manifest, results: [])
+      let parent = root.appending(path: directory)
+      try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: parent.path)
+      defer {
+        try? FileManager.default.setAttributes(
+          [.posixPermissions: 0o755], ofItemAtPath: parent.path)
+      }
+
+      #expect(throws: (any Error).self) {
+        try activator.deactivate(expectedGenerationID: manifest.generationID, dryRun: false)
+      }
+      #expect(try store.activeManifest().generationID == manifest.generationID)
+      guard case .current(let status) = try store.read() else {
+        Issue.record("Deactivation must preserve the original reconciliation status")
+        return
+      }
+      #expect(status.generationID == manifest.generationID)
+      try manifest.validateArtifacts(
+        at: root.appending(path: "generations/\(manifest.generationID)"))
+      for path in [root, root.appending(path: "state"), root.appending(path: "generations")] {
+        #expect(
+          try FileManager.default.contentsOfDirectory(atPath: path.path)
+            .allSatisfy { !$0.hasPrefix(".setup-teardown-") }
+        )
+      }
+    }
+  }
+
   @Test
   func setupDeactivationValidatesThenRemovesOnlyTheExpectedActiveGeneration() throws {
     try withTemporaryRoot(named: "macarchy-deactivation-tests") { root in
