@@ -216,30 +216,27 @@ public struct ThemeActivator: Sendable {
       )
 
       try rename(currentURL, to: currentClaim, operation: "claim current theme pointer")
-      do {
-        try rename(generationURL, to: generationClaim, operation: "claim theme generation")
-      } catch let claimError {
-        do {
-          try rename(currentClaim, to: currentURL, operation: "restore current theme pointer")
-        } catch {
-          throw error
-        }
-        throw claimError
-      }
       var statusClaimed = false
-      if FileManager.default.fileExists(atPath: statusURL.path) {
-        do {
+      do {
+        if FileManager.default.fileExists(atPath: statusURL.path) {
           try rename(statusURL, to: statusClaim, operation: "claim reconciliation status")
           statusClaimed = true
-        } catch let claimError {
-          do {
-            try rename(generationClaim, to: generationURL, operation: "restore theme generation")
-            try rename(currentClaim, to: currentURL, operation: "restore current theme pointer")
-          } catch {
-            throw error
-          }
+        }
+        // macOS 26.3.1 cannot rename a sealed directory. Reuse collection's
+        // pinned, root-only unsealing; claim status first so no later claim
+        // can require republishing the now-writable generation.
+        try moveGenerationToTrash(generationURL, trashURL: generationClaim)
+      } catch let claimError {
+        // A post-rename failure must not restore a pointer to a missing or
+        // unsealed generation. Keep the claims visible for recovery instead.
+        guard (try? manifest.validateArtifacts(at: generationURL)) != nil else {
           throw claimError
         }
+        if statusClaimed {
+          try rename(statusClaim, to: statusURL, operation: "restore reconciliation status")
+        }
+        try rename(currentClaim, to: currentURL, operation: "restore current theme pointer")
+        throw claimError
       }
 
       var cleanupError: String?
