@@ -241,9 +241,10 @@ extension Macarchy {
 
     struct InstallPackages: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
-        abstract: "Preview and install named missing official formulae through Homebrew Bundle.")
+        abstract:
+          "Preview and install named missing official formulae and casks through Homebrew Bundle.")
 
-      @Argument(help: "Exact declared formula:<name> targets; omit for --recover.")
+      @Argument(help: "Exact declared formula:<name> or cask:<name> targets; omit for --recover.")
       var targets: [String] = []
 
       @Option(help: "Exact digest from the reviewed Brewfile and native command scope.")
@@ -276,10 +277,10 @@ extension Macarchy {
     struct AddPackages: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
         abstract:
-          "Save named official formulae to personal inputs, then install or adopt them."
+          "Save named official formulae and casks to personal inputs, then install or adopt them."
       )
 
-      @Argument(help: "Exact formula:<name> identities; omit for --recover.")
+      @Argument(help: "Exact formula:<name> or cask:<name> identities; omit for --recover.")
       var targets: [String] = []
 
       @Option(help: "Exact digest from the reviewed file edit and package action preview.")

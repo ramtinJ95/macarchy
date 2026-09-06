@@ -24,12 +24,14 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     let brewfile: String
     let command: [String]
     let environment: [String]
+    let nativeEffects: [String]
     let selectedPackages: [SetupPackageInventory.Package]
     let ledger: SetupPackageAdoptionLedger?
 
     enum CodingKeys: String, CodingKey {
       case contract, contextDigest, profilePaths, selected, targets
       case selectedInstallations, selectedPackages, ledger, brewfile, command, environment
+      case nativeEffects
     }
   }
 
@@ -69,7 +71,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
       guard !inputs.targets.isEmpty else {
         return try result(
           "no_change", observation: observation,
-          message: "Every named formula matches its applied declaration; nothing was written.",
+          message: "Every named package matches its applied declaration; nothing was written.",
           json: json)
       }
       try provider.preflight()
@@ -146,9 +148,9 @@ struct SetupPackageInstallationCommandRunner: Sendable {
   func inputs(context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity])
     throws -> Inputs
   {
-    guard identities.allSatisfy({ $0.kind == .formula && !$0.name.contains("/") }) else {
+    guard identities.allSatisfy({ HomebrewPackageIdentity.validToken($0.name) }) else {
       throw SetupPackageAdoptionError(
-        "Only missing official formula targets are supported; no casks or third-party taps.")
+        "Only missing official formula and cask targets are supported; no third-party taps.")
     }
     guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
       throw SetupPackageAdoptionError(
@@ -195,6 +197,8 @@ struct SetupPackageInstallationCommandRunner: Sendable {
       command: ["/opt/homebrew/bin/brew"] + HomebrewBundleInstaller.arguments
         + [SetupPackageInstallationStore(context: context).brewfileURL.path],
       environment: HomebrewBundleInstaller.environment,
+      nativeEffects: targets.contains { $0.identity.kind == .cask }
+        ? [HomebrewBundleInstaller.caskEffects] : [],
       selectedPackages: inventory.proposed.filter { identities.contains($0.identity) },
       ledger: ledger)
   }
@@ -290,6 +294,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
       let command: [String]?
       let environment: [String]
       let boundary = "native_dependency_and_related_package_effects_delegated_to_homebrew"
+      let nativeEffects: [String]
       let targets: [SetupPackageInstallationAttempt.Target]
       let attempt: SetupPackageInstallationAttempt.Summary?
       let inventoryWarnings: [HomebrewInstalledPackage]
@@ -298,6 +303,8 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     let report = Report(
       outcome: outcome, approvalDigest: approval, brewfile: brewfile ?? attempt?.brewfile,
       command: command, environment: HomebrewBundleInstaller.environment,
+      nativeEffects: (attempt?.targets ?? targets).contains { $0.identity.kind == .cask }
+        ? [HomebrewBundleInstaller.caskEffects] : [],
       targets: attempt?.targets ?? targets,
       attempt: attempt?.summary,
       inventoryWarnings: observation?.packages.filter {

@@ -173,9 +173,9 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     throws -> Prepared
   {
     let identities = try SetupPackageAdoptionCommandRunner.parseTargets(targets)
-    guard identities.allSatisfy({ $0.kind == .formula && !$0.name.contains("/") }) else {
+    guard identities.allSatisfy({ HomebrewPackageIdentity.validToken($0.name) }) else {
       throw SetupPackageAdoptionError(
-        "Add supports only named official formulae; no casks or third-party taps.")
+        "Add supports only named official formulae and casks; no third-party taps.")
     }
     try SetupPackageInstallationStore(context: context).requireResolved()
     try SetupPackageInputPublicationStore(context: context).requireResolved()
@@ -212,10 +212,17 @@ struct SetupPackageAdditionCommandRunner: Sendable {
         "Both layers reference the same Brewfile; configure separate fragments before editing one layer."
       )
     }
+    func exclusions(_ layer: PackageProfile.Layer) -> Set<HomebrewPackageIdentity> {
+      Set(
+        layer.excludedFormulae.map {
+          HomebrewPackageIdentity(kind: .formula, name: $0)
+        }
+          + layer.excludedCasks.map {
+            HomebrewPackageIdentity(kind: .cask, name: $0)
+          })
+    }
     for contribution in layered.profile.packages.layers {
-      let excluded = contribution.excludedFormulae.map {
-        HomebrewPackageIdentity(kind: .formula, name: $0)
-      }
+      let excluded = exclusions(contribution)
       if let conflict = identities.first(where: { excluded.contains($0) }),
         !machineOnly && contribution.kind == .machine
       {
@@ -224,7 +231,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
         )
       }
     }
-    let removed = Set(layer?.excludedFormulae ?? []).intersection(identities.map(\.name))
+    let removed = (layer.map(exclusions) ?? []).intersection(identities)
     let profileEdit = try SetupPackageProfileEdit.prepare(
       source: resolved, fragment: url, needsWiring: layer?.brewfileURL == nil, removing: removed)
     guard !sourceBindings.values.contains(url.path) else {
@@ -314,6 +321,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
       let brewfile: String
       let command: [String]
       let environment: [String]
+      let nativeEffects: [String]
     }
     let layer: String
     let targets: [String]
@@ -339,7 +347,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
       installation = prepared.installation.map {
         .init(
           targets: $0.targets, brewfile: $0.brewfile, command: $0.command,
-          environment: $0.environment)
+          environment: $0.environment, nativeEffects: $0.nativeEffects)
       }
       adoption = prepared.adoption?.additions ?? []
       let additions = Set(adoption.map(\.identity))

@@ -260,7 +260,7 @@ struct GuidedSetupCommandRunner: Sendable {
     io.write(
       "The following apply confirmations cover provider setup only, not the full effective Brewfile.\n"
         + "Package-only installation requires a separate setup install-packages preview and approval "
-        + "for named official formulae; cask/tap execution remains unsupported.\n")
+        + "for named official formulae and casks; third-party tap execution remains unsupported.\n")
     guard model.packages.external.isEmpty else {
       return (
         "Complete the plan's external prerequisites, then run macarchy setup apply.",

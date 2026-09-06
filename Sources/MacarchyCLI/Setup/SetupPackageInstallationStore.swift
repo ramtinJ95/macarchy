@@ -108,15 +108,15 @@ struct SetupPackageInstallationStore: Sendable {
       value.hasPrefix("sha256:") && value.count == 71
         && value.dropFirst(7).allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
     }
-    let names = attempt.targets.map(\.identity.name)
-    let targetNames = Set(attempt.targets.map(\.identity.key))
+    let names = attempt.targets.map(\.identity.key)
+    let targetNames = Set(names)
     let verified = Set(attempt.verifiedTargets)
     guard attempt.schemaVersion == 3, attempt.contextDigest == contextDigest,
       digest(attempt.approvalDigest), digest(attempt.priorLedgerDigest),
       attempt.processSession == nil || attempt.processSession! > 1,
-      !names.isEmpty, names == names.sorted(), Set(names).count == names.count,
+      !names.isEmpty, names == names.sorted(), targetNames.count == names.count,
       attempt.targets.allSatisfy({
-        $0.identity.kind == .formula && HomebrewPackageIdentity.validToken($0.identity.name)
+        HomebrewPackageIdentity.validToken($0.identity.name)
           && !$0.declarations.isEmpty && $0.declarations.count <= 64
           && $0.declarations.allSatisfy { !$0.source.isEmpty && !$0.layer.isEmpty }
       }), attempt.diagnostic.utf8.count <= 32 * 1024,
