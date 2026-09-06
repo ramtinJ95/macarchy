@@ -546,7 +546,8 @@ extension SetupOwnershipManager {
     homeDirectory: URL,
     expectedDigest: String,
     data: Data,
-    label: String
+    label: String,
+    expectedSnapshot: RegularFileSnapshot? = nil
   ) throws {
     let parentDescriptor = try openPinnedParent(
       target: target,
@@ -569,7 +570,9 @@ extension SetupOwnershipManager {
       url: target,
       label: label
     )
-    guard sha256Digest(current.data) == expectedDigest else {
+    guard sha256Digest(current.data) == expectedDigest,
+      expectedSnapshot == nil || expectedSnapshot == originalSnapshot
+    else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
 
@@ -638,12 +641,10 @@ extension SetupOwnershipManager {
     else {
       throw posixError("replace \(label)", target)
     }
-    do {
-      try faultInjector(.replacementSwapped)
-    } catch {
-      cleanupTemporary = false
-      throw error
-    }
+    // After publication this name holds displaced user data, not disposable
+    // staging. Retain it on every unclassified verification failure.
+    cleanupTemporary = false
+    try faultInjector(.replacementSwapped)
 
     let displaced: BoundedRegularFile
     let displacedSnapshot: RegularFileSnapshot
@@ -672,9 +673,9 @@ extension SetupOwnershipManager {
         second: targetName
       )
       guard restored == 0 else {
-        cleanupTemporary = false
         throw posixError("restore concurrently changed \(label)", target)
       }
+      cleanupTemporary = true
       throw error
     }
     guard
@@ -687,9 +688,9 @@ extension SetupOwnershipManager {
         second: targetName
       )
       guard restored == 0 else {
-        cleanupTemporary = false
         throw posixError("restore concurrently changed \(label)", target)
       }
+      cleanupTemporary = true
       throw SetupOwnershipError.ownershipDrift(target)
     }
     let installedDescriptor = try openPinnedRegularFile(
@@ -718,12 +719,11 @@ extension SetupOwnershipManager {
         second: targetName
       )
       guard restored == 0 else {
-        cleanupTemporary = false
         throw posixError("restore concurrently changed \(label)", target)
       }
+      cleanupTemporary = true
       throw SetupOwnershipError.ownershipDrift(target)
     }
-    cleanupTemporary = false
     guard replacementName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
       throw posixError("remove displaced \(label)", target)
     }
@@ -744,6 +744,11 @@ extension SetupOwnershipManager {
       throw SetupOwnershipError.invalidManifest("\(label) target is outside the selected home")
     }
     let parent = target.deletingLastPathComponent()
+    if home.path == "/" {
+      // Explicit personal-input editing can target a configured source outside
+      // home. Reuse the absolute walker, including macOS /private aliases.
+      return try PinnedFilesystem.openDirectory(at: parent)
+    }
     let relativeParent =
       parent.path == home.path ? ""[...] : parent.path.dropFirst(prefix.count)
     var descriptor = home.path.withCString {
@@ -1061,7 +1066,7 @@ extension SetupOwnershipManager {
     )
   }
 
-  struct RegularFileSnapshot: Equatable {
+  struct RegularFileSnapshot: Equatable, Encodable, Sendable {
     let device: UInt64
     let inode: UInt64
     let mode: UInt32

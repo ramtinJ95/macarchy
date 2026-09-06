@@ -54,6 +54,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     .unavailable("Package inventory reader is not configured.")
   }
   var standardBrewfile: @Sendable (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
+  var personalBrewfile: @Sendable (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
 
   static let live = UnifiedSetupPlanCommandRunner(
     capabilityIsAvailable: { $0.isAvailable() },
@@ -151,7 +152,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       ? try standardBrewfile(context.environmentResourcesRoot.appending(path: "Brewfile"))
       : SetupBrewfile(packages: [])
     return try SetupPackageDeclarations.compile(
-      standard: standard, profile: profile.packages, requirements: capabilities)
+      standard: standard, profile: profile.packages, requirements: capabilities,
+      readBrewfile: personalBrewfile)
   }
 
   private func loadProfile(context: UnifiedSetupPlanContext) throws -> LayeredPortableProfile {

@@ -227,7 +227,7 @@ struct PackageInstallationTests {
   }
 }
 
-private final class InstallationFixture: Sendable {
+final class InstallationFixture: Sendable {
   let inventory: InventoryFixture
   let calls = Mutex(0)
   let installed = Mutex(false)
