@@ -878,7 +878,6 @@ never replayed or converted into adoption.
 
 The old `setup plan --package-impact` option was removed and is rejected as an
 unknown option. Ordinary plan/status remain inert inventory operations.
-Real-machine installation qualification of this replacement is still pending.
 
 The machine layer uses the same strict schema as the portable profile. Its
 declared fields replace portable fields individually, arrays replace as whole
