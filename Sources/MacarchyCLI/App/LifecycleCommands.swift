@@ -324,8 +324,12 @@ extension Macarchy {
       @OptionGroup var state: StateOptions
       @OptionGroup var adoption: AdoptionOptions
 
-      @Flag(help: "Install only selected missing Homebrew formulae and casks.")
+      @Flag(
+        help: "Deprecated and ignored. Use --approve-packages with the reviewed setup plan digest.")
       var installDependencies = false
+
+      @Option(help: "Exact package installation digest from setup plan.")
+      var approvePackages: String?
 
       @Flag(help: "Emit machine-readable output.")
       var json = false
@@ -334,7 +338,7 @@ extension Macarchy {
         let execution = try await UnifiedSetupApplyCommandRunner.live.execute(
           context: profile.context(stateRoot: state.stateRootURL),
           consumerPaths: state.consumerPaths,
-          installDependencies: installDependencies,
+          packageApproval: approvePackages,
           adoptions: try adoption.resolve(),
           json: json
         )

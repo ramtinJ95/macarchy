@@ -103,19 +103,11 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     return (try report.render(json: json), preparation.succeeded)
   }
 
-  /// Enrich read-only output, not apply's desired model or approval comparison.
-  /// Receipt uncertainty is visible here but does not change the legacy mutator.
   func inspectedReport(
     _ report: UnifiedSetupPlanReport, context: UnifiedSetupPlanContext
   ) -> UnifiedSetupPlanReport {
-    guard report.theme != nil, let declarations = report.packageDeclarations else { return report }
+    guard report.packageInventory != nil else { return report }
     var report = report
-    report.packageInventory = SetupPackageInventory(
-      capabilities: report.capabilities, fieldOrigins: report.fieldOrigins,
-      layers: report.layers, observation: packageInventoryReader(),
-      adoptionState: SetupPackageAdoptionStore(
-        stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
-      ).inspect(), declarations: declarations)
     do {
       report.packageInventory?.installation = try SetupPackageInstallationStore(context: context)
         .read()?.summary
@@ -218,6 +210,26 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
           error: String(describing: error)))
     }
 
+    let inventory = SetupPackageInventory(
+      capabilities: capabilities, fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue),
+      layers: layered.layers.map(SetupProfileLayerReport.init),
+      observation: packageInventoryReader(),
+      adoptionState: SetupPackageAdoptionStore(
+        stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
+      ).inspect(),
+      declarations: declarations)
+    let packages: HomebrewInstallPlan
+    do {
+      packages = try HomebrewInstallPlan(inventory: inventory)
+    } catch {
+      var report = UnifiedSetupPlanReport.blocked(
+        layers: layered.layers.map(SetupProfileLayerReport.init),
+        fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue), error: String(describing: error))
+      report.packageDeclarations = declarations
+      report.packageInventory = inventory
+      return .blocked(report)
+    }
+
     let themeSelection: (package: ThemePackage, plan: UnifiedSetupThemePlan)
     do {
       themeSelection = try themePlan(context: context)
@@ -243,7 +255,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       theme: themeSelection.plan,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs(profile),
       capabilities: capabilities,
-      packages: HomebrewInstallPlan(capabilities: capabilities)
+      packages: packages
     )
     let desktop = try desktopPlanner(context, profile)
     let environment = try environmentPlanner(context, profile)
@@ -286,7 +298,13 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       actions: diagnostics.isEmpty ? actions : [],
       components: components,
       diagnostics: diagnostics,
-      packageDeclarations: declarations
+      packageDeclarations: declarations,
+      packageInventory: inventory,
+      packageInstallation: packages.identities.isEmpty
+        ? nil
+        : try HomebrewBundleInstaller.Preview(
+          packages: packages.identities, effectiveBrewfile: inventory.effectiveBrewfile,
+          context: context)
     )
     guard diagnostics.isEmpty else { return .blocked(report) }
     return .ready(model, report)
@@ -572,8 +590,9 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       result.append(
         UnifiedSetupAction(
           stage: "packages",
-          id: "install_homebrew_dependencies",
-          message: "Install only the selected missing Homebrew formulae and casks."
+          id: "install_homebrew_packages",
+          message:
+            "Install the effective setup's missing Homebrew packages without adopting installed packages."
         )
       )
     }
@@ -827,6 +846,14 @@ struct UnifiedSetupPlanReport: Encodable {
   let diagnostics: [UnifiedSetupPlanDiagnostic]
   var packageDeclarations: SetupPackageDeclarations? = nil
   var packageInventory: SetupPackageInventory? = nil
+  var packageInstallation: HomebrewBundleInstaller.Preview? = nil
+
+  func approvalText() throws -> String {
+    // Unrelated observed receipts and adoption history are not install authority.
+    var inputs = self
+    inputs.packageInventory = nil
+    return try inputs.render(json: true)
+  }
 
   static func blocked(
     layers: [SetupProfileLayerReport],
@@ -866,7 +893,7 @@ struct UnifiedSetupPlanReport: Encodable {
       providers: [:],
       theme: nil,
       capabilities: [],
-      packages: HomebrewInstallPlan(capabilities: []),
+      packages: HomebrewInstallPlan(),
       files: [],
       services: [],
       permissions: [],
@@ -911,6 +938,16 @@ struct UnifiedSetupPlanReport: Encodable {
     }
     lines.append(packages.humanOutput)
     if let packageInventory { lines.append(packageInventory.humanOutput) }
+    if let packageInstallation {
+      lines.append("Missing-package Brewfile:\n" + packageInstallation.brewfile)
+      lines.append("Native command: " + packageInstallation.command.joined(separator: " "))
+      lines += packageInstallation.nativeEffects
+      lines.append(
+        "Homebrew owns dependency and related-package effects; no package rollback or automatic adoption."
+      )
+      lines.append(
+        "Approve installation with --approve-packages \(packageInstallation.approvalDigest).")
+    }
     lines.append(files.isEmpty ? "Files: none" : "Files:")
     lines += files.map { "- \($0.id) [\($0.status), \($0.ownership)]: \($0.path)" }
     lines.append(services.isEmpty ? "Services: none" : "Services:")

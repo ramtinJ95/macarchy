@@ -4,6 +4,39 @@ import ThemeCore
 
 /// Homebrew owns resolution, downloads, linking, hooks and receipts.
 struct HomebrewBundleInstaller: Sendable {
+  struct Preview: Encodable, Sendable {
+    let effectiveBrewfile: String
+    let brewfile: String
+    let command: [String]
+    let environment = HomebrewBundleInstaller.environment
+    let nativeEffects: [String]
+    let approvalDigest: String
+
+    init(
+      packages: [HomebrewPackageIdentity], effectiveBrewfile: String,
+      context: UnifiedSetupPlanContext
+    ) throws {
+      self.effectiveBrewfile = effectiveBrewfile
+      brewfile = SetupBrewfile.installing(packages).text
+      command =
+        ["/opt/homebrew/bin/brew"] + HomebrewBundleInstaller.arguments
+        + [Self.fileURL(context: context).path]
+      nativeEffects = HomebrewBundleInstaller.nativeEffects(for: packages)
+      approvalDigest = try SetupPackageInstallationStore.digest(
+        [
+          "setup_full_brewfile_installation_v1", effectiveBrewfile, brewfile,
+          SetupPackageInstallationStore(context: context).contextDigest,
+          context.profileURL.standardizedFileURL.path,
+          context.machineProfileURL.standardizedFileURL.path,
+        ]
+          + command + environment + nativeEffects)
+    }
+
+    static func fileURL(context: UnifiedSetupPlanContext) -> URL {
+      context.stateRoot.appending(path: "state/setup/provisioning.Brewfile")
+    }
+  }
+
   struct Execution: Sendable {
     let status: Int32
     let diagnostic: String
