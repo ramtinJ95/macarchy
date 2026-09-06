@@ -114,17 +114,16 @@ struct SetupPackageInstallationStore: Sendable {
     guard attempt.schemaVersion == 3, attempt.contextDigest == contextDigest,
       digest(attempt.approvalDigest), digest(attempt.priorLedgerDigest),
       attempt.processSession == nil || attempt.processSession! > 1,
-      !names.isEmpty, names == names.sorted(), targetNames.count == names.count,
+      try SetupPackageAdoptionCommandRunner.parseTargets(names) == attempt.targets.map(\.identity),
       attempt.targets.allSatisfy({
-        HomebrewPackageIdentity.validToken($0.identity.name)
-          && !$0.declarations.isEmpty && $0.declarations.count <= 64
+        !$0.declarations.isEmpty && $0.declarations.count <= 64
           && $0.declarations.allSatisfy { !$0.source.isEmpty && !$0.layer.isEmpty }
       }), attempt.diagnostic.utf8.count <= 32 * 1024,
       verified.isSubset(of: targetNames), verified.count == attempt.verifiedTargets.count,
       attempt.phase != .complete
         || (attempt.nativeExit == 0 && verified == targetNames)
     else { throw SetupPackageAdoptionError("Invalid installation context, state or evidence.") }
-    guard attempt.brewfile == SetupBrewfile(packages: attempt.targets.map(\.identity)).text else {
+    guard attempt.brewfile == SetupBrewfile.installing(attempt.targets.map(\.identity)).text else {
       throw SetupPackageAdoptionError(
         "Installation Brewfile does not match its named declarations.")
     }

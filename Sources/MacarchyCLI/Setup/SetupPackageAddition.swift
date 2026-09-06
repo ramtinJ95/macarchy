@@ -173,10 +173,6 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     throws -> Prepared
   {
     let identities = try SetupPackageAdoptionCommandRunner.parseTargets(targets)
-    guard identities.allSatisfy({ HomebrewPackageIdentity.validToken($0.name) }) else {
-      throw SetupPackageAdoptionError(
-        "Add supports only named official formulae and casks; no third-party taps.")
-    }
     try SetupPackageInstallationStore(context: context).requireResolved()
     try SetupPackageInputPublicationStore(context: context).requireResolved()
     guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {

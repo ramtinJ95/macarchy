@@ -148,10 +148,6 @@ struct SetupPackageInstallationCommandRunner: Sendable {
   func inputs(context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity])
     throws -> Inputs
   {
-    guard identities.allSatisfy({ HomebrewPackageIdentity.validToken($0.name) }) else {
-      throw SetupPackageAdoptionError(
-        "Only missing official formula and cask targets are supported; no third-party taps.")
-    }
     guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
       throw SetupPackageAdoptionError(
         "Resolve interrupted unified setup before installing packages.")
@@ -193,12 +189,11 @@ struct SetupPackageInstallationCommandRunner: Sendable {
       selectedInstallations: inventory.observation.packages.filter { package in
         identities.contains { $0.kind == package.kind && $0.token == package.token }
       },
-      brewfile: SetupBrewfile(packages: targets.map(\.identity)).text,
+      brewfile: SetupBrewfile.installing(targets.map(\.identity)).text,
       command: ["/opt/homebrew/bin/brew"] + HomebrewBundleInstaller.arguments
         + [SetupPackageInstallationStore(context: context).brewfileURL.path],
       environment: HomebrewBundleInstaller.environment,
-      nativeEffects: targets.contains { $0.identity.kind == .cask }
-        ? [HomebrewBundleInstaller.caskEffects] : [],
+      nativeEffects: HomebrewBundleInstaller.nativeEffects(for: targets.map(\.identity)),
       selectedPackages: inventory.proposed.filter { identities.contains($0.identity) },
       ledger: ledger)
   }
@@ -303,8 +298,8 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     let report = Report(
       outcome: outcome, approvalDigest: approval, brewfile: brewfile ?? attempt?.brewfile,
       command: command, environment: HomebrewBundleInstaller.environment,
-      nativeEffects: (attempt?.targets ?? targets).contains { $0.identity.kind == .cask }
-        ? [HomebrewBundleInstaller.caskEffects] : [],
+      nativeEffects: HomebrewBundleInstaller.nativeEffects(
+        for: (attempt?.targets ?? targets).map(\.identity)),
       targets: attempt?.targets ?? targets,
       attempt: attempt?.summary,
       inventoryWarnings: observation?.packages.filter {

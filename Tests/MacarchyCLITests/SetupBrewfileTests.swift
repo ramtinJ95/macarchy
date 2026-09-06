@@ -34,6 +34,18 @@ struct SetupBrewfileTests {
   }
 
   @Test
+  func namedInstallationDerivesOnlyRequiredTapsOnceBeforePackages() throws {
+    let declarations = try SetupBrewfile.parse(
+      "tap 'unrelated/tap'\nbrew 'vendor/tools/jq'\ncask 'vendor/tools/slack'\nbrew 'homebrew/core/git'\n"
+    )
+    #expect(declarations.taps == ["unrelated/tap"])
+    #expect(
+      SetupBrewfile.installing(declarations.packages).text
+        == "tap \"vendor/tools\"\ncask \"vendor/tools/slack\"\nbrew \"git\"\nbrew \"vendor/tools/jq\"\n"
+    )
+  }
+
+  @Test
   func nativeRequestUsesOnlyTheGeneratedFileAndInstallOnlyControls() {
     let home = URL(filePath: "/tmp/personal home")
     let brewfile = URL(filePath: "/tmp/macarchy state/installation.Brewfile")

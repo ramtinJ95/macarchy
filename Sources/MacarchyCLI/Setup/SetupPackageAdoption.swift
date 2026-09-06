@@ -198,6 +198,11 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     guard Set(identities).count == identities.count else {
       throw SetupPackageAdoptionError("Duplicate package targets.")
     }
+    guard Set(identities.map { "\($0.kind.rawValue):\($0.token)" }).count == identities.count else {
+      throw SetupPackageAdoptionError(
+        "Conflicting package targets share a kind and token across taps; Homebrew cannot record both identities."
+      )
+    }
     return identities.sorted { $0.key < $1.key }
   }
 
