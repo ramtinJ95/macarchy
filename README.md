@@ -754,18 +754,33 @@ than editing Slack's private Electron storage.
 
 `macarchy setup guided` asks about every core provider and daily tool, then
 offers each optional preset. Core choices default on and presets default off.
+It also accepts optional package exclusions as space-separated exact identities,
+for example `formula:jq cask:spotify`. Enter leaves package choices unchanged;
+invalid or duplicate identities must be corrected. Exclusions persist in sparse
+`[packages]` arrays, never copy the stock list and never uninstall software.
+Provider/preset selection is separate: disabling a preset does not exclude its
+standard package, and excluding a selected provider's requirement blocks setup.
 It writes only choices that differ from those defaults to a new portable
 profile, normally `~/.config/macarchy/profile.toml`; `--output-profile` selects
 another destination. Guided setup never follows or replaces an existing file,
 link, or directory. Use the noninteractive profile-driven commands below when a
 profile already exists.
 
-After writing the profile, guided setup prints the same unified plan described
-below. Missing external prerequisites stop the flow for explicit remediation.
+After writing the profile, guided setup prints the same unified plan and effective
+package inventory described below, including machine-layer contributions. If a
+machine addition defeats a requested portable exclusion, guided setup stops and
+identifies the overridden package; it never edits or bypasses the machine profile.
+Missing external prerequisites stop the flow for explicit remediation.
 Each adoption digest requires a separate default-no confirmation, missing
 Homebrew dependencies require installation confirmation, and applying the plan
 requires a final default-no confirmation. Cancelling or encountering a blocked
 plan retains the new profile for review.
+
+These guided apply confirmations still cover provider setup, **not installation
+of the full effective Brewfile**. Package-only installation uses a separate
+`setup install-packages` preview and approval for named official formulae;
+cask/tap execution remains unsupported. Ending input before the questionnaire
+finishes writes no profile.
 
 `macarchy setup plan` compiles built-in defaults, the optional portable
 `~/.config/macarchy/profile.toml`, and the optional machine-local
@@ -902,8 +917,7 @@ Brewfile; JSON uses `package_inventory.effective_brewfile`. The existing
 `setup adopt-packages` and `setup install-packages` commands consume the same
 personal declarations. Approval/revalidation uses the effective named scope.
 Inputs are read-only: these commands never rewrite profiles or fragments.
-Full-baseline apply, guided package opt-outs and save-and-apply add/remove
-commands remain later work.
+Full-baseline apply and save-and-apply add/remove commands remain later work.
 
 #### Native installation boundary
 
