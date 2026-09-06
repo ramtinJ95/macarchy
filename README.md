@@ -921,8 +921,8 @@ Full-baseline apply and persistent removal remain later work.
 
 #### Save and apply a named addition
 
-`setup add-packages` explicitly edits an **existing configured** personal
-fragment, then installs missing official formulae or adopts already installed
+`setup add-packages` explicitly saves personal package inputs, then installs
+missing official formulae or adopts already installed
 ones without requesting an upgrade:
 
 ```sh
@@ -931,24 +931,26 @@ macarchy setup add-packages formula:jq --profile /path/to/profile.toml --approve
 ```
 
 Portable intent is the default. Add `--machine-only` to both commands to target
-the configured machine fragment instead. The preview shows the actual edit path,
-complete before/after text, named adoption receipts and native installation
+the machine layer instead. The preview shows both resolved input paths, each
+create/replace/unchanged operation, before/after text, named adoption receipts and native installation
 scope. It performs no writes. Approval binds source bytes/identity/metadata,
 profile inputs and package evidence; stale approval blocks before editing.
 
-Only missing literal declarations are appended: comments and unrelated lines
-remain intact, and replacement preserves existing file metadata. The fragment
-remains user-owned; no setup ownership claim, Git operation or synchronization
-is performed. Profiles themselves are never rewritten. A symlinked profile is
-resolved using the normal profile-loading rules. The edited fragment must have
-a regular, non-symlink path and one hard link; two layers sharing one fragment
-must be separated first.
+Only missing literal declarations are appended. The command removes named formula
+exclusions only from the selected profile, preserving other values and comments.
+Missing profiles and fragments can be created. Without existing wiring, it proposes
+a sibling named `<resolved-profile-filename>.Brewfile` and the corresponding
+`packages.brewfile` field. An existing file at that path is inspected, never
+silently replaced. Comments and unrelated text remain intact; replacement preserves
+existing file metadata and new files use mode 0600.
 
-Missing profile/Brewfile wiring, unsupported syntax, selected-layer exclusions
-and machine exclusions that defeat a portable addition block with instructions.
-This first add path does not create profiles, remove exclusions, edit two files,
-install casks/taps or run full setup. Configure or edit those inputs explicitly,
-then obtain a fresh preview.
+Inputs remain user-owned; no setup ownership claim, Git operation or synchronization
+is performed. A symlinked profile is resolved using the normal profile-loading
+rules. The resolved profile and fragment must have regular, non-symlink paths and
+one hard link; layers sharing a profile or fragment must be separated first.
+
+Unsupported syntax and machine exclusions that defeat a portable addition still
+block. Add never silently switches layers, installs casks/taps or runs full setup.
 
 Intent is saved **before** package actions. A failure reports `pending`, retains
 the saved intent and includes completed/failed stage reports. Preview again to
@@ -957,12 +959,23 @@ converge only the named pending work; interrupted native attempts first require
 candidate's receipts, adopting it requires a fresh preview rather than silently
 renewing that consent. Repeat after convergence is a no-op.
 
-An unconfirmed file publication starts no package action. A retained sibling
-`.Brewfile.macarchy-add-packages` (using the actual fragment basename) blocks
-retry: inspect it and the target, preserve the intended source, and resolve the
-residue manually before obtaining fresh approval. No automatic source rollback
-or recovery is claimed. File publication and native effects are not one global
-transaction; Homebrew retains the execution boundary below.
+An unconfirmed input publication starts no package action. A bounded record under
+`state/setup/package-input-publication.json` retains the approved versions and
+confirmed file snapshots. With the same profile/state options, run:
+
+```sh
+macarchy setup add-packages --recover --profile /path/to/profile.toml --json
+```
+
+Recovery finishes only previously approved file publication, and only when every
+affected file matches its recorded state. It never invokes Homebrew or adoption;
+obtain a **fresh preview and approval** afterward for pending package work.
+Drift, a retained `.<basename>.macarchy-add-packages` sibling, or a crash after a
+file save but before its new identity was recorded requires manual inspection.
+Preserve the source and publication evidence; recovery does not guess from matching
+bytes or overwrite unknown changes. There is no automatic source rollback.
+File publication and native effects are not one global transaction; Homebrew
+retains the execution boundary below.
 
 #### Native installation boundary
 
