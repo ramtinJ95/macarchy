@@ -18,6 +18,10 @@ struct HomebrewPackageIdentity: Hashable, Codable, Sendable {
 
   var key: String { "\(kind.rawValue):\(name)" }
   var token: String { String(name.split(separator: "/").last ?? "") }
+  var tap: String? {
+    let parts = name.split(separator: "/")
+    return parts.count == 3 ? parts.prefix(2).joined(separator: "/") : nil
+  }
 
   static func validToken(_ value: String) -> Bool {
     !value.isEmpty && value.first != "." && value.first != "-"

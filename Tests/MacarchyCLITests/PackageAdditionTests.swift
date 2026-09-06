@@ -177,13 +177,12 @@ struct PackageAdditionTests {
   }
 
   @Test(arguments: [
-    "unsupported", "machine-exclusion", "shared", "hard-link", "residue", "cask-tap", "tap",
+    "unsupported", "machine-exclusion", "shared", "hard-link", "residue",
     "preflight",
   ])
   func unsupportedInputsStopWithoutSaving(mode: String) async throws {
     let fixture = try AdditionFixture()
     defer { fixture.base.inventory.cleanup() }
-    var targets = ["formula:jq"]
     var runner = fixture.runner()
     switch mode {
     case "unsupported": try fixture.write("brew ENV['PACKAGE']\n")
@@ -202,8 +201,6 @@ struct PackageAdditionTests {
         "retained",
         at: fixture.fragment.deletingLastPathComponent().appending(
           path: ".Brewfile.macarchy-add-packages"))
-    case "cask-tap": targets = ["cask:vendor/apps/slack"]
-    case "tap": targets = ["formula:vendor/tap/jq"]
     case "preflight":
       runner = .init(
         planner: runner.planner,
@@ -213,7 +210,7 @@ struct PackageAdditionTests {
     default: break
     }
     let before = try? Data(contentsOf: fixture.fragment)
-    let result = try await fixture.run(runner, targets: targets)
+    let result = try await fixture.run(runner)
     #expect(result.outcome == "blocked")
     #expect((try? Data(contentsOf: fixture.fragment)) == before)
     #expect(fixture.base.calls.withLock { $0 } == 0)
@@ -579,6 +576,90 @@ struct PackageAdditionTests {
     #expect(try fixture.contents().contains("brew \"jq\""))
     #expect(try store.read()?.complete == false)
   }
+
+  @Test(arguments: HomebrewPackageIdentity.Kind.allCases)
+  func thirdPartyAdditionSavesExactLayerIntentAndRetainsNativeFailure(
+    kind: HomebrewPackageIdentity.Kind
+  ) async throws {
+    let fixture = try AdditionFixture(kind: kind, thirdParty: true)
+    defer { fixture.base.inventory.cleanup() }
+    let machine = kind == .cask
+    let context = fixture.base.context
+    let source = machine ? context.machineProfileURL : context.profileURL
+    let field = kind == .formula ? "exclude_formulae" : "exclude_casks"
+    let original =
+      AdditionFixture.profile
+      + "\(field) = ['\(fixture.base.target.name)', 'other/tools/\(fixture.base.target.token)'] # keep other tap\n"
+    let expected = original.replacingOccurrences(of: "'\(fixture.base.target.name)',", with: "")
+    if machine { try fixture.base.inventory.write("schema_version = 1\n", at: context.profileURL) }
+    try fixture.base.inventory.write(original, at: source)
+    try fixture.write("tap 'unrelated/tap'\n")
+    let native = fixture.runner(status: 1)
+    let runner = SetupPackageAdditionCommandRunner(
+      planner: native.planner,
+      provider: .init(apply: { url, record in
+        #expect(try String(contentsOf: source, encoding: .utf8) == expected)
+        return try native.provider.apply(url, record)
+      }))
+    let targets = [fixture.base.target.key, "formula:orphan"]
+    let preview = try await fixture.run(runner, targets: targets, machineOnly: machine)
+    #expect(preview.outcome == "preview", "\(preview.json)")
+    #expect(preview.json["preview"]?["installation"]?["brewfile"]?.string == fixture.base.brewfile)
+    #expect(
+      preview.json["preview"]?["installation"]?["native_effects"]?.array?.compactMap(\.string)
+        == [HomebrewBundleInstaller.tapEffects]
+        + (kind == .cask ? [HomebrewBundleInstaller.caskEffects] : []))
+    #expect(try String(contentsOf: source, encoding: .utf8) == original)
+    // Changing only the requested tap cannot reuse this approval or save input.
+    let changed = try await fixture.run(
+      runner,
+      targets: ["\(kind.rawValue):other/tools/\(fixture.base.target.token)", "formula:orphan"],
+      machineOnly: machine, approval: preview.approval())
+    #expect(changed.outcome == "blocked")
+    #expect(try String(contentsOf: source, encoding: .utf8) == original)
+    #expect(fixture.base.calls.withLock { $0 } == 0)
+    let failed = try await fixture.run(
+      runner, targets: targets, machineOnly: machine, approval: preview.approval())
+    #expect(failed.outcome == "pending", "\(failed.json)")
+    #expect(try String(contentsOf: source, encoding: .utf8) == expected)
+    #expect(
+      try fixture.contents()
+        == "tap 'unrelated/tap'\n"
+        + (kind == .cask
+          ? fixture.base.declaration + "brew \"orphan\"\n"
+          : "brew \"orphan\"\n" + fixture.base.declaration))
+    #expect(try fixture.base.ledger.read() == nil)
+    // A native failure may still leave matching receipts. Fresh consent adopts
+    // those exact named roots; it must not acquire taps or execute Homebrew again.
+    let retry = try await fixture.run(runner, targets: targets, machineOnly: machine)
+    #expect(retry.json["preview"]?["installation"] == nil)
+    #expect(
+      try await fixture.run(
+        runner, targets: targets, machineOnly: machine, approval: retry.approval()
+      ).outcome
+        == "complete")
+    #expect(try Set(fixture.base.ledger.read()?.entries.map(\.identity.key) ?? []) == Set(targets))
+    #expect(
+      try await fixture.run(runner, targets: targets, machineOnly: machine).outcome == "no_change")
+    #expect(fixture.base.calls.withLock { $0 } == 1)
+  }
+
+  @Test(arguments: HomebrewPackageIdentity.Kind.allCases)
+  func conflictingTapTargetsBlockBeforeSaving(kind: HomebrewPackageIdentity.Kind) async throws {
+    let fixture = try AdditionFixture(kind: kind, thirdParty: true)
+    defer { fixture.base.inventory.cleanup() }
+    let before = try fixture.contents()
+    let result = try await fixture.run(
+      fixture.runner(),
+      targets: [
+        fixture.base.target.key, "\(kind.rawValue):other/tools/\(fixture.base.target.token)",
+      ])
+    #expect(result.outcome == "blocked")
+    #expect(result.json["message"]?.string?.contains("Conflicting package targets") == true)
+    #expect(try fixture.contents() == before)
+    #expect(!FileManager.default.fileExists(atPath: fixture.base.context.stateRoot.path))
+    #expect(fixture.base.calls.withLock { $0 } == 0)
+  }
 }
 
 private struct AdditionFixture: Sendable {
@@ -587,8 +668,8 @@ private struct AdditionFixture: Sendable {
     "schema_version = 1\n[packages]\nbaseline = \"personal\"\nbrewfile = \"Brewfile\"\n"
   var fragment: URL { base.inventory.root.appending(path: "Brewfile") }
 
-  init(kind: HomebrewPackageIdentity.Kind = .formula) throws {
-    base = try InstallationFixture(kind: kind)
+  init(kind: HomebrewPackageIdentity.Kind = .formula, thirdParty: Bool = false) throws {
+    base = try InstallationFixture(kind: kind, thirdParty: thirdParty)
     try base.inventory.write(Self.profile, at: base.context.profileURL)
     try write("# personal\n")
   }
@@ -609,7 +690,7 @@ private struct AdditionFixture: Sendable {
     return .init(
       planner: native.planner,
       provider: .init(apply: { url, record in
-        #expect(try self.contents().contains(self.base.brewfile))
+        #expect(try self.contents().contains(self.base.declaration))
         return try native.provider.apply(url, record)
       }))
   }

@@ -12,6 +12,11 @@ struct SetupBrewfile: Equatable, Sendable {
     self.taps = Set(taps).sorted()
   }
 
+  /// Named missing roots only; unrelated declarative taps are not execution scope.
+  static func installing(_ packages: [HomebrewPackageIdentity]) -> Self {
+    Self(packages: packages, taps: packages.compactMap(\.tap))
+  }
+
   static func read(at url: URL) throws -> Self {
     do {
       let data = try BoundedRegularFile.read(at: url).data

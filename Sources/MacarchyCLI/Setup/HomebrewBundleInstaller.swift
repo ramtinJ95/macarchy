@@ -14,6 +14,14 @@ struct HomebrewBundleInstaller: Sendable {
   static let arguments = ["bundle", "install", "--no-upgrade", "--file"]
   static let caskEffects =
     "Homebrew cask installation may invoke sudo using existing authorization and Bundle may adopt identical existing application artifacts. Macarchy supplies no credentials and adds no trust or permission-repair commands or elevated retries."
+  static let tapEffects =
+    "Homebrew acquires required named taps from its default remotes and executes package code and dependencies under native policy. Fully qualified names may authorize this invocation without persistent trust. Macarchy adds no trust grants, custom tap URLs, automatic retries or rollback; native trust/authentication failures remain visible and partial."
+
+  static func nativeEffects(for packages: [HomebrewPackageIdentity]) -> [String] {
+    (packages.contains { $0.tap != nil } ? [tapEffects] : [])
+      + (packages.contains { $0.kind == .cask } ? [caskEffects] : [])
+  }
+
   static let environment = [
     "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_AUTO_UPDATE=1",
     "HOMEBREW_NO_AUTOREMOVE=1", "HOMEBREW_NO_INSTALL_CLEANUP=1",

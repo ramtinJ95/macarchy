@@ -7,13 +7,12 @@ import Testing
 @testable import ThemeCore
 
 struct PackageInstallationTests {
-  @Test(arguments: HomebrewPackageIdentity.Kind.allCases)
+  @Test(arguments: HomebrewPackageIdentity.Kind.allCases, [false, true])
   func approvalBindsBrewfilePublishesOnlyNamedRootsAndRepeatDoesNothing(
-    kind: HomebrewPackageIdentity.Kind
+    kind: HomebrewPackageIdentity.Kind, thirdParty: Bool
   ) async throws {
-    let fixture = try InstallationFixture(kind: kind)
+    let fixture = try InstallationFixture(kind: kind, thirdParty: thirdParty)
     defer { fixture.inventory.cleanup() }
-    try fixture.inventory.write("schema_version = 1\n", at: fixture.context.profileURL)
     let personal = try Data(contentsOf: fixture.context.profileURL)
     let runner = fixture.runner()
     let preview = try await fixture.run(runner)
@@ -21,7 +20,8 @@ struct PackageInstallationTests {
     #expect(preview.json["brewfile"]?.string == fixture.brewfile)
     #expect(
       preview.json["native_effects"]?.array?.compactMap(\.string)
-        == (kind == .cask ? [HomebrewBundleInstaller.caskEffects] : []))
+        == (thirdParty ? [HomebrewBundleInstaller.tapEffects] : [])
+        + (kind == .cask ? [HomebrewBundleInstaller.caskEffects] : []))
     #expect(preview.json["effects"] == nil)
     #expect(
       preview.json["command"]?.array?.compactMap(\.string) == [
@@ -112,11 +112,14 @@ struct PackageInstallationTests {
     #expect(try fixture.ledger.read() == nil)
   }
 
-  @Test(arguments: ["nonzero", "unknown", "missing"], HomebrewPackageIdentity.Kind.allCases)
-  func partialNativeOutcomesNeverPublishOwnership(mode: String, kind: HomebrewPackageIdentity.Kind)
-    async throws
-  {
-    let fixture = try InstallationFixture(kind: kind)
+  @Test(
+    arguments: HomebrewPackageIdentity.Kind.allCases.flatMap { kind in
+      ["nonzero", "unknown", "missing"].map { ($0, kind, false) } + [("nonzero", kind, true)]
+    })
+  func partialNativeOutcomesNeverPublishOwnership(
+    mode: String, kind: HomebrewPackageIdentity.Kind, thirdParty: Bool
+  ) async throws {
+    let fixture = try InstallationFixture(kind: kind, thirdParty: thirdParty)
     defer { fixture.inventory.cleanup() }
     var runner = fixture.runner(status: mode == "nonzero" ? 1 : 0, install: mode != "missing")
     let preview = try await fixture.run(runner)
@@ -130,19 +133,21 @@ struct PackageInstallationTests {
     }
     let result = try await fixture.run(runner, approval: preview.approval())
     #expect(result.outcome == (mode == "unknown" ? "recovery_required" : "partial"))
-    if mode == "unknown" {
-      #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "partial")
-      #expect(fixture.calls.withLock { $0 } == 0)
-    }
+    #expect(try fixture.ledger.read() == nil)
+    #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "partial")
+    #expect(fixture.calls.withLock { $0 } == (mode == "unknown" ? 0 : 1))
     #expect(try fixture.ledger.read() == nil)
     #expect(try fixture.store.read()?.phase == .partial)
   }
 
-  @Test(arguments: [false, true], HomebrewPackageIdentity.Kind.allCases)
+  @Test(
+    arguments: HomebrewPackageIdentity.Kind.allCases.flatMap { kind in
+      [false, true].map { ($0, kind, false) } + [(false, kind, true)]
+    })
   func recoveryRequiresPersistedNativeSuccessAndDoesNotRerun(
-    afterPublication: Bool, kind: HomebrewPackageIdentity.Kind
+    afterPublication: Bool, kind: HomebrewPackageIdentity.Kind, thirdParty: Bool
   ) async throws {
-    let fixture = try InstallationFixture(kind: kind)
+    let fixture = try InstallationFixture(kind: kind, thirdParty: thirdParty)
     defer { fixture.inventory.cleanup() }
     var runner = fixture.runner()
     let preview = try await fixture.run(runner)
@@ -155,11 +160,14 @@ struct PackageInstallationTests {
     }
     #expect(
       try await fixture.run(runner, approval: preview.approval()).outcome == "recovery_required")
+    #expect(
+      try fixture.ledger.read()?.entries.map(\.identity)
+        == (afterPublication ? [fixture.target] : nil))
     #expect(throws: SetupPackageAdoptionError.self) { try fixture.store.requireResolved() }
     #expect(try await fixture.run(fixture.runner()).outcome == "blocked")
     #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "complete")
     #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "complete")
-    #expect(try fixture.ledger.read()?.entries.count == 1)
+    #expect(try fixture.ledger.read()?.entries.map(\.identity) == [fixture.target])
     #expect(fixture.calls.withLock { $0 } == 1)
   }
 
@@ -227,6 +235,19 @@ struct PackageInstallationTests {
     let result = try await fixture.runner().execute(
       context: fixture.context, targets: targets, approval: nil, json: true)
     #expect(!result.succeeded)
+    #expect(!FileManager.default.fileExists(atPath: fixture.context.stateRoot.path))
+  }
+
+  @Test(arguments: [
+    ["formula:jq", "formula:vendor/tap/jq"],
+    ["cask:vendor/apps/slack", "cask:other/apps/slack"],
+  ])
+  func conflictingTapTargetsBlockBeforeDeclarationLookup(targets: [String]) async throws {
+    let fixture = try InstallationFixture()
+    defer { fixture.inventory.cleanup() }
+    let result = try await fixture.run(fixture.runner(), targets: targets)
+    #expect(result.outcome == "blocked")
+    #expect(result.json["message"]?.string?.contains("Conflicting package targets") == true)
     #expect(!FileManager.default.fileExists(atPath: fixture.context.stateRoot.path))
   }
 
@@ -299,6 +320,28 @@ struct PackageInstallationTests {
     #expect(try await fixture.run(runner, recover: true).outcome == "partial")
     #expect(fixture.calls.withLock { $0 } == 1)
   }
+
+  @Test(arguments: HomebrewPackageIdentity.Kind.allCases)
+  func thirdPartySuccessRequiresExactTapReceipt(kind: HomebrewPackageIdentity.Kind) async throws {
+    let fixture = try InstallationFixture(kind: kind, thirdParty: true)
+    defer { fixture.inventory.cleanup() }
+    var runner = fixture.runner()
+    runner.checkpoint = { point in
+      if case .afterNativeOutcome = point {
+        if kind == .formula {
+          try fixture.inventory.formula(fixture.target.token, tap: "other/tools")
+        } else {
+          try fixture.inventory.cask(fixture.target.token, tap: "other/tools")
+        }
+      }
+    }
+    let preview = try await fixture.run(runner)
+    #expect(try await fixture.run(runner, approval: preview.approval()).outcome == "partial")
+    #expect(try fixture.ledger.read() == nil)
+    #expect(try await fixture.run(runner, recover: true).outcome == "partial")
+    #expect(try fixture.ledger.read() == nil)
+    #expect(fixture.calls.withLock { $0 } == 1)
+  }
 }
 
 final class InstallationFixture: Sendable {
@@ -306,12 +349,26 @@ final class InstallationFixture: Sendable {
   let calls = Mutex(0)
   let installed = Mutex(false)
   let target: HomebrewPackageIdentity
-  var brewfile: String { target.kind == .formula ? "brew \"jq\"\n" : "cask \"slack\"\n" }
+  var declaration: String {
+    "\(target.kind == .formula ? "brew" : "cask") \"\(target.name)\"\n"
+  }
+  var brewfile: String {
+    (target.name.contains("/") ? "tap \"vendor/tools\"\n" : "") + declaration
+  }
 
-  init(kind: HomebrewPackageIdentity.Kind = .formula) throws {
-    target = .init(kind: kind, name: kind == .formula ? "jq" : "slack")
+  init(kind: HomebrewPackageIdentity.Kind = .formula, thirdParty: Bool = false) throws {
+    target = .init(
+      kind: kind, name: (thirdParty ? "vendor/tools/" : "") + (kind == .formula ? "jq" : "slack"))
     inventory = try InventoryFixture()
     try inventory.formula("orphan", tap: "homebrew/core")
+    try inventory.write(
+      thirdParty
+        ? "schema_version = 1\n[packages]\nbaseline = 'personal'\nbrewfile = 'Brewfile'\n"
+        : "schema_version = 1\n", at: context.profileURL)
+    if thirdParty {
+      try inventory.write(
+        "tap \"unrelated/tap\"\n" + declaration, at: inventory.root.appending(path: "Brewfile"))
+    }
   }
 
   var context: UnifiedSetupPlanContext {
@@ -329,9 +386,9 @@ final class InstallationFixture: Sendable {
   var store: SetupPackageInstallationStore { .init(context: context) }
   func install() throws {
     if target.kind == .formula {
-      try inventory.formula(target.name, tap: "homebrew/core")
+      try inventory.formula(target.token, tap: target.tap ?? "homebrew/core")
     } else {
-      try inventory.cask(target.name, tap: "homebrew/cask")
+      try inventory.cask(target.token, tap: target.tap ?? "homebrew/cask")
     }
     try inventory.formula("libfoo", tap: "homebrew/core")
     installed.withLock { $0 = true }
@@ -340,9 +397,9 @@ final class InstallationFixture: Sendable {
     let present = installed.withLock { $0 }
     return inventory.reader(
       formulae: present
-        ? (target.kind == .formula ? "\(target.name)\nlibfoo\norphan" : "libfoo\norphan")
+        ? (target.kind == .formula ? "\(target.token)\nlibfoo\norphan" : "libfoo\norphan")
         : "orphan",
-      casks: present && target.kind == .cask ? target.name : ""
+      casks: present && target.kind == .cask ? target.token : ""
     ).read()
   }
   func runner(status: Int32 = 0, install: Bool = true) -> SetupPackageInstallationCommandRunner {
