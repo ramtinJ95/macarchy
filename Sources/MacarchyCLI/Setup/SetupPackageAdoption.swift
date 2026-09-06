@@ -44,7 +44,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
       stateRoot: context.stateRoot, homeDirectory: context.homeDirectory)
     var reviewed: Prepared?
     do {
-      let identities = try parseTargets(targets)
+      let identities = try Self.parseTargets(targets)
       let prepared = try prepare(context: context, identities: identities, store: store)
       reviewed = prepared
       if prepared.additions.isEmpty {
@@ -116,6 +116,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity],
     store: SetupPackageAdoptionStore
   ) throws -> Prepared {
+    try SetupPackageInstallationStore(context: context).requireResolved()
     guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
       throw SetupPackageAdoptionError("Resolve interrupted unified setup before adopting packages.")
     }
@@ -173,7 +174,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     return Prepared(candidates: candidates, ledger: ledger, digest: digest)
   }
 
-  private func parseTargets(_ targets: [String]) throws -> [HomebrewPackageIdentity] {
+  static func parseTargets(_ targets: [String]) throws -> [HomebrewPackageIdentity] {
     guard !targets.isEmpty, targets.count <= 1024 else {
       throw SetupPackageAdoptionError(
         "Name at least one exact formula:<name> or cask:<name> target.")
@@ -195,7 +196,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
       return HomebrewPackageIdentity(kind: kind, name: name)
     }
     guard Set(identities).count == identities.count else {
-      throw SetupPackageAdoptionError("Duplicate package adoption targets.")
+      throw SetupPackageAdoptionError("Duplicate package targets.")
     }
     return identities.sorted { $0.key < $1.key }
   }

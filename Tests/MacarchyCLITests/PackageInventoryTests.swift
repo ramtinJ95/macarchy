@@ -355,9 +355,6 @@ struct PackageInventoryTests {
     let proposed = try #require(planJSON["package_inventory"]?["proposed"]?.array)
     #expect(proposed.count == 62)
     #expect(proposed.allSatisfy { $0["homebrew_status"]?.string == "unknown" })
-    #expect(
-      planJSON["package_inventory"]?["provisioning"]?.string
-        == "preview_only_existing_apply_unchanged")
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: planner, themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
       desktopInspection: { _, _, _, _ in try applyComponent("{}") },

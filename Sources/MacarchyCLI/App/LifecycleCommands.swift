@@ -61,7 +61,8 @@ extension Macarchy {
     static let configuration = CommandConfiguration(
       abstract: "Plan and converge the complete curated Macarchy core.",
       subcommands: [
-        Guided.self, Plan.self, AdoptPackages.self, Apply.self, Status.self, Doctor.self,
+        Guided.self, Plan.self, AdoptPackages.self, InstallPackages.self, Apply.self, Status.self,
+        Doctor.self,
         Teardown.self,
       ]
     )
@@ -239,6 +240,40 @@ extension Macarchy {
           context: profile.context(stateRoot: URL(filePath: stateRoot).standardizedFileURL),
           targets: targets, approval: approve, json: json
         )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
+      }
+    }
+
+    struct InstallPackages: AsyncParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Preview and explicitly install bounded missing official bottled formulae.")
+
+      @Argument(help: "Exact declared formula:<name> targets; omit for --recover.")
+      var targets: [String] = []
+
+      @Option(help: "Exact digest from the reviewed complete installation preview.")
+      var approve: String?
+
+      @Flag(help: "Resolve an interrupted attempt by observation only; never rerun Homebrew.")
+      var recover = false
+
+      @OptionGroup var profile: ProfileOptions
+
+      @Option(help: "Canonical Macarchy state directory.")
+      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+      @Flag(help: "Emit machine-readable output.")
+      var json = false
+
+      mutating func run() async throws {
+        let context = profile.context(stateRoot: URL(filePath: stateRoot).standardizedFileURL)
+        let execution = try await SetupPackageInstallationCommandRunner.live(
+          homeDirectory: context.homeDirectory
+        )
+        .execute(
+          context: context, targets: targets, approval: approve, recover: recover, json: json)
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }
       }

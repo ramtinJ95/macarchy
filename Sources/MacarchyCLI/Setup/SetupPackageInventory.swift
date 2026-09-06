@@ -93,9 +93,11 @@ struct SetupPackageInventory: Encodable, Sendable {
   }
   let retainedAdoptionsOutsideProposed: [RetainedAdoption]
   let adoptionIssue: String?
+  var installation: SetupPackageInstallationAttempt.Summary? = nil
+  var installationIssue: String? = nil
   let scope = "standard_baseline_and_provider_requirements"
   let authority = "read_only_inventory_no_homebrew_mutation"
-  let provisioning = "preview_only_existing_apply_unchanged"
+  let provisioning = "explicit_bounded_install_packages_existing_apply_unchanged"
 
   init(
     capabilities: [SetupCapability], fieldOrigins: [String: String],
@@ -229,6 +231,19 @@ struct SetupPackageInventory: Encodable, Sendable {
       )
     }
     if let adoptionIssue { lines.append("- Adoption evidence unavailable: \(adoptionIssue)") }
+    if let installation {
+      lines.append(
+        "- Last package installation [\(installation.phase.rawValue)]: \(installation.targets.joined(separator: ", ")); native exit \(installation.nativeExit.map(String.init) ?? "unknown")."
+      )
+      if installation.phase == .running {
+        lines.append(
+          "  - Run setup install-packages --recover; no automatic Homebrew retry or rollback.")
+      }
+      if !installation.diagnostic.isEmpty { lines.append("  - \(installation.diagnostic)") }
+    }
+    if let installationIssue {
+      lines.append("- Installation evidence unavailable: \(installationIssue)")
+    }
     lines += observation.issues.map { "- Inventory unavailable: \($0)" }
     return lines.joined(separator: "\n")
   }

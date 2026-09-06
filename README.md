@@ -824,6 +824,54 @@ than pretending to roll back; inspect the inventory before retrying. Receipt
 evidence does not verify installed file integrity or waive later install/update/
 prune impact gates. Homebrew can change independently of Macarchy's setup lock.
 
+`setup install-packages` previews explicitly named missing official bottled
+formulae, including their complete new dependency closure:
+
+```sh
+macarchy setup install-packages formula:resvg --json
+macarchy setup install-packages formula:resvg --approve <reviewed-digest> --json
+macarchy setup install-packages --recover --json
+```
+
+This bounded path uses the same profile, inventory, adoption ledger and setup
+lock; it does not replace `setup apply` or change provider configuration. The
+preview shows which declarations will be recorded separately from new dependencies,
+and includes versions, bottle hashes, exact prefix links/directories and host
+path evidence. Approval binds these effects, full receipt inventory, declaration
+provenance, ledger, profile paths and home/state context. Inputs are revalidated
+under the setup lock and again after fresh native staging, immediately before
+execution. Matching applied declarations repeat without writes or native staging.
+
+Installation requires the same pinned Apple Silicon macOS 26 Homebrew runtime
+listed below. It blocks existing-package changes (including adopted packages),
+source builds, casks, third-party targets, unsupported hooks/services, aliases/
+migrations, overwrite effects, etc/var payloads and uncertain dependent work.
+An installed but unadopted target requires the separate adoption workflow;
+externally satisfied provider requirements are not replaced. Ordinary impact
+evidence alone never authorizes this command.
+
+Official archives are bounded to 32 MiB each / 64 MiB total and expanded payloads
+to 128 MiB total. Native preparation is scratch-only; installation denies network
+access and confines writes to reviewed new racks, links/directories, private
+scratch and Homebrew operational locks. Cleanup, autoremove and installation
+upgrade guards remain enabled; dependent checks are not suppressed. Missing
+trust remains a visible prerequisite, never an automatic trust change.
+
+`state/setup/package-installation.json` tracks the last attempt, not ownership.
+Only recorded native success plus verification of every planned component and
+unchanged prior receipt inventory permits publication of the **named roots** in
+`packages.json`. Dependencies remain Homebrew-owned. Interrupted attempts block
+setup apply, teardown and adoption until `--recover`; plan/status/doctor expose
+the pending state. Recovery never reruns Homebrew or claims rollback, and refuses
+to proceed while the recorded installation process group still exists. Unknown
+or unsuccessful execution becomes explicit partial state without new adoption.
+Homebrew launched independently remains outside Macarchy's setup lock.
+
+Runtime qualification is not yet complete: the supported development host's
+native dependent scan currently refuses an untrusted installed third-party
+dependency. Staging and blocked CLI behavior are verified; a real installation
+journey still requires separate exact package/version/dependency approval.
+
 `setup plan --package-impact` explicitly downloads official metadata into
 disposable scratch storage and adds `package_impact` to the report. Homebrew's
 native formula resolver runs with network access and writes outside scratch
