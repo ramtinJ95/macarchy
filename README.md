@@ -112,7 +112,7 @@ macarchy reconcile [adapter ...] [--dry-run]
 macarchy doctor [--json]
 macarchy setup guided [--output-profile <path>] [--machine-profile <path>]
 macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--json]
-macarchy setup apply [--profile <path>] [--machine-profile <path>] [--install-dependencies] [--adoption-file <path>] [--yabai-adopt <digest>] [--keybindings-adopt <digest>] [--sketchybar-adopt <digest>] [--environment-adopt <digest>] [--json]
+macarchy setup apply [--profile <path>] [--machine-profile <path>] [--approve-packages <digest>] [--adoption-file <path>] [--yabai-adopt <digest>] [--keybindings-adopt <digest>] [--sketchybar-adopt <digest>] [--environment-adopt <digest>] [--json]
 macarchy setup status [--profile <path>] [--machine-profile <path>] [--json]
 macarchy setup doctor [--profile <path>] [--machine-profile <path>] [--json]
 macarchy setup teardown [--profile <path>] [--machine-profile <path>] [--dry-run] [--json]
@@ -771,16 +771,15 @@ package inventory described below, including machine-layer contributions. If a
 machine addition defeats a requested portable exclusion, guided setup stops and
 identifies the overridden package; it never edits or bypasses the machine profile.
 Missing external prerequisites stop the flow for explicit remediation.
-Each adoption digest requires a separate default-no confirmation, missing
-Homebrew dependencies require installation confirmation, and applying the plan
+Each configuration-adoption digest requires a separate default-no confirmation,
+the missing-package Brewfile requires default-no installation confirmation, and applying the plan
 requires a final default-no confirmation. Cancelling or encountering a blocked
 plan retains the new profile for review.
 
-These guided apply confirmations still cover provider setup, **not installation
-of the full effective Brewfile**. Package-only installation uses a separate
-`setup install-packages` preview and approval for named formulae and casks,
-including any required third-party taps. Ending input before the questionnaire
-finishes writes no profile.
+Guided setup installs the effective set's missing packages before configuring
+providers. Its package confirmation binds the same digest as noninteractive
+`setup apply --approve-packages <digest>`. Ending input before the questionnaire
+finishes writes no profile. Cancelling after publication retains the new profile.
 
 `macarchy setup plan` compiles built-in defaults, the optional portable
 `~/.config/macarchy/profile.toml`, and the optional machine-local
@@ -803,13 +802,37 @@ with inert receipts; package Ruby is not loaded, metadata is not refreshed,
 and aliases or old tap identities are not silently resolved. Unavailable,
 ambiguous, or unsupported observations remain explicit.
 
-The inventory is **read-only**: apply does not yet provision the standard baseline
-or implicitly adopt packages. Existing provider dependency installation and core
-readiness are unchanged; no Brewfile is imported. Installer compatibility and
-dependency effects are not verified by this report. Third-party trust remains manual;
-installation does not authorize permissions, accounts, services/helpers,
-model/toolchain downloads or shell hooks. Installed packages outside the proposed
-set are not implicitly adopted.
+The inventory is **read-only**. Normal apply uses it to install missing declarations
+from the effective standard/personal package set; it does not automatically adopt
+packages or change their Macarchy ownership history. Satisfactory installed
+packages and compatible external provider executables are left alone. Unavailable
+or conflicting package identities block with diagnostics. Installer compatibility
+and native dependency effects are not certified by the preview; native policy and
+effects are described below. Macarchy does not grant application permissions or
+claim completion of manual setup.
+
+The plan's `package_installation` shows the effective intent, missing-only Brewfile,
+native command, native-effects notice and approval digest. For example:
+
+```sh
+macarchy setup plan --profile /path/to/profile.toml --json
+macarchy setup apply --profile /path/to/profile.toml --approve-packages <reviewed-digest> --json
+```
+
+Retain any separately required configuration-adoption options on apply. The old
+`--install-dependencies` flag does not authorize the expanded package scope.
+If no packages are missing, package approval and native execution are unnecessary.
+Approved setup writes `state/setup/provisioning.Brewfile`, runs native Bundle
+with install-only controls and checks the remaining package/capability state
+before changing provider configuration. It does not write a package adoption
+ledger or create another package transaction/recovery journal.
+
+A native failure stops configuration and reports partial effects without package
+rollback or automatic retry. Let any native work finish or resolve its native
+locks, inspect a fresh plan, and rerun deliberately. User intent is retained;
+already satisfied packages are not reinstalled. Configuration recovery remains
+separate. Explicit named install/adopt/add commands keep their own ownership and
+interruption contracts below; normal setup does not claim that ownership.
 
 `setup adopt-packages` explicitly records ownership of named, already installed
 declarations without installing, upgrading or removing anything:
@@ -919,7 +942,8 @@ Brewfile; JSON uses `package_inventory.effective_brewfile`. The existing
 `setup adopt-packages` and `setup install-packages` commands consume the same
 personal declarations. Approval/revalidation uses the effective named scope.
 Inputs are read-only: these commands never rewrite profiles or fragments.
-Full-baseline apply and persistent removal remain later work.
+Normal and guided setup consume the full effective package set. Persistent removal
+and managed-package updates remain deferred.
 
 #### Save and apply a named addition
 
@@ -1028,7 +1052,7 @@ Official and third-party formula/cask targets can be mixed. Requests for differe
 taps sharing the same kind and token block; formula and cask identities remain
 distinct even with the same token. Receipt verification requires the exact tap
 identity, not an alias or merely the same package name.
-Full-baseline apply, scoped update and prune remain pending.
+Scoped update and prune remain deferred.
 Installed unadopted targets use `setup adopt-packages`;
 externally satisfied provider requirements are not replaced. No provider
 configuration changes during this command.
@@ -1089,8 +1113,8 @@ Planning does not write files, run lifecycle mutations, install software, or
 change canonical state. After reviewing it, `macarchy setup apply` uses that
 same layered model to bootstrap the canonical theme and converge desktop and
 environment providers in order. Missing selected formulae and casks are
-installed only when `--install-dependencies` is supplied; Homebrew remains the
-package owner and mutator. Existing state that requires adoption is rejected by
+installed only with the exact `--approve-packages` digest; Homebrew remains the
+package owner and mutator. Existing configuration that requires adoption is rejected by
 default rather than claimed implicitly. To approve the exact machine state
 shown by the current plan, pass its digests with `--yabai-adopt`,
 `--keybindings-adopt`, `--sketchybar-adopt`, and
