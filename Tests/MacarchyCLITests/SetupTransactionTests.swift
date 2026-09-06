@@ -513,7 +513,10 @@ extension SetupOwnershipTests {
       }
       activationResult.withLock { $0 = result }
     }
-    try #require(preflightEntered.wait(timeout: .now() + 0.5) == .success)
+    // Readiness can wait behind other suites on the process-wide lock. Use
+    // the worker coordination budget, not the short contention observation
+    // below, to establish that this scenario has actually started.
+    try #require(preflightEntered.wait(timeout: .now() + 5) == .success)
     let setupCompleted = Mutex(false)
     let setupResult = Mutex<Result<[SetupIntegrationResult], any Error>?>(nil)
     workers.enter()
