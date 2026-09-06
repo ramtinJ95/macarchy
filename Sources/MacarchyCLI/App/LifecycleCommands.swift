@@ -276,17 +276,20 @@ extension Macarchy {
     struct AddPackages: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
         abstract:
-          "Save named official formulae to a configured personal Brewfile, then install or adopt them."
+          "Save named official formulae to personal inputs, then install or adopt them."
       )
 
-      @Argument(help: "Exact formula:<name> identities.")
-      var targets: [String]
+      @Argument(help: "Exact formula:<name> identities; omit for --recover.")
+      var targets: [String] = []
 
       @Option(help: "Exact digest from the reviewed file edit and package action preview.")
       var approve: String?
 
       @Flag(help: "Edit the machine fragment instead of the default portable fragment.")
       var machineOnly = false
+
+      @Flag(help: "Finish recorded input publication only; never install or adopt packages.")
+      var recover = false
 
       @OptionGroup var profile: ProfileOptions
 
@@ -304,7 +307,7 @@ extension Macarchy {
         )
         .execute(
           context: context, targets: targets, machineOnly: machineOnly, approval: approve,
-          json: json)
+          recover: recover, json: json)
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }
       }

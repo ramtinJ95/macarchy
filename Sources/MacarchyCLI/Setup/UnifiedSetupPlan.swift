@@ -55,6 +55,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   }
   var standardBrewfile: @Sendable (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
   var personalBrewfile: @Sendable (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
+  var proposedProfileSources: [URL: String] = [:]
 
   static let live = UnifiedSetupPlanCommandRunner(
     capabilityIsAvailable: { $0.isAvailable() },
@@ -157,7 +158,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   }
 
   private func loadProfile(context: UnifiedSetupPlanContext) throws -> LayeredPortableProfile {
-    try PortableProfileLoader().load(
+    try PortableProfileLoader(proposedSources: proposedProfileSources).load(
       portableAt: context.profileURL, portableRequired: context.profileRequired,
       machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired
     )

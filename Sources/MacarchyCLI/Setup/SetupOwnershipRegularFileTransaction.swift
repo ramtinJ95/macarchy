@@ -1066,7 +1066,7 @@ extension SetupOwnershipManager {
     )
   }
 
-  struct RegularFileSnapshot: Equatable, Encodable, Sendable {
+  struct RegularFileSnapshot: Equatable, Codable, Sendable {
     let device: UInt64
     let inode: UInt64
     let mode: UInt32
