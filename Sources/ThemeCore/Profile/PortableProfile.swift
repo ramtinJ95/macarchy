@@ -145,6 +145,7 @@ package struct PortableProfile: Equatable, Sendable {
   package let topBar: TopBarProviderSelection
   package let sketchyBar: SketchyBarProfileOptions
   package let environment: EnvironmentProfile
+  package let packages: PackageProfile
 
   package static let defaults = PortableProfile(
     sourceURL: nil,
@@ -152,7 +153,8 @@ package struct PortableProfile: Equatable, Sendable {
     desktop: DesktopProfile(provider: .yabaiSkhd, yabai: .empty),
     topBar: .sketchybar,
     sketchyBar: .empty,
-    environment: .defaults
+    environment: .defaults,
+    packages: .defaults
   )
 }
 
@@ -180,7 +182,7 @@ package struct PortableProfileLoader: Sendable {
   private static let allowedTables = Set([
     "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
     "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
-    "editor", "neovim", "tools", "presets", "btop", "yazi",
+    "editor", "neovim", "tools", "presets", "btop", "yazi", "packages",
   ])
 
   private static let allowedFields = Set([
@@ -234,6 +236,10 @@ package struct PortableProfileLoader: Sendable {
     "presets.tuicr",
     "btop.vim_keys",
     "yazi.show_hidden",
+    "packages.baseline",
+    "packages.brewfile",
+    "packages.exclude_formulae",
+    "packages.exclude_casks",
   ])
 
   package func load(at source: URL, required: Bool) throws -> PortableProfile {
@@ -266,6 +272,11 @@ package struct PortableProfileLoader: Sendable {
     for field in machine.summary.declaredFields {
       origins[field] = .machine
     }
+    // These inputs contribute by package identity; no single field wins.
+    // Keep both layer summaries and let the package compiler report provenance.
+    for field in ["packages.brewfile", "packages.exclude_formulae", "packages.exclude_casks"] {
+      origins.removeValue(forKey: field)
+    }
     return LayeredPortableProfile(
       profile: merged,
       layers: [portable.summary, machine.summary],
@@ -286,7 +297,8 @@ package struct PortableProfileLoader: Sendable {
     _ text: String,
     source: URL,
     resolvedSource: URL?,
-    index: TOMLSourceIndex
+    index: TOMLSourceIndex,
+    layerKind: PortableProfileLayerKind = .portable
   ) throws -> PortableProfile {
     if let table = index.tables.first(where: {
       !Self.allowedTables.contains($0.path) || $0.isArray
@@ -343,8 +355,26 @@ package struct PortableProfileLoader: Sendable {
       desktop: desktop,
       topBar: topBar,
       sketchyBar: sketchyBar,
-      environment: environment
+      environment: environment,
+      packages: try packages(document.packages, kind: layerKind, source: sourceURL, base: base)
     )
+  }
+
+  private func packages(
+    _ document: PackagesDocument?, kind: PortableProfileLayerKind, source: URL, base: URL
+  ) throws -> PackageProfile {
+    guard let document else { return .defaults }
+    return PackageProfile(
+      baseline: document.baseline ?? .standard,
+      layers: [
+        .init(
+          kind: kind, sourceURL: source,
+          brewfileURL: try document.brewfile.map {
+            try Self.resolvePortablePath($0, field: "packages.brewfile", base: base, source: source)
+          },
+          excludedFormulae: document.excludeFormulae ?? [],
+          excludedCasks: document.excludeCasks ?? [])
+      ])
   }
 
   private func keybindings(
@@ -814,7 +844,8 @@ package struct PortableProfileLoader: Sendable {
       loaded.text,
       source: source,
       resolvedSource: loaded.resolvedSource,
-      index: index
+      index: index,
+      layerKind: kind
     )
     return LoadedLayer(
       summary: PortableProfileLayer(
@@ -917,7 +948,12 @@ package struct PortableProfileLoader: Sendable {
       ),
       topBar: roles.value("top_bar.provider", portableProfile.topBar, machineProfile.topBar),
       sketchyBar: sketchyBar,
-      environment: environment
+      environment: environment,
+      packages: PackageProfile(
+        baseline: declaredValue(
+          "packages.baseline", portableProfile.packages.baseline, machineProfile.packages.baseline,
+          default: .standard),
+        layers: portableProfile.packages.layers + machineProfile.packages.layers)
     )
     return result
   }
@@ -1306,6 +1342,7 @@ private struct PortableProfileDocument: Decodable {
   let presets: PresetsDocument?
   let btop: BtopDocument?
   let yazi: YaziDocument?
+  let packages: PackagesDocument?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -1328,6 +1365,20 @@ private struct PortableProfileDocument: Decodable {
     case presets
     case btop
     case yazi
+    case packages
+  }
+}
+
+private struct PackagesDocument: Decodable {
+  let baseline: PackageBaseline?
+  let brewfile: String?
+  let excludeFormulae: [String]?
+  let excludeCasks: [String]?
+
+  enum CodingKeys: String, CodingKey {
+    case baseline, brewfile
+    case excludeFormulae = "exclude_formulae"
+    case excludeCasks = "exclude_casks"
   }
 }
 
