@@ -778,8 +778,8 @@ plan retains the new profile for review.
 
 These guided apply confirmations still cover provider setup, **not installation
 of the full effective Brewfile**. Package-only installation uses a separate
-`setup install-packages` preview and approval for named official formulae;
-cask/tap execution remains unsupported. Ending input before the questionnaire
+`setup install-packages` preview and approval for named official formulae and casks;
+third-party tap execution remains unsupported. Ending input before the questionnaire
 finishes writes no profile.
 
 `macarchy setup plan` compiles built-in defaults, the optional portable
@@ -840,11 +840,12 @@ evidence does not verify installed file integrity or waive later install/update/
 prune approval gates. Homebrew can change independently of Macarchy's setup lock.
 
 `setup install-packages` previews a generated Brewfile for named missing official
-formula declarations, then delegates execution to Homebrew:
+formula and cask declarations, then delegates execution to Homebrew:
 
 ```sh
 macarchy setup install-packages formula:resvg --json
 macarchy setup install-packages formula:resvg --approve <reviewed-digest> --json
+macarchy setup install-packages cask:slack --json
 macarchy setup install-packages --recover --json
 ```
 
@@ -922,12 +923,13 @@ Full-baseline apply and persistent removal remain later work.
 #### Save and apply a named addition
 
 `setup add-packages` explicitly saves personal package inputs, then installs
-missing official formulae or adopts already installed
-ones without requesting an upgrade:
+missing official formulae/casks or adopts already installed ones without requesting
+an upgrade:
 
 ```sh
 macarchy setup add-packages formula:jq --profile /path/to/profile.toml --json
 macarchy setup add-packages formula:jq --profile /path/to/profile.toml --approve <reviewed-digest> --json
+macarchy setup add-packages cask:slack --profile /path/to/profile.toml --json
 ```
 
 Portable intent is the default. Add `--machine-only` to both commands to target
@@ -937,7 +939,10 @@ scope. It performs no writes. Approval binds source bytes/identity/metadata,
 profile inputs and package evidence; stale approval blocks before editing.
 
 Only missing literal declarations are appended. The command removes named formula
-exclusions only from the selected profile, preserving other values and comments.
+or cask exclusions only from the selected profile, preserving other values and comments.
+Package kind is part of identity: adding a cask does not remove a same-token formula
+exclusion. Official `homebrew/core/` and `homebrew/cask/` qualifications normalize
+to the same identities as their unqualified names.
 Missing profiles and fragments can be created. Without existing wiring, it proposes
 a sibling named `<resolved-profile-filename>.Brewfile` and the corresponding
 `packages.brewfile` field. An existing file at that path is inspected, never
@@ -950,7 +955,7 @@ rules. The resolved profile and fragment must have regular, non-symlink paths an
 one hard link; layers sharing a profile or fragment must be separated first.
 
 Unsupported syntax and machine exclusions that defeat a portable addition still
-block. Add never silently switches layers, installs casks/taps or runs full setup.
+block. Add never silently switches layers, installs third-party targets or runs full setup.
 
 Intent is saved **before** package actions. A failure reports `pending`, retains
 the saved intent and includes completed/failed stage reports. Preview again to
@@ -993,11 +998,21 @@ solve dependencies, pin Homebrew revisions, inspect bottle payloads, rehearse
 links or sandbox package writes. It does not invoke global upgrade, cleanup,
 autoremove, force-overwrite or trust commands. Homebrew `brew.env` files that
 could override command controls block this path rather than being ignored or
-edited. Native prompts are noninteractive; trust/authentication failures require
-explicit user resolution.
+edited. Native execution has closed stdin and no controlling terminal; Macarchy
+supplies no credentials. Trust/authentication failures require explicit user resolution.
 
-This slice still accepts only official formula targets. Casks and third-party
-installation, full-baseline apply, scoped update and prune
+**Cask previews disclose native privilege and artifact-adoption effects.** Homebrew
+may invoke `sudo` for installers or application moves using existing authorization.
+Closed stdin does not prevent passwordless privilege use. Bundle also passes
+`--adopt`, allowing Homebrew to take ownership of identical existing application
+artifacts. This is separate from Macarchy's declaration ledger. Macarchy adds no
+trust or permission-repair commands and never retries with elevation. These native
+effects are part of the reviewed cask installation scope, not a filesystem-isolation
+guarantee. Receipt verification establishes installation records, not application
+launch readiness or completion of manual setup.
+
+Named official formula and cask targets are supported, including mixed requests.
+Third-party installation, full-baseline apply, scoped update and prune
 remain pending. Installed unadopted targets use `setup adopt-packages`;
 externally satisfied provider requirements are not replaced. No provider
 configuration changes during this command.
