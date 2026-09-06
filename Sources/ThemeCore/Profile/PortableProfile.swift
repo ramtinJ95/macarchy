@@ -177,7 +177,12 @@ package struct LayeredPortableProfile: Equatable, Sendable {
 }
 
 package struct PortableProfileLoader: Sendable {
-  package init() {}
+  private let proposedSources: [URL: String]
+
+  /// Preview approved source edits through the same decoding and layering path.
+  package init(proposedSources: [URL: String] = [:]) {
+    self.proposedSources = proposedSources
+  }
 
   private static let allowedTables = Set([
     "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
@@ -791,13 +796,19 @@ package struct PortableProfileLoader: Sendable {
   }
 
   private func read(at source: URL, required: Bool) throws -> LoadedSource? {
+    let resolved = source.resolvingSymlinksInPath().standardizedFileURL
+    if let text = proposedSources[resolved] {
+      guard text.utf8.count <= 65_536 else {
+        throw KeybindingProfileError.invalid(source, "profile exceeds 64 KiB")
+      }
+      return LoadedSource(text: text, resolvedSource: resolved)
+    }
     var metadata = stat()
     guard lstat(source.path, &metadata) == 0 else {
       if errno == ENOENT, !required { return nil }
       throw KeybindingProfileError.cannotRead(source, Self.systemError(errno))
     }
 
-    let resolved = source.resolvingSymlinksInPath().standardizedFileURL
     let data: Data
     do {
       data = try BoundedRegularFile.read(at: resolved, maximumSize: 65_536).data

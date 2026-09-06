@@ -2,7 +2,11 @@ import Foundation
 import ThemeCore
 
 struct SetupPackageAdditionCommandRunner: Sendable {
-  enum Checkpoint: Sendable { case beforeRevalidation, afterSave }
+  enum Checkpoint: Sendable {
+    case beforeRevalidation
+    case afterInput(Int)
+    case afterSave
+  }
   let planner: UnifiedSetupPlanCommandRunner
   let provider: HomebrewBundleInstaller
   var checkpoint: @Sendable (Checkpoint) throws -> Void = { _ in }
@@ -12,29 +16,46 @@ struct SetupPackageAdditionCommandRunner: Sendable {
   }
 
   private struct Prepared: Encodable, Sendable {
-    let contract = "setup_package_addition_v1"
+    let contract = "setup_package_addition_v2"
     let layer: String
     let targets: [HomebrewPackageIdentity]
     let profileDigests: [String: String]
-    let edit: SetupPackageInputEdit
+    let edits: [SetupPackageInputEdit]
+    let sourceBindings: [String: String]
     let installation: SetupPackageInstallationCommandRunner.Inputs?
     let adoption: SetupPackageAdoptionCommandRunner.Prepared?
 
     var digest: String { get throws { try SetupPackageInstallationStore.digest(self) } }
     var noChange: Bool {
-      !edit.changed && (installation?.targets.isEmpty ?? true)
+      !edits.contains(where: \.changed) && (installation?.targets.isEmpty ?? true)
         && (adoption?.additions.isEmpty ?? true)
     }
   }
 
   func execute(
     context: UnifiedSetupPlanContext, targets: [String], machineOnly: Bool = false,
-    approval: String?, json: Bool
+    approval: String?, recover: Bool = false, json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
     var reviewed: Prepared?
     var intent = "unchanged"
     var stages: [SetupComponentExecution] = []
     do {
+      if recover {
+        guard targets.isEmpty, approval == nil, !machineOnly else {
+          throw SetupPackageAdoptionError(
+            "--recover takes no targets, approval or --machine-only; it uses the recorded selected layer."
+          )
+        }
+        let recovered = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+          try SetupPackageInputPublicationStore(context: context).recover()
+        }
+        return try result(
+          recovered ? "recovered" : "no_change", prepared: nil,
+          intent: recovered ? "saved" : "unchanged", stages: [],
+          message: recovered
+            ? "Previously approved input publication is complete. No Homebrew or adoption action ran. Obtain a fresh add-packages preview and approval for pending package work."
+            : "No interrupted input publication. No package action ran.", json: json)
+      }
       let prepared = try prepare(context: context, targets: targets, machineOnly: machineOnly)
       reviewed = prepared
       if prepared.noChange {
@@ -64,12 +85,16 @@ struct SetupPackageAdditionCommandRunner: Sendable {
           throw SetupPackageAdoptionError(
             "Personal inputs or package evidence changed before saving.")
         }
-        return Result { try current.edit.publish() }
+        return Result {
+          try SetupPackageInputPublicationStore(context: context).publish(
+            edits: current.edits, sourceBindings: current.sourceBindings, approval: digest,
+            checkpoint: { try checkpoint(.afterInput($0)) })
+        }
       }
       do { try publication.get() } catch {
         intent = "publication_unverified"
         throw SetupPackageAdoptionError(
-          "File publication could not be confirmed: \(error). Inspect the source and any retained sibling residue; no package action started."
+          "Input publication could not be confirmed: \(error). Use setup add-packages --recover with the same profile/state options. Drift or retained sibling residue requires manual inspection; no package action started."
         )
       }
       intent = "saved"
@@ -122,7 +147,11 @@ struct SetupPackageAdditionCommandRunner: Sendable {
         }
       }
       let verified = try prepare(context: context, targets: targets, machineOnly: machineOnly)
-      guard verified.noChange, verified.edit.before == prepared.edit.after else {
+      guard verified.noChange,
+        prepared.edits.allSatisfy({ edit in
+          verified.edits.contains { $0.path == edit.path && $0.before == edit.after }
+        })
+      else {
         throw SetupPackageAdoptionError(
           "Saved intent or named package state changed before final verification; preview again.")
       }
@@ -149,20 +178,33 @@ struct SetupPackageAdditionCommandRunner: Sendable {
         "Add supports only named official formulae; no casks or third-party taps.")
     }
     try SetupPackageInstallationStore(context: context).requireResolved()
+    try SetupPackageInputPublicationStore(context: context).requireResolved()
     guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
       throw SetupPackageAdoptionError("Resolve interrupted unified setup before adding packages.")
     }
     let layered = try PortableProfileLoader().load(
-      portableAt: context.profileURL, portableRequired: context.profileRequired,
-      machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired)
+      portableAt: context.profileURL, portableRequired: machineOnly && context.profileRequired,
+      machineAt: context.machineProfileURL,
+      machineRequired: !machineOnly && context.machineProfileRequired)
     let kind: PortableProfileLayerKind = machineOnly ? .machine : .portable
-    guard let layer = layered.profile.packages.layers.first(where: { $0.kind == kind }),
-      let url = layer.brewfileURL
-    else {
-      throw SetupPackageAdoptionError(
-        "Configure an existing readable packages.brewfile in the \(kind.rawValue) profile first. This command does not create or wire profiles."
-      )
+    let source = machineOnly ? context.machineProfileURL : context.profileURL
+    guard context.profileURL.path != context.machineProfileURL.path else {
+      throw SetupPackageAdoptionError("Portable and machine profiles must have distinct paths.")
     }
+    let sourceBindings = Dictionary(
+      uniqueKeysWithValues: [context.profileURL, context.machineProfileURL].map {
+        ($0.path, $0.resolvingSymlinksInPath().standardizedFileURL.path)
+      })
+    let resolved = source.resolvingSymlinksInPath().standardizedFileURL
+    guard Set(sourceBindings.values).count == 2 else {
+      throw SetupPackageAdoptionError(
+        "Both layers resolve to the same profile; separate them before editing.")
+    }
+    let layer = layered.profile.packages.layers.first(where: { $0.kind == kind })
+    let url =
+      layer?.brewfileURL
+      ?? resolved.deletingLastPathComponent().appending(
+        path: resolved.lastPathComponent + ".Brewfile")
     guard
       !layered.profile.packages.layers.contains(where: { $0.kind != kind && $0.brewfileURL == url })
     else {
@@ -175,16 +217,23 @@ struct SetupPackageAdditionCommandRunner: Sendable {
         HomebrewPackageIdentity(kind: .formula, name: $0)
       }
       if let conflict = identities.first(where: { excluded.contains($0) }),
-        contribution.kind == kind || (!machineOnly && contribution.kind == .machine)
+        !machineOnly && contribution.kind == .machine
       {
         throw SetupPackageAdoptionError(
-          "\(contribution.sourceURL.path) excludes \(conflict.key). Edit that exclusion explicitly first; add does not remove exclusions or silently switch layers."
+          "\(contribution.sourceURL.path) excludes \(conflict.key). Machine intent defeats the portable request; add will not edit another layer or silently switch layers."
         )
       }
+    }
+    let removed = Set(layer?.excludedFormulae ?? []).intersection(identities.map(\.name))
+    let profileEdit = try SetupPackageProfileEdit.prepare(
+      source: resolved, fragment: url, needsWiring: layer?.brewfileURL == nil, removing: removed)
+    guard !sourceBindings.values.contains(url.path) else {
+      throw SetupPackageAdoptionError("A profile cannot also be the selected Brewfile.")
     }
     let edit = try SetupPackageInputEdit.prepare(url: url, targets: identities)
     let future = try SetupBrewfile.parse(edit.after)
     var proposedPlanner = planner
+    proposedPlanner.proposedProfileSources = [resolved: profileEdit.after]
     let originalReader = planner.personalBrewfile
     proposedPlanner.personalBrewfile = { path in
       path == url ? future : try originalReader(path)
@@ -227,7 +276,8 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     }
     return Prepared(
       layer: kind.rawValue, targets: identities, profileDigests: profileDigests,
-      edit: edit, installation: installation, adoption: adoption)
+      edits: [edit, profileEdit], sourceBindings: sourceBindings,
+      installation: installation, adoption: adoption)
   }
 
   private func result(
@@ -252,7 +302,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
         preview: prepared.map(Preview.init), stages: stages, message: message))
     return (
       json ? output : "Package addition [\(outcome)]\n\(output)",
-      ["preview", "no_change", "complete"].contains(outcome)
+      ["preview", "no_change", "complete", "recovered"].contains(outcome)
     )
   }
 
@@ -267,7 +317,13 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     }
     let layer: String
     let targets: [String]
-    let edit: [String: String]
+    struct Edit: Encodable {
+      let path: String
+      let before: String?
+      let after: String
+      let operation: String
+    }
+    let edits: [Edit]
     let installation: Installation?
     let adoption: [SetupPackageAdoptionCommandRunner.Candidate]
     let alreadyAdopted: [String]
@@ -275,9 +331,11 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     init(_ prepared: Prepared) {
       layer = prepared.layer
       targets = prepared.targets.map(\.key)
-      edit = [
-        "path": prepared.edit.path, "before": prepared.edit.before, "after": prepared.edit.after,
-      ]
+      edits = prepared.edits.map {
+        .init(
+          path: $0.path, before: $0.before, after: $0.after,
+          operation: !$0.changed ? "unchanged" : $0.before == nil ? "create" : "replace")
+      }
       installation = prepared.installation.map {
         .init(
           targets: $0.targets, brewfile: $0.brewfile, command: $0.command,
