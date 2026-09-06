@@ -171,6 +171,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   ) async throws -> (output: String, succeeded: Bool) {
     let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
     do {
+      try SetupPackageInstallationStore(context: context).requireResolved()
       if try transactionStore.read() != nil {
         return try await recoverInterrupted(
           context: context,
@@ -265,6 +266,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
 
     do {
       return try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+        try SetupPackageInstallationStore(context: context).requireResolved()
         let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
         guard try store.read() == nil else {
           throw UnifiedSetupTransactionError.recoveryRequired(

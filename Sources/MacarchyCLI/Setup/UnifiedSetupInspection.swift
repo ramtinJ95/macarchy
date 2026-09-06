@@ -108,6 +108,15 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       )
     }
     let plan = planner.inspectedReport(preparation.report, context: context)
+    if plan.packageInventory?.installation?.phase == .running
+      || plan.packageInventory?.installationIssue != nil
+    {
+      return try result(
+        operation: operation, outcome: "recovery_required", plan: plan, theme: nil,
+        message: plan.packageInventory?.installationIssue
+          ?? "Interrupted package installation requires setup install-packages --recover.",
+        json: json)
+    }
     guard case .ready(let model, _) = preparation else {
       return try result(
         operation: operation,

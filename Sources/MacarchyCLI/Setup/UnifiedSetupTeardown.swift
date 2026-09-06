@@ -215,6 +215,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
     let pendingTransaction: UnifiedSetupTransaction?
     do {
+      try SetupPackageInstallationStore(context: context).requireResolved()
       pendingTransaction = try transactionStore.read()
     } catch {
       return try result(
@@ -431,6 +432,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     )
     do {
       let recovery = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+        try SetupPackageInstallationStore(context: context).requireResolved()
         let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
         guard try store.read() == nil else {
           throw UnifiedSetupTransactionError.recoveryRequired(

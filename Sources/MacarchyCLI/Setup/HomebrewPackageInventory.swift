@@ -27,7 +27,7 @@ struct HomebrewPackageIdentity: Hashable, Codable, Sendable {
   }
 }
 
-struct HomebrewInstalledPackage: Encodable, Sendable {
+struct HomebrewInstalledPackage: Codable, Equatable, Sendable {
   let kind: HomebrewPackageIdentity.Kind
   let token: String
   let identity: HomebrewPackageIdentity?
@@ -45,7 +45,7 @@ struct HomebrewReceiptEvidence: Codable, Equatable, Sendable {
   let inode: UInt64
 }
 
-struct HomebrewPackageObservation: Encodable, Sendable {
+struct HomebrewPackageObservation: Codable, Sendable {
   let packages: [HomebrewInstalledPackage]
   /// A failed list cannot prove absence, even if some receipts were readable.
   let issues: [String]

@@ -125,6 +125,12 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
       ).inspect()
     )
+    do {
+      report.packageInventory?.installation = try SetupPackageInstallationStore(context: context)
+        .read()?.summary
+    } catch {
+      report.packageInventory?.installationIssue = String(describing: error)
+    }
     return report
   }
 
