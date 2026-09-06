@@ -169,12 +169,32 @@ struct PackageInstallationTests {
   func activeSessionBlocksRecoveryWithoutKillingOrRerunning() async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
+    // A CI runner may inherit launchd's session 1. Own a real disposable
+    // session instead of treating the surrounding terminal as an installer.
+    var attributes: posix_spawnattr_t?
+    try #require(posix_spawnattr_init(&attributes) == 0)
+    defer { posix_spawnattr_destroy(&attributes) }
+    try #require(posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID)) == 0)
+    let executable = try #require(strdup("/bin/sleep"))
+    defer { free(executable) }
+    let duration = try #require(strdup("30"))
+    defer { free(duration) }
+    var arguments: [UnsafeMutablePointer<CChar>?] = [executable, duration, nil]
+    var pid: pid_t = 0
+    try #require(posix_spawn(&pid, executable, nil, &attributes, &arguments, environ) == 0)
+    let session = pid
+    defer {
+      _ = kill(session, SIGKILL)
+      var status: Int32 = 0
+      while waitpid(session, &status, 0) == -1, errno == EINTR {}
+    }
+    try #require(getsid(session) == session)
     let base = fixture.runner()
     let runner = SetupPackageInstallationCommandRunner(
       planner: base.planner,
       provider: .init(
         apply: { _, record in
-          try record(getsid(0))
+          try record(session)
           throw SetupPackageAdoptionError("simulated live installer")
         }))
     let preview = try await fixture.run(runner)
@@ -182,6 +202,7 @@ struct PackageInstallationTests {
       try await fixture.run(runner, approval: preview.approval()).outcome == "recovery_required")
     #expect(try await fixture.run(base, recover: true).outcome == "blocked")
     #expect(try fixture.store.read()?.phase == .running)
+    #expect(try HomebrewPackageInstallProcess.sessionExists(session))
     #expect(fixture.calls.withLock { $0 } == 0)
   }
 
