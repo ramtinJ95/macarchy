@@ -6,6 +6,20 @@ import Testing
 @testable import ThemeCore
 
 struct UnifiedSetupPlanTests {
+  @Test(arguments: [false, true])
+  func desktopOptOutDoesNotRequireAdoptionOfExternalKeybindings(disabled: Bool) throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    if disabled {
+      try fixture.writeMachineProfile("schema_version = 1\n[desktop]\nprovider = 'disabled'\n")
+    }
+    let plan = try fixture.planner(
+      requiredAdoptions: .init(keybindings: "reviewed-keybindings")
+    ).prepare(context: fixture.context).report
+    #expect(plan.adoption.map(\.id) == (disabled ? [] : ["keybindings"]))
+    #expect(!plan.actions.contains { $0.stage == "desktop" })
+  }
+
   @Test
   func sparsePortableProfileProducesTheSameDelegatedIntentAcrossMachineRoots() throws {
     let root = try temporaryDirectory()

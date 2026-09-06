@@ -293,7 +293,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       ),
       services: services(profile),
       permissions: permissions(profile),
-      adoption: try adoptionEvidence(components),
+      adoption: try adoptionEvidence(components, profile: profile),
       manualBoundaries: manualBoundaries(profile: profile, installPlan: model.packages),
       actions: diagnostics.isEmpty ? actions : [],
       components: components,
@@ -548,7 +548,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   }
 
   private func adoptionEvidence(
-    _ components: SetupComponentPlans
+    _ components: SetupComponentPlans, profile: PortableProfile
   ) throws -> [UnifiedSetupAdoptionEvidence] {
     var result = [UnifiedSetupAdoptionEvidence]()
     func append(_ id: String, status: String, digest: String?) {
@@ -556,11 +556,15 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       result.append(UnifiedSetupAdoptionEvidence(id: id, digest: digest))
     }
     let keybindings = try components.desktop.keybindingPlan
-    append(
-      "keybindings",
-      status: try keybindings.providerStatus,
-      digest: try keybindings.adoptionEvidenceDigest
-    )
+    let keybindingStatus = try keybindings.providerStatus
+    let keybindingDigest = try keybindings.adoptionEvidenceDigest
+    if profile.desktop.provider == .yabaiSkhd {
+      append(
+        "keybindings",
+        status: keybindingStatus,
+        digest: keybindingDigest
+      )
+    }
     let yabaiProvider = try components.desktop.yabaiPlan
     append(
       "yabai",
