@@ -778,8 +778,8 @@ plan retains the new profile for review.
 
 These guided apply confirmations still cover provider setup, **not installation
 of the full effective Brewfile**. Package-only installation uses a separate
-`setup install-packages` preview and approval for named official formulae and casks;
-third-party tap execution remains unsupported. Ending input before the questionnaire
+`setup install-packages` preview and approval for named formulae and casks,
+including any required third-party taps. Ending input before the questionnaire
 finishes writes no profile.
 
 `macarchy setup plan` compiles built-in defaults, the optional portable
@@ -839,7 +839,7 @@ than pretending to roll back; inspect the inventory before retrying. Receipt
 evidence does not verify installed file integrity or waive later install/update/
 prune approval gates. Homebrew can change independently of Macarchy's setup lock.
 
-`setup install-packages` previews a generated Brewfile for named missing official
+`setup install-packages` previews a generated Brewfile for named missing
 formula and cask declarations, then delegates execution to Homebrew:
 
 ```sh
@@ -910,8 +910,9 @@ limited to 1024 package declarations and 1024 taps; effective package decisions
 (including exclusions) are limited to 1024. Duplicate canonical declarations,
 Ruby expressions, conditionals, options, hooks, custom tap URLs and non-Homebrew
 backends fail with source diagnostics. Unsupported entries are never silently
-stripped or executed. Declared taps are reported but not acquired or trusted by
-these commands.
+stripped or executed. Read-only commands report declared taps without acquiring
+or trusting them. Named installation acquires only taps required by its missing
+fully qualified targets, not unrelated `tap` declarations.
 
 `setup plan/status/doctor` expose provenance, exclusions and the effective
 Brewfile; JSON uses `package_inventory.effective_brewfile`. The existing
@@ -923,13 +924,14 @@ Full-baseline apply and persistent removal remain later work.
 #### Save and apply a named addition
 
 `setup add-packages` explicitly saves personal package inputs, then installs
-missing official formulae/casks or adopts already installed ones without requesting
+missing formulae/casks or adopts already installed ones without requesting
 an upgrade:
 
 ```sh
 macarchy setup add-packages formula:jq --profile /path/to/profile.toml --json
 macarchy setup add-packages formula:jq --profile /path/to/profile.toml --approve <reviewed-digest> --json
 macarchy setup add-packages cask:slack --profile /path/to/profile.toml --json
+macarchy setup add-packages formula:owner/tap/name --profile /path/to/profile.toml --json
 ```
 
 Portable intent is the default. Add `--machine-only` to both commands to target
@@ -955,7 +957,7 @@ rules. The resolved profile and fragment must have regular, non-symlink paths an
 one hard link; layers sharing a profile or fragment must be separated first.
 
 Unsupported syntax and machine exclusions that defeat a portable addition still
-block. Add never silently switches layers, installs third-party targets or runs full setup.
+block. Add never silently switches layers or runs full setup.
 
 Intent is saved **before** package actions. A failure reports `pending`, retains
 the saved intent and includes completed/failed stage reports. Preview again to
@@ -1011,9 +1013,23 @@ effects are part of the reviewed cask installation scope, not a filesystem-isola
 guarantee. Receipt verification establishes installation records, not application
 launch readiness or completion of manual setup.
 
-Named official formula and cask targets are supported, including mixed requests.
-Third-party installation, full-baseline apply, scoped update and prune
-remain pending. Installed unadopted targets use `setup adopt-packages`;
+**Third-party targets use exact `formula:owner/tap/name` or
+`cask:owner/tap/name` identities.** The approved generated Brewfile puts required
+tap entries before its missing package roots. Homebrew acquires absent taps from
+its default remotes and owns package-code execution and dependencies. Already
+installed/adopted targets do not acquire taps. Previews do not resolve or pin tap
+contents, inspect existing remote configuration, or establish package trust.
+Macarchy supplies no `trusted` options or persistent trust grants. Native policy
+may allow fully qualified names for that invocation without persistent trust;
+native trust/authentication failures remain visible and partial, without automatic
+retry or rollback. Custom tap URLs and tap-only management are unsupported.
+
+Official and third-party formula/cask targets can be mixed. Requests for different
+taps sharing the same kind and token block; formula and cask identities remain
+distinct even with the same token. Receipt verification requires the exact tap
+identity, not an alias or merely the same package name.
+Full-baseline apply, scoped update and prune remain pending.
+Installed unadopted targets use `setup adopt-packages`;
 externally satisfied provider requirements are not replaced. No provider
 configuration changes during this command.
 
