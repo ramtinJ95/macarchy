@@ -98,9 +98,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   ) throws -> (output: String, succeeded: Bool) {
     let preparation = try prepare(context: context)
     let report = inspectedReport(preparation.report, context: context)
-    return (
-      try report.render(json: json), preparation.succeeded && report.packageInventoryIssue == nil
-    )
+    return (try report.render(json: json), preparation.succeeded)
   }
 
   /// Enrich read-only output, not apply's desired model or approval comparison.
@@ -108,22 +106,14 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   func inspectedReport(
     _ report: UnifiedSetupPlanReport, context: UnifiedSetupPlanContext
   ) -> UnifiedSetupPlanReport {
-    guard report.theme != nil else { return report }
+    guard report.theme != nil, let declarations = report.packageDeclarations else { return report }
     var report = report
-    do {
-      report.packageInventory = SetupPackageInventory(
-        capabilities: report.capabilities, fieldOrigins: report.fieldOrigins,
-        layers: report.layers, observation: packageInventoryReader(),
-        adoptionState: SetupPackageAdoptionStore(
-          stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
-        ).inspect(),
-        standardPackages: try standardBrewfile(
-          context.environmentResourcesRoot.appending(path: "Brewfile")
-        ).packages
-      )
-    } catch {
-      report.packageInventoryIssue = String(describing: error)
-    }
+    report.packageInventory = SetupPackageInventory(
+      capabilities: report.capabilities, fieldOrigins: report.fieldOrigins,
+      layers: report.layers, observation: packageInventoryReader(),
+      adoptionState: SetupPackageAdoptionStore(
+        stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
+      ).inspect(), declarations: declarations)
     do {
       report.packageInventory?.installation = try SetupPackageInstallationStore(context: context)
         .read()?.summary
@@ -139,16 +129,29 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     context: UnifiedSetupPlanContext, adoptionState: SetupPackageAdoptionState
   ) throws -> SetupPackageInventory {
     let layered = try loadProfile(context: context)
+    let capabilities = setupCapabilities(
+      profile: layered.profile, homeDirectory: context.homeDirectory)
+    let declarations = try packageDeclarations(
+      context: context, profile: layered.profile, capabilities: capabilities)
     return SetupPackageInventory(
-      capabilities: setupCapabilities(
-        profile: layered.profile, homeDirectory: context.homeDirectory),
+      capabilities: capabilities,
       fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue),
       layers: layered.layers.map(SetupProfileLayerReport.init),
       observation: packageInventoryReader(), adoptionState: adoptionState,
-      standardPackages: try standardBrewfile(
-        context.environmentResourcesRoot.appending(path: "Brewfile")
-      ).packages
+      declarations: declarations
     )
+  }
+
+  private func packageDeclarations(
+    context: UnifiedSetupPlanContext, profile: PortableProfile, capabilities: [SetupCapability]
+  ) throws -> SetupPackageDeclarations {
+    // Personal mode must not load or fall back to release defaults.
+    let standard =
+      profile.packages.baseline == .standard
+      ? try standardBrewfile(context.environmentResourcesRoot.appending(path: "Brewfile"))
+      : SetupBrewfile(packages: [])
+    return try SetupPackageDeclarations.compile(
+      standard: standard, profile: profile.packages, requirements: capabilities)
   }
 
   private func loadProfile(context: UnifiedSetupPlanContext) throws -> LayeredPortableProfile {
@@ -198,6 +201,20 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
     }
 
+    let profile = layered.profile
+    let capabilities = setupCapabilities(profile: profile, homeDirectory: context.homeDirectory)
+    let declarations: SetupPackageDeclarations
+    do {
+      declarations = try packageDeclarations(
+        context: context, profile: profile, capabilities: capabilities)
+    } catch {
+      return .blocked(
+        UnifiedSetupPlanReport.blocked(
+          layers: layered.layers.map(SetupProfileLayerReport.init),
+          fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue),
+          error: String(describing: error)))
+    }
+
     let themeSelection: (package: ThemePackage, plan: UnifiedSetupThemePlan)
     do {
       themeSelection = try themePlan(context: context)
@@ -213,8 +230,6 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
     }
 
-    let profile = layered.profile
-    let capabilities = setupCapabilities(profile: profile, homeDirectory: context.homeDirectory)
     let model = UnifiedSetupDesiredModel(
       profile: profile,
       layers: layered.layers.map(SetupProfileLayerReport.init),
@@ -267,7 +282,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       manualBoundaries: manualBoundaries(profile: profile, installPlan: model.packages),
       actions: diagnostics.isEmpty ? actions : [],
       components: components,
-      diagnostics: diagnostics
+      diagnostics: diagnostics,
+      packageDeclarations: declarations
     )
     guard diagnostics.isEmpty else { return .blocked(report) }
     return .ready(model, report)
@@ -806,8 +822,8 @@ struct UnifiedSetupPlanReport: Encodable {
   let actions: [UnifiedSetupAction]
   let components: SetupComponentPlans?
   let diagnostics: [UnifiedSetupPlanDiagnostic]
+  var packageDeclarations: SetupPackageDeclarations? = nil
   var packageInventory: SetupPackageInventory? = nil
-  var packageInventoryIssue: String? = nil
 
   static func blocked(
     layers: [SetupProfileLayerReport],
@@ -892,9 +908,6 @@ struct UnifiedSetupPlanReport: Encodable {
     }
     lines.append(packages.humanOutput)
     if let packageInventory { lines.append(packageInventory.humanOutput) }
-    if let packageInventoryIssue {
-      lines.append("Package declarations unavailable: \(packageInventoryIssue)")
-    }
     lines.append(files.isEmpty ? "Files: none" : "Files:")
     lines += files.map { "- \($0.id) [\($0.status), \($0.ownership)]: \($0.path)" }
     lines.append(services.isEmpty ? "Services: none" : "Services:")

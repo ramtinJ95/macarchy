@@ -190,7 +190,7 @@ struct PackageInventoryTests {
     let observation = fixture.reader(formulae: "unrelated\nbat").read()
     let report = SetupPackageInventory(
       capabilities: capabilities, fieldOrigins: ["tools.bat": "portable", "tools.eza": "machine"],
-      layers: layers, observation: observation
+      layers: layers, observation: observation, declarations: .empty
     )
     let formula = try #require(report.proposed.first { $0.identity.key == "formula:bat" })
     #expect(report.proposed.contains { $0.identity.key == "cask:bat" })
@@ -205,7 +205,7 @@ struct PackageInventoryTests {
     let reordered = SetupPackageInventory(
       capabilities: capabilities.reversed(),
       fieldOrigins: ["tools.eza": "machine", "tools.bat": "portable"],
-      layers: layers, observation: observation
+      layers: layers, observation: observation, declarations: .empty
     )
     #expect(try renderJSON(report) == renderJSON(reordered))
     #expect(report.humanOutput == reordered.humanOutput)
@@ -257,7 +257,6 @@ struct PackageInventoryTests {
     }
     #expect(formula == "hashicorp/tap/terraform")
     #expect(instruction.contains("brew trust --formula hashicorp/tap/terraform"))
-    #expect(packages.humanOutput.contains("Apply does not yet provision the standard baseline"))
     #expect(
       Set(report.packages.formulae)
         == Set(["atuin", "bat", "btop", "eza", "neovim", "starship", "yazi"]))
@@ -387,7 +386,8 @@ struct PackageInventoryTests {
     _ capabilities: [SetupCapability], observation: HomebrewPackageObservation
   ) -> SetupPackageInventory {
     SetupPackageInventory(
-      capabilities: capabilities, fieldOrigins: [:], layers: [], observation: observation)
+      capabilities: capabilities, fieldOrigins: [:], layers: [], observation: observation,
+      declarations: .empty)
   }
 }
 

@@ -108,11 +108,6 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       )
     }
     let plan = planner.inspectedReport(preparation.report, context: context)
-    if let issue = plan.packageInventoryIssue {
-      return try result(
-        operation: operation, outcome: "blocked", plan: plan, theme: nil,
-        message: issue, json: json)
-    }
     if plan.packageInventory?.installation?.phase == .running
       || plan.packageInventory?.installationIssue != nil
     {

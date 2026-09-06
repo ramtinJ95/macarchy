@@ -415,7 +415,8 @@ struct UnifiedSetupPlanTests {
       },
       environmentPlanner: { _, _ in
         try component("{\"outcome\":\"ready\",\"entries\":[],\"actions\":[]}")
-      }
+      },
+      standardBrewfile: { _ in SetupBrewfile(packages: []) }
     )
 
     let execution = try runner.execute(
