@@ -835,9 +835,77 @@ macarchy setup install-packages --recover --json
 
 The maintained standard defaults live in `Environment/Brewfile` (installed under
 `share/macarchy/environment`). Selected provider requirements are composed with
-these defaults; the stock list is no longer duplicated in Swift. Personal
-Brewfile layering and add/remove commands are a later slice; do not edit release
-defaults to save personal choices.
+these defaults and separate personal inputs; do not edit release defaults to save
+personal choices.
+
+#### Personal package declarations
+
+Add a `[packages]` section to the existing schema-v1 profile:
+
+`profile.toml`:
+
+```toml
+[packages]
+brewfile = "Brewfile"
+exclude_casks = ["spotify"]
+```
+
+`Brewfile` beside that profile:
+
+```ruby
+brew "just"
+cask "visual-studio-code"
+```
+
+The default is `baseline = "standard"`: shipped defaults plus personal additions,
+minus explicit exclusions. `exclude_formulae` accepts formula names;
+`exclude_casks` accepts cask names. Fully qualified `owner/tap/name` identities
+are supported for declarations. Official `homebrew/core/` and `homebrew/cask/`
+prefixes normalize to their unqualified identities.
+
+The machine profile can supply its **own** `brewfile` and exclusions. Both
+fragments contribute; machine choices override only the named package, not the
+portable list or fragment path. For example, portable exclusion of Spotify plus
+machine exclusion of Docker keeps both excluded. Adding `cask "spotify"` to the
+machine fragment restores only Spotify. An empty machine exclusion array does
+not erase portable exclusions.
+
+To use a complete personal manifest instead of stock extras:
+
+```toml
+[packages]
+baseline = "personal"
+brewfile = "Brewfile"
+```
+
+Personal mode requires an explicit readable fragment and never loads/falls back
+to the stock Brewfile. An empty fragment is valid for a provider-only setup.
+Selected provider requirements still apply in either mode. Excluding one blocks
+setup until the corresponding provider is changed or disabled. Adding and
+excluding the same identity within one layer is contradictory, even if a higher
+layer would override it. Exclusions of currently absent packages remain visible
+intent across default updates; they never uninstall software.
+
+Fragment paths use the existing portable-input rules: relative to the resolved
+profile source, contained within that directory, and no symlink escape. Fragments
+must be regular UTF-8 files, at most 1 MiB, containing only literal `brew`, `cask`
+and `tap` lines with single/double quotes and optional comments. Each fragment is
+limited to 1024 package declarations and 1024 taps; effective package decisions
+(including exclusions) are limited to 1024. Duplicate canonical declarations,
+Ruby expressions, conditionals, options, hooks, custom tap URLs and non-Homebrew
+backends fail with source diagnostics. Unsupported entries are never silently
+stripped or executed. Declared taps are reported but not acquired or trusted by
+these commands.
+
+`setup plan/status/doctor` expose provenance, exclusions and the effective
+Brewfile; JSON uses `package_inventory.effective_brewfile`. The existing
+`setup adopt-packages` and `setup install-packages` commands consume the same
+personal declarations. Approval/revalidation uses the effective named scope.
+Inputs are read-only: these commands never rewrite profiles or fragments.
+Full-baseline apply, guided package opt-outs and save-and-apply add/remove
+commands remain later work.
+
+#### Native installation boundary
 
 The preview is inert: it shows the exact generated Brewfile, native command and
 declaration scope without resolving or downloading packages. Approval is bound to
@@ -857,7 +925,7 @@ edited. Native prompts are noninteractive; trust/authentication failures require
 explicit user resolution.
 
 This slice still accepts only official formula targets. Casks and third-party
-installation, full-baseline apply, personal layering, scoped update and prune
+installation, full-baseline apply, scoped update and prune
 remain pending. Installed unadopted targets use `setup adopt-packages`;
 externally satisfied provider requirements are not replaced. No provider
 configuration changes during this command.
@@ -879,8 +947,9 @@ never replayed or converted into adoption.
 The old `setup plan --package-impact` option was removed and is rejected as an
 unknown option. Ordinary plan/status remain inert inventory operations.
 
-The machine layer uses the same strict schema as the portable profile. Its
-declared fields replace portable fields individually, arrays replace as whole
+The machine layer uses the same strict schema as the portable profile. Apart from
+the package-identity composition above, declared fields replace portable fields
+individually, arrays replace as whole
 values, and omitted fields continue to inherit portable intent or built-in
 defaults. Relative native inputs resolve beside the layer that declares them,
 so machine-only paths do not leak into a dotfiles-owned portable profile.
