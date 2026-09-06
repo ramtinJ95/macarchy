@@ -20,6 +20,7 @@ struct GuidedSetupAnswers: Sendable {
   var slack = false
   var spicetify = false
   var tuicr = false
+  var packageExclusions: [HomebrewPackageIdentity] = []
 
   var profileTOML: String {
     var sections = [[String]]()
@@ -54,6 +55,16 @@ struct GuidedSetupAnswers: Sendable {
         slack ? "slack = true" : nil,
         spicetify ? "spicetify = true" : nil,
         tuicr ? "tuicr = true" : nil,
+      ].compactMap { $0 }
+    )
+
+    let formulae = packageExclusions.filter { $0.kind == .formula }.map { "\"\($0.name)\"" }
+    let casks = packageExclusions.filter { $0.kind == .cask }.map { "\"\($0.name)\"" }
+    add(
+      "packages",
+      [
+        formulae.isEmpty ? nil : "exclude_formulae = [\(formulae.joined(separator: ", "))]",
+        casks.isEmpty ? nil : "exclude_casks = [\(casks.joined(separator: ", "))]",
       ].compactMap { $0 }
     )
 
@@ -113,6 +124,23 @@ struct GuidedSetupQuestionnaire: Sendable {
     answers.slack = try io.confirm("Enable the Slack preset?", defaultYes: false)
     answers.spicetify = try io.confirm("Enable the Spicetify preset?", defaultYes: false)
     answers.tuicr = try io.confirm("Enable the tuicr preset?", defaultYes: false)
+    io.write(
+      "Package choices are separate from provider/preset choices. Exclusions never uninstall software.\n"
+        + "Selected providers still require their packages; disable the provider to exclude one.\n")
+    while true {
+      io.write(
+        "Optional package exclusions (space-separated, e.g. formula:jq cask:spotify; Enter for none): "
+      )
+      guard let input = io.read() else { throw GuidedSetupError.inputClosed }
+      let targets = input.split(whereSeparator: \.isWhitespace).map(String.init)
+      if targets.isEmpty { break }
+      do {
+        answers.packageExclusions = try SetupPackageAdoptionCommandRunner.parseTargets(targets)
+        break
+      } catch let error as SetupPackageAdoptionError {
+        io.write("\(error)\n")
+      }
+    }
     return answers
   }
 }
@@ -208,13 +236,31 @@ struct GuidedSetupCommandRunner: Sendable {
     io.write("Wrote portable profile: \(context.profileURL.path)\n")
 
     let preparation = try planner.prepare(context: context)
-    io.write("\(try preparation.report.render(json: false))\n")
-    guard case .ready(let model, let plan) = preparation else {
+    let plan = planner.inspectedReport(preparation.report, context: context)
+    io.write("\(try plan.render(json: false))\n")
+    guard case .ready(let model, _) = preparation else {
       return (
         "Guided setup stopped because the unified plan is blocked. The profile was retained.",
         false
       )
     }
+    guard let declarations = plan.packageDeclarations else {
+      throw SetupPackageAdoptionError("The ready guided plan is missing package declarations.")
+    }
+    let effectiveExclusions = Set(declarations.exclusions.map(\.identity))
+    let overridden = answers.packageExclusions.filter { !effectiveExclusions.contains($0) }
+    guard overridden.isEmpty else {
+      return (
+        "Machine package additions override these portable exclusions: "
+          + overridden.map(\.key).joined(separator: ", ")
+          + ". Review the machine profile before applying. The new portable profile was retained.",
+        false
+      )
+    }
+    io.write(
+      "The following apply confirmations cover provider setup only, not the full effective Brewfile.\n"
+        + "Package-only installation requires a separate setup install-packages preview and approval "
+        + "for named official formulae; cask/tap execution remains unsupported.\n")
     guard model.packages.external.isEmpty else {
       return (
         "Complete the plan's external prerequisites, then run macarchy setup apply.",

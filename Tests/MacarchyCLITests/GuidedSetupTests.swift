@@ -12,6 +12,7 @@ struct GuidedSetupTests {
       "no", "", "no", "no",
       "no", "no", "", "no", "",
       "yes", "no", "yes", "no", "yes", "no",
+      "jq", "cask:homebrew/cask/spotify formula:homebrew/core/jq",
     ])
     let answers = try GuidedSetupQuestionnaire(
       io: GuidedSetupIO(
@@ -43,6 +44,115 @@ struct GuidedSetupTests {
     #expect(!profile.environment.presets.tuicr)
     #expect(!answers.profileTOML.contains("[top_bar]"))
     #expect(!answers.profileTOML.contains("eza = true"))
+    #expect(profile.packages.layers.first?.excludedFormulae == ["jq"])
+    #expect(profile.packages.layers.first?.excludedCasks == ["spotify"])
+  }
+
+  @Test
+  func defaultAnswersDoNotCopyPackageDefaultsIntoTheProfile() throws {
+    let answers = try GuidedSetupQuestionnaire(
+      io: GuidedSetupIO(read: { "" }, write: { _ in })
+    ).collect()
+    #expect(answers.profileTOML == "schema_version = 1\n")
+  }
+
+  @Test(arguments: [false, true])
+  func packageOptOutsUseTheLayeredPlanWithoutExpandingApply(machineRestoresJq: Bool) async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let context = guidedContext(fixture)
+    try fixture.writeMachineProfile(
+      "schema_version = 1\n[packages]\nexclude_casks = [\"docker\"]\n"
+        + (machineRestoresJq ? "brewfile = \"Brewfile\"\n" : ""))
+    if machineRestoresJq {
+      try "brew \"jq\"\n".write(
+        to: fixture.state.appending(path: "Brewfile"), atomically: true, encoding: .utf8)
+    }
+    let machineBytes = try Data(contentsOf: context.machineProfileURL)
+    var answers = GuidedSetupAnswers()
+    answers.packageExclusions = try SetupPackageAdoptionCommandRunner.parseTargets([
+      "formula:jq", "cask:spotify",
+    ])
+    let transcript = Mutex("")
+    let applied = Mutex(false)
+    let runner = GuidedSetupCommandRunner(
+      planner: fixture.planner(),
+      apply: { _, _, installDependencies, adoptions in
+        applied.withLock { $0 = true }
+        #expect(!installDependencies)
+        #expect(adoptions == .none)
+        return ("applied", true)
+      },
+      io: GuidedSetupIO(
+        read: { "yes" }, write: { output in transcript.withLock { $0 += output } })
+    )
+    let result = try await runner.execute(
+      context: context, consumerPaths: testConsumerPaths(), answers: answers)
+    #expect(result.succeeded == !machineRestoresJq)
+    #expect(applied.withLock { $0 } == !machineRestoresJq)
+    let profile = try PortableProfileLoader().load(at: context.profileURL, required: true)
+    #expect(profile.packages.layers.first?.excludedFormulae == ["jq"])
+    #expect(profile.packages.layers.first?.excludedCasks == ["spotify"])
+    #expect(try Data(contentsOf: context.machineProfileURL) == machineBytes)
+    let inventory = try fixture.planner().packageInventory(
+      context: context, adoptionState: .available(nil))
+    #expect(inventory.proposed.contains { $0.identity.key == "formula:jq" } == machineRestoresJq)
+    #expect(!inventory.proposed.contains { ["spotify", "docker"].contains($0.identity.name) })
+    #expect(transcript.withLock { $0.contains("Excluded cask:docker by machine") })
+    if machineRestoresJq {
+      #expect(result.output.contains("override") && result.output.contains("formula:jq"))
+    } else {
+      #expect(transcript.withLock { $0.contains("setup install-packages") })
+    }
+  }
+
+  @Test
+  func requiredProviderExclusionBlocksBeforeApproval() async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let context = guidedContext(fixture)
+    var answers = GuidedSetupAnswers()
+    answers.packageExclusions = [.init(kind: .formula, name: "bat")]
+    let transcript = Mutex("")
+    let runner = GuidedSetupCommandRunner(
+      planner: fixture.planner(),
+      apply: { _, _, _, _ in
+        Issue.record("A required-provider exclusion must block apply")
+        return ("unexpected", false)
+      },
+      io: GuidedSetupIO(
+        read: {
+          Issue.record("A blocked plan must not ask for approval")
+          return nil
+        },
+        write: { output in transcript.withLock { $0 += output } })
+    )
+    let result = try await runner.execute(
+      context: context, consumerPaths: testConsumerPaths(), answers: answers)
+    #expect(!result.succeeded)
+    #expect(transcript.withLock { $0.contains("excludes required formula:bat") })
+    #expect(FileManager.default.fileExists(atPath: context.profileURL.path))
+  }
+
+  @Test
+  func closedPackagePromptDoesNotPublishAProfile() async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let context = guidedContext(fixture)
+    let responses = Mutex(Array(repeating: "", count: 17))
+    let runner = GuidedSetupCommandRunner(
+      planner: fixture.planner(),
+      apply: { _, _, _, _ in
+        Issue.record("A closed questionnaire must not apply")
+        return ("unexpected", false)
+      },
+      io: GuidedSetupIO(
+        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } }, write: { _ in })
+    )
+    await #expect(throws: GuidedSetupError.self) {
+      try await runner.execute(context: context, consumerPaths: testConsumerPaths())
+    }
+    #expect(!FileManager.default.fileExists(atPath: context.profileURL.path))
   }
 
   @Test
@@ -205,6 +315,8 @@ struct GuidedSetupTests {
     defer { fixture.cleanup() }
     let context = guidedContext(fixture)
     let responses = Mutex([""])
+    var answers = GuidedSetupAnswers()
+    answers.packageExclusions = [.init(kind: .cask, name: "spotify")]
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(),
       apply: { _, _, _, _ in
@@ -220,11 +332,13 @@ struct GuidedSetupTests {
     let execution = try await runner.execute(
       context: context,
       consumerPaths: testConsumerPaths(),
-      answers: GuidedSetupAnswers()
+      answers: answers
     )
 
     #expect(execution.succeeded)
     #expect(execution.output.contains("stopped before mutation"))
+    let profile = try PortableProfileLoader().load(at: context.profileURL, required: true)
+    #expect(profile.packages.layers.first?.excludedCasks == ["spotify"])
   }
 
   private func guidedContext(_ fixture: ApplyFixture) -> UnifiedSetupPlanContext {

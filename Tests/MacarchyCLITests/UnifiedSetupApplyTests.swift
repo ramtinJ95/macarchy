@@ -873,6 +873,7 @@ final class ApplyFixture: @unchecked Sendable {
           """
         )
       },
+      packageInventoryReader: { HomebrewPackageObservation(packages: [], issues: []) },
       standardBrewfile: { _ in
         try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))
       }
