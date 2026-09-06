@@ -192,12 +192,6 @@ extension Macarchy {
       @Flag(help: "Emit machine-readable output.")
       var json = false
 
-      @Flag(
-        help:
-          "Download official metadata into disposable scratch and inspect native formula dependencies; never install."
-      )
-      var packageImpact = false
-
       mutating func run() throws {
         let execution = try UnifiedSetupPlanCommandRunner.live.execute(
           context: profile.context(
@@ -206,8 +200,7 @@ extension Macarchy {
               directoryHint: .isDirectory
             ).standardizedFileURL
           ),
-          json: json,
-          packageImpact: packageImpact
+          json: json
         )
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }
@@ -247,12 +240,12 @@ extension Macarchy {
 
     struct InstallPackages: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
-        abstract: "Preview and explicitly install bounded missing official bottled formulae.")
+        abstract: "Preview and install named missing official formulae through Homebrew Bundle.")
 
       @Argument(help: "Exact declared formula:<name> targets; omit for --recover.")
       var targets: [String] = []
 
-      @Option(help: "Exact digest from the reviewed complete installation preview.")
+      @Option(help: "Exact digest from the reviewed Brewfile and native command scope.")
       var approve: String?
 
       @Flag(help: "Resolve an interrupted attempt by observation only; never rerun Homebrew.")

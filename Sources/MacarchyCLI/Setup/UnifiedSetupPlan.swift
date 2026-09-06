@@ -53,9 +53,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   var packageInventoryReader: @Sendable () -> HomebrewPackageObservation = {
     .unavailable("Package inventory reader is not configured.")
   }
-  var packageImpactReader: @Sendable ([HomebrewPackageIdentity]) -> SetupPackageImpact = {
-    SetupPackageImpact(identities: $0, issue: "Package impact reader is not configured.")
-  }
+  var standardBrewfile: @Sendable (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
 
   static let live = UnifiedSetupPlanCommandRunner(
     capabilityIsAvailable: { $0.isAvailable() },
@@ -91,23 +89,17 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
       return try SetupComponentExecution(execution)
     },
-    packageInventoryReader: { HomebrewPackageInventoryReader.live.read() },
-    packageImpactReader: { HomebrewPackageImpactReader().read($0) }
+    packageInventoryReader: { HomebrewPackageInventoryReader.live.read() }
   )
 
   func execute(
     context: UnifiedSetupPlanContext,
-    json: Bool,
-    packageImpact: Bool = false
+    json: Bool
   ) throws -> (output: String, succeeded: Bool) {
     let preparation = try prepare(context: context)
-    var report = inspectedReport(preparation.report, context: context)
-    if packageImpact, let inventory = report.packageInventory {
-      report.packageImpact = packageImpactReader(inventory.proposed.map(\.identity))
-    }
+    let report = inspectedReport(preparation.report, context: context)
     return (
-      try report.render(json: json),
-      preparation.succeeded && report.packageImpact?.status != "unavailable"
+      try report.render(json: json), preparation.succeeded && report.packageInventoryIssue == nil
     )
   }
 
@@ -118,13 +110,20 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   ) -> UnifiedSetupPlanReport {
     guard report.theme != nil else { return report }
     var report = report
-    report.packageInventory = SetupPackageInventory(
-      capabilities: report.capabilities, fieldOrigins: report.fieldOrigins,
-      layers: report.layers, observation: packageInventoryReader(),
-      adoptionState: SetupPackageAdoptionStore(
-        stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
-      ).inspect()
-    )
+    do {
+      report.packageInventory = SetupPackageInventory(
+        capabilities: report.capabilities, fieldOrigins: report.fieldOrigins,
+        layers: report.layers, observation: packageInventoryReader(),
+        adoptionState: SetupPackageAdoptionStore(
+          stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
+        ).inspect(),
+        standardPackages: try standardBrewfile(
+          context.environmentResourcesRoot.appending(path: "Brewfile")
+        ).packages
+      )
+    } catch {
+      report.packageInventoryIssue = String(describing: error)
+    }
     do {
       report.packageInventory?.installation = try SetupPackageInstallationStore(context: context)
         .read()?.summary
@@ -145,7 +144,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         profile: layered.profile, homeDirectory: context.homeDirectory),
       fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue),
       layers: layered.layers.map(SetupProfileLayerReport.init),
-      observation: packageInventoryReader(), adoptionState: adoptionState
+      observation: packageInventoryReader(), adoptionState: adoptionState,
+      standardPackages: try standardBrewfile(
+        context.environmentResourcesRoot.appending(path: "Brewfile")
+      ).packages
     )
   }
 
@@ -805,7 +807,7 @@ struct UnifiedSetupPlanReport: Encodable {
   let components: SetupComponentPlans?
   let diagnostics: [UnifiedSetupPlanDiagnostic]
   var packageInventory: SetupPackageInventory? = nil
-  var packageImpact: SetupPackageImpact? = nil
+  var packageInventoryIssue: String? = nil
 
   static func blocked(
     layers: [SetupProfileLayerReport],
@@ -890,7 +892,9 @@ struct UnifiedSetupPlanReport: Encodable {
     }
     lines.append(packages.humanOutput)
     if let packageInventory { lines.append(packageInventory.humanOutput) }
-    if let packageImpact { lines.append(packageImpact.humanOutput) }
+    if let packageInventoryIssue {
+      lines.append("Package declarations unavailable: \(packageInventoryIssue)")
+    }
     lines.append(files.isEmpty ? "Files: none" : "Files:")
     lines += files.map { "- \($0.id) [\($0.status), \($0.ownership)]: \($0.path)" }
     lines.append(services.isEmpty ? "Services: none" : "Services:")

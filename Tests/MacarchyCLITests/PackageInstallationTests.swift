@@ -8,119 +8,128 @@ import Testing
 
 struct PackageInstallationTests {
   @Test
-  func approvalInstallsMissingClosurePublishesOnlyRootAndRepeatsWithoutProviderWork() async throws {
+  func approvalBindsBrewfilePublishesOnlyNamedRootsAndRepeatDoesNothing() async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
+    try fixture.inventory.write("schema_version = 1\n", at: fixture.context.profileURL)
+    let personal = try Data(contentsOf: fixture.context.profileURL)
     let runner = fixture.runner()
     let preview = try await fixture.run(runner)
     #expect(preview.outcome == "preview")
-    #expect(preview.json["effects"]?["components"]?.array?.count == 2)
-    #expect(preview.json["targets"]?.array?.count == 1)
-    #expect(preview.json["targets"]?.array?.first?["identity"]?["name"]?.string == "jq")
+    #expect(preview.json["brewfile"]?.string == "brew \"jq\"\n")
+    #expect(preview.json["effects"] == nil)
+    #expect(
+      preview.json["command"]?.array?.compactMap(\.string) == [
+        "/opt/homebrew/bin/brew", "bundle", "install", "--no-upgrade", "--file",
+        fixture.store.brewfileURL.path,
+      ])
     #expect(!FileManager.default.fileExists(atPath: fixture.context.stateRoot.path))
-    let wrong = try await fixture.run(runner, approval: "wrong")
-    #expect(wrong.outcome == "blocked")
+    #expect(try await fixture.run(runner, approval: "wrong").outcome == "blocked")
     #expect(fixture.calls.withLock { $0 } == 0)
     let complete = try await fixture.run(runner, approval: preview.approval())
     #expect(complete.outcome == "complete" && complete.succeeded)
-    let ledger = try #require(try fixture.ledger.read())
-    #expect(ledger.entries.map(\.identity.name) == ["jq"])
-    #expect(try fixture.store.read()?.phase == .complete)
+    #expect(try fixture.ledger.read()?.entries.map(\.identity.name) == ["jq"])
+    #expect(try fixture.store.read()?.verifiedTargets == ["formula:jq"])
+    #expect(try String(contentsOf: fixture.store.brewfileURL, encoding: .utf8) == "brew \"jq\"\n")
+    #expect(try Data(contentsOf: fixture.context.profileURL) == personal)
     #expect(try SetupCoreOwnershipStore(stateRoot: fixture.context.stateRoot).read() == nil)
     let bytes = try Data(contentsOf: fixture.ledger.url)
-    let repeatedRunner = SetupPackageInstallationCommandRunner(
-      planner: runner.planner,
-      provider: .init(
-        prepare: { _ in
-          Issue.record("No-op must not resolve effects")
-          return fixture.effects
-        },
-        apply: { _, _, _, _ in
-          Issue.record("No-op must not install")
-          return .init(status: 1, diagnostic: "")
-        }))
-    #expect(try await fixture.run(repeatedRunner).outcome == "no_change")
+    #expect(try await fixture.run(runner).outcome == "no_change")
     #expect(try Data(contentsOf: fixture.ledger.url) == bytes)
     #expect(fixture.calls.withLock { $0 } == 1)
   }
 
-  @Test(arguments: ["profile", "receipt", "context", "effects", "last_moment"])
-  func staleApprovalsAndLateInputChangesBlockMutation(change: String) async throws {
+  @Test
+  func nativeRelatedPackageChangesAndUnrelatedReceiptGapsAreDelegated() async throws {
+    let fixture = try InstallationFixture()
+    defer { fixture.inventory.cleanup() }
+    let base = fixture.runner()
+    var planner = base.planner
+    planner.packageInventoryReader = {
+      let current = fixture.observation()
+      return .init(
+        packages: current.packages + [
+          .init(
+            kind: .cask, token: "zoom", identity: nil, versions: [],
+            receiptPaths: [], issue: "Opaque native receipt"),
+          .init(
+            kind: .formula, token: "opaque", identity: nil, versions: [],
+            receiptPaths: [], issue: "Opaque native receipt"),
+        ], issues: [])
+    }
+    var runner = SetupPackageInstallationCommandRunner(planner: planner, provider: base.provider)
+    let preview = try await fixture.run(runner)
+    #expect(preview.outcome == "preview")
+    #expect(preview.json["inventory_warnings"]?.array?.count == 2)
+    runner.checkpoint = { point in
+      if case .afterNativeOutcome = point {
+        try fixture.inventory.formula("orphan", version: "2", tap: "homebrew/core")
+      }
+    }
+    #expect(try await fixture.run(runner, approval: preview.approval()).outcome == "complete")
+    #expect(try fixture.ledger.read()?.entries.map(\.identity.name) == ["jq"])
+    #expect(fixture.observation().packages.contains { $0.token == "libfoo" })
+  }
+
+  @Test(arguments: ["profile", "target", "defaults", "late"])
+  func staleApprovalStopsBeforeNativeExecution(change: String) async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
     var runner = fixture.runner()
     let preview = try await fixture.run(runner)
-    var context = fixture.context
-    switch change {
-    case "context":
-      context = fixture.contextAt(fixture.inventory.root.appending(path: "other"))
-    case "effects":
-      var provider = runner.provider
-      provider.prepare = { _ in fixture.effect(version: "2") }
-      runner = .init(planner: runner.planner, provider: provider)
-    case "last_moment":
-      var provider = runner.provider
-      provider.apply = { _, _, revalidate, _ in
-        try fixture.inventory.formula("orphan", version: "2", tap: "homebrew/core")
-        try revalidate()
-        Issue.record("Late revalidation must reject changed receipts")
-        return .init(status: 0, diagnostic: "")
-      }
-      runner = .init(planner: runner.planner, provider: provider)
-    default:
+    if change == "defaults" {
+      var planner = runner.planner
+      planner.standardBrewfile = { _ in SetupBrewfile(packages: []) }
+      runner = .init(planner: planner, provider: runner.provider)
+    } else {
       runner.checkpoint = { point in
-        guard case .beforeRevalidation = point else { return }
-        if change == "profile" {
-          try fixture.inventory.write(
-            "schema_version = 1\n[tools]\nbat = false\n", at: fixture.context.profileURL)
+        let reached: Bool
+        switch (change, point) {
+        case ("late", .afterIntent), ("profile", .beforeRevalidation),
+          ("target", .beforeRevalidation):
+          reached = true
+        default: reached = false
+        }
+        guard reached else { return }
+        if change == "target" {
+          try fixture.install()
         } else {
-          try fixture.inventory.formula("orphan", version: "2", tap: "homebrew/core")
+          try fixture.inventory.write("schema_version = 999\n", at: fixture.context.profileURL)
         }
       }
     }
-    let result = try await runner.execute(
-      context: context, targets: ["formula:jq"],
-      approval: preview.approval(), json: true)
+    let result = try await fixture.run(runner, approval: preview.approval())
     #expect(!result.succeeded)
     #expect(fixture.calls.withLock { $0 } == 0)
     #expect(try fixture.ledger.read() == nil)
   }
 
-  @Test(arguments: ["nonzero", "unknown", "verification", "existing_drift"])
-  func partialAndUnknownNativeOutcomesNeverPublishOwnership(mode: String) async throws {
+  @Test(arguments: ["nonzero", "unknown", "missing"])
+  func partialNativeOutcomesNeverPublishOwnership(mode: String) async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
-    var runner = fixture.runner(
-      status: mode == "nonzero" ? 1 : 0,
-      verified: mode == "verification" ? ["jq"] : ["jq", "libfoo"])
+    var runner = fixture.runner(status: mode == "nonzero" ? 1 : 0, install: mode != "missing")
     let preview = try await fixture.run(runner)
-    if mode == "unknown" || mode == "existing_drift" {
+    if mode == "unknown" {
       runner.checkpoint = { point in
-        if mode == "unknown", case .afterIntent = point {
+        if case .afterIntent = point {
           try fixture.install()
-          throw SetupPackageAdoptionError("interrupted without native outcome")
-        }
-        if mode == "existing_drift", case .afterNativeOutcome = point {
-          try fixture.inventory.formula("orphan", version: "2", tap: "homebrew/core")
+          throw SetupPackageAdoptionError("interrupted without a durable native outcome")
         }
       }
     }
     let result = try await fixture.run(runner, approval: preview.approval())
     #expect(result.outcome == (mode == "unknown" ? "recovery_required" : "partial"))
-    #expect(try fixture.ledger.read() == nil)
     if mode == "unknown" {
-      let recovered = try await fixture.run(fixture.runner(), recover: true)
-      #expect(recovered.outcome == "partial")
-      #expect(try fixture.ledger.read() == nil)
+      #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "partial")
       #expect(fixture.calls.withLock { $0 } == 0)
     }
+    #expect(try fixture.ledger.read() == nil)
     #expect(try fixture.store.read()?.phase == .partial)
   }
 
   @Test(arguments: [false, true])
-  func recoveryPublishesOnlyPersistedNativeSuccessAndIsIdempotent(afterPublication: Bool)
-    async throws
-  {
+  func recoveryRequiresPersistedNativeSuccessAndDoesNotRerun(afterPublication: Bool) async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
     var runner = fixture.runner()
@@ -134,54 +143,50 @@ struct PackageInstallationTests {
     }
     #expect(
       try await fixture.run(runner, approval: preview.approval()).outcome == "recovery_required")
-    #expect(try fixture.store.read()?.nativeExit == 0)
-    #expect(try fixture.store.read()?.phase == .running)
+    #expect(throws: SetupPackageAdoptionError.self) { try fixture.store.requireResolved() }
     #expect(try await fixture.run(fixture.runner()).outcome == "blocked")
-    let adoption = try await SetupPackageAdoptionCommandRunner(planner: runner.planner).execute(
-      context: fixture.context, targets: ["formula:jq"], approval: nil, json: true)
-    #expect(!adoption.succeeded)
+    #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "complete")
     #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "complete")
     #expect(try fixture.ledger.read()?.entries.count == 1)
-    #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "complete")
     #expect(fixture.calls.withLock { $0 } == 1)
   }
 
-  @Test(arguments: ["unknown_field", "context", "ledger_drift"])
-  func malformedAttemptAndChangedLedgerCannotBeRecoveredAsSuccess(mode: String) async throws {
+  @Test(arguments: [1, 2, 4])
+  func incompatibleAttemptIsPreservedAndNeverReplayed(version: Int) async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
-    var runner = fixture.runner()
+    let bytes = "{\"schema_version\":\(version)}"
+    try fixture.inventory.write(bytes, at: fixture.store.url)
+    let result = try await fixture.run(fixture.runner(), recover: true)
+    #expect(result.outcome == "blocked")
+    #expect(result.json["message"]?.string?.contains("cannot be replayed") == true)
+    #expect(try String(contentsOf: fixture.store.url, encoding: .utf8) == bytes)
+    #expect(fixture.calls.withLock { $0 } == 0)
+    #expect(try fixture.ledger.read() == nil)
+  }
+
+  @Test
+  func activeSessionBlocksRecoveryWithoutKillingOrRerunning() async throws {
+    let fixture = try InstallationFixture()
+    defer { fixture.inventory.cleanup() }
+    let base = fixture.runner()
+    let runner = SetupPackageInstallationCommandRunner(
+      planner: base.planner,
+      provider: .init(
+        apply: { _, record in
+          try record(getsid(0))
+          throw SetupPackageAdoptionError("simulated live installer")
+        }))
     let preview = try await fixture.run(runner)
-    runner.checkpoint = { point in
-      if case .afterNativeOutcome = point { throw SetupPackageAdoptionError("interrupted") }
-    }
-    _ = try await fixture.run(runner, approval: preview.approval())
-    if mode == "ledger_drift" {
-      let installed = try #require(fixture.observation().packages.first { $0.token == "orphan" })
-      try fixture.ledger.write(
-        .init(
-          contextDigest: fixture.ledger.contextDigest,
-          entries: [
-            .init(
-              identity: installed.identity!, versions: installed.versions,
-              receipts: installed.receipts,
-              declarations: [
-                .init(source: "test", layer: "test", sourcePath: nil, selectionField: nil)
-              ],
-              approvalDigest: preview.approval())
-          ]))
-    } else {
-      var data = try #require(
-        JSONSerialization.jsonObject(with: Data(contentsOf: fixture.store.url)) as? [String: Any])
-      data[mode == "context" ? "context_digest" : "unknown"] = "invalid"
-      try JSONSerialization.data(withJSONObject: data).write(to: fixture.store.url)
-    }
-    #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "blocked")
-    #expect(try fixture.ledger.read()?.entries.contains { $0.identity.name == "jq" } != true)
+    #expect(
+      try await fixture.run(runner, approval: preview.approval()).outcome == "recovery_required")
+    #expect(try await fixture.run(base, recover: true).outcome == "blocked")
+    #expect(try fixture.store.read()?.phase == .running)
+    #expect(fixture.calls.withLock { $0 } == 0)
   }
 
   @Test(arguments: [["cask:slack"], ["formula:vendor/tap/jq"], ["formula:libfoo"]])
-  func unsupportedAndUndeclaredTargetsBlockBeforeProvider(targets: [String]) async throws {
+  func unsupportedOrUndeclaredTargetsBlock(targets: [String]) async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
     let result = try await fixture.runner().execute(
@@ -191,87 +196,14 @@ struct PackageInstallationTests {
   }
 
   @Test
-  func installedUnadoptedAndUnknownEffectsCannotObtainApproval() async throws {
+  func installedUnadoptedTargetRequiresSeparateAdoption() async throws {
     let fixture = try InstallationFixture()
     defer { fixture.inventory.cleanup() }
-    let base = fixture.effects
-    var runner = fixture.runner()
-    var provider = runner.provider
-    provider.prepare = { _ in
-      .init(
-        components: base.components, links: base.links,
-        directories: base.directories, footprint: base.footprint,
-        dependentIssue: "UntrustedTapError")
-    }
-    runner = .init(planner: runner.planner, provider: provider)
-    let blocked = try await fixture.run(runner)
-    #expect(blocked.outcome == "blocked" && blocked.json["approval_digest"] == nil)
-    #expect(blocked.json["effects"]?["dependent_issue"]?.string == "UntrustedTapError")
     try fixture.install()
     #expect(try await fixture.run(fixture.runner()).outcome == "blocked")
+    #expect(fixture.calls.withLock { $0 } == 0)
     #expect(try fixture.ledger.read() == nil)
   }
-
-  @Test
-  func pendingProcessBlocksRecoveryApplyAndTeardownAndAppearsInInspection() async throws {
-    let fixture = try InstallationFixture()
-    defer { fixture.inventory.cleanup() }
-    var runner = fixture.runner()
-    let preview = try await fixture.run(runner)
-    var provider = runner.provider
-    provider.apply = { _, _, revalidate, record in
-      try revalidate()
-      // No process is launched or killed. An existing test process group proves
-      // the recovery guard cannot turn active native work into a partial result.
-      try record(getpgrp())
-      throw SetupPackageAdoptionError("simulated live installer")
-    }
-    runner = .init(planner: runner.planner, provider: provider)
-    #expect(
-      try await fixture.run(runner, approval: preview.approval()).outcome == "recovery_required")
-    #expect(try await fixture.run(fixture.runner(), recover: true).outcome == "blocked")
-    #expect(try fixture.store.read()?.phase == .running)
-    let apply = try await UnifiedSetupApplyCommandRunner.live.execute(
-      context: fixture.context,
-      consumerPaths: testConsumerPaths(), installDependencies: true, json: true)
-    #expect(!apply.succeeded && apply.output.contains("--recover"))
-    let teardown = try await UnifiedSetupTeardownCommandRunner.live.execute(
-      context: fixture.context,
-      consumerPaths: testConsumerPaths(), dryRun: false, json: true)
-    #expect(!teardown.succeeded && teardown.output.contains("--recover"))
-
-    let full = try ApplyFixture()
-    defer { full.cleanup() }
-    let store = SetupPackageInstallationStore(context: full.context)
-    let prior = try #require(try fixture.store.read())
-    let pending = SetupPackageInstallationAttempt(
-      schemaVersion: 1, contextDigest: store.contextDigest,
-      approvalDigest: prior.approvalDigest, priorLedgerDigest: prior.priorLedgerDigest,
-      targets: prior.targets, effects: prior.effects, baseline: prior.baseline)
-    try store.write(pending)
-    let planner = full.planner()
-    let plan = try planner.execute(context: full.context, json: true)
-    let document = try JSONDecoder().decode(JSONValue.self, from: Data(plan.output.utf8))
-    #expect(document["package_inventory"]?["installation"]?["phase"]?.string == "running")
-    let inspector = UnifiedSetupInspectionCommandRunner(
-      planner: planner,
-      themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
-      desktopInspection: { _, _, _, _ in
-        Issue.record("Pending installation should block inspection first")
-        return try applyComponent("{}")
-      },
-      environmentInspection: { _, _, _, _ in
-        Issue.record("Pending installation should block inspection first")
-        return try applyComponent("{}")
-      })
-    for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
-      let result = try inspector.execute(
-        operation: operation, context: full.context,
-        consumerPaths: testConsumerPaths(), json: true)
-      #expect(!result.succeeded && result.output.contains("recovery_required"))
-    }
-  }
-
 }
 
 private final class InstallationFixture: Sendable {
@@ -284,37 +216,19 @@ private final class InstallationFixture: Sendable {
     try inventory.formula("orphan", tap: "homebrew/core")
   }
 
-  var context: UnifiedSetupPlanContext { contextAt(inventory.root.appending(path: "state")) }
-  func contextAt(_ state: URL) -> UnifiedSetupPlanContext {
+  var context: UnifiedSetupPlanContext {
     let root = inventory.root
     return .init(
       themesRoot: root, keybindingsResourcesRoot: root, desktopResourcesRoot: root,
       environmentResourcesRoot: root, profileURL: root.appending(path: "profile.toml"),
       profileRequired: false,
       machineProfileURL: root.appending(path: "machine.toml"), machineProfileRequired: false,
-      stateRoot: state, homeDirectory: root.appending(path: "home"))
+      stateRoot: root.appending(path: "state"), homeDirectory: root.appending(path: "home"))
   }
   var ledger: SetupPackageAdoptionStore {
     .init(stateRoot: context.stateRoot, homeDirectory: context.homeDirectory)
   }
   var store: SetupPackageInstallationStore { .init(context: context) }
-  var effects: HomebrewFormulaInstallEffects { effect() }
-  func effect(version: String = "1") -> HomebrewFormulaInstallEffects {
-    let names = ["jq", "libfoo"]
-    let links = names.map {
-      HomebrewFormulaInstallEffects.Link(
-        path: "/opt/homebrew/opt/\($0)", target: "/opt/homebrew/Cellar/\($0)/\(version)")
-    }
-    return .init(
-      components: names.map {
-        .init(
-          name: $0, version: version, sha256: String(repeating: "a", count: 64),
-          dependencies: $0 == "jq" ? ["libfoo"] : [])
-      },
-      links: links, directories: [],
-      footprint: links.map { .init(path: $0.path, device: nil, inode: nil, mode: nil) },
-      dependentIssue: nil)
-  }
   func install() throws {
     for name in ["jq", "libfoo"] { try inventory.formula(name, tap: "homebrew/core") }
     installed.withLock { $0 = true }
@@ -322,9 +236,7 @@ private final class InstallationFixture: Sendable {
   func observation() -> HomebrewPackageObservation {
     inventory.reader(formulae: installed.withLock { $0 } ? "jq\nlibfoo\norphan" : "orphan").read()
   }
-  func runner(status: Int32 = 0, verified: [String] = ["jq", "libfoo"])
-    -> SetupPackageInstallationCommandRunner
-  {
+  func runner(status: Int32 = 0, install: Bool = true) -> SetupPackageInstallationCommandRunner {
     let unrelated: UnifiedSetupPlanCommandRunner.ComponentPlanner = { _, _ in
       Issue.record("Package installation must not plan unrelated providers")
       throw SetupPackageAdoptionError("unrelated provider planning")
@@ -333,15 +245,16 @@ private final class InstallationFixture: Sendable {
       planner: .init(
         capabilityIsAvailable: { _ in false },
         desktopPlanner: unrelated, environmentPlanner: unrelated,
-        packageInventoryReader: { self.observation() }),
-      provider: .init(
-        prepare: { _ in self.effects },
-        apply: { _, _, revalidate, _ in
-          try revalidate()
-          self.calls.withLock { $0 += 1 }
-          try self.install()
-          return .init(status: status, diagnostic: "test native outcome")
-        }, verify: { _, _ in verified }))
+        packageInventoryReader: { self.observation() },
+        standardBrewfile: { _ in
+          try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))
+        }),
+      provider: .init(apply: { brewfile, _ in
+        #expect(try String(contentsOf: brewfile, encoding: .utf8) == "brew \"jq\"\n")
+        self.calls.withLock { $0 += 1 }
+        if install { try self.install() }
+        return .init(status: status, diagnostic: "test native outcome")
+      }))
   }
   struct Result {
     let json: JSONValue

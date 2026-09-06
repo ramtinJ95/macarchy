@@ -220,7 +220,7 @@ struct UnifiedSetupPlanTests {
     """.write(to: machine, atomically: true, encoding: .utf8)
     let before = try inventory(root)
     let calls = Mutex([String]())
-    let runner = UnifiedSetupPlanCommandRunner(
+    var runner = UnifiedSetupPlanCommandRunner(
       capabilityIsAvailable: { _ in false },
       desktopPlanner: { context, profile in
         calls.withLock { $0.append("desktop:\(profile.environment.tools.bat)") }
@@ -273,6 +273,9 @@ struct UnifiedSetupPlanTests {
       }
     )
 
+    runner.standardBrewfile = { _ in
+      try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))
+    }
     let setupContext = context(
       root: root,
       home: home,

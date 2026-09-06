@@ -15,31 +15,31 @@ struct SetupPackageInstallationAttempt: Codable, Sendable {
   let approvalDigest: String
   let priorLedgerDigest: String
   let targets: [Target]
-  let effects: HomebrewFormulaInstallEffects
-  let baseline: HomebrewPackageObservation
+  let brewfile: String
   var phase: Phase = .running
   var nativeExit: Int32?
-  var processGroup: Int32?
+  var processSession: Int32?
   var diagnostic = ""
-  var verifiedComponents: [String] = []
+  var verifiedTargets: [String] = []
 
   struct Summary: Encodable, Sendable {
     let phase: Phase
     let targets: [String]
     let nativeExit: Int32?
-    let verifiedComponents: [String]
+    let verifiedTargets: [String]
     let diagnostic: String
   }
   var summary: Summary {
     .init(
       phase: phase, targets: targets.map(\.identity.key), nativeExit: nativeExit,
-      verifiedComponents: verifiedComponents, diagnostic: diagnostic)
+      verifiedTargets: verifiedTargets, diagnostic: diagnostic)
   }
 }
 
 struct SetupPackageInstallationStore: Sendable {
   let context: UnifiedSetupPlanContext
   var url: URL { context.stateRoot.appending(path: "state/setup/package-installation.json") }
+  var brewfileURL: URL { context.stateRoot.appending(path: "state/setup/installation.Brewfile") }
   var contextDigest: String {
     SetupPackageAdoptionStore(stateRoot: context.stateRoot, homeDirectory: context.homeDirectory)
       .contextDigest
@@ -62,6 +62,13 @@ struct SetupPackageInstallationStore: Sendable {
       _ = try StrictJSONObjectDocument(data: data, id: "package_installation", target: url)
       let decoder = JSONDecoder()
       decoder.keyDecodingStrategy = .convertFromSnakeCase
+      struct Version: Decodable { let schemaVersion: Int }
+      let version = try decoder.decode(Version.self, from: data)
+      guard version.schemaVersion == 3 else {
+        throw SetupPackageAdoptionError(
+          "Legacy exact-effect installation attempt at \(url.path). Preserve it and inspect the host before manually moving it aside; it cannot be replayed or adopted."
+        )
+      }
       let attempt = try decoder.decode(SetupPackageInstallationAttempt.self, from: data)
       let encoder = JSONEncoder()
       encoder.keyEncodingStrategy = .convertToSnakeCase
@@ -102,25 +109,24 @@ struct SetupPackageInstallationStore: Sendable {
         && value.dropFirst(7).allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
     }
     let names = attempt.targets.map(\.identity.name)
-    let componentNames = Set(attempt.effects.components.map(\.name))
-    let verified = Set(attempt.verifiedComponents)
-    guard attempt.schemaVersion == 1, attempt.contextDigest == contextDigest,
+    let targetNames = Set(attempt.targets.map(\.identity.key))
+    let verified = Set(attempt.verifiedTargets)
+    guard attempt.schemaVersion == 3, attempt.contextDigest == contextDigest,
       digest(attempt.approvalDigest), digest(attempt.priorLedgerDigest),
-      attempt.processGroup == nil || attempt.processGroup! > 1,
+      attempt.processSession == nil || attempt.processSession! > 1,
       !names.isEmpty, names == names.sorted(), Set(names).count == names.count,
       attempt.targets.allSatisfy({
         $0.identity.kind == .formula && HomebrewPackageIdentity.validToken($0.identity.name)
           && !$0.declarations.isEmpty && $0.declarations.count <= 64
           && $0.declarations.allSatisfy { !$0.source.isEmpty && !$0.layer.isEmpty }
-      }), attempt.baseline.status == "available", attempt.baseline.issues.isEmpty,
-      attempt.baseline.packages.allSatisfy({ $0.issue == nil && $0.identity != nil }),
-      !attempt.baseline.packages.contains(where: {
-        $0.kind == .formula && componentNames.contains($0.token)
       }), attempt.diagnostic.utf8.count <= 32 * 1024,
-      verified.isSubset(of: componentNames), verified.count == attempt.verifiedComponents.count,
+      verified.isSubset(of: targetNames), verified.count == attempt.verifiedTargets.count,
       attempt.phase != .complete
-        || (attempt.nativeExit == 0 && verified == componentNames)
+        || (attempt.nativeExit == 0 && verified == targetNames)
     else { throw SetupPackageAdoptionError("Invalid installation context, state or evidence.") }
-    try attempt.effects.validate(roots: names)
+    guard attempt.brewfile == SetupBrewfile(packages: attempt.targets.map(\.identity)).text else {
+      throw SetupPackageAdoptionError(
+        "Installation Brewfile does not match its named declarations.")
+    }
   }
 }
