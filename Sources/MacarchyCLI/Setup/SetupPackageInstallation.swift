@@ -13,7 +13,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     .init(planner: .live, provider: .live(homeDirectory: homeDirectory))
   }
 
-  private struct Inputs: Encodable, Sendable {
+  struct Inputs: Encodable, Sendable {
     let contract = "setup_brewfile_installation_v3"
     let contextDigest: String
     let profilePaths: [String]
@@ -143,7 +143,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     }
   }
 
-  private func inputs(context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity])
+  func inputs(context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity])
     throws -> Inputs
   {
     guard identities.allSatisfy({ $0.kind == .formula && !$0.name.contains("/") }) else {

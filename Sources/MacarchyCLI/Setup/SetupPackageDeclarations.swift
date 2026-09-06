@@ -26,7 +26,8 @@ struct SetupPackageDeclarations: Encodable, Sendable {
   static let empty = Self(baseline: .standard, packages: [], exclusions: [], taps: [])
 
   static func compile(
-    standard: SetupBrewfile, profile: PackageProfile, requirements: [SetupCapability]
+    standard: SetupBrewfile, profile: PackageProfile, requirements: [SetupCapability],
+    readBrewfile: (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
   ) throws -> Self {
     guard profile.baseline != .personal || profile.layers.contains(where: { $0.brewfileURL != nil })
     else {
@@ -44,7 +45,7 @@ struct SetupPackageDeclarations: Encodable, Sendable {
     }
     for layer in profile.layers {
       let additions =
-        try layer.brewfileURL.map { try SetupBrewfile.read(at: $0) }
+        try layer.brewfileURL.map { try readBrewfile($0) }
         ?? SetupBrewfile(packages: [])
       let targets =
         layer.excludedFormulae.map { "formula:" + $0 }

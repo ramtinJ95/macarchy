@@ -21,7 +21,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     let boundary = "macarchy_adoption_only_no_homebrew_or_provider_mutation"
   }
 
-  private struct Prepared: Sendable {
+  struct Prepared: Encodable, Sendable {
     let candidates: [Candidate]
     let ledger: SetupPackageAdoptionLedger?
     let digest: String
@@ -112,7 +112,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     }
   }
 
-  private func prepare(
+  func prepare(
     context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity],
     store: SetupPackageAdoptionStore
   ) throws -> Prepared {
