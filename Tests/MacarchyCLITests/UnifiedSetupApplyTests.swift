@@ -93,7 +93,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       json: true
     )
     let report = try jsonObject(execution.output)
@@ -148,7 +147,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       adoptions: approvals,
       json: true
     )
@@ -193,7 +191,6 @@ struct UnifiedSetupApplyTests {
       let execution = try await runner.execute(
         context: fixture.context,
         consumerPaths: testConsumerPaths(),
-        installDependencies: false,
         adoptions: adoptions,
         json: true
       )
@@ -251,16 +248,16 @@ struct UnifiedSetupApplyTests {
   }
 
   @Test
-  func missingHomebrewDependencyBlocksBeforeMutationWithoutApprovalFlag() async throws {
+  func missingHomebrewPackagesRequireExactApproval() async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let calls = Mutex(0)
     let runner = fixture.runner(
       available: { $0.id != "bat" },
-      process: ProcessRunner { _ in
+      installer: .init(apply: { _, _ in
         calls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
+        return .init(status: 0, diagnostic: "")
+      }),
       writePlan: { _ in calls.withLock { $0 += 1 } },
       theme: { _, _ in
         calls.withLock { $0 += 1 }
@@ -279,7 +276,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       json: true
     )
     let report = try jsonObject(execution.output)
@@ -287,62 +283,88 @@ struct UnifiedSetupApplyTests {
     #expect(!execution.succeeded)
     #expect(report["outcome"] as? String == "blocked")
     #expect(report["mutated"] as? Bool == false)
-    #expect((report["message"] as? String)?.contains("--install-dependencies") == true)
+    #expect((report["message"] as? String)?.contains("--approve-packages") == true)
     #expect(calls.withLock { $0 } == 0)
   }
 
-  @Test
-  func approvedHomebrewInstallIsScopedAndVerifiedBeforeProviderMutation() async throws {
+  @Test(arguments: [Int32(0), Int32(1)])
+  func fullPackageApplyUsesReviewedMissingScopeAndDoesNotAdopt(status: Int32) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
-    let batAvailable = Mutex(false)
+    let inventory = try InventoryFixture()
+    defer { inventory.cleanup() }
+    try inventory.formula("orphan", tap: "homebrew/core")
+    try fixture.writeMachineProfile("schema_version = 1\n[packages]\nexclude_formulae = ['jq']\n")
+    let profile = try Data(contentsOf: fixture.context.machineProfileURL)
+    let installed = Mutex(false)
     let calls = Mutex([String]())
-    let available: @Sendable (DependencyCapability) -> Bool = { capability in
-      capability.id != "bat" || batAvailable.withLock { $0 }
-    }
+    let packages = try SetupBrewfile.parse(
+      "brew 'bat'\nbrew 'orphan'\nbrew 'jq'\ncask 'vendor/apps/slack'\ntap 'unrelated/tap'\n")
     let runner = fixture.runner(
-      available: available,
+      available: { $0.id != "bat" || installed.withLock { $0 } },
       plannedStages: [.desktop, .environment],
-      process: ProcessRunner { request in
-        #expect(request.arguments == ["install", "--formula", "--no-ask", "bat"])
-        #expect(request.environmentOverrides == HomebrewInstallPlan.environment)
-        batAvailable.withLock { $0 = true }
-        calls.withLock { $0.append("packages") }
-        return ProcessResult(terminationStatus: 0, output: "installed bat")
+      packages: packages,
+      inventory: {
+        inventory.reader(
+          formulae: installed.withLock { $0 } ? "bat\norphan" : "orphan",
+          casks: installed.withLock { $0 } ? "slack" : ""
+        ).read()
       },
+      installer: .init(apply: { url, _ in
+        #expect(
+          try String(contentsOf: url, encoding: .utf8)
+            == "tap \"vendor/apps\"\ncask \"vendor/apps/slack\"\nbrew \"bat\"\n")
+        try inventory.formula("bat", tap: "homebrew/core")
+        try inventory.cask("slack", tap: "vendor/apps")
+        installed.withLock { $0 = true }
+        calls.withLock { $0.append("packages") }
+        return .init(status: status, diagnostic: "native result")
+      }),
       writePlan: { _ in calls.withLock { $0.append("plan") } },
       theme: { _, _ in
         calls.withLock { $0.append("theme") }
         return try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#
-        )
+          #"{"operation":"theme_set","outcome":"success","committed":true}"#)
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop") }
         return try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"no_change","mutated":false,"message":"desktop ready"}"#
-        )
+          #"{"operation":"desktop_apply","outcome":"no_change","mutated":false,"message":"ready"}"#)
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
         return try applyComponent(
-          #"{"operation":"environment_apply","outcome":"no_change","mutated":false,"message":"environment ready"}"#
+          #"{"operation":"environment_apply","outcome":"no_change","mutated":false,"message":"ready"}"#
         )
-      }
-    )
-
-    let execution = try await runner.execute(
-      context: fixture.context,
-      consumerPaths: testConsumerPaths(),
-      installDependencies: true,
-      json: true
-    )
-    let report = try jsonObject(execution.output)
-    let packages = try #require(report["packages"] as? [String: Any])
-
-    #expect(execution.succeeded)
-    #expect(packages["outcome"] as? String == "installed")
-    #expect(calls.withLock { $0 } == ["plan", "packages", "theme", "desktop", "environment"])
+      })
+    let preview = try runner.planner.prepare(context: fixture.context).report
+    let approval = try #require(preview.packageInstallation?.approvalDigest)
+    let rejected = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), packageApproval: "wrong",
+      json: true)
+    #expect(!rejected.succeeded && calls.withLock { $0.isEmpty })
+    let result = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), packageApproval: approval,
+      json: true)
+    #expect(result.succeeded == (status == 0))
+    #expect(
+      calls.withLock { $0 }
+        == (status == 0
+          ? ["plan", "packages", "theme", "desktop", "environment"] : ["plan", "packages"]))
+    #expect(try Data(contentsOf: fixture.context.machineProfileURL) == profile)
+    #expect(
+      try SetupPackageAdoptionStore(
+        stateRoot: fixture.state, homeDirectory: fixture.home
+      ).read() == nil)
+    #expect(try SetupPackageInstallationStore(context: fixture.context).read() == nil)
+    // Even a failed native command may leave installed receipts. A fresh run
+    // uses that observed state, without ownership publication or native replay.
+    let retry = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), json: true)
+    #expect(retry.succeeded)
+    let report = try jsonObject(retry.output)
+    #expect((report["packages"] as? [String: Any])?["outcome"] as? String == "no_change")
+    #expect(calls.withLock { $0.filter { $0 == "packages" }.count } == 1)
   }
 
   @Test
@@ -411,7 +433,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       json: true
     )
     let report = try jsonObject(execution.output)
@@ -500,7 +521,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       json: true
     )
     let report = try jsonObject(execution.output)
@@ -587,7 +607,6 @@ struct UnifiedSetupApplyTests {
       try await interrupted.execute(
         context: fixture.context,
         consumerPaths: paths,
-        installDependencies: false,
         json: true
       )
     }
@@ -616,7 +635,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await replacement.execute(
       context: fixture.context,
       consumerPaths: paths,
-      installDependencies: false,
       json: true
     )
     let report = try jsonObject(execution.output)
@@ -662,7 +680,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       json: true
     )
     let report = try jsonObject(execution.output)
@@ -698,7 +715,6 @@ struct UnifiedSetupApplyTests {
     let execution = try await runner.execute(
       context: fixture.context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       json: true
     )
     let report = try jsonObject(execution.output)
@@ -777,10 +793,14 @@ final class ApplyFixture: @unchecked Sendable {
         message: succeeded ? "current" : "drifted"
       )
     },
-    process: ProcessRunner = ProcessRunner { _ in
-      Issue.record("Homebrew must not run")
-      return ProcessResult(terminationStatus: 1, output: "unexpected")
+    packages: SetupBrewfile = SetupBrewfile(packages: []),
+    inventory: @escaping @Sendable () -> HomebrewPackageObservation = {
+      .init(packages: [], issues: [])
     },
+    installer: HomebrewBundleInstaller = .init(apply: { _, _ in
+      Issue.record("Homebrew must not run")
+      return .init(status: 1, diagnostic: "unexpected")
+    }),
     writePlan: @escaping @Sendable (String) throws -> Void = { _ in },
     theme: @escaping UnifiedSetupApplyCommandRunner.ThemeApply,
     desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
@@ -790,15 +810,17 @@ final class ApplyFixture: @unchecked Sendable {
       _ in
     }
   ) -> UnifiedSetupApplyCommandRunner {
-    let planner = planner(
+    var planner = planner(
       available: available,
       requiredAdoptions: requiredAdoptions,
       plannedStages: plannedStages
     )
+    planner.standardBrewfile = { _ in packages }
+    planner.packageInventoryReader = inventory
     return UnifiedSetupApplyCommandRunner(
       planner: planner,
       themeInspection: themeInspection,
-      processRunner: process,
+      packageInstaller: installer,
       capabilityIsAvailable: available,
       writePreMutationPlan: writePlan,
       themeApply: theme,

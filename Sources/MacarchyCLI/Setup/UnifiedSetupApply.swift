@@ -16,7 +16,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
 
   let planner: UnifiedSetupPlanCommandRunner
   let themeInspection: UnifiedSetupThemeInspection
-  let processRunner: ProcessRunner
+  let packageInstaller: HomebrewBundleInstaller
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let themeApply: ThemeApply
@@ -28,7 +28,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   init(
     planner: UnifiedSetupPlanCommandRunner,
     themeInspection: @escaping UnifiedSetupThemeInspection,
-    processRunner: ProcessRunner,
+    packageInstaller: HomebrewBundleInstaller,
     capabilityIsAvailable: @escaping @Sendable (DependencyCapability) -> Bool,
     writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
     themeApply: @escaping ThemeApply,
@@ -41,7 +41,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   ) {
     self.planner = planner
     self.themeInspection = themeInspection
-    self.processRunner = processRunner
+    self.packageInstaller = packageInstaller
     self.capabilityIsAvailable = capabilityIsAvailable
     self.writePreMutationPlan = writePreMutationPlan
     self.themeApply = themeApply
@@ -54,7 +54,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   static let live = Self(
     planner: .live,
     themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
-    processRunner: .live,
+    packageInstaller: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
     capabilityIsAvailable: { $0.isAvailable() },
     writePreMutationPlan: { output in
       try FileHandle.standardError.write(contentsOf: Data("\(output)\n".utf8))
@@ -165,7 +165,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   func execute(
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
-    installDependencies: Bool,
+    packageApproval: String? = nil,
     adoptions: UnifiedSetupAdoptionApprovals = .none,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
@@ -252,12 +252,15 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         json: json
       )
     }
-    guard installDependencies || model.packages.requests.isEmpty else {
+    guard
+      plan.packageInstallation == nil || packageApproval == plan.packageInstallation?.approvalDigest
+    else {
       return try result(
         outcome: "blocked",
         mutated: false,
         plan: plan,
-        message: "Missing Homebrew dependencies require --install-dependencies.",
+        message:
+          "Review the missing-package Brewfile and repeat with its exact --approve-packages digest. The legacy --install-dependencies flag does not authorize this scope.",
         json: json
       )
     }
@@ -294,7 +297,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             json: json
           )
         }
-        guard try currentPlan.render(json: true) == plan.render(json: true) else {
+        guard try currentPlan.approvalText() == plan.approvalText() else {
           return try result(
             outcome: "blocked",
             mutated: false,
@@ -326,7 +329,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           )
         }
 
-        let packages = install(currentModel.packages)
+        let packages = install(currentPlan.packageInstallation, context: context)
         guard packages.succeeded else {
           return try result(
             outcome: "failed",
@@ -538,7 +541,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       let recoveryPending = (try? transactionStore.read()) != nil
       return try result(
         outcome: recoveryPending ? "recovery_required" : "failed",
-        mutated: recoveryPending || (installDependencies && !model.packages.requests.isEmpty),
+        mutated: recoveryPending || (packageApproval != nil && plan.packageInstallation != nil),
         plan: plan,
         message: String(describing: error),
         json: json
@@ -546,38 +549,55 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     }
   }
 
-  private func install(_ plan: HomebrewInstallPlan) -> UnifiedSetupPackageApply {
-    guard !plan.requests.isEmpty else { return .noChange }
+  private func install(
+    _ preview: HomebrewBundleInstaller.Preview?, context: UnifiedSetupPlanContext
+  ) -> UnifiedSetupPackageApply {
+    guard let preview else { return .noChange }
     var commands = [UnifiedSetupHomebrewCommand]()
-    for request in plan.requests {
-      do {
-        let result = try processRunner.run(request)
-        let command = UnifiedSetupHomebrewCommand(request: request, result: result)
-        commands.append(command)
-        guard command.succeeded else {
-          return UnifiedSetupPackageApply(
-            outcome: "failed",
-            mutated: true,
-            commands: commands,
-            message: command.message
-          )
-        }
-      } catch {
-        commands.append(UnifiedSetupHomebrewCommand(request: request, error: error))
-        return UnifiedSetupPackageApply(
-          outcome: "failed",
-          mutated: true,
-          commands: commands,
-          message: "Homebrew execution failed; package state may have changed: \(error)"
-        )
+    var mutated = false
+    do {
+      try packageInstaller.preflight()
+      let file = HomebrewBundleInstaller.Preview.fileURL(context: context)
+      try FileManager.default.createDirectory(
+        at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try preview.brewfile.write(to: file, atomically: true, encoding: .utf8)
+      mutated = true
+      guard try SetupBrewfile.read(at: file).text == preview.brewfile else {
+        throw SetupPackageAdoptionError("Generated Brewfile changed before execution.")
       }
+      // Normal setup delegates to native Homebrew, not the named ownership
+      // workflow. No package ledger, rollback or interrupted-operation replay.
+      let execution = try packageInstaller.apply(file) { _ in }
+      commands.append(
+        .init(
+          executable: preview.command[0], arguments: Array(preview.command.dropFirst()),
+          terminationStatus: execution.status, output: execution.diagnostic))
+      guard execution.status == 0 else {
+        throw SetupPackageAdoptionError(
+          "Homebrew exited with status \(execution.status): \(execution.diagnostic)")
+      }
+      let inventory = try planner.packageInventory(context: context, adoptionState: .available(nil))
+      guard inventory.effectiveBrewfile == preview.effectiveBrewfile else {
+        throw SetupPackageAdoptionError(
+          "Package intent changed during installation; review the new plan.")
+      }
+      let remaining = try HomebrewInstallPlan(inventory: inventory)
+      guard remaining.identities.isEmpty else {
+        throw SetupPackageAdoptionError(
+          "Packages remain missing: " + remaining.identities.map(\.key).joined(separator: ", "))
+      }
+      return .init(
+        outcome: "installed", mutated: true, commands: commands,
+        message:
+          "Missing setup packages installed. No package adoption or provider configuration was performed by this stage."
+      )
+    } catch {
+      return .init(
+        outcome: "failed", mutated: mutated, commands: commands,
+        message:
+          "Package installation stopped: \(error). Native effects are retained, not rolled back. Let any native work finish, then review a fresh setup plan before retrying."
+      )
     }
-    return UnifiedSetupPackageApply(
-      outcome: "installed",
-      mutated: true,
-      commands: commands,
-      message: "Selected Homebrew dependencies were installed."
-    )
   }
 
   private func failureAfterRollback(
@@ -751,42 +771,19 @@ struct UnifiedSetupPackageApply: Encodable, Sendable {
     outcome: "no_change",
     mutated: false,
     commands: [],
-    message: "Selected Homebrew dependencies are already present."
+    message:
+      "Effective setup packages are already satisfied; no Homebrew command or adoption was needed."
   )
 }
 
 struct UnifiedSetupHomebrewCommand: Encodable, Sendable {
   let executable: String
   let arguments: [String]
-  let terminationStatus: Int32?
-  let output: String?
-  let error: String?
-
-  init(request: ProcessRequest, result: ProcessResult) {
-    executable = request.executableURL.path
-    arguments = request.arguments
-    terminationStatus = result.terminationStatus
-    output = result.output.isEmpty ? nil : result.output
-    error = nil
-  }
-
-  init(request: ProcessRequest, error: Error) {
-    executable = request.executableURL.path
-    arguments = request.arguments
-    terminationStatus = nil
-    output = nil
-    self.error = String(describing: error)
-  }
-
-  var succeeded: Bool { terminationStatus == 0 }
-
-  var message: String {
-    output ?? error
-      ?? "Homebrew exited with status \(terminationStatus.map(String.init) ?? "unknown")."
-  }
+  let terminationStatus: Int32
+  let output: String
 
   enum CodingKeys: String, CodingKey {
-    case executable, arguments, output, error
+    case executable, arguments, output
     case terminationStatus = "termination_status"
   }
 }

@@ -212,11 +212,18 @@ struct PackageInventoryTests {
   }
 
   @Test
-  func defaultPreviewContainsTheApprovedSetWithoutExpandingApply() throws {
+  func defaultPreviewUsesOneObservationForTheApprovedSet() throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     var planner = fixture.planner(available: { _ in false })
-    planner.packageInventoryReader = { HomebrewPackageObservation(packages: [], issues: []) }
+    let observations = Mutex(0)
+    planner.packageInventoryReader = {
+      let first = observations.withLock {
+        $0 += 1
+        return $0 == 1
+      }
+      return first ? .init(packages: [], issues: []) : .unavailable("later Homebrew observation")
+    }
     let prepared = try planner.prepare(context: fixture.context).report
     let report = planner.inspectedReport(prepared, context: fixture.context)
     let packages = try #require(report.packageInventory)
@@ -257,10 +264,10 @@ struct PackageInventoryTests {
     }
     #expect(formula == "hashicorp/tap/terraform")
     #expect(instruction.contains("brew trust --formula hashicorp/tap/terraform"))
+    #expect(Set(report.packages.identities) == Set(packages.proposed.map(\.identity)))
     #expect(
-      Set(report.packages.formulae)
-        == Set(["atuin", "bat", "btop", "eza", "neovim", "starship", "yazi"]))
-    #expect(report.packages.casks == ["kitty"])
+      report.packageInstallation?.brewfile
+        == SetupBrewfile.installing(report.packages.identities).text)
   }
 
   @Test
@@ -335,18 +342,15 @@ struct PackageInventoryTests {
   }
 
   @Test
-  func planAndStatusExposeInventoryButApplyPreparationDoesNotInspectIt() throws {
+  func unavailableInventoryBlocksSetupWithoutHidingDeclaredScope() throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
-    let calls = Mutex(0)
     var planner = fixture.planner()
     planner.packageInventoryReader = {
-      calls.withLock { $0 += 1 }
       return .unavailable("test inventory unavailable")
     }
     let preparation = try planner.prepare(context: fixture.context)
-    #expect(calls.withLock { $0 } == 0)
-    #expect(preparation.report.packageInventory == nil)
+    #expect(!preparation.succeeded)
     let plan = try planner.execute(context: fixture.context, json: true)
     let planJSON = try JSONDecoder().decode(JSONValue.self, from: Data(plan.output.utf8))
     #expect(planJSON["package_inventory"]?["observation"]?["status"]?.string == "unavailable")
@@ -362,7 +366,7 @@ struct PackageInventoryTests {
     let status = try inspection.execute(
       operation: .status, context: fixture.context, consumerPaths: testConsumerPaths(), json: false
     )
-    #expect(status.succeeded)
+    #expect(!status.succeeded)
     #expect(status.output.contains("Package inventory [unavailable"))
     #expect(status.output.contains("test inventory unavailable"))
     let statusJSON = try inspection.execute(
@@ -372,7 +376,6 @@ struct PackageInventoryTests {
     #expect(
       try renderJSON(decoded["plan"]?["package_inventory"])
         == renderJSON(planJSON["package_inventory"]))
-    #expect(calls.withLock { $0 } == 3)
   }
 
   private func capability(

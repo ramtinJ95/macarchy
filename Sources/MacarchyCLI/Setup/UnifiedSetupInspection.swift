@@ -185,7 +185,9 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       )
     }
 
-    let succeeded = desktop.succeeded && environment.succeeded && missing.isEmpty
+    let missingPackages = model.packages.identities.map(\.key)
+    let succeeded =
+      desktop.succeeded && environment.succeeded && missing.isEmpty && missingPackages.isEmpty
     let outcome: String
     switch operation {
     case .status: outcome = succeeded ? "converged" : "drifted"
@@ -196,6 +198,8 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       ? "The selected Macarchy core is converged."
       : [
         missing.isEmpty ? nil : "Missing capabilities: \(missing.joined(separator: ", ")).",
+        missingPackages.isEmpty
+          ? nil : "Missing setup packages: \(missingPackages.joined(separator: ", ")).",
         desktop.succeeded ? nil : "Desktop inspection failed.",
         environment.succeeded ? nil : "Environment inspection failed.",
       ].compactMap { $0 }.joined(separator: " ")

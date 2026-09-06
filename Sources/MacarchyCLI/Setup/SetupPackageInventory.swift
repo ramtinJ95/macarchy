@@ -66,7 +66,7 @@ struct SetupPackageInventory: Encodable, Sendable {
   var installationIssue: String? = nil
   let scope = "declared_packages_and_provider_requirements"
   let authority = "read_only_inventory_no_homebrew_mutation"
-  let provisioning = "explicit_bounded_install_packages_existing_apply_unchanged"
+  let provisioning = "setup_apply_installs_missing_declarations_without_automatic_adoption"
 
   init(
     capabilities: [SetupCapability], fieldOrigins: [String: String],

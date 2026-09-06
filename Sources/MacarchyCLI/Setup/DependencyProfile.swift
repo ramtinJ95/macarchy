@@ -333,61 +333,49 @@ struct DependencyProfile: Sendable {
 }
 
 struct HomebrewInstallPlan: Encodable, Sendable {
-  static let environment = [
-    "HOMEBREW_NO_AUTOREMOVE": "1",
-    "HOMEBREW_NO_INSTALL_CLEANUP": "1",
-    "HOMEBREW_NO_INSTALL_UPGRADE": "1",
-  ]
-
   let formulae: [String]
   let casks: [String]
   let external: [ExternalDependencyRemediation]
 
-  init(capabilities: [SetupCapability]) {
-    var formulae = [String]()
-    var casks = [String]()
-    var external = [ExternalDependencyRemediation]()
-    for capability in capabilities where capability.status == .missing {
-      switch capability.remediation {
-      case .formula(let package):
-        formulae.append(package)
-      case .cask(let package):
-        casks.append(package)
-      case .external(let instruction, _):
-        external.append(
-          ExternalDependencyRemediation(
-            capabilityID: capability.id,
-            instruction: instruction
-          )
+  init() {
+    formulae = []
+    casks = []
+    external = []
+  }
+
+  init(inventory: SetupPackageInventory) throws {
+    if !inventory.proposed.isEmpty {
+      _ = try SetupPackageAdoptionCommandRunner.parseTargets(inventory.proposed.map(\.identity.key))
+      guard inventory.observation.issues.isEmpty else {
+        throw SetupPackageAdoptionError(
+          "Homebrew inventory is unavailable: "
+            + inventory.observation.issues.joined(separator: "; "))
+      }
+    }
+    var missing: [HomebrewPackageIdentity] = []
+    for package in inventory.proposed {
+      switch package.homebrewStatus {
+      case "installed": break
+      case "missing":
+        if package.externallySatisfiedCapabilities.isEmpty { missing.append(package.identity) }
+      default:
+        throw SetupPackageAdoptionError(
+          "\(package.identity.key) has uncertain or conflicting Homebrew state (\(package.homebrewStatus)); inspect it before setup."
         )
       }
     }
-    self.formulae = formulae
-    self.casks = casks
-    self.external = external
+    formulae = missing.filter { $0.kind == .formula }.map(\.name)
+    casks = missing.filter { $0.kind == .cask }.map(\.name)
+    external = inventory.nonHomebrewRequirements.compactMap { requirement in
+      guard requirement.runtime == .missing,
+        case .external(let instruction, _) = requirement.remediation
+      else { return nil }
+      return .init(capabilityID: requirement.capabilityID, instruction: instruction)
+    }
   }
 
-  var requests: [ProcessRequest] {
-    var requests = [ProcessRequest]()
-    if !formulae.isEmpty {
-      requests.append(
-        ProcessRequest(
-          executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
-          arguments: ["install", "--formula", "--no-ask"] + formulae,
-          environmentOverrides: Self.environment
-        )
-      )
-    }
-    if !casks.isEmpty {
-      requests.append(
-        ProcessRequest(
-          executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
-          arguments: ["install", "--cask", "--no-ask"] + casks,
-          environmentOverrides: Self.environment
-        )
-      )
-    }
-    return requests
+  var identities: [HomebrewPackageIdentity] {
+    casks.map { .init(kind: .cask, name: $0) } + formulae.map { .init(kind: .formula, name: $0) }
   }
 
   var humanOutput: String {

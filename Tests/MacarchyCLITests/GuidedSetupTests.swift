@@ -57,7 +57,7 @@ struct GuidedSetupTests {
   }
 
   @Test(arguments: [false, true])
-  func packageOptOutsUseTheLayeredPlanWithoutExpandingApply(machineRestoresJq: Bool) async throws {
+  func packageOptOutsUseTheReviewedLayeredPlan(machineRestoresJq: Bool) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let context = guidedContext(fixture)
@@ -77,9 +77,9 @@ struct GuidedSetupTests {
     let applied = Mutex(false)
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(),
-      apply: { _, _, installDependencies, adoptions in
+      apply: { _, _, packageApproval, adoptions in
         applied.withLock { $0 = true }
-        #expect(!installDependencies)
+        #expect(packageApproval?.hasPrefix("sha256:") == true)
         #expect(adoptions == .none)
         return ("applied", true)
       },
@@ -102,7 +102,7 @@ struct GuidedSetupTests {
     if machineRestoresJq {
       #expect(result.output.contains("override") && result.output.contains("formula:jq"))
     } else {
-      #expect(transcript.withLock { $0.contains("setup install-packages") })
+      #expect(transcript.withLock { $0.contains("--approve-packages") })
     }
   }
 
@@ -174,10 +174,10 @@ struct GuidedSetupTests {
         requiredAdoptions: UnifiedSetupAdoptionApprovals(yabai: approval),
         plannedStages: [.desktop]
       ),
-      apply: { receivedContext, _, installDependencies, adoptions in
+      apply: { receivedContext, _, packageApproval, adoptions in
         events.withLock { $0.append("apply") }
         #expect(receivedContext.profileURL == context.profileURL)
-        #expect(installDependencies)
+        #expect(packageApproval?.hasPrefix("sha256:") == true)
         #expect(adoptions == UnifiedSetupAdoptionApprovals(yabai: approval))
         let profile = try PortableProfileLoader().load(
           at: receivedContext.profileURL,
@@ -309,12 +309,12 @@ struct GuidedSetupTests {
     #expect(FileManager.default.fileExists(atPath: context.profileURL.path))
   }
 
-  @Test
-  func finalApplyConfirmationDefaultsToNo() async throws {
+  @Test(arguments: [false, true])
+  func packageAndFinalApplyConfirmationsDefaultToNo(approvePackages: Bool) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let context = guidedContext(fixture)
-    let responses = Mutex([""])
+    let responses = Mutex(approvePackages ? ["yes", ""] : [""])
     var answers = GuidedSetupAnswers()
     answers.packageExclusions = [.init(kind: .cask, name: "spotify")]
     let runner = GuidedSetupCommandRunner(

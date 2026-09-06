@@ -231,6 +231,7 @@ private struct ProjectionFixture {
             succeeded: true
           ))
       },
+      packageInventoryReader: { .init(packages: [], issues: []) },
       standardBrewfile: { _ in SetupBrewfile(packages: []) }
     )
   }

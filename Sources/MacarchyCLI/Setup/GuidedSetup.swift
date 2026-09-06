@@ -192,7 +192,7 @@ struct GuidedSetupCommandRunner: Sendable {
     @Sendable (
       UnifiedSetupPlanContext,
       ThemeConsumerPaths,
-      Bool,
+      String?,
       UnifiedSetupAdoptionApprovals
     ) async throws -> (output: String, succeeded: Bool)
 
@@ -203,11 +203,11 @@ struct GuidedSetupCommandRunner: Sendable {
   static func live(io: GuidedSetupIO = .live) -> Self {
     Self(
       planner: .live,
-      apply: { context, consumerPaths, installDependencies, adoptions in
+      apply: { context, consumerPaths, packageApproval, adoptions in
         try await UnifiedSetupApplyCommandRunner.live.execute(
           context: context,
           consumerPaths: consumerPaths,
-          installDependencies: installDependencies,
+          packageApproval: packageApproval,
           adoptions: adoptions,
           json: false
         )
@@ -258,9 +258,8 @@ struct GuidedSetupCommandRunner: Sendable {
       )
     }
     io.write(
-      "The following apply confirmations cover provider setup only, not the full effective Brewfile.\n"
-        + "Package-only installation requires a separate setup install-packages preview and approval "
-        + "for named formulae and casks, including any required third-party taps.\n")
+      "Setup installs the reviewed missing packages before configuring providers. Installed packages are not automatically adopted.\n"
+    )
     guard model.packages.external.isEmpty else {
       return (
         "Complete the plan's external prerequisites, then run macarchy setup apply.",
@@ -288,19 +287,17 @@ struct GuidedSetupCommandRunner: Sendable {
       environment: approved["environment"]
     )
 
-    let installDependencies: Bool
-    if model.packages.requests.isEmpty {
-      installDependencies = false
-    } else {
-      installDependencies = try io.confirm(
-        "Install the plan's Homebrew-managed dependencies?",
-        defaultYes: true
-      )
-      guard installDependencies else { return cancelled }
+    let packageApproval = plan.packageInstallation?.approvalDigest
+    if let packageApproval {
+      guard
+        try io.confirm(
+          "Install the reviewed missing-package Brewfile for \(packageApproval)?", defaultYes: false
+        )
+      else { return cancelled }
     }
     guard try io.confirm("Apply the reviewed unified setup plan now?", defaultYes: false) else {
       return cancelled
     }
-    return try await apply(context, consumerPaths, installDependencies, adoptions)
+    return try await apply(context, consumerPaths, packageApproval, adoptions)
   }
 }

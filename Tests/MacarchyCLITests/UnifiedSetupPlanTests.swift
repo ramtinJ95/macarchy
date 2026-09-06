@@ -276,6 +276,7 @@ struct UnifiedSetupPlanTests {
     runner.standardBrewfile = { _ in
       try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))
     }
+    runner.packageInventoryReader = { .init(packages: [], issues: []) }
     let setupContext = context(
       root: root,
       home: home,
@@ -316,7 +317,7 @@ struct UnifiedSetupPlanTests {
         ]
     )
     #expect((packages["formulae"] as? [String])?.contains("bat") == true)
-    #expect((packages["casks"] as? [String]) == ["kitty"])
+    #expect((packages["casks"] as? [String])?.contains("kitty") == true)
     #expect(Set(adoption.compactMap { $0["id"] }) == ["keybindings", "environment"])
     #expect(permissions.contains { $0["id"] == "yabai_accessibility" })
     #expect(
@@ -416,6 +417,7 @@ struct UnifiedSetupPlanTests {
       environmentPlanner: { _, _ in
         try component("{\"outcome\":\"ready\",\"entries\":[],\"actions\":[]}")
       },
+      packageInventoryReader: { .init(packages: [], issues: []) },
       standardBrewfile: { _ in SetupBrewfile(packages: []) }
     )
 
@@ -492,7 +494,9 @@ struct UnifiedSetupPlanTests {
   private func readyPlan(
     _ context: UnifiedSetupPlanContext
   ) throws -> (model: UnifiedSetupDesiredModel, report: UnifiedSetupPlanReport) {
-    let preparation = try UnifiedSetupPlanCommandRunner.live.prepare(context: context)
+    var runner = UnifiedSetupPlanCommandRunner.live
+    runner.packageInventoryReader = { .init(packages: [], issues: []) }
+    let preparation = try runner.prepare(context: context)
     guard case .ready(let model, let report) = preparation else {
       throw SetupComponentReportError(description: "Expected a ready unified setup plan")
     }

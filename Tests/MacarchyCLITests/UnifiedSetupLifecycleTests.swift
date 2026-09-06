@@ -38,8 +38,8 @@ struct UnifiedSetupLifecycleTests {
     #expect(calls.withLock { $0 } == 0)
   }
 
-  @Test
-  func statusRequiresThemeEvidenceBeforeReportingTheManagedCoreAsConverged() throws {
+  @Test(arguments: [false, true])
+  func statusRequiresThemeAndPackageEvidenceForConvergence(missingPackage: Bool) throws {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
@@ -58,8 +58,12 @@ struct UnifiedSetupLifecycleTests {
     let component: UnifiedSetupInspectionCommandRunner.ComponentInspection = { _, _, _, _ in
       try applyComponent(#"{"outcome":"current"}"#)
     }
+    var planner = fixture.planner()
+    planner.standardBrewfile = { _ in
+      SetupBrewfile(packages: missingPackage ? [.init(kind: .formula, name: "jq")] : [])
+    }
     let runner = UnifiedSetupInspectionCommandRunner(
-      planner: fixture.planner(),
+      planner: planner,
       themeInspection: { model, ownership, _ in
         UnifiedSetupThemeLifecycleStatus(
           succeeded: ownership?.themeGenerationID == model.theme.currentGenerationID,
@@ -80,8 +84,12 @@ struct UnifiedSetupLifecycleTests {
     )
     let report = try jsonObject(execution.output)
 
-    #expect(execution.succeeded)
-    #expect(report["outcome"] as? String == "converged")
+    #expect(execution.succeeded == !missingPackage)
+    #expect(report["outcome"] as? String == (missingPackage ? "drifted" : "converged"))
+    if missingPackage {
+      #expect(
+        (report["message"] as? String)?.contains("Missing setup packages: formula:jq") == true)
+    }
     #expect((report["theme"] as? [String: Any])?["status"] as? String == "managed")
   }
 

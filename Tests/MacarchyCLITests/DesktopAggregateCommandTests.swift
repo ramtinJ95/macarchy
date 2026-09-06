@@ -390,7 +390,6 @@ struct DesktopAggregateCommandTests {
     let execution = try await runner.execute(
       context: context,
       consumerPaths: testConsumerPaths(),
-      installDependencies: false,
       json: true
     )
 

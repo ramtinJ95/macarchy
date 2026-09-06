@@ -197,7 +197,9 @@ struct PackageLayeringTests {
       })
     let result = try await runner.execute(
       context: fixture.context, consumerPaths: testConsumerPaths(),
-      installDependencies: false, json: true)
+      packageApproval: runner.planner.prepare(context: fixture.context).report.packageInstallation?
+        .approvalDigest,
+      json: true)
     let report = try jsonObject(result.output)
     #expect(!result.succeeded)
     #expect(report["outcome"] as? String == "blocked")
