@@ -12,6 +12,8 @@ struct HomebrewBundleInstaller: Sendable {
   var apply: @Sendable (URL, @Sendable (Int32) throws -> Void) throws -> Execution
 
   static let arguments = ["bundle", "install", "--no-upgrade", "--file"]
+  static let caskEffects =
+    "Homebrew cask installation may invoke sudo using existing authorization and Bundle may adopt identical existing application artifacts. Macarchy supplies no credentials and adds no trust or permission-repair commands or elevated retries."
   static let environment = [
     "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_AUTO_UPDATE=1",
     "HOMEBREW_NO_AUTOREMOVE=1", "HOMEBREW_NO_INSTALL_CLEANUP=1",
@@ -37,7 +39,8 @@ struct HomebrewBundleInstaller: Sendable {
 
   static func request(brewfile: URL, log: URL, homeDirectory: URL) -> ProcessRequest {
     // Explicit env prevents inherited Bundle cleanup/skip/force settings. stdin
-    // is closed: authentication/trust prompts fail visibly rather than hanging.
+    // is closed; no credentials are supplied. This does not prevent native sudo
+    // from succeeding with existing authorization or Bundle artifact adoption.
     // Do not cap all regular-file writes: that also caps native package payloads.
     ProcessRequest(
       executableURL: URL(filePath: "/bin/sh"),

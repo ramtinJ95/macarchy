@@ -49,25 +49,35 @@ struct PackageAdditionTests {
     #expect(fixture.base.calls.withLock { $0 } == 1)
   }
 
-  @Test
-  func installedPackageUsesAdoptionWithoutNativePreflightOrUpgrade() async throws {
-    let fixture = try AdditionFixture()
+  @Test(arguments: HomebrewPackageIdentity.Kind.allCases)
+  func installedPackageUsesAdoptionWithoutNativePreflightOrUpgrade(
+    kind: HomebrewPackageIdentity.Kind
+  ) async throws {
+    let fixture = try AdditionFixture(kind: kind)
     defer { fixture.base.inventory.cleanup() }
+    try fixture.base.install()
     let runner = SetupPackageAdditionCommandRunner(
       planner: fixture.base.runner().planner,
       provider: .init(
         preflight: { throw SetupPackageAdoptionError("must not preflight") },
         apply: { _, _ in throw SetupPackageAdoptionError("must not install") }))
-    let preview = try await fixture.run(runner, targets: ["formula:orphan"])
+    let preview = try await fixture.run(runner)
     #expect(preview.outcome == "preview")
+    #expect(preview.json["preview"]?["installation"] == nil)
     #expect(
-      try await fixture.run(runner, targets: ["formula:orphan"], approval: preview.approval())
-        .outcome == "complete")
+      try await fixture.run(runner, approval: preview.approval()).outcome == "complete")
+    #expect(try fixture.base.ledger.read()?.entries.map(\.identity) == [fixture.base.target])
+    #expect(try await fixture.run(runner).outcome == "no_change")
   }
 
-  @Test(arguments: ["bytes", "same-bytes-inode", "profile", "mode", "receipt", "late", "wrong"])
-  func staleApprovalDoesNotEditOrInstall(change: String) async throws {
-    let fixture = try AdditionFixture()
+  @Test(
+    arguments: ["bytes", "same-bytes-inode", "profile", "mode", "receipt", "late", "wrong"]
+      .map { ($0, HomebrewPackageIdentity.Kind.formula) }
+      + [("receipt", .cask), ("late", .cask)])
+  func staleApprovalDoesNotEditOrInstall(change: String, kind: HomebrewPackageIdentity.Kind)
+    async throws
+  {
+    let fixture = try AdditionFixture(kind: kind)
     defer { fixture.base.inventory.cleanup() }
     var runner = fixture.runner()
     let preview = try await fixture.run(runner)
@@ -96,10 +106,11 @@ struct PackageAdditionTests {
     #expect(try fixture.base.ledger.read() == nil)
   }
 
-  @Test(arguments: ["native", "after-save"])
-  func failureRetainsIntentAndRetryAdoptsOrInstallsOnlyPendingTargets(failure: String) async throws
-  {
-    let fixture = try AdditionFixture()
+  @Test(arguments: ["native", "after-save"], HomebrewPackageIdentity.Kind.allCases)
+  func failureRetainsIntentAndRetryAdoptsOrInstallsOnlyPendingTargets(
+    failure: String, kind: HomebrewPackageIdentity.Kind
+  ) async throws {
+    let fixture = try AdditionFixture(kind: kind)
     defer { fixture.base.inventory.cleanup() }
     var runner = fixture.runner(status: failure == "native" ? 1 : 0)
     if failure == "after-save" {
@@ -111,7 +122,7 @@ struct PackageAdditionTests {
     let pending = try await fixture.run(runner, approval: preview.approval())
     #expect(pending.outcome == "pending")
     #expect(pending.json["intent"]?.string == "saved")
-    #expect(try fixture.contents() == "# personal\nbrew \"jq\"\n")
+    #expect(try fixture.contents() == "# personal\n" + fixture.base.brewfile)
     #expect(try fixture.base.ledger.read() == nil)
     let next = try await fixture.run(fixture.runner())
     #expect(next.outcome == "preview")
@@ -166,7 +177,7 @@ struct PackageAdditionTests {
   }
 
   @Test(arguments: [
-    "unsupported", "machine-exclusion", "shared", "hard-link", "residue", "cask", "tap",
+    "unsupported", "machine-exclusion", "shared", "hard-link", "residue", "cask-tap", "tap",
     "preflight",
   ])
   func unsupportedInputsStopWithoutSaving(mode: String) async throws {
@@ -191,7 +202,7 @@ struct PackageAdditionTests {
         "retained",
         at: fixture.fragment.deletingLastPathComponent().appending(
           path: ".Brewfile.macarchy-add-packages"))
-    case "cask": targets = ["cask:slack"]
+    case "cask-tap": targets = ["cask:vendor/apps/slack"]
     case "tap": targets = ["formula:vendor/tap/jq"]
     case "preflight":
       runner = .init(
@@ -277,9 +288,14 @@ struct PackageAdditionTests {
     #expect(fixture.base.calls.withLock { $0 } == 0)
   }
 
-  @Test(arguments: ["missing-profile", "missing-wiring", "missing-fragment", "machine"])
-  func createsAndWiresOnlySelectedInputs(mode: String) async throws {
-    let fixture = try AdditionFixture()
+  @Test(
+    arguments: ["missing-profile", "missing-wiring", "missing-fragment", "machine"]
+      .map { ($0, HomebrewPackageIdentity.Kind.formula) }
+      + [("missing-wiring", .cask), ("machine", .cask)])
+  func createsAndWiresOnlySelectedInputs(mode: String, kind: HomebrewPackageIdentity.Kind)
+    async throws
+  {
+    let fixture = try AdditionFixture(kind: kind)
     defer { fixture.base.inventory.cleanup() }
     let machine = mode == "machine"
     let context = fixture.base.context
@@ -303,8 +319,8 @@ struct PackageAdditionTests {
         // The real loader/compiler must see BOTH saved files before native work.
         let inventory = try native.planner.packageInventory(
           context: context, adoptionState: .available(nil))
-        #expect(inventory.proposed.contains { $0.identity.key == "formula:jq" })
-        #expect(try String(contentsOf: fragment, encoding: .utf8) == "brew \"jq\"\n")
+        #expect(inventory.proposed.contains { $0.identity == fixture.base.target })
+        #expect(try String(contentsOf: fragment, encoding: .utf8) == fixture.base.brewfile)
         return try native.provider.apply(url, record)
       }))
     let before = try? Data(contentsOf: source)
@@ -367,13 +383,17 @@ struct PackageAdditionTests {
     #expect(try BoundedRegularFile.read(at: source).permissions == 0o640)
   }
 
-  @Test(arguments: ["none", "before", "after", "same-bytes", "residue"])
-  func interruptedTwoFileSaveRequiresExplicitRecoveryAndBlocksEveryDrift(drift: String) async throws
-  {
-    let fixture = try AdditionFixture()
+  @Test(
+    arguments: ["none", "before", "after", "same-bytes", "residue"]
+      .map { ($0, HomebrewPackageIdentity.Kind.formula) } + [("none", .cask)])
+  func interruptedTwoFileSaveRequiresExplicitRecoveryAndBlocksEveryDrift(
+    drift: String, kind: HomebrewPackageIdentity.Kind
+  ) async throws {
+    let fixture = try AdditionFixture(kind: kind)
     defer { fixture.base.inventory.cleanup() }
     let context = fixture.base.context
-    let profile = AdditionFixture.profile + "exclude_formulae = ['jq'] # restore\n"
+    let field = kind == .formula ? "exclude_formulae" : "exclude_casks"
+    let profile = AdditionFixture.profile + "\(field) = ['\(fixture.base.target.name)'] # restore\n"
     try fixture.base.inventory.write(profile, at: context.profileURL)
     var runner = fixture.runner()
     runner.checkpoint = { point in
@@ -385,7 +405,7 @@ struct PackageAdditionTests {
     let interrupted = try await fixture.run(runner, approval: preview.approval())
     #expect(interrupted.outcome == "blocked")
     #expect(interrupted.json["intent"]?.string == "publication_unverified")
-    #expect(try fixture.contents().contains("brew \"jq\""))
+    #expect(try fixture.contents().contains(fixture.base.brewfile))
     #expect(try String(contentsOf: context.profileURL, encoding: .utf8) == profile)
     #expect(try await fixture.run(fixture.runner()).outcome == "blocked")
     switch drift {
@@ -474,6 +494,68 @@ struct PackageAdditionTests {
     #expect(!FileManager.default.fileExists(atPath: fixture.base.context.stateRoot.path))
   }
 
+  @Test(arguments: [false, true])
+  func caskExclusionsSaveBeforeMixedInstallAndFormulaAdoption(machine: Bool) async throws {
+    let fixture = try AdditionFixture(kind: .cask)
+    defer { fixture.base.inventory.cleanup() }
+    let context = fixture.base.context
+    let source = machine ? context.machineProfileURL : context.profileURL
+    let original =
+      AdditionFixture.profile + """
+        exclude_formulae = ['slack', 'orphan'] # same token, different kind
+        exclude_casks = ['other', 'homebrew/cask/slack'] # restore only slack
+
+        """
+    if machine {
+      try fixture.base.inventory.write("schema_version = 1\n", at: context.profileURL)
+    }
+    try fixture.base.inventory.write(original, at: source)
+    let expected = original.replacingOccurrences(of: ", 'orphan'", with: ", ")
+      .replacingOccurrences(of: "'homebrew/cask/slack'", with: "")
+    let native = fixture.runner()
+    let runner = SetupPackageAdditionCommandRunner(
+      planner: native.planner,
+      provider: .init(apply: { url, record in
+        #expect(try String(contentsOf: source, encoding: .utf8) == expected)
+        return try native.provider.apply(url, record)
+      }))
+    let targets = ["cask:homebrew/cask/slack", "formula:orphan"]
+    let preview = try await fixture.run(runner, targets: targets, machineOnly: machine)
+    #expect(preview.outcome == "preview", "\(preview.json)")
+    #expect(
+      preview.json["preview"]?["installation"]?["native_effects"]?.array?.compactMap(\.string)
+        == [HomebrewBundleInstaller.caskEffects])
+    #expect(preview.json["preview"]?["installation"]?["brewfile"]?.string == "cask \"slack\"\n")
+    #expect(try String(contentsOf: source, encoding: .utf8) == original)
+    #expect(
+      try await fixture.run(
+        runner, targets: targets, machineOnly: machine, approval: preview.approval()
+      ).outcome == "complete")
+    #expect(
+      try Set(fixture.base.ledger.read()?.entries.map(\.identity.key) ?? []) == [
+        "cask:slack", "formula:orphan",
+      ])
+    #expect(
+      try await fixture.run(runner, targets: targets, machineOnly: machine).outcome == "no_change")
+    #expect(fixture.base.calls.withLock { $0 } == 1)
+  }
+
+  @Test
+  func higherPriorityCaskExclusionBlocksPortableAdditionWithoutEdits() async throws {
+    let fixture = try AdditionFixture(kind: .cask)
+    defer { fixture.base.inventory.cleanup() }
+    try fixture.base.inventory.write(
+      "schema_version = 1\n[packages]\nexclude_casks = ['homebrew/cask/slack']\n",
+      at: fixture.base.context.machineProfileURL)
+    let before = try fixture.contents()
+    let result = try await fixture.run(fixture.runner())
+    #expect(result.outcome == "blocked")
+    #expect(result.json["message"]?.string?.contains("Machine intent defeats") == true)
+    #expect(try fixture.contents() == before)
+    #expect(!FileManager.default.fileExists(atPath: fixture.base.context.stateRoot.path))
+    #expect(fixture.base.calls.withLock { $0 } == 0)
+  }
+
   @Test
   func unrecordedPostSaveIdentityRequiresManualInspection() async throws {
     let fixture = try AdditionFixture()
@@ -505,8 +587,8 @@ private struct AdditionFixture: Sendable {
     "schema_version = 1\n[packages]\nbaseline = \"personal\"\nbrewfile = \"Brewfile\"\n"
   var fragment: URL { base.inventory.root.appending(path: "Brewfile") }
 
-  init() throws {
-    base = try InstallationFixture()
+  init(kind: HomebrewPackageIdentity.Kind = .formula) throws {
+    base = try InstallationFixture(kind: kind)
     try base.inventory.write(Self.profile, at: base.context.profileURL)
     try write("# personal\n")
   }
@@ -527,17 +609,17 @@ private struct AdditionFixture: Sendable {
     return .init(
       planner: native.planner,
       provider: .init(apply: { url, record in
-        #expect(try self.contents().contains("brew \"jq\""))
+        #expect(try self.contents().contains(self.base.brewfile))
         return try native.provider.apply(url, record)
       }))
   }
   func run(
-    _ runner: SetupPackageAdditionCommandRunner, targets: [String] = ["formula:jq"],
+    _ runner: SetupPackageAdditionCommandRunner, targets: [String]? = nil,
     machineOnly: Bool = false, approval: String? = nil, recover: Bool = false,
     context: UnifiedSetupPlanContext? = nil
   ) async throws -> InstallationFixture.Result {
     let result = try await runner.execute(
-      context: context ?? base.context, targets: targets,
+      context: context ?? base.context, targets: targets ?? [base.target.key],
       machineOnly: machineOnly, approval: approval, recover: recover, json: true)
     return try .init(
       json: JSONDecoder().decode(JSONValue.self, from: Data(result.output.utf8)),
