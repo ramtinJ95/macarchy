@@ -1,6 +1,5 @@
 import Foundation
 import ImageIO
-import Synchronization
 import Testing
 
 @testable import ThemeCore
@@ -107,26 +106,30 @@ struct ScreenSaverImageStoreTests {
   }
 
   @Test
-  func inspectionWaitsForReceiptPublicationInsteadOfRejectingItsTemporaryFile() throws {
-    try withTemporaryRoot { root in
+  func inspectionWaitsForReceiptPublicationInsteadOfRejectingItsTemporaryFile() async throws {
+    try await withTemporaryRoot { root in
       let store = ScreenSaverImageStore(root: root)
       _ = try activator(root).activate(package: package(format: .png))
       _ = try store.reconcile()
       let staged = store.folderURL.appending(
         path: "..macarchy.json-\(UUID().uuidString.lowercased())")
       let completed = DispatchSemaphore(value: 0)
-      let inspection = Mutex<AdapterInspection?>(nil)
+      let (inspections, continuation) = AsyncStream<AdapterInspection>.makeStream()
       try ActivationLock(root: root).withLock {
         try Data("receipt being written".utf8).write(to: staged)
         DispatchQueue.global().async {
-          inspection.withLock { $0 = store.inspection() }
+          continuation.yield(store.inspection())
+          continuation.finish()
           completed.signal()
         }
         #expect(completed.wait(timeout: .now() + 0.03) == .timedOut)
         try FileManager.default.removeItem(at: staged)
       }
-      #expect(completed.wait(timeout: .now() + 5) == .success)
-      #expect(inspection.withLock { $0?.status } == .ready)
+      // Other test roots share ActivationLock's process mutex. Join our actual
+      // inspection instead of imposing a wall-clock deadline under suite load.
+      for await inspection in inspections {
+        #expect(inspection.status == .ready)
+      }
     }
   }
 
