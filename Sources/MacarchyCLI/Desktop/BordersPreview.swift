@@ -35,7 +35,10 @@ struct Borders: ParsableCommand {
     }
 
     func run() throws {
-      let runner = BordersPreviewRunner.live(root: URL(filePath: stateRoot))
+      try run(runner: .live(root: URL(filePath: stateRoot)))
+    }
+
+    func run(runner: BordersPreviewRunner) throws {
       let emit: (BordersPreviewEvent) throws -> Void = { event in
         if json {
           let encoder = JSONEncoder()
