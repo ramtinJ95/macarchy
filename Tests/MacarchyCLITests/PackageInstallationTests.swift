@@ -195,13 +195,26 @@ struct PackageInstallationTests {
     try #require(posix_spawnattr_init(&attributes) == 0)
     defer { posix_spawnattr_destroy(&attributes) }
     try #require(posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID)) == 0)
-    let executable = try #require(strdup("/bin/sleep"))
+    // Keep the disposable session alive until cleanup, not for an assumed CI
+    // duration. The parent holds stdin open; no command input is sent.
+    var gate: [Int32] = [0, 0]
+    try #require(pipe(&gate) == 0)
+    defer {
+      close(gate[0])
+      close(gate[1])
+    }
+    try #require(fcntl(gate[0], F_SETFD, FD_CLOEXEC) == 0)
+    try #require(fcntl(gate[1], F_SETFD, FD_CLOEXEC) == 0)
+    var actions: posix_spawn_file_actions_t?
+    try #require(posix_spawn_file_actions_init(&actions) == 0)
+    defer { posix_spawn_file_actions_destroy(&actions) }
+    try #require(posix_spawn_file_actions_adddup2(&actions, gate[0], STDIN_FILENO) == 0)
+    try #require(posix_spawn_file_actions_addclose(&actions, gate[1]) == 0)
+    let executable = try #require(strdup("/bin/cat"))
     defer { free(executable) }
-    let duration = try #require(strdup("30"))
-    defer { free(duration) }
-    var arguments: [UnsafeMutablePointer<CChar>?] = [executable, duration, nil]
+    var arguments: [UnsafeMutablePointer<CChar>?] = [executable, nil]
     var pid: pid_t = 0
-    try #require(posix_spawn(&pid, executable, nil, &attributes, &arguments, environ) == 0)
+    try #require(posix_spawn(&pid, executable, &actions, &attributes, &arguments, environ) == 0)
     let session = pid
     defer {
       _ = kill(session, SIGKILL)
