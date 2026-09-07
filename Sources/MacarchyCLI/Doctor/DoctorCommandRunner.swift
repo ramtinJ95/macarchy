@@ -10,7 +10,8 @@ struct DoctorCommandRunner: Sendable {
     read: @escaping @Sendable (URL) throws -> ThemeStatusSnapshot,
     inspect: @escaping @Sendable (URL, ThemeConsumerPaths) throws -> [AdapterInspection],
     enabledAdapterIDs: @escaping @Sendable (URL, ThemeConsumerPaths) throws -> Set<String> = {
-      _, _ in Set(ThemeActivationCoordinator.adapterRequirements.keys)
+      _, _ in
+      Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([BordersAdapter.id])
     }
   ) {
     self.read = read

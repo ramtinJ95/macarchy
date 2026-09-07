@@ -230,6 +230,7 @@ struct PackageInventoryTests {
     let expectedFormulae = Set([
       "asmvik/formulae/skhd", "asmvik/formulae/yabai", "atuin", "azure-cli", "bat", "btop",
       "cmake", "eza", "fd", "felixkratz/formulae/sketchybar", "fzf", "gh", "git", "go",
+      "felixkratz/formulae/borders",
       "hashicorp/tap/terraform", "helm", "herdr", "hugo", "ifstat", "jq", "kind",
       "kubernetes-cli", "lazydocker", "lazygit", "lua", "mosh", "neovim", "node", "ollama",
       "pkgconf", "poppler", "resvg", "ripgrep", "rustup", "sevenzip", "starship", "stow",
@@ -247,7 +248,7 @@ struct PackageInventoryTests {
     #expect(
       Set(packages.proposed.filter { $0.identity.kind == .cask }.map(\.identity.name))
         == expectedCasks)
-    #expect(packages.proposed.count == 62)
+    #expect(packages.proposed.count == 63)
     #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 51)
     #expect(packages.proposed.allSatisfy { $0.homebrewStatus == "missing" })
     #expect(packages.proposed.map(\.identity.key) == packages.proposed.map(\.identity.key).sorted())
@@ -294,7 +295,7 @@ struct PackageInventoryTests {
     let report = planner.inspectedReport(
       try planner.prepare(context: fixture.context).report, context: fixture.context)
     let packages = try #require(report.packageInventory)
-    #expect(packages.proposed.count == 63)  // Only spicetify-cli adds a package.
+    #expect(packages.proposed.count == 64)  // Only spicetify-cli adds a package.
     for (name, field, layer, source) in [
       ("herdr", "presets.herdr", "portable", fixture.context.profileURL.path),
       ("spotify", "presets.spicetify", "portable", fixture.context.profileURL.path),
@@ -332,7 +333,7 @@ struct PackageInventoryTests {
     let report = planner.inspectedReport(preparation.report, context: fixture.context)
     let packages = try #require(report.packageInventory)
     #expect(!packages.proposed.contains { ["bat", "sketchybar"].contains($0.identity.token) })
-    #expect(packages.proposed.count == 60)
+    #expect(packages.proposed.count == 61)
     #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 51)
     let yabai = try #require(packages.proposed.first { $0.identity.token == "yabai" })
     #expect(yabai.identity.name == "asmvik/formulae/yabai")
@@ -356,7 +357,7 @@ struct PackageInventoryTests {
     #expect(planJSON["package_inventory"]?["observation"]?["status"]?.string == "unavailable")
     #expect(planJSON["package_inventory"]?["observation"]?["issues"]?.array?.count == 1)
     let proposed = try #require(planJSON["package_inventory"]?["proposed"]?.array)
-    #expect(proposed.count == 62)
+    #expect(proposed.count == 63)
     #expect(proposed.allSatisfy { $0["homebrew_status"]?.string == "unknown" })
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: planner, themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,

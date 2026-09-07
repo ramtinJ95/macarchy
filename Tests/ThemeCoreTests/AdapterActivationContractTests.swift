@@ -522,7 +522,7 @@ extension AdapterContractTests {
         wallpaperControl: Self.wallpaperControl(),
         wallpaperSignal: try Self.wallpaperSignal(root: root),
         enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
-          .subtracting([TuicrAdapter.id])
+          .subtracting([BordersAdapter.id, TuicrAdapter.id])
       )
 
       await #expect(throws: AdapterSelectionError.unknown("tmux")) {

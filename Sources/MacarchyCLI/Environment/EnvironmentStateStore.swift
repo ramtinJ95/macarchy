@@ -45,6 +45,7 @@ struct EnvironmentStateStore: Sendable {
         && Self.spicetifyReplacementIsValid(value)
         && Self.spicetifyRuntimeIsValid(value)
         && Self.tuicrReplacementIsValid(value)
+        && value.bordersRuntimeIsValid
     }
   }
 

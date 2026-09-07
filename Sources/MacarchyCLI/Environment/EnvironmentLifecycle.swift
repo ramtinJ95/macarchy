@@ -46,7 +46,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
 
   func recoverLocked() throws -> Bool {
     let result = try prepareRecoveryLocked()
-    guard result.runtimeTarget == nil, result.spicetifyRuntimeTarget == nil else {
+    guard result.runtimeTarget == nil, result.spicetifyRuntimeTarget == nil,
+      result.bordersRuntimeTarget == nil
+    else {
       throw EnvironmentLifecycleError.blocked(
         "interrupted provider runtime restoration must finish before recovery can finish"
       )
@@ -57,10 +59,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
   func prepareRecoveryLocked() throws -> (
     recovered: Bool,
     runtimeTarget: EnvironmentHerdrRuntimeTarget?,
-    spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
+    spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?,
+    bordersRuntimeTarget: EnvironmentBordersRuntimeTarget?
   ) {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    guard let transaction = try store.readTransaction() else { return (false, nil, nil) }
+    guard let transaction = try store.readTransaction() else { return (false, nil, nil, nil) }
     try validate(transaction.previousOwnership)
     try validate(transaction.proposedOwnership)
     switch transaction.direction {
@@ -125,10 +128,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
     if let target = transaction.herdrRuntimeTarget,
       transaction.herdrRuntimeVerified != true
     {
-      return (true, target, pendingSpicetifyRuntimeTarget(transaction))
+      return (
+        true, target, pendingSpicetifyRuntimeTarget(transaction),
+        transaction.pendingBordersRuntimeTarget
+      )
     }
     if let target = pendingSpicetifyRuntimeTarget(transaction) {
-      return (true, nil, target)
+      return (true, nil, target, transaction.pendingBordersRuntimeTarget)
+    }
+    if let target = transaction.pendingBordersRuntimeTarget {
+      return (true, nil, nil, target)
     }
 
     switch (transaction.direction, transaction.operation) {
@@ -151,7 +160,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       break
     }
     try store.removeTransaction()
-    return (true, nil, nil)
+    return (true, nil, nil, nil)
   }
 
   private func pendingSpicetifyRuntimeTarget(
@@ -254,6 +263,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
 
     // Revalidate every external seam before staging or publishing any state.
+    if composition.profile.focusRing == .borders || inspection.ownership?.borders != nil {
+      guard inspection.bordersServiceInspection != nil,
+        composition.profile.focusRing != .borders || inspection.proposedBordersOwnership != nil
+      else {
+        throw EnvironmentLifecycleError.blocked("Borders apply requires observed service evidence")
+      }
+      _ = try inspector.inspectBorders(
+        enabled: composition.profile.focusRing == .borders,
+        previous: inspection.proposedBordersOwnership ?? inspection.ownership?.borders,
+        homeDirectory: homeDirectory,
+        service: inspection.bordersServiceInspection)
+    }
     for (id, expected) in inspection.externalEvidence {
       guard let entry = inspection.desiredEntries.first(where: { $0.id == id }),
         try inspector.capture(entry.url, directoryLink: entry.id.directoryLinkKind) == expected
@@ -390,6 +411,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       ),
       originalThemeBridges: originalThemeBridges,
       btop: inspection.proposedBtopOwnership,
+      borders: inspection.proposedBordersOwnership,
       codex: inspection.proposedCodexOwnership,
       herdr: inspection.proposedHerdrOwnership,
       pi: inspection.proposedPiOwnership,
@@ -407,6 +429,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let generationChanged = previous?.generationID != proposed.generationID
     let ownershipChanged =
       previous?.records != proposed.records || previous?.btop != proposed.btop
+      || previous?.borders != proposed.borders
       || previous?.codex != proposed.codex
       || previous?.herdr != proposed.herdr
       || previous?.pi != proposed.pi
@@ -456,7 +479,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       spicetifyReplacementName: spicetifyReplacementName,
       spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(
         from: previous, to: proposed),
-      tuicrReplacementName: tuicrReplacementName
+      tuicrReplacementName: tuicrReplacementName,
+      bordersPreviousRuntime: inspection.bordersServiceInspection,
+      bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: previous, to: proposed)
     )
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     try store.writeTransaction(transaction)
@@ -513,6 +538,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   func finishApplyLocked(composition: EnvironmentComposition) throws {
+    if try pendingBordersRuntimeTargetLocked() != nil {
+      throw EnvironmentLifecycleError.blocked("Borders runtime transition is not verified")
+    }
     if try pendingHerdrRuntimeTargetLocked() != nil {
       throw EnvironmentLifecycleError.blocked(
         "Herdr runtime activation is not verified"
@@ -570,12 +598,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
     )
     try restoreRollbackThemeBridges(rollback)
     try store.writeOwnership(rollback.previousOwnership)
-    if rollback.herdrRuntimeTarget == nil, rollback.spicetifyRuntimeTarget == nil {
+    if rollback.herdrRuntimeTarget == nil, rollback.spicetifyRuntimeTarget == nil,
+      rollback.bordersRuntimeTarget == nil
+    {
       try store.removeTransaction()
     }
   }
 
-  func teardownLocked(dryRun: Bool) throws -> (changed: Bool, message: String) {
+  func teardownLocked(
+    dryRun: Bool, bordersService: BordersServiceInspection? = nil
+  ) throws -> (changed: Bool, message: String) {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     if dryRun {
       guard try store.readTransaction() == nil else {
@@ -612,6 +644,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     try validate(ownership)
     try preflight(ownership)
+    if ownership.borders != nil, bordersService == nil {
+      throw EnvironmentLifecycleError.blocked("Borders teardown requires observed service evidence")
+    }
     let transaction = EnvironmentTransaction(
       operation: .teardown,
       previousOwnership: ownership,
@@ -641,7 +676,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(from: ownership, to: nil),
       tuicrReplacementName: ownership.tuicr.map { _ in
         ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement"
-      }
+      },
+      bordersPreviousRuntime: bordersService,
+      bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: ownership, to: nil)
     )
     try store.writeTransaction(transaction)
     try transition(
@@ -654,7 +691,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       spicetifyReplacementName: transaction.spicetifyReplacementName,
       tuicrReplacementName: transaction.tuicrReplacementName
     )
-    if transaction.herdrRuntimeTarget == nil, transaction.spicetifyRuntimeTarget == nil {
+    if transaction.herdrRuntimeTarget == nil, transaction.spicetifyRuntimeTarget == nil,
+      transaction.bordersRuntimeTarget == nil
+    {
       _ = try prepareRecoveryLocked()
     }
     return (true, "The exact adopted provider entries were restored.")
@@ -1020,6 +1059,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   private func preflight(_ ownership: EnvironmentOwnership) throws {
+    if let borders = ownership.borders {
+      _ = try inspector.inspectBorders(
+        enabled: true, previous: borders, homeDirectory: homeDirectory, service: nil)
+    }
     for record in ownership.records {
       let entry = inspector.managedEntry(from: record)
       guard try inspector.managedEntryIsExact(entry) else {

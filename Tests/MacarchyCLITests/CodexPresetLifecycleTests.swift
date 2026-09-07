@@ -451,6 +451,8 @@ private struct CodexFixture {
   func writeProfile(enabled: Bool) throws {
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [terminal]
     provider = "disabled"
     [shell]

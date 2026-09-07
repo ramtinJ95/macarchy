@@ -131,6 +131,7 @@ struct DependencyProfile: Sendable {
     guard !profile.isEntirelyDisabled else { return [] }
     var ids = Set(profile.selectedThemeAdapterIDs)
     ids.formUnion(["macos-26", "arm64"])
+    if profile.focusRing == .borders { ids.insert("homebrew") }
     if profile.presets.slack { ids.insert(SlackAdapter.id) }
     if profile.presets.spicetify { ids.insert("spotify") }
     return selected(ids)
@@ -216,6 +217,11 @@ struct DependencyProfile: Sendable {
           .sketchyBar,
           probes: executable("/opt/homebrew/bin/sketchybar"),
           remediation: .externallyTrustedFormula("felixkratz/formulae/sketchybar")
+        ),
+        consumerCapability(
+          .borders,
+          probes: executable(BordersService.executableURL.path),
+          remediation: .externallyTrustedFormula(BordersService.formula)
         ),
         DependencyCapability(
           id: "skhd",

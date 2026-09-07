@@ -12,6 +12,11 @@ package enum TopBarProviderSelection: String, Codable, Sendable {
   case disabled
 }
 
+package enum FocusRingProviderSelection: String, Codable, Sendable {
+  case borders
+  case disabled
+}
+
 package enum TerminalProviderSelection: String, Codable, Sendable {
   case kitty
   case disabled
@@ -122,6 +127,7 @@ package struct YaziProfileOptions: Equatable, Sendable {
 }
 
 package struct EnvironmentProfile: Equatable, Sendable {
+  package let focusRing: FocusRingProviderSelection
   package let terminal: TerminalProviderSelection
   package let shell: ShellProviderSelection
   package let prompt: PromptProviderSelection
@@ -185,7 +191,7 @@ package struct PortableProfileLoader: Sendable {
   }
 
   private static let allowedTables = Set([
-    "keybindings", "desktop", "yabai", "top_bar", "sketchybar",
+    "keybindings", "desktop", "yabai", "top_bar", "sketchybar", "focus_ring",
     "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
     "editor", "neovim", "tools", "presets", "btop", "yazi", "packages",
   ])
@@ -206,6 +212,7 @@ package struct PortableProfileLoader: Sendable {
     "yabai.mouse_follows_focus",
     "yabai.hook",
     "top_bar.provider",
+    "focus_ring.provider",
     "sketchybar.left",
     "sketchybar.center",
     "sketchybar.right",
@@ -605,6 +612,12 @@ package struct PortableProfileLoader: Sendable {
       }
     )
     return EnvironmentProfile(
+      focusRing: try selection(
+        document.focusRing?.provider ?? FocusRingProviderSelection.borders.rawValue,
+        as: FocusRingProviderSelection.self,
+        field: "focus_ring.provider",
+        source: source
+      ),
       terminal: terminal,
       shell: shell,
       prompt: shell == .disabled ? .disabled : declaredPrompt,
@@ -1093,6 +1106,9 @@ package struct PortableProfileLoader: Sendable {
       tools: DailyToolsProfile
     ) -> EnvironmentProfile {
       return EnvironmentProfile(
+        focusRing: value(
+          "focus_ring.provider", portableProfile.environment.focusRing,
+          machineProfile.environment.focusRing),
         terminal: terminal,
         shell: shell,
         prompt: shell == .disabled ? .disabled : declaredPrompt,
@@ -1296,6 +1312,7 @@ extension SketchyBarProfileOptions {
 
 extension EnvironmentProfile {
   fileprivate static let defaults = EnvironmentProfile(
+    focusRing: .borders,
     terminal: .kitty,
     shell: .zsh,
     prompt: .starship,
@@ -1338,6 +1355,7 @@ private struct PortableProfileDocument: Decodable {
   let desktop: DesktopDocument?
   let yabai: YabaiDocument?
   let topBar: TopBarDocument?
+  let focusRing: FocusRingDocument?
   let sketchyBar: SketchyBarDocument?
   let terminal: TerminalDocument?
   let kitty: KittyDocument?
@@ -1361,6 +1379,7 @@ private struct PortableProfileDocument: Decodable {
     case desktop
     case yabai
     case topBar = "top_bar"
+    case focusRing = "focus_ring"
     case sketchyBar = "sketchybar"
     case terminal
     case kitty
@@ -1428,6 +1447,10 @@ private struct YabaiDocument: Decodable {
 }
 
 private struct TopBarDocument: Decodable {
+  let provider: String?
+}
+
+private struct FocusRingDocument: Decodable {
   let provider: String?
 }
 

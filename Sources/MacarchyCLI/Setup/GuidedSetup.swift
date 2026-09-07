@@ -5,6 +5,7 @@ import ThemeCore
 struct GuidedSetupAnswers: Sendable {
   var desktop = true
   var topBar = true
+  var focusRing = true
   var terminal = true
   var shell = true
   var prompt = true
@@ -30,6 +31,7 @@ struct GuidedSetupAnswers: Sendable {
 
     add("desktop", desktop ? [] : ["provider = \"disabled\""])
     add("top_bar", topBar ? [] : ["provider = \"disabled\""])
+    add("focus_ring", focusRing ? [] : ["provider = \"disabled\""])
     add("terminal", terminal ? [] : ["provider = \"disabled\""])
     add("shell", shell ? [] : ["provider = \"disabled\""])
     if shell {
@@ -104,6 +106,8 @@ struct GuidedSetupQuestionnaire: Sendable {
     var answers = GuidedSetupAnswers()
     answers.desktop = try io.confirm("Manage the yabai and skhd desktop?", defaultYes: true)
     answers.topBar = try io.confirm("Manage the SketchyBar top bar?", defaultYes: true)
+    answers.focusRing = try io.confirm(
+      "Manage theme-coherent Borders focus highlighting?", defaultYes: true)
     answers.terminal = try io.confirm("Manage Kitty as the terminal?", defaultYes: true)
     answers.shell = try io.confirm("Manage zsh as the shell?", defaultYes: true)
     if answers.shell {

@@ -50,7 +50,8 @@ struct EnvironmentInspectionContractTests {
         proposedHerdrOwnership: nil, herdrExternalEvidence: nil,
         proposedPiOwnership: nil, piExternalEvidence: nil,
         proposedSpicetifyOwnership: nil, spicetifyExternalEvidence: nil,
-        proposedTuicrOwnership: nil, tuicrExternalEvidence: nil)
+        proposedTuicrOwnership: nil, tuicrExternalEvidence: nil,
+        proposedBordersOwnership: nil, bordersServiceInspection: nil)
       #expect(
         inspection.isBlocked == (message != nil || status == "drifted" || status == "unsupported"))
     }
@@ -98,6 +99,7 @@ struct EnvironmentInspectionContractTests {
     let status = EnvironmentStatusCommandRunner.providers(profile.environment)
     #expect(
       status == [
+        "focus_ring": "borders",
         "terminal": "kitty", "shell": "zsh", "prompt": "starship", "history": "atuin",
         "editor": "neovim", "bat": on, "btop": off, "eza": off, "yazi": on,
         "codex": on, "herdr": off, "pi": on, "slack": off, "spicetify": on, "tuicr": off,

@@ -1,3 +1,5 @@
+import ThemeCore
+
 enum EnvironmentTransactionOperation: String, Codable, Sendable {
   case apply
   case herdrTheme = "herdr_theme"
@@ -45,6 +47,16 @@ enum EnvironmentSpicetifyRuntimeTarget: String, Codable, Equatable, Sendable {
   }
 }
 
+enum EnvironmentBordersRuntimeTarget: String, Codable, Equatable, Sendable {
+  case managed
+  case original
+
+  static func required(from old: EnvironmentOwnership?, to new: EnvironmentOwnership?) -> Self? {
+    if new?.borders != nil { return .managed }
+    return old?.borders == nil ? nil : .original
+  }
+}
+
 struct EnvironmentTransaction: Codable, Equatable, Sendable {
   static let currentSchemaVersion = 1
 
@@ -67,6 +79,10 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
   let spicetifyRuntimeVerified: Bool?
   let tuicrReplacementName: String?
+  let bordersPreviousRuntime: BordersServiceInspection?
+  let bordersRuntimeTarget: EnvironmentBordersRuntimeTarget?
+  var bordersRuntimeAttempted: Bool?
+  var bordersRuntimeVerified: Bool?
 
   init(
     operation: EnvironmentTransactionOperation,
@@ -86,7 +102,11 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     spicetifyReplacementName: String? = nil,
     spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget? = nil,
     spicetifyRuntimeVerified: Bool? = nil,
-    tuicrReplacementName: String? = nil
+    tuicrReplacementName: String? = nil,
+    bordersPreviousRuntime: BordersServiceInspection? = nil,
+    bordersRuntimeTarget: EnvironmentBordersRuntimeTarget? = nil,
+    bordersRuntimeAttempted: Bool? = nil,
+    bordersRuntimeVerified: Bool? = nil
   ) {
     schemaVersion = Self.currentSchemaVersion
     self.operation = operation
@@ -107,6 +127,10 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.spicetifyRuntimeTarget = spicetifyRuntimeTarget
     self.spicetifyRuntimeVerified = spicetifyRuntimeVerified
     self.tuicrReplacementName = tuicrReplacementName
+    self.bordersPreviousRuntime = bordersPreviousRuntime
+    self.bordersRuntimeTarget = bordersRuntimeTarget
+    self.bordersRuntimeAttempted = bordersRuntimeAttempted
+    self.bordersRuntimeVerified = bordersRuntimeVerified
   }
 
   var rollingBack: Self {
@@ -136,7 +160,12 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
         to: previousOwnership
       ),
       spicetifyRuntimeVerified: nil,
-      tuicrReplacementName: tuicrReplacementName
+      tuicrReplacementName: tuicrReplacementName,
+      bordersPreviousRuntime: bordersPreviousRuntime,
+      bordersRuntimeTarget: operation == .herdrTheme
+        ? nil
+        : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership),
+      bordersRuntimeAttempted: bordersRuntimeAttempted
     )
   }
 
@@ -159,7 +188,11 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       spicetifyReplacementName: spicetifyReplacementName,
       spicetifyRuntimeTarget: spicetifyRuntimeTarget,
       spicetifyRuntimeVerified: spicetifyRuntimeVerified,
-      tuicrReplacementName: tuicrReplacementName
+      tuicrReplacementName: tuicrReplacementName,
+      bordersPreviousRuntime: bordersPreviousRuntime,
+      bordersRuntimeTarget: bordersRuntimeTarget,
+      bordersRuntimeAttempted: bordersRuntimeAttempted,
+      bordersRuntimeVerified: bordersRuntimeVerified
     )
   }
 
@@ -182,7 +215,11 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       spicetifyReplacementName: spicetifyReplacementName,
       spicetifyRuntimeTarget: spicetifyRuntimeTarget,
       spicetifyRuntimeVerified: true,
-      tuicrReplacementName: tuicrReplacementName
+      tuicrReplacementName: tuicrReplacementName,
+      bordersPreviousRuntime: bordersPreviousRuntime,
+      bordersRuntimeTarget: bordersRuntimeTarget,
+      bordersRuntimeAttempted: bordersRuntimeAttempted,
+      bordersRuntimeVerified: bordersRuntimeVerified
     )
   }
 
@@ -205,5 +242,9 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case spicetifyRuntimeTarget = "spicetify_runtime_target"
     case spicetifyRuntimeVerified = "spicetify_runtime_verified"
     case tuicrReplacementName = "tuicr_replacement_name"
+    case bordersPreviousRuntime = "borders_previous_runtime"
+    case bordersRuntimeTarget = "borders_runtime_target"
+    case bordersRuntimeAttempted = "borders_runtime_attempted"
+    case bordersRuntimeVerified = "borders_runtime_verified"
   }
 }

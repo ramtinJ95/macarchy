@@ -45,7 +45,8 @@ struct TuicrPresetLifecycleTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, SpicetifyAdapter.id, TuicrAdapter.id,
+          BordersAdapter.id, CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, SpicetifyAdapter.id,
+          TuicrAdapter.id,
         ])
     )
 
@@ -244,7 +245,7 @@ struct TuicrPresetLifecycleTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          SpicetifyAdapter.id
+          BordersAdapter.id, SpicetifyAdapter.id,
         ])
     )
   }
@@ -815,6 +816,8 @@ private struct TuicrFixture {
   func writeProfile(tuicr: Bool, bat: Bool = false) throws {
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [terminal]
     provider = "disabled"
     [shell]

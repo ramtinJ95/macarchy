@@ -257,6 +257,7 @@ struct SetupPackageInventory: Encodable, Sendable {
     switch capabilityID {
     case "skhd", "yabai": "desktop.provider"
     case "sketchybar": "top_bar.provider"
+    case "borders": "focus_ring.provider"
     case "kitty": "terminal.provider"
     case "starship": "prompt.provider"
     case "atuin": "history.provider"

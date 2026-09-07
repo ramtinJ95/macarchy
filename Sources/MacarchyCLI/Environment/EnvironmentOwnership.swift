@@ -3,6 +3,8 @@ import ThemeCore
 
 enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
   case kitty
+  case bordersDirectory = "borders_directory"
+  case bordersConfiguration = "borders_configuration"
   case zsh
   case starship
   case atuinConfiguration = "atuin_configuration"
@@ -30,6 +32,7 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
     switch self {
     case .kitty: .kitty
     case .neovim: .neovim
+    case .bordersDirectory: .borders
     default: nil
     }
   }
@@ -38,11 +41,13 @@ enum EnvironmentEntryID: String, Codable, CaseIterable, Sendable {
 enum EnvironmentDirectoryLinkKind: String, Sendable {
   case kitty = "Kitty"
   case neovim = "Neovim"
+  case borders = "Borders"
 
   var maximumEntries: Int {
     switch self {
     case .kitty: 128
     case .neovim: 512
+    case .borders: 128
     }
   }
 
@@ -50,6 +55,7 @@ enum EnvironmentDirectoryLinkKind: String, Sendable {
     switch self {
     case .kitty: 4 * 1_048_576
     case .neovim: 8 * 1_048_576
+    case .borders: 4 * 1_048_576
     }
   }
 }
@@ -105,6 +111,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let createdDirectories: [String]
   let originalThemeBridges: [EnvironmentThemeBridgeState.Entry]
   let btop: EnvironmentBtopOwnership?
+  let borders: EnvironmentBordersOwnership?
   let codex: EnvironmentCodexOwnership?
   let herdr: EnvironmentHerdrOwnership?
   let pi: EnvironmentPiOwnership?
@@ -124,6 +131,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     createdDirectories: [String],
     originalThemeBridges: [EnvironmentThemeBridgeState.Entry],
     btop: EnvironmentBtopOwnership? = nil,
+    borders: EnvironmentBordersOwnership? = nil,
     codex: EnvironmentCodexOwnership? = nil,
     herdr: EnvironmentHerdrOwnership? = nil,
     pi: EnvironmentPiOwnership? = nil,
@@ -143,6 +151,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.createdDirectories = createdDirectories.sorted()
     self.originalThemeBridges = originalThemeBridges.sorted { $0.path < $1.path }
     self.btop = btop
+    self.borders = borders
     self.codex = codex
     self.herdr = herdr
     self.pi = pi
@@ -164,6 +173,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case createdDirectories = "created_directories"
     case originalThemeBridges = "original_theme_bridges"
     case btop
+    case borders
     case codex
     case herdr
     case pi
@@ -189,6 +199,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       forKey: .originalThemeBridges
     )
     btop = try container.decodeIfPresent(EnvironmentBtopOwnership.self, forKey: .btop)
+    borders = try container.decodeIfPresent(EnvironmentBordersOwnership.self, forKey: .borders)
     codex = try container.decodeIfPresent(EnvironmentCodexOwnership.self, forKey: .codex)
     herdr = try container.decodeIfPresent(EnvironmentHerdrOwnership.self, forKey: .herdr)
     pi = try container.decodeIfPresent(EnvironmentPiOwnership.self, forKey: .pi)
@@ -219,6 +230,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && adapterIDs.contains(PiAdapter.id) == piEnabled
           && adapterIDs.contains(SpicetifyAdapter.id) == spicetifyEnabled
           && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
+          && adapterIDs.contains(BordersAdapter.id) == (borders != nil)
       } ?? true
     guard schemaVersion == Self.currentSchemaVersion,
       EnvironmentGenerationStore.isGenerationID(generationID),
@@ -226,6 +238,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       Set(createdDirectories).count == createdDirectories.count,
       Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count,
       btop?.hasValidShape ?? true,
+      borders?.hasValidShape ?? true,
+      records.filter { [.bordersDirectory, .bordersConfiguration].contains($0.id) }.count
+        == (borders == nil ? 0 : 1),
       codex?.hasValidShape ?? true,
       herdr?.hasValidShape ?? true,
       pi?.hasValidShape ?? true,
@@ -247,14 +262,14 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && evidence.contentDigest == nil && evidence.metadataDigest == nil
           && evidence.inventory.isEmpty
       case .regularFile:
-        return record.id != .kitty && record.id != .neovim
+        return record.id.directoryLinkKind == nil
           && record.retainedPath != nil && hasIdentity
           && evidence.linkDestination == nil && evidence.contentDigest != nil
           && evidence.inventory.isEmpty
       case .symbolicLink:
         return record.retainedPath != nil && hasIdentity
           && evidence.linkDestination != nil && evidence.contentDigest == nil
-          && ([.kitty, .neovim].contains(record.id) || evidence.inventory.isEmpty)
+          && (record.id.directoryLinkKind != nil || evidence.inventory.isEmpty)
       }
     }
   }
@@ -266,6 +281,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       createdDirectories: createdDirectories,
       originalThemeBridges: originalThemeBridges,
       btop: btop,
+      borders: borders,
       codex: codex,
       herdr: herdr,
       pi: pi,

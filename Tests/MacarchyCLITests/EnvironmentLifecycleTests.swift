@@ -220,6 +220,8 @@ struct EnvironmentLifecycleTests {
     let originalProfile = try String(contentsOf: fixture.profile, encoding: .utf8)
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [editor]
     provider = "disabled"
     [kitty]
@@ -352,6 +354,8 @@ struct EnvironmentLifecycleTests {
     // left by the narrower applied set must be replaced by the restored default consumer set.
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [terminal]
     provider = "disabled"
     [shell]
@@ -484,6 +488,8 @@ struct EnvironmentLifecycleTests {
     )
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [terminal]
     provider = "disabled"
     [shell]
@@ -907,7 +913,7 @@ struct EnvironmentLifecycleTests {
   func laterFailureWarnsWhenNeovimPluginPreparationRan() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    try "schema_version = 1\n".write(
+    try "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n".write(
       to: fixture.profile,
       atomically: true,
       encoding: .utf8
@@ -949,7 +955,7 @@ struct EnvironmentLifecycleTests {
   func failedNeovimPluginRestoreRollsBackBeforeThemeReconciliation() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    try "schema_version = 1\n".write(
+    try "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n".write(
       to: fixture.profile,
       atomically: true,
       encoding: .utf8
@@ -1063,11 +1069,13 @@ struct EnvironmentLifecycleTests {
       atomically: true,
       encoding: .utf8
     )
-    try "schema_version = 1\n[kitty]\noverride = \"kitty-override\"\n".write(
-      to: fixture.profile,
-      atomically: true,
-      encoding: .utf8
-    )
+    try
+      "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n[kitty]\noverride = \"kitty-override\"\n"
+      .write(
+        to: fixture.profile,
+        atomically: true,
+        encoding: .utf8
+      )
     let digest = try #require(
       try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
     )
@@ -1343,6 +1351,8 @@ struct EnvironmentLifecycleTests {
     #expect(try await fixture.apply(adopt: digest).succeeded)
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [history]
     provider = "disabled"
     """.write(to: fixture.profile, atomically: true, encoding: .utf8)
@@ -1384,6 +1394,8 @@ struct EnvironmentLifecycleTests {
     try "managed starship\n".write(to: starshipBridge, atomically: true, encoding: .utf8)
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [prompt]
     provider = "disabled"
     """.write(to: fixture.profile, atomically: true, encoding: .utf8)
@@ -1475,6 +1487,8 @@ private struct EnvironmentLifecycleFixture {
     if disabled {
       try """
       schema_version = 1
+      [focus_ring]
+      provider = "disabled"
       [terminal]
       provider = "disabled"
       [shell]
@@ -1491,11 +1505,13 @@ private struct EnvironmentLifecycleFixture {
     }
 
     if !externalEntries {
-      try "schema_version = 1\n[editor]\nprovider = \"disabled\"\n".write(
-        to: profile,
-        atomically: true,
-        encoding: .utf8
-      )
+      try
+        "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n[editor]\nprovider = \"disabled\"\n"
+        .write(
+          to: profile,
+          atomically: true,
+          encoding: .utf8
+        )
       return
     }
 
@@ -1531,11 +1547,13 @@ private struct EnvironmentLifecycleFixture {
     try symlink(zshTarget, zshEntry.path).requireZero()
     try symlink(starshipTarget, starshipEntry.path).requireZero()
     try symlink(atuinTarget, atuinConfigEntry.path).requireZero()
-    try "schema_version = 1\n[editor]\nprovider = \"disabled\"\n".write(
-      to: profile,
-      atomically: true,
-      encoding: .utf8
-    )
+    try
+      "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n[editor]\nprovider = \"disabled\"\n"
+      .write(
+        to: profile,
+        atomically: true,
+        encoding: .utf8
+      )
   }
 
   func plan() throws -> (output: String, succeeded: Bool) {

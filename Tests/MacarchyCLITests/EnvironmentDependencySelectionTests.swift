@@ -78,7 +78,8 @@ struct EnvironmentDependencySelectionTests {
       yazi = false
       """
     let profile = try PortableProfileLoader().decode(
-      "schema_version = 1\n" + (core ? "" : optOuts) + "\n[presets]\n"
+      "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n" + (core ? "" : optOuts)
+        + "\n[presets]\n"
         + presets.map { "\($0) = true\n" }.joined(),
       source: home.appending(path: "profile.toml")
     )

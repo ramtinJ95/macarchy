@@ -408,6 +408,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     let environment = profile.environment
     return [
       "desktop": profile.desktop.provider.rawValue,
+      "focus_ring": environment.focusRing.rawValue,
       "editor": environment.editor.rawValue,
       "history": environment.history.rawValue,
       "prompt": environment.prompt.rawValue,
@@ -427,6 +428,13 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
   private func services(_ profile: PortableProfile) -> [UnifiedSetupService] {
     var result = [UnifiedSetupService]()
+    if profile.environment.focusRing == .borders {
+      result.append(
+        UnifiedSetupService(
+          id: BordersAdapter.id, ownership: "homebrew_service",
+          lifecycle:
+            "start_or_request_palette; restart_on_adoption_and_restore; no_settings_readback"))
+    }
     if profile.desktop.provider == .yabaiSkhd {
       result.append(
         UnifiedSetupService(id: "yabai", ownership: "managed", lifecycle: "restart_and_verify")

@@ -47,7 +47,9 @@ extension AdapterContractTests {
       requests: requests,
       wallpaperControl: trackedWallpaperControl(state: wallpaperState),
       enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
-        .subtracting([CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, TuicrAdapter.id])
+        .subtracting([
+          BordersAdapter.id, CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, TuicrAdapter.id,
+        ])
     )
     let second = try await withoutTuicr.activate(
       package: package,
@@ -287,7 +289,7 @@ extension AdapterContractTests {
       currentAppearance: { .dark },
       enabledAdapterIDs: enabledAdapterIDs
         ?? Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          CodexAdapter.id, HerdrAdapter.id, PiAdapter.id,
+          BordersAdapter.id, CodexAdapter.id, HerdrAdapter.id, PiAdapter.id,
         ])
     )
   }

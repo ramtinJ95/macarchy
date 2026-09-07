@@ -31,13 +31,16 @@ struct EnvironmentPlanCommandRunner: Sendable {
 
   let prerequisites: EnvironmentPrerequisiteInspector
   let requiresActiveTheme: Bool
+  let bordersRuntime: EnvironmentBordersRuntime
 
   init(
     prerequisites: EnvironmentPrerequisiteInspector = .live,
-    requiresActiveTheme: Bool = false
+    requiresActiveTheme: Bool = false,
+    bordersRuntime: EnvironmentBordersRuntime = .live
   ) {
     self.prerequisites = prerequisites
     self.requiresActiveTheme = requiresActiveTheme
+    self.bordersRuntime = bordersRuntime
   }
 
   func execute(
@@ -93,10 +96,11 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
 
     let provider = homeDirectory.map {
-      EnvironmentProviderInspector().inspect(
+      EnvironmentProviderInspector().inspectIncludingBordersRuntime(
         composition: composition,
         homeDirectory: $0,
-        stateRoot: stateRoot
+        stateRoot: stateRoot,
+        runtime: bordersRuntime
       )
     }
     let prerequisiteState =
@@ -147,6 +151,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       profile: profileURL.path,
       profileStatus: profile.sourceURL == nil ? "absent_default" : "loaded",
       terminalProvider: composition.profile.terminal.rawValue,
+      focusRingProvider: composition.profile.focusRing.rawValue,
       shellProvider: composition.profile.shell.rawValue,
       promptProvider: composition.profile.prompt.rawValue,
       historyProvider: composition.profile.history.rawValue,
@@ -190,6 +195,14 @@ struct EnvironmentPlanCommandRunner: Sendable {
     restorationRequired: Bool
   ) -> [EnvironmentPlanAction] {
     var actions: [EnvironmentPlanAction] = []
+    if profile.focusRing == .borders {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_borders",
+          message:
+            "Own the native Borders entry and Homebrew service; request the canonical palette live. Adoption and restoration of running native configuration require restart; settings have no readback."
+        ))
+    }
     if profile.terminal == .kitty {
       actions.append(
         EnvironmentPlanAction(
@@ -358,6 +371,7 @@ private struct EnvironmentPlanReport: Encodable {
   let profile: String
   let profileStatus: String
   let terminalProvider: String?
+  let focusRingProvider: String?
   let shellProvider: String?
   let promptProvider: String?
   let historyProvider: String?
@@ -395,6 +409,7 @@ private struct EnvironmentPlanReport: Encodable {
       profile: profile.path,
       profileStatus: profileStatus,
       terminalProvider: environment?.terminal.rawValue,
+      focusRingProvider: environment?.focusRing.rawValue,
       shellProvider: environment?.shell.rawValue,
       promptProvider: environment?.prompt.rawValue,
       historyProvider: environment?.history.rawValue,
@@ -431,6 +446,7 @@ private struct EnvironmentPlanReport: Encodable {
       "Macarchy environment plan [\(outcome)]:",
       "- profile [\(profileStatus)]: \(profile)",
       "- terminal provider: " + (terminalProvider ?? "unavailable"),
+      "- focus-ring provider: " + (focusRingProvider ?? "unavailable"),
       "- shell provider: " + (shellProvider ?? "unavailable"),
       "- prompt provider: " + (promptProvider ?? "unavailable"),
       "- history provider: " + (historyProvider ?? "unavailable"),

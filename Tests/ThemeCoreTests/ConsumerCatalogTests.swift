@@ -16,6 +16,7 @@ struct ConsumerCatalogTests {
           "macos-appearance:required",
           "atuin:required",
           "bat:required",
+          "borders:required",
           "btop:required",
           "codex:required",
           "eza:required",
