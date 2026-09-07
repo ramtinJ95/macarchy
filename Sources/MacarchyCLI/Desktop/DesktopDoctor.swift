@@ -163,7 +163,8 @@ struct DesktopDoctorCommandRunner: Sendable {
       homeDirectory: homeDirectory,
       json: true,
       consumerPaths: consumerPaths,
-      macarchyExecutableURL: macarchyExecutableURL
+      macarchyExecutableURL: macarchyExecutableURL,
+      profile: desired.profile
     )
     findings.append(
       DoctorFinding(
