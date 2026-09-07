@@ -503,13 +503,6 @@ struct KeybindingsPlanCommandTests {
     }
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
   private func writeOwnershipClaim(_ fixture: PlanFixture) throws {
     let setup = fixture.stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: setup, withIntermediateDirectories: true)

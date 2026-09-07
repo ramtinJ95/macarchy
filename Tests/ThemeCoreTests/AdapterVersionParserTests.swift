@@ -22,7 +22,7 @@ struct AdapterVersionParserTests {
   func rejectsExtraTokensEmptyComponentsAndNonIntegerTriplets() {
     for suffix in [
       "", " ", " 1.2.3 extra", " 1.2.3\nwarning", "1.2.3",
-      " .2.3", " 1..3", " 1.2.", " 1.2.3.4",
+      " .2.3", " 1..3", " 1.2.", " 1.2", " 1.2.3.4",
       " v1.2.3", " +1.2.3", " 1.-2.3", " 1.2.3+build",
       " 1.2.3-rc.1", " 1.two.3", " ١.2.3", " １.2.3", " ².2.3",
       " \(Int.max)0.2.3", " 1.\(Int.max)0.3", " 1.2.\(Int.max)0",
@@ -30,7 +30,7 @@ struct AdapterVersionParserTests {
       #expect(CodexAdapter.parseVersion("codex-cli" + suffix) == nil)
       #expect(HerdrAdapter.parseVersion("herdr" + suffix) == nil)
     }
-    for output in ["", "1.2.3", "prefix codex-cli 1.2.3", "prefix herdr 1.2.3"] {
+    for output in ["", "1.2.3", "codex 1.2.3", "prefix codex-cli 1.2.3", "prefix herdr 1.2.3"] {
       #expect(CodexAdapter.parseVersion(output) == nil)
       #expect(HerdrAdapter.parseVersion(output) == nil)
     }
@@ -41,11 +41,12 @@ struct AdapterVersionParserTests {
   }
 
   @Test(arguments: ["codex-cli", "herdr"])
-  func supportedVersionNormalizesAndPreservesProviderErrors(label: String) throws {
+  func supportedVersionPreservesBoundsNormalizationAndProviderErrors(label: String) throws {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let executable = root.appending(path: label)
     let provider = label == "codex-cli" ? "Codex" : "Herdr"
     let minimum = label == "codex-cli" ? "0.151.0" : "0.8.0"
+    let belowMinimum = label == "codex-cli" ? "0.150.9" : "0.7.9"
 
     func supportedVersion(_ output: String, status: Int32 = 0) throws -> String {
       let runner = ProcessRunner { request in
@@ -67,12 +68,16 @@ struct AdapterVersionParserTests {
       ).supportedVersion()
     }
 
+    for version in [minimum, "20.0.0"] {
+      #expect(try supportedVersion("\(label) \(version)") == version)
+    }
     #expect(try supportedVersion("\t\(label) 0001.0002.0003\n") == "1.2.3")
     for (output, status, expected) in [
       ("\(label) nonsense\n", Int32(0), "\(provider) returned an unparseable version"),
       ("\(label) 1.2.3\n", Int32(1), "\(provider) returned an unparseable version"),
       ("\(label) 0.0.0\n", Int32(1), "\(provider) returned an unparseable version"),
       ("\(label) 000.000.000\n", Int32(0), "unsupported"),
+      ("\(label) \(belowMinimum)", Int32(0), "unsupported"),
     ] {
       do {
         _ = try supportedVersion(output, status: status)

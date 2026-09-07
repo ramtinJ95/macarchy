@@ -9,11 +9,7 @@ extension AdapterContractTests {
   func tuiAdaptersUseCanonicalThemesAndTheirHighestAvailableUpdateBoundaries() async throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    let paths = try Self.consumerPaths(
-      root: root,
-      kittyConfigurationURL: root.appending(path: "unused-kitty.conf"),
-      sketchyBarConfigurationURL: root.appending(path: "unused-sketchybarrc")
-    )
+    let paths = try Self.consumerPaths(root: root, adapterIDs: ["btop", "yazi", "atuin"])
     let btopDirectory = paths.btopConfigurationDirectoryURL
     let yaziDirectory = paths.yaziConfigurationDirectoryURL
     let atuinDirectory = paths.atuinConfigurationDirectoryURL
@@ -138,11 +134,7 @@ extension AdapterContractTests {
   func tuiAdaptersExposeReloadRejectionAndProcessExit() async throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    let paths = try Self.consumerPaths(
-      root: root,
-      kittyConfigurationURL: root.appending(path: "unused-kitty.conf"),
-      sketchyBarConfigurationURL: root.appending(path: "unused-sketchybarrc")
-    )
+    let paths = try Self.consumerPaths(root: root, adapterIDs: ["btop", "yazi", "atuin"])
     let denied = ProcessRunner { request in
       if request.executableURL == URL(filePath: "/usr/bin/killall"),
         request.arguments.first == "-0"

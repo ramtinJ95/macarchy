@@ -57,11 +57,11 @@ struct KeybindingsCLIContractTests {
       "--state-root", stateRoot.path, "--json",
     ])
 
-    let legacyListJSON = try json(legacyList.output)
-    let legacyDoctorJSON = try json(legacyDoctor.output)
-    let effectiveListJSON = try json(effectiveList.output)
-    let effectiveDoctorJSON = try json(effectiveDoctor.output)
-    let effectiveStatusJSON = try json(effectiveStatus.output)
+    let legacyListJSON = try jsonObject(legacyList.output)
+    let legacyDoctorJSON = try jsonObject(legacyDoctor.output)
+    let effectiveListJSON = try jsonObject(effectiveList.output)
+    let effectiveDoctorJSON = try jsonObject(effectiveDoctor.output)
+    let effectiveStatusJSON = try jsonObject(effectiveStatus.output)
 
     #expect(legacyList.status == 0)
     #expect(legacyDoctor.status == 0)
@@ -150,17 +150,6 @@ struct KeybindingsCLIContractTests {
       decoding: standardError.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self
     ).trimmingCharacters(in: .whitespacesAndNewlines)
     return (process.terminationStatus, output, error)
-  }
-
-  private func json(_ output: String) throws -> [String: Any] {
-    try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-  }
-
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
   }
 
   private var productDirectory: URL {

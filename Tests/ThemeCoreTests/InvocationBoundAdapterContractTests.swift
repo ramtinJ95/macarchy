@@ -9,17 +9,7 @@ extension AdapterContractTests {
   func invocationBoundAdaptersUseCanonicalLinksAndExpectedProcesses() async throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    let kittyConfiguration = root.appending(path: "kitty.conf")
-    try "include fixture.conf\n".write(
-      to: kittyConfiguration,
-      atomically: true,
-      encoding: .utf8
-    )
-    let paths = try Self.consumerPaths(
-      root: root,
-      kittyConfigurationURL: kittyConfiguration,
-      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
-    )
+    let paths = try Self.consumerPaths(root: root, adapterIDs: ["eza", "bat"])
     let requests = Mutex([ProcessRequest]())
     let runner = ProcessRunner { request in
       requests.withLock { $0.append(request) }
@@ -88,11 +78,7 @@ extension AdapterContractTests {
   func ezaReadsAnExternallyLinkedShellConfiguration() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    let paths = try Self.consumerPaths(
-      root: root,
-      kittyConfigurationURL: root.appending(path: "kitty.conf"),
-      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
-    )
+    let paths = try Self.consumerPaths(root: root, adapterIDs: ["eza"])
     let external = root.appending(path: "dotfiles/.zshrc")
     try FileManager.default.createDirectory(
       at: external.deletingLastPathComponent(),
@@ -124,11 +110,7 @@ extension AdapterContractTests {
   func invocationBoundAdaptersExposeUnavailableControlsAndRejectedCacheBuilds() async throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    let paths = try Self.consumerPaths(
-      root: root,
-      kittyConfigurationURL: root.appending(path: "kitty.conf"),
-      sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)
-    )
+    let paths = try Self.consumerPaths(root: root, adapterIDs: ["eza", "bat"])
     let unavailable = EzaAdapter(
       root: root,
       configurationDirectoryURL: paths.ezaConfigurationDirectoryURL,

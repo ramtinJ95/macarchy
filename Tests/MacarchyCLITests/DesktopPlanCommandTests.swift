@@ -537,10 +537,6 @@ struct DesktopPlanCommandTests {
     )
   }
 
-  private func jsonObject(_ output: String) throws -> [String: Any] {
-    try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-  }
-
   private var sketchyBarLifecycle: SketchyBarLifecycleController {
     let runtime = SketchyBarRuntimeInspection(
       status: .running,
@@ -575,12 +571,6 @@ struct DesktopPlanCommandTests {
     )
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
 }
 
 private struct PlanFixture {
