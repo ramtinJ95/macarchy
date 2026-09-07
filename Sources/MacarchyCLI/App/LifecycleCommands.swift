@@ -69,8 +69,7 @@ extension Macarchy {
     )
 
     struct ProfileOptions: ParsableArguments {
-      @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-      var profile: String?
+      @OptionGroup var portable: PortableProfileOptions
 
       @Option(
         name: .customLong("machine-profile"),
@@ -85,9 +84,8 @@ extension Macarchy {
           keybindingsResourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
           desktopResourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
           environmentResourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
-          profileURL: profile.map { URL(filePath: $0).standardizedFileURL }
-            ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL,
-          profileRequired: profile != nil,
+          profileURL: portable.url(homeDirectory: home),
+          profileRequired: portable.isRequired,
           machineProfileURL: machineProfile.map { URL(filePath: $0).standardizedFileURL }
             ?? home.appending(path: ".config/macarchy/machine.toml").standardizedFileURL,
           machineProfileRequired: machineProfile != nil,

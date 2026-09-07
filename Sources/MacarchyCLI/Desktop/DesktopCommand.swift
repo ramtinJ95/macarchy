@@ -15,8 +15,7 @@ struct Desktop: ParsableCommand {
       abstract: "Plan managed desktop provider configuration without making changes."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
     var stateRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -27,13 +26,11 @@ struct Desktop: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let execution = try DesktopPlanCommandRunner.live.execute(
         resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
         profileURL: profileURL,
-        profileRequired: profile != nil,
+        profileRequired: profileOptions.isRequired,
         stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
         homeDirectory: home,
         json: json
@@ -50,8 +47,7 @@ struct Desktop: ParsableCommand {
       abstract: "Publish, activate, and verify managed desktop providers."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @OptionGroup var state: Macarchy.StateOptions
 
@@ -72,15 +68,13 @@ struct Desktop: ParsableCommand {
 
     mutating func run() async throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let execution =
         if dryRun {
           try DesktopPlanCommandRunner.live.execute(
             resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
             profileURL: profileURL,
-            profileRequired: profile != nil,
+            profileRequired: profileOptions.isRequired,
             stateRoot: state.stateRootURL,
             homeDirectory: home,
             json: json
@@ -89,7 +83,7 @@ struct Desktop: ParsableCommand {
           try await DesktopApplyCommandRunner.live.executeAggregate(
             resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
             profileURL: profileURL,
-            profileRequired: profile != nil,
+            profileRequired: profileOptions.isRequired,
             stateRoot: state.stateRootURL,
             homeDirectory: home,
             consumerPaths: state.consumerPaths,
@@ -109,8 +103,7 @@ struct Desktop: ParsableCommand {
       abstract: "Report managed desktop generation, ownership, and runtime state."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @OptionGroup var state: Macarchy.StateOptions
 
@@ -119,13 +112,11 @@ struct Desktop: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let execution = try DesktopStatusCommandRunner.live.execute(
         resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
         profileURL: profileURL,
-        profileRequired: profile != nil,
+        profileRequired: profileOptions.isRequired,
         stateRoot: state.stateRootURL,
         homeDirectory: home,
         json: json,
@@ -168,8 +159,7 @@ struct Desktop: ParsableCommand {
       abstract: "Diagnose aggregate desktop prerequisites, providers, runtime, and theme state."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @OptionGroup var state: Macarchy.StateOptions
 
@@ -178,13 +168,11 @@ struct Desktop: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let execution = try DesktopDoctorCommandRunner.live.execute(
         resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
         profileURL: profileURL,
-        profileRequired: profile != nil,
+        profileRequired: profileOptions.isRequired,
         stateRoot: state.stateRootURL,
         homeDirectory: home,
         consumerPaths: state.consumerPaths,

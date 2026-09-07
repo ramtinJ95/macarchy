@@ -13,8 +13,7 @@ struct Keybindings: ParsableCommand {
       abstract: "Plan effective managed skhd keybindings without making changes."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
     var stateRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -25,13 +24,11 @@ struct Keybindings: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let execution = try KeybindingsPlanCommandRunner.live.execute(
         resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
         profileURL: profileURL,
-        profileRequired: profile != nil,
+        profileRequired: profileOptions.isRequired,
         stateRoot: URL(
           filePath: stateRoot,
           directoryHint: .isDirectory
@@ -51,8 +48,7 @@ struct Keybindings: ParsableCommand {
       abstract: "Publish and activate managed skhd keybindings."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
     var stateRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -87,9 +83,7 @@ struct Keybindings: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let stateRootURL = URL(
         filePath: stateRoot,
         directoryHint: .isDirectory
@@ -107,7 +101,7 @@ struct Keybindings: ParsableCommand {
           try runner.preview(
             resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
             profileURL: profileURL,
-            profileRequired: profile != nil,
+            profileRequired: profileOptions.isRequired,
             stateRoot: stateRootURL,
             homeDirectory: home,
             adopt: adopt,
@@ -117,7 +111,7 @@ struct Keybindings: ParsableCommand {
           try runner.execute(
             resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
             profileURL: profileURL,
-            profileRequired: profile != nil,
+            profileRequired: profileOptions.isRequired,
             stateRoot: stateRootURL,
             homeDirectory: home,
             adopt: adopt,
@@ -141,29 +135,21 @@ struct Keybindings: ParsableCommand {
     @Option(help: "Keybinding metadata catalog for source-based inspection.")
     var catalog: String?
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
     var stateRoot: String?
-
-    var profileRequired: Bool { profile != nil }
 
     func validate(allowsSourceStateRoot: Bool) throws {
       if effective, skhdConfig != nil || catalog != nil {
         throw ValidationError("--skhd-config and --catalog cannot be used with --effective")
       }
-      if !effective, profile != nil {
+      if !effective, profileOptions.isRequired {
         throw ValidationError("--profile requires --effective")
       }
       if !effective, stateRoot != nil, !allowsSourceStateRoot {
         throw ValidationError("--state-root requires --effective")
       }
-    }
-
-    func profileURL(homeDirectory: URL) -> URL {
-      profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? homeDirectory.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
     }
 
     func stateRootURL(homeDirectory: URL) -> URL {
@@ -185,8 +171,8 @@ struct Keybindings: ParsableCommand {
     func inspect(homeDirectory: URL) -> KeybindingEffectiveBehavior {
       KeybindingEffectiveBehaviorInspector.live.inspect(
         resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
-        profileURL: profileURL(homeDirectory: homeDirectory),
-        profileRequired: profileRequired,
+        profileURL: profileOptions.url(homeDirectory: homeDirectory),
+        profileRequired: profileOptions.isRequired,
         stateRoot: stateRootURL(homeDirectory: homeDirectory),
         homeDirectory: homeDirectory
       )
@@ -198,8 +184,7 @@ struct Keybindings: ParsableCommand {
       abstract: "Report effective keybinding configuration, ownership, and runtime state."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
     var stateRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -210,13 +195,11 @@ struct Keybindings: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let behavior = KeybindingEffectiveBehaviorInspector.live.inspect(
         resourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
         profileURL: profileURL,
-        profileRequired: profile != nil,
+        profileRequired: profileOptions.isRequired,
         stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
         homeDirectory: home
       )
