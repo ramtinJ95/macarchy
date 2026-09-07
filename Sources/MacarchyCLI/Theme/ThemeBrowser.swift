@@ -12,6 +12,8 @@ struct ThemeBrowserItem: Sendable {
   let package: ThemePackage
   let generatedPreview: ThemeBrowserPreview
   let initialBackgroundID: String?
+  var deletion: ThemeBrowserDeletionAvailability = .unavailable(
+    "Built-in themes cannot be deleted.")
 
   var id: String { package.id }
   var displayName: String { package.displayName }
@@ -40,6 +42,14 @@ struct ThemeBrowserItem: Sendable {
 struct ThemeBrowserContent: Sendable {
   let items: [ThemeBrowserItem]
   let initialThemeID: String
+
+  func removingTheme(id: String) -> ThemeBrowserContent {
+    let remaining = items.filter { $0.id != id }
+    return ThemeBrowserContent(
+      items: remaining,
+      initialThemeID: initialThemeID == id ? remaining.first?.id ?? "" : initialThemeID
+    )
+  }
 
   func filteredItems(query: String) -> [ThemeBrowserItem] {
     let terms =
@@ -145,10 +155,11 @@ struct ThemeBrowserApplyProcessLauncher: Sendable {
 }
 
 struct ThemeBrowserState: Sendable {
-  let content: ThemeBrowserContent
+  private(set) var content: ThemeBrowserContent
   private(set) var visibleItems: [ThemeBrowserItem]
   private(set) var selectedThemeID: String
   private var selectedBackgroundIDs: [String: String]
+  private var inventoryIsCurrent = true
 
   init(content: ThemeBrowserContent) {
     self.content = content
@@ -166,6 +177,37 @@ struct ThemeBrowserState: Sendable {
       themeID: selectedThemeID,
       backgroundID: selectedBackgroundIDs[selectedThemeID]
     )
+  }
+
+  var deletionAvailability: ThemeBrowserDeletionAvailability {
+    guard inventoryIsCurrent else {
+      return .unavailable(
+        "Library refresh failed. Reopen the picker before deleting another theme.")
+    }
+    return content.item(id: selectedThemeID)?.deletion ?? .unavailable("Select a theme first.")
+  }
+
+  mutating func markInventoryStale() {
+    inventoryIsCurrent = false
+  }
+
+  mutating func refresh(content: ThemeBrowserContent, query: String) {
+    inventoryIsCurrent = true
+    self.content = content
+    selectedBackgroundIDs = Dictionary(
+      uniqueKeysWithValues: content.items.compactMap { item in
+        let previous = selectedBackgroundIDs[item.id]
+        let backgroundID =
+          previous.flatMap { id in
+            item.backgrounds.contains(where: { $0.id == id }) ? id : nil
+          } ?? item.initialBackgroundID
+        return backgroundID.map { (item.id, $0) }
+      }
+    )
+    if content.item(id: selectedThemeID) == nil {
+      selectedThemeID = content.initialThemeID
+    }
+    updateSearch(query)
   }
 
   mutating func updateSearch(_ query: String) {
@@ -266,13 +308,27 @@ struct ThemeBrowserCommandLoader: Sendable {
         package.backgrounds.first(where: { $0.id == preferredID })?.id
         ?? package.backgrounds.first?.id
       let preview = renderPreview(package)
+      let deletion: ThemeBrowserDeletionAvailability
+      do {
+        if let target = try repository.deletionTarget(for: package) {
+          deletion =
+            activeManifest?.themeID == package.id
+            ? .unavailable("Apply another theme before deleting the active theme.")
+            : .available(target)
+        } else {
+          deletion = .unavailable("Built-in themes cannot be deleted.")
+        }
+      } catch {
+        deletion = .unavailable("Cannot safely delete this package: \(error)")
+      }
       return ThemeBrowserItem(
         package: package,
         generatedPreview: ThemeBrowserPreview(
           label: "Generated palette",
           data: preview.data
         ),
-        initialBackgroundID: initialBackgroundID
+        initialBackgroundID: initialBackgroundID,
+        deletion: deletion
       )
     }
     let packageIDs = Set(effectivePackages.map(\.id))

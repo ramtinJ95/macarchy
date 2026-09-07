@@ -663,7 +663,11 @@ its displayed command.
 installed theme. Search and navigation change only the local generated palette
 preview, optional validated import gallery, and background selection. Enter or
 the Apply button performs one canonical activation of the selected theme and
-background; closing or changing focus without applying leaves state unchanged.
+background. **Delete Theme**, beside Apply, asks for confirmation before moving
+an inactive user-library package directory to macOS Trash, then refreshes the
+picker. Built-ins are protected; apply another theme before deleting the active
+one. External personal wallpapers, configuration, and canonical active state
+are preserved. Closing or changing focus without either action changes nothing.
 The personal skhd configuration opens it with Cmd-Shift-T.
 
 Built-in and imported themes may expose any number of validated PNG, JPEG, and
