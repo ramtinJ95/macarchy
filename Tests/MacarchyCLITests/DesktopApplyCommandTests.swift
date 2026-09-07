@@ -795,10 +795,6 @@ private struct SketchyBarPublicCommandFixture {
       )
     }
     try profileText.write(to: profile, atomically: true, encoding: .utf8)
-    let repositoryRoot = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
     let package = try ThemePackageLoader().load(
       packageURL: repositoryRoot.appending(
         path: "Themes/catppuccin-mocha",
@@ -852,12 +848,6 @@ private struct SketchyBarPublicCommandFixture {
     return try #require(provider.adoptionEvidenceDigest)
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
 }
 
 private final class SketchyBarPublicLifecycleFixture: Sendable {

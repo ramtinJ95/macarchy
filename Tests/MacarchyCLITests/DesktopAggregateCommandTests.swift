@@ -23,7 +23,7 @@ struct DesktopAggregateCommandTests {
       homeDirectory: fixture.home,
       json: true
     )
-    let planJSON = try fixture.json(plan.output)
+    let planJSON = try jsonObject(plan.output)
     let keybindingPlan = try #require(planJSON["keybindings"] as? [String: Any])
     let actionIDs = try #require(planJSON["actions"] as? [[String: Any]])
       .compactMap { $0["id"] as? String }
@@ -74,7 +74,7 @@ struct DesktopAggregateCommandTests {
       keybindingsAdopt: nil,
       json: true
     )
-    let repeatedJSON = try fixture.json(repeated.output)
+    let repeatedJSON = try jsonObject(repeated.output)
 
     #expect(repeated.succeeded)
     #expect(repeatedJSON["outcome"] as? String == "no_change")
@@ -208,7 +208,7 @@ struct DesktopAggregateCommandTests {
       keybindingsAdopt: nil,
       json: true
     )
-    let report = try fixture.json(execution.output)
+    let report = try jsonObject(execution.output)
 
     #expect(!execution.succeeded)
     #expect(report["outcome"] as? String == "blocked")
@@ -630,7 +630,7 @@ struct DesktopAggregateCommandTests {
       consumerPaths: testConsumerPaths(),
       json: true
     )
-    let selectedJSON = try selected.json(selectedDoctor.output)
+    let selectedJSON = try jsonObject(selectedDoctor.output)
     let selectedFindings = try #require(selectedJSON["findings"] as? [[String: Any]])
 
     #expect(!selectedDoctor.succeeded)
@@ -748,10 +748,6 @@ private struct DesktopAggregateFixture {
     profileText: String,
     themeFailure: Bool = false
   ) throws {
-    let repositoryRoot = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-desktop-aggregate-\(UUID().uuidString.lowercased())",
       directoryHint: .isDirectory
@@ -819,9 +815,6 @@ private struct DesktopAggregateFixture {
     )
   }
 
-  func json(_ output: String) throws -> [String: Any] {
-    try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-  }
 }
 
 private final class AggregateYabaiLifecycle: Sendable {

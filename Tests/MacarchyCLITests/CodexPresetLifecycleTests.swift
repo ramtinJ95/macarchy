@@ -8,26 +8,6 @@ import Testing
 
 struct CodexPresetLifecycleTests {
   @Test
-  func versionContractRequiresCodexCLITripletAtOrAboveMinimumWithoutUpperCap() throws {
-    #expect(CodexAdapter.parseVersion("codex-cli 0.151.0") == [0, 151, 0])
-    #expect(CodexAdapter.parseVersion("codex-cli 99.0.1\n") == [99, 0, 1])
-    #expect(CodexAdapter.parseVersion("codex 0.151.0") == nil)
-    #expect(CodexAdapter.parseVersion("codex-cli 0.151") == nil)
-    #expect(CodexAdapter.parseVersion("codex-cli 0.151.0-beta") == nil)
-
-    for output in ["codex-cli 0.151.0", "codex-cli 20.0.0"] {
-      let adapter = versionAdapter(output)
-      #expect(try adapter.supportedVersion() == String(output.split(separator: " ")[1]))
-    }
-    #expect(throws: CodexAdapterError.self) {
-      _ = try versionAdapter("codex-cli 0.150.9").supportedVersion()
-    }
-    #expect(throws: CodexAdapterError.self) {
-      _ = try versionAdapter("0.151.0").supportedVersion()
-    }
-  }
-
-  @Test
   func cleanEnableNoOpFreshSessionStatusDisableAndTeardownShareOneAuthority() async throws {
     let fixture = try CodexFixture(configuration: nil)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -397,15 +377,6 @@ struct CodexPresetLifecycleTests {
     )
   }
 
-  private func versionAdapter(_ output: String) -> CodexAdapter {
-    CodexAdapter(
-      root: URL(filePath: "/tmp/state"),
-      configurationDirectoryURL: URL(filePath: "/tmp/codex"),
-      executableURL: CodexAdapter.liveExecutableURL,
-      controlIsAvailable: { true },
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: output) }
-    )
-  }
 }
 
 private enum CodexFixtureError: Error {

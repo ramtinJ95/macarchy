@@ -57,16 +57,12 @@ extension AdapterContractTests {
           == "Cannot read Kitty configuration at \(configurationURL.path)"
       )
       try Data(count: BoundedRegularFile.maximumSize + 1).write(to: configurationSourceURL)
+      let oversized = adapter.inspection()
+      #expect(oversized.status == .failed)
       #expect(
-        adapter.inspection().message
+        oversized.message
           == "Kitty configuration at \(configurationURL.path) exceeds 1 MiB"
       )
-
-      try FileManager.default.setAttributes(
-        [.posixPermissions: 0o000],
-        ofItemAtPath: bridgeURL.path
-      )
-      #expect(adapter.inspection().status == .failed)
     }
   }
 

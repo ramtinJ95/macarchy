@@ -728,13 +728,6 @@ struct KeybindingPortabilityTests {
     )
   }
 
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-  }
-
 }
 
 private struct IsolatedKeybindingEnvironment {

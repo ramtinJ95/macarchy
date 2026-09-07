@@ -245,7 +245,7 @@ struct KeybindingsEffectiveCommandTests {
     let state = fixture.inspect()
 
     let list = try KeybindingsListCommandRunner.live.execute(effectiveState: state, json: true)
-    let listReport = try fixture.json(list.output)
+    let listReport = try jsonObject(list.output)
     let listed = try #require(listReport["bindings"] as? [[String: Any]])
     let disabled = try #require(listReport["disabled_defaults"] as? [[String: Any]])
 
@@ -260,7 +260,7 @@ struct KeybindingsEffectiveCommandTests {
       stateRoot: fixture.stateRoot,
       json: true
     )
-    let doctorReport = try fixture.json(doctor.output)
+    let doctorReport = try jsonObject(doctor.output)
     let findings = try #require(doctorReport["findings"] as? [[String: Any]])
 
     let plan = try fixture.planner().execute(
@@ -271,7 +271,7 @@ struct KeybindingsEffectiveCommandTests {
       homeDirectory: fixture.home,
       json: true
     )
-    let planReport = try fixture.json(plan.output)
+    let planReport = try jsonObject(plan.output)
     let planned = try #require(planReport["bindings"] as? [[String: Any]])
 
     let apply = try fixture.applyRunner().preview(
@@ -282,7 +282,7 @@ struct KeybindingsEffectiveCommandTests {
       homeDirectory: fixture.home,
       json: true
     )
-    let applyReport = try fixture.json(apply.output)
+    let applyReport = try jsonObject(apply.output)
 
     let expectedPresentedIdentities = ["cmd-a", "cmd-x", "alt-j"]
     #expect(list.succeeded)
@@ -361,7 +361,7 @@ struct KeybindingsEffectiveCommandTests {
       stateRoot: fixture.stateRoot,
       json: true
     )
-    let doctorReport = try fixture.json(doctor.output)
+    let doctorReport = try jsonObject(doctor.output)
 
     #expect(!list.succeeded)
     #expect(!doctor.succeeded)
@@ -391,7 +391,7 @@ struct KeybindingsEffectiveCommandTests {
       stateRoot: fixture.stateRoot,
       json: true
     )
-    let interruptedReport = try fixture.json(interrupted.output)
+    let interruptedReport = try jsonObject(interrupted.output)
     let interruptedFindings = try #require(
       interruptedReport["findings"] as? [[String: Any]])
 
@@ -414,7 +414,7 @@ struct KeybindingsEffectiveCommandTests {
       json: true
     )
     let corruptFindings = try #require(
-      fixture.json(corrupt.output)["findings"] as? [[String: Any]])
+      jsonObject(corrupt.output)["findings"] as? [[String: Any]])
     #expect(!corrupt.succeeded)
     #expect(corruptFindings.contains { $0["id"] as? String == "transaction.invalid" })
   }
@@ -435,7 +435,7 @@ struct KeybindingsEffectiveCommandTests {
       json: true
     )
     let findings = try #require(
-      fixture.json(doctor.output)["findings"] as? [[String: Any]])
+      jsonObject(doctor.output)["findings"] as? [[String: Any]])
     let syntaxIDs = findings.compactMap { finding -> String? in
       guard let id = finding["id"] as? String, id.hasPrefix("effective.unsupported_syntax.")
       else { return nil }
@@ -478,7 +478,7 @@ struct KeybindingsEffectiveCommandTests {
       json: true
     )
     #expect(preview.succeeded)
-    #expect(try fixture.json(preview.output)["lifecycle"] as? String == "reload")
+    #expect(try jsonObject(preview.output)["lifecycle"] as? String == "reload")
 
     let repaired = try runner.execute(
       resourcesRoot: fixture.resources,
@@ -658,7 +658,7 @@ struct KeybindingsEffectiveCommandTests {
     )
 
     #expect(!plan.succeeded)
-    #expect(try fixture.json(plan.output)["outcome"] as? String == "blocked")
+    #expect(try jsonObject(plan.output)["outcome"] as? String == "blocked")
   }
 
   @Test
@@ -694,7 +694,7 @@ struct KeybindingsEffectiveCommandTests {
     )
 
     #expect(!execution.succeeded)
-    #expect(try fixture.json(execution.output)["outcome"] as? String == "failed")
+    #expect(try jsonObject(execution.output)["outcome"] as? String == "failed")
     #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
     #expect(
       KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).status == .missing
@@ -940,19 +940,15 @@ private struct EffectiveCommandFixture {
       json: true
     )
     let status = try KeybindingsStatusCommandRunner().execute(behavior: behavior, json: true)
-    let doctorJSON = try json(doctor.output)
+    let doctorJSON = try jsonObject(doctor.output)
     let doctorFindings = try #require(doctorJSON["findings"] as? [[String: Any]])
     return (
-      try json(list.output),
+      try jsonObject(list.output),
       doctorFindings.compactMap { $0["id"] as? String },
-      try json(plan.output),
-      try json(apply.output),
-      try json(status.output)
+      try jsonObject(plan.output),
+      try jsonObject(apply.output),
+      try jsonObject(status.output)
     )
-  }
-
-  func json(_ output: String) throws -> [String: Any] {
-    try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
   }
 
   func theme() throws -> NormalizedTheme {

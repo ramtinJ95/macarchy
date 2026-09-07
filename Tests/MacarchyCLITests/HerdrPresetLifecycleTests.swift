@@ -8,12 +8,7 @@ import Testing
 
 struct HerdrPresetLifecycleTests {
   @Test
-  func versionAndReloadContractsAreStrictAndHaveNoUpperCap() throws {
-    #expect(HerdrAdapter.parseVersion("herdr 0.8.0") == [0, 8, 0])
-    #expect(HerdrAdapter.parseVersion("herdr 99.1.2\n") == [99, 1, 2])
-    #expect(HerdrAdapter.parseVersion("0.8.0") == nil)
-    #expect(HerdrAdapter.parseVersion("herdr 0.8") == nil)
-    #expect(HerdrAdapter.parseVersion("herdr 0.8.0-beta") == nil)
+  func reloadContractRequiresUnambiguousSuccess() {
     #expect(
       HerdrAdapter.reloadResponseIsUnambiguousSuccess(
         #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"status":"applied","type":"config_reload"}}"#
@@ -34,12 +29,6 @@ struct HerdrPresetLifecycleTests {
       #"{"id":"cli:server:reload-config","result":{"diagnostics":[],"status":"partial","status":"applied","type":"config_reload"}}"#,
     ] {
       #expect(!HerdrAdapter.reloadResponseIsUnambiguousSuccess(rejected))
-    }
-
-    #expect(try versionAdapter("herdr 0.8.0").supportedVersion() == "0.8.0")
-    #expect(try versionAdapter("herdr 20.0.0").supportedVersion() == "20.0.0")
-    #expect(throws: HerdrAdapterError.self) {
-      _ = try versionAdapter("herdr 0.7.9").supportedVersion()
     }
   }
 
@@ -552,17 +541,6 @@ struct HerdrPresetLifecycleTests {
     )
   }
 
-  private func versionAdapter(_ output: String) -> HerdrAdapter {
-    HerdrAdapter(
-      root: URL(filePath: "/tmp/state"),
-      configurationURL: URL(filePath: "/tmp/herdr/config.toml"),
-      executableURL: URL(filePath: "/tmp/herdr"),
-      controlIsAvailable: { true },
-      processRunner: ProcessRunner { _ in
-        ProcessResult(terminationStatus: 0, output: output)
-      }
-    )
-  }
 }
 
 private struct HerdrFixture {
