@@ -13,8 +13,7 @@ struct EnvironmentCommand: ParsableCommand {
       abstract: "Compose the curated terminal, editor, and TUI environment without changes."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
     var stateRoot = FileManager.default.homeDirectoryForCurrentUser
@@ -25,13 +24,11 @@ struct EnvironmentCommand: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL =
-        profile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      let profileURL = profileOptions.url(homeDirectory: home)
       let execution = try EnvironmentPlanCommandRunner.live.execute(
         resourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
         profileURL: profileURL,
-        profileRequired: profile != nil,
+        profileRequired: profileOptions.isRequired,
         stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
         homeDirectory: home,
         json: json
@@ -46,8 +43,7 @@ struct EnvironmentCommand: ParsableCommand {
       abstract: "Publish, activate, and verify the managed daily tool environment."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @OptionGroup var state: Macarchy.StateOptions
 
@@ -62,13 +58,13 @@ struct EnvironmentCommand: ParsableCommand {
 
     mutating func run() async throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let profileURL = resolvedProfile(profile, home: home)
+      let profileURL = profileOptions.url(homeDirectory: home)
       let execution =
         if dryRun {
           try EnvironmentPlanCommandRunner.live.execute(
             resourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
             profileURL: profileURL,
-            profileRequired: profile != nil,
+            profileRequired: profileOptions.isRequired,
             stateRoot: state.stateRootURL,
             homeDirectory: home,
             json: json
@@ -77,7 +73,7 @@ struct EnvironmentCommand: ParsableCommand {
           try await EnvironmentApplyCommandRunner.live.execute(
             resourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
             profileURL: profileURL,
-            profileRequired: profile != nil,
+            profileRequired: profileOptions.isRequired,
             stateRoot: state.stateRootURL,
             homeDirectory: home,
             consumerPaths: state.consumerPaths,
@@ -95,8 +91,7 @@ struct EnvironmentCommand: ParsableCommand {
       abstract: "Report environment generation, ownership, prerequisites, and theme seams."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @OptionGroup var state: Macarchy.StateOptions
 
@@ -107,8 +102,8 @@ struct EnvironmentCommand: ParsableCommand {
       let home = FileManager.default.homeDirectoryForCurrentUser
       let execution = try EnvironmentStatusCommandRunner.live.execute(
         resourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
-        profileURL: resolvedProfile(profile, home: home),
-        profileRequired: profile != nil,
+        profileURL: profileOptions.url(homeDirectory: home),
+        profileRequired: profileOptions.isRequired,
         stateRoot: state.stateRootURL,
         homeDirectory: home,
         consumerPaths: state.consumerPaths,
@@ -124,8 +119,7 @@ struct EnvironmentCommand: ParsableCommand {
       abstract: "Diagnose managed providers and verify the daily tool environment."
     )
 
-    @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
-    var profile: String?
+    @OptionGroup var profileOptions: PortableProfileOptions
 
     @OptionGroup var state: Macarchy.StateOptions
 
@@ -136,8 +130,8 @@ struct EnvironmentCommand: ParsableCommand {
       let home = FileManager.default.homeDirectoryForCurrentUser
       let execution = try EnvironmentDoctorCommandRunner.live.execute(
         resourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
-        profileURL: resolvedProfile(profile, home: home),
-        profileRequired: profile != nil,
+        profileURL: profileOptions.url(homeDirectory: home),
+        profileRequired: profileOptions.isRequired,
         stateRoot: state.stateRootURL,
         homeDirectory: home,
         consumerPaths: state.consumerPaths,
@@ -172,10 +166,5 @@ struct EnvironmentCommand: ParsableCommand {
       print(execution.output)
       if !execution.succeeded { throw ExitCode.failure }
     }
-  }
-
-  private static func resolvedProfile(_ profile: String?, home: URL) -> URL {
-    profile.map { URL(filePath: $0).standardizedFileURL }
-      ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
   }
 }
