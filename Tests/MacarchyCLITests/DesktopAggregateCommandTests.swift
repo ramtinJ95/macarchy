@@ -671,6 +671,50 @@ struct DesktopAggregateCommandTests {
 
     #expect(disabledDoctor.succeeded)
   }
+
+  @Test
+  func doctorUsesTheMachineProfileForItsAggregateStatus() throws {
+    let fixture = try DesktopAggregateFixture(profileText: "schema_version = 1\n")
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let machineProfile = fixture.state.appending(path: "machine.toml")
+    try """
+    schema_version = 1
+    [desktop]
+    provider = "disabled"
+    [top_bar]
+    provider = "disabled"
+    """.write(to: machineProfile, atomically: true, encoding: .utf8)
+    let profile = try PortableProfileLoader().load(
+      portableAt: fixture.profile,
+      portableRequired: true,
+      machineAt: machineProfile,
+      machineRequired: true
+    ).profile
+
+    let execution = try DesktopDoctorCommandRunner(
+      lifecycle: fixture.yabaiLifecycle.controller,
+      sketchyBarLifecycle: fixture.sketchyBarLifecycle.controller,
+      sketchyBarCoreRuntime: fixture.sketchyBarCore,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    ).execute(
+      resourcesRoot: fixture.desktopResources,
+      keybindingsResourcesRoot: fixture.keybindingResources,
+      profileURL: fixture.profile,
+      profileRequired: true,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
+      json: true,
+      profile: profile
+    )
+
+    #expect(execution.succeeded)
+    let findings = try #require(try jsonObject(execution.output)["findings"] as? [[String: Any]])
+    #expect(
+      findings.first { $0["id"] as? String == "desktop.aggregate" }?["status"] as? String == "ok")
+  }
 }
 
 private struct DesktopAggregateFixture {
