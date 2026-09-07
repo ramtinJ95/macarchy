@@ -693,6 +693,40 @@ pending. Upgrade verification reopens the installed build metadata and bundled
 resources even when the installed version is current; Macarchy never downloads
 or replaces itself outside Homebrew.
 
+## Preview a theme-driven focus ring
+
+The first JankyBorders slice provides a **temporary foreground preview**, not
+managed setup or login persistence. It requires separately installed
+`felixkratz/formulae/borders` version **1.9.0** and a valid active Macarchy theme.
+Installation/trust remains an explicit Homebrew decision; this command installs
+nothing and never starts a service or edits `bordersrc`.
+
+```sh
+macarchy desktop borders preview --dry-run --json
+macarchy desktop borders preview --seconds 30
+```
+
+The preview uses the active semantic accent for a four-point rounded focus ring,
+transparent inactive/background colors, Retina rendering and explicit
+`ax_focus=off`. It requests no Accessibility grant. Focus/Spaces/fullscreen and
+display compatibility still require supported-machine visual qualification;
+the presence of a running process is not that evidence.
+
+While it runs, canonical theme changes request live native color updates.
+Unchanged pointers do not repeatedly read or hash the generated wallpaper.
+The preview stops its own child after 1–300 seconds or on Ctrl-C, termination
+or terminal hangup. It refuses an existing borders process, Homebrew LaunchAgent
+file or loaded job; do not start another borders instance during the preview.
+It neither takes over nor stops an incumbent provider.
+
+`--json` emits a plan before startup and buffered lifecycle events **after child
+cleanup**, so closed or stalled stdout cannot strand the preview. Native
+diagnostics remain on stderr. JankyBorders has no settings readback, so
+`palette_requested` is not a claim of verified pixels or managed convergence.
+Missing/unsupported providers, invalid canonical state and native failures are
+reported rather than silently bypassed. Permanent profile/service integration
+is not yet included.
+
 ## Install an Omarchy theme
 
 Use a dry run to inspect conversion and capability evidence before changing
