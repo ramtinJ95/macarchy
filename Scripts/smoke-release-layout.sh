@@ -117,6 +117,8 @@ print "unified setup plan smoke passed"
 
 cat > "$temporary_directory/disabled-profile.toml" <<'EOF'
 schema_version = 1
+[focus_ring]
+provider = "disabled"
 [desktop]
 provider = "disabled"
 [top_bar]
