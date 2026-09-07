@@ -1,4 +1,14 @@
+import Darwin
 import Foundation
+
+package struct ThemePackageDeletionTarget: Equatable, Sendable {
+  package let themeID: String
+  package let packageURL: URL
+  fileprivate let device: dev_t
+  fileprivate let inode: ino_t
+  fileprivate let birthSeconds: Int
+  fileprivate let birthNanoseconds: Int
+}
 
 public struct ThemeRepository: Sendable {
   private let builtInRoot: URL
@@ -11,6 +21,51 @@ public struct ThemeRepository: Sendable {
 
   public func packages() throws -> [ThemePackage] {
     try loadPackages(in: [builtInRoot, userRoot].compactMap { $0 })
+  }
+
+  /// A deletion selection binds a user-library directory, not just a reusable theme ID.
+  /// Callers must revalidate it under ThemePackageLock immediately before mutation.
+  package func deletionTarget(for package: ThemePackage) throws -> ThemePackageDeletionTarget? {
+    let directory = package.packageURL.standardizedFileURL
+    guard let userRoot = userRoot?.standardizedFileURL,
+      directory.deletingLastPathComponent().path == userRoot.path,
+      !directory.lastPathComponent.hasPrefix(".")
+    else { return nil }
+
+    let builtInPath = builtInRoot.resolvingSymlinksInPath().standardizedFileURL.path
+    let directoryPath = directory.resolvingSymlinksInPath().standardizedFileURL.path
+    guard directoryPath != builtInPath,
+      !directoryPath.hasPrefix(builtInPath + "/"),
+      !builtInPath.hasPrefix(directoryPath + "/")
+    else { return nil }
+
+    // Reuse the no-symlink ancestor walk. A linked user root/package is not owned
+    // merely because discovery can read a valid manifest through it.
+    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    defer { Darwin.close(descriptor) }
+    var metadata = stat()
+    guard fstat(descriptor, &metadata) == 0 else {
+      throw PinnedFilesystemError(operation: "inspect theme directory", url: directory, code: errno)
+    }
+    return ThemePackageDeletionTarget(
+      themeID: package.id,
+      packageURL: directory,
+      device: metadata.st_dev,
+      inode: metadata.st_ino,
+      birthSeconds: metadata.st_birthtimespec.tv_sec,
+      birthNanoseconds: metadata.st_birthtimespec.tv_nsec
+    )
+  }
+
+  package func validateDeletionTarget(_ target: ThemePackageDeletionTarget) throws {
+    let current = try package(id: target.themeID)
+    guard try deletionTarget(for: current) == target else {
+      throw ThemeDiagnostic(
+        location: .init(file: target.packageURL),
+        message:
+          "The selected user theme changed or is protected. Reopen the picker and confirm again."
+      )
+    }
   }
 
   package func builtInPackage(id: String) throws -> ThemePackage? {

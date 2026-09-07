@@ -191,13 +191,24 @@ extension Theme {
         if !execution.succeeded { throw ExitCode.failure }
         return
       }
-      let content = try ThemeBrowserCommandLoader.live.load(
-        repository: repository,
-        stateRoot: stateRoot
-      )
+      let content = try await ThemePackageLock(root: stateRoot).withLock {
+        try ThemeBrowserCommandLoader.live.load(repository: repository, stateRoot: stateRoot)
+      }
       let launcher = ThemeBrowserApplyProcessLauncher.live
       try await MainActor.run {
-        let controller = try ThemeBrowserWindowController(content: content) { selection in
+        let controller = try ThemeBrowserWindowController(
+          content: content,
+          deleteSelection: { target in
+            await ThemeBrowserDeletionRunner.live.execute(
+              target: target, repository: repository, stateRoot: stateRoot
+            )
+          },
+          reloadContent: {
+            try await ThemePackageLock(root: stateRoot).withLock {
+              try ThemeBrowserCommandLoader.live.load(repository: repository, stateRoot: stateRoot)
+            }
+          }
+        ) { selection in
           try launcher.launch(selection: selection)
         }
         try controller.run()

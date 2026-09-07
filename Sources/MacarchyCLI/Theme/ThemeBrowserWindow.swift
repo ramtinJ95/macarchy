@@ -14,9 +14,10 @@ private final class ThemeBrowserWindow: NSWindow {
   }
 
   var navigate: ((Navigation) -> Void)?
+  var canDismiss: (() -> Bool)?
 
   override func cancelOperation(_ sender: Any?) {
-    close()
+    if canDismiss?() != false { close() }
   }
 
   override func sendEvent(_ event: NSEvent) {
@@ -180,10 +181,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 {
   static let windowTitle = "Macarchy Themes"
 
-  private let content: ThemeBrowserContent
+  private var content: ThemeBrowserContent { browserState.content }
   private let galleryLoader: ThemeBrowserGalleryLoader
   private let launchSelection:
     (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
+  private let deleteSelection:
+    @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome
+  private let reloadContent: @Sendable () async throws -> ThemeBrowserContent
 
   private var browserState: ThemeBrowserState
   private var previews: [ThemeBrowserPreview] = []
@@ -199,7 +203,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let backgroundImageCache = NSCache<NSString, NSImage>()
   private var applyProcess: ThemeBrowserApplyProcessLauncher.RunningProcess?
   private var applyTimer: Timer?
+  private var applyRefreshResult: ThemeBrowserAsyncResult<Result<ThemeBrowserContent, any Error>>?
   private var isApplying = false
+  private var isDeleting = false
+  private var isBusy: Bool { isApplying || isDeleting }
+  private var deletionResult: ThemeBrowserAsyncResult<ThemeBrowserDeletionOutcome>?
+  private var deletionTimer: Timer?
+  private var deletingThemeID: String?
 
   private let rootView = NSView()
   private let sidebar = NSStackView()
@@ -218,6 +228,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let previousBackgroundButton = NSButton(title: "Previous", target: nil, action: nil)
   private let nextBackgroundButton = NSButton(title: "Next", target: nil, action: nil)
   private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
+  private let deleteButton = NSButton(title: "Delete Theme", target: nil, action: nil)
   private let statusLabel = NSTextField(wrappingLabelWithString: "")
   private let keyboardHelp = NSTextField(
     labelWithString: "↑↓ theme   ←→ wallpaper   ⇧←→ preview   ↩ apply   esc close"
@@ -226,11 +237,15 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   init(
     content: ThemeBrowserContent,
     galleryLoader: ThemeBrowserGalleryLoader = .live,
+    deleteSelection:
+      @escaping @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome,
+    reloadContent: @escaping @Sendable () async throws -> ThemeBrowserContent,
     launchSelection:
       @escaping (ThemeBrowserSelection) throws -> ThemeBrowserApplyProcessLauncher.RunningProcess
   ) throws {
-    self.content = content
     self.galleryLoader = galleryLoader
+    self.deleteSelection = deleteSelection
+    self.reloadContent = reloadContent
     self.launchSelection = launchSelection
     browserState = ThemeBrowserState(content: content)
     backgroundImageCache.countLimit = 24
@@ -261,7 +276,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     window.titleVisibility = .hidden
     super.init(window: window)
     window.delegate = self
+    window.canDismiss = { [weak self] in self?.isDeleting == false }
     window.navigate = { [weak self] navigation in
+      guard self?.isBusy == false else { return }
       switch navigation {
       case .previousBackground:
         self?.moveBackground(by: -1)
@@ -305,7 +322,11 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   func windowDidResignKey(_ notification: Notification) {
-    if !isApplying { window?.close() }
+    if !isBusy { window?.close() }
+  }
+
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    !isDeleting
   }
 
   func windowWillClose(_ notification: Notification) {
@@ -314,6 +335,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundImageTask?.cancel()
     backgroundImageTimer?.invalidate()
     applyTimer?.invalidate()
+    deletionTimer?.invalidate()
   }
 
   func numberOfRows(in tableView: NSTableView) -> Int {
@@ -373,6 +395,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     textView: NSTextView,
     doCommandBy commandSelector: Selector
   ) -> Bool {
+    guard !isBusy else { return true }
     switch commandSelector {
     case #selector(NSResponder.moveDown(_:)):
       moveThemeSelection(by: 1)
@@ -434,7 +457,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   @objc private func applySelectedTheme(_ sender: Any?) {
-    guard !isApplying, let item = selectedItem else { return }
+    guard !isBusy, let item = selectedItem else { return }
     isApplying = true
     setControlsEnabled(false)
     statusLabel.textColor = item.package.semantic.accent.nsColor
@@ -459,19 +482,41 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   @objc private func checkApplyProcess(_ timer: Timer) {
-    guard let applyProcess else {
-      finishApply(timer: timer, status: nil)
-      return
+    guard applyProcess?.isRunning() != true else { return }
+    if let outcome = applyRefreshResult?.value() {
+      finishApply(timer: timer, status: applyProcess?.terminationStatus(), refreshed: outcome)
+    } else if applyRefreshResult == nil {
+      let result = ThemeBrowserAsyncResult<Result<ThemeBrowserContent, any Error>>()
+      applyRefreshResult = result
+      let reload = reloadContent
+      Task.detached(priority: .userInitiated) {
+        do {
+          result.complete(.success(try await reload()))
+        } catch {
+          result.complete(.failure(error))
+        }
+      }
     }
-    guard !applyProcess.isRunning() else { return }
-    finishApply(timer: timer, status: applyProcess.terminationStatus())
   }
 
-  private func finishApply(timer: Timer, status: Int32?) {
+  private func finishApply(
+    timer: Timer, status: Int32?, refreshed: Result<ThemeBrowserContent, any Error>
+  ) {
     timer.invalidate()
     applyTimer = nil
     applyProcess = nil
+    applyRefreshResult = nil
     isApplying = false
+    do {
+      refresh(try refreshed.get())
+    } catch {
+      browserState.markInventoryStale()
+      setControlsEnabled(true)
+      statusLabel.stringValue =
+        "Activation finished\(status.map { " (exit \($0))" } ?? ""); library refresh failed. Reopen the picker."
+      statusLabel.toolTip = String(describing: error)
+      return
+    }
     setControlsEnabled(true)
     guard let item = selectedItem else { return }
     if status == 0 {
@@ -484,6 +529,108 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
         "Theme activation failed\(status.map { " (exit \($0))" } ?? ""). See the test log for details."
       statusLabel.toolTip = "/tmp/macarchy-theme-browser-test.log"
     }
+  }
+
+  @objc private func deleteSelectedTheme(_ sender: Any?) {
+    guard !isBusy, let item = selectedItem, let target = browserState.deletionAvailability.target,
+      let window
+    else { return }
+    isDeleting = true
+    deletingThemeID = item.id
+    setControlsEnabled(false)
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = "Move \(item.displayName) to Trash?"
+    alert.informativeText =
+      "Theme: \(item.id)\n\(target.packageURL.path)\n\n"
+      + "The entire package directory will leave your theme library. You can restore it from Trash. "
+      + "Personal wallpapers outside this package and your configuration will not be changed."
+    alert.addButton(withTitle: "Cancel")
+    alert.addButton(withTitle: "Move to Trash")
+    alert.beginSheetModal(for: window) { [weak self] response in
+      guard let self else { return }
+      guard response == .alertSecondButtonReturn else {
+        self.finishDeletion(.cancelled)
+        return
+      }
+      self.statusLabel.stringValue = "Moving \(item.displayName) to Trash…"
+      let result = ThemeBrowserAsyncResult<ThemeBrowserDeletionOutcome>()
+      self.deletionResult = result
+      let delete = self.deleteSelection
+      Task.detached(priority: .userInitiated) {
+        result.complete(await delete(target))
+      }
+      self.deletionTimer = Timer.scheduledTimer(
+        timeInterval: 0.05,
+        target: self,
+        selector: #selector(self.checkDeletionResult(_:)),
+        userInfo: nil,
+        repeats: true
+      )
+    }
+  }
+
+  @objc private func checkDeletionResult(_ timer: Timer) {
+    guard let outcome = deletionResult?.value() else { return }
+    timer.invalidate()
+    deletionTimer = nil
+    deletionResult = nil
+    finishDeletion(outcome)
+  }
+
+  private func finishDeletion(_ outcome: ThemeBrowserDeletionOutcome) {
+    isDeleting = false
+    let deletedID = deletingThemeID ?? ""
+    deletingThemeID = nil
+    switch outcome {
+    case .cancelled:
+      statusLabel.stringValue = "Deletion cancelled. The theme was not changed."
+      statusLabel.toolTip = nil
+    case .failed(let reason):
+      statusLabel.stringValue = "Could not move the theme to Trash: \(reason)"
+      statusLabel.toolTip = reason
+      statusLabel.textColor = selectedItem?.package.semantic.error.nsColor
+    case .deleted(let content):
+      refresh(content)
+      statusLabel.stringValue =
+        "Moved \(deletedID) to Trash. Choose another theme or press Esc to close."
+      statusLabel.toolTip = nil
+    case .deletedButRefreshFailed(let reason):
+      refresh(content.removingTheme(id: deletedID))
+      browserState.markInventoryStale()
+      statusLabel.stringValue =
+        "Moved \(deletedID) to Trash, but library refresh failed. Reopen the picker."
+      statusLabel.toolTip = reason
+      statusLabel.textColor = selectedItem?.package.semantic.error.nsColor
+    }
+    setControlsEnabled(true)
+    window?.makeKeyAndOrderFront(nil)
+    window?.makeFirstResponder(searchField)
+  }
+
+  private func refresh(_ content: ThemeBrowserContent) {
+    galleryTask?.cancel()
+    galleryTimer?.invalidate()
+    galleryResult = nil
+    backgroundImageTask?.cancel()
+    backgroundImageTimer?.invalidate()
+    backgroundImageResult = nil
+    backgroundImageCache.removeAllObjects()
+    browserState.refresh(content: content, query: searchField.stringValue)
+    // Keep the post-delete picker usable when its old query only matched the
+    // removed package. Ordinary no-match searches retain their existing behavior.
+    if browserState.visibleItems.isEmpty {
+      searchField.stringValue = ""
+      browserState.updateSearch("")
+    }
+    tableView.reloadData()
+    if let row = browserState.visibleItems.firstIndex(where: {
+      $0.id == browserState.selectedThemeID
+    }) {
+      selectVisibleRow(row)
+      selectTheme(id: browserState.selectedThemeID)
+    }
+    updateCount()
   }
 
   private func configureContent(in window: NSWindow) {
@@ -585,6 +732,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     applyButton.bezelStyle = .rounded
     applyButton.controlSize = .small
     applyButton.keyEquivalent = "\r"
+    configureButton(deleteButton, action: #selector(deleteSelectedTheme(_:)))
     statusLabel.font = .systemFont(ofSize: 11)
     statusLabel.maximumNumberOfLines = 2
 
@@ -594,7 +742,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     let bottomSpacer = NSView()
     bottomSpacer.setContentHuggingPriority(.init(1), for: .horizontal)
     let bottomBar = NSStackView(views: [
-      keyboardHelp, bottomSpacer, applyButton,
+      keyboardHelp, bottomSpacer, deleteButton, applyButton,
     ])
     bottomBar.orientation = .horizontal
     bottomBar.alignment = .centerY
@@ -697,7 +845,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundLabel.textColor = item.package.semantic.mutedText.nsColor
     statusLabel.textColor = item.package.semantic.mutedText.nsColor
     keyboardHelp.textColor = item.package.semantic.mutedText.nsColor
-    statusLabel.stringValue = "Browsing is local. Only Apply changes the active theme."
+    statusLabel.stringValue = browserState.deletionAvailability.explanation
+    statusLabel.toolTip = browserState.deletionAvailability.explanation
+    deleteButton.isEnabled = !isBusy && browserState.deletionAvailability.target != nil
+    deleteButton.toolTip = browserState.deletionAvailability.explanation
     updateVisibleThemeRowPalette(item: item)
     previews = [item.generatedPreview]
     previewIndex = 0
@@ -951,6 +1102,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     searchField.isEnabled = enabled
     tableView.isEnabled = enabled
     applyButton.isEnabled = enabled
+    deleteButton.isEnabled = enabled && browserState.deletionAvailability.target != nil
     if let item = selectedItem {
       backgroundPicker.isEnabled = enabled && !item.backgrounds.isEmpty
       previousBackgroundButton.isEnabled = enabled && item.backgrounds.count > 1
