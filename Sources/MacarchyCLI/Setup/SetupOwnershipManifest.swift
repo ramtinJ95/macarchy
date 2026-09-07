@@ -55,8 +55,15 @@ extension SetupOwnershipManager {
       throw SetupOwnershipManifestValidationError.duplicateIntegrationIdentifiers
     }
     do {
+      var stepsByID: [String: ConsumerSetupPlan.Step]?
       for record in manifest.records {
-        try validateOwnershipRecord(record, context: context)
+        if stepsByID == nil, record.id != KeybindingProviderInspector.ownershipID {
+          stepsByID = Dictionary(
+            uniqueKeysWithValues: consumerSetupPlans(context: context).flatMap(\.steps).map {
+              ($0.id, $0)
+            })
+        }
+        try validateOwnershipRecord(record, context: context, stepsByID: stepsByID)
       }
     } catch {
       throw SetupOwnershipManifestValidationError.invalidRecord(error)
@@ -66,7 +73,8 @@ extension SetupOwnershipManager {
 
   func validateOwnershipRecord(
     _ record: SetupOwnershipRecord,
-    context: Context
+    context: Context,
+    stepsByID: [String: ConsumerSetupPlan.Step]? = nil
   ) throws {
     if record.id == KeybindingProviderInspector.ownershipID {
       try KeybindingProviderInspector.validateOwnershipRecord(record, context: context)
@@ -88,10 +96,14 @@ extension SetupOwnershipManager {
         "non-keybinding integration \(record.id) contains keybinding adoption evidence"
       )
     }
-    let steps = consumerSetupPlans(context: context).flatMap(\.steps)
+    let step =
+      if let stepsByID {
+        stepsByID[record.id]
+      } else {
+        consumerSetupPlans(context: context).flatMap(\.steps).first { $0.id == record.id }
+      }
     guard
-      let step = steps.first(where: { $0.id == record.id }),
-      let validate = step.validateOwnershipRecord
+      let validate = step?.validateOwnershipRecord
     else {
       throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
     }

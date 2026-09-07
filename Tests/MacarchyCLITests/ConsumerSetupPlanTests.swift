@@ -260,6 +260,16 @@ struct ConsumerSetupPlanTests {
       Set(records.map(\.kind))
         == Set([.regularFile, .symbolicLink, .jsonSelector])
     )
+
+    var document = try jsonObject(String(contentsOf: context.manifestURL, encoding: .utf8))
+    var entries = try #require(document["records"] as? [[String: Any]])
+    entries[0]["id"] = "unknown-first"
+    entries[1]["id"] = "unknown-second"
+    document["records"] = entries
+    try JSONSerialization.data(withJSONObject: document).write(to: context.manifestURL)
+    #expect(throws: SetupOwnershipError.invalidManifest("unknown integration unknown-first")) {
+      _ = try manager.readRecords(context: context)
+    }
   }
 
   @Test
