@@ -7,12 +7,29 @@ struct Theme: AsyncParsableCommand {
     abstract: "Inspect or select themes.",
     subcommands: [
       List.self, Set.self, Install.self, Next.self, Status.self, Get.self, Background.self,
-      Browse.self,
+      Browse.self, Screensaver.self,
     ]
   )
 }
 
 extension Theme {
+  struct Screensaver: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract:
+        "Prepare the chosen wallpaper's Photos screensaver folder without changing macOS settings."
+    )
+
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+
+    mutating func run() throws {
+      print(
+        try ScreenSaverImageStore(root: URL(filePath: stateRoot, directoryHint: .isDirectory))
+          .reconcile())
+    }
+  }
+
   struct ThemeRootOptions: ParsableArguments {
     @Option(help: "Built-in theme package directory.")
     var themesRoot: String?

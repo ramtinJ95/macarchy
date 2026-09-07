@@ -670,6 +670,49 @@ one. External personal wallpapers, configuration, and canonical active state
 are preserved. Closing or changing focus without either action changes nothing.
 The personal skhd configuration opens it with Cmd-Shift-T.
 
+### Enable wallpaper-following screensaver visuals
+
+Macarchy maintains a **stable Photos source folder** at
+`~/.config/macarchy/screensaver` (or `<state-root>/screensaver` for a custom state
+root). It contains one generated PNG derived from the chosen canonical wallpaper.
+Theme activation, background changes and `macarchy reconcile wallpaper` update
+that image automatically. The folder is an export, not another theme authority.
+
+**Select the native screensaver once:**
+
+1. Run `macarchy theme screensaver` to prepare the folder from the current theme.
+   This command only exports the image; it does not activate a theme, change your
+   desktop, select a saver, or reconcile other applications. Use `--state-root`
+   if your canonical state is elsewhere. If no theme is active, activate one first.
+2. Open **System Settings → Wallpaper → Screen Saver** and choose **Custom**.
+3. Under **Other**, select **Photos**, then **Options → Choose Folder**.
+4. In the folder picker, press **Command–Shift–G** and enter
+   `~/.config/macarchy/screensaver`. Select the folder and confirm the options.
+5. Click **Preview**. It should show your chosen wallpaper.
+
+macOS's **Automatic** screensaver option did not inherit a static Kanagawa
+wallpaper on the tested macOS 26.6.2 host; use the Photos configuration above.
+No supported programmatic system-screensaver selector was identified, so
+Macarchy does not change that selection or write undocumented macOS preferences.
+Once selected, the native Photos saver picked up an atomically replaced image on
+the next Preview without reselecting its folder. Live repaint of an already-running
+saver is not guaranteed; no saver process is restarted or kept resident by Macarchy.
+
+To **opt out**, choose any other screensaver or Photos source in System Settings.
+Macarchy preserves that choice during theme changes. To **return to inheritance**,
+select Photos and the Macarchy folder again. Do not add personal images to this
+generated folder: unexpected contents or unsafe links cause an explicit error,
+not deletion or adoption. Themes without backgrounds leave the previous exported
+image and desktop wallpaper unchanged. Status/doctor checks the exported image,
+not the native saver selection or pixels on screen.
+
+The native **Control–Command–Q lock background** followed the desktop wallpaper
+in the supported-host check. M5.5 supports that inherited appearance only, not an
+independent lock image. Locking does not promise to start the Photos saver.
+Macarchy leaves authentication, password/idle policy, startup/login and FileVault
+visuals untouched; this setup does not require a custom saver plugin or new
+permissions.
+
 Built-in and imported themes may expose any number of validated PNG, JPEG, and
 WebP backgrounds. Personal files can be appended without replacing package
 choices by using schema-2 configuration; they remain local and are copied into
