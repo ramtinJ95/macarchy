@@ -2,10 +2,49 @@ import Darwin
 import Foundation
 import ThemeCore
 
-/// Exclusive file publication and claimed removal shared by Pi, tuicr, and Codex.
+/// Ordinary-file inspection and authenticated mutation shared by Pi, tuicr, and Codex.
 struct EnvironmentPresetFilesystem: Sendable {
   let configurationLabel: String
   let residueLabel: String
+  let nonRegularMessage: String
+
+  func read(_ url: URL) throws -> Data? {
+    var metadata = stat()
+    guard lstat(url.path, &metadata) == 0 else {
+      if errno == ENOENT { return nil }
+      throw EnvironmentLifecycleError.system("inspect \(configurationLabel)", url, errno)
+    }
+    guard metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1 else {
+      throw EnvironmentLifecycleError.blocked("\(nonRegularMessage): \(url.path)")
+    }
+    return try BoundedRegularFile.read(at: url, maximumSize: 1_048_576).data
+  }
+
+  func utf8(_ data: Data, at url: URL) throws -> String {
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw EnvironmentLifecycleError.blocked("\(configurationLabel) is not UTF-8: \(url.path)")
+    }
+    return text
+  }
+
+  func replace(
+    _ data: Data, current: Data, at url: URL, replacementName: String,
+    homeDirectory: URL, label: String, failureLabel: String? = nil
+  ) throws {
+    guard data != current else { return }
+    do {
+      try SetupOwnershipManager().replaceRegularFile(
+        target: url,
+        replacementName: replacementName,
+        homeDirectory: homeDirectory,
+        expectedDigest: sha256Digest(current),
+        data: data,
+        label: label
+      )
+    } catch {
+      throw EnvironmentLifecycleError.blocked("cannot replace \(failureLabel ?? label): \(error)")
+    }
+  }
 
   func create(_ data: Data, at url: URL, replacementName: String) throws {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
@@ -34,6 +73,14 @@ struct EnvironmentPresetFilesystem: Sendable {
     removeTemporary = false
     guard fsync(parent) == 0 else {
       throw EnvironmentLifecycleError.system("sync \(configurationLabel) parent", url, errno)
+    }
+  }
+
+  func claimAndRemove(at url: URL, replacementName: String, expected: Data) throws {
+    try claimAndRemove(at: url, replacementName: replacementName) { residue in
+      guard try read(residue) == expected else {
+        throw EnvironmentLifecycleError.drift("claimed \(configurationLabel)")
+      }
     }
   }
 

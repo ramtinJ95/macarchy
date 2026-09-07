@@ -8,12 +8,80 @@ import Testing
 struct EnvironmentPresetFilesystemTests {
   private static let filesystems = [
     EnvironmentPresetFilesystem(
-      configurationLabel: "Pi settings", residueLabel: "Pi transaction residue"),
+      configurationLabel: "Pi settings", residueLabel: "Pi transaction residue",
+      nonRegularMessage: "Pi settings are not an ordinary file"),
     EnvironmentPresetFilesystem(
-      configurationLabel: "tuicr configuration", residueLabel: "tuicr transaction residue"),
+      configurationLabel: "tuicr configuration", residueLabel: "tuicr transaction residue",
+      nonRegularMessage: "tuicr configuration is not an ordinary file"),
     EnvironmentPresetFilesystem(
-      configurationLabel: "Codex configuration", residueLabel: "Codex transaction residue"),
+      configurationLabel: "Codex configuration", residueLabel: "Codex transaction residue",
+      nonRegularMessage: "Codex configuration is not an ordinary file"),
   ]
+
+  @Test(arguments: filesystems)
+  func readsRejectLinkedAndOversizedFiles(_ filesystem: EnvironmentPresetFilesystem) throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    #expect(try filesystem.read(fixture.target) == nil)
+    try fixture.bytes.write(to: fixture.target)
+    #expect(try filesystem.read(fixture.target) == fixture.bytes)
+    try FileManager.default.linkItem(at: fixture.target, to: fixture.residue)
+    do {
+      _ = try filesystem.read(fixture.target)
+      Issue.record("multiply linked configuration must be rejected")
+    } catch let error as EnvironmentLifecycleError {
+      #expect(
+        error.description
+          == EnvironmentLifecycleError.blocked(
+            "\(filesystem.nonRegularMessage): \(fixture.target.path)"
+          ).description)
+    }
+    try FileManager.default.removeItem(at: fixture.residue)
+    try FileManager.default.createSymbolicLink(
+      at: fixture.residue, withDestinationURL: fixture.target)
+    #expect(throws: EnvironmentLifecycleError.self) { _ = try filesystem.read(fixture.residue) }
+    try Data(count: BoundedRegularFile.maximumSize + 1).write(to: fixture.target)
+    #expect(throws: BoundedRegularFileError.tooLarge(BoundedRegularFile.maximumSize)) {
+      _ = try filesystem.read(fixture.target)
+    }
+    #expect(throws: EnvironmentLifecycleError.self) {
+      _ = try filesystem.utf8(Data([0xff]), at: fixture.target)
+    }
+  }
+
+  @Test(arguments: filesystems)
+  func replacementPreservesNoOpIdentityAndAuthenticatesClaimedBytes(
+    _ filesystem: EnvironmentPresetFilesystem
+  ) throws {
+    let fixture = try Fixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try filesystem.create(
+      fixture.bytes, at: fixture.target, replacementName: fixture.replacementName)
+    var original = stat()
+    try #require(lstat(fixture.target.path, &original) == 0)
+    try filesystem.replace(
+      fixture.bytes, current: fixture.bytes, at: fixture.target,
+      replacementName: fixture.replacementName, homeDirectory: fixture.root, label: "test selector")
+    var unchanged = stat()
+    try #require(lstat(fixture.target.path, &unchanged) == 0)
+    #expect(unchanged.st_ino == original.st_ino)
+
+    let replacement = Data("updated\n".utf8)
+    try filesystem.replace(
+      replacement, current: fixture.bytes, at: fixture.target,
+      replacementName: fixture.replacementName, homeDirectory: fixture.root, label: "test selector")
+    #expect(try filesystem.read(fixture.target) == replacement)
+    #expect(throws: EnvironmentLifecycleError.self) {
+      try filesystem.claimAndRemove(
+        at: fixture.target, replacementName: fixture.replacementName, expected: fixture.bytes)
+    }
+    #expect(try filesystem.read(fixture.target) == nil)
+    #expect(try filesystem.read(fixture.residue) == replacement)
+    try FileManager.default.moveItem(at: fixture.residue, to: fixture.target)
+    try filesystem.claimAndRemove(
+      at: fixture.target, replacementName: fixture.replacementName, expected: replacement)
+    #expect(try filesystem.read(fixture.residue) == nil)
+  }
 
   @Test(arguments: filesystems)
   func publishesPrivateBytesAndValidatesBeforeRemoval(_ filesystem: EnvironmentPresetFilesystem)
