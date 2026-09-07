@@ -96,7 +96,7 @@ private struct EffectiveKeybindingsListReport: Encodable {
   let process: KeybindingProcessInspection
   let bindings: [EffectiveKeybindingListRow]
   let disabledDefaults: [DisabledKeybindingListRow]
-  let diagnostics: [EffectiveKeybindingsListDiagnostic]
+  let diagnostics: [KeybindingCompositionDiagnostic]
 
   init(_ state: KeybindingEffectiveBehavior) {
     status = state.status
@@ -110,11 +110,11 @@ private struct EffectiveKeybindingsListReport: Encodable {
     process = state.process
     bindings = state.presentedBindings.map(EffectiveKeybindingListRow.init)
     disabledDefaults = state.presentedDisabledDefaults.map(DisabledKeybindingListRow.init)
-    diagnostics = state.configuration.diagnostics.map(EffectiveKeybindingsListDiagnostic.init)
+    diagnostics = state.configuration.diagnostics
   }
 
   var succeeded: Bool {
-    !diagnostics.contains { $0.severity == "error" }
+    !diagnostics.contains { $0.severity == .error }
       && generationStatus != KeybindingGenerationStatus.invalid.rawValue
       && status != .blocked
       && status != .recoveryRequired
@@ -204,28 +204,10 @@ private struct DisabledKeybindingListRow: Encodable {
   }
 }
 
-private struct EffectiveKeybindingsListDiagnostic: Encodable {
-  let code: String
-  let severity: String
-  let source: String
-  let line: Int?
-  let relatedLine: Int?
-  let identity: String?
-  let message: String
-
-  init(_ diagnostic: KeybindingCompositionDiagnostic) {
-    code = diagnostic.code
-    severity = diagnostic.severity.rawValue
-    source = diagnostic.source
-    line = diagnostic.line
-    relatedLine = diagnostic.relatedLine
-    identity = diagnostic.identity
-    message = diagnostic.message
-  }
-
+extension KeybindingCompositionDiagnostic {
   var humanDescription: String {
     let location = line.map { "\(source):\($0)" } ?? source
-    return "\(location): \(severity) [\(code)]: \(message)"
+    return "\(location): \(severity.rawValue) [\(code)]: \(message)"
   }
 }
 

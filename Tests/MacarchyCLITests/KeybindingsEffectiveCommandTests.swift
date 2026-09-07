@@ -7,6 +7,35 @@ import Testing
 
 struct KeybindingsEffectiveCommandTests {
   @Test
+  func listAndStatusPreserveDiagnosticJSONAndTheirOwnTextPrefix() throws {
+    let fixture = try EffectiveCommandFixture()
+    defer { fixture.remove() }
+    try "cmd + hyper - x : unsupported\n".write(
+      to: fixture.profile.deletingLastPathComponent().appending(path: "personal.skhdrc"),
+      atomically: true, encoding: .utf8)
+    let behavior = fixture.inspect()
+    let diagnostic = try #require(behavior.configuration.diagnostics.first)
+    let list = KeybindingsListCommandRunner.live
+    let status = KeybindingsStatusCommandRunner()
+    let listJSON = try jsonObject(list.execute(effectiveState: behavior, json: true).output)
+    let statusJSON = try jsonObject(status.execute(behavior: behavior, json: true).output)
+    let listDiagnostics = try #require(listJSON["diagnostics"] as? NSArray)
+    #expect(listDiagnostics == statusJSON["diagnostics"] as? NSArray)
+    let value = try #require(listDiagnostics.firstObject as? [String: Any])
+    #expect(value["severity"] as? String == diagnostic.severity.rawValue)
+    #expect(value["code"] as? String == diagnostic.code)
+    #expect(value["line"] as? Int == diagnostic.line)
+    #expect(value["relatedLine"] == nil)
+    #expect(value["identity"] == nil)
+    #expect(
+      try list.execute(effectiveState: behavior, json: false).output
+        .contains("\n\(diagnostic.humanDescription)"))
+    #expect(
+      try status.execute(behavior: behavior, json: false).output
+        .contains("\n- \(diagnostic.humanDescription)"))
+  }
+
+  @Test
   func cleanStateAgreesAcrossInspectionPlanApplyAndStatus() throws {
     let fixture = try EffectiveCommandFixture()
     defer { fixture.remove() }

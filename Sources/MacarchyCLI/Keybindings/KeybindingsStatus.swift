@@ -21,7 +21,7 @@ private struct KeybindingsStatusReport: Encodable {
   let transaction: KeybindingTransactionInspection
   let process: KeybindingProcessInspection
   let lifecycleEvidence: KeybindingLifecycleEvidenceInspection
-  let diagnostics: [KeybindingsStatusDiagnostic]
+  let diagnostics: [KeybindingCompositionDiagnostic]
 
   init(_ behavior: KeybindingEffectiveBehavior) {
     outcome = behavior.status
@@ -31,7 +31,7 @@ private struct KeybindingsStatusReport: Encodable {
     transaction = behavior.transaction
     process = behavior.process
     lifecycleEvidence = behavior.lifecycleEvidence
-    diagnostics = behavior.configuration.diagnostics.map(KeybindingsStatusDiagnostic.init)
+    diagnostics = behavior.configuration.diagnostics
   }
 
   var succeeded: Bool { outcome == .converged }
@@ -52,7 +52,7 @@ private struct KeybindingsStatusReport: Encodable {
     ]
     if !diagnostics.isEmpty {
       lines.append("Diagnostics:")
-      lines.append(contentsOf: diagnostics.map(\.humanDescription))
+      lines.append(contentsOf: diagnostics.map { "- \($0.humanDescription)" })
     }
     return lines.joined(separator: "\n")
   }
@@ -80,30 +80,5 @@ private struct KeybindingsStatusGeneration: Encodable {
     case .invalid:
       message = behavior.generation.message ?? "Current generated keybinding state is invalid."
     }
-  }
-}
-
-private struct KeybindingsStatusDiagnostic: Encodable {
-  let code: String
-  let severity: String
-  let source: String
-  let line: Int?
-  let relatedLine: Int?
-  let identity: String?
-  let message: String
-
-  init(_ diagnostic: KeybindingCompositionDiagnostic) {
-    code = diagnostic.code
-    severity = diagnostic.severity.rawValue
-    source = diagnostic.source
-    line = diagnostic.line
-    relatedLine = diagnostic.relatedLine
-    identity = diagnostic.identity
-    message = diagnostic.message
-  }
-
-  var humanDescription: String {
-    let location = line.map { "\(source):\($0)" } ?? source
-    return "- \(location): \(severity) [\(code)]: \(message)"
   }
 }
