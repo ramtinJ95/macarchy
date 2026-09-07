@@ -69,6 +69,9 @@ struct EnvironmentConfigurationTests {
     )
     #expect(try artifact("kitty/kitty.conf", in: first).contains("state/adapters/kitty.conf"))
     #expect(try !artifact("kitty/kitty.conf", in: first).contains("allow_remote_control"))
+    #expect(
+      try artifact("kitty/kitty.conf", in: first).contains(
+        "hide_window_decorations titlebar-only\n"))
     let zsh = try artifact("zsh/.zshrc", in: first)
     #expect(zsh.contains("export EZA_CONFIG_DIR=\"$HOME/.config/eza\""))
     #expect(zsh.contains("function y()"))
@@ -167,11 +170,13 @@ struct EnvironmentConfigurationTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let kitty = root.appending(path: "kitty", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: kitty, withIntermediateDirectories: true)
-    try "include bindings.conf\nmap cmd+k clear_terminal scroll active\n".write(
-      to: kitty.appending(path: "kitty.conf"),
-      atomically: true,
-      encoding: .utf8
-    )
+    try
+      "hide_window_decorations titlebar-and-corners\ninclude bindings.conf\nmap cmd+k clear_terminal scroll active\n"
+      .write(
+        to: kitty.appending(path: "kitty.conf"),
+        atomically: true,
+        encoding: .utf8
+      )
     try "map cmd+enter new_window\n".write(
       to: kitty.appending(path: "bindings.conf"),
       atomically: true,
@@ -231,6 +236,9 @@ struct EnvironmentConfigurationTests {
     #expect(
       try artifact("kitty/kitty.conf", in: composition).contains("include override/kitty.conf")
     )
+    #expect(
+      try artifact("kitty/override/kitty.conf", in: composition)
+        .contains("hide_window_decorations titlebar-and-corners\n"))
     #expect(try artifact("zsh/.zshrc", in: composition).contains("export EDITOR=\"vim\""))
     #expect(try artifact("zsh/.zshrc", in: composition).hasSuffix("alias gs='git status'\n"))
     #expect(try artifact("starship/behavior.toml", in: composition).contains("style = \"green\""))

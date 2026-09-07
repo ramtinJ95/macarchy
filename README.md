@@ -357,6 +357,11 @@ and Atuin changes on the next history interface. Existing shells keep their
 already-loaded startup state; `environment doctor` launches a fresh login shell
 and reports trusted hook behavior as semantically unverifiable.
 
+Kitty defaults hide the title bar but retain native rounded corners
+(`hide_window_decorations titlebar-only`). Window-decoration changes need a fresh
+Kitty process for reliable results: Kitty leaves their reload behavior undefined.
+Native Kitty overrides can still select a different decoration style.
+
 ## Managed desktop shell
 
 The default desktop outcome combines no-SA yabai tiling, the authoritative
@@ -706,7 +711,7 @@ macarchy desktop borders preview --dry-run --json
 macarchy desktop borders preview --seconds 30
 ```
 
-The preview uses the active semantic accent for a four-point rounded focus ring,
+The preview uses the active semantic accent for a six-point rounded focus ring,
 transparent inactive/background colors, Retina rendering and explicit
 `ax_focus=off`. It requests no Accessibility grant. Focus/Spaces/fullscreen and
 display compatibility still require supported-machine visual qualification;

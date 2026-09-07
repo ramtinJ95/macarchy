@@ -94,7 +94,7 @@ struct BordersPalette: Equatable {
   var arguments: [String] {
     [
       "active_color=0xff\(accent.dropFirst())", "inactive_color=0x00000000",
-      "background_color=0x00000000", "width=4.0", "style=round", "hidpi=on", "ax_focus=off",
+      "background_color=0x00000000", "width=6.0", "style=round", "hidpi=on", "ax_focus=off",
     ]
   }
 
