@@ -2,51 +2,47 @@
 
 https://github.com/user-attachments/assets/3a88e8f8-7213-4313-a2b7-4075d1570a4a
 
-Macarchy makes a macOS desktop follow one coherent theme. A single command
-selects the canonical palette, regenerates application themes, and updates each
-supported surface at its best proven boundary: live when possible, otherwise on
-the next invocation or restart.
+An opinionated macOS developer environment inspired by
+[Omarchy](https://omarchy.org/): a tiling desktop, coordinated themes, useful
+developer tools, and a portable configuration you can reuse on another Mac.
 
-Macarchy is independently authored and inspired by
-[Omarchy](https://omarchy.org/). It is not an official port, a dotfile bundle,
-or a general application installer.
+Macarchy brings the pieces together through one CLI. Review the setup, keep the
+defaults you want, and change your environment without maintaining a pile of
+copied configuration files. It is independently authored, not an official port
+or a replacement for your dotfile manager.
 
-The current stable release is
-[v0.7.1](https://github.com/ramtinJ95/macarchy/releases/tag/v0.7.1).
-See the [changelog](CHANGELOG.md) for release details.
+> **Status:** actively developed for Apple Silicon on macOS 26. This README
+> describes the development branch. The latest Homebrew release is
+> [v0.7.1](https://github.com/ramtinJ95/macarchy/releases/tag/v0.7.1); expanded
+> package setup, managed focus rings, picker deletion, and screensaver integration
+> are not in that release yet. See [release history](CHANGELOG.md), or
+> [build from source](#development) to try the current code.
 
-## What it does
+## What you get
 
-- Keeps one authoritative active theme under `~/.config/macarchy`.
-- Ships Catppuccin Mocha, Tokyo Night, and Kanagawa Wave themes.
-- Safely installs compatible Omarchy themes from public GitHub repositories
-  without running repository-provided code.
-- Renders native configuration for the terminal, shell tools, TUIs, editor,
-  status bar, wallpaper, and macOS appearance.
-- Reconciles supported applications without hiding failures or restart limits.
-- Diagnoses canonical state, generated artifacts, application seams, and stale
-  reconciliation results.
-- Plans package, configuration, service, permission, and ownership changes
-  before mutation.
-- Records managed changes so teardown can reverse only what Macarchy created.
+- **A coordinated desktop:** yabai tiling, skhd shortcuts, a Space-aware
+  SketchyBar, and a theme-colored JankyBorders focus ring.
+- **A ready-to-use terminal environment:** Kitty, zsh, Starship, Atuin, a
+  LazyVim-based Neovim configuration, and themed bat, eza, btop, and Yazi.
+- **One theme across your tools:** built-in palettes and wallpapers, a native
+  theme browser, remembered background choices, and compatible Omarchy imports.
+- **A useful package baseline:** developer tools and applications installed
+  through Homebrew, with personal additions and individual opt-outs.
+- **Portable choices:** a small TOML profile plus native override files, rather
+  than a snapshot of one machine. Keep them in your own dotfile workflow.
+- **Changes you can inspect:** guided setup, read-only plans, explicit approval
+  before taking over existing configuration, status, diagnostics, and teardown.
 
-Current integrations include macOS appearance, wallpaper, Kitty, SketchyBar,
-bat, eza, btop, Yazi, Atuin, Neovim, Starship, Pi, Herdr, tuicr, Codex CLI, and
-optional Spicetify support. Macarchy also generates manual Slack theme imports.
-
-## Requirements
-
-- Apple Silicon
-- macOS 26
-- Swift 6 for development builds
-
-Macarchy runs with normal SIP. It does not require yabai's scripting addition,
-Developer ID signing, notarization, an Apple Developer account, or telemetry.
+Optional integrations for **Codex CLI, Herdr, Pi, tuicr, Spicetify, and Slack**
+are off by default. Installing an application does not enable its integration:
+the standard package set includes Herdr, Spotify, and Slack independently.
 
 ## Install
 
-Macarchy is distributed through the personal Homebrew tap. Homebrew 6 requires
-an explicit trust decision for third-party formulae:
+You need **Apple Silicon, macOS 26, and [Homebrew](https://brew.sh/)**.
+Intel and older macOS versions are not currently supported.
+
+Review the third-party tap before granting Homebrew's formula trust:
 
 ```sh
 brew tap ramtinj95/tap
@@ -57,951 +53,155 @@ HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
 macarchy setup guided
 ```
 
-The formula installs the immutable arm64 release archive and its bundled
-themes, normalized-theme contract, changelog, and license. Guided setup creates
-a sparse portable profile, shows the unified plan, and asks before adoption,
-dependency installation, or provider mutation. The profile-driven plan remains
-read-only: it reports selected providers, missing packages, configuration and
-service actions, permissions, adoption evidence, and manual boundaries.
+The Homebrew controls avoid unrelated automatic upgrades and cleanup during
+Macarchy installation. Guided setup offers the curated defaults and opt-outs,
+saves a small profile, then asks before installing missing packages, adopting
+existing configuration, or applying the setup.
 
-## Try it from source
+**Already have a profile?** Use `macarchy setup plan --profile /path/to/profile.toml`
+and the [profile-driven workflow](#make-it-yours) instead. Guided setup will not
+overwrite an existing profile.
+
+Some steps remain yours: trust for selected third-party packages, Accessibility
+for yabai/skhd, and Automation approval for macOS appearance control. The plan
+and `macarchy setup doctor` report prerequisites. Pi, when selected, requires
+manual installation with `npm install --global @earendil-works/pi-coding-agent`.
+
+Macarchy keeps **normal SIP**, does not use yabai's scripting addition, and
+does not grant permissions for you. It sends no telemetry. Homebrew owns package
+installers and dependencies; their effects are not rolled back with configuration.
+
+## Everyday use
 
 ```sh
-swift build
-swift run macarchy --version
-swift run macarchy theme list
-swift run macarchy theme set catppuccin-mocha --dry-run
-swift run macarchy theme set catppuccin-mocha
-swift run macarchy theme status
-```
-
-Useful commands:
-
-```sh
+macarchy theme browse                 # Preview themes and backgrounds, then Apply
 macarchy theme list
-macarchy theme browse
-macarchy theme background list <theme-id> [--state-root <path>]
-macarchy theme background current [--state-root <path>]
-macarchy theme background set <background-id> [--dry-run]
-macarchy theme background next [--dry-run]
-macarchy theme set <theme-id> [--dry-run]
-macarchy theme next [--dry-run]
-macarchy theme install <github-url> [--dry-run] [--json]
-macarchy theme status [--json]
-macarchy theme get slack
-macarchy keybindings plan [--profile <path>] [--state-root <path>] [--json]
-macarchy keybindings apply [--profile <path>] [--adopt <evidence-digest>] [--dry-run] [--json]
-macarchy keybindings status [--profile <path>] [--state-root <path>] [--json]
-macarchy keybindings list [--json] [--skhd-config <path>] [--catalog <path>]
-macarchy keybindings list --effective [--profile <path>] [--state-root <path>] [--json]
-macarchy keybindings doctor [--json] [--skhd-config <path>] [--catalog <path>]
-macarchy keybindings doctor --effective [--profile <path>] [--state-root <path>] [--json]
-macarchy keybindings show [--skhd-config <path>] [--catalog <path>] [--state-root <path>]
-macarchy keybindings show --effective [--profile <path>] [--state-root <path>]
-macarchy desktop plan [--profile <path>] [--json]
-macarchy desktop apply [--profile <path>] [--dry-run] [--json]
-macarchy desktop status [--profile <path>] [--json]
-macarchy desktop doctor [--profile <path>] [--json]
-macarchy desktop teardown [--dry-run] [--json]
-macarchy environment plan [--profile <path>] [--state-root <path>] [--json]
-macarchy environment apply [--profile <path>] [--adopt <evidence-digest>] [--dry-run] [--json]
-macarchy environment status [--profile <path>] [--json]
-macarchy environment doctor [--profile <path>] [--json]
-macarchy environment teardown [--dry-run] [--json]
-macarchy reconcile [adapter ...] [--dry-run]
-macarchy doctor [--json]
-macarchy setup guided [--output-profile <path>] [--machine-profile <path>]
-macarchy setup plan [--profile <path>] [--machine-profile <path>] [--state-root <path>] [--json]
-macarchy setup apply [--profile <path>] [--machine-profile <path>] [--approve-packages <digest>] [--adoption-file <path>] [--yabai-adopt <digest>] [--keybindings-adopt <digest>] [--sketchybar-adopt <digest>] [--environment-adopt <digest>] [--json]
-macarchy setup status [--profile <path>] [--machine-profile <path>] [--json]
-macarchy setup doctor [--profile <path>] [--machine-profile <path>] [--json]
-macarchy setup teardown [--profile <path>] [--machine-profile <path>] [--dry-run] [--json]
-macarchy teardown [--dry-run] [--json]
-macarchy update status [--json]
-macarchy update check [--json]
-macarchy update
+macarchy theme set kanagawa-wave
+macarchy theme next
+macarchy theme background next
+macarchy keybindings show --effective # Search the managed shortcut list
+macarchy setup status
+macarchy setup doctor
 ```
 
-Development builds find bundled themes from the checkout containing `.build`.
-Installed builds resolve resources relative to the executable, so commands do
-not depend on the current working directory. `--themes-root`, `--state-root`,
-and consumer-specific path options are available for development and testing.
-
-## Managed daily tool environment
-
-The `environment` lifecycle manages M3's Kitty, zsh, Starship, Atuin, Neovim,
-and daily TUI environment as one outcome. `plan` composes package-owned defaults
-with the portable profile,
-reports selected-package prerequisites, provider ownership, exact artifacts,
-and one aggregate adoption digest without mutation. `apply` publishes one
-immutable generation, installs stable provider bridges, reconciles the active
-theme, and verifies a fresh login shell before finalizing.
-
-Review existing configuration before adopting it:
-
-```sh
-macarchy environment plan --profile /path/to/profile.toml --json
-macarchy environment apply \
-  --profile /path/to/profile.toml \
-  --adopt 'sha256:digest-from-the-reviewed-plan'
-macarchy environment status --profile /path/to/profile.toml
-macarchy environment doctor --profile /path/to/profile.toml
-```
-
-The digest covers every selected external entry, lexical link destination,
-retained identity and metadata, Kitty inventory, provider selection, native
-inputs, and rendered artifacts. Apply recaptures that evidence before changing
-any entry. If the plan reports no adoption requirement, omit `--adopt`.
-
-All curated providers are enabled when the profile is absent. Roles can be disabled
-without Macarchy touching their external configuration:
-
-```toml
-schema_version = 1
-
-[terminal]
-provider = "kitty" # or "disabled"
-
-[shell]
-provider = "zsh" # or "disabled"
-
-[prompt]
-provider = "starship" # or "disabled"
-
-[history]
-provider = "atuin" # or "disabled"
-
-[editor]
-provider = "neovim" # or "disabled"
-```
-
-Optional presets are closed, typed opt-ins and remain disabled when the profile
-is absent. Codex CLI, Herdr, Pi, Slack, Spicetify, and tuicr integrations are selected
-independently:
-
-```toml
-[presets]
-codex = true
-herdr = true
-pi = true
-slack = true
-spicetify = true
-tuicr = true
-```
-
-Selected Spicetify requires `spicetify-cli` 2.44.0 or newer and a Spotify app
-with a parseable bundle version. Missing dependencies use the approved
-Homebrew formula and cask; compatible existing installations remain external.
-After reviewed adoption of only `current_theme` and `color_scheme`, Macarchy
-owns those selectors and an absent exact `Themes/text/color.ini` link. A
-complete exact Stow tuple remains external and unclaimed. Refresh uses
-`spicetify --no-restart refresh`: Spotify is never opened, quit, signalled, or
-restarted. A running client reports `restart_required`; a closed client remains
-closed and receives the palette on its next launch. Backup/apply/restore remain
-manual Spicetify operations.
-
-Selected Slack requires the official app at version 4.51.191 or newer and a
-valid renderer-v2 four-color canonical payload. Apply changes no Slack state;
-it publishes only selection authority and reports `manual_required` with the
-exact payload and per-workspace import path. Disable and teardown remove only
-that authority. `macarchy theme get slack` remains available even when the
-preset is disabled.
-
-Selected Codex CLI uses the approved official Homebrew `codex` cask when the
-command is missing. A compatible pre-existing `/opt/homebrew/bin/codex`,
-including an npm-provided binary at that path, remains external and unclaimed.
-Macarchy requires exact `codex-cli X.Y.Z` version output at or above 0.151.0,
-with no upper cap, before configuration mutation. `environment apply` owns only
-`theme = "macarchy-current"` under the canonical `[tui]` table in
-`~/.codex/config.toml` and
-`~/.codex/themes/macarchy-current.tmTheme`. It preserves every unrelated byte,
-including Codex rewrites, and restores an adopted divergent selector at its
-exact original boundary. Authentication, sessions, project trust, MCP servers,
-plugins, hooks, caches, histories, and all other Codex state remain external.
-A complete personal Stow topology—with an external `config.toml` link, a
-separate external `themes` directory link, and the nested exact theme
-link—remains `external_exact` and is never written through or adopted; partial
-or divergent external tuples block. Codex loads theme changes only in a fresh
-TUI launch, so apply and theme reconciliation report `restart_required` and
-never restart a running session. `macarchy setup plan` reports a selected
-missing cask while leaving Codex integration configuration to `environment apply`.
-
-Selected Herdr uses the approved official Homebrew `herdr` formula when the
-command is missing. A compatible pre-existing `~/.local/bin/herdr` remains
-external and unclaimed. Macarchy requires exact `herdr X.Y.Z` version output at
-or above 0.8.0, with no upper cap. `environment apply` owns only
-`[theme].name` and the established 16 keys under `[theme.custom]` in the
-canonical `~/.config/herdr/config.toml`. The three optional fields introduced
-in Herdr 0.8.2 are deliberately outside that contract; those and any newer
-optional theme fields keep Herdr's defaults, so Macarchy does not claim a
-complete custom palette beyond its 16 managed tokens. Existing unrelated bytes
-and provider rewrites are preserved. A reviewed `~/.config/herdr` directory
-symlink is the sole Stow exception: Macarchy preserves the lexical directory
-symlink and writes the resolved regular `config.toml` target atomically. Other
-symlink topologies block. A complete authenticated older Herdr theme journal is
-migrated into aggregate ownership and its exact Catppuccin selector boundary is
-restored on disable; partial, stale, or unauthenticated evidence blocks.
-
-Herdr's configuration path cannot be overridden while this preset is selected:
-`HERDR_CONFIG_PATH` is unsupported because Macarchy cannot inspect or prove
-ownership of a second live configuration. A running Herdr server must return
-the exact successful reload result with no diagnostics; partial or ambiguous
-responses fail and roll the environment change back. A stopped server reports
-that the configuration will take effect on next launch. Macarchy never starts,
-stops, restarts, configures, or otherwise owns the Herdr service. The unified
-setup plan reports a selected missing formula while leaving Herdr configuration
-to `environment apply`.
-
-Pi is a manual prerequisite: install it yourself with
-`npm install --global @earendil-works/pi-coding-agent`. Macarchy reports that
-instruction only and never executes npm. Selected Pi must report a parseable
-version of at least 0.84.3; there is no upper version cap. The lifecycle owns
-only the root `theme` member in `~/.pi/agent/settings.json` and the watched
-`~/.pi/agent/themes/macarchy-current.json` link. It preserves every unrelated
-settings byte and all Pi conversations, credentials, extensions, models,
-sessions, caches, and other private state. Pi 0.84.4 watches replacement of that
-directory entry, not replacement of the stable generated target, and exposes no
-external reload API. When Macarchy owns the link, or a complete older setup
-record owns it, theme reconciliation atomically refreshes the watched entry and
-reports `applied`; running sessions repaint automatically. For a complete exact
-externally owned Stow tuple, reconciliation preserves the link inode and
-metadata and reports the accepted `restart_required` boundary instead. Existing
-Pi sessions then need Pi's `/reload` action or a new launch to use the active
-palette.
-
-Run `macarchy setup plan` after selecting tuicr to review its approved Homebrew
-formula and install that formula before `environment apply`. Environment apply
-never installs software; it reports and blocks before configuration mutation
-when a selected executable or compatible Pi, Herdr, or Codex version is
-missing. For tuicr, the
-environment lifecycle owns only the root `theme` selector in
-`~/.config/tuicr/config.toml` and the `macarchy-current.toml` palette and
-`macarchy-current.tmTheme` syntax links under `~/.config/tuicr/themes`. It
-preserves unrelated configuration and does not own repositories, review
-behavior, credentials, caches, or other tuicr settings. Theme commands follow
-the last successfully applied environment selection, not un-applied profile
-edits, and a running tuicr session must be restarted to observe a newly
-activated theme. Complete exact Stow-owned Codex, Pi, or tuicr tuples remain external
-and are never adopted. For Pi this includes never replacing the externally
-owned watched-link inode merely to request repaint. Complete older setup-owned
-integrations remain active until explicitly migrated or torn down; partial
-tuples block rather than being guessed or repaired.
-
-Common options remain sparse. Advanced inputs use native provider files beside
-the resolved profile source:
-
-```toml
-[kitty]
-font_size = 15
-background_opacity = 0.92
-override = "kitty"
-
-[zsh]
-editor = "nvim"
-hook = "zshrc"
-
-[starship]
-behavior = "starship.toml"
-
-[atuin]
-search_mode = "daemon-fuzzy"
-keymap_mode = "vim-insert"
-configuration = "atuin.toml"
-
-[neovim]
-configuration = "nvim"
-```
-
-The Kitty override is a bounded, symlink-free directory containing
-`kitty.conf`; exact relative includes must resolve inside it. The zsh hook is
-trusted local code but is copied, not executed, during planning. Starship
-behavior cannot define `palette` or `palettes`, and Atuin behavior cannot define
-`[theme]`, because those values remain owned by Macarchy's active theme.
-
-When `neovim.configuration` is absent, Macarchy supplies its curated, locked
-LazyVim baseline. When present, it accepts a complete profile-relative native
-configuration, including arbitrary Lua and binary native files. Planning copies
-that tree as inert bytes; it never edits or executes the source. The tree must
-contain `init.lua`, use Lazy with a `lazy-lock.json`, and leave
-`lua/plugins/colorscheme.lua`, `lua/config/macarchy-theme.lua`,
-`lua/macarchy/current.lua`, and `colors/macarchy-imported.lua` unclaimed. All
-symlinks fail except the prior Macarchy integration's one
-`lua/macarchy/current.lua` canonical-pointer link: its destination must be an
-absolute path ending in `/.config/macarchy/current/generated/neovim.lua`.
-Macarchy also owns the `aether`, `catppuccin`, `kanagawa.nvim`, and
-`tokyonight.nvim` entries in the generated `lazy-lock.json`; every other lock
-entry remains native-config owned. Recognized older Macarchy theme files are
-replaced in the generated copy only. Apply restores and verifies the pinned
-plugin graph from a temporary writable copy before validating the immutable
-effective configuration's active theme and fresh headless editor.
-
-Generated state lives under
-`~/.config/macarchy/environment/generations/e-<id>` behind `environment/current`.
-Macarchy retains adopted files and lexical symlinks by inode until teardown.
-Atuin history and daemon state remain untouched. Neovim plugin/cache state stays
-in Neovim's normal data directories and is retained across teardown.
-Disabling a previously managed role restores only that role's adopted entries;
-an entirely disabled session installs nothing.
-
-Use teardown only after reviewing its aggregate preflight:
-
-```sh
-macarchy environment teardown --dry-run
-macarchy environment teardown
-```
-
-Drift in any owned entry blocks all restoration. Interrupted apply or teardown
-is recovered before another mutation and requires the command to be rerun.
-Kitty receives its supported reload signal, Starship changes on the next prompt,
-and Atuin changes on the next history interface. Existing shells keep their
-already-loaded startup state; `environment doctor` launches a fresh login shell
-and reports trusted hook behavior as semantically unverifiable.
-
-Kitty defaults hide the title bar but retain native rounded corners
-(`hide_window_decorations titlebar-only`). Window-decoration changes need a fresh
-Kitty process for reliable results: Kitty leaves their reload behavior undefined.
-Native Kitty overrides can still select a different decoration style.
-
-## Managed desktop shell
-
-The default desktop outcome combines no-SA yabai tiling, the authoritative
-managed skhd shortcuts, and a Space-aware themed SketchyBar. Run
-`macarchy setup plan` first to inspect the `yabai`, `skhd`, and
-`sketchybar` package prerequisites. The
-third-party Homebrew formulae remain an explicit trust decision; Macarchy never
-runs `brew trust`. yabai and skhd also require the user-granted Accessibility
-permission reported by `desktop doctor`.
-
-The same portable profile used by managed keybindings controls both desktop
-roles. An absent profile selects the curated `yabai-skhd` and `sketchybar`
-defaults. Sparse controls and role opt-outs do not require copying packaged
-configuration:
-
-```toml
-schema_version = 1
-
-[desktop]
-provider = "yabai-skhd" # or "disabled"
-
-[yabai]
-layout = "bsp"
-window_gap = 8
-hook = "personal-yabai.sh"
-
-[top_bar]
-provider = "sketchybar" # or "disabled"
-
-[sketchybar]
-left = ["spaces"]
-center = []
-right = ["volume", "clock"]
-hook = "personal-sketchybar.sh"
-```
-
-Hook paths are relative to the resolved profile source. They are bounded,
-validated, copied into sealed generated state, and never executed during
-planning. The SketchyBar hook has a three-second execution bound and cannot
-leave supported detached or background work. A configured hook makes status
-honestly `partial` because Macarchy verifies its managed namespace but cannot
-claim complete behavior equivalence.
-
-Review the aggregate plan and its exact adoption evidence before mutation:
-
-```sh
-macarchy desktop plan --profile /path/to/profile.toml
-macarchy desktop apply --profile /path/to/profile.toml --dry-run
-macarchy desktop apply \
-  --profile /path/to/profile.toml \
-  --adopt 'sha256:yabai-plan-digest' \
-  --keybindings-adopt 'sha256:skhd-plan-digest' \
-  --sketchybar-adopt 'sha256:sketchybar-plan-digest'
-macarchy desktop status --profile /path/to/profile.toml
-macarchy desktop doctor --profile /path/to/profile.toml
-```
-
-Only digests required by the reviewed plan need to be supplied. Apply preflights
-all selected packages, provider conflicts, hooks, service boundaries, the
-Accessibility-dependent yabai query, and the canonical theme before the first
-provider mutation. It then converges yabai, skhd, and SketchyBar under one
-durable aggregate transaction, releases the activation lock, and reconciles
-the selected wallpaper and SketchyBar theme adapters. A later-provider or
-required-theme failure rolls completed provider boundaries back in reverse
-order.
-
-`desktop status` correlates desired profile input with provider generations,
-ownership, service/runtime evidence, skhd lifecycle evidence, the active theme,
-and any interrupted aggregate transaction. `desktop doctor` adds selected-role
-package and manual-prerequisite findings. Neither command repairs or hides
-drift.
-
-Teardown previews and then restores SketchyBar, skhd, and yabai in reverse
-dependency order:
-
-```sh
-macarchy desktop teardown --dry-run
-macarchy desktop teardown
-```
-
-Existing regular files and supported symlinks are retained and restored at
-their established exact-inode boundaries. Portable profile and hook sources
-remain user-owned; immutable generations and lifecycle records remain under
-`~/.config/macarchy` and must not be copied into dotfiles. If status reports
-`recovery_required`, rerun the same aggregate apply or teardown command first;
-the durable transaction completes forward after its commit boundary and rolls
-back otherwise.
-
-`keybindings list`, `doctor`, and `show` preserve source-based inspection for
-externally managed skhd configuration. They parse enabled key-to-command
-bindings from the selected skhd file without executing them. List preserves
-chained shell commands as opaque display text, normalizes modifier order,
-ignores disabled lines, and returns explicit nonzero diagnostics for unsupported
-enabled syntax or duplicate effective chords. The default source is
-`~/.config/skhd/skhdrc`.
-Optional labels, categories, ordering, and search aliases come from the strict
-metadata-only `~/.config/macarchy/keybindings.toml` catalog. Catalog entries
-are keyed by normalized chord identity and cannot contain commands. The
-source-based `keybindings doctor` warns about missing or stale metadata and
-parser/duplicate diagnostics, while unreadable or invalid inputs fail
-explicitly.
-
-Pass `--effective` to `keybindings list`, `doctor`, or `show` to inspect desired
-managed keybindings composed from packaged defaults and the portable profile,
-plus their agreement with the canonical generated state. This route is
-explicit so source-based inspection remains available before Macarchy adopts
-provider ownership. Its JSON reports use schema version 2 and the distinct
-`keybindings_list_effective` or `keybindings_doctor_effective` operation;
-legacy source reports retain their established schema-version-1 contracts.
-Effective list and popup rows follow metadata order with normalized identity as
-the tie-break, while generated `skhdrc` bytes retain deterministic identity
-order. The shared effective model composes desired inputs, generation agreement,
-authoritative provider ownership, pending recovery, generation-correlated
-lifecycle evidence, and bounded UID-scoped skhd executable and argument
-evidence. Missing, drifted, externally managed, blocked, and recovery-required
-states are labeled as desired or proposed rather than active, and
-`doctor --effective` fails closed on corrupt or interrupted transaction
-evidence.
-
-`keybindings status` reports that complete model directly. Its schema-version-1
-`keybindings_status` JSON distinguishes `clean`, `converged`, `drifted`,
-`externally_managed`, `blocked`, and `recovery_required`. Convergence proves
-validated inputs, generated bytes, provider ownership, a successful reload or
-restart recorded for that generation, and a supported UID-scoped process
-without an explicit `-c` selection. The lifecycle record proves command
-success and observable process evidence, not complete in-memory binding
-equivalence: skhd exposes no query for its effective binding table. Missing
-legacy lifecycle evidence is drift and plans a reload rather than being
-silently treated as converged.
-
-`keybindings plan` is the read-only entry point for managed keybindings. It
-composes immutable packaged defaults with an optional sparse native override,
-explicit disabled default identities, and an optional metadata-only overlay.
-The default portable profile is `~/.config/macarchy/profile.toml`. To use only
-the packaged defaults, leave that file absent and inspect the exact effective
-bytes:
-
-```sh
-macarchy keybindings plan
-macarchy keybindings plan --json
-```
-
-An explicit missing `--profile` is an error. For sparse customization, keep the
-profile and its referenced files together in the portable source you control:
-
-```text
-keybindings/
-  profile.toml
-  keybindings.skhdrc
-  keybindings-metadata.toml
-```
-
-Relative input paths resolve beside the resolved profile source, including
-when the default profile path is a symlink into that directory. A profile can
-replace one default, disable another, and add a binding without copying the
-untouched packaged inventory:
-
-```toml
-schema_version = 1
-
-[keybindings]
-override = "keybindings.skhdrc"
-metadata = "keybindings-metadata.toml"
-disabled = ["alt-k"]
-```
-
-```text
-alt - j : yabai -m window --focus recent
-cmd - x : open -a 'Example'
-```
-
-The override is strict native skhd syntax. A matching normalized chord replaces
-the packaged command; a new chord adds one. Do not both disable and override
-the same identity. Unknown disables, duplicate chords, and unsupported enabled
-syntax block the plan before mutation.
-
-Metadata is optional and never contains commands. Each user record is complete
-and either replaces packaged display metadata or describes a user addition:
-
-```toml
-schema_version = 1
-
-[[bindings]]
-identity = "cmd-x"
-label = "Open Example"
-category = "Applications"
-order = 10
-aliases = ["sample"]
-```
-
-The plan reports replacement, addition, disablement, source attribution,
-deterministic effective bytes, current-generation state, and provider-entry
-ownership in human or JSON form. It never publishes a generation, changes
-`~/.config/skhd`, reloads skhd, or executes a configured command.
-The expanded effective-state JSON contract uses schema version 2; apply keeps
-its established schema-version-1 mutation report.
-
-`keybindings apply` consumes the same plan model. It publishes and selects an
-immutable generation and claims `~/.config/skhd/skhdrc` transactionally.
-Existing regular files, entry symlinks, and bounded directory-level symlinks
-require `--adopt <evidence-digest>`, where the digest is copied from the
-reviewed plan. The digest authenticates the previewed entry kind, exact link
-text, source bytes, and bounded inventory; any mismatch blocks before
-keybinding state mutates. When the preferred entry is absent but `~/.skhdrc`
-exists, the fallback is also external state requiring reviewed adoption; it is
-never shadowed as a clean install, remains untouched while the preferred
-managed entry is active, and becomes authoritative again after teardown.
-
-Regular-file adoption restores exact bytes plus the authenticated restorable
-metadata contract: permissions, owner, group, supported nonrestrictive flags,
-modification time, extended attributes, and ACL. Immutable, append-only,
-no-unlink, restricted, and data-vault flags are rejected before mutation
-because copying them before backup and restoration cleanup could strand
-transaction artifacts. Access, change, and creation times are not part of the
-contract because reads and safe inode replacement necessarily change them.
-Multiply linked regular entries are also not eligible for adoption.
-
-Private recovery claims use a per-record nonce and a no-follow inode marker.
-Recovery removes only a claim carrying that exact marker; an empty, partial, or
-same-target foreign replacement is preserved and blocks for explicit recovery.
-
-Installing or adopting the entry restarts the incumbent skhd service once
-because skhd 0.3.9 does not rediscover a newly created preferred config path on
-reload; later same-entry generation updates use reload. A lifecycle or
-postcondition failure restores the prior pointer, entry, ownership record, and
-service path. Inspection retries a bounded before/after canonical snapshot and
-fails closed if transaction, generation, provider, lifecycle, or process
-identity changes during inspection. Teardown verifies all restoration
-artifacts without mutation before restoring the exact supported prior state.
-
-Preview before applying. These commands use the same composition path; only the
-last command publishes state:
-
-```sh
-macarchy keybindings plan --profile /path/to/keybindings/profile.toml
-macarchy keybindings apply --profile /path/to/keybindings/profile.toml --dry-run
-macarchy keybindings apply --profile /path/to/keybindings/profile.toml
-```
-
-On an initial unclaimed install, apply claims an absent `skhdrc` only inside an
-existing ordinary `~/.config/skhd` directory. It does not require `--adopt`
-because no prior entry is displaced. Once that entry is managed, reapply keeps
-the provider path, publishes a changed generation when needed, and uses reload;
-it also does not require `--adopt`.
-
-An existing unclaimed regular file, leaf symlink, or eligible bounded
-directory-level symlink is never adopted implicitly. Review the plan's exact
-adoption delta and `provider.adoption_evidence_digest`, then pass that digest
-back unchanged:
-
-```sh
-REVIEWED_EVIDENCE_DIGEST='sha256:copy-the-exact-plan-value-here'
-macarchy keybindings apply \
-  --profile /path/to/keybindings/profile.toml \
-  --adopt "$REVIEWED_EVIDENCE_DIGEST" \
-  --dry-run
-macarchy keybindings apply \
-  --profile /path/to/keybindings/profile.toml \
-  --adopt "$REVIEWED_EVIDENCE_DIGEST"
-```
-
-Apply recaptures the evidence before replacement. If the entry kind, link
-text, source bytes, or bounded inventory changed after review, adoption blocks
-without publishing keybinding state and requires a new plan.
-
-To review a packaged-default update, save `keybindings plan --json` output
-before and after installing the updated package and diff the two files. The
-plan shows inherited command and digest changes while leaving `profile.toml`,
-the native override, and metadata overlay untouched.
-
-Saved JSON reports contain complete configured commands and absolute paths for
-profile, override, metadata, state, provider, and adoption sources. Create them
-with restrictive permissions (for example, run `umask 077` first), keep them
-out of source control, and redact commands and absolute paths before sharing.
-
-Portable inputs and generated state have separate ownership boundaries:
-
-```text
-portable source (user-owned)              runtime state (Macarchy-owned)
-profile.toml                               ~/.config/macarchy/keybindings/
-keybindings.skhdrc                           current -> generations/k-<id>
-keybindings-metadata.toml                    generations/k-<id>/skhdrc
-```
-
-Do not copy a generated `skhdrc`, generation manifest, `current` link, or
-transaction evidence into dotfiles, and do not edit generated files. Edit the
-portable profile, override, or metadata and plan again instead.
-
-`keybindings show` opens source-correlated rows, or metadata-ordered attributed
-managed rows with `--effective`, in a short-lived searchable AppKit popup. The
-popup distinguishes converged evidence from desired, proposed external,
-drifted, blocked, and recovery-required state; it never describes a proposed
-managed row as the authoritative external source. It follows the active
-Macarchy theme, supports keyboard search and navigation, closes on Escape or
-focus loss, and remains strictly informational: selecting a row never executes
-its displayed command.
-
-`theme browse` opens a short-lived AppKit browser for every valid built-in and
-installed theme. Search and navigation change only the local generated palette
-preview, optional validated import gallery, and background selection. Enter or
-the Apply button performs one canonical activation of the selected theme and
-background. **Delete Theme**, beside Apply, asks for confirmation before moving
-an inactive user-library package directory to macOS Trash, then refreshes the
-picker. Built-ins are protected; apply another theme before deleting the active
-one. External personal wallpapers, configuration, and canonical active state
-are preserved. Closing or changing focus without either action changes nothing.
-The personal skhd configuration opens it with Cmd-Shift-T.
-
-### Enable wallpaper-following screensaver visuals
-
-Macarchy maintains a **stable Photos source folder** at
-`~/.config/macarchy/screensaver` (or `<state-root>/screensaver` for a custom state
-root). It contains one generated PNG derived from the chosen canonical wallpaper.
-Theme activation, background changes and `macarchy reconcile wallpaper` update
-that image automatically. The folder is an export, not another theme authority.
-
-**Select the native screensaver once:**
-
-1. Run `macarchy theme screensaver` to prepare the folder from the current theme.
-   This command only exports the image; it does not activate a theme, change your
-   desktop, select a saver, or reconcile other applications. Use `--state-root`
-   if your canonical state is elsewhere. If no theme is active, activate one first.
-2. Open **System Settings → Wallpaper → Screen Saver** and choose **Custom**.
-3. Under **Other**, select **Photos**, then **Options → Choose Folder**.
-4. In the folder picker, press **Command–Shift–G** and enter
-   `~/.config/macarchy/screensaver`. Select the folder and confirm the options.
-5. Click **Preview**. It should show your chosen wallpaper.
-
-macOS's **Automatic** screensaver option did not inherit a static Kanagawa
-wallpaper on the tested macOS 26.6.2 host; use the Photos configuration above.
-No supported programmatic system-screensaver selector was identified, so
-Macarchy does not change that selection or write undocumented macOS preferences.
-Once selected, the native Photos saver picked up an atomically replaced image on
-the next Preview without reselecting its folder. Live repaint of an already-running
-saver is not guaranteed; no saver process is restarted or kept resident by Macarchy.
-
-To **opt out**, choose any other screensaver or Photos source in System Settings.
-Macarchy preserves that choice during theme changes. To **return to inheritance**,
-select Photos and the Macarchy folder again. Do not add personal images to this
-generated folder: unexpected contents or unsafe links cause an explicit error,
-not deletion or adoption. Themes without backgrounds leave the previous exported
-image and desktop wallpaper unchanged. Status/doctor checks the exported image,
-not the native saver selection or pixels on screen.
-
-The native **Control–Command–Q lock background** followed the desktop wallpaper
-in the supported-host check. M5.5 supports that inherited appearance only, not an
-independent lock image. Locking does not promise to start the Photos saver.
-Macarchy leaves authentication, password/idle policy, startup/login and FileVault
-visuals untouched; this setup does not require a custom saver plugin or new
-permissions.
-
-Built-in and imported themes may expose any number of validated PNG, JPEG, and
-WebP backgrounds. Personal files can be appended without replacing package
-choices by using schema-2 configuration; they remain local and are copied into
-the immutable generation only when selected:
-
-```toml
-schema_version = 2
-
-[[wallpaper_additions]]
-theme_id = "catppuccin-mocha"
-id = "samurai"
-path = "/absolute/path/to/samurai.png"
-```
-
-Repeat `[[wallpaper_additions]]` with a unique stable ID for additional files.
-Schema-1 `[wallpaper_overrides]` remains readable as one legacy personal
-addition so an upgrade does not hide the package gallery.
-
-`update status` reads cached GitHub release evidence and the locally installed
-Homebrew tap without refreshing either source. `update check` explicitly
-refreshes the GitHub evidence. Macarchy may perform that same conditional
-request at most once per 24 hours during an eligible interactive command; set
-`MACARCHY_DISABLE_UPDATE_CHECKS=1` to disable only automatic checks.
-
-`macarchy update` is available only to stable Homebrew-owned installations. It
-streams an explicit Homebrew metadata refresh, compares the latest stable
-GitHub release with the refreshed tap, and upgrades only
-`ramtinj95/tap/macarchy`. A release newer than the tap is reported as packaging
-pending. Upgrade verification reopens the installed build metadata and bundled
-resources even when the installed version is current; Macarchy never downloads
-or replaces itself outside Homebrew.
-
-## Managed theme-driven focus ring
-
-Normal setup includes JankyBorders **1.9.0**, independently of the window manager.
-The reviewed plan includes its separately trusted Homebrew formula, native
-configuration and login service. Nothing starts merely because a profile was
-edited. To opt out in the portable or machine profile:
-
-```toml
-[focus_ring]
-provider = "disabled"
-```
-
-`setup plan` and `environment plan` disclose ownership and any adoption digest.
-Use the normal reviewed apply workflow above. Macarchy retains the existing
-`~/.config/borders/bordersrc` entry without translating its shell configuration;
-a directory-level symlink is retained as a whole under the existing bounded
-directory-inventory contract. Supporting files remain external.
-The alternative `~/.bordersrc` stays untouched, is included in adoption evidence,
-and cannot silently drift while the role is managed.
-
-The generated executable startup file reads the canonical active theme, and
-normal theme changes request live accent updates. Disabling the role or tearing
-down the environment restores the retained entry and prior running/stopped
-service state. **Adopting a running native service and restoring its arbitrary
-configuration requires a Borders restart.** Unloaded LaunchAgents, custom job
-definitions, unmanaged processes, shell-unsafe home paths and a running native
-configuration that would need a permission change on restoration are blocked,
-not silently taken over. Homebrew alone controls service registration; Macarchy
-does not grant formula trust or Accessibility permission.
-
-Status distinguishes owned configuration and service identity from appearance:
-a successful client request is **not settings or rendered-pixel readback**.
-Interrupted transitions remain in the existing environment recovery transaction.
-
-### Temporary preview
-
-The **temporary foreground preview** remains available without managed setup or
-login persistence. It requires separately installed
-`felixkratz/formulae/borders` version **1.9.0** and a valid active Macarchy theme.
-Installation/trust remains an explicit Homebrew decision; this command installs
-nothing and never starts a service or edits `bordersrc`.
-
-```sh
-macarchy desktop borders preview --dry-run --json
-macarchy desktop borders preview --seconds 30
-```
-
-The preview uses the active semantic accent for a six-point rounded focus ring,
-transparent inactive/background colors, Retina rendering and explicit
-`ax_focus=off`. It requests no Accessibility grant. Focus/Spaces/fullscreen and
-display compatibility still require supported-machine visual qualification;
-the presence of a running process is not that evidence.
-
-While it runs, canonical theme changes request live native color updates.
-Unchanged pointers do not repeatedly read or hash the generated wallpaper.
-The preview stops its own child after 1–300 seconds or on Ctrl-C, termination
-or terminal hangup. It refuses an existing borders process, Homebrew LaunchAgent
-file or loaded job; do not start another borders instance during the preview.
-It neither takes over nor stops an incumbent provider.
-
-`--json` emits a plan before startup and buffered lifecycle events **after child
-cleanup**, so closed or stalled stdout cannot strand the preview. Native
-diagnostics remain on stderr. JankyBorders has no settings readback, so
-`palette_requested` is not a claim of verified pixels or managed convergence.
-Missing/unsupported providers, invalid canonical state and native failures are
-reported rather than silently bypassed. Permanent profile/service integration
-is not yet included.
-
-## Install an Omarchy theme
-
-Use a dry run to inspect conversion and capability evidence before changing
-canonical state:
+The default shortcuts include **Command–Shift–T** for the theme browser and
+**Command–K** for the keybinding viewer. Browsing alone changes nothing.
+The browser can move inactive user-installed themes to Trash after confirmation;
+built-in and active themes are protected.
+
+Macarchy ships **Catppuccin Mocha, Tokyo Night, and Kanagawa Wave**. Theme changes
+update supported running applications where possible. Some changes take effect
+on the next prompt or launch; Codex and tuicr need a fresh session, and Spicetify
+does not restart Spotify for you. Commands report these limits and failures
+rather than treating every application as live-reloadable.
+
+Use Kitty's config reload for ordinary changes; shell startup changes need a
+fresh login shell. Kitty does not guarantee live reload of window decorations.
+
+### Bring an Omarchy theme
 
 ```sh
 macarchy theme install --dry-run https://github.com/owner/theme-repository
 macarchy theme install https://github.com/owner/theme-repository
 ```
 
-The installer accepts only public HTTPS GitHub repository URLs. It shallowly
-fetches the default branch without tags or submodules, records the resolved
-commit, and imports only palette data, supported files directly under
-`backgrounds/`, and inert previews. Symlinks and invalid or oversized images
-fail validation. Scripts, hooks, executables, Lua, application overrides,
-templates, nested backgrounds, and unknown active configuration are ignored,
-named in the report, and never executed or installed.
+Installation imports and activates a compatible theme from a public HTTPS
+GitHub repository. The dry run previews the conversion first. Macarchy imports
+palette data, supported wallpapers, and inert previews—not repository scripts
+or application code. Unsupported content is identified in the report.
 
-Each valid package exposes an ordered background inventory with explicit stable
-IDs. PNG and JPEG entries are fully decoded within the documented image bounds.
-Theme packages created by an older Macarchy release with a `[wallpaper]` table
-must be reinstalled so the importer rebuilds them with `[[backgrounds]]`.
+Slack remains a manual import: run `macarchy theme get slack`, then paste the
+value under **Slack → Preferences → Appearance → Custom theme → Theme colors →
+Import theme**. Slack may map the colors to its own supported palette.
 
-Reinstalling the same URL validates the replacement before atomically swapping
-the package and activating it. A failure before canonical commit restores the
-previous package and generation; a postcommit consumer failure remains visible
-without pretending the commit was rolled back.
+### Match the screensaver to your wallpaper
 
-Imported palettes drive macOS appearance, wallpaper, Kitty, SketchyBar, shell
-tools, Neovim, and every other generated-palette consumer. Neovim receives a
-strictly data-only palette rendered through a pinned, preinstalled Aether v3
-plugin; repository-provided Lua remains ignored and Macarchy's canonical
-pointer remains the only theme authority. Herdr receives a generated 16-token
-custom palette within the bounded contract described above and repaints through
-its live config reload. Macarchy edits only the allowlisted theme
-selector/custom keys, rejects unowned custom colors, and removes its custom
-values when returning to a built-in. Missing wallpaper provenance is
-reported as a personal-use warning; imported assets are not release-eligible
-without verified rights.
+Macarchy keeps an image of your chosen wallpaper in the stable folder
+**`~/.config/macarchy/screensaver`**. Select that folder in macOS once:
 
-Slack does not expose a supported theme automation API, configuration file, or
-preferences deep link. Every canonical generation stores a four-color payload
-for Slack's window background, selected items, presence indication, and
-notification badges as inert `generated/slack.txt` data. A committed activation
-prints it proactively only while applied Slack preset authority is enabled.
-Slack maps these values to its supported
-color palettes rather than preserving arbitrary colors exactly, as described
-in [Slack's redesign](https://slack.design/articles/a-new-visual-language-for-slack/).
-Run `macarchy theme get slack` at any time to print only that active import
-value. The target is resolved through the manual-consumer catalog so future
-import-only applications can use the same `theme get <target>` command. In
-Slack, open **Preferences → Appearance → Custom theme → Theme colors → Import
-theme**, paste the payload, and apply it. This manual boundary follows
-[Slack's documented import
-flow](https://slack.com/help/articles/205166337-Change-your-Slack-theme) rather
-than editing Slack's private Electron storage.
+1. Run `macarchy theme screensaver` after activating a theme with a background.
+   This prepares the image without changing your desktop or macOS settings.
+2. Open **System Settings → Wallpaper → Screen Saver** and choose **Custom**.
+3. Under **Other**, select **Photos**, then **Options → Choose Folder**.
+4. Press **Command–Shift–G**, enter `~/.config/macarchy/screensaver`, and select
+   the folder. Confirm the options, then click **Preview**.
 
-## Unified setup lifecycle
+Use **Photos**, not macOS's Automatic option. Theme and background changes
+refresh the image automatically; `macarchy reconcile wallpaper` refreshes it
+explicitly. The next Preview picked up image changes in supported-machine
+testing. Live repaint of an already-running screensaver is not guaranteed.
 
-`macarchy setup guided` asks about every core provider and daily tool, then
-offers each optional preset. Core choices default on and presets default off.
-It also accepts optional package exclusions as space-separated exact identities,
-for example `formula:jq cask:spotify`. Enter leaves package choices unchanged;
-invalid or duplicate identities must be corrected. Exclusions persist in sparse
-`[packages]` arrays, never copy the stock list and never uninstall software.
-Provider/preset selection is separate: disabling a preset does not exclude its
-standard package, and excluding a selected provider's requirement blocks setup.
-It writes only choices that differ from those defaults to a new portable
-profile, normally `~/.config/macarchy/profile.toml`; `--output-profile` selects
-another destination. Guided setup never follows or replaces an existing file,
-link, or directory. Use the noninteractive profile-driven commands below when a
-profile already exists.
+To opt out, choose another screensaver or Photos folder in System Settings.
+Macarchy preserves that choice. To return, select Photos and the Macarchy folder
+again. Keep personal files out of this generated folder. With a custom
+`--state-root`, use `<state-root>/screensaver` instead. Themes without backgrounds
+leave the previous desktop wallpaper and screensaver image unchanged.
 
-After writing the profile, guided setup prints the same unified plan and effective
-package inventory described below, including machine-layer contributions. If a
-machine addition defeats a requested portable exclusion, guided setup stops and
-identifies the overridden package; it never edits or bypasses the machine profile.
-Missing external prerequisites stop the flow for explicit remediation.
-Each configuration-adoption digest requires a separate default-no confirmation,
-the missing-package Brewfile requires default-no installation confirmation, and applying the plan
-requires a final default-no confirmation. Cancelling or encountering a blocked
-plan retains the new profile for review.
+The native **Control–Command–Q** lock background inherits the desktop wallpaper;
+Macarchy does not offer a separate lock image or make locking start the saver.
+Authentication, password and idle settings, startup/login, and FileVault remain
+untouched. No custom screensaver plugin or additional permission is needed.
 
-Guided setup installs the effective set's missing packages before configuring
-providers. Its package confirmation binds the same digest as noninteractive
-`setup apply --approve-packages <digest>`. Ending input before the questionnaire
-finishes writes no profile. Cancelling after publication retains the new profile.
+## Make it yours
 
-`macarchy setup plan` compiles built-in defaults, the optional portable
-`~/.config/macarchy/profile.toml`, and the optional machine-local
-`~/.config/macarchy/machine.toml` into one effective core model. An explicit
-`--profile` or `--machine-profile` path must exist; an absent default file is an
-empty layer.
+The default portable profile is `~/.config/macarchy/profile.toml`. Omitted
+settings inherit Macarchy's defaults. For example:
 
-`setup plan`, `setup status`, and `setup doctor` also report a read-only
-`package_inventory` (nested under `plan` for status/doctor). It previews 51
-additional standard declarations plus selected provider requirements: 62 packages
-with default providers (47 formulae and 15 casks). Provider opt-outs still remove
-their package requirements. Each package retains any built-in standard declaration
-and contributing provider's profile provenance separately. Standard Slack,
-Spotify and Herdr packages do not enable their optional behavior/theme presets.
+```toml
+schema_version = 1
 
-The report separates declarations from Homebrew installation records and runtime
-availability; package-only declarations have no runtime probe. A working external
-executable does not establish a Homebrew installation. Local listings are corroborated
-with inert receipts; package Ruby is not loaded, metadata is not refreshed,
-and aliases or old tap identities are not silently resolved. Unavailable,
-ambiguous, or unsupported observations remain explicit.
+[kitty]
+font_size = 15
+background_opacity = 0.92
 
-The inventory is **read-only**. Normal apply uses it to install missing declarations
-from the effective standard/personal package set; it does not automatically adopt
-packages or change their Macarchy ownership history. Satisfactory installed
-packages and compatible external provider executables are left alone. Unavailable
-or conflicting package identities block with diagnostics. Installer compatibility
-and native dependency effects are not certified by the preview; native policy and
-effects are described below. Macarchy does not grant application permissions or
-claim completion of manual setup.
+[yabai]
+window_gap = 8
 
-The plan's `package_installation` shows the effective intent, missing-only Brewfile,
-native command, native-effects notice and approval digest. For example:
+[focus_ring]
+provider = "disabled"
 
-```sh
-macarchy setup plan --profile /path/to/profile.toml --json
-macarchy setup apply --profile /path/to/profile.toml --approve-packages <reviewed-digest> --json
+[presets]
+herdr = true
+
+[keybindings]
+override = "keybindings.skhdrc"
 ```
 
-Retain any separately required configuration-adoption options on apply. The old
-`--install-dependencies` flag does not authorize the expanded package scope.
-If no packages are missing, package approval and native execution are unnecessary.
-Approved setup writes `state/setup/provisioning.Brewfile`, runs native Bundle
-with install-only controls and checks the remaining package/capability state
-before changing provider configuration. It does not write a package adoption
-ledger or create another package transaction/recovery journal.
+Put `keybindings.skhdrc` beside this profile to replace or add selected bindings:
 
-A native failure stops configuration and reports partial effects without package
-rollback or automatic retry. Let any native work finish or resolve its native
-locks, inspect a fresh plan, and rerun deliberately. User intent is retained;
-already satisfied packages are not reinstalled. Configuration recovery remains
-separate. Explicit named install/adopt/add commands keep their own ownership and
-interruption contracts below; normal setup does not claim that ownership.
-
-`setup adopt-packages` explicitly records ownership of named, already installed
-declarations without installing, upgrading or removing anything:
-
-```sh
-macarchy setup adopt-packages formula:jq cask:slack --json
-macarchy setup adopt-packages formula:jq cask:slack --approve <reviewed-digest> --json
+```text
+alt - j : yabai -m window --focus recent
 ```
 
-Output is scoped to the named packages, including their receipt evidence and
-declaration provenance; use plan/status/doctor for the full package inventory.
-The first command only previews. Approval binds the named declarations, receipt
-contents and file identities, current adoption ledger, profile paths and local
-home/state context. Macarchy revalidates under the setup lifecycle lock before
-atomically publishing `state/setup/packages.json`. No unrelated theme/provider
-setup runs, and the existing provider `--adoption-file` contract is unchanged.
-An identical repeat is a no-op; dependencies and undeclared packages are never
-implicitly adopted. `--profile`, `--machine-profile` and `--state-root` select the
-same inputs used by other setup commands.
+Relative override paths resolve beside the profile. You can disable a role
+with `provider = "disabled"` in its section: `desktop`, `top_bar`, `focus_ring`,
+`terminal`, `shell`, `prompt`, `history`, or `editor`. An optional
+`~/.config/macarchy/machine.toml` supplies machine-only overrides.
 
-Package inventory reports `adopted`, `unadopted`, `missing`, `changed` or `unknown`.
-Missing, ambiguous and changed evidence blocks adoption; this slice does not
-overwrite an existing adoption after installation drift. Records remain visible
-when a declaration leaves the profile, and configuration teardown retains them.
-An interrupted confirmation after publication reports `commit_unverified` rather
-than pretending to roll back; inspect the inventory before retrying. Receipt
-evidence does not verify installed file integrity or waive later install/update/
-prune approval gates. Homebrew can change independently of Macarchy's setup lock.
-
-`setup install-packages` previews a generated Brewfile for named missing
-formula and cask declarations, then delegates execution to Homebrew:
+Review and apply your choices:
 
 ```sh
-macarchy setup install-packages formula:resvg --json
-macarchy setup install-packages formula:resvg --approve <reviewed-digest> --json
-macarchy setup install-packages cask:slack --json
-macarchy setup install-packages --recover --json
+macarchy setup plan --profile ./profile.toml
+macarchy setup apply --profile ./profile.toml
+macarchy setup doctor --profile ./profile.toml
 ```
 
-The maintained standard defaults live in `Environment/Brewfile` (installed under
-`share/macarchy/environment`). Selected provider requirements are composed with
-these defaults and separate personal inputs; do not edit release defaults to save
-personal choices.
+Apply does not implicitly approve the plan. If packages are missing, supply
+`--approve-packages 'digest-from-plan'`. Existing configuration may also require
+the plan's `--yabai-adopt`, `--keybindings-adopt`, `--sketchybar-adopt`, or
+`--environment-adopt` approvals; `macarchy setup apply --help` lists the options.
+Review fresh evidence on each Mac rather than copying approval values.
 
-#### Personal package declarations
+Edit your profile and native inputs, not generated application files. Keep those
+inputs in dotfiles; do not sync the whole `~/.config/macarchy` directory, which
+also contains machine-local state and backups. Merely editing a profile does
+not start services or change running applications.
 
-Add a `[packages]` section to the existing schema-v1 profile:
+### Choose your packages
 
-`profile.toml`:
+The [standard Brewfile](Environment/Brewfile) lists package-only defaults;
+selected providers add their own requirements. Add a personal Brewfile beside
+your profile and reference it:
 
 ```toml
 [packages]
@@ -1009,330 +209,82 @@ brewfile = "Brewfile"
 exclude_casks = ["spotify"]
 ```
 
-`Brewfile` beside that profile:
-
 ```ruby
+# Brewfile
 brew "just"
 cask "visual-studio-code"
 ```
 
-The default is `baseline = "standard"`: shipped defaults plus personal additions,
-minus explicit exclusions. `exclude_formulae` accepts formula names;
-`exclude_casks` accepts cask names. Fully qualified `owner/tap/name` identities
-are supported for declarations. Official `homebrew/core/` and `homebrew/cask/`
-prefixes normalize to their unqualified identities.
+Personal Brewfiles accept literal `brew`, `cask`, and `tap` declarations, not
+arbitrary Ruby, hooks, or package options. Set `baseline = "personal"` in
+`[packages]` to replace the standard extras with your own manifest; selected
+provider requirements still apply. Exclusions do not uninstall software.
 
-The machine profile can supply its **own** `brewfile` and exclusions. Both
-fragments contribute; machine choices override only the named package, not the
-portable list or fragment path. For example, portable exclusion of Spotify plus
-machine exclusion of Docker keeps both excluded. Adding `cask "spotify"` to the
-machine fragment restores only Spotify. An empty machine exclusion array does
-not erase portable exclusions.
-
-To use a complete personal manifest instead of stock extras:
-
-```toml
-[packages]
-baseline = "personal"
-brewfile = "Brewfile"
-```
-
-Personal mode requires an explicit readable fragment and never loads/falls back
-to the stock Brewfile. An empty fragment is valid for a provider-only setup.
-Selected provider requirements still apply in either mode. Excluding one blocks
-setup until the corresponding provider is changed or disabled. Adding and
-excluding the same identity within one layer is contradictory, even if a higher
-layer would override it. Exclusions of currently absent packages remain visible
-intent across default updates; they never uninstall software.
-
-Fragment paths use the existing portable-input rules: relative to the resolved
-profile source, contained within that directory, and no symlink escape. Fragments
-must be regular UTF-8 files, at most 1 MiB, containing only literal `brew`, `cask`
-and `tap` lines with single/double quotes and optional comments. Each fragment is
-limited to 1024 package declarations and 1024 taps; effective package decisions
-(including exclusions) are limited to 1024. Duplicate canonical declarations,
-Ruby expressions, conditionals, options, hooks, custom tap URLs and non-Homebrew
-backends fail with source diagnostics. Unsupported entries are never silently
-stripped or executed. Read-only commands report declared taps without acquiring
-or trusting them. Named installation acquires only taps required by its missing
-fully qualified targets, not unrelated `tap` declarations.
-
-`setup plan/status/doctor` expose provenance, exclusions and the effective
-Brewfile; JSON uses `package_inventory.effective_brewfile`. The existing
-`setup adopt-packages` and `setup install-packages` commands consume the same
-personal declarations. Approval/revalidation uses the effective named scope.
-Inputs are read-only: these commands never rewrite profiles or fragments.
-Normal and guided setup consume the full effective package set. Persistent removal
-and managed-package updates remain deferred.
-
-#### Save and apply a named addition
-
-`setup add-packages` explicitly saves personal package inputs, then installs
-missing formulae/casks or adopts already installed ones without requesting
-an upgrade:
+For a named addition without applying the rest of your setup:
 
 ```sh
-macarchy setup add-packages formula:jq --profile /path/to/profile.toml --json
-macarchy setup add-packages formula:jq --profile /path/to/profile.toml --approve <reviewed-digest> --json
-macarchy setup add-packages cask:slack --profile /path/to/profile.toml --json
-macarchy setup add-packages formula:owner/tap/name --profile /path/to/profile.toml --json
+macarchy setup add-packages formula:just
+macarchy setup add-packages formula:just --approve 'digest-from-preview'
 ```
 
-Portable intent is the default. Add `--machine-only` to both commands to target
-the machine layer instead. The preview shows both resolved input paths, each
-create/replace/unchanged operation, before/after text, named adoption receipts and native installation
-scope. It performs no writes. Approval binds source bytes/identity/metadata,
-profile inputs and package evidence; stale approval blocks before editing.
+The first command previews; the approved command saves your declaration, then
+installs a missing package or records adoption of an installed one. Use
+`--machine-only` for a local addition. Homebrew remains the package manager;
+Macarchy does not yet provide managed-package upgrades or removal.
 
-Only missing literal declarations are appended. The command removes named formula
-or cask exclusions only from the selected profile, preserving other values and comments.
-Package kind is part of identity: adding a cask does not remove a same-token formula
-exclusion. Official `homebrew/core/` and `homebrew/cask/` qualifications normalize
-to the same identities as their unqualified names.
-Missing profiles and fragments can be created. Without existing wiring, it proposes
-a sibling named `<resolved-profile-filename>.Brewfile` and the corresponding
-`packages.brewfile` field. An existing file at that path is inspected, never
-silently replaced. Comments and unrelated text remain intact; replacement preserves
-existing file metadata and new files use mode 0600.
-
-Inputs remain user-owned; no setup ownership claim, Git operation or synchronization
-is performed. A symlinked profile is resolved using the normal profile-loading
-rules. The resolved profile and fragment must have regular, non-symlink paths and
-one hard link; layers sharing a profile or fragment must be separated first.
-
-Unsupported syntax and machine exclusions that defeat a portable addition still
-block. Add never silently switches layers or runs full setup.
-
-Intent is saved **before** package actions. A failure reports `pending`, retains
-the saved intent and includes completed/failed stage reports. Preview again to
-converge only the named pending work; interrupted native attempts first require
-`setup install-packages --recover`. If installation changes an already-installed
-candidate's receipts, adopting it requires a fresh preview rather than silently
-renewing that consent. Repeat after convergence is a no-op.
-
-An unconfirmed input publication starts no package action. A bounded record under
-`state/setup/package-input-publication.json` retains the approved versions and
-confirmed file snapshots. With the same profile/state options, run:
+## Updates, diagnostics, and removal
 
 ```sh
-macarchy setup add-packages --recover --profile /path/to/profile.toml --json
+macarchy update check   # Check for a stable release
+macarchy update         # Upgrade only Macarchy through Homebrew
+macarchy setup doctor  # Diagnose the configured environment
+macarchy doctor        # Diagnose the active theme and integrations
+macarchy reconcile     # Retry theme integration with installed consumers
 ```
 
-Recovery finishes only previously approved file publication, and only when every
-affected file matches its recorded state. It never invokes Homebrew or adoption;
-obtain a **fresh preview and approval** afterward for pending package work.
-Drift, a retained `.<basename>.macarchy-add-packages` sibling, or a crash after a
-file save but before its new identity was recorded requires manual inspection.
-Preserve the source and publication evidence; recovery does not guess from matching
-bytes or overwrite unknown changes. There is no automatic source rollback.
-File publication and native effects are not one global transaction; Homebrew
-retains the execution boundary below.
+Self-update requires a stable Homebrew installation. Set
+`MACARCHY_DISABLE_UPDATE_CHECKS=1` to disable automatic release checks; explicit
+`update check` remains available. Many inspection commands offer `--json`;
+check `--help` for each command's options.
 
-#### Native installation boundary
+Diagnostics distinguish missing prerequisites, external configuration, drift,
+manual work, and restart requirements. If an operation is interrupted, follow
+its reported recovery instructions rather than deleting state or forcing a
+replacement. Redact local paths and configured commands before sharing reports.
 
-The preview is inert: it shows the exact generated Brewfile, native command and
-declaration scope without resolving or downloading packages. Approval is bound to
-that scope, selected installation state, declaration provenance, profile paths,
-ledger and home/state context. Revalidation runs under the setup lock.
-The approved file is written to `state/setup/installation.Brewfile`, never a
-personal input. Native execution is `brew bundle install --no-upgrade --file …`
-with command-local no-cleanup/no-autoremove/no-install-upgrade controls.
-
-**Homebrew owns dependency and related-package effects.** These can include
-upgrades required by installation even with `--no-upgrade`. Macarchy does not
-solve dependencies, pin Homebrew revisions, inspect bottle payloads, rehearse
-links or sandbox package writes. It does not invoke global upgrade, cleanup,
-autoremove, force-overwrite or trust commands. Homebrew `brew.env` files that
-could override command controls block this path rather than being ignored or
-edited. Native execution has closed stdin and no controlling terminal; Macarchy
-supplies no credentials. Trust/authentication failures require explicit user resolution.
-
-**Cask previews disclose native privilege and artifact-adoption effects.** Homebrew
-may invoke `sudo` for installers or application moves using existing authorization.
-Closed stdin does not prevent passwordless privilege use. Bundle also passes
-`--adopt`, allowing Homebrew to take ownership of identical existing application
-artifacts. This is separate from Macarchy's declaration ledger. Macarchy adds no
-trust or permission-repair commands and never retries with elevation. These native
-effects are part of the reviewed cask installation scope, not a filesystem-isolation
-guarantee. Receipt verification establishes installation records, not application
-launch readiness or completion of manual setup.
-
-**Third-party targets use exact `formula:owner/tap/name` or
-`cask:owner/tap/name` identities.** The approved generated Brewfile puts required
-tap entries before its missing package roots. Homebrew acquires absent taps from
-its default remotes and owns package-code execution and dependencies. Already
-installed/adopted targets do not acquire taps. Previews do not resolve or pin tap
-contents, inspect existing remote configuration, or establish package trust.
-Macarchy supplies no `trusted` options or persistent trust grants. Native policy
-may allow fully qualified names for that invocation without persistent trust;
-native trust/authentication failures remain visible and partial, without automatic
-retry or rollback. Custom tap URLs and tap-only management are unsupported.
-
-Official and third-party formula/cask targets can be mixed. Requests for different
-taps sharing the same kind and token block; formula and cask identities remain
-distinct even with the same token. Receipt verification requires the exact tap
-identity, not an alias or merely the same package name.
-Scoped update and prune remain deferred.
-Installed unadopted targets use `setup adopt-packages`;
-externally satisfied provider requirements are not replaced. No provider
-configuration changes during this command.
-
-The last attempt in `state/setup/package-installation.json` is not ownership.
-Persisted native success plus observed matching named installation receipts
-permits recording only those declarations in `packages.json`. Dependencies
-are not implicitly adopted. Unrelated receipt changes do not block native
-execution or manufacture dependency-isolation guarantees. Matching applied
-declarations repeat without Homebrew work.
-
-Interrupted attempts block apply, teardown and adoption until observation-only
-`--recover`; recovery refuses while the recorded native process session exists.
-Unknown/nonzero outcomes or missing named receipts are partial, never rollback
-or automatic retry. Legacy exact-effect attempt files are explicitly rejected;
-preserve them and inspect the host before manually moving them aside. They are
-never replayed or converted into adoption.
-
-The old `setup plan --package-impact` option was removed and is rejected as an
-unknown option. Ordinary plan/status remain inert inventory operations.
-
-The machine layer uses the same strict schema as the portable profile. Apart from
-the package-identity composition above, declared fields replace portable fields
-individually, arrays replace as whole
-values, and omitted fields continue to inherit portable intent or built-in
-defaults. Relative native inputs resolve beside the layer that declares them,
-so machine-only paths do not leak into a dotfiles-owned portable profile.
-
-Keep the sparse portable file with the dotfiles reused on each Mac. A machine
-that should not run the managed top bar can add only this local `machine.toml`;
-no hostname branch or copy of the portable settings is needed:
-
-```toml
-schema_version = 1
-
-[top_bar]
-provider = "disabled"
-```
-
-Run `setup plan` with the same portable profile on each Mac and review its local
-prerequisites and adoption evidence before applying. A role opt-out is a
-desired-state transition: apply restores or removes only that role's owned
-provider state while other managed roles remain converged. Unknown providers,
-unsupported values, and contradictory combinations in the merged effective
-profile block before actions or mutation.
-
-The plan delegates to the existing keybinding, desktop, and environment
-planners and reports their complete machine-readable results under
-`components`. Its summary exposes selected providers, the active theme or
-clean-machine Catppuccin Mocha default, scoped Homebrew formulae and casks,
-external trust or npm prerequisites, owned file boundaries, service lifecycle,
-Accessibility and Automation boundaries, and per-domain adoption digests.
-Missing packages are planned work; malformed or contradictory profile input,
-unsafe ownership, drift, or interrupted component state blocks the plan before
-actions are emitted.
-
-Planning does not write files, run lifecycle mutations, install software, or
-change canonical state. After reviewing it, `macarchy setup apply` uses that
-same layered model to bootstrap the canonical theme and converge desktop and
-environment providers in order. Missing selected formulae and casks are
-installed only with the exact `--approve-packages` digest; Homebrew remains the
-package owner and mutator. Existing configuration that requires adoption is rejected by
-default rather than claimed implicitly. To approve the exact machine state
-shown by the current plan, pass its digests with `--yabai-adopt`,
-`--keybindings-adopt`, `--sketchybar-adopt`, and
-`--environment-adopt`.
-
-Several approvals can instead be kept in one bounded JSON file and supplied
-with `--adoption-file`; omit keys for components that do not require adoption:
-
-```json
-{
-  "schema_version": 1,
-  "yabai": "<digest from setup plan>",
-  "keybindings": "<digest from setup plan>",
-  "sketchybar": "<digest from setup plan>",
-  "environment": "<digest from setup plan>"
-}
-```
-
-The file and named options are mutually exclusive. Adoption digests authorize
-the exact files, links, and provider state observed on one machine; stale or
-copied evidence fails against a newly compiled plan. Keep portable intent in
-`profile.toml` and machine-specific intent in `machine.toml` rather than
-persisting adoption authorization in either profile.
-
-Unified provider mutation is journaled separately from each provider's own
-transaction. Apply recompiles the reviewed plan after acquiring the setup lock
-and stops without mutation if it changed. If a later apply stage fails, started
-stages are preflighted and rolled back in reverse order; the apply reports
-`rolled_back` rather than convergence. An interrupted apply is rolled back
-before another apply can start, while an interrupted teardown resumes forward in
-environment/desktop/theme order. `setup plan`, `setup status`, and
-`setup doctor` remain blocked while recovery is pending, and teardown
-`--dry-run` reports `recovery_required` without changing the journal. Recovery
-also refuses a different home or consumer-path context. Homebrew packages stay
-outside this rollback boundary and remain externally owned.
-
-`macarchy setup status` and `macarchy setup doctor` inspect the same theme,
-desktop, environment, capability, and ownership boundaries. A successful
-repeat apply is a no-op. Preview `macarchy setup teardown --dry-run` before
-restoring setup-owned environment, desktop, and canonical-theme state in
-reverse order. Teardown retains Homebrew packages and does not remove an active
-theme that predates unified setup.
-
-`macarchy teardown` first checks every ownership record. It then restores only
-recorded file edits and removes only recorded links. User themes, generated
-palettes, generations, logs, and rebuildable application caches are preserved.
-Software removal is a separate Homebrew-owned step:
+To undo unified setup, preview the restoration first:
 
 ```sh
-macarchy teardown
+macarchy setup teardown --dry-run
+macarchy setup teardown
+```
+
+Teardown reverses recorded configuration changes and preserves unrelated data
+and installed packages. For separately recorded legacy theme integrations,
+also inspect `macarchy teardown --dry-run` before running `macarchy teardown`.
+After restoration, remove the CLI separately if wanted:
+
+```sh
 HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
   brew uninstall --formula ramtinj95/tap/macarchy
 ```
 
-Reinstalling preserves the state under `~/.config/macarchy`:
-
-```sh
-HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 \
-  HOMEBREW_NO_INSTALL_UPGRADE=1 HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
-  brew install --formula --no-ask ramtinj95/tap/macarchy
-macarchy setup plan
-macarchy doctor
-```
-
-If Homebrew reports a successful upgrade but Macarchy's installed-layout
-verification fails, use the exact recovery path printed by `macarchy update`:
-
-```sh
-HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_AUTOREMOVE=1 \
-  HOMEBREW_NO_INSTALL_CLEANUP=1 \
-  HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 \
-  brew reinstall --formula --no-ask ramtinj95/tap/macarchy
-/opt/homebrew/bin/macarchy update
-```
-
-This is a reinstall, not an automatic rollback claim. Purging
-`~/.config/macarchy` is deliberately not part of teardown or uninstall.
-
-## Activation and recovery
-
-Theme activation validates the complete package before changing canonical
-state. It publishes a new immutable generation atomically, then reconciles
-applications and records their individual outcomes. Required failures remain
-visible and nonzero; optional failures remain visible without pretending the
-entire activation failed.
-
-Interrupted activation and setup operations retain enough evidence to resume
-or fail explicitly. Unknown drift is never overwritten by a best-effort
-fallback. The canonical `current` pointer and its validated generation remain
-authoritative; notifications and reload commands are only update mechanisms.
-
-Spicetify and Slack are disabled without applied preset authority. Their
-generated artifacts remain deterministic canonical data, but only selected
-Spicetify reconciliation and selected Slack notices run proactively.
+Uninstalling does not purge your Macarchy state directory.
 
 ## Development
 
-Run the same core checks used by continuous integration:
+Development builds require Swift 6.2 or newer on the supported Mac:
+
+```sh
+git clone https://github.com/ramtinJ95/macarchy.git
+cd macarchy
+swift build
+.build/debug/macarchy theme list
+```
+
+Use `.build/debug/macarchy` in place of `macarchy` to run the current code.
+It uses your normal configuration unless you supply alternate paths; building
+alone does not install or activate anything.
 
 ```sh
 swift format lint --strict --recursive Package.swift Sources Tests
@@ -1340,39 +292,11 @@ swift test
 swift build -c release
 ```
 
-Tests use temporary roots and do not access the developer's live Macarchy
-state.
-
-Build and smoke-test an installed layout from an unrelated working directory:
-
-```sh
-Scripts/build-release-layout.sh \
-  .build/release/macarchy .build/macarchy-release "$(git rev-parse HEAD)"
-Scripts/smoke-release-layout.sh .build/macarchy-release
-```
-
-Build the versioned archive and checksum used by the release workflow:
-
-```sh
-Scripts/build-release-archive.sh \
-  .build/release/macarchy dist "$(git rev-parse HEAD)"
-```
-
-The supported installed layout is:
-
-```text
-bin/macarchy
-share/macarchy/build-info.json
-share/macarchy/themes/<theme-id>/...
-share/doc/macarchy/CHANGELOG.md
-share/doc/macarchy/theme-json.md
-share/doc/macarchy/LICENSE
-```
-
-The theme package and normalized palette format is documented in
+Tests use temporary roots, not your live Macarchy state. CI also validates the
+release archive and installed layout. The theme format is documented in
 [`Documentation/theme-json.md`](Documentation/theme-json.md).
 
 ## License
 
-Macarchy is available under the [MIT License](LICENSE). Bundled wallpaper
-provenance and licensing are recorded inside each theme package.
+[MIT](LICENSE). Bundled wallpapers carry provenance and licensing information
+inside their theme packages.
