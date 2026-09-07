@@ -154,7 +154,8 @@ struct EnvironmentPiDocument {
 struct EnvironmentPiFileTransaction: Sendable {
   private static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Pi settings",
-    residueLabel: "Pi transaction residue"
+    residueLabel: "Pi transaction residue",
+    nonRegularMessage: "Pi settings are not an ordinary file"
   )
 
   private enum ExpectedState {
@@ -166,7 +167,7 @@ struct EnvironmentPiFileTransaction: Sendable {
 
   func preflight(_ ownership: EnvironmentPiOwnership) throws {
     let url = URL(filePath: ownership.path)
-    guard try matches(try read(url), .managed, ownership: ownership, at: url) else {
+    guard try matches(try Self.filesystem.read(url), .managed, ownership: ownership, at: url) else {
       throw EnvironmentLifecycleError.drift(url.path)
     }
   }
@@ -184,8 +185,8 @@ struct EnvironmentPiFileTransaction: Sendable {
     let residue = url.deletingLastPathComponent().appending(path: replacementName)
     let source: ExpectedState = old?.pi == nil ? .original(ownership) : .managed
     let target: ExpectedState = new?.pi == nil ? .original(ownership) : .managed
-    var current = try read(url)
-    if let residueData = try read(residue) {
+    var current = try Self.filesystem.read(url)
+    if let residueData = try Self.filesystem.read(residue) {
       if try matches(current, target, ownership: ownership, at: url),
         try matches(residueData, source, ownership: ownership, at: residue)
       {
@@ -199,7 +200,7 @@ struct EnvironmentPiFileTransaction: Sendable {
       } else {
         throw EnvironmentLifecycleError.drift("Pi replacement residue")
       }
-      current = try read(url)
+      current = try Self.filesystem.read(url)
     }
     if try matches(current, target, ownership: ownership, at: url) { return }
     guard try matches(current, source, ownership: ownership, at: url) else {
@@ -227,12 +228,13 @@ struct EnvironmentPiFileTransaction: Sendable {
       if !original.originalFileExisted,
         try EnvironmentPiDocument.isEmptyObject(restored, source: url)
       {
-        try claimAndRemove(at: url, replacementName: replacementName, expected: current)
+        try Self.filesystem.claimAndRemove(
+          at: url, replacementName: replacementName, expected: current)
       } else {
         try replace(restored, current: current, at: url, replacementName: replacementName)
       }
     }
-    guard try matches(try read(url), target, ownership: ownership, at: url) else {
+    guard try matches(try Self.filesystem.read(url), target, ownership: ownership, at: url) else {
       throw EnvironmentLifecycleError.drift(url.path)
     }
   }
@@ -253,39 +255,11 @@ struct EnvironmentPiFileTransaction: Sendable {
     }
   }
 
-  private func read(_ url: URL) throws -> Data? {
-    var metadata = stat()
-    guard lstat(url.path, &metadata) == 0 else {
-      if errno == ENOENT { return nil }
-      throw EnvironmentLifecycleError.system("inspect Pi settings", url, errno)
-    }
-    guard metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1 else {
-      throw EnvironmentLifecycleError.blocked("Pi settings are not an ordinary file: \(url.path)")
-    }
-    return try BoundedRegularFile.read(at: url, maximumSize: 1_048_576).data
-  }
-
   private func replace(_ data: Data, current: Data, at url: URL, replacementName: String) throws {
-    guard data != current else { return }
-    do {
-      try SetupOwnershipManager().replaceRegularFile(
-        target: url,
-        replacementName: replacementName,
-        homeDirectory: homeDirectory,
-        expectedDigest: sha256Digest(current),
-        data: data,
-        label: "Pi theme member"
-      )
-    } catch {
-      throw EnvironmentLifecycleError.blocked("cannot replace Pi theme member: \(error)")
-    }
+    try Self.filesystem.replace(
+      data, current: current, at: url, replacementName: replacementName,
+      homeDirectory: homeDirectory, label: "Pi theme member"
+    )
   }
 
-  private func claimAndRemove(at url: URL, replacementName: String, expected: Data) throws {
-    try Self.filesystem.claimAndRemove(at: url, replacementName: replacementName) { residue in
-      guard try read(residue) == expected else {
-        throw EnvironmentLifecycleError.drift("claimed Pi settings")
-      }
-    }
-  }
 }
