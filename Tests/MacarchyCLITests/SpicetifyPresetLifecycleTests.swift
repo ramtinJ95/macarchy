@@ -388,6 +388,8 @@ private struct SpicetifyPresetFixture {
     let profile = root.appending(path: "profile-\(enabled)-\(slack).toml")
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [terminal]
     provider = "disabled"
     [shell]

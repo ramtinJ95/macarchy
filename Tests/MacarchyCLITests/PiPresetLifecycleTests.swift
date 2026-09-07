@@ -522,6 +522,8 @@ private struct PiFixture {
   func writeProfile(pi: Bool) throws {
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [terminal]
     provider = "disabled"
     [shell]

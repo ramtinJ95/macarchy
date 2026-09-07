@@ -57,7 +57,8 @@ struct EnvironmentConfigurationTests {
     #expect(first == second)
     #expect(
       first.artifacts.map(\.path) == [
-        "atuin/config.toml", "bat/config", "btop/btop.conf", "kitty/kitty.conf",
+        "atuin/config.toml", "bat/config", "borders/bordersrc", "btop/btop.conf",
+        "kitty/kitty.conf",
         "neovim/colors/macarchy-imported.lua", "neovim/init.lua", "neovim/lazy-lock.json",
         "neovim/lazyvim.json",
         "neovim/lua/config/autocmds.lua", "neovim/lua/config/keymaps.lua",

@@ -60,6 +60,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let atuin: AtuinAdapter
   private let bat: BatAdapter
   private let btop: BtopAdapter
+  private let borders: BordersAdapter
   private let backgroundPreferences: BackgroundPreferenceStore
   private let codex: CodexAdapter
   private let configurationStore: MacarchyConfigurationStore
@@ -85,6 +86,7 @@ package struct ThemeActivationCoordinator: Sendable {
     consumerPaths: ThemeConsumerPaths,
     enabledAdapterIDs: Set<String>? = nil,
     herdrManagedMode: HerdrManagedMode? = nil,
+    bordersManagedMode: BordersManagedMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
@@ -112,6 +114,7 @@ package struct ThemeActivationCoordinator: Sendable {
       controlIsAvailable: controlIsAvailable,
       enabledAdapterIDs: enabledAdapterIDs,
       herdrManagedMode: herdrManagedMode,
+      bordersManagedMode: bordersManagedMode,
       piSelectionIsApplied: piSelectionIsApplied,
       piThemeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed,
       spicetifyVersionProvider: {
@@ -138,6 +141,7 @@ package struct ThemeActivationCoordinator: Sendable {
     postDarwinNotification: @escaping @Sendable (String) -> Void = { _ in },
     enabledAdapterIDs: Set<String>? = nil,
     herdrManagedMode: HerdrManagedMode? = nil,
+    bordersManagedMode: BordersManagedMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true },
     spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
@@ -148,6 +152,7 @@ package struct ThemeActivationCoordinator: Sendable {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
     self.root = root
+    borders = BordersAdapter(managedMode: bordersManagedMode)
     activator = ThemeActivator(
       root: root,
       faultInjector: faultInjector,
@@ -191,7 +196,9 @@ package struct ThemeActivationCoordinator: Sendable {
       processRunner: processRunner
     )
     configurationStore = MacarchyConfigurationStore(root: root)
-    self.enabledAdapterIDs = enabledAdapterIDs ?? Set(Self.adapterRequirements.keys)
+    self.enabledAdapterIDs =
+      enabledAdapterIDs
+      ?? Set(Self.adapterRequirements.keys).subtracting([BordersAdapter.id])
     eza = EzaAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
@@ -427,7 +434,8 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   package func reconcile(
-    adapterIDs: [String]
+    adapterIDs: [String],
+    excludingAdapterIDs: Set<String> = []
   ) async throws -> (manifest: GenerationManifest, record: ReconciliationRecord) {
     try validateSelection(adapterIDs)
     let manifest = try statusStore.activeManifest()
@@ -437,10 +445,13 @@ package struct ThemeActivationCoordinator: Sendable {
         unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
       )
     )
-    let selected = selectedAdapters(adapterIDs, from: adapters)
+    // Aggregate lifecycle owners may already hold a non-reentrant runtime lock.
+    // Exclusions must also constrain missing/stale-status expansion, not just selection.
+    let eligible = adapters.filter { !excludingAdapterIDs.contains($0.id) }
+    let selected = selectedAdapters(adapterIDs, from: eligible)
     let plan = try reconciliationPlan(
       selected: selected,
-      all: adapters,
+      all: eligible,
       requestedAll: adapterIDs.isEmpty,
       manifest: manifest
     )
@@ -542,6 +553,13 @@ package struct ThemeActivationCoordinator: Sendable {
         preflight: { _ in try btop.preflight() },
         inspection: btop.inspection,
         reconciliation: btop.reconciliation
+      )
+    case .borders:
+      return ConfiguredAdapter(
+        entry: entry,
+        preflight: { _ in try borders.preflight() },
+        inspection: borders.inspection,
+        reconciliation: borders.reconciliation
       )
     case .codex:
       return ConfiguredAdapter(

@@ -207,6 +207,7 @@ package struct EnvironmentGenerationStore: Sendable {
     let artifactURL = generation.appending(path: path)
     let artifact = try BoundedRegularFile.read(at: artifactURL)
     guard artifact.permissions & 0o222 == 0,
+      path != BordersConfiguration.artifactPath || artifact.permissions & 0o777 == 0o555,
       sha256Digest(artifact.data) == expectedDigest
     else {
       throw EnvironmentGenerationError.invalid("artifact bytes drifted: \(path)")
@@ -248,7 +249,9 @@ package struct EnvironmentGenerationStore: Sendable {
         withIntermediateDirectories: true
       )
       try artifact.data.write(to: file, options: .withoutOverwriting)
-      try sealRegularFile(file, operation: "seal artifact")
+      try sealRegularFile(
+        file, operation: "seal artifact",
+        permissions: artifact.path == BordersConfiguration.artifactPath ? 0o555 : 0o444)
     }
     let manifest = EnvironmentGenerationManifest(
       generationID: generationID,
@@ -522,13 +525,17 @@ package struct EnvironmentGenerationStore: Sendable {
       guard values.isRegularFile == true else {
         throw EnvironmentGenerationError.invalid("generation contains an unsupported entry")
       }
+      if relative == BordersConfiguration.artifactPath, metadata.st_mode & 0o777 != 0o555 {
+        throw EnvironmentGenerationError.invalid(
+          "Borders startup artifact is not sealed executable")
+      }
       if relative == "manifest.json" { continue }
       artifacts[relative] = sha256Digest(try BoundedRegularFile.read(at: file).data)
     }
     return artifacts
   }
 
-  private func sealRegularFile(_ url: URL, operation: String) throws {
+  private func sealRegularFile(_ url: URL, operation: String, permissions: mode_t = 0o444) throws {
     let descriptor = url.path.withCString {
       Darwin.open($0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
     }
@@ -536,7 +543,7 @@ package struct EnvironmentGenerationStore: Sendable {
       throw EnvironmentGenerationError.system(operation, url, errno)
     }
     defer { Darwin.close(descriptor) }
-    guard fchmod(descriptor, 0o444) == 0, fsync(descriptor) == 0 else {
+    guard fchmod(descriptor, permissions) == 0, fsync(descriptor) == 0 else {
       throw EnvironmentGenerationError.system(operation, url, errno)
     }
   }

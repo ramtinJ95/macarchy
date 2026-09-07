@@ -1,10 +1,23 @@
 import Foundation
 import Testing
+import ThemeCore
 
 @testable import MacarchyCLI
 
 struct EnvironmentPlanCommandTests {
-  private let runner = EnvironmentPlanCommandRunner()
+  private var runner: EnvironmentPlanCommandRunner {
+    EnvironmentPlanCommandRunner(bordersRuntime: bordersRuntime)
+  }
+  private var assumedRunner: EnvironmentPlanCommandRunner {
+    EnvironmentPlanCommandRunner(prerequisites: .assumed, bordersRuntime: bordersRuntime)
+  }
+  private let bordersRuntime = EnvironmentBordersRuntime(
+    inspect: { _ in .stopped }, preflight: { _ in .stopped },
+    recoveryPreflight: { _ in .stopped },
+    start: { _ in throw BordersServiceError.blocked("plan must not mutate") },
+    restart: { _ in throw BordersServiceError.blocked("plan must not mutate") },
+    stop: { _ in throw BordersServiceError.blocked("plan must not mutate") },
+    request: { _, _ in throw BordersServiceError.blocked("plan must not mutate") })
 
   @Test(arguments: [false, true])
   func textPlanPreservesInspectionStatusWireSpelling(existing: Bool) throws {
@@ -16,7 +29,7 @@ struct EnvironmentPlanCommandTests {
     if existing {
       try "# external shell\n".write(to: shell, atomically: true, encoding: .utf8)
     }
-    let execution = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+    let execution = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,
       profileURL: root.appending(path: "missing-profile.toml"), profileRequired: false,
       stateRoot: root.appending(path: "state"), homeDirectory: home, json: false)
@@ -63,7 +76,8 @@ struct EnvironmentPlanCommandTests {
     #expect(
       (report["rendered_artifacts"] as? [String: String])?.keys.sorted()
         == [
-          "atuin/config.toml", "bat/config", "btop/btop.conf", "kitty/kitty.conf",
+          "atuin/config.toml", "bat/config", "borders/bordersrc", "btop/btop.conf",
+          "kitty/kitty.conf",
           "starship/behavior.toml",
           "yazi/theme.toml", "yazi/yazi.toml", "zsh/.zshrc",
         ]
@@ -71,7 +85,7 @@ struct EnvironmentPlanCommandTests {
     #expect(
       (report["actions"] as? [[String: Any]])?.compactMap { $0["id"] as? String }
         == [
-          "publish_environment_generation", "configure_kitty", "configure_zsh",
+          "publish_environment_generation", "configure_borders", "configure_kitty", "configure_zsh",
           "configure_starship", "configure_atuin", "configure_neovim",
           "restore_neovim_plugins",
           "configure_bat", "configure_eza",
@@ -126,6 +140,8 @@ struct EnvironmentPlanCommandTests {
     let profile = root.appending(path: "profile.toml")
     try """
     schema_version = 1
+    [focus_ring]
+    provider = "disabled"
     [terminal]
     provider = "disabled"
     [shell]
@@ -213,7 +229,7 @@ struct EnvironmentPlanCommandTests {
       )
     }
 
-    let execution = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+    let execution = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,
       profileURL: root.appending(path: "missing-profile.toml"),
       profileRequired: false,
@@ -292,7 +308,7 @@ struct EnvironmentPlanCommandTests {
       encoding: .utf8
     )
 
-    let execution = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+    let execution = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,
       profileURL: root.appending(path: "missing-profile.toml"),
       profileRequired: false,
@@ -314,7 +330,7 @@ struct EnvironmentPlanCommandTests {
     color_theme = "first"
     color_theme = "second"
     """.write(to: btop, atomically: true, encoding: .utf8)
-    let duplicateBtop = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+    let duplicateBtop = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,
       profileURL: root.appending(path: "missing-profile.toml"),
       profileRequired: false,
@@ -340,7 +356,7 @@ struct EnvironmentPlanCommandTests {
     provider = "disabled"
     """.write(to: profile, atomically: true, encoding: .utf8)
 
-    let blocked = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+    let blocked = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,
       profileURL: profile,
       profileRequired: true,
@@ -364,7 +380,7 @@ struct EnvironmentPlanCommandTests {
       atomically: true,
       encoding: .utf8
     )
-    let ready = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+    let ready = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,
       profileURL: profile,
       profileRequired: true,
@@ -408,7 +424,7 @@ struct EnvironmentPlanCommandTests {
       records: &records
     )
 
-    let execution = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+    let execution = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,
       profileURL: root.appending(path: "missing-profile.toml"),
       profileRequired: false,

@@ -75,6 +75,14 @@ package struct EnvironmentConfigurationComposer: Sendable {
     let options = profile.environment
     var kittyOverrideArtifacts: [EnvironmentConfigurationArtifact] = []
 
+    if options.focusRing == .borders {
+      artifacts.append(
+        EnvironmentConfigurationArtifact(
+          path: BordersConfiguration.artifactPath,
+          contents: BordersConfiguration.contents(stateRoot: stateRoot)
+        ))
+    }
+
     var neovimConfigurationURL: URL?
     if options.editor == .neovim {
       let neovim = try EnvironmentNeovimConfiguration().compose(
@@ -269,6 +277,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
     let renderedDigest = Self.artifactDigest(artifacts)
     let identity = EnvironmentInputIdentity(
       schemaVersion: 1,
+      focusRing: options.focusRing.rawValue,
       terminal: options.terminal.rawValue,
       shell: options.shell.rawValue,
       prompt: options.prompt.rawValue,
@@ -865,6 +874,7 @@ struct EnvironmentNativeTreeReader {
 
 private struct EnvironmentInputIdentity: Encodable {
   let schemaVersion: Int
+  let focusRing: String
   let terminal: String
   let shell: String
   let prompt: String
@@ -876,6 +886,7 @@ private struct EnvironmentInputIdentity: Encodable {
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
+    case focusRing = "focus_ring"
     case terminal, shell, prompt, history, editor, tools, presets, artifacts
   }
 }

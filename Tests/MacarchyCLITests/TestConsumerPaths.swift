@@ -1,8 +1,8 @@
 import Foundation
 import ThemeCore
 
-func testConsumerPaths() -> ThemeConsumerPaths {
-  let root = URL(filePath: "/test", directoryHint: .isDirectory)
+func testConsumerPaths(homeDirectory: URL? = nil) -> ThemeConsumerPaths {
+  let root = homeDirectory ?? URL(filePath: "/test", directoryHint: .isDirectory)
   return ThemeConsumerPaths(
     kittyConfigurationURL: root.appending(path: "kitty.conf"),
     sketchyBarConfigurationURL: root.appending(path: "sketchybarrc"),
@@ -16,7 +16,8 @@ func testConsumerPaths() -> ThemeConsumerPaths {
     neovimConfigurationDirectoryURL: root.appending(path: "nvim", directoryHint: .isDirectory),
     starshipConfigurationURL: root.appending(path: "starship.toml"),
     starshipBehaviorURL: root.appending(path: "starship/behavior.toml"),
-    piConfigurationDirectoryURL: root.appending(path: "pi", directoryHint: .isDirectory),
+    piConfigurationDirectoryURL: root.appending(
+      path: homeDirectory == nil ? "pi" : ".pi/agent", directoryHint: .isDirectory),
     herdrConfigurationURL: root.appending(path: "herdr/config.toml"),
     tuicrConfigurationDirectoryURL: root.appending(path: "tuicr", directoryHint: .isDirectory),
     codexConfigurationDirectoryURL: root.appending(path: "codex", directoryHint: .isDirectory),

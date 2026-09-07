@@ -326,7 +326,7 @@ struct UnifiedSetupPlanTests {
     #expect(
       Set(capabilities.compactMap { $0["id"] as? String })
         == [
-          "arm64", "atuin", "bat", "btop", "eza", "homebrew", "kitty", "macos-26",
+          "arm64", "atuin", "bat", "borders", "btop", "eza", "homebrew", "kitty", "macos-26",
           "neovim", "sketchybar", "skhd", "starship", "yabai", "yazi",
         ]
     )
@@ -508,7 +508,30 @@ struct UnifiedSetupPlanTests {
   private func readyPlan(
     _ context: UnifiedSetupPlanContext
   ) throws -> (model: UnifiedSetupDesiredModel, report: UnifiedSetupPlanReport) {
-    var runner = UnifiedSetupPlanCommandRunner.live
+    let live = UnifiedSetupPlanCommandRunner.live
+    var runner = UnifiedSetupPlanCommandRunner(
+      capabilityIsAvailable: live.capabilityIsAvailable,
+      desktopPlanner: live.desktopPlanner,
+      environmentPlanner: { context, profile in
+        let noMutation: @Sendable (URL) throws -> Void = { _ in
+          throw BordersServiceError.blocked("planning must not mutate the test service")
+        }
+        let borders = EnvironmentBordersRuntime(
+          inspect: { _ in .stopped }, preflight: { _ in .stopped },
+          recoveryPreflight: { _ in .stopped },
+          start: noMutation, restart: noMutation, stop: noMutation,
+          request: { _, _ in
+            throw BordersServiceError.blocked("planning must not request appearance")
+          })
+        return try SetupComponentExecution(
+          EnvironmentPlanCommandRunner(
+            prerequisites: .assumed, bordersRuntime: borders
+          ).execute(
+            resourcesRoot: context.environmentResourcesRoot,
+            profileURL: context.profileURL, profileRequired: context.profileRequired,
+            stateRoot: context.stateRoot, homeDirectory: context.homeDirectory,
+            json: true, profile: profile))
+      })
     runner.packageInventoryReader = { .init(packages: [], issues: []) }
     let preparation = try runner.prepare(context: context)
     guard case .ready(let model, let report) = preparation else {

@@ -263,6 +263,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
 extension EnvironmentProfile {
   var isEntirelyDisabled: Bool {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
+      && focusRing == .disabled
       && editor == .disabled
       && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
       && !presets.codex && !presets.pi && !presets.tuicr
@@ -271,6 +272,7 @@ extension EnvironmentProfile {
 
   var selectedThemeAdapterIDs: [String] {
     (terminal == .kitty ? ["kitty"] : [])
+      + (focusRing == .borders ? [BordersAdapter.id] : [])
       + (prompt == .starship ? ["starship"] : [])
       + (history == .atuin ? ["atuin"] : [])
       + (editor == .neovim ? ["neovim"] : [])
@@ -494,17 +496,20 @@ struct EnvironmentStatusCommandRunner: Sendable {
   let prerequisites: EnvironmentPrerequisiteInspector
   let theme: DesktopThemeController?
   let verifier: EnvironmentSessionVerifier
+  let bordersRuntime: EnvironmentBordersRuntime
 
   static let live = Self(prerequisites: .live, theme: .live, verifier: .live)
 
   init(
     prerequisites: EnvironmentPrerequisiteInspector,
     theme: DesktopThemeController?,
-    verifier: EnvironmentSessionVerifier = .assumed
+    verifier: EnvironmentSessionVerifier = .assumed,
+    bordersRuntime: EnvironmentBordersRuntime = .live
   ) {
     self.prerequisites = prerequisites
     self.theme = theme
     self.verifier = verifier
+    self.bordersRuntime = bordersRuntime
   }
 
   func execute(
@@ -543,10 +548,11 @@ struct EnvironmentStatusCommandRunner: Sendable {
     }
 
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
-    let provider = EnvironmentProviderInspector().inspect(
+    let provider = EnvironmentProviderInspector().inspectIncludingBordersRuntime(
       composition: composition,
       homeDirectory: homeDirectory,
-      stateRoot: stateRoot
+      stateRoot: stateRoot,
+      runtime: bordersRuntime
     )
     let prerequisiteState = prerequisites.inspect(profile.environment, homeDirectory)
     let transactionStatus: String
@@ -632,6 +638,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
 
   static func providers(_ profile: EnvironmentProfile) -> [String: String] {
     var providers = [
+      "focus_ring": profile.focusRing.rawValue,
       "terminal": profile.terminal.rawValue,
       "shell": profile.shell.rawValue,
       "prompt": profile.prompt.rawValue,

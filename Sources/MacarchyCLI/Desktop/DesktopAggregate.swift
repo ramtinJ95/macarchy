@@ -412,7 +412,11 @@ struct DesktopThemeController: Sendable {
           stateRoot: stateRoot,
           consumerPaths: consumerPaths,
           enabledAdapterIDs: enabledAdapterIDs
-        ).reconcile(adapterIDs: adapterIDs)
+        ).reconcile(
+          adapterIDs: adapterIDs,
+          excludingAdapterIDs: Set([HerdrAdapter.id, BordersAdapter.id])
+            .subtracting(adapterIDs)
+        )
         let selected = Set(adapterIDs)
         let results = result.record.results.filter { selected.contains($0.adapterID) }
         return DesktopThemeReconciliation(

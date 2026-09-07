@@ -78,7 +78,7 @@ struct UnifiedSetupApplyTests {
         #expect(
           enabledThemeAdapterIDs
             == [
-              "bat", "btop", "eza", "kitty", "macos-appearance", "neovim", "starship",
+              "bat", "borders", "btop", "eza", "kitty", "macos-appearance", "neovim", "starship",
               "wallpaper", "yazi",
             ]
         )

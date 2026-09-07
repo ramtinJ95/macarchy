@@ -57,7 +57,8 @@ private func recoverEnvironmentTransaction(
   stateRoot: URL,
   homeDirectory: URL,
   runtime: EnvironmentHerdrRuntimeReloader,
-  spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
+  spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher,
+  bordersRuntime: EnvironmentBordersRuntime
 ) throws -> Bool {
   let preparation = try ActivationLock(root: stateRoot).withLock {
     try coordinator.prepareRecoveryLocked()
@@ -78,6 +79,12 @@ private func recoverEnvironmentTransaction(
       runtime: spicetifyRuntime,
       adapterWasReconciled: false
     )
+    try ActivationLock(root: stateRoot).withLock {
+      _ = try coordinator.prepareRecoveryLocked()
+    }
+  }
+  if preparation.bordersRuntimeTarget != nil {
+    _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: bordersRuntime)
     try ActivationLock(root: stateRoot).withLock {
       _ = try coordinator.prepareRecoveryLocked()
     }
@@ -112,7 +119,8 @@ private func rollbackEnvironmentTransaction(
   stateRoot: URL,
   homeDirectory: URL,
   runtime: EnvironmentHerdrRuntimeReloader,
-  spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
+  spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher,
+  bordersRuntime: EnvironmentBordersRuntime
 ) throws {
   try ActivationLock(root: stateRoot).withLock {
     try coordinator.rollbackApplyLocked()
@@ -134,6 +142,11 @@ private func rollbackEnvironmentTransaction(
     runtime: spicetifyRuntime,
     adapterWasReconciled: false
   ) != nil {
+    try ActivationLock(root: stateRoot).withLock {
+      _ = try coordinator.prepareRecoveryLocked()
+    }
+  }
+  if try verifyPendingBordersRuntime(coordinator: coordinator, runtime: bordersRuntime) != nil {
     try ActivationLock(root: stateRoot).withLock {
       _ = try coordinator.prepareRecoveryLocked()
     }
@@ -320,6 +333,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   let neovim: EnvironmentNeovimPreparer
   let herdrRuntime: EnvironmentHerdrRuntimeReloader
   let spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
+  let bordersRuntime: EnvironmentBordersRuntime
   let transactionFaultInjector: @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
 
   static let live = Self(
@@ -338,6 +352,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     neovim: EnvironmentNeovimPreparer = .assumed,
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
     spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed,
+    bordersRuntime: EnvironmentBordersRuntime = .live,
     transactionFaultInjector:
       @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = {
         _ in
@@ -349,6 +364,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.neovim = neovim
     self.herdrRuntime = herdrRuntime
     self.spicetifyRuntime = spicetifyRuntime
+    self.bordersRuntime = bordersRuntime
     self.transactionFaultInjector = transactionFaultInjector
   }
 
@@ -449,7 +465,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           return try EnvironmentStatusCommandRunner(
             prerequisites: prerequisites,
             theme: theme,
-            verifier: verifier
+            verifier: verifier,
+            bordersRuntime: bordersRuntime
           ).execute(
             operation: "environment_apply",
             resourcesRoot: resourcesRoot,
@@ -474,14 +491,21 @@ struct EnvironmentApplyCommandRunner: Sendable {
           coordinator: coordinator,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
+          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+          bordersRuntime: bordersRuntime
         )
+        let bordersService = try observedBordersService(
+          desiredEnabled: false, stateRoot: stateRoot, homeDirectory: homeDirectory,
+          runtime: bordersRuntime, preflight: true)
         let result = try ActivationLock(root: stateRoot).withLock {
-          try coordinator.teardownLocked(dryRun: false)
+          try coordinator.teardownLocked(dryRun: false, bordersService: bordersService)
         }
         let restoredHerdr: DesktopThemeAdapterStatus?
         let restoredSpicetify: DesktopThemeAdapterStatus?
+        let restoredBorders: DesktopThemeAdapterStatus?
         do {
+          restoredBorders = try verifyPendingBordersRuntime(
+            coordinator: coordinator, runtime: bordersRuntime)
           restoredHerdr = try verifyPendingHerdrRuntime(
             coordinator: coordinator,
             stateRoot: stateRoot,
@@ -495,7 +519,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
             runtime: spicetifyRuntime,
             adapterWasReconciled: false
           )
-          if restoredHerdr != nil || restoredSpicetify != nil {
+          if restoredHerdr != nil || restoredSpicetify != nil || restoredBorders != nil {
             try ActivationLock(root: stateRoot).withLock {
               _ = try coordinator.prepareRecoveryLocked()
             }
@@ -507,7 +531,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
               coordinator: coordinator,
               stateRoot: stateRoot,
               homeDirectory: homeDirectory,
-              runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
+              runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+              bordersRuntime: bordersRuntime
             )
           } catch {
             throw EnvironmentLifecycleError.blocked(
@@ -525,7 +550,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
             consumerPaths: consumerPaths,
-            restored: [restoredHerdr, restoredSpicetify].compactMap { $0 },
+            restored: [restoredHerdr, restoredSpicetify, restoredBorders].compactMap { $0 },
             restorationMessage: result.message
           )
         } catch {
@@ -533,7 +558,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
             profileURL: profileURL,
             profile: profile.environment,
             prerequisites: prerequisiteState,
-            theme: [restoredHerdr, restoredSpicetify].compactMap { $0 },
+            theme: [restoredHerdr, restoredSpicetify, restoredBorders].compactMap { $0 },
             message: defaultConsumerReconciliationFailureMessage(result.message, error),
             mutated: result.changed,
             json: json
@@ -594,7 +619,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         coordinator: coordinator,
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
-        runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
+        runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+        bordersRuntime: bordersRuntime
       )
       if recovered {
         return try failure(
@@ -643,10 +669,22 @@ struct EnvironmentApplyCommandRunner: Sendable {
       }
     }
 
+    let bordersService: BordersServiceInspection?
+    do {
+      bordersService = try observedBordersService(
+        desiredEnabled: profile.environment.focusRing == .borders,
+        stateRoot: stateRoot, homeDirectory: homeDirectory,
+        runtime: bordersRuntime, preflight: true)
+    } catch {
+      return try failure(
+        profileURL: profileURL, profile: profile.environment,
+        message: String(describing: error), mutated: false, json: json)
+    }
     let inspection = EnvironmentProviderInspector().inspect(
       composition: composition,
       homeDirectory: homeDirectory,
-      stateRoot: stateRoot
+      stateRoot: stateRoot,
+      bordersService: bordersService
     )
     guard !inspection.isBlocked else {
       return try failure(
@@ -666,7 +704,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         let lockedInspection = EnvironmentProviderInspector().inspect(
           composition: composition,
           homeDirectory: homeDirectory,
-          stateRoot: stateRoot
+          stateRoot: stateRoot,
+          bordersService: bordersService
         )
         let previousThemeGenerationID: String?
         if theme != nil, !profile.environment.selectedThemeAdapterIDs.isEmpty {
@@ -710,6 +749,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let verification: [EnvironmentVerification]
     var neovimPluginPreparationRan = false
     var herdrActivation: DesktopThemeAdapterStatus?
+    var bordersActivation: DesktopThemeAdapterStatus?
     do {
       herdrActivation = try verifyPendingHerdrRuntime(
         coordinator: coordinator,
@@ -723,8 +763,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
         throw EnvironmentLifecycleError.blocked(neovimVerification.message)
       }
       let nonHerdrAdapterIDs = themeAdapterIDs.filter {
-        $0 != HerdrAdapter.id
+        $0 != HerdrAdapter.id && $0 != BordersAdapter.id
       }
+      let reconciledTheme: [DesktopThemeAdapterStatus]
       if let theme, !nonHerdrAdapterIDs.isEmpty {
         let reconciliation = try await theme.reconcile(
           nonHerdrAdapterIDs,
@@ -739,11 +780,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
             "required theme reconciliation failed for environment generation \(applyResult.generationID)"
           )
         }
-        appliedTheme = (reconciliation.results + (herdrActivation.map { [$0] } ?? []))
-          .sorted { $0.adapterID < $1.adapterID }
+        reconciledTheme = reconciliation.results
       } else {
-        appliedTheme = herdrActivation.map { [$0] } ?? []
+        reconciledTheme = []
       }
+      bordersActivation = try verifyPendingBordersRuntime(
+        coordinator: coordinator, runtime: bordersRuntime)
+      appliedTheme = (reconciledTheme + [herdrActivation, bordersActivation].compactMap { $0 })
+        .sorted { $0.adapterID < $1.adapterID }
       _ = try verifyPendingSpicetifyRuntime(
         coordinator: coordinator,
         stateRoot: stateRoot,
@@ -786,7 +830,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           coordinator: coordinator,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
+          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+          bordersRuntime: bordersRuntime
         )
       } catch {
         return try failure(
@@ -830,7 +875,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
     return try EnvironmentStatusCommandRunner(
       prerequisites: prerequisites,
       theme: theme,
-      verifier: verifier
+      verifier: verifier,
+      bordersRuntime: bordersRuntime
     ).execute(
       operation: "environment_apply",
       resourcesRoot: resourcesRoot,
@@ -898,7 +944,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
         runtime: herdrRuntime,
-        spicetifyRuntime: spicetifyRuntime
+        spicetifyRuntime: spicetifyRuntime,
+        bordersRuntime: bordersRuntime
       )
     }
     return true
@@ -940,6 +987,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
   let theme: DesktopThemeController?
   let herdrRuntime: EnvironmentHerdrRuntimeReloader
   let spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher
+  let bordersRuntime: EnvironmentBordersRuntime
 
   static let live = Self(
     prerequisites: .live,
@@ -952,12 +1000,14 @@ struct EnvironmentTeardownCommandRunner: Sendable {
     prerequisites: EnvironmentPrerequisiteInspector = .assumed,
     theme: DesktopThemeController? = nil,
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .assumed,
-    spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed
+    spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher = .assumed,
+    bordersRuntime: EnvironmentBordersRuntime = .live
   ) {
     self.prerequisites = prerequisites
     self.theme = theme
     self.herdrRuntime = herdrRuntime
     self.spicetifyRuntime = spicetifyRuntime
+    self.bordersRuntime = bordersRuntime
   }
 
   func execute(
@@ -1033,15 +1083,22 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           coordinator: coordinator,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
-          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
+          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+          bordersRuntime: bordersRuntime
         )
       }
+      let bordersService = try observedBordersService(
+        desiredEnabled: false, stateRoot: stateRoot, homeDirectory: homeDirectory,
+        runtime: bordersRuntime, preflight: !dryRun)
       let result = try ActivationLock(root: stateRoot).withLock {
-        try coordinator.teardownLocked(dryRun: dryRun)
+        try coordinator.teardownLocked(dryRun: dryRun, bordersService: bordersService)
       }
       let restoredHerdr: DesktopThemeAdapterStatus?
       let restoredSpicetify: DesktopThemeAdapterStatus?
+      let restoredBorders: DesktopThemeAdapterStatus?
       do {
+        restoredBorders = try verifyPendingBordersRuntime(
+          coordinator: coordinator, runtime: bordersRuntime)
         restoredHerdr = try verifyPendingHerdrRuntime(
           coordinator: coordinator,
           stateRoot: stateRoot,
@@ -1055,7 +1112,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           runtime: spicetifyRuntime,
           adapterWasReconciled: false
         )
-        if restoredHerdr != nil || restoredSpicetify != nil {
+        if restoredHerdr != nil || restoredSpicetify != nil || restoredBorders != nil {
           try ActivationLock(root: stateRoot).withLock {
             _ = try coordinator.prepareRecoveryLocked()
           }
@@ -1067,7 +1124,8 @@ struct EnvironmentTeardownCommandRunner: Sendable {
             coordinator: coordinator,
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
-            runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime
+            runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+            bordersRuntime: bordersRuntime
           )
         } catch {
           throw EnvironmentLifecycleError.blocked(
@@ -1078,7 +1136,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           "teardown runtime activation failed and was rolled back: \(activationError)"
         )
       }
-      var themeState = [restoredHerdr, restoredSpicetify].compactMap { $0 }
+      var themeState = [restoredHerdr, restoredSpicetify, restoredBorders].compactMap { $0 }
       var message = result.message
       if !dryRun {
         let restored: EnvironmentRestoredThemeState

@@ -9,7 +9,7 @@ struct GuidedSetupTests {
   @Test
   func questionnaireEmitsOnlySelectionsThatDifferFromDefaults() throws {
     let responses = Mutex([
-      "no", "", "no", "no",
+      "no", "", "no", "no", "no",
       "no", "no", "", "no", "",
       "yes", "no", "yes", "no", "yes", "no",
       "jq", "cask:homebrew/cask/spotify formula:homebrew/core/jq",
@@ -27,6 +27,7 @@ struct GuidedSetupTests {
 
     #expect(profile.desktop.provider == .disabled)
     #expect(profile.topBar == .sketchybar)
+    #expect(profile.environment.focusRing == .disabled)
     #expect(profile.environment.terminal == .disabled)
     #expect(profile.environment.shell == .disabled)
     #expect(profile.environment.prompt == .disabled)

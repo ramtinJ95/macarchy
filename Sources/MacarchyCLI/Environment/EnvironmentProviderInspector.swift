@@ -36,6 +36,21 @@ struct EnvironmentProviderInspection: Sendable {
   let spicetifyExternalEvidence: EnvironmentEntryEvidence?
   let proposedTuicrOwnership: EnvironmentTuicrOwnership?
   let tuicrExternalEvidence: EnvironmentEntryEvidence?
+  let proposedBordersOwnership: EnvironmentBordersOwnership?
+  let bordersServiceInspection: BordersServiceInspection?
+
+  static func blocked(_ error: any Error) -> Self {
+    Self(
+      entries: [], ownership: nil, adoptionEvidenceDigest: nil,
+      blockedMessage: String(describing: error), desiredEntries: [], externalEvidence: [:],
+      createdDirectories: [], proposedBtopOwnership: nil, btopExternalEvidence: nil,
+      proposedCodexOwnership: nil, codexExternalEvidence: nil,
+      proposedHerdrOwnership: nil, herdrExternalEvidence: nil,
+      proposedPiOwnership: nil, piExternalEvidence: nil,
+      proposedSpicetifyOwnership: nil, spicetifyExternalEvidence: nil,
+      proposedTuicrOwnership: nil, tuicrExternalEvidence: nil,
+      proposedBordersOwnership: nil, bordersServiceInspection: nil)
+  }
 
   var isBlocked: Bool {
     blockedMessage != nil
@@ -66,7 +81,8 @@ struct EnvironmentProviderInspector: Sendable {
   func inspect(
     composition: EnvironmentComposition,
     homeDirectory: URL,
-    stateRoot: URL
+    stateRoot: URL,
+    bordersService: BordersServiceInspection? = nil
   ) -> EnvironmentProviderInspection {
     do {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
@@ -581,6 +597,13 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
 
+      let borders = try inspectBorders(
+        enabled: composition.profile.focusRing == .borders,
+        previous: ownership?.borders,
+        homeDirectory: homeDirectory,
+        service: bordersService
+      )
+      inspections.append(contentsOf: borders.entries)
       let adoptionRequired = inspections.contains { $0.status == .adoptionRequired }
       return EnvironmentProviderInspection(
         entries: inspections.sorted { $0.id < $1.id },
@@ -595,7 +618,9 @@ struct EnvironmentProviderInspector: Sendable {
             herdr: herdr.proposedOwnership,
             pi: pi.proposedOwnership,
             spicetify: spicetify.proposedOwnership,
-            tuicr: tuicr.proposedOwnership
+            tuicr: tuicr.proposedOwnership,
+            borders: borders.ownership,
+            bordersService: bordersService
           ) : nil,
         blockedMessage: nil,
         desiredEntries: entries,
@@ -612,30 +637,12 @@ struct EnvironmentProviderInspector: Sendable {
         proposedSpicetifyOwnership: spicetify.proposedOwnership,
         spicetifyExternalEvidence: spicetify.externalEvidence,
         proposedTuicrOwnership: tuicr.proposedOwnership,
-        tuicrExternalEvidence: tuicr.externalEvidence
+        tuicrExternalEvidence: tuicr.externalEvidence,
+        proposedBordersOwnership: borders.ownership,
+        bordersServiceInspection: bordersService
       )
     } catch {
-      return EnvironmentProviderInspection(
-        entries: [],
-        ownership: nil,
-        adoptionEvidenceDigest: nil,
-        blockedMessage: String(describing: error),
-        desiredEntries: [],
-        externalEvidence: [:],
-        createdDirectories: [],
-        proposedBtopOwnership: nil,
-        btopExternalEvidence: nil,
-        proposedCodexOwnership: nil,
-        codexExternalEvidence: nil,
-        proposedHerdrOwnership: nil,
-        herdrExternalEvidence: nil,
-        proposedPiOwnership: nil,
-        piExternalEvidence: nil,
-        proposedSpicetifyOwnership: nil,
-        spicetifyExternalEvidence: nil,
-        proposedTuicrOwnership: nil,
-        tuicrExternalEvidence: nil
-      )
+      return .blocked(error)
     }
   }
 
@@ -645,6 +652,13 @@ struct EnvironmentProviderInspector: Sendable {
     stateRoot: URL
   ) -> [EnvironmentManagedEntry] {
     var enabled = Set<EnvironmentEntryID>()
+    if profile.focusRing == .borders {
+      let directory = homeDirectory.appending(path: ".config/borders")
+      var metadata = stat()
+      let directoryIsLink =
+        lstat(directory.path, &metadata) == 0 && metadata.st_mode & S_IFMT == S_IFLNK
+      enabled.insert(directoryIsLink ? .bordersDirectory : .bordersConfiguration)
+    }
     if profile.terminal == .kitty { enabled.insert(.kitty) }
     if profile.shell == .zsh { enabled.insert(.zsh) }
     if profile.prompt == .starship { enabled.insert(.starship) }
@@ -670,6 +684,18 @@ struct EnvironmentProviderInspector: Sendable {
     let home = homeDirectory.standardizedFileURL
     let state = stateRoot.standardizedFileURL
     return [
+      EnvironmentManagedEntry(
+        id: .bordersDirectory,
+        url: home.appending(path: ".config/borders"),
+        kind: .symbolicLink,
+        target: state.appending(path: "environment/current/borders").path
+      ),
+      EnvironmentManagedEntry(
+        id: .bordersConfiguration,
+        url: home.appending(path: ".config/borders/bordersrc"),
+        kind: .symbolicLink,
+        target: state.appending(path: "environment/current/borders/bordersrc").path
+      ),
       EnvironmentManagedEntry(
         id: .kitty,
         url: home.appending(path: ".config/kitty", directoryHint: .isDirectory),
@@ -1023,7 +1049,9 @@ struct EnvironmentProviderInspector: Sendable {
     herdr: EnvironmentHerdrOwnership?,
     pi: EnvironmentPiOwnership?,
     spicetify: EnvironmentSpicetifyOwnership?,
-    tuicr: EnvironmentTuicrOwnership?
+    tuicr: EnvironmentTuicrOwnership?,
+    borders: EnvironmentBordersOwnership?,
+    bordersService: BordersServiceInspection?
   ) throws -> String {
     struct Payload: Encodable {
       let schemaVersion: Int
@@ -1031,6 +1059,8 @@ struct EnvironmentProviderInspector: Sendable {
       let renderedDigest: String
       let providers: [String]
       let entries: [Entry]
+      let borders: EnvironmentBordersOwnership?
+      let bordersService: BordersServiceInspection?
 
       struct Entry: Encodable {
         let id: String
@@ -1063,6 +1093,7 @@ struct EnvironmentProviderInspector: Sendable {
       inputDigest: composition.inputDigest,
       renderedDigest: composition.renderedDigest,
       providers: [
+        composition.profile.focusRing.rawValue,
         composition.profile.terminal.rawValue,
         composition.profile.shell.rawValue,
         composition.profile.prompt.rawValue,
@@ -1086,7 +1117,9 @@ struct EnvironmentProviderInspector: Sendable {
           target: targets[$0.id, default: ""],
           evidence: $0.evidence
         )
-      }.sorted { $0.id < $1.id }
+      }.sorted { $0.id < $1.id },
+      borders: borders,
+      bordersService: bordersService
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -1144,7 +1177,8 @@ struct EnvironmentProviderInspector: Sendable {
       .tuicrSyntax,
       .yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax:
       true
-    case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim:
+    case .kitty, .zsh, .starship, .atuinConfiguration, .atuinTheme, .neovim,
+      .bordersDirectory, .bordersConfiguration:
       false
     }
   }

@@ -698,10 +698,44 @@ pending. Upgrade verification reopens the installed build metadata and bundled
 resources even when the installed version is current; Macarchy never downloads
 or replaces itself outside Homebrew.
 
-## Preview a theme-driven focus ring
+## Managed theme-driven focus ring
 
-The first JankyBorders slice provides a **temporary foreground preview**, not
-managed setup or login persistence. It requires separately installed
+Normal setup includes JankyBorders **1.9.0**, independently of the window manager.
+The reviewed plan includes its separately trusted Homebrew formula, native
+configuration and login service. Nothing starts merely because a profile was
+edited. To opt out in the portable or machine profile:
+
+```toml
+[focus_ring]
+provider = "disabled"
+```
+
+`setup plan` and `environment plan` disclose ownership and any adoption digest.
+Use the normal reviewed apply workflow above. Macarchy retains the existing
+`~/.config/borders/bordersrc` entry without translating its shell configuration;
+a directory-level symlink is retained as a whole under the existing bounded
+directory-inventory contract. Supporting files remain external.
+The alternative `~/.bordersrc` stays untouched, is included in adoption evidence,
+and cannot silently drift while the role is managed.
+
+The generated executable startup file reads the canonical active theme, and
+normal theme changes request live accent updates. Disabling the role or tearing
+down the environment restores the retained entry and prior running/stopped
+service state. **Adopting a running native service and restoring its arbitrary
+configuration requires a Borders restart.** Unloaded LaunchAgents, custom job
+definitions, unmanaged processes, shell-unsafe home paths and a running native
+configuration that would need a permission change on restoration are blocked,
+not silently taken over. Homebrew alone controls service registration; Macarchy
+does not grant formula trust or Accessibility permission.
+
+Status distinguishes owned configuration and service identity from appearance:
+a successful client request is **not settings or rendered-pixel readback**.
+Interrupted transitions remain in the existing environment recovery transaction.
+
+### Temporary preview
+
+The **temporary foreground preview** remains available without managed setup or
+login persistence. It requires separately installed
 `felixkratz/formulae/borders` version **1.9.0** and a valid active Macarchy theme.
 Installation/trust remains an explicit Homebrew decision; this command installs
 nothing and never starts a service or edits `bordersrc`.

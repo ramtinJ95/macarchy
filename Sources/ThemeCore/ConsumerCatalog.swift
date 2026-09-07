@@ -11,6 +11,7 @@ package struct ConsumerID: Hashable, RawRepresentable, Sendable {
   package static let atuin = ConsumerID(rawValue: AtuinAdapter.id)
   package static let bat = ConsumerID(rawValue: BatAdapter.id)
   package static let btop = ConsumerID(rawValue: BtopAdapter.id)
+  package static let borders = ConsumerID(rawValue: BordersAdapter.id)
   package static let codex = ConsumerID(rawValue: CodexAdapter.id)
   package static let eza = ConsumerID(rawValue: EzaAdapter.id)
   package static let herdr = ConsumerID(rawValue: HerdrAdapter.id)
@@ -31,6 +32,7 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case atuin
   case bat
   case btop
+  case borders
   case codex
   case eza
   case herdr
@@ -396,6 +398,11 @@ package struct ConsumerCatalog: Sendable {
       },
       dependencies: [.init(id: BatAdapter.id, role: .requiredAdapter)],
       setupManaged: true
+    ),
+    ConsumerCatalogEntry(
+      id: .borders,
+      mode: .runtime(.borders, requirement: .required),
+      dependencies: [.init(id: BordersAdapter.id, role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(
       id: .btop,

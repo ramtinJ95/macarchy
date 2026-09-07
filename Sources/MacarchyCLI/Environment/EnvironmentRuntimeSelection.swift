@@ -21,6 +21,7 @@ enum ThemeRuntimeSelection {
       enabled = appliedAdapterIDs(for: ownership)
     } else {
       enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
+      enabled.remove(BordersAdapter.id)
       enabled.remove(CodexAdapter.id)
       enabled.remove(HerdrAdapter.id)
       enabled.remove(PiAdapter.id)
@@ -48,6 +49,8 @@ enum ThemeRuntimeSelection {
       return Set(explicit)
     }
     var enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
+    enabled.remove(BordersAdapter.id)
+    if ownership.borders != nil { enabled.insert(BordersAdapter.id) }
     enabled.remove(SpicetifyAdapter.id)
     enabled.remove(TuicrAdapter.id)
     if ownership.spicetifyEnabled {
@@ -63,6 +66,7 @@ enum ThemeRuntimeSelection {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     herdrRuntime: EnvironmentHerdrRuntimeReloader = .live,
+    bordersRuntime: EnvironmentBordersRuntime = .live,
     enabledAdapterIDs: Set<String>? = nil
   ) throws -> ThemeActivationCoordinator {
     let homeDirectory = consumerPaths.piConfigurationDirectoryURL
@@ -90,6 +94,8 @@ enum ThemeRuntimeSelection {
       ),
       enabledAdapterIDs: enabledAdapterIDs,
       herdrManagedMode: herdrManagedMode,
+      bordersManagedMode: managedBordersMode(
+        stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime),
       piSelectionIsApplied: {
         try piIsEnabled(stateRoot: stateRoot, consumerPaths: consumerPaths)
       },
@@ -98,6 +104,40 @@ enum ThemeRuntimeSelection {
           stateRoot: stateRoot,
           consumerPaths: consumerPaths
         )
+      }
+    )
+  }
+
+  static func managedBordersMode(
+    stateRoot: URL,
+    homeDirectory: URL,
+    runtime: EnvironmentBordersRuntime
+  ) -> BordersManagedMode {
+    let coordinator = EnvironmentTransactionCoordinator(
+      homeDirectory: homeDirectory, stateRoot: stateRoot)
+    return BordersManagedMode(
+      preflight: { try coordinator.verifyManagedBordersConfiguration() },
+      inspect: {
+        try coordinator.verifyManagedBordersConfiguration()
+        guard try runtime.preflight(homeDirectory).isRunning else {
+          throw EnvironmentLifecycleError.drift("the applied Borders service is stopped")
+        }
+        return
+          "Managed Borders configuration and Homebrew service are present; native appearance settings and pixels have no readback."
+      },
+      reconcile: {
+        let lock = EnvironmentLifecycleLock(stateRoot: stateRoot)
+        let descriptor = try lock.acquire()
+        defer { lock.release(descriptor) }
+        guard try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil else {
+          throw EnvironmentLifecycleError.blocked(
+            "Borders environment recovery must finish before theme reconciliation")
+        }
+        try coordinator.verifyManagedBordersConfiguration()
+        guard try runtime.preflight(homeDirectory).isRunning else {
+          throw EnvironmentLifecycleError.drift("the applied Borders service is stopped")
+        }
+        return try runtime.request(stateRoot, homeDirectory)
       }
     )
   }
