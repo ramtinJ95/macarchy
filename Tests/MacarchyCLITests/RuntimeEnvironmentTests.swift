@@ -16,7 +16,7 @@ struct RuntimeEnvironmentTests {
 
   @Test
   func developmentBuildFindsCheckoutResourcesFromExecutableLocation() throws {
-    let checkout = repositoryRoot
+    let checkout = repositoryRoot.resolvingSymlinksInPath().standardizedFileURL
     let executable = checkout.appending(
       path: ".build/arm64-apple-macosx/debug/macarchy"
     )
@@ -39,6 +39,7 @@ struct RuntimeEnvironmentTests {
   @Test
   func packagedLayoutLoadsThemesAndDetectsInstallationOwnership() throws {
     let root = try temporaryDirectory(under: repositoryRoot.appending(path: ".build"))
+      .resolvingSymlinksInPath().standardizedFileURL
     defer { try? FileManager.default.removeItem(at: root) }
     let layout = try packagedLayout(at: root)
     let runtime = RuntimeEnvironment(executableURL: layout.executable)
@@ -90,6 +91,7 @@ struct RuntimeEnvironmentTests {
   @Test
   func packagedMetadataPreventsCheckoutFallbackWhenThemesAreMissing() throws {
     let root = try temporaryDirectory(under: repositoryRoot.appending(path: ".build"))
+      .resolvingSymlinksInPath().standardizedFileURL
     defer { try? FileManager.default.removeItem(at: root) }
     let layout = try packagedLayout(at: root, includeThemes: false)
     let runtime = RuntimeEnvironment(executableURL: layout.executable)
