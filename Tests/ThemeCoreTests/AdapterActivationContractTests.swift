@@ -231,7 +231,8 @@ extension AdapterContractTests {
           AdapterResult(
             adapterID: "wallpaper",
             requirement: .required,
-            status: .applied
+            status: .applied,
+            message: ScreenSaverImageStore(root: root).inspection().message
           ),
           AdapterResult(
             adapterID: "yazi",

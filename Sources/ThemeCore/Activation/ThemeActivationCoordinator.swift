@@ -667,12 +667,27 @@ package struct ThemeActivationCoordinator: Sendable {
               let manifest = try statusStore.activeManifest()
               return activeWallpaperURL(manifest: manifest)
             }.run()
+            // The Photos folder is a projection of this same wallpaper consumer,
+            // not another environment role or a native screensaver settings owner.
+            // Prepare it only after the native desktop repaint path has finished.
+            var messages = [wallpaperOutcome.message].compactMap { $0 }
+            do {
+              messages.append(try ScreenSaverImageStore(root: root).reconcile())
+            } catch {
+              messages.append("Photos source failed: \(error)")
+              return AdapterOutcome(
+                status: .failed,
+                message: "Desktop wallpaper: \(wallpaperOutcome.status.rawValue); "
+                  + messages.joined(separator: "; ")
+              )
+            }
             guard wallpaperOutcome.status == .applied else {
-              return wallpaperOutcome
+              return AdapterOutcome(
+                status: wallpaperOutcome.status, message: messages.joined(separator: "; "))
             }
             do {
               try wallpaperSignal.preflight()
-              return wallpaperOutcome
+              return AdapterOutcome(status: .applied, message: messages.joined(separator: "; "))
             } catch {
               let status: AdapterStatus =
                 if case YabaiWallpaperSignalError.missingDirective = error {
@@ -682,7 +697,8 @@ package struct ThemeActivationCoordinator: Sendable {
                 } else {
                   .failed
                 }
-              return AdapterOutcome(status: status, message: String(describing: error))
+              messages.append(String(describing: error))
+              return AdapterOutcome(status: status, message: messages.joined(separator: "; "))
             }
           }
         }
@@ -772,11 +788,20 @@ package struct ThemeActivationCoordinator: Sendable {
       return AdapterInspection(
         adapterID: WallpaperAdapter.id,
         requirement: .required,
-        message: "The active theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
+        message:
+          "The active theme has no backgrounds; desktop wallpaper and the Photos source retain their previous images"
       )
     }
-    let wallpaperInspection = wallpaper.inspection(
+    let desktopInspection = wallpaper.inspection(
       desiredWallpaperURL: desiredWallpaperURL
+    )
+    let photosInspection = ScreenSaverImageStore(root: root).inspection()
+    let wallpaperInspection = AdapterInspection(
+      adapterID: WallpaperAdapter.id,
+      requirement: .required,
+      status: Self.mostSevere(desktopInspection.status, photosInspection.status),
+      message: [desktopInspection.message, photosInspection.message].compactMap { $0 }.joined(
+        separator: "; ")
     )
     do {
       try wallpaperSignal.preflight()

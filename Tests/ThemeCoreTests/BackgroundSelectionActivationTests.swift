@@ -27,6 +27,9 @@ extension AdapterContractTests {
 
     let first = try await coordinator.activate(package: package)
     #expect(first.manifest.background == GenerationBackground(id: "default", format: .webp))
+    let saver = ScreenSaverImageStore(root: root)
+    #expect(saver.inspection().status == .ready)
+    let firstSaverImage = try Data(contentsOf: saver.folderURL.appending(path: "wallpaper.png"))
     let baseline = try ReconciliationStatusStore(root: root).persist(
       manifest: first.manifest,
       results: first.reconciliation.results.map { result in
@@ -79,6 +82,9 @@ extension AdapterContractTests {
     stalePreferences[package.id] = "default"
     try BackgroundPreferenceStore(root: root).persist(stalePreferences)
     _ = try await coordinator.activate(package: tokyoNightPackage())
+    #expect(saver.inspection().status == .ready)
+    #expect(
+      try Data(contentsOf: saver.folderURL.appending(path: "wallpaper.png")) != firstSaverImage)
     let restarted = try backgroundCoordinator(
       root: root,
       consumerPaths: consumerPaths,
@@ -87,6 +93,8 @@ extension AdapterContractTests {
     )
     let restored = try await restarted.activate(package: package)
     #expect(restored.manifest.background == GenerationBackground(id: "second", format: .webp))
+    #expect(
+      try Data(contentsOf: saver.folderURL.appending(path: "wallpaper.png")) == firstSaverImage)
 
     let removed = try removingSecondBackground(from: package)
     let fallback = try await restarted.activate(package: removed)
@@ -148,15 +156,11 @@ extension AdapterContractTests {
       #expect(result.manifest.background == nil)
       #expect(result.manifest.artifacts[WallpaperAdapter.outputPath] == nil)
       #expect(wallpaperInspections.withLock { $0 } == 0)
-      #expect(
-        result.reconciliation.results.first { $0.adapterID == WallpaperAdapter.id }
-          == AdapterResult(
-            adapterID: WallpaperAdapter.id,
-            requirement: .required,
-            status: .disabled,
-            message: "This theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
-          )
-      )
+      let wallpaperResult = try #require(
+        result.reconciliation.results.first { $0.adapterID == WallpaperAdapter.id })
+      #expect(wallpaperResult.status == .disabled)
+      #expect(wallpaperResult.message?.contains("no backgrounds") == true)
+      #expect(!FileManager.default.fileExists(atPath: root.appending(path: "screensaver").path))
     }
   }
 
