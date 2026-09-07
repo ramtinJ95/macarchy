@@ -6,6 +6,7 @@ struct Desktop: ParsableCommand {
     abstract: "Plan and manage the default desktop providers.",
     subcommands: [
       Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, RunSketchyBarHook.self,
+      Borders.self,
     ]
   )
 
