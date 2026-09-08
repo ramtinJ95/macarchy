@@ -27,7 +27,7 @@ struct BordersServiceTests {
     try Data("external dormant registration".utf8).write(
       to: agents.appending(path: "\(BordersService.label).plist"))
     #expect(throws: (any Error).self) { try service.inspect() }
-    #expect(requests.withLock { $0.count } == 4)
+    #expect(requests.withLock { $0.count } == 6)
   }
 
   @Test
@@ -54,18 +54,20 @@ struct BordersServiceTests {
         propertyListPath: "/fixture/borders.plist", processID: 123))
   }
 
-  @Test(arguments: [
-    "supported", "custom-job", "request-rejected", "pid-change",
-    "dormant", "exited", "dormant-custom", "exited-custom",
-  ])
-  func nativeRequestsRequireExactSupportedServiceIdentity(condition: String) throws {
+  @Test(
+    arguments: HomebrewUserServiceRegistration.Provider.borders.labels,
+    [
+      "supported", "custom-job", "request-rejected", "pid-change",
+      "dormant", "exited", "dormant-custom", "exited-custom",
+    ])
+  func nativeRequestsRequireExactSupportedServiceIdentity(label: String, condition: String) throws {
     let root = try temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    let plist = root.appending(path: "Library/LaunchAgents/\(BordersService.label).plist")
+    let plist = root.appending(path: "Library/LaunchAgents/\(label).plist")
     try FileManager.default.createDirectory(
       at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
     var fields: [String: Any] = [
-      "Label": BordersService.label,
+      "Label": label,
       "ProgramArguments": [BordersService.serviceExecutableURL.path],
       "KeepAlive": true, "RunAtLoad": true, "ProcessType": "Interactive",
       "StandardOutPath": "/opt/homebrew/var/log/borders/borders.out.log",
@@ -101,9 +103,12 @@ struct BordersServiceTests {
             return ProcessResult(terminationStatus: 1, output: "")
           }
           return ProcessResult(
-            terminationStatus: 0, output: condition == "pid-change" && count > 3 ? "124" : "123")
+            terminationStatus: 0, output: condition == "pid-change" && count > 4 ? "124" : "123")
         }
         if request.executableURL.path == "/bin/launchctl" {
+          if request.arguments.last != "gui/\(getuid())/\(label)" {
+            return ProcessResult(terminationStatus: 113, output: "")
+          }
           if condition.hasPrefix("dormant") {
             return ProcessResult(terminationStatus: 113, output: "")
           }

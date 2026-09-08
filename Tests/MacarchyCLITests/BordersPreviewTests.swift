@@ -34,10 +34,12 @@ struct BordersPreviewTests {
     #expect(throws: (any Error).self) { try BordersPalette.read(root: fixture.root) }
   }
 
-  @Test(arguments: [
-    "missing", "version", "process", "inspection", "service", "loaded-job", "job-error", "ready",
-  ])
-  func preflightNeverStartsOrUpdatesTheProvider(condition: String) throws {
+  @Test(
+    arguments: HomebrewUserServiceRegistration.Provider.borders.labels,
+    [
+      "missing", "version", "process", "inspection", "service", "loaded-job", "job-error", "ready",
+    ])
+  func preflightNeverStartsOrUpdatesTheProvider(label: String, condition: String) throws {
     let fixture = try BordersFixture()
     defer { fixture.remove() }
     let executable = fixture.directory.appending(path: "borders")
@@ -51,7 +53,7 @@ struct BordersPreviewTests {
       try FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
       // Even an inactive/dangling service entry is external state, not absence.
       try FileManager.default.createSymbolicLink(
-        at: agents.appending(path: "homebrew.mxcl.borders.plist"),
+        at: agents.appending(path: "\(label).plist"),
         withDestinationURL: fixture.directory.appending(path: "missing-plist")
       )
     }
@@ -74,7 +76,13 @@ struct BordersPreviewTests {
           )
         }
         #expect(request.executableURL.path == "/bin/launchctl")
-        #expect(request.arguments == ["print", "gui/\(getuid())/homebrew.mxcl.borders"])
+        #expect(
+          HomebrewUserServiceRegistration.Provider.borders.labels.contains {
+            request.arguments == ["print", "gui/\(getuid())/\($0)"]
+          })
+        if request.arguments.last != "gui/\(getuid())/\(label)" {
+          return ProcessResult(terminationStatus: 113, output: "")
+        }
         return ProcessResult(
           terminationStatus: condition == "loaded-job" ? 0 : condition == "job-error" ? 5 : 113,
           output: ""

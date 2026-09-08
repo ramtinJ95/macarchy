@@ -6,6 +6,22 @@ import Testing
 @testable import ThemeCore
 
 struct BordersLifecycleTests {
+  @Test
+  func failedRollbackRetainsBothForwardAndRecoveryErrors() async throws {
+    let fixture = try ManagedBordersFixture(kind: "absent", running: false)
+    defer { fixture.remove() }
+    fixture.state.withLock {
+      $0.failRequest = true
+      $0.failStop = true
+    }
+    let result = try await fixture.apply()
+    #expect(!result.succeeded)
+    #expect(result.output.contains("injected request failure"))
+    #expect(result.output.contains("injected stop failure"))
+    #expect(result.output.contains("recovery_required"))
+    #expect(try EnvironmentStateStore(stateRoot: fixture.root).readTransaction() != nil)
+  }
+
   @Test(arguments: ["absent", "file", "directory-link", "fallback"])
   func managedApplyReapplyAndTeardownPreserveNativeConfiguration(kind: String) async throws {
     let fixture = try ManagedBordersFixture(kind: kind, running: kind != "absent")
@@ -275,6 +291,7 @@ private struct ManagedBordersFixture {
     var pid: Int32 = 100
     var actions: [String] = []
     var failRequest = false
+    var failStop = false
     var interruptedRegistration = false
     var incompatible = false
   }
@@ -344,7 +361,8 @@ private struct ManagedBordersFixture {
         }
       },
       stop: { _ in
-        state.withLock {
+        try state.withLock {
+          if $0.failStop { throw BordersServiceError.blocked("injected stop failure") }
           $0.running = false
           $0.interruptedRegistration = false
           $0.actions.append("stop")

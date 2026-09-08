@@ -208,8 +208,10 @@ struct SketchyBarHomebrewService: Sendable {
     )
   }
 
-  private static func inspectLive(
-    processRunner: ProcessRunner
+  static func inspectLive(
+    processRunner: ProcessRunner,
+    home: URL = FileManager.default.homeDirectoryForCurrentUser,
+    processPath: (Int32) throws -> String = nativeProcessPath
   ) throws -> SketchyBarRuntimeInspection {
     let uid = String(getuid())
     let processResult = try processRunner.run(
@@ -219,45 +221,39 @@ struct SketchyBarHomebrewService: Sendable {
         timeout: 2
       )
     )
-    let launchResult = try processRunner.run(
-      ProcessRequest(
-        executableURL: URL(filePath: "/bin/launchctl"),
-        arguments: ["print", "gui/\(uid)/\(serviceLabel)"],
-        timeout: 2
-      )
-    )
+    let registration: HomebrewUserServiceRegistration?
+    do {
+      registration = try HomebrewUserServiceRegistration.inspect(
+        provider: .sketchybar, home: home, runner: processRunner)
+    } catch {
+      throw SketchyBarDesktopError.lifecycle(String(describing: error))
+    }
     if processResult.terminationStatus == 1 {
-      if launchResult.terminationStatus == 113 { return .stopped }
-      guard launchResult.terminationStatus == 0 else {
-        throw SketchyBarDesktopError.lifecycle(
-          "cannot inspect the SketchyBar Homebrew service (launchctl status \(launchResult.terminationStatus))"
-        )
-      }
+      if registration == nil { return .stopped }
       throw SketchyBarDesktopError.lifecycle(
-        "the SketchyBar Homebrew service is loaded without its process"
+        "the SketchyBar Homebrew registration exists without its process; explicit resolution is required"
       )
     }
     guard processResult.terminationStatus == 0 else {
       throw SketchyBarDesktopError.lifecycle("cannot inspect the SketchyBar process identity")
     }
-    let processIDs = processResult.output.split(whereSeparator: \.isNewline).compactMap {
-      Int32($0.trimmingCharacters(in: .whitespaces))
-    }
-    guard processIDs.count == 1, let processID = processIDs.first else {
+    let processRows = processResult.output.split(whereSeparator: \.isNewline)
+    guard processRows.count == 1,
+      let processID = Int32(processRows[0].trimmingCharacters(in: .whitespaces)), processID > 0
+    else {
       throw SketchyBarDesktopError.lifecycle(
-        "expected one UID-scoped SketchyBar process; found \(processIDs.count)"
+        "expected one positive UID-scoped SketchyBar process ID"
       )
     }
-    guard launchResult.terminationStatus == 0 else {
+    guard let registration, let job = registration.loadedJobOutput else {
       throw SketchyBarDesktopError.lifecycle(
         "SketchyBar is running outside the supported Homebrew service"
       )
     }
-    let expectedPlist = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: "Library/LaunchAgents/\(serviceLabel).plist").path
+    let expectedPlist = registration.propertyListURL.path
     guard
       loadedServiceMatches(
-        launchResult.output,
+        job,
         propertyListPath: expectedPlist,
         processID: processID
       )
@@ -266,16 +262,8 @@ struct SketchyBarHomebrewService: Sendable {
         "the loaded SketchyBar Homebrew service does not match its running process"
       )
     }
-    try validateServicePropertyList(URL(filePath: expectedPlist))
-
-    var pathBuffer = [CChar](repeating: 0, count: 4_096)
-    guard proc_pidpath(processID, &pathBuffer, UInt32(pathBuffer.count)) > 0 else {
-      throw SketchyBarDesktopError.lifecycle("cannot resolve SketchyBar PID \(processID)")
-    }
-    let executablePath = String(
-      decoding: pathBuffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)),
-      as: UTF8.self
-    )
+    try validateServicePropertyList(registration.propertyListURL, label: registration.label)
+    let executablePath = try processPath(processID)
     let supportedPath = serviceExecutableURL.resolvingSymlinksInPath().path
     guard executablePath == supportedPath else {
       throw SketchyBarDesktopError.lifecycle(
@@ -287,16 +275,25 @@ struct SketchyBarHomebrewService: Sendable {
       message: "the UID-scoped Homebrew SketchyBar service is running",
       processID: processID,
       executablePath: executablePath,
-      serviceLabel: serviceLabel
+      serviceLabel: registration.label
     )
   }
 
-  private static func validateServicePropertyList(_ url: URL) throws {
+  private static func nativeProcessPath(_ processID: Int32) throws -> String {
+    var pathBuffer = [CChar](repeating: 0, count: 4_096)
+    guard proc_pidpath(processID, &pathBuffer, UInt32(pathBuffer.count)) > 0 else {
+      throw SketchyBarDesktopError.lifecycle("cannot resolve SketchyBar PID \(processID)")
+    }
+    return String(
+      decoding: pathBuffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
+  }
+
+  private static func validateServicePropertyList(_ url: URL, label: String) throws {
     let data = try BoundedRegularFile.read(at: url, maximumSize: 65_536).data
     guard
       let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
         as? [String: Any],
-      plist["Label"] as? String == serviceLabel,
+      plist["Label"] as? String == label,
       plist["ProgramArguments"] as? [String] == [serviceExecutableURL.path],
       plist["KeepAlive"] as? Bool == true,
       plist["RunAtLoad"] as? Bool == true
@@ -364,7 +361,8 @@ struct SketchyBarLifecycleEvidence: Codable, Equatable, Sendable {
       SketchyBarGenerationInspector.isGenerationID(generationID),
       runtime.status == .running,
       runtime.processID.map({ $0 > 0 }) == true,
-      runtime.serviceLabel == SketchyBarHomebrewService.serviceLabel,
+      runtime.serviceLabel.map(HomebrewUserServiceRegistration.Provider.sketchybar.labels.contains)
+        == true,
       coreRuntime.isValidEvidence,
       let executablePath = runtime.executablePath,
       !executablePath.contains("\0"),

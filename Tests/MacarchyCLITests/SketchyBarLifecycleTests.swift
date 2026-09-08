@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Synchronization
 import Testing
@@ -6,6 +7,59 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarLifecycleTests {
+  @Test(
+    arguments: HomebrewUserServiceRegistration.Provider.sketchybar.labels,
+    ["running", "wrong-label", "wrong-pid", "wrong-executable", "dormant", "external"])
+  func nativeInspectionValidatesBothLabelGenerations(label: String, condition: String) throws {
+    let home = FileManager.default.temporaryDirectory.appending(path: "sketchy-label-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: home) }
+    let plist = home.appending(path: "Library/LaunchAgents/\(label).plist")
+    try FileManager.default.createDirectory(
+      at: plist.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let executable = SketchyBarHomebrewService.serviceExecutableURL
+    let fields: [String: Any] = [
+      "Label": condition == "wrong-label" ? "external.label" : label,
+      "ProgramArguments": [executable.path], "KeepAlive": true, "RunAtLoad": true,
+    ]
+    if condition != "external" {
+      try PropertyListSerialization.data(fromPropertyList: fields, format: .xml, options: 0).write(
+        to: plist)
+    }
+    let job = """
+      path = \(plist.path)
+      state = running
+      program = \(executable.path)
+      pid = \(condition == "wrong-pid" ? 124 : 123)
+      arguments = {
+        \(executable.path)
+      }
+      """
+    let runner = ProcessRunner { request in
+      if request.executableURL.path == "/usr/bin/pgrep" {
+        return ProcessResult(terminationStatus: condition == "dormant" ? 1 : 0, output: "123")
+      }
+      let loaded =
+        request.arguments.last == "gui/\(getuid())/\(label)"
+        && condition != "dormant" && condition != "external"
+      return ProcessResult(terminationStatus: loaded ? 0 : 113, output: loaded ? job : "")
+    }
+    let inspect = {
+      try SketchyBarHomebrewService.inspectLive(
+        processRunner: runner, home: home,
+        processPath: { _ in
+          condition == "wrong-executable"
+            ? "/external/sketchybar" : executable.resolvingSymlinksInPath().path
+        })
+    }
+    if condition == "running" {
+      let runtime = try inspect()
+      #expect(
+        runtime.status == .running && runtime.serviceLabel == label && runtime.processID == 123)
+    } else {
+      #expect(throws: SketchyBarDesktopError.self) { try inspect() }
+    }
+  }
+
   @Test
   func unsupportedVersionBlocksBeforeRuntimeInspection() {
     let requests = Mutex([ProcessRequest]())
