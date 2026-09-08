@@ -423,7 +423,8 @@ final class InstallationFixture: Sendable {
     return .init(
       planner: .init(
         capabilityIsAvailable: { _ in false },
-        desktopPlanner: unrelated, environmentPlanner: unrelated,
+        desktopPlanner: unrelated,
+        environmentPlanner: { context, profile, _ in try unrelated(context, profile) },
         packageInventoryReader: { self.observation() },
         standardBrewfile: { _ in
           try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))

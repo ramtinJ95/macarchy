@@ -270,7 +270,7 @@ private final class PackageLayeringFixture: Sendable {
     }
     return .init(
       capabilityIsAvailable: { _ in false }, desktopPlanner: unrelated,
-      environmentPlanner: unrelated,
+      environmentPlanner: { context, profile, _ in try unrelated(context, profile) },
       packageInventoryReader: {
         self.inventory.reader(formulae: self.installed.withLock { $0 } ? "hello" : "").read()
       },

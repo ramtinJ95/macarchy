@@ -47,10 +47,14 @@ struct EnvironmentSlackPreset: Sendable {
     return payload
   }
 
-  func entry(stateRoot: URL, applied: Bool) -> EnvironmentEntryInspection {
+  func entry(
+    stateRoot: URL, applied: Bool, bootstrapTheme: ThemePackage? = nil
+  ) -> EnvironmentEntryInspection {
     do {
       let version = try supportedVersion()
-      let payload = try payload(stateRoot: stateRoot).trimmingCharacters(in: .newlines)
+      let preview = applied ? nil : bootstrapTheme.map { SlackAdapter.render(package: $0) }
+      let payload = try (preview ?? payload(stateRoot: stateRoot))
+        .trimmingCharacters(in: .newlines)
       return EnvironmentEntryInspection(
         id: Self.manualEntryID,
         path: bundleURL.path,
@@ -58,7 +62,8 @@ struct EnvironmentSlackPreset: Sendable {
         ownership: "external",
         message: applied
           ? "Slack \(version) is compatible. Manual import is required for each workspace: \(SlackAdapter.importInstructions) Payload: \(payload)"
-          : "Slack package and payload are ready; environment apply must publish manual-import authority. \(SlackAdapter.importInstructions) Payload: \(payload)",
+          : "Slack package and payload are ready; environment apply must publish manual-import authority. \(SlackAdapter.importInstructions) Payload: \(payload)"
+            + (preview == nil ? "" : " Preview only; unified setup must first activate the theme."),
         evidence: nil
       )
     } catch {

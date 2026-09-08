@@ -50,7 +50,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL? = nil,
     json: Bool,
-    profile suppliedProfile: PortableProfile? = nil
+    profile suppliedProfile: PortableProfile? = nil,
+    bootstrapTheme: ThemePackage? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
     if let suppliedProfile {
@@ -96,7 +97,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
 
     let provider = homeDirectory.map {
-      EnvironmentProviderInspector().inspectIncludingBordersRuntime(
+      EnvironmentProviderInspector(bootstrapTheme: bootstrapTheme).inspectIncludingBordersRuntime(
         composition: composition,
         homeDirectory: $0,
         stateRoot: stateRoot,

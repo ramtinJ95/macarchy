@@ -73,9 +73,15 @@ struct EnvironmentManagedEntry: Equatable, Sendable {
 struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
   let slackPreset: EnvironmentSlackPreset
+  /// Only unified first-install planning supplies a rendered, not-yet-active theme.
+  let bootstrapTheme: ThemePackage?
 
-  init(slackPreset: EnvironmentSlackPreset = EnvironmentSlackPreset()) {
+  init(
+    slackPreset: EnvironmentSlackPreset = EnvironmentSlackPreset(),
+    bootstrapTheme: ThemePackage? = nil
+  ) {
     self.slackPreset = slackPreset
+    self.bootstrapTheme = bootstrapTheme
   }
 
   func inspect(
@@ -506,7 +512,8 @@ struct EnvironmentProviderInspector: Sendable {
         inspections.append(
           slackPreset.entry(
             stateRoot: stateRoot,
-            applied: ownership?.slackEnabled == true
+            applied: ownership?.slackEnabled == true,
+            bootstrapTheme: bootstrapTheme
           )
         )
       } else if ownership?.slackEnabled == true {

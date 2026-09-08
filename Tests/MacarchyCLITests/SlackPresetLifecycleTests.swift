@@ -6,6 +6,37 @@ import Testing
 
 struct SlackPresetLifecycleTests {
   @Test
+  func bootstrapPayloadIsPreviewOnlyAndDoesNotWeakenAppliedOrVersionChecks() throws {
+    let fixture = try SlackPresetFixture(version: "4.60.0", activateTheme: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let package = try ThemePackageLoader().load(
+      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
+    #expect(fixture.preset.entry(stateRoot: fixture.state, applied: false).status == .unsupported)
+    let preview = fixture.preset.entry(
+      stateRoot: fixture.state, applied: false, bootstrapTheme: package)
+    #expect(preview.status == .authorityRequired)
+    #expect(preview.message.contains("Preview only"))
+    #expect(preview.message.contains("#1e1e2e,#cba6f7,#a6e3a1,#f38ba8"))
+    #expect(!FileManager.default.fileExists(atPath: fixture.state.path))
+    #expect(
+      fixture.preset.entry(stateRoot: fixture.state, applied: true, bootstrapTheme: package)
+        .status == .unsupported)
+
+    let unsupported = try SlackPresetFixture(version: "4.51.190", activateTheme: false)
+    defer { try? FileManager.default.removeItem(at: unsupported.root) }
+    #expect(
+      unsupported.preset.entry(
+        stateRoot: unsupported.state, applied: false, bootstrapTheme: package
+      ).status == .unsupported)
+
+    _ = try ThemeActivator(root: fixture.state).activate(package: package)
+    let active = fixture.preset.entry(stateRoot: fixture.state, applied: true)
+    #expect(active.status == .external)
+    #expect(!active.message.contains("Preview only"))
+    #expect(active.message.contains("#1e1e2e,#cba6f7,#a6e3a1,#f38ba8"))
+  }
+
+  @Test
   func strictBundleVersionAndRendererV2PayloadGateManualAuthority() throws {
     let fixture = try SlackPresetFixture(version: "4.51.191")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -119,7 +150,7 @@ private struct SlackPresetFixture {
 
   var preset: EnvironmentSlackPreset { EnvironmentSlackPreset(bundleURL: bundle) }
 
-  init(version: String) throws {
+  init(version: String, activateTheme: Bool = true) throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-slack-preset-\(UUID().uuidString)", directoryHint: .isDirectory)
     home = root.appending(path: "home", directoryHint: .isDirectory)
@@ -131,9 +162,11 @@ private struct SlackPresetFixture {
       fromPropertyList: ["CFBundleShortVersionString": version],
       format: .xml, options: 0)
     try plist.write(to: contents.appending(path: "Info.plist"))
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
-    _ = try ThemeActivator(root: state).activate(package: package)
+    if activateTheme {
+      let package = try ThemePackageLoader().load(
+        packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
+      _ = try ThemeActivator(root: state).activate(package: package)
+    }
   }
 
   func composition(enabled: Bool) throws -> EnvironmentComposition {
