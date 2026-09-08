@@ -404,6 +404,10 @@ struct EnvironmentSessionVerifier: Sendable {
             "HOME": homeDirectory.path,
             "MACARCHY_MANAGED_SESSION": "0",
             "ZDOTDIR": homeDirectory.path,
+            // Do not let the invoking terminal supply missing managed startup paths.
+            "PATH": requireManagedMarker
+              ? "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
+              : ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin",
           ]
         )
       )
