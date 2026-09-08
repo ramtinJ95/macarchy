@@ -714,6 +714,10 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           )
         )
       }
+      let warning =
+        try EnvironmentStateStore(stateRoot: context.stateRoot)
+        .hasUnverifiedSpicetifyRecovery()
+        ? " \(EnvironmentStateStore.spicetifyRecoveryMessage)" : ""
       if recovered.transaction.operation == .apply,
         recovered.transaction.phase == .committing
       {
@@ -721,7 +725,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           outcome: "applied",
           mutated: recovered.result.mutated,
           plan: nil,
-          message: "Interrupted unified apply had committed; transaction cleanup completed.",
+          message: "Interrupted unified apply had committed; transaction cleanup completed."
+            + warning,
           json: json
         )
       }
@@ -729,9 +734,10 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         outcome: recovered.transaction.operation == .apply ? "rolled_back" : "blocked",
         mutated: recovered.result.mutated,
         plan: nil,
-        message: recovered.transaction.operation == .apply
+        message: (recovered.transaction.operation == .apply
           ? "Interrupted unified apply was rolled back; review the current plan before retrying."
-          : "Interrupted teardown was completed; review the current plan before applying.",
+          : "Interrupted teardown was completed; review the current plan before applying.")
+          + warning,
         json: json
       )
     } catch {

@@ -10,6 +10,22 @@ struct EnvironmentStateStore: Sendable {
   }
   private var ownershipURL: URL { directory.appending(path: "ownership.json") }
   private var transactionURL: URL { directory.appending(path: "transaction.json") }
+  private var spicetifyRecoveryURL: URL {
+    directory.appending(path: "spicetify-recovery.json")
+  }
+
+  static let spicetifyRecoveryMessage =
+    "Spotify runtime restoration remains UNVERIFIED after an explicitly acknowledged rollback. Macarchy restored configuration ownership only; repair Spicetify manually before enabling the preset."
+
+  func hasUnverifiedSpicetifyRecovery() throws -> Bool {
+    try read(String.self, at: spicetifyRecoveryURL) { $0 == "original_runtime_unverified" } != nil
+  }
+
+  func recordUnverifiedSpicetifyRecovery() throws {
+    try write("original_runtime_unverified", to: spicetifyRecoveryURL)
+  }
+
+  func clearUnverifiedSpicetifyRecovery() throws { try remove(spicetifyRecoveryURL) }
 
   func readOwnership() throws -> EnvironmentOwnership? {
     try read(EnvironmentOwnership.self, at: ownershipURL) { value in
@@ -285,6 +301,10 @@ struct EnvironmentStateStore: Sendable {
     return transaction.spicetifyRuntimeTarget == expected
       && (transaction.spicetifyRuntimeVerified == nil
         || transaction.spicetifyRuntimeVerified == true)
+      && (transaction.spicetifyRuntimeDeferred == nil
+        || (transaction.spicetifyRuntimeDeferred == true
+          && transaction.operation == .apply && transaction.direction == .rollback
+          && expected == .original && transaction.spicetifyRuntimeVerified == nil))
   }
 
   private static func replacementIsValid(

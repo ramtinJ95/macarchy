@@ -62,7 +62,7 @@ extension Macarchy {
       abstract: "Plan and converge the complete curated Macarchy core.",
       subcommands: [
         Guided.self, Plan.self, AdoptPackages.self, InstallPackages.self, AddPackages.self,
-        Apply.self, Status.self,
+        Apply.self, Recover.self, Status.self,
         Doctor.self,
         Teardown.self,
       ]
@@ -344,6 +344,33 @@ extension Macarchy {
           adoptions: try adoption.resolve(),
           json: json
         )
+        print(execution.output)
+        if !execution.succeeded { throw ExitCode.failure }
+      }
+    }
+
+    struct Recover: AsyncParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Recover interrupted setup without starting a new apply.")
+
+      @OptionGroup var profile: ProfileOptions
+      @OptionGroup var state: StateOptions
+
+      @Flag(
+        help:
+          "Restore original Spicetify configuration but explicitly leave Spotify runtime UNVERIFIED. Only valid for an interrupted apply already rolling back to original Spicetify."
+      )
+      var acknowledgeUnverifiedSpicetify = false
+
+      @Flag(help: "Emit machine-readable output.")
+      var json = false
+
+      mutating func run() async throws {
+        let execution = try await UnifiedSetupRecoveryCommandRunner.live.execute(
+          context: profile.context(stateRoot: state.stateRootURL),
+          consumerPaths: state.consumerPaths,
+          acknowledgeUnverifiedSpicetify: acknowledgeUnverifiedSpicetify,
+          json: json)
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }
       }

@@ -82,7 +82,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     },
     environmentPlanner: { context, profile, bootstrapTheme in
       let execution = try EnvironmentPlanCommandRunner(
-        prerequisites: .assumed,
+        prerequisites: EnvironmentPrerequisiteInspector { profile, home in
+          profile.presets.spicetify
+            ? EnvironmentPrerequisiteInspector.spicetifyPreparation(homeDirectory: home) : []
+        },
         requiresActiveTheme: false
       ).execute(
         resourcesRoot: context.environmentResourcesRoot,
@@ -305,7 +308,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       services: services(profile),
       permissions: permissions(profile),
       adoption: try adoptionEvidence(components, profile: profile),
-      manualBoundaries: manualBoundaries(profile: profile, installPlan: model.packages),
+      manualBoundaries: try manualBoundaries(
+        profile: profile, installPlan: model.packages, stateRoot: context.stateRoot),
       actions: diagnostics.isEmpty ? actions : [],
       components: components,
       diagnostics: diagnostics,
@@ -494,14 +498,21 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
   private func manualBoundaries(
     profile: PortableProfile,
-    installPlan: HomebrewInstallPlan
-  ) -> [UnifiedSetupManualBoundary] {
+    installPlan: HomebrewInstallPlan,
+    stateRoot: URL
+  ) throws -> [UnifiedSetupManualBoundary] {
     var result = installPlan.external.map {
       UnifiedSetupManualBoundary(
         id: $0.capabilityID,
         kind: "external_prerequisite",
         instruction: $0.instruction
       )
+    }
+    if try EnvironmentStateStore(stateRoot: stateRoot).hasUnverifiedSpicetifyRecovery() {
+      result.append(
+        UnifiedSetupManualBoundary(
+          id: "spicetify_runtime_restoration", kind: "unverified",
+          instruction: EnvironmentStateStore.spicetifyRecoveryMessage))
     }
     if profile.desktop.provider == .yabaiSkhd {
       result.append(
