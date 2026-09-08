@@ -1,3 +1,4 @@
+import AppKit
 import ArgumentParser
 import Foundation
 
@@ -6,7 +7,7 @@ struct Desktop: ParsableCommand {
     abstract: "Plan and manage the default desktop providers.",
     subcommands: [
       Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, RunSketchyBarHook.self,
-      Borders.self,
+      Borders.self, CPULoad.self, WiFi.self,
     ]
   )
 
@@ -180,6 +181,43 @@ struct Desktop: ParsableCommand {
       )
       print(execution.output)
       if !execution.succeeded { throw ExitCode.failure }
+    }
+  }
+
+  struct WiFi: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "_wifi", shouldDisplay: false)
+    @Option var name: String
+    @Option var sender: String = "routine"
+    @Option var textColor: String
+    @Option var accentColor: String
+    @Option var mutedColor: String
+    @Option var errorColor: String
+
+    mutating func run() throws {
+      let runner = SketchyBarWiFi(
+        processRunner: .live, read: WiFiState.read,
+        sleep: { Thread.sleep(forTimeInterval: $0) },
+        uptime: { ProcessInfo.processInfo.systemUptime },
+        copy: { value in
+          let pasteboard = NSPasteboard.general
+          pasteboard.clearContents()
+          guard pasteboard.setString(value, forType: .string) else {
+            throw WiFiError.queryFailed("cannot write clipboard")
+          }
+        })
+      try runner.execute(
+        name: name, sender: sender,
+        colors: .init(text: textColor, accent: accentColor, muted: mutedColor, error: errorColor))
+    }
+  }
+
+  struct CPULoad: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "_cpu-load", shouldDisplay: false)
+
+    mutating func run() throws {
+      let previous = try CPUTicks.read()
+      Thread.sleep(forTimeInterval: 1)
+      print(try CPUTicks.read().utilization(since: previous))
     }
   }
 
