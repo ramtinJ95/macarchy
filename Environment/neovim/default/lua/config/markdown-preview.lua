@@ -6,14 +6,15 @@ function M.setup()
   local group = vim.api.nvim_create_augroup("MacarchyMarkdownPreview", { clear = true })
   local function refresh()
     local normal = vim.api.nvim_get_hl(0, { name = "Normal", link = false })
-    assert(normal.fg and normal.bg, "Macarchy preview requires Normal foreground and background")
+    assert(normal.fg, "Macarchy preview requires Normal foreground")
+    local background = normal.bg or require("config.macarchy-theme").background()
     local function color(name)
       -- Unstyled syntax deliberately inherits normal text, just as it does in Neovim.
       return string.format("#%06x", vim.api.nvim_get_hl(0, { name = name, link = false }).fg or normal.fg)
     end
     local lines = {
       "/* Macarchy: derived from the active Neovim colorscheme. */",
-      string.format("pre.hljs { color: #%06x; background: #%06x; }", normal.fg, normal.bg),
+      string.format("pre.hljs { color: #%06x; background: #%06x; }", normal.fg, background),
     }
     for _, rule in ipairs({
       { "Keyword", ".hljs-keyword, .hljs-selector-tag" },
