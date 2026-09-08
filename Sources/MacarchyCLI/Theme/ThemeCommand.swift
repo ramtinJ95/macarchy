@@ -13,20 +13,44 @@ struct Theme: AsyncParsableCommand {
 }
 
 extension Theme {
-  struct Screensaver: ParsableCommand {
+  struct Screensaver: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
       abstract:
-        "Prepare the chosen wallpaper's Photos screensaver folder without changing macOS settings."
+        "Prepare or select a per-theme Photos screensaver image without changing the wallpaper or macOS settings."
     )
 
     @Option(help: "Canonical Macarchy state directory.")
     var stateRoot = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
 
-    mutating func run() throws {
+    @OptionGroup var roots: ThemeRootOptions
+
+    @Option(help: "Theme whose screensaver choice is saved. Defaults to the active theme.")
+    var theme: String?
+
+    @Option(
+      help: "Validated background identifier to use independently as this theme's screensaver.")
+    var background: String?
+
+    @Flag(help: "Clear this theme's independent selection and follow its wallpaper again.")
+    var followWallpaper = false
+
+    mutating func validate() throws {
+      if background != nil && followWallpaper {
+        throw ValidationError("--background and --follow-wallpaper are mutually exclusive")
+      }
+      if theme != nil && background == nil && !followWallpaper {
+        throw ValidationError("--theme requires --background or --follow-wallpaper")
+      }
+    }
+
+    mutating func run() async throws {
+      let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
       print(
-        try ScreenSaverImageStore(root: URL(filePath: stateRoot, directoryHint: .isDirectory))
-          .reconcile())
+        try await ThemeScreenSaverCommandRunner().execute(
+          repository: roots.repository(userRoot: root.appending(path: "themes")),
+          stateRoot: root, themeID: theme, backgroundID: background,
+          followWallpaper: followWallpaper))
     }
   }
 
@@ -215,6 +239,12 @@ extension Theme {
       try await MainActor.run {
         let controller = try ThemeBrowserWindowController(
           content: content,
+          saveScreenSaverSelection: { selection in
+            try await ThemeScreenSaverCommandRunner().execute(
+              repository: repository, stateRoot: stateRoot,
+              themeID: selection.themeID, backgroundID: selection.backgroundID,
+              followWallpaper: selection.backgroundID == nil)
+          },
           deleteSelection: { target in
             await ThemeBrowserDeletionRunner.live.execute(
               target: target, repository: repository, stateRoot: stateRoot

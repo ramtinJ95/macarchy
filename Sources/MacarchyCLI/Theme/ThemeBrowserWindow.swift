@@ -188,6 +188,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let deleteSelection:
     @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome
   private let reloadContent: @Sendable () async throws -> ThemeBrowserContent
+  private let saveScreenSaverSelection: @Sendable (ThemeBrowserSelection) async throws -> String
+
+  private struct ScreenSaverOutcome: Sendable {
+    let message: String
+    let succeeded: Bool
+    let refreshed: Result<ThemeBrowserContent, any Error>
+  }
 
   private var browserState: ThemeBrowserState
   private var previews: [ThemeBrowserPreview] = []
@@ -206,7 +213,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private var applyRefreshResult: ThemeBrowserAsyncResult<Result<ThemeBrowserContent, any Error>>?
   private var isApplying = false
   private var isDeleting = false
-  private var isBusy: Bool { isApplying || isDeleting }
+  private var isSavingScreenSaver = false
+  private var screenSaverResult: ThemeBrowserAsyncResult<ScreenSaverOutcome>?
+  private var screenSaverTimer: Timer?
+  private var isBusy: Bool { isApplying || isDeleting || isSavingScreenSaver }
   private var deletionResult: ThemeBrowserAsyncResult<ThemeBrowserDeletionOutcome>?
   private var deletionTimer: Timer?
   private var deletingThemeID: String?
@@ -225,6 +235,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private let backgroundImageView = ThemeBrowserWallpaperImageView()
   private let backgroundLabel = NSTextField(labelWithString: "")
   private let backgroundPicker = NSPopUpButton()
+  private let screenSaverLabel = NSTextField(labelWithString: "")
+  private let saveScreenSaverButton = NSButton(
+    title: "Use image as screensaver", target: nil, action: nil)
+  private let followWallpaperButton = NSButton(title: "Follow wallpaper", target: nil, action: nil)
   private let previousBackgroundButton = NSButton(title: "Previous", target: nil, action: nil)
   private let nextBackgroundButton = NSButton(title: "Next", target: nil, action: nil)
   private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
@@ -236,6 +250,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
   init(
     content: ThemeBrowserContent,
+    saveScreenSaverSelection: @escaping @Sendable (ThemeBrowserSelection) async throws -> String,
     galleryLoader: ThemeBrowserGalleryLoader = .live,
     deleteSelection:
       @escaping @Sendable (ThemePackageDeletionTarget) async -> ThemeBrowserDeletionOutcome,
@@ -246,6 +261,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     self.galleryLoader = galleryLoader
     self.deleteSelection = deleteSelection
     self.reloadContent = reloadContent
+    self.saveScreenSaverSelection = saveScreenSaverSelection
     self.launchSelection = launchSelection
     browserState = ThemeBrowserState(content: content)
     backgroundImageCache.countLimit = 24
@@ -276,7 +292,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     window.titleVisibility = .hidden
     super.init(window: window)
     window.delegate = self
-    window.canDismiss = { [weak self] in self?.isDeleting == false }
+    window.canDismiss = { [weak self] in
+      self?.isDeleting == false && self?.isSavingScreenSaver == false
+    }
     window.navigate = { [weak self] navigation in
       guard self?.isBusy == false else { return }
       switch navigation {
@@ -326,7 +344,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    !isDeleting
+    !isDeleting && !isSavingScreenSaver
   }
 
   func windowWillClose(_ notification: Notification) {
@@ -336,6 +354,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundImageTimer?.invalidate()
     applyTimer?.invalidate()
     deletionTimer?.invalidate()
+    screenSaverTimer?.invalidate()
   }
 
   func numberOfRows(in tableView: NSTableView) -> Int {
@@ -454,6 +473,69 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     else { return }
     browserState.selectBackground(id: item.backgrounds[backgroundPicker.indexOfSelectedItem].id)
     updateBackgroundPresentation(item: item)
+  }
+
+  @objc private func saveSelectedScreenSaver(_ sender: Any?) {
+    guard browserState.selection.backgroundID != nil else { return }
+    saveScreenSaver(browserState.selection)
+  }
+
+  @objc private func followSelectedWallpaper(_ sender: Any?) {
+    saveScreenSaver(ThemeBrowserSelection(themeID: browserState.selectedThemeID, backgroundID: nil))
+  }
+
+  private func saveScreenSaver(_ selection: ThemeBrowserSelection) {
+    guard !isBusy, selectedItem != nil else { return }
+    isSavingScreenSaver = true
+    setControlsEnabled(false)
+    statusLabel.stringValue = "Saving this theme's screensaver choice…"
+    statusLabel.toolTip = nil
+    let result = ThemeBrowserAsyncResult<ScreenSaverOutcome>()
+    screenSaverResult = result
+    let save = saveScreenSaverSelection
+    let reload = reloadContent
+    Task.detached(priority: .userInitiated) {
+      let message: String
+      let succeeded: Bool
+      do {
+        message = try await save(selection)
+        succeeded = true
+      } catch {
+        message = String(describing: error)
+        succeeded = false
+      }
+      let refreshed: Result<ThemeBrowserContent, any Error>
+      do {
+        refreshed = .success(try await reload())
+      } catch {
+        refreshed = .failure(error)
+      }
+      result.complete(
+        ScreenSaverOutcome(message: message, succeeded: succeeded, refreshed: refreshed))
+    }
+    screenSaverTimer = Timer.scheduledTimer(
+      timeInterval: 0.05, target: self, selector: #selector(checkScreenSaverResult(_:)),
+      userInfo: nil, repeats: true)
+  }
+
+  @objc private func checkScreenSaverResult(_ timer: Timer) {
+    guard let outcome = screenSaverResult?.value() else { return }
+    timer.invalidate()
+    screenSaverTimer = nil
+    screenSaverResult = nil
+    isSavingScreenSaver = false
+    do {
+      refresh(try outcome.refreshed.get())
+      statusLabel.stringValue = outcome.message
+    } catch {
+      browserState.markInventoryStale()
+      statusLabel.stringValue = outcome.message + " Library refresh failed; reopen the picker."
+    }
+    statusLabel.toolTip = statusLabel.stringValue
+    statusLabel.textColor =
+      outcome.succeeded
+      ? selectedItem?.package.semantic.accent.nsColor : selectedItem?.package.semantic.error.nsColor
+    setControlsEnabled(true)
   }
 
   @objc private func applySelectedTheme(_ sender: Any?) {
@@ -727,6 +809,19 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundControls.alignment = .centerY
     backgroundControls.spacing = 8
 
+    screenSaverLabel.font = .systemFont(ofSize: 11)
+    screenSaverLabel.lineBreakMode = .byTruncatingMiddle
+    configureButton(saveScreenSaverButton, action: #selector(saveSelectedScreenSaver(_:)))
+    configureButton(followWallpaperButton, action: #selector(followSelectedWallpaper(_:)))
+    saveScreenSaverButton.toolTip =
+      "Save the previewed image for this theme's screensaver only. The theme and wallpaper do not change."
+    followWallpaperButton.toolTip =
+      "Clear this theme's separate choice; its screensaver follows its wallpaper."
+    let screenSaverControls = NSStackView(views: [saveScreenSaverButton, followWallpaperButton])
+    screenSaverControls.orientation = .horizontal
+    screenSaverControls.alignment = .centerY
+    screenSaverControls.spacing = 8
+
     applyButton.target = self
     applyButton.action = #selector(applySelectedTheme(_:))
     applyButton.bezelStyle = .rounded
@@ -750,7 +845,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
     let detail = NSStackView(views: [
       header, previewImageView, backgroundImageView, backgroundControls, backgroundLabel,
-      statusLabel, bottomBar,
+      screenSaverLabel, screenSaverControls, statusLabel, bottomBar,
     ])
     detail.orientation = .vertical
     detail.alignment = .leading
@@ -758,7 +853,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     detail.setContentHuggingPriority(.init(1), for: .horizontal)
     backgroundImageView.setContentHuggingPriority(.init(1), for: .vertical)
     for view in [
-      header, previewImageView, backgroundControls, backgroundLabel, statusLabel, bottomBar,
+      header, previewImageView, backgroundControls, backgroundLabel, screenSaverLabel,
+      screenSaverControls, statusLabel, bottomBar,
     ] {
       view.setContentHuggingPriority(.defaultHigh, for: .vertical)
       view.setContentCompressionResistancePriority(.defaultHigh, for: .vertical)
@@ -794,6 +890,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       backgroundImageView.heightAnchor.constraint(greaterThanOrEqualToConstant: 200),
       backgroundLabel.widthAnchor.constraint(equalTo: detail.widthAnchor),
       backgroundControls.widthAnchor.constraint(equalTo: detail.widthAnchor),
+      screenSaverLabel.widthAnchor.constraint(equalTo: detail.widthAnchor),
+      screenSaverControls.widthAnchor.constraint(equalTo: detail.widthAnchor),
       statusLabel.widthAnchor.constraint(equalTo: detail.widthAnchor),
       statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 28),
       bottomBar.widthAnchor.constraint(equalTo: detail.widthAnchor),
@@ -843,6 +941,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     countLabel.textColor = item.package.semantic.mutedText.nsColor
     previewLabel.textColor = item.package.semantic.mutedText.nsColor
     backgroundLabel.textColor = item.package.semantic.mutedText.nsColor
+    screenSaverLabel.textColor = item.package.semantic.mutedText.nsColor
+    screenSaverLabel.stringValue =
+      "Screensaver for this theme: "
+      + (item.screenSaverBackgroundID.map { "Saved image · \($0)" } ?? "Follow wallpaper")
+    screenSaverLabel.toolTip = screenSaverLabel.stringValue
+    saveScreenSaverButton.isEnabled = !isBusy && !item.backgrounds.isEmpty
+    followWallpaperButton.isEnabled = !isBusy && item.screenSaverBackgroundID != nil
     statusLabel.textColor = item.package.semantic.mutedText.nsColor
     keyboardHelp.textColor = item.package.semantic.mutedText.nsColor
     statusLabel.stringValue = browserState.deletionAvailability.explanation
@@ -1107,6 +1212,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       backgroundPicker.isEnabled = enabled && !item.backgrounds.isEmpty
       previousBackgroundButton.isEnabled = enabled && item.backgrounds.count > 1
       nextBackgroundButton.isEnabled = enabled && item.backgrounds.count > 1
+      saveScreenSaverButton.isEnabled = enabled && !item.backgrounds.isEmpty
+      followWallpaperButton.isEnabled = enabled && item.screenSaverBackgroundID != nil
     }
     previousPreviewButton.isEnabled = enabled && previews.count > 1
     nextPreviewButton.isEnabled = enabled && previews.count > 1

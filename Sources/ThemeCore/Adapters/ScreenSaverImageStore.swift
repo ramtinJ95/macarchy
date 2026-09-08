@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import ImageIO
 
-enum ScreenSaverImageError: Error, CustomStringConvertible {
+enum ScreenSaverImageError: Error, CustomStringConvertible, Equatable {
   case unsafeFolder(String)
   case cannotEncode
   case activeThemeChanged
@@ -14,13 +14,21 @@ enum ScreenSaverImageError: Error, CustomStringConvertible {
     case .cannotEncode:
       "Cannot encode the chosen wallpaper as a bounded PNG for Photos"
     case .activeThemeChanged:
-      "Active wallpaper changed while preparing the Photos source; reconcile wallpaper again"
+      "Active theme or screensaver selection changed while preparing the Photos source; prepare it again"
     }
   }
 }
 
 /// A derived image export, not a native screensaver settings owner.
 package struct ScreenSaverImageStore: Sendable {
+  private struct Source {
+    let generationID: String
+    let themeID: String
+    let preference: ScreenSaverPreference?
+    let data: Data
+    let format: ThemeBackgroundFormat
+  }
+
   private struct Receipt: Codable {
     var owner = "macarchy.screensaver.v1"
     var sourceDigest: String?
@@ -62,10 +70,10 @@ package struct ScreenSaverImageStore: Sendable {
           directory: snapshot.directory)
       else {
         return result(
-          .drifted, "Photos source differs from the chosen wallpaper; reconcile wallpaper.")
+          .drifted, "Photos source differs from the selected screensaver image; prepare it again.")
       }
       try lock.withLock {
-        try validateSource(generationID: source.generationID, directory: snapshot.directory)
+        try validateSource(source, directory: snapshot.directory)
       }
       return result(.ready, instructions)
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
@@ -93,7 +101,7 @@ package struct ScreenSaverImageStore: Sendable {
     {
       try beforeCompletion()
       try lock.withLock {
-        try validateSource(generationID: source.generationID, directory: directory)
+        try validateSource(source, directory: directory)
       }
       return instructions
     }
@@ -110,7 +118,7 @@ package struct ScreenSaverImageStore: Sendable {
     let receipt = Receipt(sourceDigest: sourceDigest, imageDigest: sha256Digest(png))
     try beforeCompletion()
     try lock.withLock {
-      try validateSource(generationID: source.generationID, directory: directory)
+      try validateSource(source, directory: directory)
       do {
         let existing = try PinnedFilesystem.metadata(
           parentDescriptor: directory, name: Self.imageName,
@@ -135,17 +143,23 @@ package struct ScreenSaverImageStore: Sendable {
     return instructions
   }
 
-  private func activeSource() throws -> (
-    generationID: String, data: Data, format: ThemeBackgroundFormat
-  )? {
+  private func activeSource() throws -> Source? {
     let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let preferences = ScreenSaverPreferenceStore(root: root)
+    if let preference = try preferences.load()[manifest.themeID] {
+      return Source(
+        generationID: manifest.generationID, themeID: manifest.themeID, preference: preference,
+        data: try preferences.image(for: preference), format: preference.format)
+    }
     guard let background = manifest.background else { return nil }
     let data = try BoundedRegularFile.read(
       at: root.appending(
         path: "generations/\(manifest.generationID)/\(WallpaperAdapter.outputPath)"),
       maximumSize: ThemeImageAsset.maximumSize
     ).data
-    return (manifest.generationID, data, background.format)
+    return Source(
+      generationID: manifest.generationID, themeID: manifest.themeID, preference: nil,
+      data: data, format: background.format)
   }
 
   // Caller holds ActivationLock; receipt staging must not look like foreign content.
@@ -189,10 +203,12 @@ package struct ScreenSaverImageStore: Sendable {
 
   // Also used for no-op success: hashing a matching image is not sufficient if
   // the canonical source or the stable folder was replaced during that read.
-  private func validateSource(generationID: String, directory: Int32) throws {
+  private func validateSource(_ source: Source, directory: Int32) throws {
     let current = try FileManager.default.destinationOfSymbolicLink(
       atPath: root.appending(path: "current").path)
-    guard current == "generations/\(generationID)" else {
+    guard current == "generations/\(source.generationID)",
+      try ScreenSaverPreferenceStore(root: root).load()[source.themeID] == source.preference
+    else {
       throw ScreenSaverImageError.activeThemeChanged
     }
     let snapshot = try openFolder(create: false)
