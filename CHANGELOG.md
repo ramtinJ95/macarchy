@@ -7,6 +7,15 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-08
+
+### Fixed
+
+- First-install setup planning with Herdr or Slack selected now previews the
+  planned bootstrap theme without requiring an active generation. Preview does
+  not activate a theme or change applications; existing active-state validation,
+  adoption approval and Slack compatibility checks remain enforced.
+
 ## [0.8.0] - 2026-09-08
 
 First integrated alpha dogfooding release for existing macOS 26 developer
@@ -404,7 +413,8 @@ unqualified; review plans and reported prerequisites before applying changes.
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/ramtinJ95/macarchy/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ramtinJ95/macarchy/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/ramtinJ95/macarchy/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/ramtinJ95/macarchy/compare/v0.6.2...v0.7.0
