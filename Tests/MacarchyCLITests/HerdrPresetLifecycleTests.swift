@@ -134,11 +134,14 @@ struct HerdrPresetLifecycleTests {
     #expect(restored == "[theme]\nname = \"personal\"\n")
   }
 
-  @Test
-  func commandEnableOfImportedThemeAndFollowingThemeSetStayUnderAggregateAuthority() async throws {
+  @Test(arguments: [false, true])
+  func commandEnableOfImportedThemeAndFollowingThemeSetStayUnderAggregateAuthority(
+    otherPresets: Bool
+  ) async throws {
     let fixture = try HerdrFixture(
       configuration: "[theme]\nname = \"personal\"\n",
-      importedPalette: true
+      importedPalette: true,
+      otherPresets: otherPresets
     )
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let inspection = try fixture.inspection(enabled: true)
@@ -184,6 +187,61 @@ struct HerdrPresetLifecycleTests {
         atPath: fixture.state.appending(path: "state/adapters/herdr-theme-ownership.json").path
       )
     )
+  }
+
+  @Test
+  func themeRecoveryTouchesOnlyHerdrWithAllOtherPresetsOwned() async throws {
+    for direction in [EnvironmentTransactionDirection.forward, .rollback] {
+      let fixture = try HerdrFixture(configuration: nil, otherPresets: true)
+      defer { try? FileManager.default.removeItem(at: fixture.root) }
+      let inspection = try fixture.inspection(enabled: true)
+      let applied = try await fixture.commandApply(
+        enabled: true, adopt: inspection.adoptionEvidenceDigest,
+        runtime: EnvironmentHerdrRuntimeReloader { _, _ in "reloaded" })
+      try #require(applied.succeeded)
+      let store = EnvironmentStateStore(stateRoot: fixture.state)
+      let previous = try #require(try store.readOwnership())
+      let herdr = try #require(previous.herdr)
+      let proposed = previous.replacingHerdr(
+        herdr.replacingManagedTheme(GeneratedHerdrTheme(name: "tokyo-night")))
+      let paths = [
+        ".config/btop/btop.conf", ".codex/config.toml", ".pi/agent/settings.json",
+        ".config/spicetify/config-xpui.ini", ".config/tuicr/config.toml",
+      ].map { fixture.home.appending(path: $0) }
+      let before = try paths.map { (try Data(contentsOf: $0), try metadata($0)) }
+      let transaction = EnvironmentTransaction(
+        operation: .herdrTheme, direction: direction,
+        previousOwnership: previous, proposedOwnership: proposed,
+        previousCurrentDestination: "generations/\(previous.generationID)",
+        herdrReplacementName:
+          ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement",
+        herdrRuntimeTarget: .managed)
+      // Reproduce a journal published before any provider file was changed.
+      try store.writeTransaction(transaction)
+      let coordinator = EnvironmentTransactionCoordinator(
+        homeDirectory: fixture.home, stateRoot: fixture.state)
+      let recovery = try coordinator.prepareRecoveryLocked()
+      #expect(recovery.runtimeTarget == .managed)
+      #expect(recovery.spicetifyRuntimeTarget == nil)
+      #expect(recovery.bordersRuntimeTarget == nil)
+      try coordinator.markHerdrRuntimeVerifiedLocked(.managed)
+      _ = try coordinator.prepareRecoveryLocked()
+      #expect(!store.transactionExists)
+      #expect(try store.readOwnership() == (direction == .forward ? proposed : previous))
+      for (index, path) in paths.enumerated() {
+        #expect(try Data(contentsOf: path) == before[index].0)
+        #expect(try metadata(path) == before[index].1)
+      }
+      // The narrow operation cannot smuggle another provider's replacement.
+      try store.writeTransaction(transaction)
+      let journal = fixture.state.appending(path: "environment/transaction.json")
+      var malformed = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as? [String: Any])
+      malformed["codex_replacement_name"] =
+        ".macarchy-environment-codex-\(UUID().uuidString.lowercased()).replacement"
+      try JSONSerialization.data(withJSONObject: malformed).write(to: journal)
+      #expect(throws: (any Error).self) { try store.readTransaction() }
+    }
   }
 
   @Test
@@ -548,12 +606,15 @@ private struct HerdrFixture {
   let home: URL
   let state: URL
   let configuration: URL
+  let otherPresets: Bool
 
   init(
     configuration contents: String?,
     theme: String = "catppuccin-mocha",
-    importedPalette: Bool = false
+    importedPalette: Bool = false,
+    otherPresets: Bool = false
   ) throws {
+    self.otherPresets = otherPresets
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-herdr-preset-\(UUID().uuidString)",
       directoryHint: .isDirectory
@@ -562,6 +623,14 @@ private struct HerdrFixture {
     state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
     configuration = home.appending(path: ".config/herdr/config.toml")
     try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+    if otherPresets {
+      try FileManager.default.createDirectory(
+        at: home.appending(path: ".config/spicetify/Themes/text"),
+        withIntermediateDirectories: true)
+      try "[Setting]\ncurrent_theme = text\ncolor_scheme = Personal\n".write(
+        to: home.appending(path: ".config/spicetify/config-xpui.ini"),
+        atomically: true, encoding: .utf8)
+    }
     if let contents {
       try FileManager.default.createDirectory(
         at: configuration.deletingLastPathComponent(),
@@ -752,10 +821,14 @@ private struct HerdrFixture {
     [tools]
     bat = false
     eza = false
-    btop = false
+    btop = \(otherPresets)
     yazi = false
     [presets]
     herdr = \(enabled)
+    codex = \(otherPresets)
+    pi = \(otherPresets)
+    spicetify = \(otherPresets)
+    tuicr = \(otherPresets)
     """.write(to: profile, atomically: true, encoding: .utf8)
     return profile
   }
