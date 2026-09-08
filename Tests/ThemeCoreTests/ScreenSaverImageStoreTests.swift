@@ -201,6 +201,108 @@ struct ScreenSaverImageStoreTests {
 
   private enum ProbeFailure: Error { case injected }
 
+  @Test
+  func perThemeScreensaversSurviveWallpaperChangesAndReturnToInheritance() throws {
+    try withTemporaryRoot { root in
+      let wallpaper = try package(format: .jpeg)
+      let independent = try package(format: .png)
+      let other = try ThemePackageLoader().load(
+        packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
+      let preferences = ScreenSaverPreferenceStore(root: root)
+      let images = ScreenSaverImageStore(root: root)
+      let manifest = try activator(root).activate(package: wallpaper)
+      try preferences.select(package: independent, backgroundID: "png")
+      let selected = try #require(preferences.load()[wallpaper.id])
+      #expect(try preferences.image(for: selected) == independent.firstBackgroundData)
+      _ = try images.reconcile()
+      let exported = images.folderURL.appending(path: "wallpaper.png")
+      #expect(try Data(contentsOf: exported) == independent.firstBackgroundData)
+      #expect(
+        try ReconciliationStatusStore(root: root).activeManifest().generationID
+          == manifest.generationID)
+      let receipt = root.appending(path: "state/screensaver-preferences.json")
+      let before = try identity(receipt)
+      try preferences.select(package: independent, backgroundID: "png")
+      #expect(try identity(receipt) == before)
+
+      _ = try activator(root).activate(package: package(format: .webp))
+      _ = try images.reconcile()
+      #expect(try Data(contentsOf: exported) == independent.firstBackgroundData)
+      _ = try activator(root).activate(package: other)
+      _ = try images.reconcile()
+      #expect(try Data(contentsOf: exported) != independent.firstBackgroundData)
+      try preferences.select(package: other, backgroundID: #require(other.backgrounds.first?.id))
+      _ = try activator(root).activate(package: wallpaper)
+      _ = try images.reconcile()
+      #expect(try Data(contentsOf: exported) == independent.firstBackgroundData)
+      try preferences.followWallpaper(themeID: wallpaper.id)
+      _ = try images.reconcile()
+      #expect(try Data(contentsOf: exported) != independent.firstBackgroundData)
+      #expect(try preferences.load().keys.sorted() == [other.id])
+    }
+  }
+
+  @Test(arguments: [false, true])
+  func changedSelectionRejectsStalePublicationEvenWhenTheImageAlreadyMatches(matching: Bool) throws
+  {
+    try withTemporaryRoot { root in
+      let first = try package(format: .png)
+      let replacement = try package(format: .webp)
+      _ = try activator(root).activate(package: first)
+      let preferences = ScreenSaverPreferenceStore(root: root)
+      let store = ScreenSaverImageStore(root: root)
+      _ = try store.reconcile()
+      let exported = store.folderURL.appending(path: "wallpaper.png")
+      let before = try Data(contentsOf: exported)
+      if !matching { try preferences.select(package: replacement, backgroundID: "webp") }
+      let racing = ScreenSaverImageStore(
+        root: root,
+        beforeCompletion: {
+          if matching {
+            try preferences.select(package: replacement, backgroundID: "webp")
+          } else {
+            try preferences.followWallpaper(themeID: first.id)
+          }
+        })
+      #expect(throws: ScreenSaverImageError.activeThemeChanged) { try racing.reconcile() }
+      #expect(try Data(contentsOf: exported) == before)
+    }
+  }
+
+  @Test
+  func invalidSelectionsAndDamagedSnapshotsFailWithoutFallingBackToWallpaper() throws {
+    try withTemporaryRoot { root in
+      let selected = try package(format: .png)
+      _ = try activator(root).activate(package: package(format: .jpeg))
+      let preferences = ScreenSaverPreferenceStore(root: root)
+      #expect(throws: (any Error).self) {
+        try preferences.select(package: selected, backgroundID: "missing")
+      }
+      #expect(try preferences.load().isEmpty)
+      try preferences.select(package: selected, backgroundID: "png")
+      let saved = try #require(preferences.load()[selected.id])
+      let image = root.appending(path: "state/screensaver-images/\(saved.imageName)")
+      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: image.path)
+      try Data("damaged".utf8).write(to: image)
+      #expect(throws: (any Error).self) { try ScreenSaverImageStore(root: root).reconcile() }
+      #expect(ScreenSaverImageStore(root: root).inspection().status == .failed)
+      #expect(throws: (any Error).self) {
+        try preferences.select(package: selected, backgroundID: "png")
+      }
+      try FileManager.default.removeItem(at: image)
+      let external = root.appending(path: "external")
+      try Data("external".utf8).write(to: external)
+      try FileManager.default.createSymbolicLink(at: image, withDestinationURL: external)
+      #expect(throws: (any Error).self) { try ScreenSaverImageStore(root: root).reconcile() }
+      #expect(try Data(contentsOf: external) == Data("external".utf8))
+      try preferences.followWallpaper(themeID: selected.id)
+      _ = try ScreenSaverImageStore(root: root).reconcile()
+      let document = root.appending(path: "state/screensaver-preferences.json")
+      try Data(#"{"schema_version":1,"selections":{},"unknown":true}"#.utf8).write(to: document)
+      #expect(throws: (any Error).self) { try preferences.load() }
+    }
+  }
+
   private func identity(_ url: URL) throws -> UInt64 {
     let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
     return try #require(attributes[.systemFileNumber] as? NSNumber).uint64Value

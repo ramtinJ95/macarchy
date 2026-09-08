@@ -12,6 +12,7 @@ struct ThemeBrowserItem: Sendable {
   let package: ThemePackage
   let generatedPreview: ThemeBrowserPreview
   let initialBackgroundID: String?
+  var screenSaverBackgroundID: String? = nil
   var deletion: ThemeBrowserDeletionAvailability = .unavailable(
     "Built-in themes cannot be deleted.")
 
@@ -272,6 +273,9 @@ struct ThemeBrowserCommandLoader: Sendable {
   let loadActiveManifest: @Sendable (URL) throws -> GenerationManifest?
   let addPersonalBackgrounds: @Sendable (URL, ThemePackage) throws -> ThemePackage
   let renderPreview: @Sendable (ThemePackage) -> GeneratedThemePreview
+  var loadScreenSaverPreferences: @Sendable (URL) throws -> [String: String] = {
+    try ScreenSaverPreferenceStore(root: $0).load().mapValues(\.backgroundID)
+  }
 
   static let live = ThemeBrowserCommandLoader(
     loadPackages: { try $0.packages() },
@@ -293,6 +297,7 @@ struct ThemeBrowserCommandLoader: Sendable {
     let packages = try loadPackages(repository)
     guard !packages.isEmpty else { throw ThemeBrowserError.noThemes }
     let preferences = try loadPreferences(stateRoot)
+    let screenSaverPreferences = try loadScreenSaverPreferences(stateRoot)
     let activeManifest = try loadActiveManifest(stateRoot)
     let effectivePackages = try packages.map { package in
       try addPersonalBackgrounds(stateRoot, package)
@@ -328,6 +333,7 @@ struct ThemeBrowserCommandLoader: Sendable {
           data: preview.data
         ),
         initialBackgroundID: initialBackgroundID,
+        screenSaverBackgroundID: screenSaverPreferences[package.id],
         deletion: deletion
       )
     }
