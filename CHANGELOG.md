@@ -7,6 +7,15 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-09-08
+
+### Fixed
+
+- Package installation now preserves the selected XDG Homebrew configuration
+  location, so existing formula trust is not lost in the sanitized subprocess.
+  The same location is included in approval and checked for `brew.env` overrides.
+  No trust grants are added; unrelated environment settings remain excluded.
+
 ## [0.8.1] - 2026-09-08
 
 ### Fixed
@@ -413,7 +422,8 @@ unqualified; review plans and reported prerequisites before applying changes.
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/ramtinJ95/macarchy/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ramtinJ95/macarchy/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ramtinJ95/macarchy/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/ramtinJ95/macarchy/compare/v0.7.0...v0.7.1
