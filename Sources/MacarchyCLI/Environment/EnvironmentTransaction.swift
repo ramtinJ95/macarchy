@@ -78,6 +78,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let spicetifyReplacementName: String?
   let spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
   let spicetifyRuntimeVerified: Bool?
+  var spicetifyRuntimeDeferred: Bool?
   let tuicrReplacementName: String?
   let bordersPreviousRuntime: BordersServiceInspection?
   let bordersRuntimeTarget: EnvironmentBordersRuntimeTarget?
@@ -102,6 +103,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     spicetifyReplacementName: String? = nil,
     spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget? = nil,
     spicetifyRuntimeVerified: Bool? = nil,
+    spicetifyRuntimeDeferred: Bool? = nil,
     tuicrReplacementName: String? = nil,
     bordersPreviousRuntime: BordersServiceInspection? = nil,
     bordersRuntimeTarget: EnvironmentBordersRuntimeTarget? = nil,
@@ -126,6 +128,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.spicetifyReplacementName = spicetifyReplacementName
     self.spicetifyRuntimeTarget = spicetifyRuntimeTarget
     self.spicetifyRuntimeVerified = spicetifyRuntimeVerified
+    self.spicetifyRuntimeDeferred = spicetifyRuntimeDeferred
     self.tuicrReplacementName = tuicrReplacementName
     self.bordersPreviousRuntime = bordersPreviousRuntime
     self.bordersRuntimeTarget = bordersRuntimeTarget
@@ -134,7 +137,9 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   }
 
   var rollingBack: Self {
-    Self(
+    // Retrying rollback must preserve completed runtime work and explicit deferral.
+    if direction == .rollback { return self }
+    return Self(
       operation: operation,
       direction: .rollback,
       previousOwnership: previousOwnership,
@@ -188,6 +193,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       spicetifyReplacementName: spicetifyReplacementName,
       spicetifyRuntimeTarget: spicetifyRuntimeTarget,
       spicetifyRuntimeVerified: spicetifyRuntimeVerified,
+      spicetifyRuntimeDeferred: spicetifyRuntimeDeferred,
       tuicrReplacementName: tuicrReplacementName,
       bordersPreviousRuntime: bordersPreviousRuntime,
       bordersRuntimeTarget: bordersRuntimeTarget,
@@ -241,6 +247,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case spicetifyReplacementName = "spicetify_replacement_name"
     case spicetifyRuntimeTarget = "spicetify_runtime_target"
     case spicetifyRuntimeVerified = "spicetify_runtime_verified"
+    case spicetifyRuntimeDeferred = "spicetify_runtime_deferred"
     case tuicrReplacementName = "tuicr_replacement_name"
     case bordersPreviousRuntime = "borders_previous_runtime"
     case bordersRuntimeTarget = "borders_runtime_target"

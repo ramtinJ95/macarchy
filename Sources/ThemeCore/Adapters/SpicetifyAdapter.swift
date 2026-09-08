@@ -8,6 +8,7 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
   case invalidVersion(String)
   case invalidConfiguration(URL)
   case processInspectionFailed(String)
+  case refreshNotPrepared(String)
   case unsupportedVersion(String)
   case wrongColorScheme(String)
   case wrongTheme(String)
@@ -28,6 +29,8 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
       "Spicetify configuration at \(url.path) must be valid provider INI with one [Setting] table and one current_theme and color_scheme key"
     case .processInspectionFailed(let output):
       output.isEmpty ? "Cannot determine whether Spotify is running" : output
+    case .refreshNotPrepared(let reason):
+      "Spicetify refresh is not prepared: \(reason). Initialize or repair Spicetify manually, or disable presets.spicetify; Macarchy never runs backup, apply, or restore."
     case .unsupportedVersion(let value):
       "Spicetify \(value) is unsupported; version \(SpicetifyAdapter.minimumVersion) or newer is required"
     case .wrongColorScheme(let expected):
@@ -53,6 +56,7 @@ package struct SpicetifyAdapter: Sendable {
     package let colorScheme: String?
     package let rawTheme: String?
     package let rawColorScheme: String?
+    package let spotifyPath: String?
   }
 
   private static let processLookupURL = URL(filePath: "/usr/bin/pgrep")
@@ -64,6 +68,7 @@ package struct SpicetifyAdapter: Sendable {
   let processRunner: ProcessRunner
   let spicetifyVersionProvider: @Sendable () throws -> String
   let spotifyVersionProvider: @Sendable () throws -> String
+  let refreshPreparation: @Sendable () throws -> Void
 
   init(
     root: URL,
@@ -74,7 +79,8 @@ package struct SpicetifyAdapter: Sendable {
     spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
       SpicetifyAdapter.minimumVersion
     },
-    spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" }
+    spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" },
+    refreshPreparation: @escaping @Sendable () throws -> Void = {}
   ) {
     self.root = root
     self.configurationDirectoryURL = configurationDirectoryURL
@@ -83,6 +89,7 @@ package struct SpicetifyAdapter: Sendable {
     self.processRunner = processRunner
     self.spicetifyVersionProvider = spicetifyVersionProvider
     self.spotifyVersionProvider = spotifyVersionProvider
+    self.refreshPreparation = refreshPreparation
   }
 
   private var configurationURL: URL {
@@ -102,6 +109,7 @@ package struct SpicetifyAdapter: Sendable {
     }
     _ = try supportedVersion()
     _ = try supportedSpotifyVersion()
+    try refreshPreparation()
     try colorSchemeLink.validate()
     let selection = try selectedTheme()
     guard selection.theme == Self.themeName else {
@@ -186,6 +194,7 @@ package struct SpicetifyAdapter: Sendable {
       }
       let spicetifyVersion = try supportedVersion()
       let spotifyVersion = try supportedSpotifyVersion()
+      try refreshPreparation()
       let running = try spotifyPIDs() != nil
       try refresh()
       let result: SpicetifyRuntimeResult = running ? .restartRequired : .applied
@@ -277,6 +286,7 @@ package struct SpicetifyAdapter: Sendable {
     var colorSchemes = [String]()
     var rawThemes = [String]()
     var rawColorSchemes = [String]()
+    var spotifyPaths = [String]()
     for (index, rawLine) in configuration.components(separatedBy: "\n").enumerated() {
       var line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
       if index == 0, line.hasPrefix("\u{FEFF}") { line.removeFirst() }
@@ -303,17 +313,22 @@ package struct SpicetifyAdapter: Sendable {
       case "color_scheme":
         colorSchemes.append(assignment.value)
         rawColorSchemes.append(assignment.rawValue)
+      case "spotify_path":
+        spotifyPaths.append(assignment.value)
       default: continue
       }
     }
-    guard settingTables == 1, themes.count <= 1, colorSchemes.count <= 1 else {
+    guard settingTables == 1, themes.count <= 1, colorSchemes.count <= 1,
+      spotifyPaths.count <= 1
+    else {
       throw SpicetifyAdapterError.invalidConfiguration(configurationURL)
     }
     return ConfigurationSelection(
       theme: themes.first,
       colorScheme: colorSchemes.first,
       rawTheme: rawThemes.first,
-      rawColorScheme: rawColorSchemes.first
+      rawColorScheme: rawColorSchemes.first,
+      spotifyPath: spotifyPaths.first
     )
   }
 

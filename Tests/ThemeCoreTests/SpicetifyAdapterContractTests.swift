@@ -21,6 +21,54 @@ private struct SpicetifyAdapterBlockingScope: TestTrait, TestScoping {
 
 extension AdapterContractTests {
   @Test
+  func spicetifyPreparationInspectsTheConfiguredSpotifyWithoutInitializingIt() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let configuration = root.appending(path: "config-xpui.ini")
+    let spotify = root.appending(path: "Spotify Resources")
+    let xpui = spotify.appending(path: "Apps/xpui")
+    try "[Setting]\nspotify_path = \(spotify.path)\n".write(
+      to: configuration, atomically: true, encoding: .utf8)
+    let before = try Data(contentsOf: configuration)
+    #expect(throws: SpicetifyAdapterError.self) {
+      try SpicetifyAdapter.requireRefreshPreparation(configurationDirectoryURL: root)
+    }
+    #expect(!FileManager.default.fileExists(atPath: spotify.path))
+    try FileManager.default.createDirectory(at: xpui, withIntermediateDirectories: true)
+    #expect(throws: SpicetifyAdapterError.self) {
+      try SpicetifyAdapter.requireRefreshPreparation(configurationDirectoryURL: root)
+    }
+    try "<html></html>".write(
+      to: xpui.appending(path: "index.html"), atomically: true, encoding: .utf8)
+    try SpicetifyAdapter.requireRefreshPreparation(configurationDirectoryURL: root)
+    // Refresh creates colors.css; preflight neither requires nor creates it.
+    #expect(!FileManager.default.fileExists(atPath: xpui.appending(path: "colors.css").path))
+    #expect(try Data(contentsOf: configuration) == before)
+  }
+
+  @Test
+  func spicetifyUnpreparedRuntimeBlocksReconciliationAndRestorationBeforeCommands() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let adapter = SpicetifyAdapter(
+      root: root, configurationDirectoryURL: root,
+      executableURL: SpicetifyAdapter.liveExecutableURL, controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        Issue.record("Unprepared Spotify must not run any process")
+        return ProcessResult(terminationStatus: 0, output: "")
+      },
+      refreshPreparation: { throw SpicetifyAdapterError.refreshNotPrepared("stock Spotify") })
+    let result = try await adapter.reconciliation().run()
+    #expect(result.status == .failed)
+    #expect(result.message?.contains("stock Spotify") == true)
+    #expect(throws: SpicetifyAdapterError.self) {
+      try adapter.refreshRestoredConfiguration(clearRuntimeEvidence: true)
+    }
+    #expect(
+      !FileManager.default.fileExists(atPath: root.appending(path: "state/spicetify.json").path))
+  }
+
+  @Test
   func spicetifyRefreshIsAwaitedRequiredAndNeverRestartsSpotify() async throws {
     let executor = BlockingTaskExecutor(label: "spicetify-refresh-await")
     // The coordinator waits synchronously too; keep the cooperative pool free.

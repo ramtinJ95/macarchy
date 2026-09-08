@@ -104,10 +104,17 @@ struct EnvironmentPlanCommandRunner: Sendable {
         runtime: bordersRuntime
       )
     }
-    let prerequisiteState =
+    var prerequisiteState =
       homeDirectory.map {
         prerequisites.inspect(composition.profile, $0)
       } ?? []
+    if try EnvironmentStateStore(stateRoot: stateRoot).hasUnverifiedSpicetifyRecovery() {
+      prerequisiteState.append(
+        EnvironmentPrerequisiteStatus(
+          id: "spicetify_runtime_restoration", status: "manual_required",
+          requirement: EnvironmentStateStore.spicetifyRecoveryMessage,
+          remediation: "Repair Spicetify manually before enabling the preset."))
+    }
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
     let themeDiagnostic: EnvironmentPlanDiagnostic?
     if requiresActiveTheme,
@@ -136,6 +143,13 @@ struct EnvironmentPlanCommandRunner: Sendable {
         [EnvironmentPlanDiagnostic(code: "provider_blocked", source: stateRoot.path, message: $0)]
       } ?? []
     if let themeDiagnostic { diagnostics.append(themeDiagnostic) }
+    for prerequisite in prerequisiteState
+    where prerequisite.id == "spicetify_preparation" && prerequisite.status == "missing" {
+      diagnostics.append(
+        EnvironmentPlanDiagnostic(
+          code: "spicetify_unprepared", source: "spicetify",
+          message: prerequisite.requirement))
+    }
     let renderedArtifacts = try Dictionary(
       uniqueKeysWithValues: composition.artifacts.compactMap { artifact -> (String, String)? in
         guard !artifact.path.hasPrefix("neovim/") else { return nil }

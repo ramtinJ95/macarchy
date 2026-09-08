@@ -136,6 +136,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
       }
       if profile.presets.spicetify {
         results = validateSpicetifyRuntime(results)
+        results += spicetifyPreparation(homeDirectory: homeDirectory)
       }
       if profile.presets.slack,
         let index = results.firstIndex(where: { $0.id == SlackAdapter.id }),
@@ -196,7 +197,9 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             remediation: remediation($0.remediation)
           )
         }
-      return validateSpicetifyRuntime(results).sorted { $0.id < $1.id }
+      return
+        (validateSpicetifyRuntime(results)
+        + spicetifyPreparation(homeDirectory: homeDirectory)).sorted { $0.id < $1.id }
     })
 
   private static func validateSpicetifyRuntime(
@@ -246,6 +249,28 @@ struct EnvironmentPrerequisiteInspector: Sendable {
       }
     }
     return results
+  }
+
+  static func spicetifyPreparation(homeDirectory: URL) -> [EnvironmentPrerequisiteStatus] {
+    do {
+      try SpicetifyAdapter.requireRefreshPreparation(
+        configurationDirectoryURL: homeDirectory.appending(path: ".config/spicetify"))
+      return [
+        EnvironmentPrerequisiteStatus(
+          id: "spicetify_preparation", status: "present",
+          requirement: "Spotify has the unpacked writable xpui required by no-restart refresh.",
+          remediation: "Runtime refresh must still succeed; this inspection makes no writes.")
+      ]
+    } catch {
+      return [
+        EnvironmentPrerequisiteStatus(
+          id: "spicetify_preparation", status: "missing",
+          requirement: String(describing: error),
+          remediation:
+            "Initialize or repair Spicetify manually, or set presets.spicetify = false. Macarchy never runs backup, apply, or restore."
+        )
+      ]
+    }
   }
 
   private static func remediation(_ remediation: DependencyRemediation) -> String {
@@ -587,10 +612,23 @@ struct EnvironmentStatusCommandRunner: Sendable {
         themeFailure = String(describing: error)
       }
     }
-    let verification =
+    var verification =
       observedVerification
       ?? (includeVerification && !provider.isBlocked
         ? verifier.verify(profile.environment, homeDirectory) : [])
+    do {
+      if try EnvironmentStateStore(stateRoot: stateRoot).hasUnverifiedSpicetifyRecovery() {
+        verification.append(
+          EnvironmentVerification(
+            id: "spicetify_runtime_restoration",
+            status: profile.environment.presets.spicetify ? "unverified" : "manual_required",
+            message: EnvironmentStateStore.spicetifyRecoveryMessage))
+      }
+    } catch {
+      let report = failure(
+        operation: operation, profile: profileURL, message: String(describing: error))
+      return (try report.render(json: json), false)
+    }
     let missing = prerequisiteState.contains { $0.status == "missing" }
     let providerReady =
       !provider.isBlocked

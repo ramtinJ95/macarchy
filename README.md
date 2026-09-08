@@ -197,6 +197,41 @@ inputs in dotfiles; do not sync the whole `~/.config/macarchy` directory, which
 also contains machine-local state and backups. Merely editing a profile does
 not start services or change running applications.
 
+### Spicetify prerequisites and interrupted setup
+
+The optional `presets.spicetify` integration refreshes an **already initialized**
+Spicetify installation without restarting Spotify. Its `config-xpui.ini` must
+contain an explicit absolute `spotify_path` pointing to an unpacked, writable
+Spotify application. Setup checks this before activating a theme or changing the
+desktop. Installing Spotify and `spicetify-cli` alone does not initialize it;
+Spicetify backup, apply, and restore remain manual operations.
+
+Recover an interrupted setup without starting a new apply:
+
+```sh
+macarchy setup recover
+```
+
+If an interrupted apply is already rolling back to the original Spicetify
+configuration, but Spotify cannot be refreshed, you may explicitly accept
+unverified Spotify runtime restoration:
+
+```sh
+macarchy setup recover --acknowledge-unverified-spicetify
+```
+
+This restores recorded configuration ownership and continues the existing
+desktop/theme rollback. It does **not** repair Spotify or claim its runtime was
+restored. A persistent **UNVERIFIED** warning remains in plan/status/doctor until
+a later verified Spicetify refresh. It cannot bypass restoration of previously
+managed Spicetify, ownership drift, or a mismatched recovery context. Use the same
+state root and consumer-path options as the interrupted command; never delete
+transaction files to bypass recovery.
+
+After recovery, set `spicetify = false` in `[presets]` to defer the integration,
+then review `macarchy setup plan` and obtain fresh approvals before applying.
+Changing the profile alone does not recover an interrupted transaction.
+
 ### Opt into macOS preferences
 
 Native preferences are **off by default**, including in guided setup. Currently

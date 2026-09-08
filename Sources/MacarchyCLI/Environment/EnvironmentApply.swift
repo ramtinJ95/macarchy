@@ -44,7 +44,8 @@ private func requiresSpicetifyRuntimePrerequisites(
   let store = EnvironmentStateStore(stateRoot: stateRoot)
   if let transaction = try store.readTransaction(),
     transaction.spicetifyRuntimeTarget != nil,
-    transaction.spicetifyRuntimeVerified != true
+    transaction.spicetifyRuntimeVerified != true,
+    transaction.spicetifyRuntimeDeferred != true
   {
     return true
   }
@@ -125,31 +126,22 @@ private func rollbackEnvironmentTransaction(
   try ActivationLock(root: stateRoot).withLock {
     try coordinator.rollbackApplyLocked()
   }
-  if try verifyPendingHerdrRuntime(
+  _ = try verifyPendingHerdrRuntime(
     coordinator: coordinator,
     stateRoot: stateRoot,
     homeDirectory: homeDirectory,
     runtime: runtime
-  ) != nil {
-    try ActivationLock(root: stateRoot).withLock {
-      _ = try coordinator.prepareRecoveryLocked()
-    }
-  }
-  if try verifyPendingSpicetifyRuntime(
+  )
+  _ = try verifyPendingSpicetifyRuntime(
     coordinator: coordinator,
     stateRoot: stateRoot,
     homeDirectory: homeDirectory,
     runtime: spicetifyRuntime,
     adapterWasReconciled: false
-  ) != nil {
-    try ActivationLock(root: stateRoot).withLock {
-      _ = try coordinator.prepareRecoveryLocked()
-    }
-  }
-  if try verifyPendingBordersRuntime(coordinator: coordinator, runtime: bordersRuntime) != nil {
-    try ActivationLock(root: stateRoot).withLock {
-      _ = try coordinator.prepareRecoveryLocked()
-    }
+  )
+  _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: bordersRuntime)
+  try ActivationLock(root: stateRoot).withLock {
+    _ = try coordinator.prepareRecoveryLocked()
   }
 }
 
@@ -165,7 +157,9 @@ private func verifyPendingSpicetifyRuntime(
   }
   guard let target else { return nil }
   let message: String
-  if target == .managed, adapterWasReconciled {
+  if target == .managed, adapterWasReconciled,
+    try !EnvironmentStateStore(stateRoot: stateRoot).hasUnverifiedSpicetifyRecovery()
+  {
     message = "Spicetify refreshed the managed configuration."
   } else {
     message = try runtime.refresh(stateRoot, homeDirectory, target == .original)

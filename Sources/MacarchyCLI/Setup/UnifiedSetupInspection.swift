@@ -285,6 +285,9 @@ private struct UnifiedSetupInspectionReport: Encodable {
     if let environment { lines.append("- environment [\(environment.outcome)]") }
     if let preferences { lines.append("- preferences [\(preferences.outcome)]") }
     lines += (plan?.diagnostics ?? []).map { "- \($0.source): \($0.message)" }
+    lines += (plan?.manualBoundaries ?? [])
+      .filter { $0.id == "spicetify_runtime_restoration" }
+      .map { "- \($0.id) [\($0.kind)]: \($0.instruction)" }
     if let inventory = plan?.packageInventory { lines.append(inventory.humanOutput) }
     return lines.joined(separator: "\n")
   }

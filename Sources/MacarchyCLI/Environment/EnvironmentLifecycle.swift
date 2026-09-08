@@ -159,6 +159,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     case (.rollback, _):
       break
     }
+    if transaction.spicetifyRuntimeDeferred == true {
+      try store.recordUnverifiedSpicetifyRecovery()
+    }
     try store.removeTransaction()
     return (true, nil, nil, nil)
   }
@@ -166,7 +169,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private func pendingSpicetifyRuntimeTarget(
     _ transaction: EnvironmentTransaction
   ) -> EnvironmentSpicetifyRuntimeTarget? {
-    transaction.spicetifyRuntimeVerified == true ? nil : transaction.spicetifyRuntimeTarget
+    transaction.spicetifyRuntimeVerified == true || transaction.spicetifyRuntimeDeferred == true
+      ? nil : transaction.spicetifyRuntimeTarget
   }
 
   func pendingHerdrRuntimeTargetLocked() throws -> EnvironmentHerdrRuntimeTarget? {
@@ -201,13 +205,39 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     guard let transaction = try store.readTransaction(),
       transaction.spicetifyRuntimeTarget == target,
-      transaction.spicetifyRuntimeVerified != true
+      transaction.spicetifyRuntimeVerified != true,
+      transaction.spicetifyRuntimeDeferred != true
     else {
       throw EnvironmentLifecycleError.blocked(
         "no matching Spicetify runtime restoration is pending"
       )
     }
     try store.writeTransaction(transaction.withSpicetifyRuntimeVerified)
+    try store.clearUnverifiedSpicetifyRecovery()
+  }
+
+  /// Explicit recovery only: never relax managed restoration or a forward apply.
+  /// File restoration must succeed before acknowledging that native state is unknown.
+  func deferOriginalSpicetifyRuntimeLocked() throws {
+    let store = EnvironmentStateStore(stateRoot: stateRoot)
+    guard var transaction = try store.readTransaction(),
+      transaction.operation == .apply, transaction.direction == .rollback,
+      transaction.spicetifyRuntimeTarget == .original,
+      transaction.spicetifyRuntimeVerified == nil
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "only an interrupted apply rolling back to original Spicetify may defer runtime restoration"
+      )
+    }
+    if transaction.spicetifyRuntimeDeferred == true {
+      try store.recordUnverifiedSpicetifyRecovery()
+      return
+    }
+    _ = try prepareRecoveryLocked()
+    transaction.spicetifyRuntimeDeferred = true
+    // Persist visible uncertainty before recording permission to finish the journal.
+    try store.recordUnverifiedSpicetifyRecovery()
+    try store.writeTransaction(transaction)
   }
 
   func preflightManagedHerdr(

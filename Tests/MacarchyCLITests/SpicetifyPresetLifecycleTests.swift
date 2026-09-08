@@ -7,6 +7,216 @@ import Testing
 @testable import ThemeCore
 
 struct SpicetifyPresetLifecycleTests {
+  @Test(arguments: [false, true])
+  func explicitRecoveryRestoresDomainsButNeverClaimsSpotifyVerified(interruptDesktop: Bool)
+    async throws
+  {
+    let original = "[Setting]\ncurrent_theme = text\ncolor_scheme = Personal\n"
+    let fixture = try SpicetifyPresetFixture(configuration: original)
+    defer { removeSpicetifyTestRoot(fixture.root) }
+    let coordinator = EnvironmentTransactionCoordinator(
+      homeDirectory: fixture.home, stateRoot: fixture.state)
+    let inspection = try fixture.inspection(enabled: true)
+    _ = try coordinator.applyLocked(
+      composition: fixture.composition(enabled: true), inspection: inspection,
+      adoptionDigest: inspection.adoptionEvidenceDigest,
+      themeBridges: EnvironmentThemeBridgeState(entries: []))
+    #expect(throws: EnvironmentLifecycleError.self) {
+      try coordinator.deferOriginalSpicetifyRuntimeLocked()
+    }
+    try coordinator.rollbackApplyLocked()
+    let context = UnifiedSetupPlanContext(
+      themesRoot: repositoryRoot.appending(path: "Themes"),
+      keybindingsResourcesRoot: repositoryRoot.appending(path: "Keybindings"),
+      desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
+      environmentResourcesRoot: repositoryRoot.appending(path: "Environment"),
+      profileURL: try fixture.profile(enabled: true), profileRequired: true,
+      machineProfileURL: fixture.root.appending(path: "absent-machine.toml"),
+      machineProfileRequired: false,
+      stateRoot: fixture.state, homeDirectory: fixture.home)
+    let paths = testConsumerPaths()
+    let transaction = UnifiedSetupTransaction(
+      operation: .apply, stages: [.theme, .desktop, .environment], desiredAppearance: .dark,
+      contextDigest: unifiedSetupContextDigest(context: context, consumerPaths: paths))
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    let unified = UnifiedSetupTransactionStore(stateRoot: fixture.state)
+    try unified.write(transaction)
+    let calls = Mutex([String]())
+    let refreshes = Mutex(0)
+    let shouldInterrupt = Mutex(interruptDesktop)
+    let runner = UnifiedSetupRecoveryCommandRunner(
+      teardown: UnifiedSetupTeardownCommandRunner(
+        planner: .live,
+        environmentTeardown: { _, _, _ in
+          Issue.record("Apply rollback must not use ordinary teardown")
+          return try teardownComponent(dryRun: false, mutated: false)
+        },
+        desktopTeardown: { _, _, _ in
+          Issue.record("Apply rollback must not use ordinary teardown")
+          return try teardownComponent(dryRun: false, mutated: false)
+        },
+        themeTeardown: { state, _, _, dryRun in
+          #expect(!dryRun)
+          #expect(calls.withLock { $0.last } == "desktop")
+          calls.withLock { $0.append("theme") }
+          let generation = try ReconciliationStatusStore(root: state).activeManifest().generationID
+          _ = try ThemeActivator(root: state).deactivate(
+            expectedGenerationID: generation, dryRun: false)
+          return .noChange("Prior theme absence restored")
+        },
+        environmentApplyFinalization: { context, commit in
+          #expect(!commit)
+          calls.withLock { $0.append("environment") }
+          _ = try EnvironmentApplyCommandRunner(
+            prerequisites: .assumed, theme: nil, verifier: .assumed,
+            spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher { _, _, _ in
+              refreshes.withLock { $0 += 1 }
+              throw EnvironmentLifecycleError.blocked("stock Spotify cannot refresh")
+            }
+          ).finishDeferredApply(
+            stateRoot: context.stateRoot, homeDirectory: context.homeDirectory, commit: false)
+          #expect(try store.readTransaction() == nil)
+          return .noChange("Environment configuration restored; Spotify runtime unverified")
+        },
+        desktopApplyFinalization: { _, commit in
+          #expect(!commit)
+          #expect(try String(contentsOf: fixture.configuration, encoding: .utf8) == original)
+          #expect(!FileManager.default.fileExists(atPath: fixture.colorLink.path))
+          if shouldInterrupt.withLock({ value in
+            let previous = value
+            value = false
+            return previous
+          }) {
+            throw EnvironmentLifecycleError.blocked("interrupted desktop recovery")
+          }
+          calls.withLock { $0.append("desktop") }
+          return .noChange("Prior desktop restored")
+        }))
+    let refused = try await runner.execute(
+      context: context, consumerPaths: paths, acknowledgeUnverifiedSpicetify: false, json: true)
+    #expect(!refused.succeeded)
+    #expect(refreshes.withLock { $0 } == 1)
+    #expect(try !store.hasUnverifiedSpicetifyRecovery())
+    #expect(try store.readTransaction()?.spicetifyRuntimeVerified == nil)
+    #expect(calls.withLock { $0 } == ["environment"])
+    calls.withLock { $0 = [] }
+
+    // Consent cannot authorize a different consumer-path context.
+    try unified.write(
+      UnifiedSetupTransaction(
+        operation: .apply, stages: transaction.stages, desiredAppearance: .dark,
+        contextDigest: "sha256:" + String(repeating: "0", count: 64)))
+    let wrongContext = try await runner.execute(
+      context: context, consumerPaths: paths, acknowledgeUnverifiedSpicetify: true, json: true)
+    #expect(!wrongContext.succeeded)
+    #expect(try !store.hasUnverifiedSpicetifyRecovery())
+    try unified.write(transaction.replacing(phase: .committing))
+    let committed = try await runner.execute(
+      context: context, consumerPaths: paths, acknowledgeUnverifiedSpicetify: true, json: true)
+    #expect(!committed.succeeded)
+    #expect(try !store.hasUnverifiedSpicetifyRecovery())
+    try unified.write(transaction.replacing(stages: [.theme, .desktop]))
+    let unrelated = try await runner.execute(
+      context: context, consumerPaths: paths, acknowledgeUnverifiedSpicetify: true, json: true)
+    #expect(!unrelated.succeeded)
+    #expect(try !store.hasUnverifiedSpicetifyRecovery())
+    try unified.write(transaction)
+
+    var recovered = try await runner.execute(
+      context: context, consumerPaths: paths, acknowledgeUnverifiedSpicetify: true, json: true)
+    if interruptDesktop {
+      #expect(!recovered.succeeded)
+      #expect(recovered.output.contains("UNVERIFIED"))
+      #expect(try store.readTransaction() == nil)
+      #expect(try store.hasUnverifiedSpicetifyRecovery())
+      recovered = try await runner.execute(
+        context: context, consumerPaths: paths, acknowledgeUnverifiedSpicetify: true, json: true)
+    }
+    #expect(recovered.succeeded)
+    #expect(recovered.output.contains("recovered_with_unverified_runtime"))
+    #expect(recovered.output.contains("UNVERIFIED"))
+    #expect(calls.withLock { $0 } == ["environment", "desktop", "theme"])
+    #expect(refreshes.withLock { $0 } == 1)
+    #expect(try store.readOwnership() == nil)
+    #expect(try store.readTransaction() == nil)
+    #expect(try unified.read() == nil)
+    #expect(try store.hasUnverifiedSpicetifyRecovery())
+    #expect(!FileManager.default.fileExists(atPath: fixture.state.appending(path: "current").path))
+    let disabledPlan = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
+      resourcesRoot: context.environmentResourcesRoot, profileURL: fixture.profile(enabled: false),
+      profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home, json: true)
+    #expect(disabledPlan.succeeded)
+    #expect(disabledPlan.output.contains("UNVERIFIED"))
+  }
+
+  @Test
+  func reenablingAfterDeferralRequiresActualRefreshEvenWhenAdapterReportsMatchingEvidence()
+    async throws
+  {
+    let fixture = try SpicetifyPresetFixture(
+      configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
+    defer { removeSpicetifyTestRoot(fixture.root) }
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    try store.recordUnverifiedSpicetifyRecovery()
+    let refreshes = Mutex(0)
+    let theme = DesktopThemeController(
+      reconcile: { ids, state, _ in
+        DesktopThemeReconciliation(
+          generationID: try ReconciliationStatusStore(root: state).activeManifest().generationID,
+          results: ids.map {
+            DesktopThemeAdapterStatus(
+              adapterID: $0, requirement: "required", status: "applied", message: "matching receipt"
+            )
+          },
+          succeeded: true)
+      }, inspect: { _, _, _ in [] })
+    let inspection = try fixture.inspection(enabled: true)
+    let result = try await EnvironmentApplyCommandRunner(
+      prerequisites: .assumed, theme: theme, verifier: .assumed,
+      spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher { _, _, clear in
+        #expect(!clear)
+        let pending = try store.hasUnverifiedSpicetifyRecovery()
+        #expect(pending)
+        refreshes.withLock { $0 += 1 }
+        return "Actual refresh completed"
+      }
+    ).execute(
+      resourcesRoot: repositoryRoot.appending(path: "Environment"),
+      profileURL: fixture.profile(enabled: true), profileRequired: true,
+      stateRoot: fixture.state, homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(), adopt: inspection.adoptionEvidenceDigest, json: true)
+    #expect(result.succeeded)
+    #expect(refreshes.withLock { $0 } == 1)
+    #expect(try !store.hasUnverifiedSpicetifyRecovery())
+  }
+
+  @Test
+  func managedRestorationCannotBeDeferredAndMalformedDeferralFailsClosed() throws {
+    let fixture = try SpicetifyPresetFixture(
+      configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
+    defer { removeSpicetifyTestRoot(fixture.root) }
+    let inspection = try fixture.inspection(enabled: true)
+    _ = try fixture.apply(
+      enabled: true, inspection: inspection, adoptionDigest: inspection.adoptionEvidenceDigest)
+    let coordinator = EnvironmentTransactionCoordinator(
+      homeDirectory: fixture.home, stateRoot: fixture.state)
+    _ = try coordinator.applyLocked(
+      composition: fixture.composition(enabled: false),
+      inspection: fixture.inspection(enabled: false),
+      adoptionDigest: nil, themeBridges: EnvironmentThemeBridgeState(entries: []))
+    try coordinator.rollbackApplyLocked()
+    #expect(try coordinator.pendingSpicetifyRuntimeTargetLocked() == .managed)
+    #expect(throws: EnvironmentLifecycleError.self) {
+      try coordinator.deferOriginalSpicetifyRuntimeLocked()
+    }
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    var invalid = try #require(try store.readTransaction())
+    invalid.spicetifyRuntimeDeferred = true
+    try store.writeTransaction(invalid)
+    #expect(throws: EnvironmentLifecycleError.self) { try store.readTransaction() }
+    #expect(try !store.hasUnverifiedSpicetifyRecovery())
+  }
+
   @Test
   func ordinarySelectorsRequireReviewAndRoundTripWithoutOwningOtherConfiguration() throws {
     let original =
