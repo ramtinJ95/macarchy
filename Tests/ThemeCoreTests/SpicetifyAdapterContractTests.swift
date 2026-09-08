@@ -69,7 +69,7 @@ extension AdapterContractTests {
   }
 
   @Test
-  func spicetifyRefreshIsAwaitedRequiredAndNeverRestartsSpotify() async throws {
+  func spicetifyRefreshAndRunningClientRestartAreAwaitedAndRequired() async throws {
     let executor = BlockingTaskExecutor(label: "spicetify-refresh-await")
     // The coordinator waits synchronously too; keep the cooperative pool free.
     try await Task(executorPreference: executor) {
@@ -102,7 +102,12 @@ extension AdapterContractTests {
       processRunner: ProcessRunner { request in
         requests.withLock { $0.append(request) }
         if request.executableURL == URL(filePath: "/usr/bin/pgrep") {
-          return ProcessResult(terminationStatus: 0, output: "123\n")
+          let restarted = requests.withLock { $0.contains { $0.arguments == ["restart"] } }
+          return ProcessResult(terminationStatus: 0, output: restarted ? "456\n" : "123\n")
+        }
+        if request.arguments == ["restart"] {
+          #expect(finished.withLock { $0 })
+          return ProcessResult(terminationStatus: 0, output: "")
         }
         refreshEntered.signal()
         try #require(releaseRefresh.wait(timeout: .now() + 5) == .success)
@@ -136,15 +141,15 @@ extension AdapterContractTests {
         AdapterResult(
           adapterID: "spicetify",
           requirement: .required,
-          status: .restartRequired,
+          status: .applied,
           message:
-            "Spicetify refreshed without restarting Spotify; restart the running client manually to repaint"
+            "Spicetify refreshed the palette and restarted Spotify"
         )
       ]
     )
     let observed = requests.withLock { $0 }
     #expect(observed.contains { $0.arguments == ["--no-restart", "refresh"] })
-    #expect(!observed.contains { $0.arguments == ["restart"] })
+    #expect(observed.contains { $0.arguments == ["restart"] })
     #expect(!observed.contains { $0.executableURL == URL(filePath: "/usr/bin/open") })
   }
 
@@ -183,6 +188,15 @@ extension AdapterContractTests {
     versions.withLock { $0.spotify = "1.2.98" }
     _ = try await adapter.reconciliation().run()
     #expect(refreshes.withLock { $0 } == 3)
+    let receipt = root.appending(path: "state/spicetify.json")
+    var legacy = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: receipt)) as? [String: Any])
+    legacy.removeValue(forKey: "restart_policy_version")
+    try JSONSerialization.data(withJSONObject: legacy).write(to: receipt)
+    _ = try await adapter.reconciliation().run()
+    #expect(refreshes.withLock { $0 } == 4)
+    _ = try await adapter.reconciliation().run()
+    #expect(refreshes.withLock { $0 } == 4)
   }
 
   @Test
@@ -266,6 +280,76 @@ extension AdapterContractTests {
     _ = try await second.value
     #expect(state.withLock { $0.refreshes } == 1)
     #expect(state.withLock { $0.maximumActive } == 1)
+  }
+
+  @Test(
+    arguments: [
+      "closed", "replacement", "fallback", "stuck", "unstable", "restart-failed", "open-failed",
+      "refresh-failed",
+    ], [false, true])
+  func spicetifyRestartVerifiesProcessesAndPreservesFailureEvidence(
+    scenario: String, restoring: Bool
+  ) async throws {
+    let root = try temporaryDirectory()
+    defer {
+      makeWritableForRemoval(root)
+      try? FileManager.default.removeItem(at: root)
+    }
+    _ = try testActivator(root: root).activate(package: catppuccinPackage())
+    let configuration = try spicetifyConfiguration(root: root).directory
+    let state = Mutex((queries: 0, requests: [ProcessRequest]()))
+    let adapter = SpicetifyAdapter(
+      root: root, configurationDirectoryURL: configuration,
+      executableURL: SpicetifyAdapter.liveExecutableURL, controlIsAvailable: { true },
+      processRunner: ProcessRunner { request in
+        state.withLock { $0.requests.append(request) }
+        if request.executableURL.lastPathComponent == "pgrep" {
+          let query = state.withLock {
+            $0.queries += 1
+            return $0.queries
+          }
+          if scenario == "closed" { return ProcessResult(terminationStatus: 1, output: "") }
+          if query == 1 || scenario == "stuck" {
+            return ProcessResult(terminationStatus: 0, output: "123\n")
+          }
+          if (scenario == "fallback" && query == 2) || scenario == "open-failed" {
+            return ProcessResult(terminationStatus: 1, output: "")
+          }
+          return ProcessResult(
+            terminationStatus: 0, output: scenario == "unstable" ? "\(query + 200)\n" : "456\n")
+        }
+        let failed =
+          (scenario == "restart-failed" && request.arguments == ["restart"])
+          || (scenario == "open-failed" && request.executableURL.lastPathComponent == "open")
+          || (scenario == "refresh-failed" && request.arguments == ["--no-restart", "refresh"])
+        return ProcessResult(
+          terminationStatus: failed ? 1 : 0, output: failed ? "provider rejected" : "")
+      }, waitBetweenProcessChecks: {})
+    let succeeds = ["closed", "replacement", "fallback"].contains(scenario)
+    do {
+      if restoring {
+        #expect(try adapter.refreshRestoredConfiguration(clearRuntimeEvidence: true) == .applied)
+      } else {
+        #expect(try await adapter.reconciliation().run().status == .applied)
+      }
+      #expect(succeeds)
+    } catch {
+      #expect(!succeeds)
+    }
+    if succeeds && !restoring {
+      #expect(try await adapter.reconciliation().run().status == .applied)
+    }
+    let requests = state.withLock { $0.requests }
+    #expect(
+      requests.filter { $0.arguments == ["restart"] }.count
+        == (["closed", "refresh-failed"].contains(scenario) ? 0 : 1))
+    #expect(
+      requests.filter { $0.executableURL.lastPathComponent == "open" }.count
+        == (["fallback", "open-failed"].contains(scenario) ? 1 : 0))
+    #expect(
+      FileManager.default.fileExists(atPath: root.appending(path: "state/spicetify.json").path)
+        == (succeeds && !restoring))
+    #expect(state.withLock { $0.queries } <= 22)
   }
 
   private func spicetifyConfiguration(root: URL) throws -> (

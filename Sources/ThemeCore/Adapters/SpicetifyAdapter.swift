@@ -69,6 +69,7 @@ package struct SpicetifyAdapter: Sendable {
   let spicetifyVersionProvider: @Sendable () throws -> String
   let spotifyVersionProvider: @Sendable () throws -> String
   let refreshPreparation: @Sendable () throws -> Void
+  let waitBetweenProcessChecks: @Sendable () throws -> Void
 
   init(
     root: URL,
@@ -80,7 +81,11 @@ package struct SpicetifyAdapter: Sendable {
       SpicetifyAdapter.minimumVersion
     },
     spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" },
-    refreshPreparation: @escaping @Sendable () throws -> Void = {}
+    refreshPreparation: @escaping @Sendable () throws -> Void = {},
+    waitBetweenProcessChecks: @escaping @Sendable () throws -> Void = {
+      try Task.checkCancellation()
+      Thread.sleep(forTimeInterval: 0.1)
+    }
   ) {
     self.root = root
     self.configurationDirectoryURL = configurationDirectoryURL
@@ -90,6 +95,7 @@ package struct SpicetifyAdapter: Sendable {
     self.spicetifyVersionProvider = spicetifyVersionProvider
     self.spotifyVersionProvider = spotifyVersionProvider
     self.refreshPreparation = refreshPreparation
+    self.waitBetweenProcessChecks = waitBetweenProcessChecks
   }
 
   private var configurationURL: URL {
@@ -165,13 +171,13 @@ package struct SpicetifyAdapter: Sendable {
         "the active generation has no \(Self.outputPath) digest"
       )
     }
-    let running = try spotifyPIDs() != nil
+    let runningPIDs = try spotifyPIDs()
     let desired = SpicetifyRuntimeEvidence(
       generationID: manifest.generationID,
       colorDigest: colorDigest,
       spicetifyVersion: spicetifyVersion,
       spotifyVersion: spotifyVersion,
-      result: running ? .restartRequired : .applied
+      result: .applied
     )
     if try readRuntimeEvidence() == desired {
       return AdapterOutcome(
@@ -181,8 +187,13 @@ package struct SpicetifyAdapter: Sendable {
     }
 
     try refresh()
+    if let runningPIDs { try restartSpotify(replacing: runningPIDs) }
     try writeRuntimeEvidence(desired)
-    return AdapterOutcome(status: desired.result.adapterStatus, message: desired.result.message())
+    return AdapterOutcome(
+      status: .applied,
+      message: runningPIDs == nil
+        ? "Spicetify refreshed the palette; closed Spotify will use it on next launch"
+        : "Spicetify refreshed the palette and restarted Spotify")
   }
 
   package func refreshRestoredConfiguration(
@@ -195,9 +206,10 @@ package struct SpicetifyAdapter: Sendable {
       let spicetifyVersion = try supportedVersion()
       let spotifyVersion = try supportedSpotifyVersion()
       try refreshPreparation()
-      let running = try spotifyPIDs() != nil
+      let runningPIDs = try spotifyPIDs()
       try refresh()
-      let result: SpicetifyRuntimeResult = running ? .restartRequired : .applied
+      if let runningPIDs { try restartSpotify(replacing: runningPIDs) }
+      let result: SpicetifyRuntimeResult = .applied
       if clearRuntimeEvidence {
         try removeRuntimeEvidence()
       } else {
@@ -458,6 +470,46 @@ package struct SpicetifyAdapter: Sendable {
     }
   }
 
+  private func restartSpotify(replacing oldPIDs: Set<Int32>) throws {
+    let restart = try processRunner.run(
+      ProcessRequest(executableURL: executableURL, arguments: ["restart"], timeout: 5))
+    guard restart.terminationStatus == 0 else {
+      throw SpicetifyAdapterError.processInspectionFailed(
+        restart.output.isEmpty ? "Spicetify could not restart Spotify" : restart.output)
+    }
+    // The provider can quit successfully but race its macOS relaunch. Launch
+    // Services is permitted only after every original process has disappeared.
+    var launched = false
+    var previousReplacement: Set<Int32>?
+    for attempt in 0..<21 {
+      try Task.checkCancellation()
+      if let current = try spotifyPIDs() {
+        if current.isDisjoint(with: oldPIDs) {
+          if previousReplacement == current { return }
+          previousReplacement = current
+        } else {
+          previousReplacement = nil
+        }
+      } else {
+        previousReplacement = nil
+        if !launched {
+          let launch = try processRunner.run(
+            ProcessRequest(
+              executableURL: URL(filePath: "/usr/bin/open"),
+              arguments: ["-g", "-a", Self.liveSpotifyBundleURL.path], timeout: 2))
+          guard launch.terminationStatus == 0 else {
+            throw SpicetifyAdapterError.processInspectionFailed(
+              launch.output.isEmpty ? "Cannot relaunch Spotify" : launch.output)
+          }
+          launched = true
+        }
+      }
+      if attempt < 20 { try waitBetweenProcessChecks() }
+    }
+    throw SpicetifyAdapterError.processInspectionFailed(
+      "Spotify restart did not produce a stable replacement process")
+  }
+
   private var runtimeEvidenceURL: URL {
     root.appending(path: "state/spicetify.json")
   }
@@ -558,8 +610,8 @@ package enum SpicetifyRuntimeResult: String, Codable {
     switch self {
     case .applied:
       noChange
-        ? "Spicetify runtime evidence already matches; Spotify will use the palette on next launch"
-        : "Spicetify refreshed the palette; Spotify will use it on next launch"
+        ? "Spicetify runtime evidence already matches the active palette"
+        : "Spicetify refreshed the palette and restarted Spotify if it was running"
     case .restartRequired:
       noChange
         ? "Spicetify runtime evidence already matches; restart running Spotify manually to repaint"
@@ -575,6 +627,8 @@ private struct SpicetifyRuntimeEvidence: Codable, Equatable {
   let spicetifyVersion: String
   let spotifyVersion: String
   let result: SpicetifyRuntimeResult
+  // Absent on legacy no-restart receipts, forcing one verified reconciliation.
+  var restartPolicyVersion: Int? = 1
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -583,6 +637,7 @@ private struct SpicetifyRuntimeEvidence: Codable, Equatable {
     case spicetifyVersion = "spicetify_version"
     case spotifyVersion = "spotify_version"
     case result
+    case restartPolicyVersion = "restart_policy_version"
   }
 
   var hasValidShape: Bool {
