@@ -819,6 +819,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         }
       }
     } catch {
+      let applyError = error
       do {
         try rollbackEnvironmentTransaction(
           coordinator: coordinator,
@@ -833,8 +834,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           profile: profile.environment,
           prerequisites: prerequisiteState,
           message: neovimPluginPreparationRan
-            ? "Environment configuration ownership rollback requires recovery; provider-private Neovim plugin/cache changes may remain. Rollback failed: \(error)"
-            : "Provider verification failed and rollback requires recovery: \(error)",
+            ? "Environment configuration ownership rollback requires recovery; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). Rollback failed: \(error)"
+            : "Provider verification failed: \(applyError). Rollback requires recovery: \(error)",
           mutated: true,
           transactionStatus: "recovery_required",
           json: json

@@ -47,13 +47,13 @@ struct SketchyBarPalettePlanInspector: Sendable {
         default: 0
       ]
       guard
-        rendererVersion >= 2,
+        rendererVersion >= 3,
         manifest.artifacts[SketchyBarConfigurationComposer.paletteArtifactPath] != nil
       else {
         return SketchyBarPalettePlanInspection(
           status: .refreshRequired,
           generationID: manifest.generationID,
-          message: "the active theme predates the managed SketchyBar shell palette"
+          message: "the active theme predates the current managed SketchyBar palette contract"
         )
       }
       return SketchyBarPalettePlanInspection(

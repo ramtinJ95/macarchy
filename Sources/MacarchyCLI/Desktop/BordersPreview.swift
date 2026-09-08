@@ -183,15 +183,6 @@ struct BordersPreviewRunner {
     processRunner: ProcessRunner = .live
   ) -> Self {
     func requireStopped() throws {
-      let service = home.appending(path: "Library/LaunchAgents/homebrew.mxcl.borders.plist")
-      var metadata = stat()
-      if lstat(service.path, &metadata) == 0 {
-        throw BordersPreviewError.incumbent(service.path)
-      }
-      guard errno == ENOENT else {
-        throw BordersPreviewError.inspectionFailed(
-          "Cannot inspect \(service.path) (errno \(errno))")
-      }
       let result = try processRunner.run(
         ProcessRequest(
           executableURL: URL(filePath: "/usr/bin/pgrep"),
@@ -202,18 +193,15 @@ struct BordersPreviewRunner {
       guard result.terminationStatus == 1 else {
         throw BordersPreviewError.inspectionFailed(result.output)
       }
-      let job = try processRunner.run(
-        ProcessRequest(
-          executableURL: URL(filePath: "/bin/launchctl"),
-          arguments: ["print", "gui/\(getuid())/homebrew.mxcl.borders"], timeout: 2
-        )
-      )
-      if job.terminationStatus == 0 {
-        throw BordersPreviewError.incumbent("homebrew.mxcl.borders is loaded in the GUI domain")
+      let registration: HomebrewUserServiceRegistration?
+      do {
+        registration = try HomebrewUserServiceRegistration.inspect(
+          provider: .borders, home: home, runner: processRunner)
+      } catch {
+        throw BordersPreviewError.inspectionFailed(String(describing: error))
       }
-      guard job.terminationStatus == 113 else {
-        throw BordersPreviewError.inspectionFailed(
-          "launchctl status \(job.terminationStatus): \(job.output)")
+      if let registration {
+        throw BordersPreviewError.incumbent(registration.propertyListURL.path)
       }
     }
     return Self(

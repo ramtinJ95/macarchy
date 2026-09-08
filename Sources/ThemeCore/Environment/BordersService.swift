@@ -93,54 +93,53 @@ package struct BordersService: Sendable {
   package func inspect(allowInterruptedRegistration: Bool = false) throws
     -> BordersServiceInspection
   {
-    let plistURL = homeDirectory.appending(path: "Library/LaunchAgents/\(Self.label).plist")
     let processes = try run(
       URL(filePath: "/usr/bin/pgrep"), ["-u", String(getuid()), "-x", "borders"])
-    let job = try run(URL(filePath: "/bin/launchctl"), ["print", "gui/\(getuid())/\(Self.label)"])
-    if processes.terminationStatus == 1, job.terminationStatus == 113 {
-      var metadata = stat()
-      if lstat(plistURL.path, &metadata) == 0 {
-        if allowInterruptedRegistration {
-          return try registrationInspection(plistURL: plistURL, processID: nil)
-        }
-        throw BordersServiceError.blocked(
-          "an unloaded LaunchAgent exists; its registration requires explicit resolution before apply"
-        )
-      }
-      guard errno == ENOENT else {
-        throw BordersServiceError.blocked("cannot inspect the LaunchAgent: errno \(errno)")
-      }
-      return .stopped
+    let registration: HomebrewUserServiceRegistration?
+    do {
+      registration = try HomebrewUserServiceRegistration.inspect(
+        provider: .borders, home: homeDirectory, runner: runner)
+    } catch {
+      throw BordersServiceError.blocked(String(describing: error))
     }
+    if processes.terminationStatus == 1, registration == nil { return .stopped }
+    guard let registration else {
+      throw BordersServiceError.blocked(
+        "process and Homebrew job disagree or could not be inspected; refusing to control an external singleton"
+      )
+    }
+    let plistURL = registration.propertyListURL
+    let job = registration.loadedJobOutput
     if allowInterruptedRegistration, processes.terminationStatus == 1,
-      job.terminationStatus == 0,
-      Self.loadedServiceMatches(job.output, propertyListPath: plistURL.path, processID: nil)
+      job.map({ Self.loadedServiceMatches($0, propertyListPath: plistURL.path, processID: nil) })
+        ?? true
     {
-      return try registrationInspection(plistURL: plistURL, processID: nil)
+      return try registrationInspection(
+        plistURL: plistURL, label: registration.label, processID: nil)
     }
-    guard processes.terminationStatus == 0, job.terminationStatus == 0 else {
+    guard processes.terminationStatus == 0, let job else {
       throw BordersServiceError.blocked(
         "process and Homebrew job disagree or could not be inspected; refusing to control an external singleton"
       )
     }
     let rows = processes.output.split(whereSeparator: \.isNewline)
     guard rows.count == 1, let pid = Int32(rows[0].trimmingCharacters(in: .whitespaces)), pid > 0,
-      Self.loadedServiceMatches(job.output, propertyListPath: plistURL.path, processID: pid)
+      Self.loadedServiceMatches(job, propertyListPath: plistURL.path, processID: pid)
     else {
       throw BordersServiceError.blocked(
         "expected one UID-scoped Borders process belonging to the supported Homebrew job")
     }
-    return try registrationInspection(plistURL: plistURL, processID: pid)
+    return try registrationInspection(plistURL: plistURL, label: registration.label, processID: pid)
   }
 
-  private func registrationInspection(plistURL: URL, processID: Int32?) throws
+  private func registrationInspection(plistURL: URL, label: String, processID: Int32?) throws
     -> BordersServiceInspection
   {
     let data = try BoundedRegularFile.read(at: plistURL, maximumSize: 65_536).data
     guard
       let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
         as? [String: Any],
-      plist["Label"] as? String == Self.label,
+      plist["Label"] as? String == label,
       plist["ProgramArguments"] as? [String] == [Self.serviceExecutableURL.path],
       plist["KeepAlive"] as? Bool == true,
       plist["RunAtLoad"] as? Bool == true,
