@@ -90,8 +90,10 @@ built-in and active themes are protected.
 
 Macarchy ships **Catppuccin Mocha, Tokyo Night, and Kanagawa Wave**. Theme changes
 update supported running applications where possible. Some changes take effect
-on the next prompt or launch; Codex and tuicr need a fresh session, and Spicetify
-does not restart Spotify for you. Commands report these limits and failures
+on the next prompt or launch; Codex and tuicr need a fresh session. Selected
+Spicetify integration automatically restarts an already-running Spotify client
+after refreshing its palette, which may briefly interrupt playback; a closed
+client stays closed. Commands report these limits and failures
 rather than treating every application as live-reloadable.
 
 Use Kitty's config reload for ordinary changes; shell startup changes need a
@@ -113,9 +115,9 @@ Slack remains a manual import: run `macarchy theme get slack`, then paste the
 value under **Slack → Preferences → Appearance → Custom theme → Theme colors →
 Import theme**. Slack may map the colors to its own supported palette.
 
-### Match the screensaver to your wallpaper
+### Choose your screensaver image
 
-Macarchy keeps an image of your chosen wallpaper in the stable folder
+By default, Macarchy keeps an image of your chosen wallpaper in the stable folder
 **`~/.config/macarchy/screensaver`**. Select that folder in macOS once:
 
 1. Run `macarchy theme screensaver` after activating a theme with a background.
@@ -125,16 +127,41 @@ Macarchy keeps an image of your chosen wallpaper in the stable folder
 4. Press **Command–Shift–G**, enter `~/.config/macarchy/screensaver`, and select
    the folder. Confirm the options, then click **Preview**.
 
-Use **Photos**, not macOS's Automatic option. Theme and background changes
-refresh the image automatically; `macarchy reconcile wallpaper` refreshes it
-explicitly. The next Preview picked up image changes in supported-machine
+Use **Photos**, not macOS's Automatic option. Theme changes refresh the image
+automatically; `macarchy theme screensaver` prepares it explicitly without
+changing the desktop. The next Preview picked up image changes in supported-machine
 testing. Live repaint of an already-running screensaver is not guaranteed.
+
+To use a different image, open the theme picker, select a theme and preview one
+of its backgrounds, then click **Use image as screensaver**. This saves a separate
+choice **for that theme** without applying the theme or changing its wallpaper.
+Each theme remembers its own choice. **Follow wallpaper** clears that theme's
+separate choice and restores the default behavior.
+
+Saved images are retained copies in Macarchy state, independent of package and
+Homebrew version paths. They stay selected until you choose again or return to
+following the wallpaper, even if the original package image changes. The Photos
+folder does not change and needs no reselection.
+
+The equivalent commands are:
+
+```sh
+macarchy theme background list kanagawa-wave
+macarchy theme screensaver --theme kanagawa-wave --background <background-id>
+macarchy theme screensaver --theme kanagawa-wave --follow-wallpaper
+```
+
+Omit `--theme` to change the active theme's choice. Saving an inactive theme's
+choice leaves the currently exported image unchanged until that theme is active.
+Export failures retain the saved choice and report how to retry; they never
+silently revert to the wallpaper.
 
 To opt out, choose another screensaver or Photos folder in System Settings.
 Macarchy preserves that choice. To return, select Photos and the Macarchy folder
 again. Keep personal files out of this generated folder. With a custom
 `--state-root`, use `<state-root>/screensaver` instead. Themes without backgrounds
-leave the previous desktop wallpaper and screensaver image unchanged.
+leave the previous desktop wallpaper unchanged; without a saved screensaver image,
+they also retain the previous screensaver image.
 
 The native **Control–Command–Q** lock background inherits the desktop wallpaper;
 Macarchy does not offer a separate lock image or make locking start the saver.
@@ -238,7 +265,9 @@ configuration replacement or bar shutdown; status detects a dead/stale helper.
 ### Spicetify prerequisites and interrupted setup
 
 The optional `presets.spicetify` integration refreshes an **already initialized**
-Spicetify installation without restarting Spotify. Its `config-xpui.ini` must
+Spicetify installation and restarts Spotify only if it was already running,
+including when restoring configuration. Restart completion is verified and
+failures remain visible. Its `config-xpui.ini` must
 contain an explicit absolute `spotify_path` pointing to an unpacked, writable
 Spotify application. Setup checks this before activating a theme or changing the
 desktop. Installing Spotify and `spicetify-cli` alone does not initialize it;
