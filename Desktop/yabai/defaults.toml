@@ -25,6 +25,21 @@ app = "^System Settings$"
 app = "^Calculator$"
 
 [[rules]]
+app = "^Karabiner-Elements$"
+
+[[rules]]
+app = "^QuickTime Player$"
+
+[[rules]]
+title = "^SFML$"
+
+[[rules]]
+title = "Our Love Story$"
+
+[[rules]]
+title = "^Software Renderer$"
+
+[[rules]]
 label = "macarchy-keybindings-popup"
 app = "^macarchy$"
 title = "^Macarchy Keybindings$"

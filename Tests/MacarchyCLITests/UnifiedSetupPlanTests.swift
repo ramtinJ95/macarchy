@@ -165,7 +165,9 @@ struct UnifiedSetupPlanTests {
     #expect(exceptional.report.fieldOrigins["top_bar.provider"] == "machine")
     #expect(exceptional.report.fieldOrigins["terminal.provider"] == "machine")
     #expect(
-      Set(standard.model.capabilities.map(\.id)).subtracting(["kitty", "sketchybar"])
+      Set(standard.model.capabilities.map(\.id)).subtracting([
+        "kitty", "kitty-meslo-font", "sketchybar",
+      ])
         == Set(exceptional.model.capabilities.map(\.id))
     )
     #expect(!standard.model.capabilities.map(\.id).contains("btop"))
@@ -191,11 +193,13 @@ struct UnifiedSetupPlanTests {
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
-    try "schema_version = 1\n[kitty]\nfont_size = 15\n".write(
-      to: state.appending(path: "machine.toml"),
-      atomically: true,
-      encoding: .utf8
-    )
+    // This tests the live profile overlay, not the host's incumbent Borders job.
+    try "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n[kitty]\nfont_size = 15\n"
+      .write(
+        to: state.appending(path: "machine.toml"),
+        atomically: true,
+        encoding: .utf8
+      )
     let before = try inventory(root)
 
     var runner = UnifiedSetupPlanCommandRunner.live
@@ -364,6 +368,7 @@ struct UnifiedSetupPlanTests {
         == [
           "arm64", "atuin", "bat", "borders", "btop", "eza", "homebrew", "kitty", "macos-26",
           "neovim", "sketchybar", "skhd", "starship", "yabai", "yazi",
+          "kitty-meslo-font", "zsh-autosuggestions", "zsh-syntax-highlighting", "fzf", "zoxide",
         ]
     )
     #expect((packages["formulae"] as? [String])?.contains("bat") == true)
@@ -505,7 +510,7 @@ struct UnifiedSetupPlanTests {
     UnifiedSetupPlanContext(
       themesRoot: repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory),
       keybindingsResourcesRoot: root.appending(path: "Keybindings"),
-      desktopResourcesRoot: root.appending(path: "Desktop"),
+      desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
       environmentResourcesRoot: root.appending(path: "Environment"),
       profileURL: profile,
       profileRequired: profilesRequired,

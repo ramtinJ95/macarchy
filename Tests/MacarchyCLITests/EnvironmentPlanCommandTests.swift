@@ -128,7 +128,9 @@ struct EnvironmentPlanCommandTests {
 
     #expect(jsonExecution.succeeded)
     #expect(textExecution.succeeded)
-    #expect(expected.count == 11)
+    #expect(expected.count == 13)
+    #expect(digests["neovim/lua/plugins/editor.lua"] != nil)
+    #expect(digests["neovim/lua/config/markdown-preview.lua"] != nil)
     #expect(actual == expected)
     #expect(!textExecution.output.contains("Rendered neovim/"))
   }

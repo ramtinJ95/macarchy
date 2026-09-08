@@ -194,9 +194,13 @@ struct EnvironmentInspectionContractTests {
     } catch {
       #expect(String(describing: error) == expected(runtimeFirst))
     }
+    // Unrelated live service state must not mask legacy-tuple ordering.
+    let profileURL = root.appending(path: "profile.toml")
+    try "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n".write(
+      to: profileURL, atomically: true, encoding: .utf8)
     let plan = try EnvironmentPlanCommandRunner(prerequisites: .assumed).execute(
       resourcesRoot: repositoryRoot.appending(path: "Environment"),
-      profileURL: root.appending(path: "absent.toml"), profileRequired: false,
+      profileURL: profileURL, profileRequired: true,
       stateRoot: state, homeDirectory: home, json: true)
     let report = try jsonObject(plan.output)
     let diagnostics = try #require(report["diagnostics"] as? [[String: Any]])

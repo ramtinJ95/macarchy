@@ -1,9 +1,11 @@
+import CoreText
 import Foundation
 import ThemeCore
 
 enum DependencyCapabilityCategory: String, Encodable, Sendable {
   case platformRuntime = "platform_runtime"
   case desktopSubstrate = "desktop_substrate"
+  case environmentSubstrate = "environment_substrate"
   case requiredAdapter = "required_adapter"
   case optionalAdapter = "optional_adapter"
 }
@@ -13,6 +15,7 @@ enum DependencyCapabilityProbe: Sendable {
   case architecture(String)
   case executable(URL)
   case exists(URL)
+  case postScriptFont(String)
   case macOSMajorVersion(Int)
 
   var description: String {
@@ -25,8 +28,11 @@ enum DependencyCapabilityProbe: Sendable {
       "\(url.path) must be executable"
     case .exists(let url):
       "\(url.path) must exist"
+    case .postScriptFont(let name):
+      "PostScript font \(name) must be registered"
     case .macOSMajorVersion(let version):
       "requires macOS \(version)"
+
     }
   }
 
@@ -44,8 +50,12 @@ enum DependencyCapabilityProbe: Sendable {
       return FileManager.default.isExecutableFile(atPath: url.path)
     case .exists(let url):
       return FileManager.default.fileExists(atPath: url.path)
+    case .postScriptFont(let name):
+      // Enumerate registered names: constructing a font can silently substitute.
+      return (CTFontManagerCopyAvailablePostScriptNames() as! [String]).contains(name)
     case .macOSMajorVersion(let expected):
       return ProcessInfo.processInfo.operatingSystemVersion.majorVersion == expected
+
     }
   }
 }
@@ -131,6 +141,15 @@ struct DependencyProfile: Sendable {
     guard !profile.isEntirelyDisabled else { return [] }
     var ids = Set(profile.selectedThemeAdapterIDs)
     ids.formUnion(["macos-26", "arm64"])
+    if profile.terminal == .kitty,
+      profile.kitty.fontFamily == nil
+        || profile.kitty.fontFamily == "postscript_name=MesloLGSNF-Regular"
+    {
+      ids.insert("kitty-meslo-font")
+    }
+    if profile.shell == .zsh {
+      ids.formUnion(["zsh-autosuggestions", "zsh-syntax-highlighting", "fzf", "zoxide"])
+    }
     if profile.focusRing == .borders { ids.insert("homebrew") }
     if profile.presets.slack { ids.insert(SlackAdapter.id) }
     if profile.presets.spicetify { ids.insert("spotify") }
@@ -207,6 +226,47 @@ struct DependencyProfile: Sendable {
           category: .platformRuntime,
           probes: executable("/opt/homebrew/bin/brew"),
           remediation: .external("Install Homebrew from https://brew.sh.")
+        ),
+        DependencyCapability(
+          id: "zsh-autosuggestions",
+          category: .environmentSubstrate,
+          probes: [
+            .exists(
+              URL(filePath: "/opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh"))
+          ],
+          remediation: .formula("zsh-autosuggestions")
+        ),
+        DependencyCapability(
+          id: "zsh-syntax-highlighting",
+          category: .environmentSubstrate,
+          probes: [
+            .exists(
+              URL(
+                filePath: "/opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh")
+            )
+          ],
+          remediation: .formula("zsh-syntax-highlighting")
+        ),
+        DependencyCapability(
+          id: "fzf",
+          category: .environmentSubstrate,
+          probes: executable("/opt/homebrew/bin/fzf") + [
+            .exists(URL(filePath: "/opt/homebrew/opt/fzf/shell/key-bindings.zsh")),
+            .exists(URL(filePath: "/opt/homebrew/opt/fzf/shell/completion.zsh")),
+          ],
+          remediation: .formula("fzf")
+        ),
+        DependencyCapability(
+          id: "zoxide",
+          category: .environmentSubstrate,
+          probes: executable("/opt/homebrew/bin/zoxide"),
+          remediation: .formula("zoxide")
+        ),
+        DependencyCapability(
+          id: "kitty-meslo-font",
+          category: .environmentSubstrate,
+          probes: [.postScriptFont("MesloLGSNF-Regular")],
+          remediation: .cask("font-meslo-lg-nerd-font")
         ),
         consumerCapability(
           .kitty,
