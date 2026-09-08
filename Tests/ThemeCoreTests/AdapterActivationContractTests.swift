@@ -214,7 +214,7 @@ extension AdapterContractTests {
             adapterID: "spicetify",
             requirement: .required,
             status: .applied,
-            message: "Spicetify refreshed the palette; Spotify will use it on next launch"
+            message: "Spicetify refreshed the palette; closed Spotify will use it on next launch"
           ),
           AdapterResult(
             adapterID: "starship",
