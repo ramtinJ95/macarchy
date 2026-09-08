@@ -28,7 +28,7 @@ struct RuntimeEnvironmentTests {
     #expect(
       try runtime.buildInformation()
         == MacarchyBuildInformation(
-          version: "0.7.1-dev",
+          version: "\(RuntimeEnvironment.sourceVersion)-dev",
           revision: "unknown",
           platform: "macos-arm64",
           installation: .development
@@ -157,7 +157,7 @@ struct RuntimeEnvironmentTests {
   }
 
   private var packagedBuildInformation: String {
-    "{\"schema_version\":1,\"version\":\"0.7.1\",\"revision\":\"\(revision)\"}\n"
+    "{\"schema_version\":1,\"version\":\"\(RuntimeEnvironment.sourceVersion)\",\"revision\":\"\(revision)\"}\n"
   }
 
   private func packagedLayout(
