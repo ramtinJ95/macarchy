@@ -14,7 +14,8 @@ or a replacement for your dotfile manager.
 > **Status:** actively developed for Apple Silicon on macOS 26. This README
 > describes the development branch. The latest Homebrew release is
 > [v0.7.1](https://github.com/ramtinJ95/macarchy/releases/tag/v0.7.1); expanded
-> package setup, managed focus rings, picker deletion, and screensaver integration
+> package setup, managed focus rings, picker deletion, screensaver integration,
+> and opt-in macOS preferences
 > are not in that release yet. See [release history](CHANGELOG.md), or
 > [build from source](#development) to try the current code.
 
@@ -190,12 +191,49 @@ Apply does not implicitly approve the plan. If packages are missing, supply
 `--approve-packages 'digest-from-plan'`. Existing configuration may also require
 the plan's `--yabai-adopt`, `--keybindings-adopt`, `--sketchybar-adopt`, or
 `--environment-adopt` approvals; `macarchy setup apply --help` lists the options.
+Selected native preference changes require `--approve-preferences 'digest-from-plan'`.
 Review fresh evidence on each Mac rather than copying approval values.
 
 Edit your profile and native inputs, not generated application files. Keep those
 inputs in dotfiles; do not sync the whole `~/.config/macarchy` directory, which
 also contains machine-local state and backups. Merely editing a profile does
 not start services or change running applications.
+
+### Opt into macOS preferences
+
+Native preferences are **off by default**, including in guided setup. Currently
+supported on macOS 26: Dock autohide and Finder filename extensions. Add only
+the controls you want to manage:
+
+```toml
+[macos_preferences]
+enabled = true
+dock_autohide = true
+finder_show_extensions = true
+```
+
+Unified setup previews these changes and requires their separate approval before
+any setup mutation. To manage just this module:
+
+```sh
+macarchy preferences plan
+macarchy preferences apply --approve 'digest-from-plan'
+macarchy preferences status
+macarchy preferences teardown --dry-run
+macarchy preferences teardown
+```
+
+Only declared controls are owned. Removing a control or disabling the module
+restores its original value on the next approved apply. Teardown does the same;
+external changes block restoration rather than being overwritten. `preferences
+doctor` diagnoses drift and unavailable access. Recovery instructions are explicit
+when an interrupted OS write may still be running.
+
+Changes take effect without restart or logout. Inspection may start Apple's
+System Events helper; Finder must already be running. Unsupported macOS versions
+or missing Automation access block visibly—Macarchy never prompts for or grants
+access. Keep other preference editors idle during apply/recovery. A custom
+`--state-root` relocates receipts, **not** the current user's native preferences.
 
 ### Choose your packages
 

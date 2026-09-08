@@ -153,6 +153,23 @@ grep -q '"outcome" : "no_change"' "$temporary_directory/setup-teardown.json"
 grep -q '"packages" : "retained_external"' "$temporary_directory/setup-teardown.json"
 print "unified setup inspection and teardown smoke passed"
 
+# The module is off by default: exercise the packaged commands without sending
+# native preference requests. Keep operational locks outside the immutable home.
+for operation in plan apply status doctor teardown recover; do
+  HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
+    "$binary" preferences "$operation" \
+    --profile "$temporary_directory/disabled-profile.toml" \
+    --state-root "$temporary_directory/preferences-state" \
+    --json > "$temporary_directory/preferences-$operation.json"
+  grep -q '"operation" : "macos_preferences"' "$temporary_directory/preferences-$operation.json"
+  grep -q '"mutated" : false' "$temporary_directory/preferences-$operation.json"
+  outcome=disabled
+  if [[ $operation == recover ]]; then outcome=recovered; fi
+  grep -q "\"outcome\" : \"$outcome\"" "$temporary_directory/preferences-$operation.json"
+done
+[[ ! -e "$temporary_directory/preferences-state/state/preferences/state.json" ]]
+print "disabled native preferences lifecycle smoke passed"
+
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" keybindings list \
   --skhd-config "$layout/share/macarchy/keybindings/defaults.skhdrc" \
