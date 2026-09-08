@@ -344,12 +344,15 @@ struct DesktopApplyCommandRunner: Sendable {
     {
       do {
         let reconciled = try await theme.reconcile(adapterIDs, stateRoot, consumerPaths)
+        themeResult = reconciled
         guard reconciled.succeeded else {
+          let details = reconciled.results.map {
+            "\($0.adapterID) [\($0.requirement), \($0.status)]: \($0.message ?? "no detail reported")"
+          }.joined(separator: "; ")
           throw DesktopAggregateError.invalidState(
-            "required desktop theme reconciliation failed"
+            "required desktop theme reconciliation failed: \(details)"
           )
         }
-        themeResult = reconciled
       } catch {
         do {
           try ActivationLock(root: stateRoot).withLock {
@@ -372,7 +375,7 @@ struct DesktopApplyCommandRunner: Sendable {
           yabai: mutations.yabai,
           keybindings: mutations.keybindings,
           sketchyBar: mutations.sketchyBar,
-          theme: nil,
+          theme: themeResult,
           message: "theme reconciliation failed; provider changes were rolled back: \(error)"
         )
         return (try report.render(json: json), false)

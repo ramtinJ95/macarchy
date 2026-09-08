@@ -770,8 +770,11 @@ struct EnvironmentApplyCommandRunner: Sendable {
           )
         )
         guard reconciliation.succeeded else {
+          let details = reconciliation.results.map {
+            "\($0.adapterID) [\($0.requirement), \($0.status)]: \($0.message ?? "no detail reported")"
+          }.joined(separator: "; ")
           throw EnvironmentLifecycleError.blocked(
-            "required theme reconciliation failed for environment generation \(applyResult.generationID)"
+            "required theme reconciliation failed for environment generation \(applyResult.generationID): \(details)"
           )
         }
         reconciledTheme = reconciliation.results
@@ -849,8 +852,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           prerequisites: prerequisiteState,
           message:
             neovimPluginPreparationRan
-            ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. The restored fresh session also failed: \(failed.message)"
-            : "Environment apply rolled back, but the restored fresh session failed: \(failed.message)",
+            ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). The restored fresh session also failed: \(failed.message)"
+            : "Environment apply rolled back. Apply failed: \(applyError). The restored fresh session failed: \(failed.message)",
           mutated: applyResult.changed,
           json: json
         )

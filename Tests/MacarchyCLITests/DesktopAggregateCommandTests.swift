@@ -140,6 +140,7 @@ struct DesktopAggregateCommandTests {
     )
 
     #expect(!execution.succeeded)
+    #expect(execution.output.contains("injected theme failure"))
     #expect(try YabaiOwnershipStore(stateRoot: fixture.state).read() == nil)
     #expect(YabaiGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
     #expect(

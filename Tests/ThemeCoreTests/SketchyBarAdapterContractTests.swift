@@ -5,8 +5,8 @@ import Testing
 @testable import ThemeCore
 
 extension AdapterContractTests {
-  @Test
-  func sketchyBarReloadsTheExactEntryConfigAndDetectsABrokenPaletteSeam() async throws {
+  @Test(arguments: [2, 15])
+  func sketchyBarReloadsTheExactEntryConfigAndDetectsABrokenPaletteSeam(readyAt: Int) async throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -30,7 +30,7 @@ extension AdapterContractTests {
             count += 1
             return count
           }
-          if count < 2 {
+          if count < readyAt {
             throw ProcessRunnerError.timedOut(SketchyBarAdapter.liveExecutableURL, 0.1)
           }
           return ProcessResult(
@@ -47,7 +47,7 @@ extension AdapterContractTests {
     #expect(adapter.inspection().status == .ready)
     #expect(requests.withLock { $0 }.isEmpty)
     #expect(try await adapter.reconciliation().run().status == .applied)
-    #expect(settleCount.withLock { $0 } == 1)
+    #expect(settleCount.withLock { $0 } == readyAt - 1)
     #expect(presentationCount.withLock { $0 } == 1)
     #expect(
       requests.withLock { $0 }
@@ -56,18 +56,13 @@ extension AdapterContractTests {
             executableURL: SketchyBarAdapter.liveExecutableURL,
             arguments: ["--reload", configuration.path],
             timeout: 2
-          ),
-          ProcessRequest(
-            executableURL: SketchyBarAdapter.liveExecutableURL,
-            arguments: ["--query", "bar"],
-            timeout: 0.1
-          ),
-          ProcessRequest(
-            executableURL: SketchyBarAdapter.liveExecutableURL,
-            arguments: ["--query", "bar"],
-            timeout: 0.1
-          ),
+          )
         ]
+        + Array(
+          repeating: ProcessRequest(
+            executableURL: SketchyBarAdapter.liveExecutableURL,
+            arguments: ["--query", "bar"], timeout: 0.1
+          ), count: readyAt)
     )
 
     try "return {}\n".write(
@@ -77,7 +72,7 @@ extension AdapterContractTests {
     )
     #expect(adapter.inspection().status == .drifted)
     #expect(try await adapter.reconciliation().run().status == .drifted)
-    #expect(requests.withLock { $0 }.count == 3)
+    #expect(requests.withLock { $0 }.count == readyAt + 1)
 
     try "\(SketchyBarAdapter.paletteImport(root: root))\nreturn colors\n".write(
       to: configuration.deletingLastPathComponent().appending(path: "colors.lua"),
@@ -91,7 +86,7 @@ extension AdapterContractTests {
     )
     #expect(adapter.inspection().status == .drifted)
     #expect(try await adapter.reconciliation().run().status == .drifted)
-    #expect(requests.withLock { $0 }.count == 3)
+    #expect(requests.withLock { $0 }.count == readyAt + 1)
   }
 
   @Test
@@ -272,8 +267,8 @@ extension AdapterContractTests {
         #expect(outcome.status == .failed)
         #expect(outcome.message?.contains("timed out through the bounded settle window") == true)
       }
-      #expect(queryCount.withLock { $0 } == 11)
-      #expect(settleCount.withLock { $0 } == 10)
+      #expect(queryCount.withLock { $0 } == 41)
+      #expect(settleCount.withLock { $0 } == 40)
     }
   }
 
