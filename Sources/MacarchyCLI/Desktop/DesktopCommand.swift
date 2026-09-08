@@ -7,7 +7,7 @@ struct Desktop: ParsableCommand {
     abstract: "Plan and manage the default desktop providers.",
     subcommands: [
       Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, RunSketchyBarHook.self,
-      Borders.self, CPULoad.self, WiFi.self,
+      Borders.self, CPULoad.self, WiFi.self, AudioOutputCommand.self, AudioPicker.self,
     ]
   )
 
@@ -208,6 +208,30 @@ struct Desktop: ParsableCommand {
       try runner.execute(
         name: name, sender: sender,
         colors: .init(text: textColor, accent: accentColor, muted: mutedColor, error: errorColor))
+    }
+  }
+
+  struct AudioOutputCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      commandName: "_audio-output", shouldDisplay: false)
+    @Option var id: UInt32?
+    @Option var identity: String?
+
+    mutating func validate() throws {
+      guard (id == nil) == (identity == nil) else {
+        throw ValidationError("Audio output selection requires both --id and --identity.")
+      }
+      if let identity {
+        guard identity.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
+          throw ValidationError("Audio output identity must be a SHA-256 digest.")
+        }
+      }
+    }
+
+    mutating func run() throws {
+      if let id, let identity { try AudioOutputs.select(id: id, identity: identity) }
+      let data = try JSONEncoder().encode(AudioOutputs.read())
+      print(String(decoding: data, as: UTF8.self))
     }
   }
 
