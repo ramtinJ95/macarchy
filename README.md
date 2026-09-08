@@ -197,6 +197,44 @@ inputs in dotfiles; do not sync the whole `~/.config/macarchy` directory, which
 also contains machine-local state and backups. Merely editing a profile does
 not start services or change running applications.
 
+### SketchyBar modules
+
+The default bar includes Apple menu, Spaces, adaptive calendar, battery, volume
+and output-device controls, Wi-Fi traffic/details, CPU/memory, media, and native
+menu-bar coordination. Palette colors remain managed by the active Macarchy theme.
+
+Use positioned module arrays to enable, omit, or reorder individual modules:
+
+```toml
+[sketchybar]
+left = ["spaces"]
+center = []
+right = ["clock", "volume", "cpu", "memory"]
+```
+
+Omitted arrays inherit defaults; empty arrays hide that position's modules.
+A module may appear only once. An inherited clock moves to center when an
+external display is online, otherwise compact right. Explicitly placing `clock`
+fixes its position. Click it for a four-second ISO-week preview.
+
+Volume supports scrolling (Ctrl for fine steps), a slider, safe output-device
+selection, and right-click Sound settings. Wi-Fi never requests Location access:
+its network-name row explicitly reports privacy restriction. Media requires
+Homebrew `nowplaying-cli`; its private MediaRemote code runs outside Macarchy.
+
+`apple` uses the separately packaged `macarchy-menu` executable. Enable its
+Accessibility permission manually if required; `macarchy-menu --check` only checks
+readiness, never prompts or grants permission. Private SkyLight use is confined
+to that helper. Check permission again after upgrades and in the bar's launch
+context; a successful terminal check does not guarantee another process context.
+
+`toggle` coordinates the native auto-hidden menu bar with the managed bar using
+public mouse-position polling. It does not change macOS preferences, require new
+permissions, or launch the external `sketchybar-toggle` daemon. Stop an existing
+personal toggle before adopting this module, or omit `toggle`. Macarchy refuses
+that conflict rather than killing another process. Its owned process exits on
+configuration replacement or bar shutdown; status detects a dead/stale helper.
+
 ### Spicetify prerequisites and interrupted setup
 
 The optional `presets.spicetify` integration refreshes an **already initialized**

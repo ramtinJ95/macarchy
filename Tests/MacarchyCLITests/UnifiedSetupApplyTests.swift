@@ -748,7 +748,7 @@ final class ApplyFixture: @unchecked Sendable {
     UnifiedSetupPlanContext(
       themesRoot: repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory),
       keybindingsResourcesRoot: root.appending(path: "Keybindings"),
-      desktopResourcesRoot: root.appending(path: "Desktop"),
+      desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
       environmentResourcesRoot: root.appending(path: "Environment"),
       profileURL: state.appending(path: "profile.toml"),
       profileRequired: false,

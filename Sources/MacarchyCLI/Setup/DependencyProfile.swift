@@ -17,6 +17,8 @@ enum DependencyCapabilityProbe: Sendable {
   case exists(URL)
   case postScriptFont(String)
   case macOSMajorVersion(Int)
+  case appleMenuHelper(URL)
+  case nativeMenuToggle
 
   var description: String {
     switch self {
@@ -32,7 +34,10 @@ enum DependencyCapabilityProbe: Sendable {
       "PostScript font \(name) must be registered"
     case .macOSMajorVersion(let version):
       "requires macOS \(version)"
-
+    case .appleMenuHelper(let url):
+      "\(url.path) --check must report ready (separate SkyLight helper and manual Accessibility permission)"
+    case .nativeMenuToggle:
+      "native menu bar must allow auto-hide; no unmanaged sketchybar-toggle process may compete with the owned helper"
     }
   }
 
@@ -55,7 +60,19 @@ enum DependencyCapabilityProbe: Sendable {
       return (CTFontManagerCopyAvailablePostScriptNames() as! [String]).contains(name)
     case .macOSMajorVersion(let expected):
       return ProcessInfo.processInfo.operatingSystemVersion.majorVersion == expected
-
+    case .appleMenuHelper(let url):
+      guard
+        let result = try? ProcessRunner.live.run(
+          .init(executableURL: url, arguments: ["--check"], timeout: 2))
+      else { return false }
+      return result.terminationStatus == 0
+        && result.output.trimmingCharacters(in: .whitespacesAndNewlines) == "ready"
+    case .nativeMenuToggle:
+      let preferences = UserDefaults.standard
+      let allowsAutoHide =
+        preferences.bool(forKey: "_HIHideMenuBar")
+        || !preferences.bool(forKey: "AppleMenuBarVisibleInFullscreen")
+      return allowsAutoHide && (try? SketchyBarToggle.noForeignToggle()) == true
     }
   }
 }
@@ -130,10 +147,21 @@ struct DependencyCapability: Sendable {
 struct DependencyProfile: Sendable {
   let capabilities: [DependencyCapability]
 
-  func selectedForDesktop(_ profile: PortableProfile) -> [DependencyCapability] {
+  func selectedForDesktop(
+    _ profile: PortableProfile,
+    defaultsURL: URL = RuntimeEnvironment.live.builtInDesktopURL.appending(
+      path: "sketchybar/defaults.toml")
+  ) throws -> [DependencyCapability] {
     var ids = Set(["macos-26", "arm64", "homebrew"])
     if profile.desktop.provider == .yabaiSkhd { ids.formUnion(["skhd", "yabai"]) }
-    if profile.topBar == .sketchybar { ids.insert("sketchybar") }
+    if profile.topBar == .sketchybar {
+      ids.insert("sketchybar")
+      let layout = try SketchyBarConfigurationComposer().effectiveLayout(
+        defaultsURL: defaultsURL, profile: profile)
+      if layout.position(of: .media) != nil { ids.insert("nowplaying-cli") }
+      if layout.position(of: .apple) != nil { ids.insert("apple-menu-helper") }
+      if layout.position(of: .toggle) != nil { ids.insert("native-menu-toggle") }
+    }
     return selected(ids)
   }
 
@@ -156,9 +184,14 @@ struct DependencyProfile: Sendable {
     return selected(ids)
   }
 
-  func selectedForSetup(_ profile: PortableProfile) -> [DependencyCapability] {
+  func selectedForSetup(
+    _ profile: PortableProfile,
+    defaultsURL: URL = RuntimeEnvironment.live.builtInDesktopURL.appending(
+      path: "sketchybar/defaults.toml")
+  ) throws -> [DependencyCapability] {
     let ids = Set(
-      (selectedForDesktop(profile) + selectedForEnvironment(profile.environment)).map(\.id)
+      (try selectedForDesktop(profile, defaultsURL: defaultsURL)
+        + selectedForEnvironment(profile.environment)).map(\.id)
     )
     return selected(ids)
   }
@@ -277,6 +310,28 @@ struct DependencyProfile: Sendable {
           .sketchyBar,
           probes: executable("/opt/homebrew/bin/sketchybar"),
           remediation: .externallyTrustedFormula("felixkratz/formulae/sketchybar")
+        ),
+        consumerCapability(
+          .sketchyBar, dependencyID: "nowplaying-cli",
+          probes: executable("/opt/homebrew/bin/nowplaying-cli"),
+          remediation: .formula("nowplaying-cli")
+        ),
+        consumerCapability(
+          .sketchyBar, dependencyID: "apple-menu-helper",
+          probes: [
+            .appleMenuHelper(
+              RuntimeEnvironment.live.executableURL.deletingLastPathComponent().appending(
+                path: "macarchy-menu"))
+          ],
+          remediation: .external(
+            "Enable Accessibility manually for the packaged macarchy-menu executable in System Settings > Privacy & Security > Accessibility. Run its --check command for the exact failure. Recheck after upgrades; no permission is granted automatically."
+          )
+        ),
+        consumerCapability(
+          .sketchyBar, dependencyID: "native-menu-toggle", probes: [.nativeMenuToggle],
+          remediation: .external(
+            "Enable native menu-bar auto-hide manually if set to Never, and stop any unmanaged sketchybar-toggle process before applying. Macarchy never kills that process or changes the preference automatically; omit toggle to opt out."
+          )
         ),
         consumerCapability(
           .borders,

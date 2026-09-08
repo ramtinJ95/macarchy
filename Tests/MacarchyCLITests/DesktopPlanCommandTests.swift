@@ -32,16 +32,23 @@ struct DesktopPlanCommandTests {
     #expect(sketchyBarProvider["status"] as? String == "install_required")
     #expect(sketchyBar["space_module"] as? String == "dynamic_yabai")
     let layout = try #require(sketchyBar["layout"] as? [String: Any])
-    #expect(layout["left"] as? [String] == ["spaces"])
+    #expect(layout["left"] as? [String] == ["apple", "spaces"])
     #expect(layout["center"] as? [String] == [])
-    #expect(layout["right"] as? [String] == ["clock"])
+    #expect(
+      layout["right"] as? [String] == [
+        "clock", "battery", "volume", "wifi", "cpu", "memory", "media", "toggle",
+      ])
     #expect(
       (sketchyBar["theme_palette"] as? [String: Any])?["status"] as? String
         == "unavailable"
     )
     #expect(
       (sketchyBar["rendered_artifacts"] as? [String: String])?.keys.sorted()
-        == ["plugins/clock.sh", "plugins/space-indexes.sh", "sketchybarrc"]
+        == [
+          "plugins/apple.sh", "plugins/battery.sh", "plugins/clock.sh", "plugins/cpu.sh",
+          "plugins/media.sh", "plugins/memory.sh", "plugins/space-indexes.sh",
+          "plugins/volume.sh", "plugins/wifi.sh", "sketchybarrc",
+        ]
     )
     #expect(
       actions.compactMap { $0["id"] as? String }
@@ -457,6 +464,7 @@ struct DesktopPlanCommandTests {
     try """
     schema_version = 1
     [sketchybar]
+    left = ["spaces"]
     right = ["volume", "clock"]
     """.write(to: fixture.profile, atomically: true, encoding: .utf8)
 

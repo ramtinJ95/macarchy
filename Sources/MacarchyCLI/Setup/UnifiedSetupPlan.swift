@@ -131,8 +131,9 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     context: UnifiedSetupPlanContext, adoptionState: SetupPackageAdoptionState
   ) throws -> SetupPackageInventory {
     let layered = try loadProfile(context: context)
-    let capabilities = setupCapabilities(
-      profile: layered.profile, homeDirectory: context.homeDirectory)
+    let capabilities = try setupCapabilities(
+      profile: layered.profile, homeDirectory: context.homeDirectory,
+      desktopResourcesRoot: context.desktopResourcesRoot)
     let declarations = try packageDeclarations(
       context: context, profile: layered.profile, capabilities: capabilities)
     return SetupPackageInventory(
@@ -164,9 +165,12 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     )
   }
 
-  private func setupCapabilities(profile: PortableProfile, homeDirectory: URL) -> [SetupCapability]
-  {
-    DependencyProfile.personal(homeDirectory: homeDirectory).selectedForSetup(profile).map {
+  private func setupCapabilities(
+    profile: PortableProfile, homeDirectory: URL, desktopResourcesRoot: URL
+  ) throws -> [SetupCapability] {
+    try DependencyProfile.personal(homeDirectory: homeDirectory).selectedForSetup(
+      profile, defaultsURL: desktopResourcesRoot.appending(path: "sketchybar/defaults.toml")
+    ).map {
       SetupCapability(
         id: $0.id, category: $0.category,
         status: capabilityIsAvailable($0) ? .present : .missing,
@@ -205,7 +209,9 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     }
 
     let profile = layered.profile
-    let capabilities = setupCapabilities(profile: profile, homeDirectory: context.homeDirectory)
+    let capabilities = try setupCapabilities(
+      profile: profile, homeDirectory: context.homeDirectory,
+      desktopResourcesRoot: context.desktopResourcesRoot)
     let declarations: SetupPackageDeclarations
     do {
       declarations = try packageDeclarations(

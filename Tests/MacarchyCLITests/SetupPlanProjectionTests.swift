@@ -185,7 +185,7 @@ private struct ProjectionFixture {
     context = UnifiedSetupPlanContext(
       themesRoot: repositoryRoot.appending(path: "Themes"),
       keybindingsResourcesRoot: root.appending(path: "Keybindings"),
-      desktopResourcesRoot: root.appending(path: "Desktop"),
+      desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
       environmentResourcesRoot: root.appending(path: "Environment"),
       profileURL: root.appending(path: "profile.toml"),
       profileRequired: false,

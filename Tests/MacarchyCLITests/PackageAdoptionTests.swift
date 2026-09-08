@@ -287,7 +287,7 @@ private struct AdoptionFixture {
     return UnifiedSetupPlanContext(
       themesRoot: root.appending(path: "no-themes"),
       keybindingsResourcesRoot: root.appending(path: "no-keybindings"),
-      desktopResourcesRoot: root.appending(path: "no-desktop"),
+      desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
       environmentResourcesRoot: root.appending(path: "no-environment"),
       profileURL: root.appending(path: "profile.toml"), profileRequired: false,
       machineProfileURL: root.appending(path: "machine.toml"), machineProfileRequired: false,

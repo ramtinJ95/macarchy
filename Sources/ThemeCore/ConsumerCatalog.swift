@@ -551,7 +551,12 @@ package struct ConsumerCatalog: Sendable {
           ),
         ]
       },
-      dependencies: [.init(id: SketchyBarAdapter.id, role: .desktopSubstrate)]
+      dependencies: [
+        .init(id: SketchyBarAdapter.id, role: .desktopSubstrate),
+        .init(id: "nowplaying-cli", role: .desktopSubstrate),
+        .init(id: "apple-menu-helper", role: .desktopSubstrate),
+        .init(id: "native-menu-toggle", role: .desktopSubstrate),
+      ]
     ),
     ConsumerCatalogEntry(
       id: .slack,

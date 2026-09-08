@@ -435,8 +435,20 @@ struct DesktopPlanCommandRunner: Sendable {
   private static func moduleCapabilities(
     _ composition: SketchyBarComposition
   ) -> [String: String] {
-    composition.layout.position(of: .volume) == nil
-      ? [:] : [SketchyBarModule.volume.rawValue: "supported_macos_builtin"]
+    var capabilities = Dictionary(
+      uniqueKeysWithValues: [SketchyBarModule.volume, .battery, .cpu, .memory, .wifi].compactMap {
+        composition.layout.position(of: $0) == nil ? nil : ($0.rawValue, "supported_macos_builtin")
+      })
+    if composition.layout.position(of: .media) != nil {
+      capabilities["media"] = "external_nowplaying_cli_private_mediaremote"
+    }
+    if composition.layout.position(of: .apple) != nil {
+      capabilities["apple"] = "separate_skylight_helper_manual_accessibility"
+    }
+    if composition.layout.position(of: .toggle) != nil {
+      capabilities["toggle"] = "owned_public_mouse_polling_manual_native_menu_autohide"
+    }
+    return capabilities
   }
 
   private func keybindingActions(

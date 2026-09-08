@@ -46,6 +46,13 @@ package enum SketchyBarModule: String, Codable, Hashable, Sendable {
   case spaces
   case clock
   case volume
+  case battery
+  case cpu
+  case memory
+  case wifi
+  case media
+  case apple
+  case toggle
 }
 
 package struct SketchyBarProfileOptions: Equatable, Sendable {

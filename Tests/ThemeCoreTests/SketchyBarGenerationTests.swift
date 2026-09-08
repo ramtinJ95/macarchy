@@ -34,8 +34,8 @@ struct SketchyBarGenerationTests {
     }
   }
 
-  @Test
-  func sealsAndAuthenticatesTheCopiedTrustedHook() throws {
+  @Test(arguments: [false, true])
+  func sealsAndAuthenticatesTheCopiedTrustedHook(withBattery: Bool) throws {
     try withTemporaryRoot(named: "macarchy-sketchybar-generation-tests") { root in
       let hook = root.appending(path: "hook.sh")
       try "\"$SKETCHYBAR\" --add item personal.demo center\n".write(
@@ -47,7 +47,8 @@ struct SketchyBarGenerationTests {
         """
         schema_version = 1
         [sketchybar]
-        right = ["volume", "clock"]
+        left = ["spaces"]
+        right = ["volume", "clock"\(withBattery ? ", \"battery\", \"cpu\", \"memory\", \"wifi\", \"media\", \"apple\"" : "")]
         hook = "hook.sh"
         """,
         source: root.appending(path: "profile.toml")
@@ -70,6 +71,18 @@ struct SketchyBarGenerationTests {
       )
       #expect(SketchyBarGenerationInspector(stateRoot: root).inspect().status == .current)
 
+      #expect(
+        FileManager.default.fileExists(
+          atPath:
+            copied.deletingLastPathComponent().appending(path: "battery.sh").path) == withBattery)
+      let disposable = "s-\(UUID().uuidString.lowercased())"
+      let activator = SketchyBarGenerationActivator(stateRoot: root)
+      try activator.publish(composition, generationID: disposable)
+      try activator.removeTransactionResidue(disposable)
+      #expect(
+        !FileManager.default.fileExists(
+          atPath:
+            root.appending(path: "desktop/sketchybar/generations/\(disposable)").path))
       try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: copied.path)
       try Data("drift\n".utf8).write(to: copied)
       #expect(SketchyBarGenerationInspector(stateRoot: root).inspect().status == .invalid)

@@ -346,8 +346,11 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             json: json
           )
         }
-        let unresolved = DependencyProfile.personal(homeDirectory: context.homeDirectory)
-          .selectedForSetup(currentModel.profile)
+        let unresolved = try DependencyProfile.personal(homeDirectory: context.homeDirectory)
+          .selectedForSetup(
+            currentModel.profile,
+            defaultsURL: context.desktopResourcesRoot.appending(path: "sketchybar/defaults.toml")
+          )
           .filter { !capabilityIsAvailable($0) }
           .map(\.id)
         guard unresolved.isEmpty else {
