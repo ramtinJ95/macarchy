@@ -8,7 +8,7 @@ import ThemeCore
 
 struct SketchyBarMediaTests {
   @Test(arguments: ["com.spotify.client", "com.apple.Music", "other"])
-  func parsesOpenStepProviderOutputWithoutShellSelectors(bundle: String) throws {
+  func parsesJSONProviderOutputAndBase64ArtworkWithoutShellSelectors(bundle: String) throws {
     let media = try NowPlayingMedia.parse(metadata(bundle: bundle))
     #expect(media.title == "Title $(bad) 'quoted'")
     #expect(media.artist == "Artist")
@@ -20,8 +20,11 @@ struct SketchyBarMediaTests {
   }
 
   @Test(arguments: [
-    "bad", "{ kMRMediaRemoteNowPlayingInfoPlaybackRate = nope; }",
-    "{ kMRMediaRemoteNowPlayingInfoArtworkData = nope; }",
+    "bad", "[]", "{ kMRMediaRemoteNowPlayingInfoPlaybackRate = 1; }",
+    #"{"kMRMediaRemoteNowPlayingInfoPlaybackRate":"nope"}"#,
+    #"{"kMRMediaRemoteNowPlayingInfoPlaybackRate":true}"#,
+    #"{"kMRMediaRemoteNowPlayingInfoArtworkData":"not base64!"}"#,
+    #"{"kMRMediaRemoteNowPlayingInfoArtworkData":42}"#,
   ])
   func malformedProviderResponsesFail(output: String) {
     #expect(throws: (any Error).self) { try NowPlayingMedia.parse(output) }
@@ -117,11 +120,11 @@ struct SketchyBarMediaTests {
 
   private func metadata(bundle: String = "com.spotify.client") -> String {
     """
-    { kMRMediaRemoteNowPlayingInfoClientBundleIdentifier = "\(bundle)";
-      kMRMediaRemoteNowPlayingInfoTitle = "Title $(bad) 'quoted'";
-      kMRMediaRemoteNowPlayingInfoArtist = Artist;
-      kMRMediaRemoteNowPlayingInfoPlaybackRate = 1;
-      kMRMediaRemoteNowPlayingInfoArtworkData = <0001>; }
+    { "kMRMediaRemoteNowPlayingInfoClientBundleIdentifier": "\(bundle)",
+      "kMRMediaRemoteNowPlayingInfoTitle": "Title $(bad) 'quoted'",
+      "kMRMediaRemoteNowPlayingInfoArtist": "Artist",
+      "kMRMediaRemoteNowPlayingInfoPlaybackRate": 1,
+      "kMRMediaRemoteNowPlayingInfoArtworkData": "AAE=" }
     """
   }
   private final class State: Sendable {
