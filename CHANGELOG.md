@@ -7,6 +7,42 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-08
+
+### Added
+
+- A complete, individually configurable SketchyBar default: Apple menu, Spaces,
+  adaptive calendar, battery, volume and output picker, Wi-Fi details and traffic,
+  CPU/memory, Spotify/Music controls and artwork, and native-menu auto-hide.
+- A separately packaged Apple-menu helper with manual Accessibility permission,
+  and module-derived prerequisites for media and native-menu interaction.
+- Portable personal Neovim extras, editing bindings and Markdown-preview styling
+  derived from the active editor theme, with an explicit browser-reload notice.
+
+### Changed
+
+- Align managed Kitty, zsh, Atuin, Starship and Yabai behavior with the personal
+  defaults while preserving canonical theme colors and excluding private data.
+  Kitty retains rounded, titlebar-free windows and requires the exact default font.
+- Declare shell integrations and bar-module dependencies from selected providers;
+  disabling the relevant provider or module removes its requirements.
+
+### Fixed
+
+- Recognize current and legacy Homebrew service labels without accepting
+  conflicting registrations, including Borders/SketchyBar recovery and previews.
+- Preserve both the original environment apply failure and a subsequent rollback
+  failure instead of masking the first error.
+
+### Known limitations
+
+- Full visual and interaction acceptance is scheduled for a fresh Macarchy
+  reinstall on the existing user account; this is not a clean macOS/TCC test.
+- Wi-Fi names remain privacy-restricted without Location permission. Apple-menu
+  permission is manual, and an existing external bar-toggle must be stopped before
+  the owned toggle can run. Spicetify initialization and Spotify restart remain
+  manual; its managed appearance will be checked after reinstall.
+
 ## [0.8.3] - 2026-09-08
 
 ### Fixed
@@ -433,7 +469,8 @@ unqualified; review plans and reported prerequisites before applying changes.
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/ramtinJ95/macarchy/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/ramtinJ95/macarchy/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/ramtinJ95/macarchy/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ramtinJ95/macarchy/compare/v0.8.0...v0.8.1
