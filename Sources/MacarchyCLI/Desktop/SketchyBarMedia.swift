@@ -15,7 +15,7 @@ struct NowPlayingMedia: Equatable {
     let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
     if text == "(null)" { return .init(title: "", artist: "", artwork: nil, playing: false) }
     guard text.utf8.count <= 16_777_216,
-      let values = try PropertyListSerialization.propertyList(from: Data(text.utf8), format: nil)
+      let values = try JSONSerialization.jsonObject(with: Data(text.utf8))
         as? [String: Any]
     else { throw MediaError.invalidMetadata }
     func string(_ key: String) throws -> String {
@@ -33,6 +33,7 @@ struct NowPlayingMedia: Equatable {
     if rawRate == nil {
       rate = 0
     } else if let number = rawRate as? NSNumber {
+      guard CFGetTypeID(number) != CFBooleanGetTypeID() else { throw MediaError.invalidMetadata }
       rate = number.doubleValue
     } else if let string = rawRate as? String, let number = Double(string) {
       rate = number
@@ -41,8 +42,16 @@ struct NowPlayingMedia: Equatable {
     }
     guard rate.isFinite, rate >= 0 else { throw MediaError.invalidMetadata }
     let rawArtwork = values["kMRMediaRemoteNowPlayingInfoArtworkData"]
-    guard rawArtwork == nil || rawArtwork is Data else { throw MediaError.invalidMetadata }
-    let artwork = rawArtwork as? Data
+    let artwork: Data?
+    if let rawArtwork {
+      // nowplaying-cli 2.1.0 sanitizes NSData as base64 in its get-raw JSON.
+      guard let encoded = rawArtwork as? String, let decoded = Data(base64Encoded: encoded) else {
+        throw MediaError.invalidMetadata
+      }
+      artwork = decoded
+    } else {
+      artwork = nil
+    }
     return Self(
       title: title, artist: artist, artwork: artwork?.isEmpty == false ? artwork : nil,
       playing: ["com.spotify.client", "com.apple.Music"].contains(bundle) && rate > 0
