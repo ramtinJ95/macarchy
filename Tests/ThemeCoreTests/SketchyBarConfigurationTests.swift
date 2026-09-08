@@ -4,6 +4,40 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarConfigurationTests {
+  @Test func sliderCreationPassesPositionBeforeWidthToTheNativeCLI() throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[sketchybar]\nleft = []\nright = [\"volume\"]\n",
+      source: root.appending(path: "profile.toml"))
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL, profile: profile, stateRoot: root)
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+    let command = try #require(
+      entry.contents.split(separator: "\n").first { $0.contains("--add slider ") })
+    let recorder = root.appending(path: "record-arguments.sh")
+    try "#!/bin/sh\nprintf '%s\\n' \"$@\"\n".write(
+      to: recorder, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: recorder.path)
+    let process = Process()
+    process.executableURL = URL(filePath: "/bin/sh")
+    process.arguments = ["-c", String(command)]
+    process.environment = ["SKETCHYBAR": recorder.path]
+    let output = Pipe()
+    process.standardOutput = output
+    try process.run()
+    let arguments = String(
+      decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self
+    )
+    .split(separator: "\n").map(String.init)
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+    // Native 2.23.0 message.c consumes position before the slider width.
+    #expect(
+      Array(arguments.prefix(5))
+        == ["--add", "slider", "macarchy.volume.slider", "popup.macarchy.volume.bracket", "250"])
+  }
+
   @Test func callbacksTreatMetacharactersInPluginPathsAsLiteralData() throws {
     let root = try configurationRoot()
     defer { try? FileManager.default.removeItem(at: root) }
