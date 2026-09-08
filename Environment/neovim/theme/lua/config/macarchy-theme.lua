@@ -138,6 +138,27 @@ function M.apply_imported()
   return theme
 end
 
+-- Transparent editor highlights have no background. Browser previews instead
+-- use the same canonical background as the terminal behind that editor.
+function M.background()
+  local theme = M.current()
+  local file = assert(io.open(root .. "/current/theme.json", "rb"))
+  local bytes = file:read(1048577)
+  file:close()
+  assert(bytes and #bytes <= 1048576, "Macarchy: normalized theme exceeds 1 MiB")
+  local normalized = vim.json.decode(bytes)
+  assert(
+    type(normalized) == "table"
+      and normalized.schema_version == 1
+      and normalized.generation_id == theme.generation_id
+      and normalized.theme_id == theme.theme_id,
+    "Macarchy: preview background does not match the canonical editor theme"
+  )
+  local background = type(normalized.semantic) == "table" and normalized.semantic.background
+  assert(type(background) == "string" and background:match("^#%x%x%x%x%x%x$"), "Macarchy: invalid preview background")
+  return tonumber(background:sub(2), 16)
+end
+
 function M.verify()
   local theme = M.current()
   if not state.watcher then
