@@ -152,6 +152,7 @@ package struct PortableProfile: Equatable, Sendable {
   package let sketchyBar: SketchyBarProfileOptions
   package let environment: EnvironmentProfile
   package let packages: PackageProfile
+  package let macOSPreferences: MacOSPreferencesProfile
 
   package static let defaults = PortableProfile(
     sourceURL: nil,
@@ -160,7 +161,8 @@ package struct PortableProfile: Equatable, Sendable {
     topBar: .sketchybar,
     sketchyBar: .empty,
     environment: .defaults,
-    packages: .defaults
+    packages: .defaults,
+    macOSPreferences: .init()
   )
 }
 
@@ -193,11 +195,14 @@ package struct PortableProfileLoader: Sendable {
   private static let allowedTables = Set([
     "keybindings", "desktop", "yabai", "top_bar", "sketchybar", "focus_ring",
     "terminal", "kitty", "shell", "zsh", "prompt", "starship", "history", "atuin",
-    "editor", "neovim", "tools", "presets", "btop", "yazi", "packages",
+    "editor", "neovim", "tools", "presets", "btop", "yazi", "packages", "macos_preferences",
   ])
 
   private static let allowedFields = Set([
     "schema_version",
+    "macos_preferences.enabled",
+    "macos_preferences.dock_autohide",
+    "macos_preferences.finder_show_extensions",
     "keybindings.override",
     "keybindings.metadata",
     "keybindings.disabled",
@@ -368,7 +373,8 @@ package struct PortableProfileLoader: Sendable {
       topBar: topBar,
       sketchyBar: sketchyBar,
       environment: environment,
-      packages: try packages(document.packages, kind: layerKind, source: sourceURL, base: base)
+      packages: try packages(document.packages, kind: layerKind, source: sourceURL, base: base),
+      macOSPreferences: document.macOSPreferences ?? .init()
     )
   }
 
@@ -977,7 +983,18 @@ package struct PortableProfileLoader: Sendable {
         baseline: declaredValue(
           "packages.baseline", portableProfile.packages.baseline, machineProfile.packages.baseline,
           default: .standard),
-        layers: portableProfile.packages.layers + machineProfile.packages.layers)
+        layers: portableProfile.packages.layers + machineProfile.packages.layers),
+      macOSPreferences: MacOSPreferencesProfile(
+        enabled: roles.value(
+          "macos_preferences.enabled", portableProfile.macOSPreferences.enabled,
+          machineProfile.macOSPreferences.enabled),
+        dockAutohide: roles.value(
+          "macos_preferences.dock_autohide", portableProfile.macOSPreferences.dockAutohide,
+          machineProfile.macOSPreferences.dockAutohide),
+        finderShowExtensions: roles.value(
+          "macos_preferences.finder_show_extensions",
+          portableProfile.macOSPreferences.finderShowExtensions,
+          machineProfile.macOSPreferences.finderShowExtensions))
     )
     return result
   }
@@ -1372,6 +1389,7 @@ private struct PortableProfileDocument: Decodable {
   let btop: BtopDocument?
   let yazi: YaziDocument?
   let packages: PackagesDocument?
+  let macOSPreferences: MacOSPreferencesProfile?
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
@@ -1396,6 +1414,7 @@ private struct PortableProfileDocument: Decodable {
     case btop
     case yazi
     case packages
+    case macOSPreferences = "macos_preferences"
   }
 }
 
