@@ -16,6 +16,11 @@ struct EnvironmentSessionVerifierTests {
         #expect(request.arguments.prefix(4) == ["-l", "-i", "+m", "-c"])
         #expect(request.arguments.last?.contains("MACARCHY_MANAGED_SESSION") == managed)
         #expect(request.environmentOverrides["ZDOTDIR"] == "/tmp/session-home")
+        #expect(
+          request.environmentOverrides["PATH"]
+            == (managed
+              ? "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
+              : ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"))
         #expect(request.timeout == 5)
         return ProcessResult(terminationStatus: 0, output: "")
       })

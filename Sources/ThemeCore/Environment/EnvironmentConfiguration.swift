@@ -162,6 +162,17 @@ package struct EnvironmentConfigurationComposer: Sendable {
         )
       }
       if options.history == .atuin {
+        configuration = appendSection(
+          """
+          # Match the supported external-before-Homebrew Atuin installation order.
+          # Its generated widgets also need the executable on the session PATH.
+          if [[ -x "$HOME/.atuin/bin/atuin" ]]; then
+            path=("$HOME/.atuin/bin" $path)
+            export PATH
+          fi
+          """,
+          to: configuration
+        )
         configuration = appendLine(
           "MACARCHY_ATUIN_INIT=\"$(atuin init zsh)\" || return 1",
           to: configuration

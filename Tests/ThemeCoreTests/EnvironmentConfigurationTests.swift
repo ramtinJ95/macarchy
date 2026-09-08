@@ -249,6 +249,54 @@ struct EnvironmentConfigurationTests {
         == "unset\n")
   }
 
+  @Test(arguments: [0, 17])
+  func externalAtuinInitializesWithoutAnInheritedPersonalPath(exitStatus: Int) throws {
+    let root = try temporaryDirectory().appending(path: "home with spaces")
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let atuinBin = root.appending(path: ".atuin/bin")
+    let bin = root.appending(path: "bin")
+    for directory in [atuinBin, bin] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    let executables = [
+      (
+        atuinBin.appending(path: "atuin"),
+        "#!/bin/sh\necho \"export ATUIN_INITIALIZED=1\"\nexit \(exitStatus)\n"
+      ),
+      (bin.appending(path: "starship"), "#!/bin/sh\necho \"export STARSHIP_INITIALIZED=1\"\n"),
+      (bin.appending(path: "atuin"), "#!/bin/sh\nexit 99\n"),
+    ]
+    for (url, contents) in executables {
+      try contents.write(to: url, atomically: true, encoding: .utf8)
+      try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    }
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n", source: root.appending(path: "profile.toml"))
+    let composition = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: root.appending(path: "state"))
+    try artifact("zsh/.zshrc", in: composition).write(
+      to: root.appending(path: ".zshrc"), atomically: true, encoding: .utf8)
+    let output = Pipe()
+    let process = Process()
+    process.executableURL = URL(filePath: "/bin/zsh")
+    process.arguments = [
+      "-c",
+      "source .zshrc; startup=$?; print -r -- ${ATUIN_INITIALIZED-0}:${STARSHIP_INITIALIZED-0}:${MACARCHY_MANAGED_SESSION-0}; exit $startup",
+    ]
+    process.currentDirectoryURL = root
+    process.environment = [
+      "HOME": root.path, "ZDOTDIR": root.path, "PATH": "\(bin.path):/usr/bin:/bin",
+    ]
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    process.waitUntilExit()
+    #expect((process.terminationStatus == 0) == (exitStatus == 0))
+    #expect(
+      String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        == (exitStatus == 0 ? "1:1:1\n" : "0:0:0\n"))
+  }
+
   @Test
   func nativeInputsAndStableOptionsProduceSelfContainedArtifacts() throws {
     let root = try temporaryDirectory()
