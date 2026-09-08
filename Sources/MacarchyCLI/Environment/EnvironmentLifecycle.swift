@@ -86,7 +86,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
           herdrReplacementName: transaction.herdrReplacementName,
           piReplacementName: transaction.piReplacementName,
           spicetifyReplacementName: transaction.spicetifyReplacementName,
-          tuicrReplacementName: transaction.tuicrReplacementName
+          tuicrReplacementName: transaction.tuicrReplacementName,
+          herdrThemeOnly: transaction.operation == .herdrTheme
         )
         if transaction.operation == .apply {
           try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
@@ -116,7 +117,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         piReplacementName: transaction.piReplacementName,
         spicetifyReplacementName: transaction.spicetifyReplacementName,
         tuicrReplacementName: transaction.tuicrReplacementName,
-        preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
+        preserveLegacyHerdrOnRemoval: preserveLegacyHerdr,
+        herdrThemeOnly: transaction.operation == .herdrTheme
       )
       try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
         transaction.previousCurrentDestination
@@ -768,7 +770,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         herdrReplacementName: transaction.herdrReplacementName,
         piReplacementName: nil,
         spicetifyReplacementName: nil,
-        tuicrReplacementName: nil
+        tuicrReplacementName: nil,
+        herdrThemeOnly: true
       )
       try store.writeOwnership(proposed)
       return true
@@ -784,7 +787,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
           herdrReplacementName: transaction.herdrReplacementName,
           piReplacementName: nil,
           spicetifyReplacementName: nil,
-          tuicrReplacementName: nil
+          tuicrReplacementName: nil,
+          herdrThemeOnly: true
         )
         try store.writeOwnership(previous)
         try store.removeTransaction()
@@ -806,8 +810,25 @@ struct EnvironmentTransactionCoordinator: Sendable {
     piReplacementName: String?,
     spicetifyReplacementName: String?,
     tuicrReplacementName: String?,
-    preserveLegacyHerdrOnRemoval: Bool = false
+    preserveLegacyHerdrOnRemoval: Bool = false,
+    herdrThemeOnly: Bool = false
   ) throws {
+    if herdrThemeOnly {
+      // A theme transaction carries the full aggregate receipt but authorizes
+      // only Herdr's generated surface, including forward/rollback recovery.
+      guard let old, let new, old.herdrEnabled, new.herdrEnabled,
+        let previous = old.herdr, let proposed = new.herdr,
+        old.replacingHerdr(previous.replacingManagedTheme(proposed.managedTheme)) == new,
+        let herdrReplacementName
+      else {
+        throw EnvironmentLifecycleError.blocked(
+          "Herdr theme transaction changes unrelated ownership")
+      }
+      try EnvironmentHerdrFileTransaction(
+        homeDirectory: homeDirectory, stateRoot: stateRoot
+      ).transition(from: old, to: new, replacementName: herdrReplacementName)
+      return
+    }
     let oldByID = Dictionary(uniqueKeysWithValues: (old?.records ?? []).map { ($0.id, $0) })
     let newByID = Dictionary(uniqueKeysWithValues: (new?.records ?? []).map { ($0.id, $0) })
     let codexTransaction = EnvironmentCodexFileTransaction(homeDirectory: homeDirectory)

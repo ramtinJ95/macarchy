@@ -53,14 +53,9 @@ struct EnvironmentStateStore: Sendable {
           value.rollbackThemeBridges,
           stateRoot: stateRoot
         )
-        && Self.btopReplacementIsValid(value)
-        && Self.codexReplacementIsValid(value)
-        && Self.herdrReplacementIsValid(value)
+        && Self.providerReplacementsAreValid(value)
         && Self.herdrRuntimeIsValid(value)
-        && Self.piReplacementIsValid(value)
-        && Self.spicetifyReplacementIsValid(value)
         && Self.spicetifyRuntimeIsValid(value)
-        && Self.tuicrReplacementIsValid(value)
         && value.bordersRuntimeIsValid
     }
   }
@@ -190,6 +185,28 @@ struct EnvironmentStateStore: Sendable {
       return false
     }
     return EnvironmentGenerationStore.isGenerationID(String(destination.dropFirst(prefix.count)))
+  }
+
+  private static func providerReplacementsAreValid(_ transaction: EnvironmentTransaction) -> Bool {
+    if transaction.operation == .herdrTheme {
+      guard let previous = transaction.previousOwnership,
+        let proposed = transaction.proposedOwnership,
+        previous.herdrEnabled, proposed.herdrEnabled,
+        let oldHerdr = previous.herdr, let newHerdr = proposed.herdr
+      else { return false }
+      return previous.replacingHerdr(oldHerdr.replacingManagedTheme(newHerdr.managedTheme))
+        == proposed
+        && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
+        && transaction.previousThemeGenerationID == nil
+        && transaction.rollbackThemeBridges.isEmpty
+        && transaction.btopReplacementName == nil && transaction.codexReplacementName == nil
+        && transaction.piReplacementName == nil && transaction.spicetifyReplacementName == nil
+        && transaction.tuicrReplacementName == nil
+        && herdrReplacementIsValid(transaction)
+    }
+    return btopReplacementIsValid(transaction) && codexReplacementIsValid(transaction)
+      && herdrReplacementIsValid(transaction) && piReplacementIsValid(transaction)
+      && spicetifyReplacementIsValid(transaction) && tuicrReplacementIsValid(transaction)
   }
 
   private static func btopReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
