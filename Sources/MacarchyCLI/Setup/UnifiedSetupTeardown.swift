@@ -263,6 +263,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
             mutated: recovered.result.mutated,
             dryRun: dryRun,
             plan: nil,
+            preferences: recovered.result.preferences,
             environment: recovered.result.environment,
             desktop: recovered.result.desktop,
             theme: recovered.result.theme,
@@ -322,10 +323,21 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     }
 
+    let preferencesPreview: UnifiedSetupTeardownStage
     let environmentPreview: UnifiedSetupTeardownStage
     let desktopPreview: UnifiedSetupTeardownStage
     let themePreview: UnifiedSetupTeardownStage
     do {
+      preferencesPreview = try stage(
+        planner.preferences.teardown(context: context.preferencesContext, dryRun: true)
+          .componentExecution(),
+        dryRun: true)
+      guard preferencesPreview.succeeded else {
+        return try result(
+          outcome: "blocked", mutated: false, dryRun: dryRun, plan: plan,
+          preferences: preferencesPreview,
+          message: "Native preferences teardown preflight is blocked.", json: json)
+      }
       environmentPreview = try stage(
         await environmentTeardown(context, consumerPaths, true),
         dryRun: true
@@ -388,7 +400,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     }
 
     if dryRun {
-      let planned = [environmentPreview, desktopPreview, themePreview].contains {
+      let planned = [preferencesPreview, environmentPreview, desktopPreview, themePreview].contains
+      {
         $0.outcome == "planned"
       }
       return try result(
@@ -396,6 +409,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         mutated: false,
         dryRun: true,
         plan: plan,
+        preferences: preferencesPreview,
         environment: environmentPreview,
         desktop: desktopPreview,
         theme: themePreview,
@@ -407,6 +421,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     }
 
     let stages: [UnifiedSetupTransactionStage] = [
+      preferencesPreview.outcome == "planned" ? .preferences : nil,
       environmentPreview.outcome == "planned" ? .environment : nil,
       desktopPreview.outcome == "planned" ? .desktop : nil,
       themePreview.outcome == "planned" ? .theme : nil,
@@ -417,6 +432,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         mutated: false,
         dryRun: false,
         plan: plan,
+        preferences: preferencesPreview,
         environment: environmentPreview,
         desktop: desktopPreview,
         theme: themePreview,
@@ -451,6 +467,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         mutated: recovery.mutated,
         dryRun: false,
         plan: plan,
+        preferences: recovery.preferences ?? preferencesPreview,
         environment: recovery.environment ?? environmentPreview,
         desktop: recovery.desktop ?? desktopPreview,
         theme: recovery.theme ?? themePreview,
@@ -530,6 +547,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       }
       result.record(execution, for: stageID)
       switch stageID {
+      case .preferences: try faultInjector(.preferencesTornDown)
       case .environment: try faultInjector(.environmentTornDown)
       case .desktop: try faultInjector(.desktopTornDown)
       case .theme: try faultInjector(.themeTornDown)
@@ -549,6 +567,19 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     commit: Bool
   ) async throws -> UnifiedSetupTeardownStage {
     switch stageID {
+    case .preferences:
+      let preferencesContext = try context.preferencesContext
+      let changed = try PreferencesStore(context: preferencesContext).read().pending != nil
+      if commit {
+        try planner.preferences.commit(context: preferencesContext)
+      } else {
+        try planner.preferences.rollback(context: preferencesContext)
+      }
+      return UnifiedSetupTeardownStage(
+        succeeded: true, mutated: changed,
+        outcome: changed ? (commit ? "committed" : "restored") : "no_change",
+        message: "Deferred native preferences apply \(commit ? "committed" : "rolled back").",
+        details: nil)
     case .environment:
       return try await environmentApplyFinalization(context, commit)
     case .desktop:
@@ -572,6 +603,16 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     dryRun: Bool
   ) async throws -> UnifiedSetupTeardownStage {
     switch stageID {
+    case .preferences:
+      let preferencesContext = try context.preferencesContext
+      if !dryRun, try PreferencesStore(context: preferencesContext).read().pending != nil {
+        // Restore an interrupted component attempt, then continue unified teardown forward.
+        try planner.preferences.rollback(context: preferencesContext)
+      }
+      return try stage(
+        planner.preferences.teardown(context: preferencesContext, dryRun: dryRun)
+          .componentExecution(),
+        dryRun: dryRun)
     case .environment:
       return try stage(
         await environmentTeardown(context, consumerPaths, dryRun),
@@ -621,6 +662,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     mutated: Bool,
     dryRun: Bool,
     plan: UnifiedSetupPlanReport?,
+    preferences: UnifiedSetupTeardownStage? = nil,
     environment: UnifiedSetupTeardownStage? = nil,
     desktop: UnifiedSetupTeardownStage? = nil,
     theme: UnifiedSetupTeardownStage? = nil,
@@ -632,6 +674,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       mutated: mutated,
       dryRun: dryRun,
       plan: plan,
+      preferences: preferences,
       environment: environment,
       desktop: desktop,
       theme: theme,
@@ -661,6 +704,7 @@ private struct UnifiedSetupTeardownReport: Encodable {
   let mutated: Bool
   let dryRun: Bool
   let plan: UnifiedSetupPlanReport?
+  let preferences: UnifiedSetupTeardownStage?
   let environment: UnifiedSetupTeardownStage?
   let desktop: UnifiedSetupTeardownStage?
   let theme: UnifiedSetupTeardownStage?
@@ -677,6 +721,9 @@ private struct UnifiedSetupTeardownReport: Encodable {
       "- packages: \(packages)",
       "- \(message)",
     ]
+    if let preferences {
+      lines.append("- preferences [\(preferences.outcome)]: \(preferences.message)")
+    }
     if let environment {
       lines.append("- environment [\(environment.outcome)]: \(environment.message)")
     }
@@ -689,6 +736,6 @@ private struct UnifiedSetupTeardownReport: Encodable {
     case schemaVersion = "schema_version"
     case operation, outcome, mutated
     case dryRun = "dry_run"
-    case plan, environment, desktop, theme, packages, message
+    case plan, preferences, environment, desktop, theme, packages, message
   }
 }

@@ -331,6 +331,9 @@ extension Macarchy {
       @Option(help: "Exact package installation digest from setup plan.")
       var approvePackages: String?
 
+      @Option(help: "Exact native preferences approval digest from setup plan.")
+      var approvePreferences: String?
+
       @Flag(help: "Emit machine-readable output.")
       var json = false
 
@@ -339,6 +342,7 @@ extension Macarchy {
           context: profile.context(stateRoot: state.stateRootURL),
           consumerPaths: state.consumerPaths,
           packageApproval: approvePackages,
+          preferencesApproval: approvePreferences,
           adoptions: try adoption.resolve(),
           json: json
         )

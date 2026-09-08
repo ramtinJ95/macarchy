@@ -56,6 +56,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   var standardBrewfile: @Sendable (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
   var personalBrewfile: @Sendable (URL) throws -> SetupBrewfile = { try SetupBrewfile.read(at: $0) }
   var proposedProfileSources: [URL: String] = [:]
+  var preferences: PreferencesLifecycle = .live
 
   static let live = UnifiedSetupPlanCommandRunner(
     capabilityIsAvailable: { $0.isAvailable() },
@@ -261,7 +262,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     let environment = try environmentPlanner(context, profile)
     let components = SetupComponentPlans(
       desktop: desktop,
-      environment: environment
+      environment: environment,
+      preferences: try preferences.inspect(
+        context: context.preferencesContext, desired: profile.macOSPreferences
+      ).componentExecution()
     )
     var diagnostics = [UnifiedSetupPlanDiagnostic]()
     for (id, component) in components.all where !component.succeeded {
@@ -653,9 +657,10 @@ struct SetupComponentExecution: Encodable, Sendable {
 struct SetupComponentPlans: Encodable, Sendable {
   let desktop: SetupComponentExecution
   let environment: SetupComponentExecution
+  let preferences: SetupComponentExecution
 
   var all: [(String, SetupComponentExecution)] {
-    [("desktop", desktop), ("environment", environment)]
+    [("desktop", desktop), ("environment", environment), ("preferences", preferences)]
   }
 }
 
@@ -972,12 +977,25 @@ struct UnifiedSetupPlanReport: Encodable {
     lines += manualBoundaries.map { "- \($0.id) [\($0.kind)]: \($0.instruction)" }
     lines.append(actions.isEmpty ? "Actions: none" : "Actions:")
     lines += actions.map { "- \($0.stage)/\($0.id): \($0.message)" }
+    if let preferences = components?.preferences, preferences.outcome != "disabled" {
+      if let target = preferences.report["target"]?.string { lines.append(target) }
+      if let runtime = preferences.report["runtime"]?.string { lines.append(runtime) }
+      if let digest = try preferencesApprovalDigest {
+        lines.append("Approve native preference changes with --approve-preferences \(digest).")
+      }
+    }
     if !diagnostics.isEmpty {
       lines.append("Diagnostics:")
       lines += diagnostics.map { "- \($0.source): error [\($0.code)]: \($0.message)" }
     }
     lines.append("No changes made.")
     return lines.joined(separator: "\n")
+  }
+
+  var preferencesApprovalDigest: String? {
+    get throws {
+      try components?.preferences.report.optionalString("approval_digest", at: "preferences")
+    }
   }
 }
 

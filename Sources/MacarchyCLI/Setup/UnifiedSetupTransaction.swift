@@ -16,6 +16,7 @@ enum UnifiedSetupTransactionStage: String, Codable, Hashable, Sendable {
   case theme
   case desktop
   case environment
+  case preferences
 }
 
 struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
@@ -68,8 +69,8 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     else { return false }
     let order: [UnifiedSetupTransactionStage] =
       operation == .apply
-      ? [.theme, .desktop, .environment]
-      : [.environment, .desktop, .theme]
+      ? [.theme, .desktop, .environment, .preferences]
+      : [.preferences, .environment, .desktop, .theme]
     return stages == order.filter { stages.contains($0) }
   }
 
@@ -170,6 +171,8 @@ enum UnifiedSetupTransactionCheckpoint: Sendable {
   case themeApplied
   case desktopApplied
   case environmentApplied
+  case preferencesApplied
+  case preferencesTornDown
   case environmentTornDown
   case desktopTornDown
   case themeTornDown
@@ -180,12 +183,13 @@ enum UnifiedSetupInterruptionError: Error, Sendable {
 }
 
 struct UnifiedSetupRecoveryResult: Sendable {
+  var preferences: UnifiedSetupTeardownStage?
   var environment: UnifiedSetupTeardownStage?
   var desktop: UnifiedSetupTeardownStage?
   var theme: UnifiedSetupTeardownStage?
 
   var mutated: Bool {
-    [environment, desktop, theme].compactMap { $0 }.contains { $0.mutated }
+    [preferences, environment, desktop, theme].compactMap { $0 }.contains { $0.mutated }
   }
 
   mutating func record(
@@ -193,6 +197,7 @@ struct UnifiedSetupRecoveryResult: Sendable {
     for stage: UnifiedSetupTransactionStage
   ) {
     switch stage {
+    case .preferences: preferences = result
     case .environment: environment = result
     case .desktop: desktop = result
     case .theme: theme = result

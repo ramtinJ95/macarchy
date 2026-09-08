@@ -782,6 +782,7 @@ final class ApplyFixture: @unchecked Sendable {
     available: @escaping @Sendable (DependencyCapability) -> Bool,
     requiredAdoptions: UnifiedSetupAdoptionApprovals = .none,
     plannedStages: Set<UnifiedSetupTransactionStage> = [],
+    preferences: PreferencesLifecycle = .live,
     themeInspection: @escaping UnifiedSetupThemeInspection = {
       model, ownership, _ in
       let active = model.theme.currentGenerationID
@@ -813,7 +814,8 @@ final class ApplyFixture: @unchecked Sendable {
     var planner = planner(
       available: available,
       requiredAdoptions: requiredAdoptions,
-      plannedStages: plannedStages
+      plannedStages: plannedStages,
+      preferences: preferences
     )
     planner.standardBrewfile = { _ in packages }
     planner.packageInventoryReader = inventory
@@ -848,7 +850,8 @@ final class ApplyFixture: @unchecked Sendable {
   func planner(
     available: @escaping @Sendable (DependencyCapability) -> Bool = { _ in true },
     requiredAdoptions: UnifiedSetupAdoptionApprovals = .none,
-    plannedStages: Set<UnifiedSetupTransactionStage> = []
+    plannedStages: Set<UnifiedSetupTransactionStage> = [],
+    preferences: PreferencesLifecycle = .live
   ) -> UnifiedSetupPlanCommandRunner {
     UnifiedSetupPlanCommandRunner(
       capabilityIsAvailable: available,
@@ -898,7 +901,8 @@ final class ApplyFixture: @unchecked Sendable {
       packageInventoryReader: { HomebrewPackageObservation(packages: [], issues: []) },
       standardBrewfile: { _ in
         try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))
-      }
+      },
+      preferences: preferences
     )
   }
 
