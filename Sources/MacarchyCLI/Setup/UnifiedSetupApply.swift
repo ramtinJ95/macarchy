@@ -166,6 +166,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
     packageApproval: String? = nil,
+    preferencesApproval: String? = nil,
     adoptions: UnifiedSetupAdoptionApprovals = .none,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
@@ -212,6 +213,11 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     }
     do {
       try adoptions.validate(required: plan.adoption)
+      guard try preferencesApproval == plan.preferencesApprovalDigest else {
+        throw PreferencesError.invalid(
+          "Supply exactly --approve-preferences from the reviewed setup plan before any setup mutation."
+        )
+      }
     } catch {
       return try result(
         outcome: "blocked",
@@ -511,6 +517,32 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           environment = .noChange("Preserved the converged daily tool environment.")
         }
 
+        let preferences: UnifiedSetupApplyStage
+        if plannedStages.contains(.preferences) {
+          try start(.preferences)
+          do {
+            var report = try planner.preferences.apply(
+              context: context.preferencesContext, desired: currentModel.profile.macOSPreferences,
+              approval: preferencesApproval, deferFinalization: true)
+            // This success report is emitted only after unified finalization below.
+            if report.outcome == "pending_commit" { report.outcome = "applied" }
+            preferences = try stage(
+              report.componentExecution(),
+              mutationField: "mutated", successMessage: "Selected macOS preferences converged.")
+          } catch {
+            return try await failureAfterRollback(
+              transaction: transaction, mutated: true, context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan, packages: packages, theme: theme, desktop: desktop,
+              environment: environment,
+              message: "macOS preferences apply failed: \(error)", json: json)
+          }
+          mutated = mutated || preferences.mutated
+          try faultInjector(.preferencesApplied)
+        } else {
+          preferences = .noChange("No native preference changes were required.")
+        }
+
         if let transaction {
           let committing = transaction.replacing(phase: .committing)
           try store.write(committing)
@@ -529,6 +561,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           theme: theme,
           desktop: desktop,
           environment: environment,
+          preferences: preferences,
           message: mutated
             ? "The selected Macarchy core converged."
             : "The selected Macarchy core is already converged.",
@@ -742,6 +775,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     theme: UnifiedSetupApplyStage? = nil,
     desktop: UnifiedSetupApplyStage? = nil,
     environment: UnifiedSetupApplyStage? = nil,
+    preferences: UnifiedSetupApplyStage? = nil,
     message: String,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
@@ -753,6 +787,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       theme: theme,
       desktop: desktop,
       environment: environment,
+      preferences: preferences,
       message: message
     )
     return (try report.render(json: json), report.succeeded)
@@ -809,6 +844,7 @@ private struct UnifiedSetupApplyReport: Encodable {
   let theme: UnifiedSetupApplyStage?
   let desktop: UnifiedSetupApplyStage?
   let environment: UnifiedSetupApplyStage?
+  let preferences: UnifiedSetupApplyStage?
   let message: String
 
   var succeeded: Bool { outcome == "applied" || outcome == "no_change" }
@@ -824,11 +860,13 @@ private struct UnifiedSetupApplyReport: Encodable {
     if let theme { lines.append("- theme: \(theme.message)") }
     if let desktop { lines.append("- desktop: \(desktop.message)") }
     if let environment { lines.append("- environment: \(environment.message)") }
+    if let preferences { lines.append("- preferences: \(preferences.message)") }
     return lines.joined(separator: "\n")
   }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
-    case operation, outcome, mutated, plan, packages, theme, desktop, environment, message
+    case operation, outcome, mutated, plan, packages, theme, desktop, environment, preferences,
+      message
   }
 }

@@ -154,8 +154,12 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     }
 
     let missing = model.capabilities.filter { $0.status == .missing }.map(\.id)
+    let preferences = try stage(
+      planner.preferences.inspect(
+        context: context.preferencesContext, desired: model.profile.macOSPreferences, status: true
+      ).componentExecution())
     if model.theme.status == "activation_required", ownership == nil, plan.adoption.isEmpty,
-      missing.isEmpty
+      missing.isEmpty, preferences.outcome == "disabled"
     {
       return try result(
         operation: operation,
@@ -187,7 +191,8 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
 
     let missingPackages = model.packages.identities.map(\.key)
     let succeeded =
-      desktop.succeeded && environment.succeeded && missing.isEmpty && missingPackages.isEmpty
+      desktop.succeeded && environment.succeeded && preferences.succeeded && missing.isEmpty
+      && missingPackages.isEmpty
     let outcome: String
     switch operation {
     case .status: outcome = succeeded ? "converged" : "drifted"
@@ -202,6 +207,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
           ? nil : "Missing setup packages: \(missingPackages.joined(separator: ", ")).",
         desktop.succeeded ? nil : "Desktop inspection failed.",
         environment.succeeded ? nil : "Environment inspection failed.",
+        preferences.succeeded ? nil : "Native preferences require attention.",
       ].compactMap { $0 }.joined(separator: " ")
     return try result(
       operation: operation,
@@ -210,6 +216,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       theme: theme,
       desktop: desktop,
       environment: environment,
+      preferences: preferences,
       message: message,
       json: json
     )
@@ -230,6 +237,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     theme: UnifiedSetupThemeLifecycleStatus?,
     desktop: UnifiedSetupInspectionStage? = nil,
     environment: UnifiedSetupInspectionStage? = nil,
+    preferences: UnifiedSetupInspectionStage? = nil,
     message: String,
     json: Bool
   ) throws -> (output: String, succeeded: Bool) {
@@ -240,6 +248,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       theme: theme,
       desktop: desktop,
       environment: environment,
+      preferences: preferences,
       message: message
     )
     return (try report.render(json: json), report.succeeded)
@@ -260,6 +269,7 @@ private struct UnifiedSetupInspectionReport: Encodable {
   let theme: UnifiedSetupThemeLifecycleStatus?
   let desktop: UnifiedSetupInspectionStage?
   let environment: UnifiedSetupInspectionStage?
+  let preferences: UnifiedSetupInspectionStage?
   let message: String
 
   var succeeded: Bool {
@@ -273,12 +283,14 @@ private struct UnifiedSetupInspectionReport: Encodable {
     if let theme { lines.append("- theme [\(theme.status)]: \(theme.message)") }
     if let desktop { lines.append("- desktop [\(desktop.outcome)]") }
     if let environment { lines.append("- environment [\(environment.outcome)]") }
+    if let preferences { lines.append("- preferences [\(preferences.outcome)]") }
+    lines += (plan?.diagnostics ?? []).map { "- \($0.source): \($0.message)" }
     if let inventory = plan?.packageInventory { lines.append(inventory.humanOutput) }
     return lines.joined(separator: "\n")
   }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
-    case operation, outcome, plan, theme, desktop, environment, message
+    case operation, outcome, plan, theme, desktop, environment, preferences, message
   }
 }
