@@ -380,10 +380,11 @@ struct EnvironmentSessionVerifier: Sendable {
     }
   )
 
-  private static func verifyFreshSession(
+  static func verifyFreshSession(
     _ profile: EnvironmentProfile,
     _ homeDirectory: URL,
-    requireManagedMarker: Bool
+    requireManagedMarker: Bool,
+    processRunner: ProcessRunner = .live
   ) -> [EnvironmentVerification] {
     guard profile.shell == .zsh else { return [] }
     do {
@@ -391,10 +392,13 @@ struct EnvironmentSessionVerifier: Sendable {
         requireManagedMarker
         ? "startup_status=$?; test $startup_status -eq 0 && test \"$MACARCHY_MANAGED_SESSION\" = 1"
         : "startup_status=$?; test $startup_status -eq 0"
-      let result = try ProcessRunner.live.run(
+      let result = try processRunner.run(
         ProcessRequest(
           executableURL: URL(filePath: "/bin/zsh"),
-          arguments: ["-lic", command],
+          // Foundation launches a separate process group. An interactive zsh
+          // with MONITOR enabled stops itself trying to acquire the caller's
+          // terminal. Verify login/interactive startup, not terminal ownership.
+          arguments: ["-l", "-i", "+m", "-c", command],
           timeout: 5,
           environmentOverrides: [
             "HOME": homeDirectory.path,
