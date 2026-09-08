@@ -6,6 +6,27 @@ import Testing
 
 struct KeybindingsShowTests {
   @Test
+  func packagedHelpShortcutSelectsTheCategorizedManagedView() throws {
+    let root = URL(filePath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent().deletingLastPathComponent()
+    let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let state = KeybindingEffectiveStateInspector().inspect(
+      resourcesRoot: root.appending(path: "Keybindings"),
+      profileURL: temporary.appending(path: "profile.toml"), profileRequired: false,
+      stateRoot: temporary)
+    let help = try #require(state.presentedBindings.first { $0.binding.identity == "cmd-k" })
+    #expect(help.binding.command == "macarchy keybindings show --effective")
+    let arguments = help.binding.command.split(separator: " ").dropFirst(3).map(String.init)
+    let command = try Keybindings.Show.parse(arguments)
+    #expect(command.inspection.effective)
+    let rows = state.presentedBindings.map(KeybindingsPopupRow.init)
+    #expect(!rows.isEmpty)
+    #expect(rows.allSatisfy { $0.category != "Uncatalogued" })
+    #expect(rows.first { $0.identity == "alt-j" }?.category == "Window focus")
+    #expect(rows.first { $0.identity == "cmd-k" }?.category == "Macarchy")
+  }
+
+  @Test
   func popupRowsPreserveCorrelationOrderAndSearchEveryInformationalField() throws {
     let catalog = try SkhdKeybindingCatalogLoader().decode(
       """

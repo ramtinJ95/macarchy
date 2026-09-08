@@ -55,5 +55,5 @@ cmd - 7 : yabai -m space --focus 7
 
 # Default provider and Macarchy workflows
 alt - a : open -a 'kitty'
-cmd - k : macarchy keybindings show
+cmd - k : macarchy keybindings show --effective
 cmd + shift - t : macarchy theme browse
