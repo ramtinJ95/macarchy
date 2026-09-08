@@ -36,7 +36,7 @@ struct SketchyBarAdapter: Sendable {
   static let id = "sketchybar"
   static let outputPath = "generated/sketchybar.lua"
   static let shellOutputPath = SketchyBarConfigurationComposer.paletteArtifactPath
-  static let rendererVersion = 2
+  static let rendererVersion = 3
   static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/sketchybar")
   static let initImport = "require(\"init\")"
   static let readyItem = SketchyBarConfigurationComposer.readyItem
@@ -268,6 +268,10 @@ struct SketchyBarAdapter: Sendable {
       MACARCHY_TEXT_COLOR=\(argb(colors.text))
       MACARCHY_ACCENT_COLOR=\(argb(terminal[4]))
       MACARCHY_MUTED_COLOR=\(argb(terminal[8]))
+      MACARCHY_BATTERY_GREEN=\(argb(colors.success))
+      MACARCHY_BATTERY_ORANGE=\(blendedARGB(colors.warning, colors.error))
+      MACARCHY_BATTERY_RED=\(argb(colors.error))
+      MACARCHY_WARNING_COLOR=\(argb(colors.warning))
 
       """
   }

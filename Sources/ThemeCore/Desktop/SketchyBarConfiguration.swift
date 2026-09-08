@@ -522,7 +522,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     "PALETTE=\(shellLiteral(path))"
   }
 
-  private static func shellLiteral(_ value: String) -> String {
+  static func shellLiteral(_ value: String) -> String {
     "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
   }
 }
