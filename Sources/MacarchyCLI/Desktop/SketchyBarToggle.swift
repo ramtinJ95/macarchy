@@ -1,5 +1,5 @@
-import AppKit
 import ArgumentParser
+import CoreGraphics
 import Darwin
 import Foundation
 import Synchronization
@@ -156,6 +156,26 @@ struct SketchyBarToggle {
     return result.terminationStatus == 1
   }
 
+  static func cursorDistanceFromTop() throws -> Double {
+    guard let event = CGEvent(source: nil) else { throw ToggleError.cursorScreenUnavailable }
+    let point = event.location
+    guard point.x.isFinite, point.y.isFinite else { throw ToggleError.cursorScreenUnavailable }
+    var display = CGDirectDisplayID()
+    var count: UInt32 = 0
+    guard CGGetDisplaysWithPoint(point, 1, &display, &count) == .success, count == 1 else {
+      throw ToggleError.cursorScreenUnavailable
+    }
+    return try distanceFromTop(point: point, bounds: CGDisplayBounds(display))
+  }
+
+  static func distanceFromTop(point: CGPoint, bounds: CGRect) throws -> Double {
+    guard bounds.contains(point), point.x.isFinite, point.y.isFinite,
+      bounds.minY.isFinite
+    else { throw ToggleError.cursorScreenUnavailable }
+    // CGEvent locations and display bounds share top-left global coordinates.
+    return Double(point.y - bounds.minY)
+  }
+
   static func processStart(_ pid: Int32) -> UInt64? {
     var info = proc_bsdinfo()
     let size = Int32(MemoryLayout<proc_bsdinfo>.size)
@@ -187,7 +207,7 @@ extension Desktop {
     @Option var stateRoot: String
 
     mutating func run() throws {
-      guard stateRoot.hasPrefix("/"), Thread.isMainThread else { throw ToggleError.invalidToken }
+      guard stateRoot.hasPrefix("/") else { throw ToggleError.invalidToken }
       let stop = Mutex(false)
       signal(SIGTERM, SIG_IGN)
       signal(SIGINT, SIG_IGN)
@@ -210,21 +230,11 @@ extension Desktop {
       try lock.withLock(root: URL(filePath: stateRoot)) {
         try SketchyBarToggle(
           processRunner: .live, uptime: { ProcessInfo.processInfo.systemUptime },
-          distance: {
-            try MainActor.assumeIsolated {
-              let point = NSEvent.mouseLocation
-              guard
-                let screen = NSScreen.screens.first(where: {
-                  point.x >= $0.frame.minX && point.x <= $0.frame.maxX && point.y >= $0.frame.minY
-                    && point.y <= $0.frame.maxY
-                })
-              else { throw ToggleError.cursorScreenUnavailable }
-              return screen.frame.maxY - point.y
-            }
-          },
-          wait: {
-            _ = RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(1.0 / 60))
-          }, stopping: { stop.withLock { $0 } },
+          distance: SketchyBarToggle.cursorDistanceFromTop,
+          // AsyncParsableCommand does not guarantee the main thread. These
+          // public CG queries need no AppKit run loop; an empty run loop would spin.
+          wait: { Thread.sleep(forTimeInterval: 1.0 / 60) },
+          stopping: { stop.withLock { $0 } },
           foreignToggleAbsent: { try SketchyBarToggle.noForeignToggle() }, pid: getpid(),
           started: started
         ).execute(token: token)

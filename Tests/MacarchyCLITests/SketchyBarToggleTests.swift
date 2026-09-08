@@ -1,3 +1,4 @@
+import CoreGraphics
 import Darwin
 import Foundation
 import Synchronization
@@ -8,6 +9,39 @@ import ThemeCore
 
 struct SketchyBarToggleTests {
   private let token = "00000000-0000-0000-0000-000000000001"
+
+  @Test func asyncCLIDispatchReachesTheLockWithoutRequiringTheMainThread() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-toggle-cli-\(UUID())")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let blockedRoot = root.appending(path: "not-a-directory")
+    try Data().write(to: blockedRoot)
+    let binary = Bundle(for: SketchyBarToggleCLIBundleToken.self).bundleURL
+      .deletingLastPathComponent().appending(path: "macarchy")
+    // Failure to create the lock is deliberate and precedes any native bar query
+    // or cursor observation. Exercise the real async CLI dispatcher in a child.
+    let result = try ProcessRunner.live.run(
+      .init(
+        executableURL: binary,
+        arguments: ["desktop", "_bar-toggle", "--state-root", blockedRoot.path, "--token", token],
+        timeout: 3))
+    #expect(result.terminationStatus != 0)
+    #expect(result.output.contains("lock("), Comment(rawValue: result.output))
+    #expect(!result.output.contains("invalidToken"))
+  }
+
+  @Test func cursorCoordinatesUseEachDisplaysTopEdge() throws {
+    for origin in [CGPoint.zero, CGPoint(x: -1920, y: 0), CGPoint(x: 0, y: -1080)] {
+      let bounds = CGRect(origin: origin, size: CGSize(width: 1920, height: 1080))
+      let point = CGPoint(x: origin.x + 10, y: origin.y + 42)
+      #expect(try SketchyBarToggle.distanceFromTop(point: point, bounds: bounds) == 42)
+      #expect(throws: ToggleError.self) {
+        try SketchyBarToggle.distanceFromTop(
+          point: CGPoint(x: origin.x - 1, y: origin.y), bounds: bounds)
+      }
+    }
+  }
 
   @Test func cursorZonesAndDebounceMatchThePersonalBehavior() {
     var state = NativeMenuToggleState()
@@ -124,3 +158,5 @@ struct SketchyBarToggleTests {
     }
   }
 }
+
+private final class SketchyBarToggleCLIBundleToken: NSObject {}
