@@ -13,7 +13,7 @@ struct EnvironmentDependencySelectionTests {
     )
     #expect(
       catalog.selectedForEnvironment(profile).map(\.id)
-        == (shellEnabled ? ["macos-26", "arm64"] : [])
+        == (shellEnabled ? ["macos-26", "arm64"] + Self.shellDependencies : [])
     )
   }
 
@@ -23,13 +23,16 @@ struct EnvironmentDependencySelectionTests {
       core: true,
       presets: allPresets ? Self.presetNames : []
     )
-    let expected =
+    let consumers =
       allPresets
       ? [
         "macos-26", "arm64", "kitty", "atuin", "bat", "btop", "codex", "eza",
         "herdr", "neovim", "pi", "slack", "starship", "tuicr", "yazi", "spicetify", "spotify",
       ]
       : ["macos-26", "arm64", "kitty", "atuin", "bat", "btop", "eza", "neovim", "starship", "yazi"]
+    let expected =
+      Array(consumers.prefix(2)) + Self.shellDependencies
+      + ["kitty-meslo-font"] + consumers.dropFirst(2)
     #expect(catalog.selectedForEnvironment(profile).map(\.id) == expected)
     #expect(
       DependencyProfile(capabilities: catalog.capabilities.reversed())
@@ -50,7 +53,26 @@ struct EnvironmentDependencySelectionTests {
     #expect(catalog.selectedForEnvironment(profile).map(\.id) == expected)
   }
 
+  @Test(arguments: ["", "postscript_name=MesloLGSNF-Regular", "monospace"])
+  func kittyFontRequirementFollowsTypedFontChoice(font: String) throws {
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n" + (font.isEmpty ? "" : "[kitty]\nfont_family = \"\(font)\"\n"),
+      source: URL(filePath: "/tmp/macarchy-font-selection.toml")
+    )
+    let requirements = DependencyProfile.personal(homeDirectory: URL(filePath: "/tmp"))
+      .selectedForEnvironment(profile.environment)
+    #expect(requirements.contains { $0.id == "kitty-meslo-font" } == (font != "monospace"))
+  }
+
+  @Test
+  func missingFontDoesNotPassBySystemSubstitution() {
+    #expect(!DependencyCapabilityProbe.postScriptFont("Macarchy-Missing-\(UUID())").isSatisfied())
+  }
+
   private static let presetNames = ["codex", "herdr", "pi", "slack", "spicetify", "tuicr"]
+  private static let shellDependencies = [
+    "zsh-autosuggestions", "zsh-syntax-highlighting", "fzf", "zoxide",
+  ]
 
   private func selection(
     core: Bool,

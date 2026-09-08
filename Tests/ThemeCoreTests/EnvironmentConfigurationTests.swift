@@ -63,25 +63,109 @@ struct EnvironmentConfigurationTests {
         "neovim/lazyvim.json",
         "neovim/lua/config/autocmds.lua", "neovim/lua/config/keymaps.lua",
         "neovim/lua/config/lazy.lua", "neovim/lua/config/macarchy-theme.lua",
+        "neovim/lua/config/markdown-preview.lua",
         "neovim/lua/config/options.lua", "neovim/lua/macarchy/current.lua",
-        "neovim/lua/plugins/colorscheme.lua",
+        "neovim/lua/plugins/colorscheme.lua", "neovim/lua/plugins/editor.lua",
         "starship/behavior.toml", "yazi/theme.toml", "yazi/yazi.toml", "zsh/.zshrc",
       ]
     )
     #expect(try artifact("kitty/kitty.conf", in: first).contains("state/adapters/kitty.conf"))
-    #expect(try !artifact("kitty/kitty.conf", in: first).contains("allow_remote_control"))
+    let kitty = try artifact("kitty/kitty.conf", in: first)
+    #expect(kitty.contains("allow_remote_control no\n"))
+    #expect(kitty.contains("font_family postscript_name=MesloLGSNF-Regular\n"))
+    #expect(kitty.contains("font_size 11.0\n"))
+    #expect(kitty.contains("shell_integration no-cursor\n"))
+    #expect(kitty.contains("cursor_trail 5\n"))
+    #expect(kitty.contains("cursor_stop_blinking_after 0\n"))
+    #expect(kitty.contains("map ctrl+g>| launch --location=vsplit --cwd=current\n"))
+    #expect(kitty.contains("map --mode resize esc pop_keyboard_mode\n"))
+    #expect(kitty.contains("map ctrl+g>s combine : new_tab : set_tab_title main"))
+    #expect(!kitty.contains("include bindings.conf"))
     #expect(
       try artifact("kitty/kitty.conf", in: first).contains(
         "hide_window_decorations titlebar-only\n"))
+    #expect(!kitty.contains("hide_window_decorations titlebar-and-corners\n"))
     let zsh = try artifact("zsh/.zshrc", in: first)
     #expect(zsh.contains("export EZA_CONFIG_DIR=\"$HOME/.config/eza\""))
     #expect(zsh.contains("function y()"))
+    #expect(zsh.contains("setopt SHARE_HISTORY"))
+    #expect(zsh.contains("bindkey '^y' autosuggest-accept || return 1"))
+    #expect(zsh.contains("/opt/homebrew/bin/zoxide init zsh"))
+    let fzf = try #require(zsh.range(of: "source /opt/homebrew/opt/fzf/shell/key-bindings.zsh"))
+    let history = try #require(zsh.range(of: "atuin init zsh"))
+    let highlighting = try #require(
+      zsh.range(of: "source /opt/homebrew/share/zsh-syntax-highlighting"))
+    #expect(fzf.lowerBound < history.lowerBound)
+    #expect(history.lowerBound < highlighting.lowerBound)
+    #expect(zsh.contains("alias gc='git commit --verbose'"))
+    #expect(zsh.contains("alias n='nvim'"))
+    #expect(!zsh.contains("/Users/ramtin"))
+    let keymaps = try artifact("neovim/lua/config/keymaps.lua", in: first)
+    #expect(keymaps.contains("\"<leader>y\""))
+    #expect(keymaps.contains("\"<C-d>zz\""))
+    let starship = try artifact("starship/behavior.toml", in: first)
+    #expect(starship.contains("$ahead_behind$stashed"))
+    #expect(starship.contains("stashed = \"≡\""))
+    #expect(!starship.contains("](218)"))
     let atuinInit = try #require(zsh.range(of: "atuin init zsh"))
     let starshipInit = try #require(zsh.range(of: "starship init zsh"))
     #expect(atuinInit.lowerBound < starshipInit.lowerBound)
     #expect(try artifact("atuin/config.toml", in: first).contains("name = \"macarchy-current\""))
+    #expect(try artifact("atuin/config.toml", in: first).contains("keymap_mode = \"vim-insert\""))
     #expect(first.renderedDigest.hasPrefix("sha256:"))
     #expect(first.inputDigest.hasPrefix("sha256:"))
+  }
+
+  @Test
+  func packagedEditorIncludesPersonalExtrasAndPinsWithoutPrivateState() throws {
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n", source: URL(filePath: "/fixtures/profile.toml"))
+    let composition = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: URL(filePath: "/fixtures/state"))
+    let extras = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try artifact("neovim/lazyvim.json", in: composition).utf8))
+        as? [String: Any])
+    #expect(
+      extras["extras"] as? [String]
+        == [
+          "coding.mini-surround", "editor.telescope", "lang.clangd", "lang.docker", "lang.go",
+          "lang.helm", "lang.json", "lang.markdown", "lang.python", "lang.sql", "lang.terraform",
+          "lang.toml", "lang.yaml",
+        ].map { "lazyvim.plugins.extras.\($0)" })
+    #expect((extras["news"] as? [String: String])?.isEmpty == true)
+    let lock = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try artifact("neovim/lazy-lock.json", in: composition).utf8))
+        as? [String: [String: String]])
+    for plugin in [
+      "SchemaStore.nvim", "clangd_extensions.nvim", "helm-ls.nvim", "markdown-preview.nvim",
+      "mini.surround", "no-neck-pain.nvim", "render-markdown.nvim", "telescope-fzf-native.nvim",
+      "telescope-terraform-doc.nvim", "telescope-terraform.nvim", "telescope.nvim",
+      "venv-selector.nvim", "vim-dadbod", "vim-dadbod-completion", "vim-dadbod-ui", "vimwiki",
+    ] {
+      let pin = try #require(lock[plugin]?["commit"])
+      #expect(pin.count == 40 && pin.allSatisfy(\.isHexDigit))
+    }
+    let editor = try artifact("neovim/lua/plugins/editor.lua", in: composition)
+    #expect(editor.contains("inlay_hints = { enabled = false }"))
+    #expect(editor.contains("progress = { enabled = false }"))
+    #expect(editor.contains("<cmd>NoNeckPain<cr>"))
+    #expect(editor.contains("<cmd>MarkdownPreviewToggle<cr>"))
+    #expect(editor.contains("vim.fn.expand(\"~/vimwiki/\")"))
+    #expect(!editor.contains("mkdp_highlight_css"))
+    #expect(editor.contains("require(\"config.markdown-preview\").setup()"))
+    let preview = try artifact("neovim/lua/config/markdown-preview.lua", in: composition)
+    #expect(preview.contains("nvim_get_hl"))
+    #expect(preview.contains("\"ColorScheme\""))
+    #expect(preview.contains("reload the Markdown preview page"))
+    #expect(!preview.contains("catppuccin"))
+    for item in composition.artifacts where item.path.hasPrefix("neovim/") {
+      let value = String(decoding: item.data, as: UTF8.self)
+      #expect(!value.contains("/Users/ramtin"))
+      #expect(!value.contains("tuido"))
+      #expect(!value.contains("intric-infrastructure"))
+    }
   }
 
   @Test

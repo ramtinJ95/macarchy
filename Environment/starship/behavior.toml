@@ -23,7 +23,16 @@ format = "[$branch]($style)"
 style = "bright-black"
 
 [git_status]
+# Preserve the dotfile layout, using the canonical palette rather than ANSI 218.
+format = "[[(*$conflicted$untracked$modified$staged$renamed$deleted)](purple) ($ahead_behind$stashed)]($style)"
 style = "cyan"
+conflicted = "\u200b"
+untracked = "\u200b"
+modified = "\u200b"
+staged = "\u200b"
+renamed = "\u200b"
+deleted = "\u200b"
+stashed = "≡"
 
 [git_state]
 format = '\([$state( $progress_current/$progress_total)]($style)\) '

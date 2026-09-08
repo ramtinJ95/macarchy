@@ -145,6 +145,69 @@ struct PackageLayeringTests {
     }
   }
 
+  @Test(arguments: ["zsh-autosuggestions", "zsh-syntax-highlighting", "fzf", "zoxide"])
+  func shellIntegrationExclusionsBlockBeforeProviderMutation(package: String) throws {
+    let fixture = try PackageLayeringFixture()
+    defer { fixture.inventory.cleanup() }
+    try fixture.profiles(portable: "[packages]\nexclude_formulae = [\"\(package)\"]\n")
+    let preparation = try fixture.planner().prepare(context: fixture.context)
+    #expect(!preparation.succeeded)
+    #expect(
+      preparation.report.diagnostics.contains {
+        $0.message.contains("excludes required formula:\(package)")
+      })
+    #expect(!FileManager.default.fileExists(atPath: fixture.context.stateRoot.path))
+
+    try fixture.profiles(
+      portable: """
+        [shell]
+        provider = "disabled"
+        [packages]
+        exclude_formulae = ["\(package)"]
+        """)
+    let inventory = try fixture.planner().packageInventory(
+      context: fixture.context, adoptionState: .available(nil))
+    #expect(!inventory.proposed.contains { $0.identity.name == package })
+  }
+
+  @Test
+  func shellPackagesExplainTheirSelectionOrigin() throws {
+    let fixture = try PackageLayeringFixture()
+    defer { fixture.inventory.cleanup() }
+    try fixture.profiles(portable: "[shell]\nprovider = \"zsh\"\n")
+    let inventory = try fixture.planner().packageInventory(
+      context: fixture.context, adoptionState: .available(nil))
+    for name in ["zsh-autosuggestions", "zsh-syntax-highlighting", "fzf", "zoxide"] {
+      let package = try #require(inventory.proposed.first { $0.identity.name == name })
+      #expect(package.requirements.count == 1)
+      #expect(package.requirements.first?.selectionField == "shell.provider")
+      #expect(package.requirements.first?.layer == "portable")
+    }
+  }
+
+  @Test(arguments: [
+    "", "[terminal]\nprovider = \"disabled\"\n", "[kitty]\nfont_family = \"monospace\"\n",
+  ])
+  func kittyDefaultFontExclusionRequiresOptOut(override: String) throws {
+    let fixture = try PackageLayeringFixture()
+    defer { fixture.inventory.cleanup() }
+    try fixture.profiles(
+      portable: override + "[packages]\nexclude_casks = [\"font-meslo-lg-nerd-font\"]\n")
+    if override.isEmpty {
+      let preparation = try fixture.planner().prepare(context: fixture.context)
+      #expect(!preparation.succeeded)
+      #expect(
+        preparation.report.diagnostics.contains {
+          $0.message.contains("excludes required cask:font-meslo-lg-nerd-font")
+        })
+      #expect(!FileManager.default.fileExists(atPath: fixture.context.stateRoot.path))
+    } else {
+      let inventory = try fixture.planner().packageInventory(
+        context: fixture.context, adoptionState: .available(nil))
+      #expect(!inventory.proposed.contains { $0.identity.name == "font-meslo-lg-nerd-font" })
+    }
+  }
+
   @Test(arguments: [false, true])
   func personalIntentFeedsNamedInstallationAndAdoption(alreadyInstalled: Bool) async throws {
     let fixture = try PackageLayeringFixture()
@@ -243,7 +306,8 @@ private final class PackageLayeringFixture: Sendable {
     let root = inventory.root
     return .init(
       themesRoot: repositoryRoot.appending(path: "Themes"), keybindingsResourcesRoot: root,
-      desktopResourcesRoot: root, environmentResourcesRoot: root,
+      desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
+      environmentResourcesRoot: root,
       profileURL: root.appending(path: "portable/profile.toml"), profileRequired: true,
       machineProfileURL: root.appending(path: "machine/profile.toml"), machineProfileRequired: true,
       stateRoot: root.appending(path: "state"), homeDirectory: root.appending(path: "home"))

@@ -189,6 +189,14 @@ package struct EnvironmentConfigurationComposer: Sendable {
           to: configuration
         )
       }
+      configuration = appendSection(
+        """
+        if [[ -o interactive ]]; then
+          source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh || return 1
+        fi
+        """,
+        to: configuration
+      )
       configuration = appendLine("export MACARCHY_MANAGED_SESSION=1", to: configuration)
       if let hookURL = options.zsh.hookURL {
         let text = try readText(at: hookURL)

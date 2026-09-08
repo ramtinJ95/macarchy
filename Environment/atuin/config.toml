@@ -1,6 +1,6 @@
 enter_accept = true
 search_mode = "daemon-fuzzy"
-keymap_mode = "emacs"
+keymap_mode = "vim-insert"
 
 [daemon]
 enabled = true
