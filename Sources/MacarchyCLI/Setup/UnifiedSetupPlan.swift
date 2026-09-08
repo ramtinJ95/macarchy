@@ -49,7 +49,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let desktopPlanner: ComponentPlanner
-  let environmentPlanner: ComponentPlanner
+  let environmentPlanner:
+    @Sendable (
+      UnifiedSetupPlanContext, PortableProfile, ThemePackage?
+    ) throws -> SetupComponentExecution
   var packageInventoryReader: @Sendable () -> HomebrewPackageObservation = {
     .unavailable("Package inventory reader is not configured.")
   }
@@ -77,7 +80,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
       return try SetupComponentExecution(execution)
     },
-    environmentPlanner: { context, profile in
+    environmentPlanner: { context, profile, bootstrapTheme in
       let execution = try EnvironmentPlanCommandRunner(
         prerequisites: .assumed,
         requiresActiveTheme: false
@@ -88,7 +91,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         stateRoot: context.stateRoot,
         homeDirectory: context.homeDirectory,
         json: true,
-        profile: profile
+        profile: profile,
+        bootstrapTheme: bootstrapTheme
       )
       return try SetupComponentExecution(execution)
     },
@@ -259,7 +263,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       packages: packages
     )
     let desktop = try desktopPlanner(context, profile)
-    let environment = try environmentPlanner(context, profile)
+    let environment = try environmentPlanner(
+      context, profile,
+      themeSelection.plan.currentGenerationID == nil ? themeSelection.package : nil
+    )
     let components = SetupComponentPlans(
       desktop: desktop,
       environment: environment,

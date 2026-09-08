@@ -891,7 +891,7 @@ final class ApplyFixture: @unchecked Sendable {
           """
         )
       },
-      environmentPlanner: { _, _ in
+      environmentPlanner: { _, _, _ in
         try planComponent(
           """
           {"outcome":"ready","adoption_evidence_digest":\(jsonString(requiredAdoptions.environment)),"entries":[],"actions":\(actionsJSON(plannedStages.contains(.environment), id: "environment"))}

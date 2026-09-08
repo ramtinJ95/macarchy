@@ -77,7 +77,9 @@ extension EnvironmentProviderInspector {
     }
     let resolved = url.resolvingSymlinksInPath()
     let legacy = try adapter.legacyOwnershipEvidence()
-    let desired = try HerdrAdapter.desiredTheme(root: stateRoot)
+    let desired =
+      try bootstrapTheme.map { try HerdrAdapter.desiredTheme(for: $0) }
+      ?? HerdrAdapter.desiredTheme(root: stateRoot)
     let original: String
     let current: String
     let migratedLegacy: Bool

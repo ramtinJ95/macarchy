@@ -221,7 +221,7 @@ private struct ProjectionFixture {
             succeeded: succeeded
           ))
       },
-      environmentPlanner: { _, _ in
+      environmentPlanner: { _, _, _ in
         let report: [String: JSONValue] = [
           "outcome": .string("ready"), "entries": .array([]), "actions": .array([]),
         ]

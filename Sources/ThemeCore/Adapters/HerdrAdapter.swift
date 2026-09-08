@@ -444,7 +444,7 @@ package struct HerdrAdapter: Sendable {
     return true
   }
 
-  private static func desiredTheme(for package: ThemePackage) throws -> GeneratedHerdrTheme {
+  package static func desiredTheme(for package: ThemePackage) throws -> GeneratedHerdrTheme {
     if let mapping = package.mappings[id] {
       guard supportedThemes.contains(mapping) else {
         throw HerdrAdapterError.unsupportedTheme(mapping)

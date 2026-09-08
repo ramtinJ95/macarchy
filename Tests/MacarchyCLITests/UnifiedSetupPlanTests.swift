@@ -6,6 +6,42 @@ import Testing
 @testable import ThemeCore
 
 struct UnifiedSetupPlanTests {
+  @Test
+  func firstInstallPreviewsHerdrWithoutPublishingThemeAndPreservesAdoptionAfterBootstrap() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = root.appending(path: "profile.toml")
+    try "schema_version = 1\n[presets]\nherdr = true\n".write(
+      to: profile, atomically: true, encoding: .utf8)
+    let context = try liveContext(root: root, machine: "first", profile: profile)
+    let configuration = context.homeDirectory.appending(path: ".config/herdr/config.toml")
+    try FileManager.default.createDirectory(
+      at: configuration.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let original = "[theme]\nname = \"nord\"\n"
+    try original.write(to: configuration, atomically: true, encoding: .utf8)
+    let before = try inventory(root)
+
+    let first = try readyPlan(context)
+    #expect(first.model.theme.status == "activation_required")
+    #expect(first.report.files.contains { $0.id == "herdr_configuration" })
+    #expect(try inventory(root) == before)
+    #expect(try String(contentsOf: configuration, encoding: .utf8) == original)
+    let approval = first.report.adoption.first { $0.id == "environment" }?.digest
+    #expect(approval != nil)
+
+    _ = try ThemeActivator(root: context.stateRoot).activate(package: first.model.themePackage)
+    let active = try readyPlan(context)
+    #expect(active.model.theme.status == "preserve")
+    #expect(active.report.adoption.first { $0.id == "environment" }?.digest == approval)
+    #expect(try String(contentsOf: configuration, encoding: .utf8) == original)
+
+    let current = context.stateRoot.appending(path: "current")
+    try FileManager.default.removeItem(at: current)
+    try FileManager.default.createSymbolicLink(atPath: current.path, withDestinationPath: "missing")
+    let invalid = try UnifiedSetupPlanCommandRunner.live.prepare(context: context).report
+    #expect(invalid.outcome == "blocked")
+  }
+
   @Test(arguments: [false, true])
   func desktopOptOutDoesNotRequireAdoptionOfExternalKeybindings(disabled: Bool) throws {
     let fixture = try ApplyFixture()
@@ -267,7 +303,7 @@ struct UnifiedSetupPlanTests {
           """
         )
       },
-      environmentPlanner: { context, profile in
+      environmentPlanner: { context, profile, _ in
         calls.withLock { $0.append("environment:\(profile.environment.kitty.fontSize ?? 0)") }
         return try component(
           """
@@ -371,7 +407,7 @@ struct UnifiedSetupPlanTests {
     let runner = UnifiedSetupPlanCommandRunner(
       capabilityIsAvailable: { _ in true },
       desktopPlanner: unexpected,
-      environmentPlanner: unexpected
+      environmentPlanner: { context, profile, _ in try unexpected(context, profile) }
     )
 
     let execution = try runner.execute(
@@ -428,7 +464,7 @@ struct UnifiedSetupPlanTests {
           succeeded: false
         )
       },
-      environmentPlanner: { _, _ in
+      environmentPlanner: { _, _, _ in
         try component("{\"outcome\":\"ready\",\"entries\":[],\"actions\":[]}")
       },
       packageInventoryReader: { .init(packages: [], issues: []) },
@@ -512,7 +548,7 @@ struct UnifiedSetupPlanTests {
     var runner = UnifiedSetupPlanCommandRunner(
       capabilityIsAvailable: live.capabilityIsAvailable,
       desktopPlanner: live.desktopPlanner,
-      environmentPlanner: { context, profile in
+      environmentPlanner: { context, profile, bootstrapTheme in
         let noMutation: @Sendable (URL) throws -> Void = { _ in
           throw BordersServiceError.blocked("planning must not mutate the test service")
         }
@@ -530,7 +566,7 @@ struct UnifiedSetupPlanTests {
             resourcesRoot: context.environmentResourcesRoot,
             profileURL: context.profileURL, profileRequired: context.profileRequired,
             stateRoot: context.stateRoot, homeDirectory: context.homeDirectory,
-            json: true, profile: profile))
+            json: true, profile: profile, bootstrapTheme: bootstrapTheme))
       })
     runner.packageInventoryReader = { .init(packages: [], issues: []) }
     let preparation = try runner.prepare(context: context)
