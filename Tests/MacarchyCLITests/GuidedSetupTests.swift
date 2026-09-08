@@ -12,6 +12,7 @@ struct GuidedSetupTests {
       "no", "", "no", "no", "no",
       "no", "no", "", "no", "",
       "yes", "no", "yes", "no", "yes", "no",
+      "no", "no",
       "jq", "cask:homebrew/cask/spotify formula:homebrew/core/jq",
     ])
     let answers = try GuidedSetupQuestionnaire(
@@ -43,6 +44,7 @@ struct GuidedSetupTests {
     #expect(!profile.environment.presets.slack)
     #expect(profile.environment.presets.spicetify)
     #expect(!profile.environment.presets.tuicr)
+    #expect(!profile.macOSPreferences.enabled)
     #expect(!answers.profileTOML.contains("[top_bar]"))
     #expect(!answers.profileTOML.contains("eza = true"))
     #expect(profile.packages.layers.first?.excludedFormulae == ["jq"])
@@ -78,9 +80,10 @@ struct GuidedSetupTests {
     let applied = Mutex(false)
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(),
-      apply: { _, _, packageApproval, adoptions in
+      apply: { _, _, packageApproval, preferencesApproval, adoptions in
         applied.withLock { $0 = true }
         #expect(packageApproval?.hasPrefix("sha256:") == true)
+        #expect(preferencesApproval == nil)
         #expect(adoptions == .none)
         return ("applied", true)
       },
@@ -117,7 +120,7 @@ struct GuidedSetupTests {
     let transcript = Mutex("")
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(),
-      apply: { _, _, _, _ in
+      apply: { _, _, _, _, _ in
         Issue.record("A required-provider exclusion must block apply")
         return ("unexpected", false)
       },
@@ -140,10 +143,10 @@ struct GuidedSetupTests {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let context = guidedContext(fixture)
-    let responses = Mutex(Array(repeating: "", count: 17))
+    let responses = Mutex(Array(repeating: "", count: 20))
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(),
-      apply: { _, _, _, _ in
+      apply: { _, _, _, _, _ in
         Issue.record("A closed questionnaire must not apply")
         return ("unexpected", false)
       },
@@ -175,10 +178,11 @@ struct GuidedSetupTests {
         requiredAdoptions: UnifiedSetupAdoptionApprovals(yabai: approval),
         plannedStages: [.desktop]
       ),
-      apply: { receivedContext, _, packageApproval, adoptions in
+      apply: { receivedContext, _, packageApproval, preferencesApproval, adoptions in
         events.withLock { $0.append("apply") }
         #expect(receivedContext.profileURL == context.profileURL)
         #expect(packageApproval?.hasPrefix("sha256:") == true)
+        #expect(preferencesApproval == nil)
         #expect(adoptions == UnifiedSetupAdoptionApprovals(yabai: approval))
         let profile = try PortableProfileLoader().load(
           at: receivedContext.profileURL,
@@ -252,7 +256,7 @@ struct GuidedSetupTests {
     answers.pi = true
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(available: { _ in false }),
-      apply: { _, _, _, _ in
+      apply: { _, _, _, _, _ in
         Issue.record("Apply must not run with an external prerequisite")
         return ("unexpected", false)
       },
@@ -289,7 +293,7 @@ struct GuidedSetupTests {
       planner: fixture.planner(
         requiredAdoptions: UnifiedSetupAdoptionApprovals(yabai: approval)
       ),
-      apply: { _, _, _, _ in
+      apply: { _, _, _, _, _ in
         Issue.record("Apply must not run when adoption confirmation defaults to no")
         return ("unexpected", false)
       },
@@ -320,7 +324,7 @@ struct GuidedSetupTests {
     answers.packageExclusions = [.init(kind: .cask, name: "spotify")]
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(),
-      apply: { _, _, _, _ in
+      apply: { _, _, _, _, _ in
         Issue.record("Apply must not run without final confirmation")
         return ("unexpected", false)
       },
@@ -340,6 +344,54 @@ struct GuidedSetupTests {
     #expect(execution.output.contains("stopped before mutation"))
     let profile = try PortableProfileLoader().load(at: context.profileURL, required: true)
     #expect(profile.packages.layers.first?.excludedCasks == ["spotify"])
+  }
+
+  @Test
+  func questionnaireKeepsNativeSelectionSeparateFromItsBooleanValue() throws {
+    let responses = Mutex(Array(repeating: "", count: 18) + ["yes", "no", "no", ""])
+    let answers = try GuidedSetupQuestionnaire(
+      io: .init(
+        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } }, write: { _ in }
+      )
+    ).collect()
+    let profile = try PortableProfileLoader().decode(
+      answers.profileTOML, source: URL(filePath: "/tmp/profile.toml"))
+    #expect(profile.macOSPreferences.selected == [.dockAutohide: false])
+    #expect(!answers.profileTOML.contains("finder_show_extensions"))
+  }
+
+  @Test(arguments: [false, true])
+  func nativeChangesRequireSeparateExplicitApproval(approvePreferences: Bool) async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let os = PreferencesTests.MemoryPreferences()
+    let lifecycle = PreferencesLifecycle(native: os.native)
+    let context = guidedContext(fixture)
+    let responses = Mutex(["yes", approvePreferences ? "yes" : "", "yes"])
+    let applied = Mutex(false)
+    let transcript = Mutex("")
+    let planner = fixture.planner(preferences: lifecycle)
+    var answers = GuidedSetupAnswers()
+    answers.finderShowExtensions = true
+    let runner = GuidedSetupCommandRunner(
+      planner: planner,
+      apply: { received, _, _, preferencesApproval, _ in
+        applied.withLock { $0 = true }
+        let expected = try planner.prepare(context: received).report.preferencesApprovalDigest
+        #expect(preferencesApproval == expected)
+        #expect(preferencesApproval != nil)
+        return ("applied", true)
+      },
+      io: .init(
+        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } },
+        write: { output in transcript.withLock { $0 += output } })
+    )
+    let result = try await runner.execute(
+      context: context, consumerPaths: testConsumerPaths(), answers: answers)
+    #expect(result.succeeded)
+    #expect(applied.withLock { $0 } == approvePreferences)
+    #expect(transcript.withLock { $0.contains("Approve the reviewed native preference changes") })
+    #expect(os.state.withLock { $0.writes.isEmpty })
   }
 
   private func guidedContext(_ fixture: ApplyFixture) -> UnifiedSetupPlanContext {

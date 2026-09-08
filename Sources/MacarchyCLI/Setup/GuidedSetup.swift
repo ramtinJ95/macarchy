@@ -21,6 +21,8 @@ struct GuidedSetupAnswers: Sendable {
   var slack = false
   var spicetify = false
   var tuicr = false
+  var dockAutohide: Bool?
+  var finderShowExtensions: Bool?
   var packageExclusions: [HomebrewPackageIdentity] = []
 
   var profileTOML: String {
@@ -59,6 +61,12 @@ struct GuidedSetupAnswers: Sendable {
         tuicr ? "tuicr = true" : nil,
       ].compactMap { $0 }
     )
+
+    let preferences = [
+      dockAutohide.map { "dock_autohide = \($0)" },
+      finderShowExtensions.map { "finder_show_extensions = \($0)" },
+    ].compactMap { $0 }
+    add("macos_preferences", preferences.isEmpty ? [] : ["enabled = true"] + preferences)
 
     let formulae = packageExclusions.filter { $0.kind == .formula }.map { "\"\($0.name)\"" }
     let casks = packageExclusions.filter { $0.kind == .cask }.map { "\"\($0.name)\"" }
@@ -128,6 +136,13 @@ struct GuidedSetupQuestionnaire: Sendable {
     answers.slack = try io.confirm("Enable the Slack preset?", defaultYes: false)
     answers.spicetify = try io.confirm("Enable the Spicetify preset?", defaultYes: false)
     answers.tuicr = try io.confirm("Enable the tuicr preset?", defaultYes: false)
+    if try io.confirm("Manage Dock autohide?", defaultYes: false) {
+      answers.dockAutohide = try io.confirm("Automatically hide the Dock?", defaultYes: true)
+    }
+    if try io.confirm("Manage Finder filename extensions?", defaultYes: false) {
+      answers.finderShowExtensions = try io.confirm(
+        "Show all filename extensions?", defaultYes: true)
+    }
     io.write(
       "Package choices are separate from provider/preset choices. Exclusions never uninstall software.\n"
         + "Selected providers still require their packages; disable the provider to exclude one.\n")
@@ -197,6 +212,7 @@ struct GuidedSetupCommandRunner: Sendable {
       UnifiedSetupPlanContext,
       ThemeConsumerPaths,
       String?,
+      String?,
       UnifiedSetupAdoptionApprovals
     ) async throws -> (output: String, succeeded: Bool)
 
@@ -207,11 +223,12 @@ struct GuidedSetupCommandRunner: Sendable {
   static func live(io: GuidedSetupIO = .live) -> Self {
     Self(
       planner: .live,
-      apply: { context, consumerPaths, packageApproval, adoptions in
+      apply: { context, consumerPaths, packageApproval, preferencesApproval, adoptions in
         try await UnifiedSetupApplyCommandRunner.live.execute(
           context: context,
           consumerPaths: consumerPaths,
           packageApproval: packageApproval,
+          preferencesApproval: preferencesApproval,
           adoptions: adoptions,
           json: false
         )
@@ -299,9 +316,18 @@ struct GuidedSetupCommandRunner: Sendable {
         )
       else { return cancelled }
     }
+    let preferencesApproval = try plan.preferencesApprovalDigest
+    if let preferencesApproval {
+      guard
+        try io.confirm(
+          "Approve the reviewed native preference changes for \(preferencesApproval)?",
+          defaultYes: false
+        )
+      else { return cancelled }
+    }
     guard try io.confirm("Apply the reviewed unified setup plan now?", defaultYes: false) else {
       return cancelled
     }
-    return try await apply(context, consumerPaths, packageApproval, adoptions)
+    return try await apply(context, consumerPaths, packageApproval, preferencesApproval, adoptions)
   }
 }
