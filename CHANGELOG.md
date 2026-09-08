@@ -7,6 +7,44 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-08
+
+First integrated alpha dogfooding release for existing macOS 26 developer
+environments. Fresh-user installation and first-use permission flows remain
+unqualified; review plans and reported prerequisites before applying changes.
+
+### Added
+
+- Standard Homebrew workstation packages, personal Brewfile layering, individual
+  package exclusions, and guided package choices. Unified setup installs the
+  reviewed missing packages before configuring providers, with explicit approval
+  and interrupted-installation recovery.
+- Named package additions through `setup add-packages`, including formulae,
+  casks and third-party taps, with persistent profile intent and visible native
+  installation/trust boundaries.
+- Managed, theme-coherent JankyBorders focus highlighting with profile opt-out,
+  service/status integration, drift checks and restoration.
+- Deletion of inactive user-installed themes from the native picker through
+  Trash, with confirmation and protection for built-in and active themes.
+- A stable Photos screensaver image source that follows theme/background
+  changes. Native Photos folder selection remains a one-time manual step.
+- Opt-in Dock autohide and Finder filename-extension preferences, with preview,
+  exact approval, current-value observation, drift protection and recovery.
+  Standalone and unified/guided setup retain originals for guarded restoration.
+
+### Changed
+
+- Rounded six-point focus borders and title-bar-free Kitty defaults. Window
+  decoration changes may require a fresh Kitty process.
+- Reworked the README around installation, daily use, customization and removal.
+
+### Fixed
+
+- Preserve the effective machine profile in desktop doctor status.
+- Avoid requesting keybinding adoption when the desktop role is disabled.
+- Safely collect sealed setup-owned theme generations during teardown and retain
+  explicit recovery behavior for interrupted native preference writes.
+
 ## [0.7.1] - 2026-09-05
 
 ### Fixed
@@ -366,7 +404,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/ramtinJ95/macarchy/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/ramtinJ95/macarchy/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/ramtinJ95/macarchy/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/ramtinJ95/macarchy/compare/v0.6.1...v0.6.2

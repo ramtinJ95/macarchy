@@ -11,13 +11,11 @@ defaults you want, and change your environment without maintaining a pile of
 copied configuration files. It is independently authored, not an official port
 or a replacement for your dotfile manager.
 
-> **Status:** actively developed for Apple Silicon on macOS 26. This README
-> describes the development branch. The latest Homebrew release is
-> [v0.7.1](https://github.com/ramtinJ95/macarchy/releases/tag/v0.7.1); expanded
-> package setup, managed focus rings, picker deletion, screensaver integration,
-> and opt-in macOS preferences
-> are not in that release yet. See [release history](CHANGELOG.md), or
-> [build from source](#development) to try the current code.
+> **Status:** early alpha dogfooding for Apple Silicon on macOS 26.
+> [v0.8.0](https://github.com/ramtinJ95/macarchy/releases/tag/v0.8.0) is the first
+> integrated dogfooding release, distributed through the existing Homebrew channel.
+> Fresh-user installation and first-use permission flows are not yet qualified.
+> See [release history](CHANGELOG.md), or [build from source](#development).
 
 ## What you get
 
