@@ -7,6 +7,17 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-09-08
+
+### Fixed
+
+- Block selected Spicetify before setup mutation when Spotify is not prepared
+  for no-restart refresh, rather than relying on installed versions alone.
+- Add `setup recover` with an explicit `--acknowledge-unverified-spicetify`
+  option for rollback to original configuration. Desktop/theme recovery can
+  finish while Spotify runtime restoration remains visibly unverified; no
+  automatic Spotify initialization, restart, or journal deletion is performed.
+
 ## [0.8.2] - 2026-09-08
 
 ### Fixed
@@ -422,7 +433,8 @@ unqualified; review plans and reported prerequisites before applying changes.
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/ramtinJ95/macarchy/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/ramtinJ95/macarchy/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ramtinJ95/macarchy/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ramtinJ95/macarchy/compare/v0.7.1...v0.8.0
