@@ -1168,6 +1168,7 @@ struct EnvironmentLifecycleTests {
     let apply = try await fixture.apply(adopt: digest, theme: theme)
 
     #expect(!apply.succeeded)
+    #expect(apply.output.contains("[required, failed]: injected"))
     #expect(try fixture.entryEvidence() == originalEntries)
     #expect(try String(contentsOf: kittyBridge, encoding: .utf8) == "original kitty\n")
     #expect(try String(contentsOf: starshipBridge, encoding: .utf8) == "original starship\n")

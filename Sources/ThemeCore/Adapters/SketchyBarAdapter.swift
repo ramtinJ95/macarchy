@@ -198,11 +198,15 @@ struct SketchyBarAdapter: Sendable {
       let expectedColor = try activeBarColor()
       var lastTimeout: ProcessRunnerError?
       var observedState = false
-      for attempt in 0..<11 {
+      var lastState: SketchyBarState?
+      // Match the desktop provider's bounded two-second startup window. The
+      // complete managed configuration may not publish its ready marker in 0.5s.
+      for attempt in 0..<41 {
         try Task.checkCancellation()
         do {
           let state = try queryState(timeout: 0.1)
           observedState = true
+          lastState = state
           if matchesActivePalette(state, expectedColor: expectedColor) {
             // SketchyBar publishes query state before the compositor presents the completed batch.
             try await waitForPresentation()
@@ -211,7 +215,7 @@ struct SketchyBarAdapter: Sendable {
         } catch let error as ProcessRunnerError {
           lastTimeout = error
         }
-        if attempt < 10 { try await waitForSettle() }
+        if attempt < 40 { try await waitForSettle() }
       }
       if !observedState, let lastTimeout {
         return AdapterOutcome(
@@ -222,6 +226,9 @@ struct SketchyBarAdapter: Sendable {
       return AdapterOutcome(
         status: .drifted,
         message: "SketchyBar did not repaint within the bounded settle window"
+          + (lastState.map {
+            "; drawing=\($0.drawing), color=\($0.color), expected=\(expectedColor), ready=\($0.items.contains(Self.readyItem))"
+          } ?? "")
       )
     }
   }
