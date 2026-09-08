@@ -231,7 +231,7 @@ struct PackageInventoryTests {
       "asmvik/formulae/skhd", "asmvik/formulae/yabai", "atuin", "azure-cli", "bat", "btop",
       "cmake", "eza", "fd", "felixkratz/formulae/sketchybar", "fzf", "gh", "git", "go",
       "felixkratz/formulae/borders",
-      "hashicorp/tap/terraform", "helm", "herdr", "hugo", "ifstat", "jq", "kind",
+      "hashicorp/tap/terraform", "helm", "herdr", "hugo", "ifstat", "jq", "kind", "nowplaying-cli",
       "kubernetes-cli", "lazydocker", "lazygit", "lua", "mosh", "neovim", "node", "ollama",
       "pkgconf", "poppler", "resvg", "ripgrep", "rustup", "sevenzip", "starship", "stow",
       "switchaudio-osx", "tmux", "tree-sitter", "tree-sitter-cli", "unar", "uv", "wget",
@@ -248,7 +248,7 @@ struct PackageInventoryTests {
     #expect(
       Set(packages.proposed.filter { $0.identity.kind == .cask }.map(\.identity.name))
         == expectedCasks)
-    #expect(packages.proposed.count == 65)
+    #expect(packages.proposed.count == 66)
     #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 51)
     #expect(packages.proposed.allSatisfy { $0.homebrewStatus == "missing" })
     #expect(packages.proposed.map(\.identity.key) == packages.proposed.map(\.identity.key).sorted())
@@ -295,7 +295,7 @@ struct PackageInventoryTests {
     let report = planner.inspectedReport(
       try planner.prepare(context: fixture.context).report, context: fixture.context)
     let packages = try #require(report.packageInventory)
-    #expect(packages.proposed.count == 66)  // Only spicetify-cli adds a package.
+    #expect(packages.proposed.count == 67)  // Only spicetify-cli adds a package.
     for (name, field, layer, source) in [
       ("herdr", "presets.herdr", "portable", fixture.context.profileURL.path),
       ("spotify", "presets.spicetify", "portable", fixture.context.profileURL.path),
@@ -357,7 +357,7 @@ struct PackageInventoryTests {
     #expect(planJSON["package_inventory"]?["observation"]?["status"]?.string == "unavailable")
     #expect(planJSON["package_inventory"]?["observation"]?["issues"]?.array?.count == 1)
     let proposed = try #require(planJSON["package_inventory"]?["proposed"]?.array)
-    #expect(proposed.count == 65)
+    #expect(proposed.count == 66)
     #expect(proposed.allSatisfy { $0["homebrew_status"]?.string == "unknown" })
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: planner, themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,

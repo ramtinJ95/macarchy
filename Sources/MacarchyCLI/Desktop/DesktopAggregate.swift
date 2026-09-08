@@ -100,17 +100,26 @@ struct DesktopPrerequisiteInspector: Sendable {
   static let assumed = Self { _, _ in [] }
 
   static let live = Self { profile, homeDirectory in
-    DependencyProfile.personal(homeDirectory: homeDirectory)
-      .selectedForDesktop(profile)
-      .map {
-        DesktopPrerequisiteStatus(
-          id: $0.id,
-          status: $0.isAvailable() ? .present : .missing,
-          requirement: $0.requirement,
-          remediation: remediation($0.remediation)
-        )
-      }
-      .sorted { $0.id < $1.id }
+    do {
+      return try DependencyProfile.personal(homeDirectory: homeDirectory)
+        .selectedForDesktop(profile)
+        .map {
+          DesktopPrerequisiteStatus(
+            id: $0.id,
+            status: $0.isAvailable() ? .present : .missing,
+            requirement: $0.requirement,
+            remediation: remediation($0.remediation)
+          )
+        }
+        .sorted { $0.id < $1.id }
+    } catch {
+      return [
+        .init(
+          id: "sketchybar-layout", status: .missing,
+          requirement: "Cannot resolve selected module prerequisites: \(error)",
+          remediation: "Repair the reported SketchyBar configuration before applying.")
+      ]
+    }
   }
 
   private static func remediation(_ remediation: DependencyRemediation) -> String {

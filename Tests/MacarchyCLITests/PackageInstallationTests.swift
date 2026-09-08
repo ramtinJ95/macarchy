@@ -387,7 +387,8 @@ final class InstallationFixture: Sendable {
   var context: UnifiedSetupPlanContext {
     let root = inventory.root
     return .init(
-      themesRoot: root, keybindingsResourcesRoot: root, desktopResourcesRoot: root,
+      themesRoot: root, keybindingsResourcesRoot: root,
+      desktopResourcesRoot: repositoryRoot.appending(path: "Desktop"),
       environmentResourcesRoot: root, profileURL: root.appending(path: "profile.toml"),
       profileRequired: false,
       machineProfileURL: root.appending(path: "machine.toml"), machineProfileRequired: false,

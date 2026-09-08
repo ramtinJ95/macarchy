@@ -1,13 +1,13 @@
 schema_version = 1
 
 position = "top"
-height = 35
-margin = 8
-corner_radius = 9
-item_padding = 8
+height = 30
+margin = 0
+corner_radius = 0
+item_padding = 0
 font = "SF Pro"
 font_size = 13
-clock_format = "+%a %d %b %H:%M"
-left = ["spaces"]
+clock_format = "+%a %d %b  %H:%M"
+left = ["apple", "spaces"]
 center = []
-right = ["clock"]
+right = ["clock", "battery", "volume", "wifi", "cpu", "memory", "media", "toggle"]

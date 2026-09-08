@@ -6,6 +6,190 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarRuntimeTests {
+  @Test(arguments: ["visible", "hidden", "stale", "dead", "starting", "error", "position"])
+  func toggleRequiresFreshOwnedHeartbeatButNotAConstantVisibility(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nleft = []\nright = [\"toggle\"]\n")
+    let token = "00000000-0000-0000-0000-000000000001"
+    let verifier = SketchyBarCoreRuntimeVerifier(
+      stateRoot: fixture.state,
+      processRunner: ProcessRunner { request in
+        let output: String
+        switch request.arguments {
+        case ["--query", "bar"]:
+          output = """
+            {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"\(condition == "hidden" ? "on" : "off")","y_offset":0,"topmost":"on","items":["macarchy.toggle","macarchy.theme.ready"]}
+            """
+        case ["--query", "macarchy.toggle"]:
+          let label =
+            condition == "starting"
+            ? token + "|starting"
+            : condition == "error"
+              ? "Toggle ERR" : token + "|7|\(condition == "stale" ? "1000" : "100000")|1000000"
+          output = Self.itemJSON(
+            name: "macarchy.toggle", drawing: condition == "error" ? "on" : "off",
+            position: condition == "position" ? "left" : "right", label: label)
+        default:
+          output = Self.itemJSON(name: "macarchy.theme.ready", drawing: "off", position: "right")
+        }
+        return .init(terminationStatus: 0, output: output)
+      }, waitForSettle: {}, waitForPresentation: {},
+      toggleProcessMatches: { $0.pid == 7 && $0.started == 1_000_000 && condition != "dead" },
+      uptime: { 100 })
+    let inspection = verifier.inspect(composition)
+    let valid = ["visible", "hidden"].contains(condition)
+    #expect(inspection.status == (valid ? .converged : .drifted))
+    if valid {
+      #expect(inspection.toggleStatePresent == true && inspection.isValidEvidence)
+      #expect(verifier.settleRestored(inspection))
+      #expect(
+        !String(decoding: try JSONEncoder().encode(inspection), as: UTF8.self).contains(token))
+    }
+  }
+
+  @Test(arguments: ["valid", "permission", "position", "script", "event"])
+  func appleRequiresSuccessfulHelperPresentationAndOwnedInteraction(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nleft = [\"apple\"]\nright = []\n")
+    let verifier = fixture.verifier { request in
+      let output: String
+      switch request.arguments {
+      case ["--query", "bar"]:
+        output =
+          #"{"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":["macarchy.apple","macarchy.theme.ready"]}"#
+      case ["--query", "events"]:
+        output = #"{"mouse.clicked":{"bit":1}}"#
+      case ["--query", "macarchy.apple"]:
+        output = Self.itemJSON(
+          name: "macarchy.apple", drawing: "on",
+          position: condition == "position" ? "right" : "left",
+          label: condition == "permission" ? "Menu ERR" : "",
+          labelDrawing: condition == "permission" ? "on" : "off",
+          script: condition == "script"
+            ? "/foreign"
+            : fixture.state.appending(path: "desktop/sketchybar/current/plugins/apple.sh").path,
+          updateMask: condition == "event" ? 0 : 1)
+      default:
+        output = Self.itemJSON(name: "macarchy.theme.ready", drawing: "off", position: "right")
+      }
+      return .init(terminationStatus: 0, output: output)
+    }
+    let inspection = verifier.inspect(composition)
+    #expect(inspection.status == (condition == "valid" ? .converged : .drifted))
+    if condition == "valid" {
+      #expect(inspection.appleStatePresent == true)
+      #expect(inspection.isValidEvidence)
+      #expect(verifier.settleRestored(inspection))
+    }
+  }
+
+  @Test(arguments: [
+    "playing", "inactive", "error", "position", "script", "event", "control", "preview",
+  ])
+  func mediaVerifiesPresentationControlsAndVolatileEvidence(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nleft = []\ncenter = []\nright = [\"media\"]\n")
+    let script = fixture.state.appending(path: "desktop/sketchybar/current/plugins/media.sh").path
+    let verifier = fixture.verifier { request in
+      let name = request.arguments.last ?? ""
+      let output: String
+      if name == "bar" {
+        let items = (SketchyBarMedia.items + ["macarchy.theme.ready"]).map { "\"\($0)\"" }.joined(
+          separator: ",")
+        output = """
+          {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":[\(items)]}
+          """
+      } else if name == "events" {
+        output =
+          #"{"mouse.clicked":{"bit":1},"mouse.entered":{"bit":2},"mouse.exited":{"bit":4},"mouse.exited.global":{"bit":8},"system_woke":{"bit":16}}"#
+      } else if name == "macarchy.theme.ready" {
+        output = Self.itemJSON(name: name, drawing: "off", position: "right")
+      } else {
+        let main = name == "macarchy.media"
+        let detail = ["macarchy.media.title", "macarchy.media.artist"].contains(name)
+        let preview = name == "macarchy.media.preview"
+        let label =
+          preview
+          ? (condition == "preview" ? "bad" : "0")
+          : main
+            ? (condition == "error"
+              ? "ERR" : condition == "inactive" ? "inactive" : String(repeating: "a", count: 64))
+            : detail ? "Example" : ""
+        let click =
+          main || detail || preview
+          ? "(null)"
+          : SketchyBarConfigurationComposer.pluginClickScript(sender: name, pluginPath: script)
+        let object: [String: Any] = [
+          "name": name, "type": "item",
+          "geometry": [
+            "position": condition == "position" && main
+              ? "left" : main || detail || preview ? "right" : "popup",
+            "drawing": preview || (condition == "inactive" && (main || detail)) ? "off" : "on",
+            "associated_space_mask": 0,
+          ],
+          "label": ["value": label, "drawing": detail ? "on" : "off"],
+          "scripting": [
+            "script": main || detail ? (condition == "script" ? "/unmanaged" : script) : "(null)",
+            "update_freq": main ? 2 : 0, "update_mask": condition == "event" ? 0 : main ? 31 : 14,
+            "click_script": condition == "control" && !main && !detail && !preview
+              ? "unmanaged" : click,
+          ],
+        ]
+        output = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+      }
+      return .init(terminationStatus: 0, output: output)
+    }
+    let inspection = verifier.inspect(composition)
+    let valid = ["playing", "inactive"].contains(condition)
+    #expect(inspection.status == (valid ? .converged : .drifted))
+    if valid {
+      #expect(inspection.mediaStatePresent == true)
+      #expect(inspection.isValidEvidence)
+      #expect(verifier.settleRestored(inspection))
+      let data = try JSONEncoder().encode(inspection)
+      #expect(!String(decoding: data, as: UTF8.self).contains("Example"))
+      #expect(
+        try JSONDecoder().decode(SketchyBarCoreRuntimeInspection.self, from: data) == inspection)
+    }
+  }
+
+  @Test(arguments: ["external", "misplaced", "preview", "events", "error"])
+  func calendarVerifiesAdaptivePlacementPreviewStateAndSubscriptions(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let verifier = SketchyBarCoreRuntimeVerifier(
+      stateRoot: fixture.state,
+      processRunner: ProcessRunner { request in
+        let result = Self.dynamicResult(request, fixture: fixture, indices: [1])
+        var output = result.output
+        if request.arguments == ["--query", "macarchy.clock"], condition != "misplaced" {
+          output = output.replacingOccurrences(
+            of: "\"position\":\"right\"", with: "\"position\":\"center\"")
+          if condition == "events" {
+            output = output.replacingOccurrences(
+              of: "\"update_mask\":25", with: "\"update_mask\":1")
+          }
+          if condition == "error" {
+            output = output.replacingOccurrences(of: "Mon 01 Jan 12:00", with: "ERR")
+          }
+        }
+        if request.arguments == ["--query", SketchyBarCalendar.previewItem], condition == "preview"
+        {
+          output = output.replacingOccurrences(of: "\"value\":\"0\"", with: "\"value\":\"bad\"")
+        }
+        return ProcessResult(terminationStatus: result.terminationStatus, output: output)
+      }, waitForSettle: {}, waitForPresentation: {}, hasExternalDisplay: { true })
+    #expect(
+      verifier.inspect(fixture.dynamicComposition).status
+        == (condition == "external" ? .converged : .drifted))
+  }
+
   @Test
   func verifiesTheCanonicalPaletteDynamicSpacesClockAndHiddenReadyMarker() throws {
     let fixture = try SketchyBarRuntimeFixture()
@@ -21,7 +205,8 @@ struct SketchyBarRuntimeTests {
     #expect(inspection.spaceIndices == [1, 2])
     #expect(
       inspection.items == [
-        "macarchy.clock", "macarchy.space.1", "macarchy.space.2", "macarchy.theme.ready",
+        "macarchy.clock", "macarchy.clock.preview", "macarchy.space.1", "macarchy.space.2",
+        "macarchy.theme.ready",
       ])
   }
 
@@ -35,11 +220,13 @@ struct SketchyBarRuntimeTests {
         return ProcessResult(
           terminationStatus: 0,
           output: """
-            {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-             "margin":8,"corner_radius":9,
-             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.theme.ready"]}
+            {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+             "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
+             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready"]}
             """
         )
+      case ["--query", "macarchy.clock.preview"], ["--query", "events"]:
+        return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.clock"]:
         return ProcessResult(
           terminationStatus: 0,
@@ -105,11 +292,13 @@ struct SketchyBarRuntimeTests {
         return ProcessResult(
           terminationStatus: 0,
           output: """
-            {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-             "margin":8,"corner_radius":9,
-             "items":["macarchy.clock","macarchy.theme.ready"]}
+            {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+             "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
+             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready"]}
             """
         )
+      case ["--query", "macarchy.clock.preview"], ["--query", "events"]:
+        return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.clock"]:
         return ProcessResult(
           terminationStatus: 0,
@@ -200,8 +389,8 @@ struct SketchyBarRuntimeTests {
         return ProcessResult(
           terminationStatus: 0,
           output: """
-            {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-             "margin":8,"corner_radius":9,"items":["macarchy.theme.ready"]}
+            {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+             "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":["macarchy.theme.ready"]}
             """
         )
       case ["--query", "macarchy.theme.ready"]:
@@ -240,20 +429,27 @@ struct SketchyBarRuntimeTests {
       """
     )
 
-    for (label, updateMask, expected) in [
-      ("42%", UInt64(4_104), SketchyBarCoreRuntimeStatus.converged),
-      ("42%", UInt64(8), .drifted),
-      ("042%", UInt64(4_104), .drifted),
+    for (label, updateMask, sliderLevel, rowState, expected) in [
+      ("42%", UInt64(4_111), "42", "absent", SketchyBarCoreRuntimeStatus.converged),
+      ("09%", UInt64(4_111), "9", "absent", .converged),
+      ("42%", UInt64(8), "42", "absent", .drifted),
+      ("042%", UInt64(4_111), "42", "absent", .drifted),
+      ("9%", UInt64(4_111), "9", "absent", .drifted),
+      ("42%", UInt64(4_111), "101", "absent", .drifted),
+      ("42%", UInt64(4_111), "42", "valid", .converged),
+      ("42%", UInt64(4_111), "42", "unmanaged", .drifted),
+      ("42%", UInt64(4_111), "42", "wrong_parent", .drifted),
     ] {
+      let rowName = SketchyBarAudioPicker.prefix + "7." + String(repeating: "a", count: 64)
       let verifier = fixture.verifier { request in
         switch request.arguments {
         case ["--query", "bar"]:
           return ProcessResult(
             terminationStatus: 0,
             output: """
-              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-               "margin":8,"corner_radius":9,
-               "items":["macarchy.volume","macarchy.theme.ready"]}
+              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+               "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
+               "items":["macarchy.volume","macarchy.volume.icon","macarchy.volume.bracket","macarchy.volume.padding","macarchy.volume.slider","macarchy.theme.ready"\(rowState == "absent" ? "" : ",\"\(rowName)\"")]}
               """
           )
         case ["--query", "macarchy.theme.ready"]:
@@ -278,10 +474,74 @@ struct SketchyBarRuntimeTests {
               updateMask: updateMask
             )
           )
+        case ["--query", "macarchy.volume.icon"]:
+          return .init(
+            terminationStatus: 0,
+            output: Self.itemJSON(
+              name: "macarchy.volume.icon", drawing: "on", position: "right", label: "􀊧",
+              labelDrawing: "on", script: fixture.volumeScript, updateMask: 3))
+        case ["--query", "macarchy.volume.padding"]:
+          let output = Self.itemJSON(
+            name: "macarchy.volume.padding", drawing: "on", position: "right"
+          )
+          .replacingOccurrences(
+            of: "\"associated_space_mask\":0", with: "\"associated_space_mask\":0,\"width\":8")
+          return .init(terminationStatus: 0, output: output)
+        case ["--query", "macarchy.volume.bracket"]:
+          let object: [String: Any] = [
+            "name": "macarchy.volume.bracket", "type": "bracket",
+            "geometry": ["drawing": "on", "position": "right"],
+            "label": ["drawing": "off", "value": ""],
+            "scripting": ["script": "", "click_script": "", "update_freq": 0],
+            "bracket": ["macarchy.volume", "macarchy.volume.icon"],
+            "popup": [
+              "drawing": "off",
+              "items": ["macarchy.volume.slider"]
+                + (["absent", "wrong_parent"].contains(rowState) ? [] : [rowName]),
+            ],
+          ]
+          return .init(
+            terminationStatus: 0,
+            output: String(
+              decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+        case ["--query", rowName]:
+          let object: [String: Any] = [
+            "name": rowName, "type": "item",
+            "geometry": ["drawing": "on", "position": "popup"],
+            "label": ["drawing": "on", "value": "Speaker"],
+            "scripting": [
+              "script": "", "update_freq": 0,
+              "click_script": rowState != "unmanaged"
+                ? SketchyBarAudioPicker.clickScript(name: rowName, pluginPath: fixture.volumeScript)
+                : "unmanaged",
+            ],
+          ]
+          return ProcessResult(
+            terminationStatus: 0,
+            output: String(
+              decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+        case ["--query", "macarchy.volume.slider"]:
+          let object: [String: Any] = [
+            "name": "macarchy.volume.slider", "type": "slider",
+            "geometry": ["drawing": "on", "position": "popup", "associated_space_mask": 0],
+            "label": ["drawing": "off", "value": ""],
+            "scripting": [
+              "script": "(null)",
+              "click_script": SketchyBarConfigurationComposer.pluginClickScript(
+                sender: "macarchy.slider", pluginPath: fixture.volumeScript),
+              "update_freq": 0,
+            ],
+            "slider": ["percentage": sliderLevel],
+          ]
+          return ProcessResult(
+            terminationStatus: 0,
+            output: String(
+              decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self))
         case ["--query", "events"]:
           return ProcessResult(
             terminationStatus: 0,
-            output: #"{"volume_change":{"bit":4096},"system_woke":{"bit":8}}"#
+            output:
+              #"{"volume_change":{"bit":4096},"system_woke":{"bit":8},"mouse.clicked":{"bit":1},"mouse.scrolled":{"bit":2},"mouse.exited.global":{"bit":4}}"#
           )
         default:
           Issue.record("unexpected request: \(request)")
@@ -295,7 +555,227 @@ struct SketchyBarRuntimeTests {
       if expected == .converged {
         #expect(inspection.volumeLevelPresent == true)
         #expect(inspection.isValidEvidence)
+        #expect(!inspection.items.contains(rowName))
+        #expect(verifier.settleRestored(inspection))
       }
+    }
+  }
+
+  @Test(arguments: [
+    "valid", "unavailable", "rate", "ssid", "position", "script", "frequency", "subscription",
+    "group",
+  ])
+  func verifiesWiFiInventoryRatesPrivacyStateAndInteractions(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nleft = []\ncenter = []\nright = [\"wifi\"]\n")
+    let verifier = fixture.verifier { request in
+      let output: String
+      let name = request.arguments.last ?? ""
+      if name == "bar" {
+        let items =
+          (SketchyBarCoreRuntimeInspection.wifiItems + [
+            "macarchy.theme.ready", "macarchy.wifi.bracket",
+          ])
+          .map { "\"\($0)\"" }.joined(separator: ",")
+        output = """
+          {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":[\(items)]}
+          """
+      } else if name == "events" {
+        output =
+          #"{"mouse.clicked":{"bit":1},"mouse.exited.global":{"bit":2},"system_woke":{"bit":4}}"#
+      } else if name == "macarchy.theme.ready" {
+        output = Self.itemJSON(name: name, drawing: "off", position: "right")
+      } else if name == "macarchy.wifi.bracket" {
+        let object: [String: Any] = [
+          "name": name, "type": "bracket",
+          "geometry": ["drawing": "on", "position": "right", "associated_space_mask": 0],
+          "label": ["drawing": "off", "value": ""],
+          "scripting": ["script": "", "click_script": "", "update_freq": 0],
+          "bracket": [
+            condition == "group" ? "foreign" : "macarchy.wifi", "macarchy.wifi.up",
+            "macarchy.wifi.down",
+          ],
+          "popup": [
+            "drawing": "off",
+            "items": [
+              "macarchy.wifi.hostname", "macarchy.wifi.ip", "macarchy.wifi.mask",
+              "macarchy.wifi.router", "macarchy.wifi.ssid",
+            ],
+          ],
+        ]
+        output = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+      } else if SketchyBarCoreRuntimeInspection.wifiItems.contains(name) {
+        let main = name == "macarchy.wifi"
+        let rate = name.hasSuffix(".up") || name.hasSuffix(".down")
+        let ssid = name.hasSuffix(".ssid")
+        let label =
+          rate
+          ? (condition == "rate" ? "ERR" : condition == "unavailable" ? "Unavailable" : "001KBps")
+          : ssid
+            ? (condition == "ssid" ? "Network query failed" : "Privacy restricted") : "Unavailable"
+        let script = URL(filePath: fixture.volumeScript).deletingLastPathComponent().appending(
+          path: "wifi.sh"
+        ).path
+        output = Self.itemJSON(
+          name: name, drawing: "on",
+          position: condition == "position" ? "left" : main || rate ? "right" : "popup",
+          label: label, labelDrawing: main ? "off" : "on",
+          script: condition == "script" ? "/tmp/stale.sh" : script,
+          updateFrequency: condition == "frequency" ? 30 : main ? 2 : 0,
+          updateMask: condition == "subscription" ? 0 : main ? 7 : 1)
+      } else {
+        Issue.record("unexpected request: \(request)")
+        return ProcessResult(terminationStatus: 1, output: "unexpected")
+      }
+      return ProcessResult(terminationStatus: 0, output: output)
+    }
+    let inspection = verifier.inspect(composition)
+    let success = ["valid", "unavailable"].contains(condition)
+    #expect(inspection.status == (success ? .converged : .drifted))
+    if success {
+      #expect(inspection.wifiStatePresent == true)
+      #expect(inspection.isValidEvidence)
+      #expect(verifier.settleRestored(inspection))
+      #expect(
+        try JSONDecoder().decode(
+          SketchyBarCoreRuntimeInspection.self,
+          from: JSONEncoder().encode(inspection)) == inspection)
+    }
+  }
+
+  @Test(arguments: ["valid", "error", "unpadded", "position", "script", "frequency", "click"])
+  func verifiesMetricScriptsLabelsAndInteractions(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nleft = []\ncenter = []\nright = [\"cpu\", \"memory\"]\n")
+    let verifier = fixture.verifier { request in
+      let output: String
+      switch request.arguments {
+      case ["--query", "bar"]:
+        output =
+          #"{"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":["macarchy.cpu","macarchy.memory","macarchy.memory.padding","macarchy.theme.ready"]}"#
+      case ["--query", "macarchy.theme.ready"]:
+        output = Self.itemJSON(name: "macarchy.theme.ready", drawing: "off", position: "right")
+      case ["--query", "macarchy.memory.padding"]:
+        output = Self.itemJSON(
+          name: "macarchy.memory.padding", drawing: "on", position: "right", width: 8)
+      case ["--query", "macarchy.cpu"], ["--query", "macarchy.memory"]:
+        let cpu = request.arguments[1] == "macarchy.cpu"
+        let module = cpu ? "cpu" : "memory"
+        let label =
+          condition == "error"
+          ? "ERR" : "\(cpu ? "cpu" : "mem") \(condition == "unpadded" ? "9" : "09")%"
+        let script = URL(filePath: fixture.volumeScript).deletingLastPathComponent().appending(
+          path: "\(module).sh"
+        ).path
+        output = Self.itemJSON(
+          name: "macarchy.\(module)", drawing: "on",
+          position: condition == "position" ? "left" : "right", label: label, labelDrawing: "on",
+          script: condition == "script" ? "/tmp/stale.sh" : script,
+          clickScript: condition == "click" ? "" : "/usr/bin/open -a \\\"Activity Monitor\\\"",
+          updateFrequency: condition == "frequency" ? 0 : cpu ? 2 : 5)
+      default:
+        Issue.record("unexpected request: \(request)")
+        return ProcessResult(terminationStatus: 1, output: "unexpected")
+      }
+      return ProcessResult(terminationStatus: 0, output: output)
+    }
+    let inspection = verifier.inspect(composition)
+    #expect(inspection.status == (condition == "valid" ? .converged : .drifted))
+    if condition == "valid" {
+      #expect(inspection.metricModules == ["cpu", "memory"])
+      #expect(inspection.isValidEvidence)
+      #expect(verifier.settleRestored(inspection))
+      #expect(
+        try JSONDecoder().decode(
+          SketchyBarCoreRuntimeInspection.self,
+          from: JSONEncoder().encode(inspection)) == inspection)
+    }
+  }
+
+  @Test
+  func planningRequiresTheNewCanonicalBatteryPaletteWithoutInvalidatingOldGenerations() throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let inspector = SketchyBarPalettePlanInspector()
+    #expect(inspector.inspect(stateRoot: fixture.state, enabled: true).status == .current)
+    let manifest = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let url = fixture.state.appending(path: "generations/\(manifest.generationID)/manifest.json")
+    var object = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+    var versions = try #require(object["renderer_versions"] as? [String: Int])
+    versions["sketchybar"] = 2
+    object["renderer_versions"] = versions
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+    try JSONSerialization.data(withJSONObject: object).write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: url.path)
+    #expect(inspector.inspect(stateRoot: fixture.state, enabled: true).status == .refreshRequired)
+    #expect(inspector.inspect(stateRoot: fixture.state, enabled: false).status == .disabled)
+    #expect(
+      try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID
+        == manifest.generationID)
+  }
+
+  @Test(arguments: [
+    "percentage", "desktop", "error", "unpadded", "missing_event", "wrong_position", "wrong_script",
+    "bad_estimate",
+  ])
+  func verifiesBatteryStatePopupAndSubscriptions(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let composition = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nleft = []\ncenter = []\nright = [\"battery\"]\n")
+    let script = URL(filePath: fixture.volumeScript).deletingLastPathComponent().appending(
+      path: "battery.sh"
+    ).path
+    let verifier = fixture.verifier { request in
+      let output: String
+      switch request.arguments {
+      case ["--query", "bar"]:
+        output =
+          #"{"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":["macarchy.battery","macarchy.battery.remaining","macarchy.battery.padding","macarchy.theme.ready"]}"#
+      case ["--query", "macarchy.theme.ready"]:
+        output = Self.itemJSON(name: "macarchy.theme.ready", drawing: "off", position: "right")
+      case ["--query", "macarchy.battery"]:
+        let label =
+          condition == "desktop"
+          ? "No battery" : condition == "error" ? "ERR" : condition == "unpadded" ? "9%" : "09%"
+        output = Self.itemJSON(
+          name: "macarchy.battery", drawing: "on",
+          position: condition == "wrong_position" ? "left" : "right", label: label,
+          labelDrawing: "on",
+          script: condition == "wrong_script" ? "/tmp/stale.sh" : script, updateFrequency: 180,
+          updateMask: condition == "missing_event" ? 7 : 15)
+      case ["--query", "macarchy.battery.padding"]:
+        output = Self.itemJSON(
+          name: "macarchy.battery.padding", drawing: "on", position: "right", width: 8)
+      case ["--query", "macarchy.battery.remaining"]:
+        output = Self.itemJSON(
+          name: "macarchy.battery.remaining", drawing: "on", position: "popup",
+          label: condition == "desktop"
+            ? "No battery" : condition == "bad_estimate" ? "ERR" : "2:34h", labelDrawing: "on")
+      case ["--query", "events"]:
+        output =
+          #"{"power_source_change":{"bit":1},"system_woke":{"bit":2},"mouse.clicked":{"bit":4},"mouse.exited.global":{"bit":8}}"#
+      default:
+        Issue.record("unexpected request: \(request)")
+        return ProcessResult(terminationStatus: 1, output: "unexpected")
+      }
+      return ProcessResult(terminationStatus: 0, output: output)
+    }
+    let inspection = verifier.inspect(composition)
+    let succeeds = ["percentage", "desktop"].contains(condition)
+    #expect(inspection.status == (succeeds ? .converged : .drifted))
+    if succeeds {
+      #expect(inspection.batteryStatePresent == true)
+      #expect(inspection.isValidEvidence)
+      #expect(verifier.settleRestored(inspection))
+      let decoded = try JSONDecoder().decode(
+        SketchyBarCoreRuntimeInspection.self, from: JSONEncoder().encode(inspection))
+      #expect(decoded == inspection)
     }
   }
 
@@ -331,9 +811,9 @@ struct SketchyBarRuntimeTests {
           return ProcessResult(
             terminationStatus: 0,
             output: """
-              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-               "margin":8,"corner_radius":9,
-               "items":["macarchy.clock","macarchy.theme.ready","macarchy.space.1"\(extra)]}
+              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+               "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.space.1"\(extra)]}
               """
           )
         }
@@ -370,9 +850,9 @@ struct SketchyBarRuntimeTests {
           return ProcessResult(
             terminationStatus: 0,
             output: """
-              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-               "margin":8,"corner_radius":9,
-               "items":["macarchy.clock","macarchy.theme.ready","macarchy.space.1","\(extra)"]}
+              {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+               "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.space.1","\(extra)"]}
               """
           )
         }
@@ -408,7 +888,7 @@ struct SketchyBarRuntimeTests {
         return Self.dynamicResult(request, fixture: fixture, indices: [1])
       },
       waitForSettle: { waits.withLock { $0 += 1 } },
-      waitForPresentation: {}
+      waitForPresentation: {}, hasExternalDisplay: { false }
     )
 
     let inspection = verifier.settle(composition)
@@ -437,8 +917,8 @@ struct SketchyBarRuntimeTests {
             return ProcessResult(
               terminationStatus: 0,
               output: """
-                {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-                 "margin":8,"corner_radius":9,"items":[]}
+                {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+                 "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":[]}
                 """
             )
           }
@@ -446,7 +926,7 @@ struct SketchyBarRuntimeTests {
         return Self.dynamicResult(request, fixture: fixture, indices: [1])
       },
       waitForSettle: { waits.withLock { $0 += 1 } },
-      waitForPresentation: {}
+      waitForPresentation: {}, hasExternalDisplay: { false }
     )
 
     let inspection = verifier.settle(fixture.dynamicComposition)
@@ -488,8 +968,8 @@ struct SketchyBarRuntimeTests {
             return ProcessResult(
               terminationStatus: 0,
               output: """
-                {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-                 "margin":8,"corner_radius":9,"items":[]}
+                {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+                 "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":[]}
                 """
             )
           }
@@ -497,7 +977,7 @@ struct SketchyBarRuntimeTests {
         return Self.dynamicResult(request, fixture: fixture, indices: [1])
       },
       waitForSettle: { waits.withLock { $0 += 1 } },
-      waitForPresentation: {}
+      waitForPresentation: {}, hasExternalDisplay: { false }
     )
 
     #expect(expected.agreesWithProviderRuntime(current))
@@ -516,16 +996,25 @@ struct SketchyBarRuntimeTests {
       return ProcessResult(terminationStatus: 0, output: "[\(spaces)]")
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "bar"]):
       let names =
-        ["macarchy.clock", "macarchy.theme.ready"]
+        ["macarchy.clock", "macarchy.clock.preview", "macarchy.theme.ready"]
         + indices.map { "macarchy.space.\($0)" }
       let items = names.map { "\"\($0)\"" }.joined(separator: ",")
       return ProcessResult(
         terminationStatus: 0,
         output: """
-          {"position":"top","drawing":"on","color":"0xf01e1e2e","height":35,
-           "margin":8,"corner_radius":9,"items":[\(items)]}
+          {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
+           "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":[\(items)]}
           """
       )
+    case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.clock.preview"]):
+      return ProcessResult(
+        terminationStatus: 0,
+        output: itemJSON(
+          name: "macarchy.clock.preview", drawing: "off", position: "right", label: "0"))
+    case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "events"]):
+      return ProcessResult(
+        terminationStatus: 0,
+        output: #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16}}"#)
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.clock"]):
       return ProcessResult(
         terminationStatus: 0,
@@ -584,6 +1073,7 @@ struct SketchyBarRuntimeTests {
     drawing: String,
     position: String,
     associatedSpaceMask: UInt32 = 0,
+    width: Int? = nil,
     label: String = "",
     labelDrawing: String = "off",
     script: String = "(null)",
@@ -591,10 +1081,12 @@ struct SketchyBarRuntimeTests {
     updateFrequency: Int = 0,
     updateMask: UInt64? = nil
   ) -> String {
-    let mask = updateMask.map { ",\"update_mask\":\($0)" } ?? ""
+    let mask =
+      (updateMask ?? (name == "macarchy.clock" ? 25 : nil)).map { ",\"update_mask\":\($0)" } ?? ""
+    let widthField = width.map { ",\"width\":\($0)" } ?? ""
     return """
       {"name":"\(name)","type":"\(type)",
-       "geometry":{"drawing":"\(drawing)","position":"\(position)","associated_space_mask":\(associatedSpaceMask)},
+       "geometry":{"drawing":"\(drawing)","position":"\(position)","associated_space_mask":\(associatedSpaceMask)\(widthField)},
        "label":{"value":"\(label)","drawing":"\(labelDrawing)"},
        "scripting":{"script":"\(script)","click_script":"\(clickScript)","update_freq":\(updateFrequency)\(mask)}}
       """
@@ -631,7 +1123,22 @@ private struct SketchyBarRuntimeFixture {
       )
     )
     _ = try ThemeActivator(root: state).activate(package: package)
-    let defaults = repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml")
+    // Keep the core verifier fixtures isolated from the independently tested
+    // personal default modules. Individual module cases select their full layout.
+    let defaults = root.appending(path: "defaults.toml")
+    let coreDefaults = try String(
+      contentsOf: repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml"),
+      encoding: .utf8
+    )
+    .replacingOccurrences(
+      of: #"(?m)^left = .*$"#, with: "left = [\"spaces\"]", options: .regularExpression
+    )
+    .replacingOccurrences(
+      of: #"(?m)^center = .*$"#, with: "center = []", options: .regularExpression
+    )
+    .replacingOccurrences(
+      of: #"(?m)^right = .*$"#, with: "right = [\"clock\"]", options: .regularExpression)
+    try coreDefaults.write(to: defaults, atomically: true, encoding: .utf8)
     let dynamicProfile = try PortableProfileLoader().decode(
       "schema_version = 1\n",
       source: root.appending(path: "dynamic.toml")
@@ -666,7 +1173,7 @@ private struct SketchyBarRuntimeFixture {
 
   func composition(_ profile: String) throws -> SketchyBarComposition {
     try SketchyBarConfigurationComposer().compose(
-      defaultsURL: repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml"),
+      defaultsURL: root.appending(path: "defaults.toml"),
       profile: PortableProfileLoader().decode(
         profile,
         source: root.appending(path: "custom.toml")
@@ -682,7 +1189,7 @@ private struct SketchyBarRuntimeFixture {
       stateRoot: state,
       processRunner: ProcessRunner(run: run),
       waitForSettle: {},
-      waitForPresentation: {}
+      waitForPresentation: {}, hasExternalDisplay: { false }
     )
   }
 }

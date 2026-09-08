@@ -166,7 +166,8 @@ struct UnifiedSetupPlanTests {
     #expect(exceptional.report.fieldOrigins["terminal.provider"] == "machine")
     #expect(
       Set(standard.model.capabilities.map(\.id)).subtracting([
-        "kitty", "kitty-meslo-font", "sketchybar",
+        "kitty", "kitty-meslo-font", "sketchybar", "nowplaying-cli", "apple-menu-helper",
+        "native-menu-toggle",
       ])
         == Set(exceptional.model.capabilities.map(\.id))
     )
@@ -368,6 +369,7 @@ struct UnifiedSetupPlanTests {
         == [
           "arm64", "atuin", "bat", "borders", "btop", "eza", "homebrew", "kitty", "macos-26",
           "neovim", "sketchybar", "skhd", "starship", "yabai", "yazi",
+          "nowplaying-cli", "apple-menu-helper", "native-menu-toggle",
           "kitty-meslo-font", "zsh-autosuggestions", "zsh-syntax-highlighting", "fzf", "zoxide",
         ]
     )
