@@ -8,6 +8,7 @@ let package = Package(
   products: [
     .library(name: "ThemeCore", targets: ["ThemeCore"]),
     .executable(name: "macarchy", targets: ["MacarchyCLI"]),
+    .executable(name: "macarchy-menu", targets: ["MacarchyMenu"]),
     .executable(
       name: "theme-activation-crash-probe",
       targets: ["ThemeActivationCrashProbe"]
@@ -48,6 +49,7 @@ let package = Package(
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
+    .executableTarget(name: "MacarchyMenu", swiftSettings: [.swiftLanguageMode(.v6)]),
     .executableTarget(
       name: "ThemeActivationCrashProbe",
       dependencies: ["ThemeCore"],
@@ -59,6 +61,10 @@ let package = Package(
       path: "Tests/Fixtures/ThemeContractConsumer",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
+    .testTarget(
+      name: "MacarchyMenuTests",
+      dependencies: ["MacarchyMenu", .product(name: "Testing", package: "swift-testing")],
+      swiftSettings: [.swiftLanguageMode(.v6)]),
     .testTarget(
       name: "ThemeCoreTests",
       dependencies: [

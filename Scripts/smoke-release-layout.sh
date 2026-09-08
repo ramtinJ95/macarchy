@@ -23,6 +23,7 @@ snapshot_helper="$temporary_directory/keybindings-portability-snapshot"
 mkdir -p "$work" "$runtime_tmp"
 
 [[ -x "$binary" ]]
+[[ -x "$layout/bin/macarchy-menu" ]]
 [[ -f "$metadata" ]]
 [[ -d "$layout/share/macarchy/themes" ]]
 [[ -f "$layout/share/macarchy/keybindings/defaults.skhdrc" ]]
@@ -48,11 +49,14 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$snapshot_source" ]]
 [[ -z "$(find -P "$layout" ! -type f ! -type d -print)" ]]
 /usr/bin/codesign --verify --strict "$binary"
+/usr/bin/codesign --verify --strict "$layout/bin/macarchy-menu"
+"$layout/bin/macarchy-menu" --help | grep -q 'Permission must be enabled manually'
 signature=$(/usr/bin/codesign -dv --verbose=2 "$binary" 2>&1)
 print -r -- "$signature" | grep -q '^Signature=adhoc$'
 
 {
   print "bin/macarchy"
+  print "bin/macarchy-menu"
   print "share/macarchy/build-info.json"
   print "share/doc/macarchy/CHANGELOG.md"
   print "share/doc/macarchy/theme-json.md"
@@ -105,8 +109,17 @@ print -r -- "$themes" | grep -q '^catppuccin-mocha'
 print -r -- "$themes" | grep -q '^kanagawa-wave'
 print -r -- "$themes" | grep -q '^tokyo-night'
 
+# A temporary HOME cannot own a developer host's already-running Borders job.
+# Keep this composition smoke independent of that native service; the default
+# environment plan below still reports its real prerequisite/ownership outcome.
+cat > "$temporary_directory/plan-profile.toml" <<'EOF'
+schema_version = 1
+[focus_ring]
+provider = "disabled"
+EOF
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
-  "$binary" setup plan --json > "$temporary_directory/setup-plan.json"
+  "$binary" setup plan --profile "$temporary_directory/plan-profile.toml" \
+  --json > "$temporary_directory/setup-plan.json"
 grep -q '"operation" : "setup_plan"' "$temporary_directory/setup-plan.json"
 grep -q '"outcome" : "ready"' "$temporary_directory/setup-plan.json"
 grep -q '"mutated" : false' "$temporary_directory/setup-plan.json"

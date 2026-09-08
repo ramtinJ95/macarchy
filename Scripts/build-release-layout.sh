@@ -8,6 +8,7 @@ if [[ $# -ne 3 ]]; then
 fi
 
 binary=${1:A}
+menu_binary="${binary:h}/macarchy-menu"
 destination=${2:A}
 revision=$3
 script_directory=${0:A:h}
@@ -17,6 +18,10 @@ destination_parent=${destination:h}
 
 if [[ ! -x "$binary" ]]; then
   print -u2 "macarchy binary is not executable: $binary"
+  exit 66
+fi
+if [[ ! -x "$menu_binary" || "$(/usr/bin/lipo -archs "$menu_binary")" != "arm64" ]]; then
+  print -u2 "matching arm64 macarchy-menu helper is missing beside the release binary"
   exit 66
 fi
 if ! IFS= read -r version < "$version_file"; then
@@ -54,6 +59,8 @@ mkdir -p "$destination/bin" "$destination/share/macarchy" \
   "$destination/share/doc/macarchy"
 install -m 0755 "$binary" "$destination/bin/macarchy"
 /usr/bin/codesign --force --sign - --timestamp=none "$destination/bin/macarchy"
+install -m 0755 "$menu_binary" "$destination/bin/macarchy-menu"
+/usr/bin/codesign --force --sign - --timestamp=none "$destination/bin/macarchy-menu"
 /usr/bin/ditto "$repository_root/Themes" "$destination/share/macarchy/themes"
 /usr/bin/ditto "$repository_root/Keybindings" "$destination/share/macarchy/keybindings"
 /usr/bin/ditto "$repository_root/Desktop" "$destination/share/macarchy/desktop"
