@@ -8,15 +8,17 @@ struct HomebrewBundleInstaller: Sendable {
     let effectiveBrewfile: String
     let brewfile: String
     let command: [String]
-    let environment = HomebrewBundleInstaller.environment
+    let environment: [String]
     let nativeEffects: [String]
     let approvalDigest: String
 
     init(
       packages: [HomebrewPackageIdentity], effectiveBrewfile: String,
-      context: UnifiedSetupPlanContext
+      context: UnifiedSetupPlanContext,
+      inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment
     ) throws {
       self.effectiveBrewfile = effectiveBrewfile
+      environment = HomebrewBundleInstaller.executionEnvironment(inheriting: inheritedEnvironment)
       brewfile = SetupBrewfile.installing(packages).text
       command =
         ["/opt/homebrew/bin/brew"] + HomebrewBundleInstaller.arguments
@@ -55,11 +57,29 @@ struct HomebrewBundleInstaller: Sendable {
       + (packages.contains { $0.kind == .cask } ? [caskEffects] : [])
   }
 
-  static let environment = [
-    "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_AUTO_UPDATE=1",
-    "HOMEBREW_NO_AUTOREMOVE=1", "HOMEBREW_NO_INSTALL_CLEANUP=1",
-    "HOMEBREW_NO_INSTALL_UPGRADE=1",
-  ]
+  static var environment: [String] {
+    executionEnvironment(inheriting: ProcessInfo.processInfo.environment)
+  }
+
+  static func executionEnvironment(inheriting inherited: [String: String]) -> [String] {
+    let configuration = configurationVariable(in: inherited)
+    return [
+      "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_AUTO_UPDATE=1",
+      "HOMEBREW_NO_AUTOREMOVE=1", "HOMEBREW_NO_INSTALL_CLEANUP=1",
+      "HOMEBREW_NO_INSTALL_UPGRADE=1",
+    ] + (configuration.map { ["\($0.name)=\($0.value)"] } ?? [])
+  }
+
+  private static func configurationVariable(in inherited: [String: String])
+    -> (name: String, value: String)?
+  {
+    // Match bin/brew precedence. Preserve the existing trust-store location,
+    // not arbitrary Homebrew options or a second copy of the trust store.
+    for name in ["XDG_CONFIG_HOME", "HOMEBREW_XDG_CONFIG_HOME"] {
+      if let value = inherited[name], !value.isEmpty { return (name, value) }
+    }
+    return nil
+  }
 
   static func live(homeDirectory: URL) -> Self {
     Self(
@@ -78,7 +98,10 @@ struct HomebrewBundleInstaller: Sendable {
       })
   }
 
-  static func request(brewfile: URL, log: URL, homeDirectory: URL) -> ProcessRequest {
+  static func request(
+    brewfile: URL, log: URL, homeDirectory: URL,
+    inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> ProcessRequest {
     // Explicit env prevents inherited Bundle cleanup/skip/force settings. stdin
     // is closed; no credentials are supplied. This does not prevent native sudo
     // from succeeding with existing authorization or Bundle artifact adoption.
@@ -90,20 +113,28 @@ struct HomebrewBundleInstaller: Sendable {
         "macarchy-bundle-install", log.path, "/usr/bin/env", "-i",
         "HOME=\(homeDirectory.path)", "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "LC_ALL=C",
-      ] + environment + ["/opt/homebrew/bin/brew"] + arguments + [brewfile.path],
+      ] + executionEnvironment(inheriting: inheritedEnvironment)
+        + ["/opt/homebrew/bin/brew"] + arguments + [brewfile.path],
       timeout: 1800)
   }
 
-  static func validateConfiguration(homeDirectory: URL) throws {
+  static func validateConfiguration(
+    homeDirectory: URL,
+    inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment
+  ) throws {
     guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/brew") else {
       throw SetupPackageAdoptionError("Homebrew is not installed at /opt/homebrew/bin/brew.")
     }
     // bin/brew sources these after the command environment. Do not silently
     // ignore user settings or allow them to request cleanup outside approval.
+    let userConfiguration =
+      configurationVariable(in: inheritedEnvironment).map {
+        URL(filePath: $0.value).appending(path: "homebrew")
+      } ?? homeDirectory.appending(path: ".homebrew")
     for url in [
       URL(filePath: "/etc/homebrew/brew.env"),
       URL(filePath: "/opt/homebrew/etc/homebrew/brew.env"),
-      homeDirectory.appending(path: ".homebrew/brew.env"),
+      userConfiguration.appending(path: "brew.env"),
     ] {
       var info = stat()
       if lstat(url.path, &info) == 0 {
