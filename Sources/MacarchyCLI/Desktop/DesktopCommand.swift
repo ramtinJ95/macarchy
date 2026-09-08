@@ -8,7 +8,7 @@ struct Desktop: ParsableCommand {
     subcommands: [
       Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, RunSketchyBarHook.self,
       Borders.self, CPULoad.self, WiFi.self, AudioOutputCommand.self, AudioPicker.self,
-      Calendar.self,
+      Calendar.self, Media.self,
     ]
   )
 
