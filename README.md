@@ -127,6 +127,12 @@ By default, Macarchy keeps an image of your chosen wallpaper in the stable folde
 4. Press **Command–Shift–G**, enter `~/.config/macarchy/screensaver`, and select
    the folder. Confirm the options, then click **Preview**.
 
+If your image shows black bars on an ultrawide or differently proportioned
+display, try **Photos → Style → Ken Burns**, then **Preview**. This native style
+pans and zooms the image rather than keeping it still; check the result on each
+display. Macarchy preserves the source image's proportions and does not crop it
+for a specific monitor or change the native screen saver style for you.
+
 Use **Photos**, not macOS's Automatic option. Theme changes refresh the image
 automatically; `macarchy theme screensaver` prepares it explicitly without
 changing the desktop. The next Preview picked up image changes in supported-machine
