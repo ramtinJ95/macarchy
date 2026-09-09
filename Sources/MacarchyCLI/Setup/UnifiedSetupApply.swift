@@ -53,7 +53,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
 
   static let live = Self(
     planner: .live,
-    themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
+    themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
     packageInstaller: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
     capabilityIsAvailable: { $0.isAvailable() },
     writePreMutationPlan: { output in

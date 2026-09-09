@@ -11,7 +11,7 @@ struct UnifiedSetupThemeLifecycleStatus: Encodable, Sendable {
   let generationID: String?
   let message: String
 
-  static func inspect(
+  static func preflightApply(
     model: UnifiedSetupDesiredModel,
     ownership: SetupCoreOwnership?,
     stateRoot: URL
@@ -40,15 +40,26 @@ struct UnifiedSetupThemeLifecycleStatus: Encodable, Sendable {
         message: "The active canonical theme predates unified setup and is not setup-owned."
       )
     }
-    guard ownership.themeGenerationID == active else {
-      return Self(
-        succeeded: false,
-        status: "drifted",
-        generationID: active,
-        message:
-          "Setup owns theme generation '\(ownership.themeGenerationID)', but '\(active)' is active."
-      )
-    }
+    let bootstrapActive = ownership.themeGenerationID == active
+    return Self(
+      succeeded: true,
+      status: bootstrapActive ? "managed" : "preserved",
+      generationID: active,
+      message: bootstrapActive
+        ? "The setup bootstrap is active; apply will reconcile its consumers."
+        : "Preserving the user-selected canonical theme; bootstrap ownership is unchanged."
+    )
+  }
+
+  static func inspect(
+    model: UnifiedSetupDesiredModel,
+    ownership: SetupCoreOwnership?,
+    stateRoot: URL
+  ) -> Self {
+    let preflight = preflightApply(model: model, ownership: ownership, stateRoot: stateRoot)
+    guard preflight.succeeded, ownership != nil,
+      let active = model.theme.currentGenerationID
+    else { return preflight }
 
     do {
       guard case .current(let record) = try ReconciliationStatusStore(root: stateRoot).read()
@@ -75,9 +86,10 @@ struct UnifiedSetupThemeLifecycleStatus: Encodable, Sendable {
       }
       return Self(
         succeeded: true,
-        status: "managed",
+        status: preflight.status,
         generationID: active,
-        message: "The setup-owned canonical theme and macOS appearance are current."
+        message:
+          "The active canonical theme and macOS appearance are current; bootstrap ownership is unchanged."
       )
     } catch {
       return Self(
