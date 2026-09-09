@@ -1,6 +1,6 @@
 # Macarchy
 
-https://github.com/user-attachments/assets/3a88e8f8-7213-4313-a2b7-4075d1570a4a
+https://github.com/user-attachments/assets/2634deb7-fadb-46f4-995e-3425e18bb98d
 
 An opinionated macOS developer environment inspired by
 [Omarchy](https://omarchy.org/): a tiling desktop, coordinated themes, useful
