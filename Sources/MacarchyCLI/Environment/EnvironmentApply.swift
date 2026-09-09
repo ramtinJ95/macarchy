@@ -377,7 +377,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
   ) async throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
     let composition: EnvironmentComposition
-    let enabledThemeAdapterIDs: [String]
+    var enabledThemeAdapterIDs: [String]
     do {
       profile =
         try suppliedProfile
@@ -639,13 +639,28 @@ struct EnvironmentApplyCommandRunner: Sendable {
       )
     }
 
+    // Standalone apply replaces its own selection, not the other domains' applied authority.
+    // Read only after lifecycle recovery while holding the ownership lock.
+    if suppliedThemeAdapterIDs == nil {
+      do {
+        let previous = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+        let otherDomains: Set<String> = ["macos-appearance", "wallpaper", "sketchybar"]
+        enabledThemeAdapterIDs = Set(enabledThemeAdapterIDs)
+          .union(Set(previous?.enabledThemeAdapterIDs ?? []).intersection(otherDomains))
+          .sorted()
+      } catch {
+        return try failure(
+          profileURL: profileURL, profile: profile.environment,
+          message: "Cannot preserve applied theme inventory: \(error)",
+          mutated: false, json: json)
+      }
+    }
+
     var themeAdapterIDs = profile.environment.selectedThemeAdapterIDs
     if theme != nil, !themeAdapterIDs.isEmpty {
       do {
         let statusStore = ReconciliationStatusStore(root: stateRoot)
-        if suppliedThemeAdapterIDs != nil,
-          case .current(let record) = try statusStore.read()
-        {
+        if case .current(let record) = try statusStore.read() {
           let recorded = Set(record.results.map(\.adapterID))
           themeAdapterIDs = Set(themeAdapterIDs)
             .union(Set(enabledThemeAdapterIDs).subtracting(recorded))
