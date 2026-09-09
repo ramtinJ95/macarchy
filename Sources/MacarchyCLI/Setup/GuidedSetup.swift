@@ -93,86 +93,31 @@ struct GuidedSetupIO: Sendable {
     write: { FileHandle.standardOutput.write(Data($0.utf8)) }
   )
 
-  func confirm(_ question: String, defaultYes: Bool) throws -> Bool {
+  func confirm(_ question: String) throws -> Bool {
     while true {
-      write("\(question) \(defaultYes ? "[Y/n]" : "[y/N]") ")
+      write("\(question) [y/N] ")
       guard let answer = read() else { throw GuidedSetupError.inputClosed }
       switch answer.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-      case "": return defaultYes
       case "y", "yes": return true
-      case "n", "no": return false
+      case "", "n", "no": return false
       default: write("Please answer yes or no.\n")
       }
     }
   }
 }
 
-struct GuidedSetupQuestionnaire: Sendable {
-  let io: GuidedSetupIO
-
-  func collect() throws -> GuidedSetupAnswers {
-    var answers = GuidedSetupAnswers()
-    answers.desktop = try io.confirm("Manage the yabai and skhd desktop?", defaultYes: true)
-    answers.topBar = try io.confirm("Manage the SketchyBar top bar?", defaultYes: true)
-    answers.focusRing = try io.confirm(
-      "Manage theme-coherent Borders focus highlighting?", defaultYes: true)
-    answers.terminal = try io.confirm("Manage Kitty as the terminal?", defaultYes: true)
-    answers.shell = try io.confirm("Manage zsh as the shell?", defaultYes: true)
-    if answers.shell {
-      answers.prompt = try io.confirm("Manage Starship as the prompt?", defaultYes: true)
-      answers.history = try io.confirm("Manage Atuin history?", defaultYes: true)
-    } else {
-      answers.prompt = false
-      answers.history = false
-    }
-    answers.editor = try io.confirm("Manage Neovim as the editor?", defaultYes: true)
-    answers.bat = try io.confirm("Manage bat?", defaultYes: true)
-    answers.eza = try io.confirm("Manage eza?", defaultYes: true)
-    answers.btop = try io.confirm("Manage btop?", defaultYes: true)
-    answers.yazi = try io.confirm("Manage Yazi?", defaultYes: true)
-    answers.codex = try io.confirm("Enable the Codex preset?", defaultYes: false)
-    answers.herdr = try io.confirm("Enable the Herdr preset?", defaultYes: false)
-    answers.pi = try io.confirm("Enable the Pi preset?", defaultYes: false)
-    answers.slack = try io.confirm("Enable the Slack preset?", defaultYes: false)
-    answers.spicetify = try io.confirm("Enable the Spicetify preset?", defaultYes: false)
-    answers.tuicr = try io.confirm("Enable the tuicr preset?", defaultYes: false)
-    if try io.confirm("Manage Dock autohide?", defaultYes: false) {
-      answers.dockAutohide = try io.confirm("Automatically hide the Dock?", defaultYes: true)
-    }
-    if try io.confirm("Manage Finder filename extensions?", defaultYes: false) {
-      answers.finderShowExtensions = try io.confirm(
-        "Show all filename extensions?", defaultYes: true)
-    }
-    io.write(
-      "Package choices are separate from provider/preset choices. Exclusions never uninstall software.\n"
-        + "Selected providers still require their packages; disable the provider to exclude one.\n")
-    while true {
-      io.write(
-        "Optional package exclusions (space-separated, e.g. formula:jq cask:spotify; Enter for none): "
-      )
-      guard let input = io.read() else { throw GuidedSetupError.inputClosed }
-      let targets = input.split(whereSeparator: \.isWhitespace).map(String.init)
-      if targets.isEmpty { break }
-      do {
-        answers.packageExclusions = try SetupPackageAdoptionCommandRunner.parseTargets(targets)
-        break
-      } catch let error as SetupPackageAdoptionError {
-        io.write("\(error)\n")
-      }
-    }
-    return answers
-  }
-}
-
 enum GuidedSetupError: Error, CustomStringConvertible, Sendable {
   case inputClosed
+  case terminalUnavailable
   case invalidProfileTarget(URL)
   case profileTargetExists(URL)
 
   var description: String {
     switch self {
     case .inputClosed:
-      "guided setup input closed before the questionnaire completed"
+      "guided setup cancelled or input closed"
+    case .terminalUnavailable:
+      "guided setup requires an interactive terminal; use setup plan/apply with a profile instead"
     case .invalidProfileTarget(let url):
       "guided setup profile target is invalid: \(url.path)"
     case .profileTargetExists(let url):
@@ -219,6 +164,8 @@ struct GuidedSetupCommandRunner: Sendable {
   let planner: UnifiedSetupPlanCommandRunner
   let apply: Apply
   let io: GuidedSetupIO
+  var select: @Sendable ([HomebrewPackageIdentity]) throws -> GuidedSetupAnswers =
+    GuidedSetupTerminal.collect
 
   static func live(io: GuidedSetupIO = .live) -> Self {
     Self(
@@ -241,11 +188,11 @@ struct GuidedSetupCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths
   ) async throws -> (output: String, succeeded: Bool) {
-    try await execute(
-      context: context,
-      consumerPaths: consumerPaths,
-      answers: GuidedSetupQuestionnaire(io: io).collect()
-    )
+    let packages = try planner.standardBrewfile(
+      context.environmentResourcesRoot.appending(path: "Brewfile")
+    ).packages
+    let answers = try select(packages)
+    return try await execute(context: context, consumerPaths: consumerPaths, answers: answers)
   }
 
   func execute(
@@ -289,16 +236,11 @@ struct GuidedSetupCommandRunner: Sendable {
     }
 
     let cancelled = ("Guided setup stopped before mutation. The profile was retained.", true)
+    // The single consent covers only the digests in the visible reviewed plan.
+    // Unified apply still revalidates them before mutation.
     var approved = [String: String]()
     for adoption in plan.adoption {
-      guard
-        try io.confirm(
-          "Approve \(adoption.id) adoption for \(adoption.digest)?",
-          defaultYes: false
-        )
-      else {
-        return cancelled
-      }
+      io.write("Configuration adoption: \(adoption.id) — \(adoption.digest)\n")
       approved[adoption.id] = adoption.digest
     }
     let adoptions = UnifiedSetupAdoptionApprovals(
@@ -307,25 +249,20 @@ struct GuidedSetupCommandRunner: Sendable {
       sketchybar: approved["sketchybar"],
       environment: approved["environment"]
     )
-
     let packageApproval = plan.packageInstallation?.approvalDigest
-    if let packageApproval {
-      guard
-        try io.confirm(
-          "Install the reviewed missing-package Brewfile for \(packageApproval)?", defaultYes: false
-        )
-      else { return cancelled }
-    }
     let preferencesApproval = try plan.preferencesApprovalDigest
-    if let preferencesApproval {
-      guard
-        try io.confirm(
-          "Approve the reviewed native preference changes for \(preferencesApproval)?",
-          defaultYes: false
-        )
-      else { return cancelled }
+    if let packageApproval {
+      io.write("Homebrew installation approval: \(packageApproval)\n")
     }
-    guard try io.confirm("Apply the reviewed unified setup plan now?", defaultYes: false) else {
+    if let preferencesApproval {
+      io.write("Native preference approval: \(preferencesApproval)\n")
+    }
+    io.write(
+      "Confirmation authorizes the reviewed package installation, configuration adoptions, "
+        + "native preferences and provider/service changes, including desktop keybindings when selected.\n"
+        + "Homebrew effects are not rolled back with configuration. Permissions are never granted automatically.\n"
+    )
+    guard try io.confirm("Install & apply the reviewed setup now?") else {
       return cancelled
     }
     return try await apply(context, consumerPaths, packageApproval, preferencesApproval, adoptions)

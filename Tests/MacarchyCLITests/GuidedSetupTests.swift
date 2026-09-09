@@ -7,19 +7,21 @@ import Testing
 
 struct GuidedSetupTests {
   @Test
-  func questionnaireEmitsOnlySelectionsThatDifferFromDefaults() throws {
-    let responses = Mutex([
-      "no", "", "no", "no", "no",
-      "no", "no", "", "no", "",
-      "yes", "no", "yes", "no", "yes", "no",
-      "no", "no",
-      "jq", "cask:homebrew/cask/spotify formula:homebrew/core/jq",
-    ])
-    let answers = try GuidedSetupQuestionnaire(
+  func menuEmitsOnlySelectionsThatDifferFromDefaults() throws {
+    let toggled = Set([0, 2, 3, 4, 7, 8, 10, 12, 14, 16, 20, 21])
+    var keys = [String]()
+    for index in 0...21 {
+      if toggled.contains(index) { keys.append(" ") }
+      if index < 21 { keys.append("down") }
+    }
+    keys.append("enter")
+    let responses = Mutex(keys)
+    let answers = try GuidedSetupSelectionMenu(
       io: GuidedSetupIO(
         read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } },
         write: { _ in }
-      )
+      ),
+      packages: [.init(kind: .cask, name: "spotify"), .init(kind: .formula, name: "jq")]
     ).collect()
     let profile = try PortableProfileLoader().decode(
       answers.profileTOML,
@@ -49,14 +51,6 @@ struct GuidedSetupTests {
     #expect(!answers.profileTOML.contains("eza = true"))
     #expect(profile.packages.layers.first?.excludedFormulae == ["jq"])
     #expect(profile.packages.layers.first?.excludedCasks == ["spotify"])
-  }
-
-  @Test
-  func defaultAnswersDoNotCopyPackageDefaultsIntoTheProfile() throws {
-    let answers = try GuidedSetupQuestionnaire(
-      io: GuidedSetupIO(read: { "" }, write: { _ in })
-    ).collect()
-    #expect(answers.profileTOML == "schema_version = 1\n")
   }
 
   @Test(arguments: [false, true])
@@ -139,19 +133,21 @@ struct GuidedSetupTests {
   }
 
   @Test
-  func closedPackagePromptDoesNotPublishAProfile() async throws {
+  func closedMenuDoesNotPublishAProfile() async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let context = guidedContext(fixture)
-    let responses = Mutex(Array(repeating: "", count: 20))
+    let responses = Mutex(["down", " "])
+    let io = GuidedSetupIO(
+      read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } }, write: { _ in })
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(),
       apply: { _, _, _, _, _ in
-        Issue.record("A closed questionnaire must not apply")
+        Issue.record("A closed menu must not apply")
         return ("unexpected", false)
       },
-      io: GuidedSetupIO(
-        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } }, write: { _ in })
+      io: io,
+      select: { try GuidedSetupSelectionMenu(io: io, packages: $0).collect() }
     )
     await #expect(throws: GuidedSetupError.self) {
       try await runner.execute(context: context, consumerPaths: testConsumerPaths())
@@ -164,7 +160,7 @@ struct GuidedSetupTests {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let context = guidedContext(fixture)
-    let responses = Mutex(["yes", "yes", "yes"])
+    let responses = Mutex(["yes"])
     let events = Mutex([String]())
     let approval = "sha256:reviewed-yabai"
     var answers = GuidedSetupAnswers()
@@ -175,7 +171,8 @@ struct GuidedSetupTests {
     let runner = GuidedSetupCommandRunner(
       planner: fixture.planner(
         available: { $0.id != "kitty" },
-        requiredAdoptions: UnifiedSetupAdoptionApprovals(yabai: approval),
+        requiredAdoptions: UnifiedSetupAdoptionApprovals(
+          yabai: approval, keybindings: "sha256:reviewed-keys"),
         plannedStages: [.desktop]
       ),
       apply: { receivedContext, _, packageApproval, preferencesApproval, adoptions in
@@ -183,7 +180,9 @@ struct GuidedSetupTests {
         #expect(receivedContext.profileURL == context.profileURL)
         #expect(packageApproval?.hasPrefix("sha256:") == true)
         #expect(preferencesApproval == nil)
-        #expect(adoptions == UnifiedSetupAdoptionApprovals(yabai: approval))
+        #expect(
+          adoptions
+            == UnifiedSetupAdoptionApprovals(yabai: approval, keybindings: "sha256:reviewed-keys"))
         let profile = try PortableProfileLoader().load(
           at: receivedContext.profileURL,
           required: true
@@ -213,6 +212,7 @@ struct GuidedSetupTests {
     #expect(execution.succeeded)
     #expect(execution.output == "applied")
     #expect(events.withLock { $0 } == ["plan", "apply"])
+    #expect(responses.withLock { $0.isEmpty })
   }
 
   @Test
@@ -282,48 +282,18 @@ struct GuidedSetupTests {
     #expect(FileManager.default.fileExists(atPath: context.profileURL.path))
   }
 
-  @Test
-  func adoptionRequiresAnExplicitYesBeforeMutation() async throws {
+  @Test(arguments: ["", "no"])
+  func singleConfirmationDefaultsToNo(answer: String) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let context = guidedContext(fixture)
-    let approval = "sha256:reviewed-yabai"
-    let responses = Mutex([""])
-    let runner = GuidedSetupCommandRunner(
-      planner: fixture.planner(
-        requiredAdoptions: UnifiedSetupAdoptionApprovals(yabai: approval)
-      ),
-      apply: { _, _, _, _, _ in
-        Issue.record("Apply must not run when adoption confirmation defaults to no")
-        return ("unexpected", false)
-      },
-      io: GuidedSetupIO(
-        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } },
-        write: { _ in }
-      )
-    )
-
-    let execution = try await runner.execute(
-      context: context,
-      consumerPaths: testConsumerPaths(),
-      answers: GuidedSetupAnswers()
-    )
-
-    #expect(execution.succeeded)
-    #expect(execution.output.contains("stopped before mutation"))
-    #expect(FileManager.default.fileExists(atPath: context.profileURL.path))
-  }
-
-  @Test(arguments: [false, true])
-  func packageAndFinalApplyConfirmationsDefaultToNo(approvePackages: Bool) async throws {
-    let fixture = try ApplyFixture()
-    defer { fixture.cleanup() }
-    let context = guidedContext(fixture)
-    let responses = Mutex(approvePackages ? ["yes", ""] : [""])
+    let responses = Mutex([answer])
     var answers = GuidedSetupAnswers()
     answers.packageExclusions = [.init(kind: .cask, name: "spotify")]
     let runner = GuidedSetupCommandRunner(
-      planner: fixture.planner(),
+      planner: fixture.planner(
+        requiredAdoptions: .init(
+          yabai: "sha256:reviewed-yabai", keybindings: "sha256:reviewed-keys")),
       apply: { _, _, _, _, _ in
         Issue.record("Apply must not run without final confirmation")
         return ("unexpected", false)
@@ -346,28 +316,30 @@ struct GuidedSetupTests {
     #expect(profile.packages.layers.first?.excludedCasks == ["spotify"])
   }
 
-  @Test
-  func questionnaireKeepsNativeSelectionSeparateFromItsBooleanValue() throws {
-    let responses = Mutex(Array(repeating: "", count: 18) + ["yes", "no", "no", ""])
-    let answers = try GuidedSetupQuestionnaire(
+  @Test(arguments: [1, 2, 3])
+  func menuKeepsNativeSelectionSeparateFromItsBooleanValue(toggles: Int) throws {
+    let responses = Mutex(
+      Array(repeating: "down", count: 18) + Array(repeating: " ", count: toggles) + ["enter"])
+    let answers = try GuidedSetupSelectionMenu(
       io: .init(
         read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } }, write: { _ in }
-      )
+      ), packages: []
     ).collect()
     let profile = try PortableProfileLoader().decode(
       answers.profileTOML, source: URL(filePath: "/tmp/profile.toml"))
-    #expect(profile.macOSPreferences.selected == [.dockAutohide: false])
+    #expect(
+      profile.macOSPreferences.selected == (toggles == 3 ? [:] : [.dockAutohide: toggles == 1]))
     #expect(!answers.profileTOML.contains("finder_show_extensions"))
   }
 
   @Test(arguments: [false, true])
-  func nativeChangesRequireSeparateExplicitApproval(approvePreferences: Bool) async throws {
+  func singleConfirmationIncludesNativeChanges(approvePreferences: Bool) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let os = PreferencesTests.MemoryPreferences()
     let lifecycle = PreferencesLifecycle(native: os.native)
     let context = guidedContext(fixture)
-    let responses = Mutex(["yes", approvePreferences ? "yes" : "", "yes"])
+    let responses = Mutex([approvePreferences ? "yes" : ""])
     let applied = Mutex(false)
     let transcript = Mutex("")
     let planner = fixture.planner(preferences: lifecycle)
@@ -390,8 +362,57 @@ struct GuidedSetupTests {
       context: context, consumerPaths: testConsumerPaths(), answers: answers)
     #expect(result.succeeded)
     #expect(applied.withLock { $0 } == approvePreferences)
-    #expect(transcript.withLock { $0.contains("Approve the reviewed native preference changes") })
+    #expect(transcript.withLock { $0.contains("Native preference approval:") })
     #expect(os.state.withLock { $0.writes.isEmpty })
+  }
+
+  @Test
+  func menuContinuesDirectlyThroughReviewIntoApply() async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let responses = Mutex(["enter", "yes"])
+    let io = GuidedSetupIO(
+      read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } },
+      write: { _ in })
+    let runner = GuidedSetupCommandRunner(
+      planner: fixture.planner(),
+      apply: { context, _, packageApproval, _, _ in
+        #expect(packageApproval != nil)
+        let saved = try String(contentsOf: context.profileURL, encoding: .utf8)
+        #expect(saved == "schema_version = 1\n")
+        return ("applied including desktop", true)
+      },
+      io: io,
+      select: { try GuidedSetupSelectionMenu(io: io, packages: $0).collect() }
+    )
+    let result = try await runner.execute(
+      context: guidedContext(fixture), consumerPaths: testConsumerPaths())
+    #expect(result.succeeded)
+    #expect(result.output == "applied including desktop")
+    #expect(responses.withLock { $0.isEmpty })
+  }
+
+  @Test(arguments: [1, 2])
+  func menuWrapsToPackageAndTogglesExclusion(toggles: Int) throws {
+    let responses = Mutex(["up"] + Array(repeating: " ", count: toggles) + ["enter"])
+    let answers = try GuidedSetupSelectionMenu(
+      io: .init(
+        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } },
+        write: { _ in }),
+      packages: [.init(kind: .formula, name: "jq")]
+    ).collect()
+    #expect(answers.packageExclusions == (toggles == 1 ? [.init(kind: .formula, name: "jq")] : []))
+  }
+
+  @Test
+  func disabledShellPreventsContradictoryPromptSelection() throws {
+    let responses = Mutex(Array(repeating: "down", count: 4) + [" ", "down", " ", "enter"])
+    let answers = try GuidedSetupSelectionMenu(
+      io: .init(
+        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } },
+        write: { _ in }), packages: []
+    ).collect()
+    #expect(!answers.shell && !answers.prompt && !answers.history)
   }
 
   private func guidedContext(_ fixture: ApplyFixture) -> UnifiedSetupPlanContext {
