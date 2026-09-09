@@ -161,6 +161,32 @@ struct EnvironmentLifecycleTests {
       return
     }
     #expect(record.results.map(\.adapterID) == enabledThemeAdapterIDs)
+
+    // A standalone reapply must retain other domains, including missing evidence repair.
+    _ = try statusStore.persist(
+      manifest: statusStore.activeManifest(),
+      results: environmentThemeAdapterIDs.map(appliedAdapterResult)
+    )
+    let standalone = try await fixture.apply(
+      adopt: nil,
+      theme: recordingThemeController { adapterIDs in
+        reconciledAdapterIDs.withLock { $0 = adapterIDs }
+      }
+    )
+    #expect(standalone.succeeded)
+    #expect(reconciledAdapterIDs.withLock { $0 } == enabledThemeAdapterIDs)
+    #expect(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?
+        .enabledThemeAdapterIDs == enabledThemeAdapterIDs)
+
+    // Explicit unified selection may remove desktop consumers; preservation is not a union
+    // with desired inventory from a previous unified apply.
+    let narrowed = try await fixture.apply(
+      adopt: nil, enabledThemeAdapterIDs: environmentThemeAdapterIDs)
+    #expect(narrowed.succeeded)
+    #expect(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?
+        .enabledThemeAdapterIDs == environmentThemeAdapterIDs)
   }
 
   @Test
