@@ -53,9 +53,19 @@ macarchy setup guided
 ```
 
 The Homebrew controls avoid unrelated automatic upgrades and cleanup during
-Macarchy installation. Guided setup offers the curated defaults and opt-outs,
-saves a small profile, then asks before installing missing packages, adopting
-existing configuration, or applying the setup.
+Macarchy installation. Guided setup opens one selection menu: use Up/Down to
+move, Space to toggle, and Enter to review. Providers, optional presets, native
+settings and individual standard packages appear together with curated defaults
+selected. The desktop choice includes tiling and Macarchy's default keybindings.
+Package-only choices do not enable optional presets; selected providers still
+require their dependencies. Native settings cycle through unmanaged, true and
+false. Press q or Ctrl-C to cancel without saving.
+
+The menu saves a small profile and displays the unified plan. One default-no
+**Install & apply** confirmation authorizes its reviewed missing packages,
+configuration adoptions, native settings and service changes. Setup then installs
+and configures those selections without a separate apply or keybindings command.
+Blocked prerequisites still stop setup visibly. An interactive terminal is required.
 
 **Already have a profile?** Use `macarchy setup plan --profile /path/to/profile.toml`
 and the [profile-driven workflow](#make-it-yours) instead. Guided setup will not

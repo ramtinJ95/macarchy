@@ -132,7 +132,7 @@ extension Macarchy {
 
     struct Guided: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
-        abstract: "Create a sparse portable profile and optionally apply its reviewed plan."
+        abstract: "Select your setup in one menu, then review, install and apply."
       )
 
       @Option(
