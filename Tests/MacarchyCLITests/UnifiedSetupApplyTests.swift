@@ -691,13 +691,20 @@ struct UnifiedSetupApplyTests {
     #expect(try UnifiedSetupTransactionStore(stateRoot: fixture.state).read() == nil)
   }
 
-  @Test
-  func repeatedApplyPreservesTheSetupThemeAndReportsNoChange() async throws {
+  @Test(arguments: [false, true])
+  func repeatedApplyPreservesTheActiveThemeAndReportsNoChange(replaced: Bool) async throws {
     let fixture = try ApplyFixture()
-    let manifest = try fixture.activateSetupOwnedTheme()
+    let bootstrap = try fixture.activateSetupOwnedTheme()
+    let manifest =
+      try replaced
+      ? ThemeActivator(root: fixture.state).activate(
+        package: ThemePackageLoader().load(
+          packageURL: repositoryRoot.appending(path: "Themes/tokyo-night")))
+      : bootstrap
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
     let runner = fixture.runner(
       available: { _ in true },
+      themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
       theme: { _, _ in
         Issue.record("A repeated apply must preserve the active canonical theme")
         return try applyComponent("{}")
@@ -726,6 +733,29 @@ struct UnifiedSetupApplyTests {
       try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID
         == manifest.generationID
     )
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    #expect(ownership.themeGenerationID == bootstrap.generationID)
+    #expect(ownership.originalAppearance == .light)
+    guard case .ready(let model, _) = try fixture.planner().prepare(context: fixture.context) else {
+      Issue.record("Expected ready model")
+      return
+    }
+    // Applyability is not health: absent appearance evidence must still fail status.
+    let health = UnifiedSetupThemeLifecycleStatus.inspect(
+      model: model, ownership: ownership, stateRoot: fixture.state)
+    #expect(!health.succeeded)
+    #expect(health.status == "drifted")
+    if replaced {
+      // The real teardown rejects the replacement before any native appearance access.
+      await #expect(throws: (any Error).self) {
+        _ = try await UnifiedSetupTeardownCommandRunner.live.themeTeardown(
+          fixture.state, ownership, model.themePackage.appearance, false)
+      }
+      #expect(try SetupCoreOwnershipStore(stateRoot: fixture.state).read() == ownership)
+      #expect(
+        try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID
+          == manifest.generationID)
+    }
   }
 }
 
