@@ -240,6 +240,35 @@ inputs in dotfiles; do not sync the whole `~/.config/macarchy` directory, which
 also contains machine-local state and backups. Merely editing a profile does
 not start services or change running applications.
 
+### Writable Neovim configuration
+
+The original managed Neovim configuration is immutable. Lazy's install, update,
+sync and restore commands write `lazy-lock.json`, so they conflict with that
+layout. To keep the **currently active setup** but make it editable, review:
+
+```sh
+macarchy environment migrate-neovim
+macarchy environment migrate-neovim --approve 'digest-from-preview'
+```
+
+The migration seeds `~/.config/nvim-native` once and points `~/.config/nvim` to
+it. It preserves the old dotfiles configuration and does not download plugins.
+Restart Neovim afterward. Edit the writable configuration through `~/.config/nvim`;
+Lazy owns its lockfile. Four reserved theme files remain linked to Macarchy.
+Environment reapply updates those theme files, not your behavior or plugin lock.
+The generated Neovim behavior remains a seed, not a continuously merged default.
+
+Migration is explicit, not automatic on install or update. An existing destination
+is never overwritten. Teardown restores the original entry and retains
+`nvim-native` with your edits; its managed theme links are inactive after teardown.
+Use a Macarchy version supporting this command before migrating—older versions
+cannot manage the new ownership target. Reconnecting a retained native tree after
+teardown requires a separately reviewed action, not an automatic reseed.
+
+GitHub port-443 timeouts are a separate connectivity problem. Logs are normally
+under `~/.local/state/nvim/` (`nvim.log`, `lsp.log`, `mason.log`); Lazy task failures
+are best inspected in the still-open `:Lazy` session or `:messages` / `:Noice history`.
+
 ### SketchyBar modules
 
 The default bar includes Apple menu, Spaces, adaptive calendar, battery, volume

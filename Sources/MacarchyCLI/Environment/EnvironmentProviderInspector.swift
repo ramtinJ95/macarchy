@@ -106,11 +106,17 @@ struct EnvironmentProviderInspector: Sendable {
           "an environment generation is selected without ownership"
         )
       }
+      let neovim = EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      let nativeNeovim = neovim.isNative(ownership)
       let entries = desiredEntries(
         profile: composition.profile,
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
-      )
+      ).map { entry in
+        guard entry.id == .neovim, nativeNeovim else { return entry }
+        return EnvironmentManagedEntry(
+          id: entry.id, url: entry.url, kind: entry.kind, target: neovim.nativeRoot.path)
+      }
       let setupContext = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
       var legacyIDs = Set<String>()
       if entries.contains(where: { $0.id == .kitty }) { legacyIDs.insert("kitty.include") }
@@ -183,9 +189,7 @@ struct EnvironmentProviderInspector: Sendable {
       )
       for record in ownership?.records ?? [] {
         guard let entry = allowed[record.id],
-          record.publicPath == entry.url.path,
-          record.managedKind == entry.kind.rawValue,
-          record.managedTarget == entry.target
+          neovim.allows(record, entry: entry)
         else {
           throw EnvironmentLifecycleError.blocked(
             "ownership for \(record.id.rawValue) contains an unexpected provider path or target"
@@ -263,6 +267,7 @@ struct EnvironmentProviderInspector: Sendable {
             throw EnvironmentLifecycleError.drift("ownership for \(entry.id.rawValue) is invalid")
           }
           let exact = try managedEntryIsExact(entry)
+          if exact, entry.id == .neovim, nativeNeovim { try neovim.validateNativeTree() }
           inspections.append(
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
@@ -270,7 +275,12 @@ struct EnvironmentProviderInspector: Sendable {
               status: exact ? .managed : .drifted,
               ownership: "macarchy",
               message: exact
-                ? "The provider entry is managed." : "The managed provider entry drifted.",
+                ? (entry.id == .neovim
+                  ? (nativeNeovim
+                    ? "Neovim behavior and Lazy lock are user-owned; only the entry and theme bridges are managed."
+                    : "Neovim configuration is immutable; interactive Lazy writes require environment migrate-neovim.")
+                  : "The provider entry is managed.")
+                : "The managed provider entry drifted.",
               evidence: nil
             )
           )

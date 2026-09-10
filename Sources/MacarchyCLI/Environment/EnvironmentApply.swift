@@ -766,8 +766,19 @@ struct EnvironmentApplyCommandRunner: Sendable {
         homeDirectory: homeDirectory,
         runtime: herdrRuntime
       )
-      let neovimVerification = neovim.prepare(profile.environment, homeDirectory)
-      neovimPluginPreparationRan = neovimVerification != nil
+      // After reviewed native migration, Lazy and its writable lock belong to the
+      // user. Environment reapply must not restore the immutable seed's plugin graph.
+      let nativeNeovim = EnvironmentNeovimMigration(
+        homeDirectory: homeDirectory, stateRoot: stateRoot
+      )
+      .isNative(try EnvironmentStateStore(stateRoot: stateRoot).readOwnership())
+      let neovimVerification: EnvironmentVerification? =
+        nativeNeovim && profile.environment.editor == .neovim
+        ? EnvironmentVerification(
+          id: "neovim_plugin_ownership", status: "verified",
+          message: "Neovim plugin management is user-owned; no install, update or restore was run.")
+        : neovim.prepare(profile.environment, homeDirectory)
+      neovimPluginPreparationRan = !nativeNeovim && neovimVerification != nil
       if let neovimVerification, neovimVerification.status != "verified" {
         throw EnvironmentLifecycleError.blocked(neovimVerification.message)
       }

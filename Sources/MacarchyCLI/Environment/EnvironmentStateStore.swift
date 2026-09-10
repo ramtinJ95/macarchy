@@ -44,7 +44,7 @@ struct EnvironmentStateStore: Sendable {
   func readTransaction() throws -> EnvironmentTransaction? {
     try read(EnvironmentTransaction.self, at: transactionURL) { value in
       value.schemaVersion == EnvironmentTransaction.currentSchemaVersion
-        && (![.apply, .herdrTheme].contains(value.operation)
+        && (![.apply, .herdrTheme, .neovimMigration].contains(value.operation)
           || value.proposedOwnership != nil)
         && (value.previousOwnership?.hasValidShape ?? true)
         && (value.proposedOwnership?.hasValidShape ?? true)
@@ -188,6 +188,24 @@ struct EnvironmentStateStore: Sendable {
   }
 
   private static func providerReplacementsAreValid(_ transaction: EnvironmentTransaction) -> Bool {
+    if transaction.operation == .neovimMigration {
+      guard let previous = transaction.previousOwnership,
+        let proposed = transaction.proposedOwnership,
+        let old = previous.records.first(where: { $0.id == .neovim }),
+        let new = proposed.records.first(where: { $0.id == .neovim })
+      else { return false }
+      return old.managedTarget != new.managedTarget
+        && previous.replacingNeovimTarget(new.managedTarget) == proposed
+        && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
+        && transaction.previousThemeGenerationID == nil
+        && transaction.rollbackThemeBridges.isEmpty
+        && transaction.btopReplacementName == nil && transaction.codexReplacementName == nil
+        && transaction.herdrReplacementName == nil && transaction.piReplacementName == nil
+        && transaction.spicetifyReplacementName == nil && transaction.tuicrReplacementName == nil
+        && transaction.herdrRuntimeVerified == nil && transaction.herdrLegacyMigration == nil
+        && transaction.spicetifyRuntimeVerified == nil
+        && transaction.spicetifyRuntimeDeferred == nil
+    }
     if transaction.operation == .herdrTheme {
       guard let previous = transaction.previousOwnership,
         let proposed = transaction.proposedOwnership,

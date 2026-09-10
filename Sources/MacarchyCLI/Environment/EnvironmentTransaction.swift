@@ -3,6 +3,7 @@ import ThemeCore
 enum EnvironmentTransactionOperation: String, Codable, Sendable {
   case apply
   case herdrTheme = "herdr_theme"
+  case neovimMigration = "neovim_migration"
   case teardown
 }
 
@@ -167,7 +168,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       spicetifyRuntimeVerified: nil,
       tuicrReplacementName: tuicrReplacementName,
       bordersPreviousRuntime: bordersPreviousRuntime,
-      bordersRuntimeTarget: operation == .herdrTheme
+      bordersRuntimeTarget: [.herdrTheme, .neovimMigration].contains(operation)
         ? nil
         : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership),
       bordersRuntimeAttempted: bordersRuntimeAttempted

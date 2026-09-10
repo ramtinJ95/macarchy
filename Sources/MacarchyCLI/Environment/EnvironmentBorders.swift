@@ -174,7 +174,7 @@ extension EnvironmentTransaction {
 
   var bordersRuntimeIsValid: Bool {
     let expected: EnvironmentBordersRuntimeTarget? =
-      operation == .herdrTheme
+      [.herdrTheme, .neovimMigration].contains(operation)
       ? nil
       : direction == .forward
         ? .required(from: previousOwnership, to: proposedOwnership)
