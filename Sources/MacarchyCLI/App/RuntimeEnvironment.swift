@@ -23,7 +23,7 @@ struct InvalidBuildInformationError: Error, CustomStringConvertible, Equatable {
 }
 
 struct RuntimeEnvironment: Sendable {
-  static let sourceVersion = "0.9.3"
+  static let sourceVersion = "0.9.4"
 
   static let live = RuntimeEnvironment(
     executableURL: Bundle.main.executableURL
