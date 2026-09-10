@@ -7,6 +7,27 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-09-10
+
+### Fixed
+
+- Add an explicitly reviewed Neovim migration that preserves the active setup as
+  writable user-owned configuration, allowing Lazy to write its lockfile. Only
+  the entry and four theme bridges remain managed; reapply preserves user edits
+  and does not restore the stock plugin graph. Rollback and teardown retain the
+  writable copy without modifying the old dotfiles configuration.
+
+### Changed
+
+- Guided setup now uses one keyboard selection menu and one reviewed Install &
+  apply confirmation instead of a sequence of yes/no questions.
+
+### Known limitations
+
+- Neovim migration is opt-in through `macarchy environment migrate-neovim`;
+  installation alone does not migrate an existing configuration. Restart Neovim
+  afterward. GitHub connection timeouts are a separate network issue.
+
 ## [0.9.0] - 2026-09-08
 
 ### Added
@@ -469,7 +490,8 @@ unqualified; review plans and reported prerequisites before applying changes.
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/ramtinJ95/macarchy/compare/v0.9.3...v0.9.4
 [0.9.0]: https://github.com/ramtinJ95/macarchy/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/ramtinJ95/macarchy/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/ramtinJ95/macarchy/compare/v0.8.1...v0.8.2
