@@ -7,6 +7,15 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-09-10
+
+### Fixed
+
+- Recognize the exact managed theme links created by Neovim native migration.
+  Version 0.9.4 could report false theme drift and block theme activation even
+  though Neovim startup and its writable lockfile worked. Keep strict destination,
+  loader and watcher-root validation; no repeat migration or config edits needed.
+
 ## [0.9.4] - 2026-09-10
 
 ### Fixed
@@ -490,7 +499,8 @@ unqualified; review plans and reported prerequisites before applying changes.
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/ramtinJ95/macarchy/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/ramtinJ95/macarchy/compare/v0.9.3...v0.9.4
 [0.9.0]: https://github.com/ramtinJ95/macarchy/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/ramtinJ95/macarchy/compare/v0.8.2...v0.8.3
