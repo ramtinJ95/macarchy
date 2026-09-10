@@ -61,6 +61,20 @@ struct EnvironmentNeovimMigrationTests {
     try migration.validateNativeTree()
     #expect(try Data(contentsOf: migration.nativeRoot.appending(path: "lazy-lock.json")) == oldLock)
 
+    // The real consumer must accept the migrated topology, not just the owner.
+    try fixture.activateTheme()
+    let active = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let adapter = NeovimAdapter(
+      root: fixture.state, configurationDirectoryURL: migration.publicURL,
+      executableURL: NeovimAdapter.liveExecutableURL, controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(
+          terminationStatus: 0, output: "MACARCHY_THEME=\(active.generationID):\(active.themeID)")
+      })
+    let inspected = adapter.inspection(includeRuntimeChecks: true)
+    #expect(inspected.status == .ready, "\(inspected.message ?? "no diagnostic")")
+    #expect(try await adapter.reconciliation().run().status == .applied)
+
     let lock = migration.publicURL.appending(path: "lazy-lock.json")
     let options = migration.publicURL.appending(path: "lua/config/options.lua")
     #expect(access(lock.path, W_OK) == 0)

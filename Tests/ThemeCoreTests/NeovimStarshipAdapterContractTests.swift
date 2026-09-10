@@ -119,8 +119,8 @@ extension AdapterContractTests {
     #expect(neovim.inspection().status == .drifted)
   }
 
-  @Test
-  func neovimRuntimeInspectionExposesRejectedActivePalette() async throws {
+  @Test(arguments: [false, true])
+  func neovimRuntimeInspectionExposesRejectedActivePalette(linkedLoader: Bool) async throws {
     let root = try temporaryDirectory()
     defer {
       makeWritableForRemoval(root)
@@ -135,8 +135,18 @@ extension AdapterContractTests {
     try writeBackgroundAwareWatcher(at: neovimDirectory, managedRoot: root)
     try "\(NeovimAdapter.integrationDirective)\n".write(
       to: plugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
+    let publicLoader = macarchy.appending(path: "current.lua")
+    let themeLoader =
+      linkedLoader
+      ? root.appending(path: "environment/current/neovim/lua/macarchy/current.lua")
+      : publicLoader
+    if linkedLoader {
+      try FileManager.default.createDirectory(
+        at: themeLoader.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try FileManager.default.createSymbolicLink(at: publicLoader, withDestinationURL: themeLoader)
+    }
     try "\(NeovimAdapter.managedThemeLoaderDirective(root: root))\n".write(
-      to: macarchy.appending(path: "current.lua"),
+      to: themeLoader,
       atomically: true,
       encoding: .utf8
     )
@@ -158,7 +168,15 @@ extension AdapterContractTests {
     #expect(reconciliation.status == .failed)
     #expect(reconciliation.message == "Aether palette mismatch")
 
-    let themeLoader = macarchy.appending(path: "current.lua")
+    if linkedLoader {
+      let unknown = root.appending(path: "unknown-loader.lua")
+      try FileManager.default.copyItem(at: themeLoader, to: unknown)
+      try FileManager.default.removeItem(at: publicLoader)
+      try FileManager.default.createSymbolicLink(at: publicLoader, withDestinationURL: unknown)
+      #expect(adapter.inspection().status == .drifted)
+      try FileManager.default.removeItem(at: publicLoader)
+      try FileManager.default.createSymbolicLink(at: publicLoader, withDestinationURL: themeLoader)
+    }
     try "\(NeovimAdapter.managedThemeLoaderDirective(root: root.appending(path: "wrong-state")))\n"
       .write(
         to: themeLoader,
