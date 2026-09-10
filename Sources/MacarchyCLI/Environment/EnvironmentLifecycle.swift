@@ -69,7 +69,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     switch transaction.direction {
     case .forward:
       switch transaction.operation {
-      case .apply, .herdrTheme:
+      case .apply, .herdrTheme, .neovimMigration:
         guard let proposed = transaction.proposedOwnership else {
           throw EnvironmentLifecycleError.blocked("apply recovery has no proposed ownership")
         }
@@ -87,7 +87,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
           piReplacementName: transaction.piReplacementName,
           spicetifyReplacementName: transaction.spicetifyReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName,
-          herdrThemeOnly: transaction.operation == .herdrTheme
+          herdrThemeOnly: transaction.operation == .herdrTheme,
+          neovimOnly: transaction.operation == .neovimMigration
         )
         if transaction.operation == .apply {
           try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
@@ -118,12 +119,15 @@ struct EnvironmentTransactionCoordinator: Sendable {
         spicetifyReplacementName: transaction.spicetifyReplacementName,
         tuicrReplacementName: transaction.tuicrReplacementName,
         preserveLegacyHerdrOnRemoval: preserveLegacyHerdr,
-        herdrThemeOnly: transaction.operation == .herdrTheme
+        herdrThemeOnly: transaction.operation == .herdrTheme,
+        neovimOnly: transaction.operation == .neovimMigration
       )
-      try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
-        transaction.previousCurrentDestination
-      )
-      try restoreRollbackThemeBridges(transaction)
+      if transaction.operation != .neovimMigration {
+        try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
+          transaction.previousCurrentDestination
+        )
+        try restoreRollbackThemeBridges(transaction)
+      }
       try store.writeOwnership(transaction.previousOwnership)
     }
 
@@ -143,6 +147,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
 
     switch (transaction.direction, transaction.operation) {
+    case (.forward, .neovimMigration):
+      break
     case (.forward, .apply), (.forward, .herdrTheme):
       if let proposed = transaction.proposedOwnership,
         proposed.herdr?.migratedLegacy == true, !proposed.herdrEnabled
@@ -811,8 +817,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
     spicetifyReplacementName: String?,
     tuicrReplacementName: String?,
     preserveLegacyHerdrOnRemoval: Bool = false,
-    herdrThemeOnly: Bool = false
+    herdrThemeOnly: Bool = false,
+    neovimOnly: Bool = false
   ) throws {
+    if neovimOnly {
+      guard let old, let new else {
+        throw EnvironmentLifecycleError.blocked(
+          "Neovim migration requires both ownership snapshots")
+      }
+      try EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        .transition(from: old, to: new)
+      return
+    }
     if herdrThemeOnly {
       // A theme transaction carries the full aggregate receipt but authorizes
       // only Herdr's generated surface, including forward/rollback recovery.
@@ -1022,9 +1038,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     )
     for record in ownership.records {
       guard let entry = allowed[record.id],
-        record.publicPath == entry.url.path,
-        record.managedKind == entry.kind.rawValue,
-        record.managedTarget == entry.target
+        EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .allows(record, entry: entry)
       else {
         throw EnvironmentLifecycleError.blocked(
           "ownership for \(record.id.rawValue) contains an unexpected provider path or target"

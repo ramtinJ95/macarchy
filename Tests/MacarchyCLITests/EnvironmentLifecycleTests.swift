@@ -1473,7 +1473,7 @@ private func recordingThemeController(
   )
 }
 
-private struct EnvironmentLifecycleFixture {
+struct EnvironmentLifecycleFixture {
   let root: URL
   let home: URL
   let state: URL

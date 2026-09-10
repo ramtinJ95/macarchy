@@ -161,6 +161,10 @@ struct EnvironmentPlanCommandRunner: Sendable {
         return (artifact.path, contents)
       }
     )
+    let nativeNeovimRoot = homeDirectory.flatMap { home -> URL? in
+      let migration = EnvironmentNeovimMigration(homeDirectory: home, stateRoot: stateRoot)
+      return migration.isNative(provider?.ownership) ? migration.nativeRoot : nil
+    }
     let report = EnvironmentPlanReport(
       outcome: blocked ? "blocked" : "ready",
       profile: profileURL.path,
@@ -179,7 +183,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       zshHookDigest: composition.zshHookDigest,
       starshipBehavior: composition.starshipBehaviorURL?.path,
       atuinConfiguration: composition.atuinConfigurationURL?.path,
-      neovimConfiguration: composition.neovimConfigurationURL?.path,
+      neovimConfiguration: nativeNeovimRoot?.path ?? composition.neovimConfigurationURL?.path,
       renderedArtifacts: renderedArtifacts,
       renderedArtifactDigests: Dictionary(
         uniqueKeysWithValues: composition.artifacts.map { ($0.path, $0.digest) }
@@ -194,6 +198,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       entries: provider?.entries ?? [],
       actions: Self.actions(
         for: composition.profile,
+        nativeNeovim: nativeNeovimRoot != nil,
         adoptionRequired: provider?.adoptionEvidenceDigest != nil,
         restorationRequired: provider?.entries.contains {
           $0.status == .restorationRequired
@@ -206,6 +211,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
 
   private static func actions(
     for profile: EnvironmentProfile,
+    nativeNeovim: Bool,
     adoptionRequired: Bool,
     restorationRequired: Bool
   ) -> [EnvironmentPlanAction] {
@@ -254,15 +260,19 @@ struct EnvironmentPlanCommandRunner: Sendable {
       actions.append(
         EnvironmentPlanAction(
           id: "configure_neovim",
-          message: "Configure Neovim behavior and canonical theme integration."
+          message: nativeNeovim
+            ? "Preserve writable Neovim behavior and Lazy lock; update only canonical theme integration."
+            : "Configure immutable Neovim behavior and canonical theme integration. Use environment migrate-neovim before interactive Lazy changes."
         )
       )
-      actions.append(
-        EnvironmentPlanAction(
-          id: "restore_neovim_plugins",
-          message: "Restore the selected Neovim plugin graph from its lock using Lazy."
+      if !nativeNeovim {
+        actions.append(
+          EnvironmentPlanAction(
+            id: "restore_neovim_plugins",
+            message: "Restore the selected Neovim plugin graph from its lock using Lazy."
+          )
         )
-      )
+      }
     }
     if profile.tools.bat {
       actions.append(
