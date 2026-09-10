@@ -7,6 +7,7 @@ enum NeovimAdapterError: Error, CustomStringConvertible, Sendable {
   case controlUnavailable(URL)
   case invalidMapping(String)
   case missingIntegration(String)
+  case unexpectedThemeLink(URL, expected: URL)
   case runtimeValidationFailed(String)
 
   var description: String {
@@ -21,6 +22,8 @@ enum NeovimAdapterError: Error, CustomStringConvertible, Sendable {
       "Neovim mapping '\(mapping)' must be a colorscheme name"
     case .missingIntegration(let directive):
       "Neovim theme configuration must contain '\(directive)'"
+    case .unexpectedThemeLink(let url, let expected):
+      "Neovim theme link at \(url.path) must point to \(expected.path)"
     case .runtimeValidationFailed(let message):
       message
     }
@@ -40,6 +43,10 @@ package struct NeovimAdapter: Sendable {
   package static let aetherCommit = "567efb778534e11ee1072d4fe27178f705a27d8a"
   package static let aetherCommitDirective = "commit = \"\(aetherCommit)\","
   package static let outputPath = "generated/neovim.lua"
+  package static let managedThemePaths = [
+    "colors/macarchy-imported.lua", "lua/config/macarchy-theme.lua",
+    "lua/macarchy/current.lua", "lua/plugins/colorscheme.lua",
+  ]
   static let rendererVersion = 4
   package static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/nvim")
 
@@ -113,8 +120,16 @@ package struct NeovimAdapter: Sendable {
   private func validateThemeLoader() throws -> Bool {
     var metadata = stat()
     if lstat(themeLoaderURL.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFLNK {
-      try themeLink.validate()
-      return false
+      let destination = try FileManager.default.destinationOfSymbolicLink(
+        atPath: themeLoaderURL.path)
+      let managedLoader = root.appending(
+        path: "environment/current/neovim/lua/macarchy/current.lua")
+      if destination != managedLoader.path {
+        try themeLink.validate()
+        return false
+      }
+      // Native migration links to the managed loader, not directly to theme data.
+      // Its bytes and watcher root must pass the same checks as the inline loader.
     }
     let directive = Self.managedThemeLoaderDirective(root: root)
     guard
@@ -301,7 +316,17 @@ package struct NeovimAdapter: Sendable {
   }
 
   private func readConfiguration(at url: URL) throws -> String {
-    try AdapterConfigurationFile.readUTF8(
+    if let path = Self.managedThemePaths.first(where: {
+      configurationDirectoryURL.appending(path: $0) == url
+    }) {
+      let managed = root.appending(path: "environment/current/neovim/\(path)")
+      return try AdapterConfigurationFile.readUTF8(
+        at: url, managedDestination: managed,
+        tooLarge: NeovimAdapterError.configurationTooLarge(url),
+        unreadable: NeovimAdapterError.cannotReadConfiguration(url),
+        unexpectedLink: { _ in NeovimAdapterError.unexpectedThemeLink(url, expected: managed) })
+    }
+    return try AdapterConfigurationFile.readUTF8(
       at: url,
       tooLarge: NeovimAdapterError.configurationTooLarge(url),
       unreadable: NeovimAdapterError.cannotReadConfiguration(url)
@@ -351,7 +376,8 @@ package struct NeovimAdapter: Sendable {
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {
     switch error {
-    case is CanonicalThemeLinkError, NeovimAdapterError.missingIntegration:
+    case is CanonicalThemeLinkError, NeovimAdapterError.missingIntegration,
+      NeovimAdapterError.unexpectedThemeLink:
       true
     default:
       false

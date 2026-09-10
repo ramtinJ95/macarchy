@@ -5,10 +5,7 @@ import ThemeCore
 /// The native tree is user-owned and deliberately outside the removable runtime root.
 /// Only its four theme bridges and the public entry link remain Macarchy-owned.
 struct EnvironmentNeovimMigration: Sendable {
-  static let themePaths = [
-    "colors/macarchy-imported.lua", "lua/config/macarchy-theme.lua",
-    "lua/macarchy/current.lua", "lua/plugins/colorscheme.lua",
-  ]
+  static let themePaths = NeovimAdapter.managedThemePaths
   let homeDirectory: URL
   let stateRoot: URL
 
