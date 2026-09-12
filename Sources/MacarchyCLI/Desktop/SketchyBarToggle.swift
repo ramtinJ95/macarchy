@@ -230,7 +230,7 @@ extension Desktop {
       guard let started = SketchyBarToggle.processStart(getpid()) else {
         throw ToggleError.processQuery
       }
-      _ = try lock.withLockIfAvailable(root: URL(filePath: stateRoot)) {
+      try lock.withLockIfAvailable(root: URL(filePath: stateRoot)) {
         try SketchyBarToggle(
           processRunner: .live, uptime: { ProcessInfo.processInfo.systemUptime },
           distance: SketchyBarToggle.cursorDistanceFromTop,

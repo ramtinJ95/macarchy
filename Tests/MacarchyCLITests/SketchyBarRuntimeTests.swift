@@ -174,7 +174,7 @@ struct SketchyBarRuntimeTests {
     }
   }
 
-  @Test(arguments: ["external", "misplaced", "preview", "events", "error"])
+  @Test(arguments: ["external", "misplaced", "preview", "events", "error", "updates"])
   func calendarVerifiesAdaptivePlacementPreviewStateAndSubscriptions(condition: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -192,6 +192,10 @@ struct SketchyBarRuntimeTests {
           }
           if condition == "error" {
             output = output.replacingOccurrences(of: "Mon 01 Jan 12:00", with: "ERR")
+          }
+          if condition == "updates" {
+            output = output.replacingOccurrences(
+              of: "\"updates\":\"on\"", with: "\"updates\":\"when_shown\"")
           }
         }
         if request.arguments == ["--query", SketchyBarCalendar.previewItem], condition == "preview"
@@ -252,7 +256,8 @@ struct SketchyBarRuntimeTests {
             label: "Mon 01 Jan 12:00",
             labelDrawing: "on",
             script: fixture.clockScript,
-            updateFrequency: 30
+            updateFrequency: 30,
+            updates: "on"
           )
         )
       case ["--query", "macarchy.theme.ready"]:
@@ -324,7 +329,8 @@ struct SketchyBarRuntimeTests {
             label: "Mon 01 Jan 12:00",
             labelDrawing: "on",
             script: fixture.clockScript,
-            updateFrequency: 30
+            updateFrequency: 30,
+            updates: "on"
           )
         )
       case ["--query", "macarchy.theme.ready"]:
@@ -989,7 +995,12 @@ struct SketchyBarRuntimeTests {
             )
           }
         }
-        return Self.dynamicResult(request, fixture: fixture, indices: [1])
+        let result = Self.dynamicResult(request, fixture: fixture, indices: [1])
+        // Current-generation checks must not reject a restored older clock.
+        return ProcessResult(
+          terminationStatus: result.terminationStatus,
+          output: result.output.replacingOccurrences(
+            of: "\"updates\":\"on\"", with: "\"updates\":\"when_shown\""))
       },
       waitForSettle: { waits.withLock { $0 += 1 } },
       waitForPresentation: {}, hasExternalDisplay: { false }
@@ -1040,7 +1051,8 @@ struct SketchyBarRuntimeTests {
           label: "Mon 01 Jan 12:00",
           labelDrawing: "on",
           script: fixture.clockScript,
-          updateFrequency: 30
+          updateFrequency: 30,
+          updates: "on"
         )
       )
     case (

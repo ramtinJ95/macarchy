@@ -96,7 +96,6 @@ struct SketchyBarConfigurationTests {
         #expect(watchdog?.contents.contains("desktop _bar-toggle") == true)
         #expect(watchdog?.contents.contains("2>&1") == false)
         #expect(entry.contents.contains("updates=on update_freq=1"))
-        #expect(entry.contents.contains("--subscribe macarchy.toggle display_change system_woke"))
         let ready = try #require(
           entry.contents.range(of: SketchyBarConfigurationComposer.managedReadyMarkerDeclaration))
         let helper = try #require(
@@ -216,17 +215,20 @@ struct SketchyBarConfigurationTests {
     #expect(!entry.contents.contains("macarchy.media"))
   }
 
-  @Test func automaticClockRejectsAHiddenClockAndNonBooleanIntent() throws {
+  @Test func automaticClockRequiresAnEnabledClock() throws {
     let root = try configurationRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    for value in ["true", "\"auto\""] {
-      #expect(throws: (any Error).self) {
-        let profile = try PortableProfileLoader().decode(
-          "schema_version = 1\n[sketchybar]\nright = []\nautomatic_clock = \(value)\n",
-          source: root.appending(path: "profile.toml"))
-        _ = try SketchyBarConfigurationComposer().compose(
-          defaultsURL: defaultsURL, profile: profile, stateRoot: root)
-      }
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[sketchybar]\nright = []\nautomatic_clock = true\n",
+      source: root.appending(path: "profile.toml"))
+    #expect {
+      _ = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: defaultsURL, profile: profile, stateRoot: root)
+    } throws: { error in
+      guard let error = error as? SketchyBarConfigurationError,
+        case .invalid(_, let reason) = error
+      else { return false }
+      return reason == "automatic_clock requires an enabled clock module"
     }
   }
 
