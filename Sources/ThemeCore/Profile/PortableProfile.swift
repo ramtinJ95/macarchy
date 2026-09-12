@@ -86,15 +86,18 @@ package struct KittyProfileOptions: Equatable, Sendable {
   package let backgroundOpacity: Double?
   package let backgroundBlur: Int?
   package let overrideDirectoryURL: URL?
+  package var configurationURL: URL? = nil
 }
 
 package struct ZshProfileOptions: Equatable, Sendable {
   package let editor: String?
   package let hookURL: URL?
+  package var configurationURL: URL? = nil
 }
 
 package struct StarshipProfileOptions: Equatable, Sendable {
   package let behaviorURL: URL?
+  package var nativeConfigurationURL: URL? = nil
 }
 
 package struct AtuinProfileOptions: Equatable, Sendable {
@@ -103,10 +106,12 @@ package struct AtuinProfileOptions: Equatable, Sendable {
   package let enterAccept: Bool?
   package let daemon: Bool?
   package let configurationURL: URL?
+  package var nativeConfigurationURL: URL? = nil
 }
 
 package struct NeovimProfileOptions: Equatable, Sendable {
   package let configurationDirectoryURL: URL?
+  package var nativeConfigurationDirectoryURL: URL? = nil
 }
 
 package struct DailyToolsProfile: Equatable, Sendable {
@@ -235,19 +240,24 @@ package struct PortableProfileLoader: Sendable {
     "kitty.background_opacity",
     "kitty.background_blur",
     "kitty.override",
+    "kitty.configuration",
     "shell.provider",
     "zsh.editor",
     "zsh.hook",
+    "zsh.configuration",
     "prompt.provider",
     "starship.behavior",
+    "starship.native_configuration",
     "history.provider",
     "atuin.search_mode",
     "atuin.keymap_mode",
     "atuin.enter_accept",
     "atuin.daemon",
     "atuin.configuration",
+    "atuin.native_configuration",
     "editor.provider",
     "neovim.configuration",
+    "neovim.native_configuration",
     "tools.bat",
     "tools.eza",
     "tools.btop",
@@ -611,6 +621,10 @@ package struct PortableProfileLoader: Sendable {
           base: base,
           source: source
         )
+      },
+      nativeConfigurationURL: try document.starship?.nativeConfiguration.map {
+        try Self.resolveNativeSourcePath(
+          $0, field: "starship.native_configuration", base: base, source: source)
       }
     )
     let atuin = try atuin(document.atuin, source: source, base: base)
@@ -622,6 +636,10 @@ package struct PortableProfileLoader: Sendable {
           base: base,
           source: source
         )
+      },
+      nativeConfigurationDirectoryURL: try document.neovim?.nativeConfiguration.map {
+        try Self.resolveNativeSourcePath(
+          $0, field: "neovim.native_configuration", base: base, source: source)
       }
     )
     return EnvironmentProfile(
@@ -693,6 +711,10 @@ package struct PortableProfileLoader: Sendable {
       backgroundBlur: options?.backgroundBlur,
       overrideDirectoryURL: try options?.override.map {
         try Self.resolvePortablePath($0, field: "kitty.override", base: base, source: source)
+      },
+      configurationURL: try options?.configuration.map {
+        try Self.resolveNativeSourcePath(
+          $0, field: "kitty.configuration", base: base, source: source)
       }
     )
   }
@@ -719,6 +741,9 @@ package struct PortableProfileLoader: Sendable {
       editor: options?.editor,
       hookURL: try options?.hook.map {
         try Self.resolvePortablePath($0, field: "zsh.hook", base: base, source: source)
+      },
+      configurationURL: try options?.configuration.map {
+        try Self.resolveNativeSourcePath($0, field: "zsh.configuration", base: base, source: source)
       }
     )
   }
@@ -756,6 +781,10 @@ package struct PortableProfileLoader: Sendable {
           base: base,
           source: source
         )
+      },
+      nativeConfigurationURL: try options?.nativeConfiguration.map {
+        try Self.resolveNativeSourcePath(
+          $0, field: "atuin.native_configuration", base: base, source: source)
       }
     )
   }
@@ -773,6 +802,25 @@ package struct PortableProfileLoader: Sendable {
       )
     }
     return selection
+  }
+
+  /// Native sources are explicit user-owned connections, not bounded copied inputs.
+  /// Provider validation still excludes generated state and public adoption entries.
+  private static func resolveNativeSourcePath(
+    _ path: String, field: String, base: URL, source: URL
+  ) throws -> URL {
+    guard !path.isEmpty, path == path.trimmingCharacters(in: .whitespacesAndNewlines),
+      !path.hasPrefix("~"),
+      !path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+    else {
+      throw KeybindingProfileError.invalid(
+        source,
+        "\(field) must be an explicit absolute or profile-relative path without tilde expansion or control characters"
+      )
+    }
+    return
+      (NSString(string: path).isAbsolutePath ? URL(filePath: path) : base.appending(path: path))
+      .standardizedFileURL
   }
 
   private static func resolvePortablePath(
@@ -1163,6 +1211,11 @@ package struct PortableProfileLoader: Sendable {
             "kitty.override",
             portableProfile.environment.kitty.overrideDirectoryURL,
             machineProfile.environment.kitty.overrideDirectoryURL
+          ),
+          configurationURL: value(
+            "kitty.configuration",
+            portableProfile.environment.kitty.configurationURL,
+            machineProfile.environment.kitty.configurationURL
           )
         ),
         zsh: ZshProfileOptions(
@@ -1171,13 +1224,21 @@ package struct PortableProfileLoader: Sendable {
             machineProfile.environment.zsh.editor),
           hookURL: value(
             "zsh.hook", portableProfile.environment.zsh.hookURL,
-            machineProfile.environment.zsh.hookURL)
+            machineProfile.environment.zsh.hookURL),
+          configurationURL: value(
+            "zsh.configuration", portableProfile.environment.zsh.configurationURL,
+            machineProfile.environment.zsh.configurationURL)
         ),
         starship: StarshipProfileOptions(
           behaviorURL: value(
             "starship.behavior",
             portableProfile.environment.starship.behaviorURL,
             machineProfile.environment.starship.behaviorURL
+          ),
+          nativeConfigurationURL: value(
+            "starship.native_configuration",
+            portableProfile.environment.starship.nativeConfigurationURL,
+            machineProfile.environment.starship.nativeConfigurationURL
           )
         ),
         atuin: AtuinProfileOptions(
@@ -1205,6 +1266,11 @@ package struct PortableProfileLoader: Sendable {
             "atuin.configuration",
             portableProfile.environment.atuin.configurationURL,
             machineProfile.environment.atuin.configurationURL
+          ),
+          nativeConfigurationURL: value(
+            "atuin.native_configuration",
+            portableProfile.environment.atuin.nativeConfigurationURL,
+            machineProfile.environment.atuin.nativeConfigurationURL
           )
         ),
         neovim: NeovimProfileOptions(
@@ -1212,6 +1278,11 @@ package struct PortableProfileLoader: Sendable {
             "neovim.configuration",
             portableProfile.environment.neovim.configurationDirectoryURL,
             machineProfile.environment.neovim.configurationDirectoryURL
+          ),
+          nativeConfigurationDirectoryURL: value(
+            "neovim.native_configuration",
+            portableProfile.environment.neovim.nativeConfigurationDirectoryURL,
+            machineProfile.environment.neovim.nativeConfigurationDirectoryURL
           )
         ),
         tools: tools,
@@ -1497,6 +1568,7 @@ private struct KittyDocument: Decodable {
   let backgroundOpacity: Double?
   let backgroundBlur: Int?
   let override: String?
+  let configuration: String?
 
   enum CodingKeys: String, CodingKey {
     case fontFamily = "font_family"
@@ -1504,6 +1576,7 @@ private struct KittyDocument: Decodable {
     case backgroundOpacity = "background_opacity"
     case backgroundBlur = "background_blur"
     case override
+    case configuration
   }
 }
 
@@ -1514,6 +1587,7 @@ private struct ShellDocument: Decodable {
 private struct ZshDocument: Decodable {
   let editor: String?
   let hook: String?
+  let configuration: String?
 }
 
 private struct PromptDocument: Decodable {
@@ -1522,6 +1596,12 @@ private struct PromptDocument: Decodable {
 
 private struct StarshipDocument: Decodable {
   let behavior: String?
+  let nativeConfiguration: String?
+
+  enum CodingKeys: String, CodingKey {
+    case behavior
+    case nativeConfiguration = "native_configuration"
+  }
 }
 
 private struct HistoryDocument: Decodable {
@@ -1534,6 +1614,7 @@ private struct AtuinDocument: Decodable {
   let enterAccept: Bool?
   let daemon: Bool?
   let configuration: String?
+  let nativeConfiguration: String?
 
   enum CodingKeys: String, CodingKey {
     case searchMode = "search_mode"
@@ -1541,6 +1622,7 @@ private struct AtuinDocument: Decodable {
     case enterAccept = "enter_accept"
     case daemon
     case configuration
+    case nativeConfiguration = "native_configuration"
   }
 }
 
@@ -1550,6 +1632,12 @@ private struct EditorDocument: Decodable {
 
 private struct NeovimDocument: Decodable {
   let configuration: String?
+  let nativeConfiguration: String?
+
+  enum CodingKeys: String, CodingKey {
+    case configuration
+    case nativeConfiguration = "native_configuration"
+  }
 }
 
 private struct DailyToolsDocument: Decodable {
