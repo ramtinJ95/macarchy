@@ -16,8 +16,31 @@ struct EnvironmentNeovimConfiguration {
   func compose(
     resourcesRoot: URL,
     configurationDirectoryURL: URL?,
-    stateRoot: URL
+    stateRoot: URL,
+    nativeConfigurationDirectoryURL: URL? = nil,
+    proposedNativeFiles: [URL: Data] = [:]
   ) throws -> (source: URL, artifacts: [EnvironmentConfigurationArtifact]) {
+    if let source = nativeConfigurationDirectoryURL {
+      guard configurationDirectoryURL == nil else {
+        throw EnvironmentConfigurationError.invalid(
+          source, "neovim.native_configuration cannot be combined with neovim.configuration")
+      }
+      if proposedNativeFiles[source.appending(path: "init.lua")] == nil {
+        _ = try BoundedRegularFile.read(
+          at: source.appending(path: "init.lua").resolvingSymlinksInPath())
+      }
+      let encodedPath = try JSONEncoder().encode(source.path)
+      let artifacts = try composeTheme(
+        themeRoot: resourcesRoot.appending(path: "neovim/theme"), stateRoot: stateRoot)
+      return (
+        source,
+        artifacts + [
+          EnvironmentConfigurationArtifact(
+            path: "neovim/native-source.txt",
+            contents: String(decoding: encodedPath, as: UTF8.self) + "\n")
+        ]
+      )
+    }
     let packaged = resourcesRoot.appending(
       path: "neovim/default",
       directoryHint: .isDirectory
@@ -39,16 +62,7 @@ struct EnvironmentNeovimConfiguration {
     themeRoot: URL,
     stateRoot: URL
   ) throws -> [EnvironmentConfigurationArtifact] {
-    let packagedTheme = try EnvironmentNativeTreeReader().read(
-      at: themeRoot,
-      targetRoot: "neovim",
-      allowLegacyThemeLink: false
-    )
-    let theme = try renderNeovimTheme(
-      packagedTheme.artifacts,
-      source: themeRoot,
-      stateRoot: stateRoot
-    )
+    let theme = try composeTheme(themeRoot: themeRoot, stateRoot: stateRoot)
     let reserved = Dictionary(uniqueKeysWithValues: theme.map { ($0.path, $0) })
     let nativeTree = try EnvironmentNativeTreeReader().read(
       at: source,
@@ -95,6 +109,21 @@ struct EnvironmentNeovimConfiguration {
         .appending(path: "default/lazy-lock.json")
     )
     return effective
+  }
+
+  private func composeTheme(themeRoot: URL, stateRoot: URL) throws
+    -> [EnvironmentConfigurationArtifact]
+  {
+    let packagedTheme = try EnvironmentNativeTreeReader().read(
+      at: themeRoot,
+      targetRoot: "neovim",
+      allowLegacyThemeLink: false
+    )
+    return try renderNeovimTheme(
+      packagedTheme.artifacts,
+      source: themeRoot,
+      stateRoot: stateRoot
+    )
   }
 
   private func renderNeovimTheme(

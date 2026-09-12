@@ -6,6 +6,327 @@ import Testing
 struct EnvironmentConfigurationTests {
   private let composer = EnvironmentConfigurationComposer()
 
+  @Test(arguments: ["relative", "absolute", "linked"])
+  func explicitNativeSourcesMayLeaveTheProfileDirectory(kind: String) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profileRoot = root.appending(path: "macarchy")
+    let userRoot = root.appending(path: "macarchy-user")
+    try FileManager.default.createDirectory(at: profileRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: userRoot, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: profileRoot.appending(path: "user"), withDestinationURL: userRoot)
+    let path = kind == "absolute" ? userRoot.path : kind == "linked" ? "user" : "../macarchy-user"
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    let quoted = String(decoding: try encoder.encode(path), as: UTF8.self)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[zsh]\nconfiguration = \(quoted)\n[kitty]\nconfiguration = \(quoted)\n"
+        + "[atuin]\nnative_configuration = \(quoted)\n[starship]\nnative_configuration = \(quoted)\n"
+        + "[neovim]\nnative_configuration = \(quoted)\n",
+      source: profileRoot.appending(path: "profile.toml"))
+    for source in [
+      profile.environment.zsh.configurationURL, profile.environment.kitty.configurationURL,
+      profile.environment.atuin.nativeConfigurationURL,
+      profile.environment.starship.nativeConfigurationURL,
+      profile.environment.neovim.nativeConfigurationDirectoryURL,
+    ] {
+      #expect(source?.resolvingSymlinksInPath().path == userRoot.path)
+    }
+  }
+
+  @Test(arguments: [
+    "[zsh]\nhook", "[kitty]\noverride", "[atuin]\nconfiguration",
+    "[starship]\nbehavior", "[neovim]\nconfiguration",
+  ])
+  func copiedInputsStillCannotLeaveTheProfileDirectory(field: String) throws {
+    #expect(throws: (any Error).self) {
+      try PortableProfileLoader().decode(
+        "schema_version = 1\n\(field) = \"../outside\"\n",
+        source: URL(filePath: "/tmp/macarchy/profile.toml"))
+    }
+  }
+
+  @Test(arguments: [false, true])
+  func liveSourcesResolveBesideTheirDeclaringProfileAndRetainLayerOrigins(
+    machineOverridesSources: Bool
+  ) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let portableDirectory = root.appending(path: "portable")
+    let machineDirectory = root.appending(path: "machine")
+    for directory in [portableDirectory, machineDirectory] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try FileManager.default.createDirectory(
+        at: directory.appending(path: "nvim"), withIntermediateDirectories: true)
+      try "-- native Lua\n".write(
+        to: directory.appending(path: "nvim/init.lua"), atomically: true, encoding: .utf8)
+      try "export PERSONAL=present\n".write(
+        to: directory.appending(path: "personal.zsh"), atomically: true, encoding: .utf8)
+      try "font_size 17\n".write(
+        to: directory.appending(path: "kitty.conf"), atomically: true, encoding: .utf8)
+      try "[theme]\nname = \"macarchy-current\"\n".write(
+        to: directory.appending(path: "atuin.toml"), atomically: true, encoding: .utf8)
+      try
+        ("palette = \"macarchy_current\"\n"
+        + StarshipAdapter.render(package: AdapterContractTests().catppuccinPackage())).write(
+          to: directory.appending(path: "starship.toml"), atomically: true, encoding: .utf8)
+    }
+    let portable = portableDirectory.appending(path: "profile.toml")
+    let machine = machineDirectory.appending(path: "profile.toml")
+    try """
+    schema_version = 1
+    [zsh]
+    configuration = "personal.zsh"
+    [kitty]
+    configuration = "kitty.conf"
+    [atuin]
+    native_configuration = "atuin.toml"
+    [starship]
+    native_configuration = "starship.toml"
+    [neovim]
+    native_configuration = "nvim"
+    """.write(to: portable, atomically: true, encoding: .utf8)
+    let sources =
+      machineOverridesSources
+      ? "[zsh]\nconfiguration = \"personal.zsh\"\n[kitty]\nconfiguration = \"kitty.conf\"\n[atuin]\nnative_configuration = \"atuin.toml\"\n"
+      : "[zsh]\neditor = \"vi\"\n[kitty]\nfont_size = 19\n"
+    try
+      ("schema_version = 1\n" + sources
+      + (machineOverridesSources
+        ? "[starship]\nnative_configuration = \"starship.toml\"\n[neovim]\nnative_configuration = \"nvim\"\n"
+        : ""))
+      .write(
+        to: machine, atomically: true, encoding: .utf8)
+    let layered = try PortableProfileLoader().load(
+      portableAt: portable, portableRequired: true, machineAt: machine, machineRequired: true)
+    let directory = machineOverridesSources ? machineDirectory : portableDirectory
+    let origin: PortableProfileLayerKind = machineOverridesSources ? .machine : .portable
+    #expect(
+      layered.profile.environment.zsh.configurationURL == directory.appending(path: "personal.zsh"))
+    #expect(
+      layered.profile.environment.kitty.configurationURL == directory.appending(path: "kitty.conf"))
+    #expect(layered.fieldOrigins["zsh.configuration"] == origin)
+    #expect(layered.fieldOrigins["kitty.configuration"] == origin)
+    #expect(
+      layered.profile.environment.atuin.nativeConfigurationURL
+        == directory.appending(path: "atuin.toml"))
+    #expect(layered.fieldOrigins["atuin.native_configuration"] == origin)
+    #expect(
+      layered.profile.environment.starship.nativeConfigurationURL
+        == directory.appending(path: "starship.toml"))
+    #expect(layered.fieldOrigins["starship.native_configuration"] == origin)
+    #expect(
+      layered.profile.environment.neovim.nativeConfigurationDirectoryURL?.path
+        == directory.appending(path: "nvim").path)
+    #expect(layered.fieldOrigins["neovim.native_configuration"] == origin)
+    let composition = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: layered.profile, stateRoot: root)
+    #expect(composition.atuinConfigurationURL == directory.appending(path: "atuin.toml"))
+    #expect(composition.starshipBehaviorURL == directory.appending(path: "starship.toml"))
+    #expect(composition.neovimConfigurationURL?.path == directory.appending(path: "nvim").path)
+    #expect(!composition.artifacts.contains { $0.path == "neovim/init.lua" })
+    #expect(!composition.artifacts.contains { $0.path == "neovim/lazy-lock.json" })
+    #expect(
+      try artifact("zsh/.zshrc", in: composition).contains(
+        directory.appending(path: "personal.zsh").path))
+    #expect(
+      try artifact("kitty/kitty.conf", in: composition).contains(
+        directory.appending(path: "kitty.conf").path))
+  }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_KITTY_CONFIG"] == "1"))
+  func installedKittyLoadsLiveIncludesAndTrailingTheme() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "personal kitty.conf")
+    let nested = root.appending(path: "nested.conf")
+    try "font_size 17\nforeground #112233\n".write(to: nested, atomically: true, encoding: .utf8)
+    try "include nested.conf\n".write(to: source, atomically: true, encoding: .utf8)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[kitty]\nconfiguration = \"personal kitty.conf\"\n",
+      source: root.appending(path: "profile.toml"))
+    let composition = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+    let wrapper = root.appending(path: "entry.conf")
+    try artifact("kitty/kitty.conf", in: composition).write(
+      to: wrapper, atomically: true, encoding: .utf8)
+    let bridge = root.appending(path: "state/adapters/kitty.conf")
+    try FileManager.default.createDirectory(
+      at: bridge.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "foreground #abcdef\n".write(to: bridge, atomically: true, encoding: .utf8)
+    let script = root.appending(path: "verify.py")
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    let path = String(data: try encoder.encode(wrapper.path), encoding: .utf8)!
+    try """
+    from kitty.config import load_config
+    errors = []
+    options = load_config(\(path), accumulate_bad_lines=errors)
+    assert not errors, errors
+    assert options.font_size == 17, options.font_size
+    assert int(options.foreground) == 0xabcdef, options.foreground
+    # Complete user configuration does not silently inherit Macarchy's 0.95 opacity.
+    assert options.background_opacity == 1.0, options.background_opacity
+    """.write(to: script, atomically: true, encoding: .utf8)
+    let process = Process()
+    process.executableURL = URL(filePath: "/opt/homebrew/bin/kitty")
+    let scriptPath = String(data: try encoder.encode(script.path), encoding: .utf8)!
+    process.arguments = ["+runpy", "import runpy; runpy.run_path(\(scriptPath))"]
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+  }
+
+  @Test
+  func liveKittyConfigurationSeparatesDefaultsBehaviorAndTrailingTheme() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "personal kitty.conf")
+    try "font_size 14\n".write(to: source, atomically: true, encoding: .utf8)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[kitty]\nconfiguration = \"personal kitty.conf\"\n",
+      source: root.appending(path: "profile.toml"))
+    let first = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+    let wrapper = try artifact("kitty/kitty.conf", in: first)
+    #expect(wrapper == "include \(source.path)\n\ninclude \(root.path)/state/adapters/kitty.conf\n")
+    #expect(try artifact("kitty/defaults.conf", in: first).contains("map ctrl+g>c new_tab"))
+    try "font_size 17\n".write(to: source, atomically: true, encoding: .utf8)
+    let second = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+    #expect(first.inputDigest == second.inputDigest)
+    #expect(first.renderedDigest == second.renderedDigest)
+  }
+
+  @Test(arguments: ["missing.conf", "$PERSONAL.conf", "conflicting.conf"])
+  func liveKittyConfigurationRejectsInvalidConnections(name: String) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    if name != "missing.conf" {
+      try "font_size 14\n".write(to: root.appending(path: name), atomically: true, encoding: .utf8)
+    }
+    let extra = name == "conflicting.conf" ? "override = \"legacy\"\n" : ""
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[kitty]\nconfiguration = \"\(name)\"\n" + extra,
+      source: root.appending(path: "profile.toml"))
+    #expect(throws: EnvironmentConfigurationError.self) {
+      try composer.compose(resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+    }
+  }
+
+  @Test
+  func completePersonalZshOwnsInitializationPathsAndPrivateRuntimeInputs() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "personal.zsh")
+    try #"""
+    export PATH="$HOME/.bun/bin:$HOME/bin:$PATH"
+    alias personal='print preserved'
+    eval "$(starship init zsh)"
+    eval "$(atuin init zsh)"
+    source "$HOME/private.env"
+    """#.write(to: source, atomically: true, encoding: .utf8)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[zsh]\nconfiguration = \"personal.zsh\"\n",
+      source: root.appending(path: "profile.toml"))
+    // The private runtime file does not even exist during composition.
+    let composition = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: root.appending(path: "state"))
+    for directory in ["bin", ".bun/bin"] {
+      try FileManager.default.createDirectory(
+        at: root.appending(path: directory), withIntermediateDirectories: true)
+    }
+    let scripts = [
+      "bin/starship": "#!/bin/sh\nprintf '%s\\n' '(( STARSHIP_COUNT += 1 ))'\n",
+      "bin/atuin": "#!/bin/sh\nprintf '%s\\n' '(( ATUIN_COUNT += 1 ))'\n",
+      ".bun/bin/bunx": "#!/bin/sh\nexit 0\n",
+    ]
+    for (path, script) in scripts {
+      let url = root.appending(path: path)
+      try script.write(to: url, atomically: true, encoding: .utf8)
+      try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+    }
+    try "export PRIVATE_RUNTIME=fixture-only\n".write(
+      to: root.appending(path: "private.env"), atomically: true, encoding: .utf8)
+    #expect(
+      composition.artifacts.allSatisfy { !($0.textContents?.contains("fixture-only") ?? false) })
+    let output = Pipe()
+    let process = Process()
+    process.executableURL = URL(filePath: "/bin/zsh")
+    process.arguments = [
+      "-f", "-c",
+      try artifact("zsh/.zshrc", in: composition)
+        + #"""
+
+        print -r -- "$STARSHIP_COUNT:$ATUIN_COUNT:$MACARCHY_MANAGED_SESSION:$PRIVATE_RUNTIME"
+        command -v bunx
+        alias personal
+        """#,
+    ]
+    process.environment = ["HOME": root.path, "PATH": "/usr/bin:/bin"]
+    process.standardOutput = output
+    process.standardError = output
+    try process.run()
+    process.waitUntilExit()
+    let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    #expect(process.terminationStatus == 0, "\(text)")
+    #expect(text.contains("1:1:1:fixture-only"))
+    #expect(text.contains(root.appending(path: ".bun/bin/bunx").path))
+    #expect(text.contains("print preserved"))
+  }
+
+  @Test
+  func liveZshConfigurationPreservesEditsOutsideGenerationIdentity() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "personal.zsh")
+    try "export PERSONAL=before\n".write(to: source, atomically: true, encoding: .utf8)
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[zsh]\nconfiguration = \"personal.zsh\"\n",
+      source: root.appending(path: "profile.toml")
+    )
+    let first = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+    let wrapper = try artifact("zsh/.zshrc", in: first)
+    #expect(wrapper.contains("source '\(source.path)' || return 1"))
+    #expect(wrapper.contains("MACARCHY_ZSH_DEFAULTS="))
+    #expect(!wrapper.contains("starship init"))
+    #expect(try artifact("zsh/defaults.zsh", in: first).contains("starship init zsh"))
+    try "export PERSONAL=after\n".write(to: source, atomically: true, encoding: .utf8)
+    let second = try composer.compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+    #expect(first.renderedDigest == second.renderedDigest)
+    #expect(first.inputDigest == second.inputDigest)
+    #expect(try String(contentsOf: source, encoding: .utf8) == "export PERSONAL=after\n")
+    let process = Process()
+    process.executableURL = URL(filePath: "/bin/zsh")
+    process.arguments = ["-f", "-c", wrapper + "\nprint -r -- $PERSONAL"]
+    process.environment = ["PATH": "/usr/bin:/bin", "HOME": root.path]
+    let output = Pipe()
+    process.standardOutput = output
+    try process.run()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+    #expect(
+      String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) == "after\n")
+  }
+
+  @Test
+  func liveZshConfigurationRejectsMissingSourcesAndLegacyHookCombination() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    for extra in ["", "hook = \"hook.zsh\"\n"] {
+      let profile = try PortableProfileLoader().decode(
+        "schema_version = 1\n[zsh]\nconfiguration = \"missing.zsh\"\n" + extra,
+        source: root.appending(path: "profile.toml")
+      )
+      #expect(throws: EnvironmentConfigurationError.self) {
+        try composer.compose(resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
+      }
+    }
+  }
+
   @Test
   func optionalPresetsAreClosedTypedAndDisabledByDefault() throws {
     let source = URL(filePath: "/fixtures/profile.toml")

@@ -69,7 +69,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
   package func compose(
     resourcesRoot: URL,
     profile: PortableProfile,
-    stateRoot: URL
+    stateRoot: URL,
+    proposedNativeFiles: [URL: Data] = [:]
   ) throws -> EnvironmentComposition {
     var artifacts: [EnvironmentConfigurationArtifact] = []
     let options = profile.environment
@@ -88,7 +89,9 @@ package struct EnvironmentConfigurationComposer: Sendable {
       let neovim = try EnvironmentNeovimConfiguration().compose(
         resourcesRoot: resourcesRoot,
         configurationDirectoryURL: options.neovim.configurationDirectoryURL,
-        stateRoot: stateRoot
+        stateRoot: stateRoot,
+        nativeConfigurationDirectoryURL: options.neovim.nativeConfigurationDirectoryURL,
+        proposedNativeFiles: proposedNativeFiles
       )
       neovimConfigurationURL = neovim.source
       artifacts.append(contentsOf: neovim.artifacts)
@@ -127,6 +130,26 @@ package struct EnvironmentConfigurationComposer: Sendable {
       let source = resourcesRoot.appending(path: "kitty/defaults.conf")
       var configuration = try readText(at: source)
       configuration = appendKittyOptions(options.kitty, to: configuration)
+      if let nativeSource = options.kitty.configurationURL {
+        guard options.kitty.overrideDirectoryURL == nil else {
+          throw EnvironmentConfigurationError.invalid(
+            nativeSource, "kitty.configuration and kitty.override are mutually exclusive")
+        }
+        _ =
+          try proposedNativeFiles[nativeSource].map { String(decoding: $0, as: UTF8.self) }
+          ?? readText(at: nativeSource.resolvingSymlinksInPath())
+        guard !nativeSource.path.contains("$"),
+          !nativeSource.path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+        else {
+          throw EnvironmentConfigurationError.invalid(
+            nativeSource,
+            "kitty.configuration must not contain control characters or environment expansion")
+        }
+        artifacts.append(
+          EnvironmentConfigurationArtifact(path: "kitty/defaults.conf", contents: configuration)
+        )
+        configuration = "include " + nativeSource.path + "\n"
+      }
       if let overrideURL = options.kitty.overrideDirectoryURL {
         kittyOverrideArtifacts = try readKittyOverride(at: overrideURL)
         configuration = appendLine("include override/kitty.conf", to: configuration)
@@ -143,6 +166,11 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
     let zshHook: (text: String, digest: String)?
     if options.shell == .zsh {
+      if let source = options.zsh.configurationURL, options.zsh.hookURL != nil {
+        throw EnvironmentConfigurationError.invalid(
+          source, "zsh.configuration and zsh.hook are mutually exclusive"
+        )
+      }
       let defaults = resourcesRoot.appending(path: "zsh/defaults.zsh")
       var configuration = try readText(at: defaults)
       if let editor = options.zsh.editor {
@@ -216,6 +244,30 @@ package struct EnvironmentConfigurationComposer: Sendable {
       } else {
         zshHook = nil
       }
+      if let source = options.zsh.configurationURL {
+        // Validate availability without making writable behavior part of generation identity.
+        // The source decides whether and where curated initialization runs.
+        _ =
+          try proposedNativeFiles[source].map { String(decoding: $0, as: UTF8.self) }
+          ?? readText(at: source.resolvingSymlinksInPath())
+        let entry = stateRoot.appending(path: "environment/current/zsh/.zshrc")
+        guard source.resolvingSymlinksInPath() != entry.resolvingSymlinksInPath() else {
+          throw EnvironmentConfigurationError.invalid(
+            source, "zsh.configuration resolves to the managed entry point")
+        }
+        artifacts.append(
+          EnvironmentConfigurationArtifact(path: "zsh/defaults.zsh", contents: configuration)
+        )
+        let quote: (String) -> String = {
+          "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        }
+        configuration = """
+          # User-owned live configuration; Macarchy never rewrites this source.
+          export MACARCHY_ZSH_DEFAULTS=\(quote(stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path))
+          source \(quote(source.path)) || return 1
+          export MACARCHY_MANAGED_SESSION=1
+          """ + "\n"
+      }
       artifacts.append(
         EnvironmentConfigurationArtifact(path: "zsh/.zshrc", contents: configuration)
       )
@@ -225,42 +277,84 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
     var starshipBehaviorURL: URL?
     if options.prompt == .starship {
-      let source =
-        options.starship.behaviorURL
-        ?? resourcesRoot.appending(path: "starship/behavior.toml")
-      starshipBehaviorURL = source
-      let behavior = try readText(at: source)
-      try validateStarship(behavior, source: source)
-      artifacts.append(
-        EnvironmentConfigurationArtifact(
-          path: "starship/behavior.toml",
-          contents: terminated(behavior)
+      if let source = options.starship.nativeConfigurationURL {
+        guard options.starship.behaviorURL == nil else {
+          throw EnvironmentConfigurationError.invalid(
+            source, "starship.native_configuration cannot be combined with starship.behavior")
+        }
+        let native = StarshipNativeConfiguration(url: source.resolvingSymlinksInPath())
+        let data = try proposedNativeFiles[source] ?? native.read()
+        _ = try native.replacingPalette(in: data, with: String(decoding: data, as: UTF8.self))
+        starshipBehaviorURL = source
+        let encodedPath = try JSONEncoder().encode(source.path)
+        artifacts.append(
+          EnvironmentConfigurationArtifact(
+            path: "starship/behavior.toml",
+            contents: "# Native source: " + String(decoding: encodedPath, as: UTF8.self) + "\n"))
+      } else {
+        let source =
+          options.starship.behaviorURL
+          ?? resourcesRoot.appending(path: "starship/behavior.toml")
+        starshipBehaviorURL = source
+        let behavior = try readText(at: source)
+        try validateStarship(behavior, source: source)
+        artifacts.append(
+          EnvironmentConfigurationArtifact(
+            path: "starship/behavior.toml",
+            contents: terminated(behavior)
+          )
         )
-      )
+      }
     }
 
     var atuinConfigurationURL: URL?
     if options.history == .atuin {
-      let source =
-        options.atuin.configurationURL
-        ?? resourcesRoot.appending(path: "atuin/config.toml")
-      atuinConfigurationURL = source
-      var configuration = try readText(at: source)
-      try validateAtuin(configuration, source: source)
-      configuration = try applyAtuinOptions(
-        options.atuin,
-        to: configuration,
-        source: source
-      )
-      try validateEffectiveAtuin(configuration, source: source)
-      configuration = appendSection(
-        "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n",
-        to: configuration
-      )
-      try validateTOML(configuration, source: source, role: "Atuin")
-      artifacts.append(
-        EnvironmentConfigurationArtifact(path: "atuin/config.toml", contents: configuration)
-      )
+      if let source = options.atuin.nativeConfigurationURL {
+        guard options.atuin.configurationURL == nil,
+          options.atuin.searchMode == nil, options.atuin.keymapMode == nil,
+          options.atuin.enterAccept == nil, options.atuin.daemon == nil
+        else {
+          throw EnvironmentConfigurationError.invalid(
+            source,
+            "atuin.native_configuration cannot be combined with copied Atuin behavior options")
+        }
+        let text =
+          try proposedNativeFiles[source].map { String(decoding: $0, as: UTF8.self) }
+          ?? readText(at: source.resolvingSymlinksInPath())
+        guard AtuinAdapter.selectsTheme(in: text) else {
+          throw EnvironmentConfigurationError.invalid(
+            source, "atuin.native_configuration must select the Macarchy theme")
+        }
+        atuinConfigurationURL = source
+        // Only the connection contributes to generation identity, never personal settings.
+        let encodedPath = try JSONEncoder().encode(source.path)
+        artifacts.append(
+          EnvironmentConfigurationArtifact(
+            path: "atuin/config.toml",
+            contents: "# Native source: " + String(decoding: encodedPath, as: UTF8.self)
+              + "\n[theme]\nname = \"\(AtuinAdapter.themeName)\"\n"))
+      } else {
+        let source =
+          options.atuin.configurationURL
+          ?? resourcesRoot.appending(path: "atuin/config.toml")
+        atuinConfigurationURL = source
+        var configuration = try readText(at: source)
+        try validateAtuin(configuration, source: source)
+        configuration = try applyAtuinOptions(
+          options.atuin,
+          to: configuration,
+          source: source
+        )
+        try validateEffectiveAtuin(configuration, source: source)
+        configuration = appendSection(
+          "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n",
+          to: configuration
+        )
+        try validateTOML(configuration, source: source, role: "Atuin")
+        artifacts.append(
+          EnvironmentConfigurationArtifact(path: "atuin/config.toml", contents: configuration)
+        )
+      }
     }
 
     if options.tools.yazi {
