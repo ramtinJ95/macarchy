@@ -95,7 +95,7 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test(arguments: [false, true])
-  func liveZshSourceCannotBeTheEntryBeingAdopted(symlinked: Bool) throws {
+  func standardZshIsUserOwnedButAliasesIntoItAreRejected(symlinked: Bool) throws {
     let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     try "# personal shell\n".write(to: fixture.zshEntry, atomically: true, encoding: .utf8)
@@ -109,8 +109,11 @@ struct EnvironmentLifecycleTests {
     try (original + "\n[zsh]\nconfiguration = \"\(relative)\"\n").write(
       to: fixture.profile, atomically: true, encoding: .utf8)
     let plan = try fixture.plan()
-    #expect(!plan.succeeded)
-    #expect(plan.output.contains("zsh.configuration must live outside"))
+    #expect(plan.succeeded == !symlinked)
+    #expect(
+      plan.output.contains(
+        symlinked
+          ? "zsh.configuration must live outside" : "user_owned_native"))
     #expect(try String(contentsOf: fixture.zshEntry, encoding: .utf8) == "# personal shell\n")
   }
 

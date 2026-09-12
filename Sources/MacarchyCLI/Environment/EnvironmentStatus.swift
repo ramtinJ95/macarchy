@@ -378,7 +378,10 @@ struct EnvironmentSessionVerifier: Sendable {
 
   static let live = Self(
     { profile, homeDirectory in
-      verifyFreshSession(profile, homeDirectory, requireManagedMarker: true)
+      verifyFreshSession(
+        profile, homeDirectory,
+        requireManagedMarker: profile.zsh.configurationURL
+          != homeDirectory.appending(path: ".zshrc"))
     },
     verifyRestored: { profile, homeDirectory in
       verifyFreshSession(profile, homeDirectory, requireManagedMarker: false)
@@ -421,7 +424,9 @@ struct EnvironmentSessionVerifier: Sendable {
           id: "zsh_fresh_session",
           status: result.terminationStatus == 0 ? "verified" : "failed",
           message: result.terminationStatus == 0
-            ? "A fresh login shell loaded the managed entry point. User configuration and trusted hook semantics remain unverifiable."
+            ? (requireManagedMarker
+              ? "A fresh login shell loaded the managed entry point. User configuration and trusted hook semantics remain unverifiable."
+              : "A fresh login shell completed native startup. Personal behavior and private runtime includes are not verified.")
             : (result.output.isEmpty
               ? "The fresh login shell rejected the managed session." : result.output)
         )

@@ -464,7 +464,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
       spicetifyEnabled: composition.profile.presets.spicetify,
       tuicrEnabled: composition.profile.presets.tuicr,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs
-        ?? composition.profile.selectedThemeAdapterIDs
+        ?? composition.profile.selectedThemeAdapterIDs,
+      standardNativeEntries: inspection.standardNativeEntries
     )
     let generationChanged = previous?.generationID != proposed.generationID
     let ownershipChanged =
@@ -482,6 +483,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.spicetifyEnabled != proposed.spicetifyEnabled
       || previous?.tuicrEnabled != proposed.tuicrEnabled
       || previous?.enabledThemeAdapterIDs != proposed.enabledThemeAdapterIDs
+      || previous?.standardNativeEntries != proposed.standardNativeEntries
     let changed = generationChanged || ownershipChanged
 
     let btopReplacementName =

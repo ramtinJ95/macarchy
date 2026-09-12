@@ -229,11 +229,11 @@ struct GuidedSetupCommandRunner: Sendable {
   ) async throws -> (output: String, succeeded: Bool) {
     var context = context
     context.nativeStarterProviders = answers.nativeStarterProviders
-    let directory = UnifiedSetupNativeStarters.relativeDirectory(context: context)
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.withoutEscapingSlashes]
     let nativeSources = try answers.nativeStarterProviders.map { provider in
-      let path = try encoder.encode("\(directory)/\(provider.starterName)")
+      let path = try encoder.encode(
+        UnifiedSetupNativeStarters.profilePath(provider, context: context))
       return "[\(provider.rawValue)]\n\(provider.profileKey) = "
         + String(decoding: path, as: UTF8.self) + "\n"
     }.joined(separator: "\n")

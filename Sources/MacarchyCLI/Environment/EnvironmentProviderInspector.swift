@@ -38,6 +38,7 @@ struct EnvironmentProviderInspection: Sendable {
   let tuicrExternalEvidence: EnvironmentEntryEvidence?
   let proposedBordersOwnership: EnvironmentBordersOwnership?
   let bordersServiceInspection: BordersServiceInspection?
+  var standardNativeEntries: [EnvironmentEntryID] = []
 
   static func blocked(_ error: any Error) -> Self {
     Self(
@@ -98,7 +99,8 @@ struct EnvironmentProviderInspector: Sendable {
       if let source = composition.profile.zsh.configurationURL {
         guard
           EnvironmentNativeSource.targetIsAllowed(
-            source.path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+            source.path, homeDirectory: homeDirectory, stateRoot: stateRoot,
+            userOwnedPublicEntry: .zsh)
         else {
           throw EnvironmentLifecycleError.blocked(
             "zsh.configuration must live outside Macarchy state and the managed ~/.zshrc entry point"
@@ -109,7 +111,8 @@ struct EnvironmentProviderInspector: Sendable {
       if let source = composition.profile.kitty.configurationURL {
         guard
           EnvironmentNativeSource.targetIsAllowed(
-            source.path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+            source.path, homeDirectory: homeDirectory, stateRoot: stateRoot,
+            userOwnedPublicEntry: .kitty)
         else {
           throw EnvironmentLifecycleError.blocked(
             "kitty.configuration must live outside Macarchy state and the managed ~/.config/kitty directory"
@@ -130,14 +133,44 @@ struct EnvironmentProviderInspector: Sendable {
           "an environment generation is selected without ownership"
         )
       }
+      var standardShellEntries = Set<EnvironmentEntryID>()
+      for provider in [EnvironmentNativeSeed.Provider.zsh, .kitty] {
+        guard provider.isEnabled(in: composition.profile) else { continue }
+        let source = provider.source(in: composition.profile)
+        let standard = provider.standardURL(homeDirectory: homeDirectory)
+        if ownership?.standardNativeEntries?.contains(provider.entryID) == true,
+          source?.path != standard.path
+        {
+          throw EnvironmentLifecycleError.blocked(
+            "Keep \(provider.rawValue).configuration pointed at its user-owned standard path, or review a migration before changing the connection"
+          )
+        }
+        guard source?.path == standard.path else { continue }
+        guard ownership?.records.contains(where: { $0.id == provider.entryID }) != true else {
+          throw EnvironmentLifecycleError.blocked(
+            "Review migration of the managed \(provider.rawValue) entry before selecting its standard native path"
+          )
+        }
+        if !proposedNativeSources.contains(standard.path) {
+          try EnvironmentStandardNativeConfiguration.validate(
+            provider, homeDirectory: homeDirectory, stateRoot: stateRoot)
+        }
+        standardShellEntries.insert(provider.entryID)
+      }
       let neovim = EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
       let neovimSource =
         composition.profile.neovim.nativeConfigurationDirectoryURL
         ?? neovim.nativeTarget(in: ownership)
       let nativeNeovim = neovimSource != nil
+      let standardNeovim = neovimSource?.path == neovim.publicURL.path
+      if ownership?.standardNativeEntries?.contains(.neovim) == true, !standardNeovim {
+        throw EnvironmentLifecycleError.blocked(
+          "Neovim is user-owned at its standard path; changing that connection requires a reviewed migration"
+        )
+      }
       if composition.profile.editor == .neovim, let neovimSource {
         if !proposedNativeSources.contains(neovimSource.path) {
-          try neovim.validateNativeTree(at: neovimSource)
+          try neovim.validateNativeTree(at: neovimSource, userOwnedPublicEntry: standardNeovim)
         }
         if let record = ownership?.records.first(where: { $0.id == .neovim }),
           record.managedTarget != neovimSource.path
@@ -152,9 +185,15 @@ struct EnvironmentProviderInspector: Sendable {
       let ownedAtuinSource = atuin.nativeTarget(in: ownership)
       let atuinSource = composition.profile.atuin.nativeConfigurationURL ?? ownedAtuinSource
       let nativeAtuin = atuinSource != nil
+      let standardAtuin = atuinSource?.path == atuin.publicURL.path
+      if ownership?.standardNativeEntries?.contains(.atuinConfiguration) == true, !standardAtuin {
+        throw EnvironmentLifecycleError.blocked(
+          "Atuin is user-owned at its standard path; changing that connection requires a reviewed migration"
+        )
+      }
       if composition.profile.history == .atuin, let atuinSource {
         if !proposedNativeSources.contains(atuinSource.path) {
-          try atuin.validateNativeFile(at: atuinSource)
+          try atuin.validateNativeFile(at: atuinSource, userOwnedPublicEntry: standardAtuin)
         }
         if let record = ownership?.records.first(where: { $0.id == .atuinConfiguration }),
           record.managedTarget != atuinSource.path
@@ -170,9 +209,16 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.starship.nativeConfigurationURL
         ?? starship.nativeTarget(in: ownership)
       let nativeStarship = starshipSource != nil
+      let standardStarship = starshipSource?.path == starship.publicURL.path
+      if ownership?.standardNativeEntries?.contains(.starship) == true, !standardStarship {
+        throw EnvironmentLifecycleError.blocked(
+          "Starship is user-owned at its standard path; changing that connection requires a reviewed migration"
+        )
+      }
       if composition.profile.prompt == .starship, let starshipSource {
         if !proposedNativeSources.contains(starshipSource.path) {
-          try starship.validateNativeFile(at: starshipSource)
+          try starship.validateNativeFile(
+            at: starshipSource, userOwnedPublicEntry: standardStarship)
         }
         if let record = ownership?.records.first(where: { $0.id == .starship }),
           record.managedTarget != starshipSource.path
@@ -282,8 +328,27 @@ struct EnvironmentProviderInspector: Sendable {
       var inspections = [EnvironmentEntryInspection]()
       var evidence = [EnvironmentEntryID: EnvironmentEntryEvidence]()
       var createdDirectories = Set<String>()
+      var standardNativeEntries = [EnvironmentEntryID]()
 
       for entry in entries {
+        if entry.id == .atuinConfiguration && standardAtuin
+          || entry.id == .starship && standardStarship
+          || entry.id == .neovim && standardNeovim
+          || standardShellEntries.contains(entry.id), owned[entry.id] == nil
+        {
+          standardNativeEntries.append(entry.id)
+          inspections.append(
+            EnvironmentEntryInspection(
+              id: entry.id.rawValue,
+              path: entry.id == .kitty
+                ? entry.url.appending(path: "kitty.conf").path : entry.url.path,
+              status: .external,
+              ownership: "user_owned_native",
+              message:
+                "The application reads this user-owned standard configuration directly. Macarchy maintains only its declared theme seam; reapply and teardown preserve behavior and personal links.",
+              evidence: nil))
+          continue
+        }
         let hasExternalAncestor = try hasSymlinkAncestor(
           entry.url,
           stoppingAt: homeDirectory
@@ -751,7 +816,8 @@ struct EnvironmentProviderInspector: Sendable {
         proposedTuicrOwnership: tuicr.proposedOwnership,
         tuicrExternalEvidence: tuicr.externalEvidence,
         proposedBordersOwnership: borders.ownership,
-        bordersServiceInspection: bordersService
+        bordersServiceInspection: bordersService,
+        standardNativeEntries: standardNativeEntries
       )
     } catch {
       return .blocked(error)

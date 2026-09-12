@@ -380,8 +380,8 @@ struct GuidedSetupTests {
         #expect(packageApproval != nil)
         let saved = try String(contentsOf: context.profileURL, encoding: .utf8)
         #expect(saved.hasPrefix("schema_version = 1\n"))
-        #expect(saved.contains("../macarchy-user/zshrc"))
-        #expect(saved.contains("../macarchy-user/neovim"))
+        #expect(saved.contains("../../.zshrc"))
+        #expect(saved.contains("../nvim"))
         return ("applied including desktop", true)
       },
       io: io,

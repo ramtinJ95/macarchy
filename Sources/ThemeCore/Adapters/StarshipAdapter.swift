@@ -245,6 +245,14 @@ package struct StarshipAdapter: Sendable {
   }
 
   private func validateConfigurationLink() throws {
+    // Explicit native authority also supports an ordinary standard config file.
+    // The bounded native reader below validates its file shape and reserved palette.
+    if let native, configurationURL == behaviorURL,
+      configurationURL.resolvingSymlinksInPath() == native.url
+    {
+      _ = try native.read()
+      return
+    }
     let firstDestination: String
     do {
       firstDestination = try FileManager.default.destinationOfSymbolicLink(

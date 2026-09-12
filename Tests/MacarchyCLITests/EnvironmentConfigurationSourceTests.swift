@@ -79,7 +79,11 @@ struct EnvironmentConfigurationSourceTests {
     ).resolve(.zsh, profile: profile)
     switch scenario {
     case "missing": #expect(result.status == .missing)
-    case "state", "public": #expect(result.status == .blocked)
+    case "state": #expect(result.status == .blocked)
+    case "public":
+      #expect(result.status == .editable)
+      #expect(result.authority == "native_profile")
+      #expect(result.source == source.path)
     case "disabled": #expect(result.status == .disabledInProfile)
     case "copied":
       #expect(result.status == .editable)

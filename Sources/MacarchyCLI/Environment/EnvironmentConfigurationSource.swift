@@ -74,7 +74,9 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
       let native: URL?
       switch provider {
       case .zsh, .kitty:
-        native = nil
+        native =
+          ownership?.standardNativeEntries?.contains(provider.entryID) == true
+          ? provider.standardURL(homeDirectory: homeDirectory) : nil
       case .neovim:
         native = EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
           .nativeTarget(in: ownership)
@@ -96,8 +98,10 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
         }
       }
       let declared = provider.source(in: profile.environment)
-      if let declared, let record, provider != .zsh && provider != .kitty,
-        record.managedTarget != declared.path
+      if let declared,
+        (native != nil && native?.path != declared.path)
+          || (record != nil && provider != .zsh && provider != .kitty
+            && record?.managedTarget != declared.path)
       {
         return report(
           .connectionRequired, authority: "profile", source: declared,
@@ -118,7 +122,8 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
       }
       guard
         EnvironmentNativeSource.targetIsAllowed(
-          source.path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+          source.path, homeDirectory: homeDirectory, stateRoot: stateRoot,
+          userOwnedPublicEntry: declared != nil || native != nil ? provider.entryID : nil)
       else {
         throw EnvironmentLifecycleError.blocked(
           "Editor targets must stay outside generated state and managed public entry points.")
@@ -130,7 +135,7 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
         provider == .neovim || (provider == .kitty && authority == "copied_profile_input")
       if provider == .neovim,
         !EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .targetIsAllowed(source.path)
+          .targetIsAllowed(source.path, userOwnedPublicEntry: declared != nil || native != nil)
       {
         throw EnvironmentLifecycleError.blocked(
           "An editor configuration tree cannot contain managed state or public entries.")

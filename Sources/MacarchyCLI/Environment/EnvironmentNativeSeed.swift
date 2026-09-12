@@ -4,7 +4,7 @@ import ThemeCore
 
 /// Creates personal starter files, not ownership receipts or active connections.
 struct EnvironmentNativeSeed: Sendable {
-  enum Provider: String, CaseIterable, Sendable {
+  enum Provider: String, Codable, CaseIterable, Sendable {
     case zsh, kitty, atuin, starship, neovim
 
     var profileKey: String {
@@ -14,15 +14,6 @@ struct EnvironmentNativeSeed: Sendable {
       }
     }
 
-    var starterName: String {
-      switch self {
-      case .zsh: "zshrc"
-      case .kitty: "kitty.conf"
-      case .atuin: "atuin.toml"
-      case .starship: "starship.toml"
-      case .neovim: "neovim"
-      }
-    }
   }
 
   struct Plan: Encodable, Sendable {
@@ -48,14 +39,15 @@ struct EnvironmentNativeSeed: Sendable {
     let destination = destination.standardizedFileURL
     guard
       EnvironmentNativeSource.targetIsAllowed(
-        destination.path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+        destination.path, homeDirectory: homeDirectory, stateRoot: stateRoot,
+        userOwnedPublicEntry: provider.entryID)
     else {
       throw EnvironmentLifecycleError.blocked(
         "starter destination must be outside Macarchy state and managed entry points")
     }
     if provider == .neovim,
       !EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
-        .targetIsAllowed(destination.path)
+        .targetIsAllowed(destination.path, userOwnedPublicEntry: true)
     {
       throw EnvironmentLifecycleError.blocked(
         "Neovim starter must not contain managed entry points or state")
@@ -65,9 +57,14 @@ struct EnvironmentNativeSeed: Sendable {
     var files: [String: Data] = [:]
     switch provider {
     case .zsh:
+      let defaults = stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path
+      let source =
+        destination == provider.standardURL(homeDirectory: homeDirectory)
+        ? "'" + defaults.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        : "\"$MACARCHY_ZSH_DEFAULTS\""
       contents = """
         # User-owned configuration. Put overrides after the optional curated defaults.
-        source "$MACARCHY_ZSH_DEFAULTS" || return 1
+        source \(source) || return 1
 
         """
     case .kitty:
@@ -78,11 +75,15 @@ struct EnvironmentNativeSeed: Sendable {
         throw EnvironmentLifecycleError.blocked(
           "Kitty defaults path cannot contain expansion or control characters")
       }
+      let theme =
+        destination == provider.standardURL(homeDirectory: homeDirectory)
+        ? "# Keep the managed theme include last.\ninclude "
+          + stateRoot.appending(path: KittyAdapter.bridgePath).path + "\n" : ""
       contents = """
         # User-owned configuration. Put overrides after the optional curated defaults.
         include \(defaults)
 
-        """
+        """ + theme
     case .neovim:
       let composition = try EnvironmentConfigurationComposer().compose(
         resourcesRoot: resourcesRoot, profile: .defaults, stateRoot: stateRoot)
@@ -152,7 +153,7 @@ struct EnvironmentNativeSeed: Sendable {
         }, destination: destination, stateRoot: stateRoot)
       try EnvironmentNeovimMigration(
         homeDirectory: homeDirectory, stateRoot: stateRoot, sourceURL: destination
-      ).validateNativeTree()
+      ).validateNativeTree(userOwnedPublicEntry: true)
       return plan
     }
     try Self.publishFile(
