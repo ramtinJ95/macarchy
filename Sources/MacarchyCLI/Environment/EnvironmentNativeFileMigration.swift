@@ -34,6 +34,9 @@ struct EnvironmentNativeFileMigration: Sendable {
   }
 
   func nativeTarget(in ownership: EnvironmentOwnership?) -> URL? {
+    if ownership?.standardNativeEntries?.contains(provider.entryID) == true {
+      return publicURL
+    }
     guard let record = ownership?.records.first(where: { $0.id == provider.entryID }),
       record.publicPath == publicURL.path, record.managedKind == "symbolic_link",
       nativeTargetIsAllowed(record.managedTarget)
@@ -51,9 +54,13 @@ struct EnvironmentNativeFileMigration: Sendable {
       && record.managedKind == entry.kind.rawValue && nativeTargetIsAllowed(record.managedTarget)
   }
 
-  func validateNativeFile(at selectedURL: URL? = nil) throws {
+  func validateNativeFile(at selectedURL: URL? = nil, userOwnedPublicEntry: Bool = false) throws {
     let nativeURL = selectedURL ?? self.nativeURL
-    guard nativeTargetIsAllowed(nativeURL.path) else {
+    guard
+      EnvironmentNativeSource.targetIsAllowed(
+        nativeURL.path, homeDirectory: homeDirectory, stateRoot: stateRoot,
+        userOwnedPublicEntry: userOwnedPublicEntry ? provider.entryID : nil)
+    else {
       throw EnvironmentLifecycleError.blocked(
         "native source must live outside managed provider entries and Macarchy state")
     }
@@ -215,7 +222,10 @@ struct EnvironmentNativeFileMigration: Sendable {
 
 /// Shared exclusion boundary for explicit external native provider connections.
 enum EnvironmentNativeSource {
-  static func targetIsAllowed(_ path: String, homeDirectory: URL, stateRoot: URL) -> Bool {
+  static func targetIsAllowed(
+    _ path: String, homeDirectory: URL, stateRoot: URL,
+    userOwnedPublicEntry: EnvironmentEntryID? = nil
+  ) -> Bool {
     let url = URL(filePath: path).standardizedFileURL
     guard path.hasPrefix("/"), path == url.path,
       !path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -229,6 +239,14 @@ enum EnvironmentNativeSource {
     for entry in EnvironmentProviderInspector().allManagedEntries(
       homeDirectory: homeDirectory, stateRoot: stateRoot)
     {
+      // Only explicit native profile authority may exempt its exact standard path.
+      // State exclusion above still rejects an incumbent managed-generation link.
+      let standardPath =
+        entry.id == .kitty
+        ? entry.url.appending(path: "kitty.conf").path : entry.url.standardizedFileURL.path
+      if entry.id == userOwnedPublicEntry, path == standardPath {
+        continue
+      }
       let physical = entry.url.deletingLastPathComponent().resolvingSymlinksInPath()
         .appending(path: entry.url.lastPathComponent).path
       for forbidden in [entry.url.standardizedFileURL.path, physical] {

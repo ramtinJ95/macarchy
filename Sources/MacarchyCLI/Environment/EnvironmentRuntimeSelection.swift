@@ -232,6 +232,13 @@ enum ThemeRuntimeSelection {
     guard let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership() else {
       return consumerPaths
     }
+    let homeDirectory = consumerPaths.starshipConfigurationURL.deletingLastPathComponent()
+      .deletingLastPathComponent()
+    for provider in EnvironmentNativeSeed.Provider.allCases
+    where provider != .zsh && ownership.standardNativeEntries?.contains(provider.entryID) == true {
+      try EnvironmentStandardNativeConfiguration.validate(
+        provider, homeDirectory: homeDirectory, stateRoot: stateRoot)
+    }
     return ThemeConsumerPaths(
       kittyConfigurationURL: consumerPaths.kittyConfigurationURL,
       sketchyBarConfigurationURL: consumerPaths.sketchyBarConfigurationURL,

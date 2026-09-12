@@ -89,11 +89,14 @@ struct EnvironmentNativeSeedTests {
     #expect(try String(contentsOf: destination, encoding: .utf8) == edited)
   }
 
-  @Test
-  func neovimStarterConnectsWithoutPluginRestoreAndPreservesEdits() async throws {
+  @Test(arguments: [false, true])
+  func neovimStarterConnectsWithoutPluginRestoreAndPreservesEdits(standard: Bool) async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let destination = fixture.root.appending(path: "personal-neovim")
+    let destination =
+      standard
+      ? fixture.home.appending(path: ".config/nvim")
+      : fixture.root.appending(path: "personal-neovim")
     let seed = EnvironmentNativeSeed(
       provider: .neovim, destination: destination, homeDirectory: fixture.home,
       stateRoot: fixture.state, resourcesRoot: repositoryRoot.appending(path: "Environment"))
@@ -116,7 +119,7 @@ struct EnvironmentNativeSeedTests {
     let original = try String(contentsOf: fixture.profile, encoding: .utf8)
       .replacingOccurrences(
         of: "[editor]\nprovider = \"disabled\"", with: "[editor]\nprovider = \"neovim\"")
-    try (original + "\n[neovim]\nnative_configuration = \"personal-neovim\"\n")
+    try (original + "\n[neovim]\nnative_configuration = \"\(destination.path)\"\n")
       .write(to: fixture.profile, atomically: true, encoding: .utf8)
     let report = try jsonObject(fixture.plan().output)
     let applied = try await fixture.apply(
@@ -125,9 +128,34 @@ struct EnvironmentNativeSeedTests {
     let lock = destination.appending(path: "lazy-lock.json")
     let edited = "{\"personal\":{\"commit\":\"kept\"}}\n"
     try edited.write(to: lock, atomically: true, encoding: .utf8)
-    let repeated = try await fixture.apply(adopt: nil)
+    let mustNotRestore = EnvironmentNeovimPreparer { _, _ in
+      Issue.record("native configuration must not restore plugins")
+      return EnvironmentVerification(id: "neovim_plugins", status: "failed", message: "unexpected")
+    }
+    let repeated = try await fixture.apply(adopt: nil, neovim: mustNotRestore)
     #expect(repeated.succeeded, "\(repeated.output)")
     #expect(try jsonObject(repeated.output)["outcome"] as? String == "no_change")
+    try fixture.activateTheme()
+    let active = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let adapter = NeovimAdapter(
+      root: fixture.state, configurationDirectoryURL: fixture.home.appending(path: ".config/nvim"),
+      executableURL: NeovimAdapter.liveExecutableURL, controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(
+          terminationStatus: 0, output: "MACARCHY_THEME=\(active.generationID):\(active.themeID)")
+      })
+    #expect(adapter.inspection(includeRuntimeChecks: true).status == .ready)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    let ownership = try #require(
+      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership())
+    #expect(ownership.standardNativeEntries?.contains(.neovim) == (standard ? true : nil))
+    #expect(try fixture.status().succeeded)
+    let source = EnvironmentConfigurationSourceResolver(
+      homeDirectory: fixture.home, stateRoot: fixture.state
+    )
+    .resolve(.neovim, profile: .defaults)
+    #expect(source.status == .editable, "\(source.message)")
+    #expect(source.source == destination.path)
     #expect(try await fixture.teardown().succeeded)
     #expect(try String(contentsOf: lock, encoding: .utf8) == edited)
   }
@@ -176,10 +204,10 @@ struct EnvironmentNativeSeedTests {
   }
 
   @Test(arguments: [
-    ".zshrc", ".config/kitty/personal.conf", ".config/macarchy/personal.zsh",
+    ".config/kitty/personal.conf", ".config/macarchy/personal.zsh",
     ".config/nvim/personal.zsh", ".config/atuin/config.toml", ".config/starship.toml",
   ])
-  func rejectsManagedDestinations(_ path: String) throws {
+  func rejectsStateAndOtherProviderDestinations(_ path: String) throws {
     let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let seed = EnvironmentNativeSeed(

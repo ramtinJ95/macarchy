@@ -135,8 +135,10 @@ struct EnvironmentConfigurationTests {
         directory.appending(path: "kitty.conf").path))
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_KITTY_CONFIG"] == "1"))
-  func installedKittyLoadsLiveIncludesAndTrailingTheme() throws {
+  @Test(
+    .enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_KITTY_CONFIG"] == "1"),
+    arguments: [false, true])
+  func installedKittyLoadsLiveIncludesAndTrailingTheme(standard: Bool) throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appending(path: "personal kitty.conf")
@@ -155,10 +157,15 @@ struct EnvironmentConfigurationTests {
     try FileManager.default.createDirectory(
       at: bridge.deletingLastPathComponent(), withIntermediateDirectories: true)
     try "foreground #abcdef\n".write(to: bridge, atomically: true, encoding: .utf8)
+    if standard {
+      try ("include nested.conf\ninclude " + bridge.path + "\n")
+        .write(to: source, atomically: true, encoding: .utf8)
+    }
     let script = root.appending(path: "verify.py")
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.withoutEscapingSlashes]
-    let path = String(data: try encoder.encode(wrapper.path), encoding: .utf8)!
+    let path = String(
+      data: try encoder.encode((standard ? source : wrapper).path), encoding: .utf8)!
     try """
     from kitty.config import load_config
     errors = []

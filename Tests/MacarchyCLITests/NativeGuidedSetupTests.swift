@@ -7,6 +7,57 @@ import Testing
 
 struct NativeGuidedSetupTests {
   @Test
+  func retainedLegacyGuidedProfileResumesWithoutRelocatingSources() async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    let context = context(fixture)
+    let planner = planner(fixture)
+    let apply = runner(planner: planner)
+    let responses = Mutex(["no", "yes"])
+    let guided = GuidedSetupCommandRunner(
+      planner: planner,
+      apply: { context, paths, packages, preferences, adoptions in
+        try await apply.execute(
+          context: context, consumerPaths: paths, packageApproval: packages,
+          preferencesApproval: preferences, adoptions: adoptions, json: true)
+      },
+      io: GuidedSetupIO(
+        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } }, write: { _ in }))
+    #expect(
+      try await guided.execute(
+        context: context, consumerPaths: testConsumerPaths(), answers: answers()
+      ).succeeded)
+    var retained = try String(contentsOf: context.profileURL, encoding: .utf8)
+    let parent = context.profileURL.deletingLastPathComponent()
+    let legacyDirectory =
+      parent.standardizedFileURL.path == context.stateRoot.standardizedFileURL.path
+      ? "../macarchy-user" : "native"
+    let names: [(EnvironmentNativeSeed.Provider, String)] = [
+      (.zsh, "zshrc"), (.kitty, "kitty.conf"), (.atuin, "atuin.toml"),
+      (.starship, "starship.toml"), (.neovim, "neovim"),
+    ]
+    for (provider, name) in names {
+      retained = retained.replacingOccurrences(
+        of: "\"" + UnifiedSetupNativeStarters.profilePath(provider, context: context) + "\"",
+        with: "\"\(legacyDirectory)/\(name)\"")
+    }
+    try retained.write(to: context.profileURL, atomically: true, encoding: .utf8)
+    let result = try await guided.execute(
+      context: context, consumerPaths: testConsumerPaths(), resume: true)
+    #expect(result.succeeded, "\(result.output)")
+    #expect(try String(contentsOf: context.profileURL, encoding: .utf8) == retained)
+    let ownership = try #require(
+      try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership())
+    #expect(ownership.standardNativeEntries == nil)
+    for (provider, name) in names {
+      #expect(
+        FileManager.default.fileExists(
+          atPath: parent.appending(path: "\(legacyDirectory)/\(name)").path))
+      #expect(ownership.records.contains { $0.id == provider.entryID })
+    }
+  }
+
+  @Test
   func cancelResumeCreateConnectEditAndReapply() async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
@@ -36,7 +87,7 @@ struct NativeGuidedSetupTests {
     }
     #expect(
       !FileManager.default.fileExists(
-        atPath: UnifiedSetupNativeStarters.destination(.zsh, context: context)
+        atPath: UnifiedSetupNativeStarters.destination(.kitty, context: context)
           .deletingLastPathComponent().path))
     #expect(try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership() == nil)
     let applied = try await guided.execute(
@@ -56,13 +107,12 @@ struct NativeGuidedSetupTests {
       let selected = resolver.resolve(provider, profile: profile)
       #expect(selected.status == .editable, "\(selected.message)")
       #expect(selected.source == source.path)
-      if provider != .kitty && provider != .zsh {
-        #expect(ownership.records.first { $0.id == provider.entryID }?.managedTarget == source.path)
-        let receiptSelected = resolver.resolve(provider, profile: .defaults)
-        #expect(receiptSelected.status == .editable, "\(receiptSelected.message)")
-        #expect(receiptSelected.authority == "native_ownership")
-        #expect(receiptSelected.source == source.path)
-      }
+      #expect(ownership.records.first { $0.id == provider.entryID } == nil)
+      #expect(ownership.standardNativeEntries?.contains(provider.entryID) == true)
+      let receiptSelected = resolver.resolve(provider, profile: .defaults)
+      #expect(receiptSelected.status == .editable, "\(receiptSelected.message)")
+      #expect(receiptSelected.authority == "native_ownership")
+      #expect(receiptSelected.source == source.path)
     }
     let source = UnifiedSetupNativeStarters.destination(.zsh, context: context)
     let edited = try String(contentsOf: source, encoding: .utf8) + "export PERSONAL=edited\n"
@@ -104,8 +154,6 @@ struct NativeGuidedSetupTests {
         if change == "approval" {
           received.nativeStarterApprovals["zsh"] = "stale"
         } else {
-          try FileManager.default.createDirectory(
-            at: source.deletingLastPathComponent(), withIntermediateDirectories: false)
           try "personal replacement\n".write(to: source, atomically: true, encoding: .utf8)
         }
         return try await apply.execute(
@@ -122,7 +170,7 @@ struct NativeGuidedSetupTests {
     if change == "destination" {
       #expect(try String(contentsOf: source, encoding: .utf8) == "personal replacement\n")
     } else {
-      #expect(!FileManager.default.fileExists(atPath: source.deletingLastPathComponent().path))
+      #expect(!FileManager.default.fileExists(atPath: source.path))
     }
   }
 

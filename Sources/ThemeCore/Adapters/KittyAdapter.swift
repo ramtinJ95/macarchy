@@ -29,10 +29,10 @@ enum KittyAdapterError: AdapterBridgeFileError, CustomStringConvertible, Sendabl
   }
 }
 
-struct KittyAdapter: Sendable {
+package struct KittyAdapter: Sendable {
   private static let killallURL = URL(filePath: "/usr/bin/killall")
   static let id = "kitty"
-  static let bridgePath = "state/adapters/kitty.conf"
+  package static let bridgePath = "state/adapters/kitty.conf"
   static let outputPath = "generated/kitty.conf"
   static let rendererVersion = 2
 

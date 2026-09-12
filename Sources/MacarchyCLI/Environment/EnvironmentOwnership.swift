@@ -103,7 +103,7 @@ struct EnvironmentOwnershipRecord: Codable, Equatable, Sendable {
 }
 
 struct EnvironmentOwnership: Codable, Equatable, Sendable {
-  static let currentSchemaVersion = 1
+  static let currentSchemaVersion = 2
 
   let schemaVersion: Int
   let generationID: String
@@ -124,6 +124,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
   let spicetifyEnabled: Bool
   let tuicrEnabled: Bool
   let enabledThemeAdapterIDs: [String]?
+  /// Theme authority only: these standard configuration entries remain user-owned.
+  let standardNativeEntries: [EnvironmentEntryID]?
 
   init(
     generationID: String,
@@ -143,9 +145,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     slackEnabled: Bool = false,
     spicetifyEnabled: Bool = false,
     tuicrEnabled: Bool = false,
-    enabledThemeAdapterIDs: [String]? = nil
+    enabledThemeAdapterIDs: [String]? = nil,
+    standardNativeEntries: [EnvironmentEntryID] = []
   ) {
-    schemaVersion = Self.currentSchemaVersion
+    schemaVersion = standardNativeEntries.isEmpty ? 1 : Self.currentSchemaVersion
     self.generationID = generationID
     self.records = records.sorted { $0.id.rawValue < $1.id.rawValue }
     self.createdDirectories = createdDirectories.sorted()
@@ -164,6 +167,9 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.spicetifyEnabled = spicetifyEnabled
     self.tuicrEnabled = tuicrEnabled
     self.enabledThemeAdapterIDs = enabledThemeAdapterIDs?.sorted()
+    self.standardNativeEntries =
+      standardNativeEntries.isEmpty
+      ? nil : standardNativeEntries.sorted { $0.rawValue < $1.rawValue }
   }
 
   enum CodingKeys: String, CodingKey {
@@ -186,6 +192,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     case spicetifyEnabled = "spicetify_enabled"
     case tuicrEnabled = "tuicr_enabled"
     case enabledThemeAdapterIDs = "enabled_theme_adapter_ids"
+    case standardNativeEntries = "standard_native_entries"
   }
 
   init(from decoder: Decoder) throws {
@@ -216,6 +223,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       [String].self,
       forKey: .enabledThemeAdapterIDs
     )
+    standardNativeEntries = try container.decodeIfPresent(
+      [EnvironmentEntryID].self, forKey: .standardNativeEntries)
   }
 
   var hasValidShape: Bool {
@@ -232,7 +241,12 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
           && adapterIDs.contains(BordersAdapter.id) == (borders != nil)
       } ?? true
-    guard schemaVersion == Self.currentSchemaVersion,
+    let standard = standardNativeEntries ?? []
+    guard (schemaVersion == 1 && standard.isEmpty) || schemaVersion == Self.currentSchemaVersion,
+      Set(standard).isSubset(of: [.atuinConfiguration, .starship, .zsh, .kitty, .neovim]),
+      standard == standard.sorted(by: { $0.rawValue < $1.rawValue }),
+      Set(standard).count == standard.count,
+      Set(standard).isDisjoint(with: records.map(\.id)),
       EnvironmentGenerationStore.isGenerationID(generationID),
       Set(records.map(\.id)).count == records.count,
       Set(createdDirectories).count == createdDirectories.count,
@@ -274,6 +288,18 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     }
   }
 
+  func releasingStandardEntry(_ id: EnvironmentEntryID) -> Self {
+    Self(
+      generationID: generationID, records: records.filter { $0.id != id },
+      createdDirectories: createdDirectories, originalThemeBridges: originalThemeBridges,
+      btop: btop, borders: borders, codex: codex, herdr: herdr, pi: pi,
+      spicetify: spicetify, tuicr: tuicr, codexEnabled: codexEnabled,
+      herdrEnabled: herdrEnabled, piEnabled: piEnabled, slackEnabled: slackEnabled,
+      spicetifyEnabled: spicetifyEnabled, tuicrEnabled: tuicrEnabled,
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs,
+      standardNativeEntries: (standardNativeEntries ?? []) + [id])
+  }
+
   func replacingHerdr(_ herdr: EnvironmentHerdrOwnership?) -> Self {
     Self(
       generationID: generationID,
@@ -293,7 +319,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       slackEnabled: slackEnabled,
       spicetifyEnabled: spicetifyEnabled,
       tuicrEnabled: tuicrEnabled,
-      enabledThemeAdapterIDs: enabledThemeAdapterIDs
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs,
+      standardNativeEntries: standardNativeEntries ?? []
     )
   }
 }

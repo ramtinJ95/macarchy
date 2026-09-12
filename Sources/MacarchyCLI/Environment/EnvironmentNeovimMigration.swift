@@ -19,6 +19,7 @@ struct EnvironmentNeovimMigration: Sendable {
   }
 
   func nativeTarget(in ownership: EnvironmentOwnership?) -> URL? {
+    if ownership?.standardNativeEntries?.contains(.neovim) == true { return publicURL }
     guard let record = ownership?.records.first(where: { $0.id == .neovim }),
       record.publicPath == publicURL.path, record.managedKind == "symbolic_link",
       targetIsAllowed(record.managedTarget)
@@ -26,10 +27,11 @@ struct EnvironmentNeovimMigration: Sendable {
     return URL(filePath: record.managedTarget)
   }
 
-  func targetIsAllowed(_ path: String) -> Bool {
+  func targetIsAllowed(_ path: String, userOwnedPublicEntry: Bool = false) -> Bool {
     guard
       EnvironmentNativeSource.targetIsAllowed(
-        path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+        path, homeDirectory: homeDirectory, stateRoot: stateRoot,
+        userOwnedPublicEntry: userOwnedPublicEntry ? .neovim : nil)
     else { return false }
     let resolved = URL(filePath: path).resolvingSymlinksInPath().path
     // A directory containing its own public connection or managed state is not
@@ -52,9 +54,9 @@ struct EnvironmentNeovimMigration: Sendable {
         || (record.id == .neovim && targetIsAllowed(record.managedTarget)))
   }
 
-  func validateNativeTree(at selectedURL: URL? = nil) throws {
+  func validateNativeTree(at selectedURL: URL? = nil, userOwnedPublicEntry: Bool = false) throws {
     let selected = selectedURL ?? self.nativeRoot
-    guard targetIsAllowed(selected.path) else {
+    guard targetIsAllowed(selected.path, userOwnedPublicEntry: userOwnedPublicEntry) else {
       throw EnvironmentLifecycleError.blocked(
         "native Neovim source must live outside managed provider entries and Macarchy state")
     }
@@ -313,7 +315,8 @@ extension EnvironmentOwnership {
       spicetify: spicetify, tuicr: tuicr, codexEnabled: codexEnabled,
       herdrEnabled: herdrEnabled, piEnabled: piEnabled, slackEnabled: slackEnabled,
       spicetifyEnabled: spicetifyEnabled, tuicrEnabled: tuicrEnabled,
-      enabledThemeAdapterIDs: enabledThemeAdapterIDs)
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs,
+      standardNativeEntries: standardNativeEntries ?? [])
   }
 }
 

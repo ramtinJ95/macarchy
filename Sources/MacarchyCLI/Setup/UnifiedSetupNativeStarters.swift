@@ -3,17 +3,21 @@ import ThemeCore
 
 /// Guided intent feeds the existing planner and lifecycle; it is not a second installer.
 enum UnifiedSetupNativeStarters {
-  static func relativeDirectory(context: UnifiedSetupPlanContext) -> String {
-    context.profileURL.deletingLastPathComponent().standardizedFileURL.path
-      == context.stateRoot.standardizedFileURL.path ? "../macarchy-user" : "native"
+  static func profilePath(
+    _ provider: EnvironmentNativeSeed.Provider, context: UnifiedSetupPlanContext
+  ) -> String {
+    let base = context.profileURL.deletingLastPathComponent().resolvingSymlinksInPath()
+      .pathComponents
+    let target = destination(provider, context: context).pathComponents
+    let common = zip(base, target).prefix { $0 == $1 }.count
+    return (Array(repeating: "..", count: base.count - common) + target.dropFirst(common))
+      .joined(separator: "/")
   }
 
   static func destination(
     _ provider: EnvironmentNativeSeed.Provider, context: UnifiedSetupPlanContext
   ) -> URL {
-    context.profileURL.deletingLastPathComponent()
-      .appending(path: relativeDirectory(context: context))
-      .appending(path: provider.starterName).standardizedFileURL
+    provider.standardURL(homeDirectory: context.homeDirectory)
   }
 
   static func prepare(
@@ -25,7 +29,7 @@ enum UnifiedSetupNativeStarters {
       context.nativeStarterProviders.contains(.starship)
       ? Data(StarshipAdapter.render(package: theme).utf8) : nil
     return try context.nativeStarterProviders.map { provider in
-      let expected = destination(provider, context: context)
+      let expected = reviewedDestination(provider, context: context, profile: profile)
       guard provider.isEnabled(in: profile.environment),
         provider.source(in: profile.environment)?.path == expected.path
       else {
@@ -49,7 +53,7 @@ enum UnifiedSetupNativeStarters {
     context: UnifiedSetupPlanContext, profile: PortableProfile
   ) -> [EnvironmentNativeSeed.Provider] {
     EnvironmentNativeSeed.Provider.allCases.filter { provider in
-      let expected = destination(provider, context: context)
+      let expected = reviewedDestination(provider, context: context, profile: profile)
       return provider.isEnabled(in: profile.environment)
         && provider.source(in: profile.environment)?.path == expected.path
         && !FileManager.default.fileExists(atPath: expected.path)
@@ -69,5 +73,28 @@ enum UnifiedSetupNativeStarters {
       }
     }
     return files
+  }
+
+  private static func reviewedDestination(
+    _ provider: EnvironmentNativeSeed.Provider, context: UnifiedSetupPlanContext,
+    profile: PortableProfile
+  ) -> URL {
+    // Resume a retained v0.9.6 questionnaire without rewriting its chosen paths.
+    // This exception recognizes only that release's exact generated destination.
+    let parent = context.profileURL.deletingLastPathComponent()
+    let directory =
+      parent.standardizedFileURL.path == context.stateRoot.standardizedFileURL.path
+      ? "../macarchy-user" : "native"
+    let filename: String
+    switch provider {
+    case .zsh: filename = "zshrc"
+    case .kitty: filename = "kitty.conf"
+    case .atuin: filename = "atuin.toml"
+    case .starship: filename = "starship.toml"
+    case .neovim: filename = "neovim"
+    }
+    let legacy = parent.appending(path: directory).appending(path: filename).standardizedFileURL
+    return provider.source(in: profile.environment)?.path == legacy.path
+      ? legacy : destination(provider, context: context)
   }
 }
