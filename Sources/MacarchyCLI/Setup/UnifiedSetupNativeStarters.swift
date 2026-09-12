@@ -21,8 +21,9 @@ enum UnifiedSetupNativeStarters {
   ) throws -> [EnvironmentNativeSeed] {
     guard !context.nativeStarterProviders.isEmpty else { return [] }
     let ownership = try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()
-    let palette = try ThemeRenderer().render(package: theme, generationID: "native-starter-preview")
-      .starshipPalette
+    let palette =
+      context.nativeStarterProviders.contains(.starship)
+      ? Data(StarshipAdapter.render(package: theme).utf8) : nil
     return try context.nativeStarterProviders.map { provider in
       let expected = destination(provider, context: context)
       guard provider.isEnabled(in: profile.environment),
@@ -40,7 +41,7 @@ enum UnifiedSetupNativeStarters {
       return EnvironmentNativeSeed(
         provider: provider, destination: expected, homeDirectory: context.homeDirectory,
         stateRoot: context.stateRoot, resourcesRoot: context.environmentResourcesRoot,
-        bootstrapPalette: Data(palette.utf8), createParentDirectory: true)
+        bootstrapPalette: palette, createParentDirectory: true)
     }
   }
 

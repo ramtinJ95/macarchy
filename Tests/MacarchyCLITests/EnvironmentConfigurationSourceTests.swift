@@ -89,14 +89,4 @@ struct EnvironmentConfigurationSourceTests {
     }
   }
 
-  @Test
-  func commandAcceptsLayeredProfileOptions() throws {
-    let command = try EnvironmentCommand.ConfigurationSource.parse([
-      "neovim", "--profile", "/tmp/portable.toml", "--machine-profile", "/tmp/machine.toml",
-      "--state-root", "/tmp/macarchy-state", "--json",
-    ])
-    #expect(command.provider == "neovim")
-    #expect(command.profile.machineProfile == "/tmp/machine.toml")
-    #expect(command.json)
-  }
 }

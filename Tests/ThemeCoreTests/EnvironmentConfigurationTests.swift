@@ -316,14 +316,26 @@ struct EnvironmentConfigurationTests {
   func liveZshConfigurationRejectsMissingSourcesAndLegacyHookCombination() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    for extra in ["", "hook = \"hook.zsh\"\n"] {
-      let profile = try PortableProfileLoader().decode(
-        "schema_version = 1\n[zsh]\nconfiguration = \"missing.zsh\"\n" + extra,
-        source: root.appending(path: "profile.toml")
-      )
-      #expect(throws: EnvironmentConfigurationError.self) {
-        try composer.compose(resourcesRoot: resourcesRoot, profile: profile, stateRoot: root)
-      }
+    let missing = try PortableProfileLoader().decode(
+      "schema_version = 1\n[zsh]\nconfiguration = \"missing.zsh\"\n",
+      source: root.appending(path: "profile.toml"))
+    #expect(throws: EnvironmentConfigurationError.self) {
+      try composer.compose(resourcesRoot: resourcesRoot, profile: missing, stateRoot: root)
+    }
+
+    let source = root.appending(path: "personal.zsh")
+    try "export PERSONAL=kept\n".write(to: source, atomically: true, encoding: .utf8)
+    try "# legacy hook\n".write(
+      to: root.appending(path: "hook.zsh"), atomically: true, encoding: .utf8)
+    let conflicting = try PortableProfileLoader().decode(
+      "schema_version = 1\n[zsh]\nconfiguration = \"personal.zsh\"\nhook = \"hook.zsh\"\n",
+      source: root.appending(path: "profile.toml"))
+    do {
+      _ = try composer.compose(resourcesRoot: resourcesRoot, profile: conflicting, stateRoot: root)
+      Issue.record("Expected native configuration and legacy hook conflict")
+    } catch EnvironmentConfigurationError.invalid(let url, let message) {
+      #expect(url == source)
+      #expect(message == "zsh.configuration and zsh.hook are mutually exclusive")
     }
   }
 

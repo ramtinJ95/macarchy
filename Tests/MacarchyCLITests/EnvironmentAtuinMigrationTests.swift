@@ -126,7 +126,7 @@ struct EnvironmentAtuinMigrationTests {
     let seed = try Data(contentsOf: migration.publicURL)
     #expect(!FileManager.default.fileExists(atPath: migration.nativeURL.path))
     _ = try EnvironmentTransactionCoordinator(homeDirectory: fixture.home, stateRoot: fixture.state)
-      .migrateAtuinLocked(approval: plan.approval)
+      .migrateNativeFileLocked(provider: .atuin, approval: plan.approval)
     #expect(try unrelated(fixture) == before)
     #expect(try Data(contentsOf: migration.nativeURL) == seed)
     let edited =
@@ -187,7 +187,7 @@ struct EnvironmentAtuinMigrationTests {
       provider: .atuin, homeDirectory: fixture.home, stateRoot: fixture.state)
     let (seedPlan, _) = try seeded.plan()
     _ = try EnvironmentTransactionCoordinator(homeDirectory: fixture.home, stateRoot: fixture.state)
-      .migrateAtuinLocked(approval: seedPlan.approval)
+      .migrateNativeFileLocked(provider: .atuin, approval: seedPlan.approval)
     let source = fixture.root.appending(path: "external.toml")
     try nativeSettings.write(to: source, atomically: true, encoding: .utf8)
     let migration = EnvironmentNativeFileMigration(
@@ -218,12 +218,14 @@ struct EnvironmentAtuinMigrationTests {
     let (plan, old) = try migration.plan()
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: fixture.home, stateRoot: fixture.state)
-    #expect(throws: (any Error).self) { try coordinator.migrateAtuinLocked(approval: "stale") }
+    #expect(throws: (any Error).self) {
+      try coordinator.migrateNativeFileLocked(provider: .atuin, approval: "stale")
+    }
     #expect(!FileManager.default.fileExists(atPath: migration.nativeURL.path))
     try FileManager.default.createSymbolicLink(
       atPath: migration.nativeURL.path, withDestinationPath: "missing")
     #expect(throws: (any Error).self) {
-      try coordinator.migrateAtuinLocked(approval: plan.approval)
+      try coordinator.migrateNativeFileLocked(provider: .atuin, approval: plan.approval)
     }
     let forged = old.replacingTarget(for: .atuinConfiguration, with: migration.nativeURL.path)
       .replacingTarget(for: .zsh, with: "/unexpected")
@@ -248,7 +250,7 @@ struct EnvironmentAtuinMigrationTests {
       homeDirectory: fixture.home, stateRoot: fixture.state,
       faultInjector: { _ in throw EnvironmentLifecycleError.blocked("injected") })
     #expect(throws: (any Error).self) {
-      try coordinator.migrateAtuinLocked(approval: plan.approval)
+      try coordinator.migrateNativeFileLocked(provider: .atuin, approval: plan.approval)
     }
     let store = EnvironmentStateStore(stateRoot: fixture.state)
     #expect(try store.readOwnership() == old)
@@ -293,7 +295,7 @@ struct EnvironmentAtuinMigrationTests {
       provider: .atuin, homeDirectory: fixture.home, stateRoot: fixture.state)
     let (plan, _) = try migration.plan()
     _ = try EnvironmentTransactionCoordinator(homeDirectory: fixture.home, stateRoot: fixture.state)
-      .migrateAtuinLocked(approval: plan.approval)
+      .migrateNativeFileLocked(provider: .atuin, approval: plan.approval)
     let edited = "[theme]\nname = \"personal\"\n"
     try edited.write(to: migration.nativeURL, atomically: true, encoding: .utf8)
     #expect(!(try fixture.status().succeeded))

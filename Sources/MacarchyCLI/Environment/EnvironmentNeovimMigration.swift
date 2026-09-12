@@ -260,7 +260,7 @@ struct EnvironmentNeovimMigration: Sendable {
   func transition(from old: EnvironmentOwnership, to new: EnvironmentOwnership) throws {
     guard let before = old.records.first(where: { $0.id == .neovim }),
       let after = new.records.first(where: { $0.id == .neovim }),
-      old.replacingNeovimTarget(after.managedTarget) == new,
+      old.replacingTarget(for: .neovim, with: after.managedTarget) == new,
       [before.managedTarget, after.managedTarget].allSatisfy({
         $0 == legacyTarget || targetIsAllowed($0)
       }),
@@ -299,10 +299,6 @@ struct EnvironmentNeovimMigration: Sendable {
 }
 
 extension EnvironmentOwnership {
-  func replacingNeovimTarget(_ target: String) -> Self {
-    replacingTarget(for: .neovim, with: target)
-  }
-
   func replacingTarget(for id: EnvironmentEntryID, with target: String) -> Self {
     Self(
       generationID: generationID,
@@ -330,7 +326,7 @@ extension EnvironmentTransactionCoordinator {
       throw EnvironmentLifecycleError.blocked(
         "Neovim migration approval changed; review the plan again")
     }
-    let proposed = previous.replacingNeovimTarget(migration.nativeRoot.path)
+    let proposed = previous.replacingTarget(for: .neovim, with: migration.nativeRoot.path)
     if sourceURL == nil { try migration.seed(previous) }
     let transaction = EnvironmentTransaction(
       operation: .neovimMigration, previousOwnership: previous, proposedOwnership: proposed,

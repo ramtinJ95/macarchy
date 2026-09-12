@@ -173,7 +173,9 @@ struct EnvironmentNeovimMigrationTests {
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: fixture.home, stateRoot: fixture.state)
     _ = try coordinator.migrateNeovimLocked(approval: plan.approval)
-    #expect(try store.readOwnership() == old.replacingNeovimTarget(migration.nativeRoot.path))
+    #expect(
+      try store.readOwnership()
+        == old.replacingTarget(for: .neovim, with: migration.nativeRoot.path))
     #expect(try unrelatedEvidence(fixture) == unrelated)
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: migration.publicURL.path)
@@ -310,7 +312,7 @@ struct EnvironmentNeovimMigrationTests {
     }
     let old = try #require(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership())
     let source = external ? try preparedSource(fixture) : migration.nativeRoot
-    let new = old.replacingNeovimTarget(source.path)
+    let new = old.replacingTarget(for: .neovim, with: source.path)
     let unrelated = try unrelatedEvidence(fixture)
     if entryAlreadySwitched { try migration.transition(from: old, to: new) }
     let journal = EnvironmentTransaction(
@@ -337,7 +339,7 @@ struct EnvironmentNeovimMigrationTests {
     let migration = EnvironmentNeovimMigration(
       homeDirectory: fixture.home, stateRoot: fixture.state)
     let (_, old) = try migration.plan()
-    let new = old.replacingNeovimTarget(migration.nativeRoot.path)
+    let new = old.replacingTarget(for: .neovim, with: migration.nativeRoot.path)
     let forged = EnvironmentOwnership(
       generationID: new.generationID,
       records: new.records.filter { $0.id != .zsh },

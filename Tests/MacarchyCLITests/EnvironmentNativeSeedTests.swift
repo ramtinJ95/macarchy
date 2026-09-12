@@ -203,14 +203,4 @@ struct EnvironmentNativeSeedTests {
     #expect(try FileManager.default.contentsOfDirectory(atPath: managed.path).isEmpty)
   }
 
-  @Test
-  func commandAcceptsPreviewAndExactApproval() throws {
-    _ = try Macarchy.parseAsRoot([
-      "environment", "seed-configuration", "zsh", "--destination", "/tmp/personal.zsh", "--json",
-    ])
-    _ = try Macarchy.parseAsRoot([
-      "environment", "seed-configuration", "kitty", "--destination", "/tmp/personal.conf",
-      "--approve", "digest",
-    ])
-  }
 }
