@@ -181,8 +181,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
           palettePath: palettePath,
           pluginPath: pluginPath,
           hasHook: hook != nil,
-          macarchyExecutablePath: macarchyExecutablePath,
-          stateRootPath: stateRoot.standardizedFileURL.path
+          macarchyExecutablePath: macarchyExecutablePath
         )
       ),
       SketchyBarConfigurationArtifact(
@@ -197,6 +196,18 @@ package struct SketchyBarConfigurationComposer: Sendable {
         contents: renderSpaceIndexes()
       ),
     ]
+    if layout.position(of: .toggle) != nil {
+      artifacts.append(
+        SketchyBarConfigurationArtifact(
+          path: "plugins/toggle.sh",
+          contents: """
+            #!/bin/sh
+            set -eu
+            [ "$#" = 1 ] || exit 1
+            \(Self.shellLiteral(macarchyExecutablePath)) desktop _bar-toggle --state-root \(Self.shellLiteral(stateRoot.standardizedFileURL.path)) --token "$1" </dev/null >/dev/null &
+
+            """))
+    }
     if layout.position(of: .volume) != nil {
       artifacts.append(
         SketchyBarConfigurationArtifact(
@@ -389,8 +400,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     palettePath: String,
     pluginPath: String,
     hasHook: Bool,
-    macarchyExecutablePath: String,
-    stateRootPath: String
+    macarchyExecutablePath: String
   ) -> String {
     let font = Self.shellLiteral("\(settings.font):Semibold:\(settings.fontSize).0")
     let iconFont = Self.shellLiteral("\(settings.font):Bold:\(settings.fontSize).0")
@@ -449,8 +459,13 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "TOGGLE_TOKEN=$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')",
             "\"$SKETCHYBAR\" --add item macarchy.toggle \(position.rawValue) --set macarchy.toggle drawing=on icon='Toggle starting' label.drawing=off label=\"$TOGGLE_TOKEN|starting\"",
           ]
+          let scriptPrefix = Self.shellLiteral(
+            Self.toggleScript(pluginPath: pluginPath + "/toggle.sh", token: ""))
           helperCommands.append(
-            "\(Self.shellLiteral(macarchyExecutablePath)) desktop _bar-toggle --state-root \(Self.shellLiteral(stateRootPath)) --token \"$TOGGLE_TOKEN\" </dev/null >/dev/null 2>&1 &"
+            "\"$SKETCHYBAR\" --set macarchy.toggle updates=on update_freq=1 script=\(scriptPrefix)\"$TOGGLE_TOKEN\" --subscribe macarchy.toggle display_change system_woke"
+          )
+          helperCommands.append(
+            "\"$PLUGIN_DIR/toggle.sh\" \"$TOGGLE_TOKEN\""
           )
         case .apple:
           lines += [
@@ -671,6 +686,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
 
   package static func pluginClickScript(sender: String, pluginPath: String) -> String {
     "SENDER=\(shellLiteral(sender)) \(shellLiteral(pluginPath))"
+  }
+
+  package static func toggleScript(pluginPath: String, token: String) -> String {
+    "\(shellLiteral(pluginPath)) \(token)"
   }
 
   static func shellLiteral(_ value: String) -> String {

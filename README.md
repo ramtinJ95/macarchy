@@ -520,6 +520,10 @@ permissions, or launch the external `sketchybar-toggle` daemon. Stop an existing
 personal toggle before adopting this module, or omit `toggle`. Macarchy refuses
 that conflict rather than killing another process. Its owned process exits on
 configuration replacement or bar shutdown; status detects a dead/stale helper.
+SketchyBar's own timer and display/wake events relaunch a missing helper, even
+while the bar is hidden. A nonblocking ownership lock prevents duplicate workers.
+Failures remain visible on the bar and in SketchyBar's service stderr log;
+recovery needs no separate daemon or whole-bar reload.
 
 ### Spicetify prerequisites and interrupted setup
 

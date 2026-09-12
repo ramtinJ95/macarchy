@@ -6,7 +6,10 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarRuntimeTests {
-  @Test(arguments: ["visible", "hidden", "stale", "dead", "starting", "error", "position"])
+  @Test(arguments: [
+    "visible", "hidden", "stale", "dead", "starting", "error", "position",
+    "script", "frequency", "updates", "events",
+  ])
   func toggleRequiresFreshOwnedHeartbeatButNotAConstantVisibility(condition: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -30,7 +33,19 @@ struct SketchyBarRuntimeTests {
               ? "Toggle ERR" : token + "|7|\(condition == "stale" ? "1000" : "100000")|1000000"
           output = Self.itemJSON(
             name: "macarchy.toggle", drawing: condition == "error" ? "on" : "off",
-            position: condition == "position" ? "left" : "right", label: label)
+            position: condition == "position" ? "left" : "right", label: label,
+            script: condition == "script"
+              ? "(null)"
+              : SketchyBarConfigurationComposer.toggleScript(
+                pluginPath: fixture.state.appending(
+                  path: "desktop/sketchybar/current/plugins/toggle.sh"
+                ).path,
+                token: token),
+            updateFrequency: condition == "frequency" ? 0 : 1,
+            updateMask: condition == "events" ? 0 : 24,
+            updates: condition == "updates" ? "when_shown" : "on")
+        case ["--query", "events"]:
+          output = #"{"system_woke":{"bit":8},"display_change":{"bit":16}}"#
         default:
           output = Self.itemJSON(name: "macarchy.theme.ready", drawing: "off", position: "right")
         }
@@ -1079,7 +1094,8 @@ struct SketchyBarRuntimeTests {
     script: String = "(null)",
     clickScript: String = "(null)",
     updateFrequency: Int = 0,
-    updateMask: UInt64? = nil
+    updateMask: UInt64? = nil,
+    updates: String = "when_shown"
   ) -> String {
     let mask =
       (updateMask ?? (name == "macarchy.clock" ? 25 : nil)).map { ",\"update_mask\":\($0)" } ?? ""
@@ -1088,7 +1104,7 @@ struct SketchyBarRuntimeTests {
       {"name":"\(name)","type":"\(type)",
        "geometry":{"drawing":"\(drawing)","position":"\(position)","associated_space_mask":\(associatedSpaceMask)\(widthField)},
        "label":{"value":"\(label)","drawing":"\(labelDrawing)"},
-       "scripting":{"script":"\(script)","click_script":"\(clickScript)","update_freq":\(updateFrequency)\(mask)}}
+       "scripting":{"script":"\(script)","click_script":"\(clickScript)","update_freq":\(updateFrequency),"updates":"\(updates)"\(mask)}}
       """
   }
 }

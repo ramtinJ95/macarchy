@@ -74,8 +74,12 @@ package struct SketchyBarGenerationInspector: Sendable {
   private static let optionalArtifactPaths = [
     "plugins/user-hook.sh", "plugins/volume.sh", "plugins/battery.sh",
     "plugins/cpu.sh", "plugins/memory.sh", "plugins/wifi.sh", "plugins/media.sh",
-    "plugins/apple.sh",
+    "plugins/apple.sh", "plugins/toggle.sh",
   ]
+  fileprivate static let pluginNames = Set(
+    (coreArtifactPaths + optionalArtifactPaths)
+      .filter { $0.hasPrefix("plugins/") }
+      .map { String($0.dropFirst("plugins/".count)) })
 
   private let stateRoot: URL
 
@@ -172,7 +176,7 @@ package struct SketchyBarGenerationInspector: Sendable {
     let pluginInventory = try PinnedFilesystem.directoryEntries(
       descriptor: pluginsDescriptor,
       url: plugins,
-      limit: 10
+      limit: Self.pluginNames.count
     )
     guard !pluginInventory.truncated else {
       throw SketchyBarGenerationError.invalid("plugin inventory is unexpected")
@@ -651,15 +655,11 @@ package struct SketchyBarGenerationActivator: Sendable {
       let pluginsInventory = try PinnedFilesystem.directoryEntries(
         descriptor: pluginsDescriptor,
         url: plugins,
-        limit: 10
+        limit: SketchyBarGenerationInspector.pluginNames.count
       )
-      let expectedPlugins = Set([
-        "clock.sh", "space-indexes.sh", "user-hook.sh", "volume.sh", "battery.sh",
-        "cpu.sh", "memory.sh", "wifi.sh", "media.sh", "apple.sh",
-      ])
       guard
         !pluginsInventory.truncated,
-        Set(pluginsInventory.entries).isSubset(of: expectedPlugins)
+        Set(pluginsInventory.entries).isSubset(of: SketchyBarGenerationInspector.pluginNames)
       else {
         throw SketchyBarGenerationError.invalid("plugin removal inventory is unexpected")
       }

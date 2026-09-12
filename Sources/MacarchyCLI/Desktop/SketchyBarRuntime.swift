@@ -826,10 +826,22 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     if let position = composition.layout.position(of: .toggle) {
       let toggle: SketchyBarItemQuery = try query(
         control: Self.controlURL, arguments: ["--query", "macarchy.toggle"], timeout: 0.1)
+      let events: [String: SketchyBarEventQuery] = try query(
+        control: Self.controlURL, arguments: ["--query", "events"], timeout: 0.1)
+      let bits = ["display_change", "system_woke"].compactMap { events[$0]?.bit }
+      let mask = bits.reduce(UInt64(0), |)
+      let heartbeat = ToggleHeartbeat.parse(toggle.label.value)
       guard toggle.name == "macarchy.toggle", toggle.type == "item",
         toggle.geometry.drawing == "off",
         toggle.geometry.position == position.rawValue, toggle.label.drawing == "off",
-        ["", "(null)"].contains(toggle.scripting.script), toggle.scripting.updateFrequency == 0,
+        let heartbeat,
+        toggle.scripting.script
+          == SketchyBarConfigurationComposer.toggleScript(
+            pluginPath: stateRoot.appending(path: "desktop/sketchybar/current/plugins/toggle.sh")
+              .path,
+            token: heartbeat.token),
+        toggle.scripting.updateFrequency == 1, toggle.scripting.updates == "on",
+        bits.count == 2, toggle.scripting.updateMask.map({ $0 & mask == mask }) == true,
         validToggleHeartbeat(toggle.label.value)
       else {
         return drifted(
@@ -1234,12 +1246,14 @@ private struct SketchyBarItemQuery: Decodable {
     let clickScript: String
     let updateFrequency: Int
     let updateMask: UInt64?
+    let updates: String?
 
     enum CodingKeys: String, CodingKey {
       case script
       case clickScript = "click_script"
       case updateFrequency = "update_freq"
       case updateMask = "update_mask"
+      case updates
     }
   }
 

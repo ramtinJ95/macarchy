@@ -46,7 +46,24 @@ package struct ProcessScopedFileLock<LockError: Error>: Sendable {
     return try await operation()
   }
 
+  /// A periodic owner check must not queue another long-lived worker.
+  /// Contention alone returns nil; filesystem/locking failures still throw.
+  package func withLockIfAvailable<Output>(
+    root: URL, _ operation: () throws -> Output
+  ) throws -> Output? {
+    guard semaphore.wait(timeout: .now()) == .success else { return nil }
+    defer { semaphore.signal() }
+    guard let descriptor = try acquire(root: root, wait: false) else { return nil }
+    defer { Darwin.close(descriptor) }
+    return try operation()
+  }
+
   private func acquire(root: URL) throws -> Int32 {
+    // The waiting variant either acquires a descriptor or throws.
+    try acquire(root: root, wait: true)!
+  }
+
+  private func acquire(root: URL, wait: Bool) throws -> Int32? {
     let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
     do {
       try FileManager.default.createDirectory(
@@ -63,10 +80,11 @@ package struct ProcessScopedFileLock<LockError: Error>: Sendable {
     guard descriptor >= 0 else {
       throw operationError("open", errno)
     }
-    while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
+    while Darwin.lockf(descriptor, wait ? F_LOCK : F_TLOCK, 0) != 0 {
       if errno == EINTR { continue }
       let code = errno
       Darwin.close(descriptor)
+      if !wait && (code == EACCES || code == EAGAIN) { return nil }
       throw operationError("acquire", code)
     }
     return descriptor
