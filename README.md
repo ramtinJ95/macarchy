@@ -63,9 +63,17 @@ false. Press q or Ctrl-C to cancel without saving.
 
 The menu saves a small profile and displays the unified plan. One default-no
 **Install & apply** confirmation authorizes its reviewed missing packages,
-configuration adoptions, native settings and service changes. Setup then installs
+configuration adoptions, writable native starters, native settings and service changes. Setup then installs
 and configures those selections without a separate apply or keybindings command.
 Blocked prerequisites still stop setup visibly. An interactive terminal is required.
+
+Enabled zsh, Kitty, Atuin, Starship and Neovim receive writable user configurations
+under `~/.config/macarchy-user`, separate from generated state. The plan shows
+their exact contents before creation; existing files are never replaced. Declining
+creates no starters. Run `macarchy setup guided --resume` with the same profile
+options to review the retained profile again without rewriting it. Created user
+files survive failures and teardown. A custom profile outside state uses its
+`native` subdirectory instead.
 
 **Already have a profile?** Use `macarchy setup plan --profile /path/to/profile.toml`
 and the [profile-driven workflow](#make-it-yours) instead. Guided setup will not
@@ -240,6 +248,182 @@ inputs in dotfiles; do not sync the whole `~/.config/macarchy` directory, which
 also contains machine-local state and backups. Merely editing a profile does
 not start services or change running applications.
 
+### Writable starter files
+
+Native-source fields accept absolute paths or paths relative to the profile that
+declares them, including `../macarchy-user/...` and personal symlinks. They cannot
+point into generated state or managed entry points. Tilde/environment expansion
+is not supported. Copied inputs and legacy hooks still stay beside their profile.
+
+For a new native configuration, preview an absent-only starter:
+
+```sh
+macarchy environment seed-configuration zsh --destination ~/personal.zsh
+macarchy environment seed-configuration kitty --destination ~/personal-kitty.conf
+macarchy environment seed-configuration neovim --destination ~/personal-neovim
+macarchy environment seed-configuration atuin --destination ~/personal-atuin.toml
+macarchy environment seed-configuration starship --destination ~/personal-starship.toml
+```
+
+Repeat the chosen command with its exact `--approve` digest to create the file.
+The parent directory must already exist. Existing files, directories and links
+are never replaced. zsh and Kitty starters explicitly load live curated defaults;
+remove that include to own all initialization yourself. Neovim, Atuin and
+Starship copy shipped behavior once. Neovim seeds a directory with four narrow
+theme links and downloads no plugins. Starship requires an active theme for its
+initial reserved palette. Set `configuration` for zsh/Kitty or
+`native_configuration` for the other tools, then review environment plan/apply
+to connect it. Seeding alone changes neither the active configuration nor your
+profile, and does not migrate existing personal behavior. Existing owned native
+targets require the corresponding reviewed `migrate-* --source` cutover.
+
+### Finding the user-owned configuration
+
+```sh
+macarchy environment configuration-source neovim --json
+macarchy environment configuration-source zsh --profile /path/to/profile.toml
+```
+
+This read-only lookup uses the effective portable/machine profile and existing
+native ownership receipts. It reports the declared path, resolved personal link
+target and editing status; it never substitutes a generated file. Missing sources,
+drift, source conflicts and required native setup return a nonzero exit status.
+It opens no editor, evaluates no user configuration and applies no changes.
+An editable profile input is not proof that pending connection changes are active.
+
+### Live zsh configuration
+
+To keep shell behavior in a writable file beside your profile:
+
+```toml
+[zsh]
+configuration = "shell/personal.zsh"
+```
+
+Macarchy manages only the `~/.zshrc` connection in this mode. It sources your
+file on each new shell; apply, updates and teardown never rewrite that file.
+The source must resolve to a regular file outside Macarchy state, not `~/.zshrc`
+itself. Dotfile symlinks are supported and remain user-owned.
+Choose this mode or the legacy copied `zsh.hook`, not both.
+
+Your source controls initialization order. To opt into the live curated shell
+defaults (including selected Starship/Atuin initialization), add this once:
+
+```zsh
+source "$MACARCHY_ZSH_DEFAULTS" || return 1
+# Personal paths, aliases and overrides follow here.
+```
+
+Do not also initialize those tools in your personal source. Alternatively,
+own initialization yourself and omit the defaults include. The existing
+environment plan/apply approval and teardown workflow manages the connection;
+no personal files are automatically migrated. Status verifies shell startup,
+not arbitrary personal behavior. Changes affect new shells.
+
+### Live Kitty configuration
+
+```toml
+[kitty]
+configuration = "kitty/kitty.conf"
+```
+
+This sources a writable native file beside your profile, preserving its relative
+includes. Use it instead of the legacy copied `kitty.override`. Macarchy adds
+only the final theme include; it does not silently layer its behavior underneath
+your complete setup. To inherit curated defaults, explicitly include
+`~/.config/macarchy/environment/current/kitty/defaults.conf` at the beginning
+of your file (adjust for a custom state root), then add personal overrides.
+
+Keep the source outside `~/.config/kitty` and Macarchy state. Apply and teardown
+preserve it, including dotfile symlinks; edits take effect on Kitty configuration reload. Paths may contain
+spaces but not `$` expansion or control characters. Native includes are trusted
+user configuration, not a sandbox; plan/status validate the connected file and
+owned theme seam, not arbitrary nested includes or behavior.
+
+### Writable Atuin configuration
+
+To preserve the active Atuin settings as a writable native file:
+
+```sh
+macarchy environment migrate-atuin
+macarchy environment migrate-atuin --approve 'digest-from-preview'
+```
+
+This seeds `~/.config/atuin-native.toml` once and reconnects
+`~/.config/atuin/config.toml`. Edit that native configuration directly; profile
+behavior options are seed-only after migration. Keep `[theme] name =
+"macarchy-current"` to use the separately managed theme file. Edits affect fresh
+Atuin invocations. Apply and theme changes preserve behavior; a changed selector
+is reported as drift, never silently rewritten. History, sync and daemon state
+are untouched. Existing destinations are never replaced, and teardown retains
+the native file while restoring the original public entry. Use a compatible
+Macarchy release before migrating; older versions reject this ownership mode.
+
+To connect an existing native file on a new installation, declare its
+profile-relative path instead of copied Atuin options:
+
+```toml
+[atuin]
+native_configuration = "dotfiles/atuin.toml"
+```
+
+The file must already select `macarchy-current`. Symlinked dotfile sources are
+supported; sources inside Macarchy state or managed provider entries are not.
+The reviewed environment apply connects it without copying or rewriting behavior.
+Do not combine this field with `atuin.configuration` or Atuin behavior options.
+
+For an existing owned installation, reconnect explicitly before applying the
+changed profile:
+
+```sh
+macarchy environment migrate-atuin --source /absolute/path/to/dotfiles/atuin.toml
+macarchy environment migrate-atuin --source /absolute/path/to/dotfiles/atuin.toml --approve 'digest-from-preview'
+```
+
+This changes only Atuin's public connection and preserves both old and new
+native files. The receipt retains the selected source when no profile source
+is declared; a conflicting declared source blocks apply pending reviewed cutover.
+
+### Writable Starship configuration
+
+Starship uses a writable whole-file seed, not a simulated include:
+
+```sh
+macarchy environment migrate-starship
+macarchy environment migrate-starship --approve 'digest-from-preview'
+```
+
+This seeds the active behavior and palette at `~/.config/starship-native.toml`
+and switches only the owned public configuration link. An active theme is
+required. Existing destinations are never replaced. Edit the native file;
+fresh prompts read changes directly, and reapply preserves personal settings.
+Profile behavior becomes seed-only after migration.
+
+Macarchy requires `palette = "macarchy_current"` and manages only the seven
+colors in `[palettes.macarchy_current]`. Other palettes, modules, comments and
+format strings remain personal. Changed selection or unfamiliar reserved-table
+syntax is reported as drift, not silently rewritten. A concurrent edit or
+ambiguous publication retains displaced data beside the file as
+`.starship-native.toml.macarchy-palette`; inspect both files before retrying.
+Teardown preserves the native file. Use a compatible release before migrating.
+
+A prepared dotfiles source may instead declare:
+
+```toml
+[starship]
+native_configuration = "starship/starship.toml"
+```
+
+The profile-relative file must already select the reserved palette and contain
+its seven color assignments. It cannot be combined with `starship.behavior`.
+First reviewed apply connects it directly; existing installations use
+`macarchy environment migrate-starship --source /absolute/source.toml`, then
+repeat with the preview's `--approve` digest. Source symlinks are preserved;
+palette reconciliation updates the resolved file, never the link. Neither apply
+nor migration copies personal behavior. Sources within managed entries or
+Macarchy state are rejected. Publication residue uses the source filename:
+`.<filename>.macarchy-palette`.
+
 ### Writable Neovim configuration
 
 The original managed Neovim configuration is immutable. Lazy's install, update,
@@ -264,6 +448,36 @@ is never overwritten. Teardown restores the original entry and retains
 Use a Macarchy version supporting this command before migrating—older versions
 cannot manage the new ownership target. Reconnecting a retained native tree after
 teardown requires a separately reviewed action, not an automatic reseed.
+
+To connect a prepared native tree (including a retained one), declare a
+profile-relative source:
+
+```toml
+[neovim]
+native_configuration = "nvim"
+```
+
+This is exclusive with the older copied `neovim.configuration` input. The
+directory must be writable, contain readable `init.lua`, and have a writable
+ordinary `lazy-lock.json` if present. These four reserved paths must already be
+symlinks to their matching files under
+`~/.config/macarchy/environment/current/neovim/` (or your selected state root):
+
+- `colors/macarchy-imported.lua`
+- `lua/config/macarchy-theme.lua`
+- `lua/macarchy/current.lua`
+- `lua/plugins/colorscheme.lua`
+
+First reviewed apply connects that tree without copying Lua or restoring
+plugins. Existing ownership requires
+`macarchy environment migrate-neovim --source /absolute/native-directory`,
+then the same command with the preview's `--approve` digest. This cutover changes
+only the public link; prepare conflicting theme paths deliberately rather than
+expecting migration to overwrite them. Root source symlinks are preserved.
+Sources inside managed entries/state, or containing those entries, are rejected.
+Native Lua must load the theme integration through its plugin configuration;
+arbitrary plugin behavior is not a convergence guarantee. Restart Neovim after
+changing the connection.
 
 GitHub port-443 timeouts are a separate connectivity problem. Logs are normally
 under `~/.local/state/nvim/` (`nvim.log`, `lsp.log`, `mason.log`); Lazy task failures
