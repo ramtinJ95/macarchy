@@ -7,6 +7,113 @@ import Testing
 @testable import ThemeCore
 
 struct EnvironmentLifecycleTests {
+  @Test(arguments: [false, true])
+  func liveKittySourceSurvivesApplyEditsRepeatAndTeardown(symlinked: Bool) async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let source = fixture.root.appending(path: "personal kitty.conf")
+    try "font_size 14\n".write(to: source, atomically: true, encoding: .utf8)
+    let connection = symlinked ? fixture.root.appending(path: "linked kitty.conf") : source
+    if symlinked {
+      try FileManager.default.createSymbolicLink(at: connection, withDestinationURL: source)
+    }
+    let original = try String(contentsOf: fixture.profile, encoding: .utf8)
+    try (original + "\n[kitty]\nconfiguration = \"\(connection.lastPathComponent)\"\n").write(
+      to: fixture.profile, atomically: true, encoding: .utf8)
+    let plan = try jsonObject(fixture.plan().output)
+    #expect(plan["kitty_configuration"] as? String == connection.path)
+    let digest = try #require(plan["adoption_evidence_digest"] as? String)
+    let apply = try await fixture.apply(adopt: digest)
+    #expect(apply.succeeded, "\(apply.output)")
+    try "font_size 17\n".write(to: source, atomically: true, encoding: .utf8)
+    let repeated = try await fixture.apply(adopt: nil)
+    #expect(repeated.succeeded, "\(repeated.output)")
+    #expect(try jsonObject(repeated.output)["outcome"] as? String == "no_change")
+    #expect(try fixture.status().succeeded)
+    #expect(try await fixture.teardown().succeeded)
+    #expect(try String(contentsOf: source, encoding: .utf8) == "font_size 17\n")
+    if symlinked {
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: connection.path) == source.path)
+    }
+  }
+
+  @Test(arguments: [false, true])
+  func liveZshSourceSurvivesApplyEditsRepeatAndTeardown(symlinked: Bool) async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let source = fixture.root.appending(path: "personal.zsh")
+    try "export PERSONAL=before\n".write(to: source, atomically: true, encoding: .utf8)
+    let connection = symlinked ? fixture.root.appending(path: "linked.zsh") : source
+    if symlinked {
+      try FileManager.default.createSymbolicLink(at: connection, withDestinationURL: source)
+    }
+    let originalProfile = try String(contentsOf: fixture.profile, encoding: .utf8)
+    try (originalProfile + "\n[zsh]\nconfiguration = \"\(connection.lastPathComponent)\"\n").write(
+      to: fixture.profile, atomically: true, encoding: .utf8)
+    let plan = try jsonObject(fixture.plan().output)
+    #expect(plan["zsh_configuration"] as? String == connection.path)
+    let digest = try #require(plan["adoption_evidence_digest"] as? String)
+    let apply = try await fixture.apply(adopt: digest, verifier: .live)
+    #expect(apply.succeeded, "\(apply.output)")
+    let generation = try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination()
+    try "export PERSONAL=after\n".write(to: source, atomically: true, encoding: .utf8)
+    let repeated = try await fixture.apply(adopt: nil, verifier: .live)
+    #expect(repeated.succeeded, "\(repeated.output)")
+    #expect(try jsonObject(repeated.output)["outcome"] as? String == "no_change")
+    #expect(
+      try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination() == generation)
+    #expect(try fixture.status().succeeded)
+    #expect(try await fixture.teardown().succeeded)
+    #expect(try String(contentsOf: source, encoding: .utf8) == "export PERSONAL=after\n")
+    if symlinked {
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: connection.path) == source.path)
+    }
+  }
+
+  @Test(arguments: [false, true])
+  func liveKittySourceCannotBeInsideTheDirectoryBeingAdopted(symlinked: Bool) throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try FileManager.default.createDirectory(
+      at: fixture.kittyEntry, withIntermediateDirectories: true)
+    let source = fixture.kittyEntry.appending(path: "personal.conf")
+    try "font_size 17\n".write(to: source, atomically: true, encoding: .utf8)
+    let connection = symlinked ? fixture.root.appending(path: "alias.conf") : source
+    if symlinked {
+      try FileManager.default.createSymbolicLink(at: connection, withDestinationURL: source)
+    }
+    let original = try String(contentsOf: fixture.profile, encoding: .utf8)
+    let relative = symlinked ? "alias.conf" : "home/.config/kitty/personal.conf"
+    try (original + "\n[kitty]\nconfiguration = \"\(relative)\"\n").write(
+      to: fixture.profile, atomically: true, encoding: .utf8)
+    let plan = try fixture.plan()
+    #expect(!plan.succeeded)
+    #expect(plan.output.contains("kitty.configuration must live outside"))
+    #expect(try String(contentsOf: source, encoding: .utf8) == "font_size 17\n")
+  }
+
+  @Test(arguments: [false, true])
+  func liveZshSourceCannotBeTheEntryBeingAdopted(symlinked: Bool) throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try "# personal shell\n".write(to: fixture.zshEntry, atomically: true, encoding: .utf8)
+    let connection = symlinked ? fixture.root.appending(path: "alias.zsh") : fixture.zshEntry
+    if symlinked {
+      try FileManager.default.createSymbolicLink(
+        at: connection, withDestinationURL: fixture.zshEntry)
+    }
+    let original = try String(contentsOf: fixture.profile, encoding: .utf8)
+    let relative = symlinked ? "alias.zsh" : "home/.zshrc"
+    try (original + "\n[zsh]\nconfiguration = \"\(relative)\"\n").write(
+      to: fixture.profile, atomically: true, encoding: .utf8)
+    let plan = try fixture.plan()
+    #expect(!plan.succeeded)
+    #expect(plan.output.contains("zsh.configuration must live outside"))
+    #expect(try String(contentsOf: fixture.zshEntry, encoding: .utf8) == "# personal shell\n")
+  }
+
   @Test
   func consumerPathsKeepTheLogicalShellPathAcrossLinkChanges() throws {
     let root = FileManager.default.temporaryDirectory.appending(

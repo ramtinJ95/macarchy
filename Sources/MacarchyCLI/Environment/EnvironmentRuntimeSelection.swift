@@ -229,7 +229,7 @@ enum ThemeRuntimeSelection {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths
   ) throws -> ThemeConsumerPaths {
-    guard try EnvironmentStateStore(stateRoot: stateRoot).readOwnership() != nil else {
+    guard let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership() else {
       return consumerPaths
     }
     return ThemeConsumerPaths(
@@ -244,9 +244,14 @@ enum ThemeRuntimeSelection {
       atuinConfigurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
       neovimConfigurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
       starshipConfigurationURL: consumerPaths.starshipConfigurationURL,
-      starshipBehaviorURL: stateRoot.appending(
-        path: "environment/current/starship/behavior.toml"
-      ),
+      starshipBehaviorURL: EnvironmentNativeFileMigration(
+        provider: .starship,
+        homeDirectory: consumerPaths.starshipConfigurationURL.deletingLastPathComponent()
+          .deletingLastPathComponent(), stateRoot: stateRoot
+      ).nativeTarget(in: ownership)
+        ?? stateRoot.appending(
+          path: "environment/current/starship/behavior.toml"
+        ),
       piConfigurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
       herdrConfigurationURL: consumerPaths.herdrConfigurationURL,
       tuicrConfigurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,

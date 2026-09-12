@@ -75,13 +75,17 @@ struct EnvironmentProviderInspector: Sendable {
   let slackPreset: EnvironmentSlackPreset
   /// Only unified first-install planning supplies a rendered, not-yet-active theme.
   let bootstrapTheme: ThemePackage?
+  /// Only absent, validated starter plans may stand in for files during first-install review.
+  let proposedNativeSources: Set<String>
 
   init(
     slackPreset: EnvironmentSlackPreset = EnvironmentSlackPreset(),
-    bootstrapTheme: ThemePackage? = nil
+    bootstrapTheme: ThemePackage? = nil,
+    proposedNativeSources: Set<String> = []
   ) {
     self.slackPreset = slackPreset
     self.bootstrapTheme = bootstrapTheme
+    self.proposedNativeSources = proposedNativeSources
   }
 
   func inspect(
@@ -91,7 +95,27 @@ struct EnvironmentProviderInspector: Sendable {
     bordersService: BordersServiceInspection? = nil
   ) -> EnvironmentProviderInspection {
     do {
+      if let source = composition.profile.zsh.configurationURL {
+        guard
+          EnvironmentNativeSource.targetIsAllowed(
+            source.path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+        else {
+          throw EnvironmentLifecycleError.blocked(
+            "zsh.configuration must live outside Macarchy state and the managed ~/.zshrc entry point"
+          )
+        }
+      }
       let store = EnvironmentStateStore(stateRoot: stateRoot)
+      if let source = composition.profile.kitty.configurationURL {
+        guard
+          EnvironmentNativeSource.targetIsAllowed(
+            source.path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+        else {
+          throw EnvironmentLifecycleError.blocked(
+            "kitty.configuration must live outside Macarchy state and the managed ~/.config/kitty directory"
+          )
+        }
+      }
       let ownership = try store.readOwnership()
       let currentDestination = try EnvironmentGenerationStore(stateRoot: stateRoot)
         .currentDestination()
@@ -107,15 +131,73 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
       let neovim = EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
-      let nativeNeovim = neovim.isNative(ownership)
+      let neovimSource =
+        composition.profile.neovim.nativeConfigurationDirectoryURL
+        ?? neovim.nativeTarget(in: ownership)
+      let nativeNeovim = neovimSource != nil
+      if composition.profile.editor == .neovim, let neovimSource {
+        if !proposedNativeSources.contains(neovimSource.path) {
+          try neovim.validateNativeTree(at: neovimSource)
+        }
+        if let record = ownership?.records.first(where: { $0.id == .neovim }),
+          record.managedTarget != neovimSource.path
+        {
+          throw EnvironmentLifecycleError.blocked(
+            "Neovim source changed; review environment migrate-neovim --source before applying this profile"
+          )
+        }
+      }
+      let atuin = EnvironmentNativeFileMigration(
+        provider: .atuin, homeDirectory: homeDirectory, stateRoot: stateRoot)
+      let ownedAtuinSource = atuin.nativeTarget(in: ownership)
+      let atuinSource = composition.profile.atuin.nativeConfigurationURL ?? ownedAtuinSource
+      let nativeAtuin = atuinSource != nil
+      if composition.profile.history == .atuin, let atuinSource {
+        if !proposedNativeSources.contains(atuinSource.path) {
+          try atuin.validateNativeFile(at: atuinSource)
+        }
+        if let record = ownership?.records.first(where: { $0.id == .atuinConfiguration }),
+          record.managedTarget != atuinSource.path
+        {
+          throw EnvironmentLifecycleError.blocked(
+            "Atuin source changed; review environment migrate-atuin --source before applying this profile"
+          )
+        }
+      }
+      let starship = EnvironmentNativeFileMigration(
+        provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot)
+      let starshipSource =
+        composition.profile.starship.nativeConfigurationURL
+        ?? starship.nativeTarget(in: ownership)
+      let nativeStarship = starshipSource != nil
+      if composition.profile.prompt == .starship, let starshipSource {
+        if !proposedNativeSources.contains(starshipSource.path) {
+          try starship.validateNativeFile(at: starshipSource)
+        }
+        if let record = ownership?.records.first(where: { $0.id == .starship }),
+          record.managedTarget != starshipSource.path
+        {
+          throw EnvironmentLifecycleError.blocked(
+            "Starship source changed; review environment migrate-starship --source before applying this profile"
+          )
+        }
+      }
       let entries = desiredEntries(
         profile: composition.profile,
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       ).map { entry in
-        guard entry.id == .neovim, nativeNeovim else { return entry }
+        if entry.id == .starship, let starshipSource {
+          return EnvironmentManagedEntry(
+            id: entry.id, url: entry.url, kind: entry.kind, target: starshipSource.path)
+        }
+        if entry.id == .atuinConfiguration, let atuinSource {
+          return EnvironmentManagedEntry(
+            id: entry.id, url: entry.url, kind: entry.kind, target: atuinSource.path)
+        }
+        guard entry.id == .neovim, let neovimSource else { return entry }
         return EnvironmentManagedEntry(
-          id: entry.id, url: entry.url, kind: entry.kind, target: neovim.nativeRoot.path)
+          id: entry.id, url: entry.url, kind: entry.kind, target: neovimSource.path)
       }
       let setupContext = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
       var legacyIDs = Set<String>()
@@ -189,7 +271,8 @@ struct EnvironmentProviderInspector: Sendable {
       )
       for record in ownership?.records ?? [] {
         guard let entry = allowed[record.id],
-          neovim.allows(record, entry: entry)
+          neovim.allows(record, entry: entry) || atuin.allows(record, entry: entry)
+            || starship.allows(record, entry: entry)
         else {
           throw EnvironmentLifecycleError.blocked(
             "ownership for \(record.id.rawValue) contains an unexpected provider path or target"
@@ -267,7 +350,15 @@ struct EnvironmentProviderInspector: Sendable {
             throw EnvironmentLifecycleError.drift("ownership for \(entry.id.rawValue) is invalid")
           }
           let exact = try managedEntryIsExact(entry)
-          if exact, entry.id == .neovim, nativeNeovim { try neovim.validateNativeTree() }
+          if exact, entry.id == .neovim, let neovimSource {
+            try neovim.validateNativeTree(at: neovimSource)
+          }
+          if exact, entry.id == .atuinConfiguration, let atuinSource {
+            try atuin.validateNativeFile(at: atuinSource)
+          }
+          if exact, entry.id == .starship, let starshipSource {
+            try starship.validateNativeFile(at: starshipSource)
+          }
           inspections.append(
             EnvironmentEntryInspection(
               id: entry.id.rawValue,
@@ -279,7 +370,11 @@ struct EnvironmentProviderInspector: Sendable {
                   ? (nativeNeovim
                     ? "Neovim behavior and Lazy lock are user-owned; only the entry and theme bridges are managed."
                     : "Neovim configuration is immutable; interactive Lazy writes require environment migrate-neovim.")
-                  : "The provider entry is managed.")
+                  : (entry.id == .atuinConfiguration && nativeAtuin
+                    ? "Atuin behavior is user-owned; only the entry and theme link are managed. Profile behavior options are seed-only in this mode."
+                    : (entry.id == .starship && nativeStarship
+                      ? "Starship behavior is user-owned; only the entry, selector and reserved palette are managed. Profile behavior is seed-only in this mode."
+                      : "The provider entry is managed.")))
                 : "The managed provider entry drifted.",
               evidence: nil
             )

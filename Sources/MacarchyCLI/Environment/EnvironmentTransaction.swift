@@ -4,7 +4,19 @@ enum EnvironmentTransactionOperation: String, Codable, Sendable {
   case apply
   case herdrTheme = "herdr_theme"
   case neovimMigration = "neovim_migration"
+  case atuinMigration = "atuin_migration"
+  case starshipMigration = "starship_migration"
   case teardown
+
+  var nativeFileProvider: EnvironmentNativeFileMigration.Provider? {
+    switch self {
+    case .atuinMigration: .atuin
+    case .starshipMigration: .starship
+    default: nil
+    }
+  }
+
+  var isNativeMigration: Bool { self == .neovimMigration || nativeFileProvider != nil }
 }
 
 enum EnvironmentTransactionDirection: String, Codable, Sendable {
@@ -168,7 +180,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       spicetifyRuntimeVerified: nil,
       tuicrReplacementName: tuicrReplacementName,
       bordersPreviousRuntime: bordersPreviousRuntime,
-      bordersRuntimeTarget: [.herdrTheme, .neovimMigration].contains(operation)
+      bordersRuntimeTarget: operation == .herdrTheme || operation.isNativeMigration
         ? nil
         : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership),
       bordersRuntimeAttempted: bordersRuntimeAttempted

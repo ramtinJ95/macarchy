@@ -314,7 +314,9 @@ extension EnvironmentProfile {
 }
 
 extension ThemeConsumerPaths {
-  func managedEnvironmentPaths(stateRoot: URL, homeDirectory: URL) -> ThemeConsumerPaths {
+  func managedEnvironmentPaths(
+    stateRoot: URL, homeDirectory: URL, ownership: EnvironmentOwnership? = nil
+  ) -> ThemeConsumerPaths {
     ThemeConsumerPaths(
       kittyConfigurationURL: homeDirectory.appending(path: ".config/kitty/kitty.conf"),
       sketchyBarConfigurationURL: sketchyBarConfigurationURL,
@@ -330,9 +332,12 @@ extension ThemeConsumerPaths {
       ),
       neovimConfigurationDirectoryURL: homeDirectory.appending(path: ".config/nvim"),
       starshipConfigurationURL: homeDirectory.appending(path: ".config/starship.toml"),
-      starshipBehaviorURL: stateRoot.appending(
-        path: "environment/current/starship/behavior.toml"
-      ),
+      starshipBehaviorURL: EnvironmentNativeFileMigration(
+        provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot
+      ).nativeTarget(in: ownership)
+        ?? stateRoot.appending(
+          path: "environment/current/starship/behavior.toml"
+        ),
       piConfigurationDirectoryURL: piConfigurationDirectoryURL,
       herdrConfigurationURL: herdrConfigurationURL,
       tuicrConfigurationDirectoryURL: tuicrConfigurationDirectoryURL,
@@ -416,7 +421,7 @@ struct EnvironmentSessionVerifier: Sendable {
           id: "zsh_fresh_session",
           status: result.terminationStatus == 0 ? "verified" : "failed",
           message: result.terminationStatus == 0
-            ? "A fresh login shell loaded the managed session. Trusted hook semantics remain unverifiable."
+            ? "A fresh login shell loaded the managed entry point. User configuration and trusted hook semantics remain unverifiable."
             : (result.output.isEmpty
               ? "The fresh login shell rejected the managed session." : result.output)
         )
@@ -613,7 +618,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
           stateRoot,
           consumerPaths.managedEnvironmentPaths(
             stateRoot: stateRoot,
-            homeDirectory: homeDirectory
+            homeDirectory: homeDirectory,
+            ownership: provider.ownership
           )
         )
       } catch {

@@ -792,7 +792,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           stateRoot,
           consumerPaths.managedEnvironmentPaths(
             stateRoot: stateRoot,
-            homeDirectory: homeDirectory
+            homeDirectory: homeDirectory,
+            ownership: try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
           )
         )
         guard reconciliation.succeeded else {

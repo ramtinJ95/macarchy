@@ -213,6 +213,14 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     }
     do {
       try adoptions.validate(required: plan.adoption)
+      let starterApprovals = Dictionary(
+        uniqueKeysWithValues: plan.nativeStarters.map {
+          ($0.provider, $0.approval)
+        })
+      guard context.nativeStarterApprovals == starterApprovals else {
+        throw EnvironmentLifecycleError.blocked(
+          "Native starter approval changed; review guided setup again before any mutation.")
+      }
       guard try preferencesApproval == plan.preferencesApprovalDigest else {
         throw PreferencesError.invalid(
           "Supply exactly --approve-preferences from the reviewed setup plan before any setup mutation."
@@ -363,6 +371,22 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             json: json
           )
         }
+        // These become user-owned immediately, like the emitted profile. Never
+        // remove them during provider rollback: the user may already have edited them.
+        do {
+          for starter in currentModel.nativeStarters {
+            guard let approval = context.nativeStarterApprovals[starter.provider.rawValue] else {
+              throw EnvironmentLifecycleError.blocked("Missing native starter approval")
+            }
+            _ = try starter.seed(approval: approval)
+          }
+        } catch {
+          return try result(
+            outcome: "failed", mutated: true, plan: currentPlan, packages: packages,
+            message:
+              "Native starter publication stopped: \(error). Any created user files were retained; no providers were changed. Review existing files before retrying.",
+            json: json)
+        }
         let plannedStages = Set(
           currentPlan.actions.compactMap { UnifiedSetupTransactionStage(rawValue: $0.stage) }
         )
@@ -381,7 +405,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           transaction = next
         }
 
-        var mutated = packages.mutated
+        var mutated = packages.mutated || !currentModel.nativeStarters.isEmpty
         let theme: UnifiedSetupApplyStage
         if currentModel.theme.status == "activation_required" {
           try start(.theme)

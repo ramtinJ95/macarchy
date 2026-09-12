@@ -6,6 +6,126 @@ import Testing
 @testable import ThemeCore
 
 struct EnvironmentNeovimMigrationTests {
+  @Test(arguments: ["missing", "theme", "state", "public-alias", "ancestor", "conflict"])
+  func externalNeovimRejectsUnpreparedOrManagedTrees(kind: String) throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let source = try preparedSource(fixture)
+    var selected = source
+    if kind == "missing" { selected = fixture.root.appending(path: "missing") }
+    if kind == "theme" {
+      try FileManager.default.removeItem(
+        at: source.appending(path: EnvironmentNeovimMigration.themePaths[0]))
+    }
+    if kind == "state" {
+      try FileManager.default.createDirectory(at: fixture.state, withIntermediateDirectories: true)
+      selected = fixture.state.appending(path: "native-nvim")
+      try FileManager.default.moveItem(at: source, to: selected)
+    }
+    if kind == "public-alias" {
+      let entry = fixture.home.appending(path: ".config/nvim")
+      try FileManager.default.moveItem(at: source, to: entry)
+      try FileManager.default.createSymbolicLink(at: source, withDestinationURL: entry)
+    }
+    if kind == "ancestor" { selected = fixture.home }
+    if kind == "conflict" {
+      try """
+      schema_version = 1
+      [neovim]
+      native_configuration = "external-nvim"
+      configuration = "external-nvim"
+      """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+      #expect(!(try fixture.plan().succeeded))
+    } else {
+      #expect(throws: (any Error).self) {
+        try EnvironmentNeovimMigration(
+          homeDirectory: fixture.home, stateRoot: fixture.state, sourceURL: selected
+        )
+        .validateNativeTree()
+      }
+    }
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
+  }
+
+  private func preparedSource(_ fixture: EnvironmentLifecycleFixture) throws -> URL {
+    let source = fixture.root.appending(path: "external-nvim")
+    try FileManager.default.copyItem(
+      at: repositoryRoot.appending(path: "Environment/neovim/default"), to: source)
+    for path in EnvironmentNeovimMigration.themePaths {
+      let url = source.appending(path: path)
+      try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try FileManager.default.createSymbolicLink(
+        at: url,
+        withDestinationURL: fixture.state.appending(path: "environment/current/neovim/\(path)"))
+    }
+    return source
+  }
+
+  @Test(arguments: [false, true])
+  func externalNeovimSourcePreservesBehaviorAndRealConsumerSeam(existing: Bool) async throws {
+    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let base = "schema_version = 1\n[focus_ring]\nprovider = \"disabled\"\n"
+    try base.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    if existing { #expect(try await fixture.apply(adopt: nil).succeeded) }
+    let source = try preparedSource(fixture)
+    let alias = fixture.root.appending(path: "nvim-link")
+    try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: source)
+    try (base + "[neovim]\nnative_configuration = \"nvim-link\"\n").write(
+      to: fixture.profile, atomically: true, encoding: .utf8)
+    if existing {
+      #expect(!(try fixture.plan().succeeded))
+      let migration = EnvironmentNeovimMigration(
+        homeDirectory: fixture.home, stateRoot: fixture.state, sourceURL: alias)
+      let (stale, old) = try migration.plan()
+      let before = try unrelatedEvidence(fixture)
+      let initURL = source.appending(path: "init.lua")
+      let initText = try String(contentsOf: initURL, encoding: .utf8)
+      try (initText + "\n-- edited after preview\n").write(
+        to: initURL, atomically: true, encoding: .utf8)
+      let coordinator = EnvironmentTransactionCoordinator(
+        homeDirectory: fixture.home, stateRoot: fixture.state)
+      #expect(throws: (any Error).self) {
+        try coordinator.migrateNeovimLocked(approval: stale.approval, sourceURL: alias)
+      }
+      #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == old)
+      let (plan, _) = try migration.plan()
+      _ = try coordinator.migrateNeovimLocked(approval: plan.approval, sourceURL: alias)
+      #expect(try unrelatedEvidence(fixture) == before)
+    }
+    let neverRestore = EnvironmentNeovimPreparer { _, _ in
+      Issue.record("external native configuration must never restore plugin worktrees")
+      return EnvironmentVerification(id: "neovim_plugins", status: "failed", message: "unexpected")
+    }
+    let applied = try await fixture.apply(adopt: nil, neovim: neverRestore)
+    #expect(applied.succeeded, "\(applied.output)")
+    try fixture.activateTheme()
+    let active = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let adapter = NeovimAdapter(
+      root: fixture.state, configurationDirectoryURL: fixture.home.appending(path: ".config/nvim"),
+      executableURL: NeovimAdapter.liveExecutableURL, controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        ProcessResult(
+          terminationStatus: 0,
+          output: "MACARCHY_THEME=\(active.generationID):\(active.themeID)")
+      })
+    #expect(adapter.inspection(includeRuntimeChecks: true).status == .ready)
+    #expect(try await adapter.reconciliation().run().status == .applied)
+    let generation = try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination()
+    let lock = source.appending(path: "lazy-lock.json")
+    try "{}\n".write(to: lock, atomically: true, encoding: .utf8)
+    let repeated = try await fixture.apply(adopt: nil, neovim: neverRestore)
+    #expect(repeated.succeeded, "\(repeated.output)")
+    #expect(try jsonObject(repeated.output)["outcome"] as? String == "no_change")
+    #expect(
+      try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination() == generation)
+    #expect(try fixture.status().succeeded)
+    #expect(try await fixture.teardown().succeeded)
+    #expect(try String(contentsOf: lock, encoding: .utf8) == "{}\n")
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: alias.path) == source.path)
+  }
+
   private func unrelatedEvidence(_ fixture: EnvironmentLifecycleFixture) throws
     -> [EnvironmentEntryEvidence]
   {
@@ -164,14 +284,34 @@ struct EnvironmentNeovimMigrationTests {
 
   @Test(arguments: [false, true], [false, true])
   func recoveryIsNeovimOnly(rollback: Bool, entryAlreadySwitched: Bool) async throws {
+    try await recover(
+      rollback: rollback, entryAlreadySwitched: entryAlreadySwitched, external: false)
+  }
+
+  @Test(arguments: [false, true], [false, true])
+  func externalRecoveryIsNeovimOnly(rollback: Bool, entryAlreadySwitched: Bool) async throws {
+    try await recover(
+      rollback: rollback, entryAlreadySwitched: entryAlreadySwitched, external: true)
+  }
+
+  private func recover(rollback: Bool, entryAlreadySwitched: Bool, external: Bool) async throws {
     let fixture = try await fixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let migration = EnvironmentNeovimMigration(
       homeDirectory: fixture.home, stateRoot: fixture.state)
-    let (_, old) = try migration.plan()
-    let new = old.replacingNeovimTarget(migration.nativeRoot.path)
+    let (plan, legacy) = try migration.plan()
+    if external {
+      _ = try EnvironmentTransactionCoordinator(
+        homeDirectory: fixture.home, stateRoot: fixture.state
+      )
+      .migrateNeovimLocked(approval: plan.approval)
+    } else {
+      try migration.seed(legacy)
+    }
+    let old = try #require(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership())
+    let source = external ? try preparedSource(fixture) : migration.nativeRoot
+    let new = old.replacingNeovimTarget(source.path)
     let unrelated = try unrelatedEvidence(fixture)
-    try migration.seed(old)
     if entryAlreadySwitched { try migration.transition(from: old, to: new) }
     let journal = EnvironmentTransaction(
       operation: .neovimMigration, previousOwnership: old, proposedOwnership: new,
@@ -213,8 +353,10 @@ struct EnvironmentNeovimMigrationTests {
     #expect(try store.readOwnership() == old)
   }
 
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_LAZY_NVIM_ROOT"] != nil))
-  func installedLazyCanWriteTheMigratedLockWithoutDownloads() async throws {
+  @Test(
+    .enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_LAZY_NVIM_ROOT"] != nil),
+    arguments: [false, true])
+  func installedLazyCanWriteTheMigratedLockWithoutDownloads(external: Bool) async throws {
     let fixture = try await fixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let lazyRoot = try #require(ProcessInfo.processInfo.environment["MACARCHY_TEST_LAZY_NVIM_ROOT"])
@@ -223,6 +365,16 @@ struct EnvironmentNeovimMigrationTests {
     let (plan, _) = try migration.plan()
     _ = try EnvironmentTransactionCoordinator(homeDirectory: fixture.home, stateRoot: fixture.state)
       .migrateNeovimLocked(approval: plan.approval)
+    if external {
+      let source = try preparedSource(fixture)
+      let migration = EnvironmentNeovimMigration(
+        homeDirectory: fixture.home, stateRoot: fixture.state, sourceURL: source)
+      let (plan, _) = try migration.plan()
+      _ = try EnvironmentTransactionCoordinator(
+        homeDirectory: fixture.home, stateRoot: fixture.state
+      )
+      .migrateNeovimLocked(approval: plan.approval, sourceURL: source)
+    }
     let result = try ProcessRunner.live.run(
       ProcessRequest(
         executableURL: NeovimAdapter.liveExecutableURL,

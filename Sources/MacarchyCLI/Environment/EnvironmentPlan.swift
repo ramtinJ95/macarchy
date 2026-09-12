@@ -51,7 +51,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     homeDirectory: URL? = nil,
     json: Bool,
     profile suppliedProfile: PortableProfile? = nil,
-    bootstrapTheme: ThemePackage? = nil
+    bootstrapTheme: ThemePackage? = nil,
+    nativeStarters: [EnvironmentNativeSeed] = []
   ) throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
     if let suppliedProfile {
@@ -74,11 +75,14 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
 
     let composition: EnvironmentComposition
+    let starterPlans: [EnvironmentNativeSeed.Plan]
     do {
+      starterPlans = try nativeStarters.map { try $0.plan() }
       composition = try EnvironmentConfigurationComposer().compose(
         resourcesRoot: resourcesRoot,
         profile: profile,
-        stateRoot: stateRoot
+        stateRoot: stateRoot,
+        proposedNativeFiles: UnifiedSetupNativeStarters.proposedFiles(starterPlans)
       )
     } catch {
       let source = (error as? EnvironmentConfigurationError)?.sourceURL ?? resourcesRoot
@@ -97,7 +101,10 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
 
     let provider = homeDirectory.map {
-      EnvironmentProviderInspector(bootstrapTheme: bootstrapTheme).inspectIncludingBordersRuntime(
+      EnvironmentProviderInspector(
+        bootstrapTheme: bootstrapTheme,
+        proposedNativeSources: Set(starterPlans.map(\.destination))
+      ).inspectIncludingBordersRuntime(
         composition: composition,
         homeDirectory: $0,
         stateRoot: stateRoot,
@@ -163,7 +170,8 @@ struct EnvironmentPlanCommandRunner: Sendable {
     )
     let nativeNeovimRoot = homeDirectory.flatMap { home -> URL? in
       let migration = EnvironmentNeovimMigration(homeDirectory: home, stateRoot: stateRoot)
-      return migration.isNative(provider?.ownership) ? migration.nativeRoot : nil
+      return migration.nativeTarget(in: provider?.ownership)
+        ?? composition.profile.neovim.nativeConfigurationDirectoryURL
     }
     let report = EnvironmentPlanReport(
       outcome: blocked ? "blocked" : "ready",
@@ -179,10 +187,20 @@ struct EnvironmentPlanCommandRunner: Sendable {
       presets: composition.profile.presetPresentation,
       packagedDefaults: resourcesRoot.path,
       kittyOverride: composition.kittyOverrideURL?.path,
+      kittyConfiguration: composition.profile.kitty.configurationURL?.path,
       zshHook: composition.zshHookURL?.path,
       zshHookDigest: composition.zshHookDigest,
-      starshipBehavior: composition.starshipBehaviorURL?.path,
-      atuinConfiguration: composition.atuinConfigurationURL?.path,
+      zshConfiguration: composition.profile.zsh.configurationURL?.path,
+      starshipBehavior: homeDirectory.flatMap { home in
+        let migration = EnvironmentNativeFileMigration(
+          provider: .starship, homeDirectory: home, stateRoot: stateRoot)
+        return migration.nativeTarget(in: provider?.ownership)?.path
+      } ?? composition.starshipBehaviorURL?.path,
+      atuinConfiguration: homeDirectory.flatMap { home in
+        let migration = EnvironmentNativeFileMigration(
+          provider: .atuin, homeDirectory: home, stateRoot: stateRoot)
+        return migration.nativeTarget(in: provider?.ownership)?.path
+      } ?? composition.atuinConfigurationURL?.path,
       neovimConfiguration: nativeNeovimRoot?.path ?? composition.neovimConfigurationURL?.path,
       renderedArtifacts: renderedArtifacts,
       renderedArtifactDigests: Dictionary(
@@ -405,8 +423,10 @@ private struct EnvironmentPlanReport: Encodable {
   let presets: [String: String]
   let packagedDefaults: String
   let kittyOverride: String?
+  let kittyConfiguration: String?
   let zshHook: String?
   let zshHookDigest: String?
+  let zshConfiguration: String?
   let starshipBehavior: String?
   let atuinConfiguration: String?
   let neovimConfiguration: String?
@@ -443,8 +463,10 @@ private struct EnvironmentPlanReport: Encodable {
       presets: environment?.presetPresentation ?? [:],
       packagedDefaults: resourcesRoot.path,
       kittyOverride: environment?.kitty.overrideDirectoryURL?.path,
+      kittyConfiguration: environment?.kitty.configurationURL?.path,
       zshHook: environment?.zsh.hookURL?.path,
       zshHookDigest: nil,
+      zshConfiguration: environment?.zsh.configurationURL?.path,
       starshipBehavior: environment?.starship.behaviorURL?.path,
       atuinConfiguration: environment?.atuin.configurationURL?.path,
       neovimConfiguration: environment?.neovim.configurationDirectoryURL?.path,
@@ -484,8 +506,10 @@ private struct EnvironmentPlanReport: Encodable {
         .joined(separator: ", "),
       "- packaged defaults: \(packagedDefaults)",
       "- Kitty override: " + (kittyOverride ?? "none"),
+      "- live Kitty configuration (user-owned): " + (kittyConfiguration ?? "none"),
       "- trusted zsh hook: " + (zshHook ?? "none"),
       "- zsh hook digest: " + (zshHookDigest ?? "none"),
+      "- live zsh configuration (user-owned): " + (zshConfiguration ?? "none"),
       "- Starship behavior: " + (starshipBehavior ?? "none"),
       "- Atuin configuration: " + (atuinConfiguration ?? "none"),
       "- Neovim configuration: " + (neovimConfiguration ?? "none"),
