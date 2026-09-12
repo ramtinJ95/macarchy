@@ -9,8 +9,56 @@ struct EnvironmentCommand: ParsableCommand {
     subcommands: [
       Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, MigrateNeovim.self,
       SeedConfiguration.self, MigrateAtuin.self, MigrateStarship.self, ConfigurationSource.self,
+      MigrateStandard.self,
     ]
   )
+
+  struct MigrateStandard: ParsableCommand {
+    static let configuration = CommandConfiguration(
+      commandName: "migrate-standard",
+      abstract: "Review release of one managed entry to user-owned standard configuration.")
+    @Argument(help: "Provider: zsh, kitty, atuin, starship or neovim.") var provider: String
+    @Option(help: "Prepared personal file, or writable Neovim directory to move.") var source:
+      String
+    @Option(help: "Canonical Macarchy state directory.")
+    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
+      .appending(path: ".config/macarchy").path
+    @Option(help: "Exact approval digest from the preview.") var approve: String?
+    @Flag(help: "Emit the preview as JSON.") var json = false
+
+    mutating func run() throws {
+      guard let provider = EnvironmentNativeSeed.Provider(rawValue: provider) else {
+        throw ValidationError("provider must be zsh, kitty, atuin, starship or neovim")
+      }
+      let home = FileManager.default.homeDirectoryForCurrentUser
+      let root = URL(filePath: stateRoot).standardizedFileURL
+      let source = URL(filePath: source).standardizedFileURL
+      if let approve {
+        guard !json else { throw ValidationError("--json is a preview option") }
+        let lock = EnvironmentLifecycleLock(stateRoot: root)
+        let descriptor = try lock.acquire()
+        defer { lock.release(descriptor) }
+        print(
+          try ActivationLock(root: root).withLock {
+            try EnvironmentTransactionCoordinator(homeDirectory: home, stateRoot: root)
+              .migrateStandardLocked(provider: provider, sourceURL: source, approval: approve)
+          })
+      } else {
+        let (plan, _) = try EnvironmentStandardMigration(
+          provider: provider, homeDirectory: home, stateRoot: root, sourceURL: source
+        ).plan()
+        if json {
+          let encoder = JSONEncoder()
+          encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+          print(String(decoding: try encoder.encode(plan), as: UTF8.self))
+        } else {
+          print("Source: \(plan.source)\nDestination: \(plan.destination)\n\(plan.message)")
+          print("Retained backup: \(plan.retainedBackup ?? "none")")
+          print("Review, then repeat with --approve '\(plan.approval)'.")
+        }
+      }
+    }
+  }
 
   struct ConfigurationSource: ParsableCommand {
     static let configuration = CommandConfiguration(
