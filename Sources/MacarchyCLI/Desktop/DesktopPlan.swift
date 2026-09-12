@@ -255,6 +255,7 @@ struct DesktopPlanCommandRunner: Sendable {
         packagedDefaults: resourcesRoot.appending(path: "sketchybar/defaults.toml").path,
         settings: sketchyBarComposition?.settings,
         layout: sketchyBarComposition?.layout,
+        automaticClock: sketchyBarComposition?.automaticClock,
         spaceModule: sketchyBarComposition?.spaceModule.rawValue,
         moduleCapabilities: sketchyBarComposition.map(Self.moduleCapabilities),
         hook: sketchyBarComposition?.hookURL?.path,
@@ -592,6 +593,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
   let packagedDefaults: String
   let settings: SketchyBarSettings?
   let layout: SketchyBarLayout?
+  let automaticClock: Bool?
   let spaceModule: String?
   let moduleCapabilities: [String: String]?
   let hook: String?
@@ -610,6 +612,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
       "- SketchyBar left modules: \(modules(layout?.left))",
       "- SketchyBar center modules: \(modules(layout?.center))",
       "- SketchyBar right modules: \(modules(layout?.right))",
+      "- SketchyBar automatic clock placement: \(automaticClock.map { $0 ? "on" : "off" } ?? "unavailable")",
       "- SketchyBar Space module: \(spaceModule ?? "unavailable")",
       "- SketchyBar optional module capabilities: \(capabilities)",
       "- trusted SketchyBar hook: \(hook ?? "none")",
@@ -646,6 +649,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
     case packagedDefaults = "packaged_defaults"
     case settings
     case layout
+    case automaticClock = "automatic_clock"
     case spaceModule = "space_module"
     case moduleCapabilities = "module_capabilities"
     case hook

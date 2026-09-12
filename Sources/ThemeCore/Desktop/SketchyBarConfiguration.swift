@@ -144,10 +144,14 @@ package struct SketchyBarConfigurationComposer: Sendable {
       throw SketchyBarConfigurationError.invalid(
         defaultsURL, "native-menu toggle requires a top-positioned bar")
     }
-    let automaticClock = ![
+    let inheritedClock = ![
       profile.sketchyBar.left, profile.sketchyBar.center, profile.sketchyBar.right,
-    ]
-    .compactMap { $0 }.joined().contains(.clock)
+    ].compactMap { $0 }.joined().contains(.clock)
+    let automaticClock = profile.sketchyBar.automaticClock ?? inheritedClock
+    guard profile.sketchyBar.automaticClock != true || layout.position(of: .clock) != nil else {
+      throw SketchyBarConfigurationError.invalid(
+        profile.sourceURL ?? defaultsURL, "automatic_clock requires an enabled clock module")
+    }
     let spaceModule: SketchyBarSpaceModule =
       if layout.position(of: .spaces) == nil {
         .hidden
@@ -451,7 +455,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
           lines += [
             "\"$SKETCHYBAR\" --add item macarchy.clock.preview right --set macarchy.clock.preview drawing=off label=0",
             "\"$SKETCHYBAR\" --add item macarchy.clock \(position.rawValue) \\",
-            "  --set macarchy.clock icon.drawing=off label.font='SF Mono:Semibold:13.0' label.align=center update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
+            "  --set macarchy.clock icon.drawing=off label.font='SF Mono:Semibold:13.0' label.align=center updates=on update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
             "\"$SKETCHYBAR\" --subscribe macarchy.clock mouse.clicked display_change system_woke",
           ]
         case .toggle:

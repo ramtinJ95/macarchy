@@ -59,6 +59,7 @@ package struct SketchyBarProfileOptions: Equatable, Sendable {
   package let left: [SketchyBarModule]?
   package let center: [SketchyBarModule]?
   package let right: [SketchyBarModule]?
+  package let automaticClock: Bool?
   package let hookURL: URL?
   package let hookRootURL: URL?
 }
@@ -233,6 +234,7 @@ package struct PortableProfileLoader: Sendable {
     "sketchybar.left",
     "sketchybar.center",
     "sketchybar.right",
+    "sketchybar.automatic_clock",
     "sketchybar.hook",
     "terminal.provider",
     "kitty.font_family",
@@ -554,6 +556,7 @@ package struct PortableProfileLoader: Sendable {
       left: document?.left,
       center: document?.center,
       right: document?.right,
+      automaticClock: document?.automaticClock,
       hookURL: hookURL,
       hookRootURL: hookURL == nil ? nil : base
     )
@@ -1143,6 +1146,9 @@ package struct PortableProfileLoader: Sendable {
           "sketchybar.center", portableProfile.sketchyBar.center, machineProfile.sketchyBar.center),
         right: value(
           "sketchybar.right", portableProfile.sketchyBar.right, machineProfile.sketchyBar.right),
+        automaticClock: value(
+          "sketchybar.automatic_clock",
+          portableProfile.sketchyBar.automaticClock, machineProfile.sketchyBar.automaticClock),
         hookURL: value(
           "sketchybar.hook",
           portableProfile.sketchyBar.hookURL,
@@ -1400,6 +1406,7 @@ extension SketchyBarProfileOptions {
     left: nil,
     center: nil,
     right: nil,
+    automaticClock: nil,
     hookURL: nil,
     hookRootURL: nil
   )
@@ -1555,7 +1562,13 @@ private struct SketchyBarDocument: Decodable {
   let left: [SketchyBarModule]?
   let center: [SketchyBarModule]?
   let right: [SketchyBarModule]?
+  let automaticClock: Bool?
   let hook: String?
+
+  enum CodingKeys: String, CodingKey {
+    case left, center, right, hook
+    case automaticClock = "automatic_clock"
+  }
 }
 
 private struct TerminalDocument: Decodable {

@@ -501,7 +501,11 @@ right = ["clock", "volume", "cpu", "memory"]
 Omitted arrays inherit defaults; empty arrays hide that position's modules.
 A module may appear only once. An inherited clock moves to center when an
 external display is online, otherwise compact right. Explicitly placing `clock`
-fixes its position. Click it for a four-second ISO-week preview.
+fixes its position unless you set `automatic_clock = true` in `[sketchybar]`.
+This enables monitor-dependent placement without changing your module arrays
+(for example, when omitting media). `false` fixes the array position; omission
+preserves the inherited-versus-explicit behavior. Click the clock for a
+four-second ISO-week preview.
 
 Volume supports scrolling (Ctrl for fine steps), a slider, safe output-device
 selection, and right-click Sound settings. Wi-Fi never requests Location access:

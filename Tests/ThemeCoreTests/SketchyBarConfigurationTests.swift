@@ -193,6 +193,43 @@ struct SketchyBarConfigurationTests {
     }
   }
 
+  @Test(arguments: [true, false])
+  func automaticClockCanBeSelectedWithoutRestoringExcludedMedia(automatic: Bool) throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = try PortableProfileLoader().decode(
+      """
+      schema_version = 1
+      [sketchybar]
+      center = ["clock"]
+      right = ["battery", "volume", "wifi", "cpu", "memory", "toggle"]
+      automatic_clock = \(automatic)
+      """, source: root.appending(path: "profile.toml"))
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL, profile: profile, stateRoot: root)
+    #expect(composition.automaticClock == automatic)
+    #expect(composition.layout.position(of: .media) == nil)
+    let clock = try #require(composition.artifacts.first { $0.path == "plugins/clock.sh" })
+    #expect(clock.contents.contains("--position '\(automatic ? "auto" : "center")'"))
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+    #expect(entry.contents.contains("label.align=center updates=on update_freq=30"))
+    #expect(!entry.contents.contains("macarchy.media"))
+  }
+
+  @Test func automaticClockRejectsAHiddenClockAndNonBooleanIntent() throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    for value in ["true", "\"auto\""] {
+      #expect(throws: (any Error).self) {
+        let profile = try PortableProfileLoader().decode(
+          "schema_version = 1\n[sketchybar]\nright = []\nautomatic_clock = \(value)\n",
+          source: root.appending(path: "profile.toml"))
+        _ = try SketchyBarConfigurationComposer().compose(
+          defaultsURL: defaultsURL, profile: profile, stateRoot: root)
+      }
+    }
+  }
+
   @Test
   func metricsAreIndividuallyPositionedAndRemoved() throws {
     let root = try configurationRoot()
