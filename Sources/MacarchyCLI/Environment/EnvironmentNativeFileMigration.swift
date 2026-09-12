@@ -33,10 +33,6 @@ struct EnvironmentNativeFileMigration: Sendable {
     ).path
   }
 
-  func isNative(_ ownership: EnvironmentOwnership?) -> Bool {
-    nativeTarget(in: ownership) != nil
-  }
-
   func nativeTarget(in ownership: EnvironmentOwnership?) -> URL? {
     guard let record = ownership?.records.first(where: { $0.id == provider.entryID }),
       record.publicPath == publicURL.path, record.managedKind == "symbolic_link",
@@ -171,22 +167,9 @@ struct EnvironmentNativeFileMigration: Sendable {
 
   func seed(_ ownership: EnvironmentOwnership) throws {
     let data = try seedData(ownership)
-    let parent = try PinnedFilesystem.openDirectory(at: nativeURL.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let name = ".macarchy-\(provider.rawValue)-\(UUID().uuidString.lowercased()).seed"
-    defer { name.withCString { _ = Darwin.unlinkat(parent, $0, 0) } }
-    try PinnedFilesystem.writeNewRegularFile(
-      parentDescriptor: parent, name: name,
-      url: nativeURL.deletingLastPathComponent().appending(path: name),
-      data: data, mode: 0o600)
-    let result = name.withCString { source in
-      nativeURL.lastPathComponent.withCString {
-        Darwin.renameatx_np(parent, source, parent, $0, UInt32(RENAME_EXCL))
-      }
-    }
-    guard result == 0, fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("publish native seed", nativeURL, errno)
-    }
+    try EnvironmentNativeSeed.publishFile(
+      data, at: nativeURL, temporaryPrefix: ".macarchy-\(provider.rawValue)",
+      publishOperation: "publish native seed", syncOperation: "publish native seed")
     try validateNativeFile()
   }
 
@@ -261,10 +244,6 @@ enum EnvironmentNativeSource {
 }
 
 extension EnvironmentTransactionCoordinator {
-  func migrateAtuinLocked(approval: String) throws -> String {
-    try migrateNativeFileLocked(provider: .atuin, approval: approval)
-  }
-
   func migrateNativeFileLocked(
     provider: EnvironmentNativeFileMigration.Provider, approval: String, sourceURL: URL? = nil
   )

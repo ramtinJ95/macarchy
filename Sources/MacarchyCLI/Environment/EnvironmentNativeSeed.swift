@@ -155,26 +155,35 @@ struct EnvironmentNativeSeed: Sendable {
       ).validateNativeTree()
       return plan
     }
+    try Self.publishFile(
+      Data(plan.contents.utf8), at: destination, temporaryPrefix: ".macarchy-native",
+      publishOperation: "publish native starter", syncOperation: "sync published native starter")
+    return plan
+  }
+
+  static func publishFile(
+    _ data: Data, at destination: URL, temporaryPrefix: String,
+    publishOperation: String, syncOperation: String
+  ) throws {
     let parent = try PinnedFilesystem.openDirectory(at: destination.deletingLastPathComponent())
     defer { Darwin.close(parent) }
-    let temporary = ".macarchy-native-\(UUID().uuidString.lowercased()).seed"
+    let temporary = "\(temporaryPrefix)-\(UUID().uuidString.lowercased()).seed"
     let temporaryURL = destination.deletingLastPathComponent().appending(path: temporary)
     defer { temporary.withCString { _ = Darwin.unlinkat(parent, $0, 0) } }
     try PinnedFilesystem.writeNewRegularFile(
       parentDescriptor: parent, name: temporary, url: temporaryURL,
-      data: Data(plan.contents.utf8), mode: 0o600)
+      data: data, mode: 0o600)
     let result = temporary.withCString { source in
       destination.lastPathComponent.withCString {
         Darwin.renameatx_np(parent, source, parent, $0, UInt32(RENAME_EXCL))
       }
     }
     guard result == 0 else {
-      throw EnvironmentLifecycleError.system("publish native starter", destination, errno)
+      throw EnvironmentLifecycleError.system(publishOperation, destination, errno)
     }
     guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync published native starter", destination, errno)
+      throw EnvironmentLifecycleError.system(syncOperation, destination, errno)
     }
-    return plan
   }
 
   private func validateDestination() throws {
