@@ -4,17 +4,20 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarConfigurationTests {
-  @Test func sliderCreationPassesPositionBeforeWidthToTheNativeCLI() throws {
+  @Test(arguments: [false, true])
+  func generatedCommandsPreserveNativeArguments(toggle: Bool) throws {
     let root = try configurationRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
-      "schema_version = 1\n[sketchybar]\nleft = []\nright = [\"volume\"]\n",
+      "schema_version = 1\n[sketchybar]\nleft = []\nright = [\"\(toggle ? "toggle" : "volume")\"]\n",
       source: root.appending(path: "profile.toml"))
     let composition = try SketchyBarConfigurationComposer().compose(
       defaultsURL: defaultsURL, profile: profile, stateRoot: root)
     let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
     let command = try #require(
-      entry.contents.split(separator: "\n").first { $0.contains("--add slider ") })
+      entry.contents.split(separator: "\n").first {
+        $0.contains(toggle ? "--set macarchy.toggle updates=" : "--add slider ")
+      })
     let recorder = root.appending(path: "record-arguments.sh")
     try "#!/bin/sh\nprintf '%s\\n' \"$@\"\n".write(
       to: recorder, atomically: true, encoding: .utf8)
@@ -22,7 +25,8 @@ struct SketchyBarConfigurationTests {
     let process = Process()
     process.executableURL = URL(filePath: "/bin/sh")
     process.arguments = ["-c", String(command)]
-    process.environment = ["SKETCHYBAR": recorder.path]
+    let token = "00000000-0000-0000-0000-000000000001"
+    process.environment = ["SKETCHYBAR": recorder.path, "TOGGLE_TOKEN": token]
     let output = Pipe()
     process.standardOutput = output
     try process.run()
@@ -32,10 +36,21 @@ struct SketchyBarConfigurationTests {
     .split(separator: "\n").map(String.init)
     process.waitUntilExit()
     #expect(process.terminationStatus == 0)
-    // Native 2.23.0 message.c consumes position before the slider width.
-    #expect(
-      Array(arguments.prefix(5))
-        == ["--add", "slider", "macarchy.volume.slider", "popup.macarchy.volume.bracket", "250"])
+    if toggle {
+      #expect(
+        arguments.contains(
+          "script="
+            + SketchyBarConfigurationComposer.toggleScript(
+              pluginPath: root.appending(path: "desktop/sketchybar/current/plugins/toggle.sh").path,
+              token: token)))
+      #expect(
+        arguments.suffix(4) == ["--subscribe", "macarchy.toggle", "display_change", "system_woke"])
+    } else {
+      // Native 2.23.0 message.c consumes position before the slider width.
+      #expect(
+        Array(arguments.prefix(5))
+          == ["--add", "slider", "macarchy.volume.slider", "popup.macarchy.volume.bracket", "250"])
+    }
   }
 
   @Test func callbacksTreatMetacharactersInPluginPathsAsLiteralData() throws {
@@ -69,15 +84,23 @@ struct SketchyBarConfigurationTests {
       let composition = try SketchyBarConfigurationComposer().compose(
         defaultsURL: defaultsURL, profile: profile, stateRoot: root)
       let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
-      #expect(entry.contents.contains("desktop _bar-toggle") == enabled)
+      #expect(entry.contents.contains("\"$PLUGIN_DIR/toggle.sh\" \"$TOGGLE_TOKEN\"") == enabled)
       #expect(entry.contents.contains("label=\"$TOGGLE_TOKEN|starting\"") == enabled)
       #expect(entry.contents.contains("hidden=off y_offset=0"))
       #expect(!entry.contents.contains("pkill"))
       #expect(!entry.contents.contains("killall"))
+      #expect(!entry.contents.contains("2>&1"))
+      let watchdog = composition.artifacts.first { $0.path == "plugins/toggle.sh" }
+      #expect((watchdog != nil) == enabled)
       if enabled {
+        #expect(watchdog?.contents.contains("desktop _bar-toggle") == true)
+        #expect(watchdog?.contents.contains("2>&1") == false)
+        #expect(entry.contents.contains("updates=on update_freq=1"))
+        #expect(entry.contents.contains("--subscribe macarchy.toggle display_change system_woke"))
         let ready = try #require(
           entry.contents.range(of: SketchyBarConfigurationComposer.managedReadyMarkerDeclaration))
-        let helper = try #require(entry.contents.range(of: "desktop _bar-toggle"))
+        let helper = try #require(
+          entry.contents.range(of: "\"$PLUGIN_DIR/toggle.sh\" \"$TOGGLE_TOKEN\""))
         #expect(ready.lowerBound < helper.lowerBound)
       }
       try requireValidShellSyntax(composition.artifacts, root: root)
@@ -229,7 +252,8 @@ struct SketchyBarConfigurationTests {
     #expect(
       first.artifacts.map { $0.path }
         == [
-          "sketchybarrc", "plugins/clock.sh", "plugins/space-indexes.sh", "plugins/volume.sh",
+          "sketchybarrc", "plugins/clock.sh", "plugins/space-indexes.sh", "plugins/toggle.sh",
+          "plugins/volume.sh",
           "plugins/battery.sh", "plugins/cpu.sh", "plugins/memory.sh", "plugins/wifi.sh",
           "plugins/apple.sh", "plugins/media.sh",
         ]

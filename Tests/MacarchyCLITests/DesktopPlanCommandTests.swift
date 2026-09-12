@@ -46,7 +46,7 @@ struct DesktopPlanCommandTests {
       (sketchyBar["rendered_artifacts"] as? [String: String])?.keys.sorted()
         == [
           "plugins/apple.sh", "plugins/battery.sh", "plugins/clock.sh", "plugins/cpu.sh",
-          "plugins/media.sh", "plugins/memory.sh", "plugins/space-indexes.sh",
+          "plugins/media.sh", "plugins/memory.sh", "plugins/space-indexes.sh", "plugins/toggle.sh",
           "plugins/volume.sh", "plugins/wifi.sh", "sketchybarrc",
         ]
     )

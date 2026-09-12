@@ -48,7 +48,7 @@ struct SketchyBarGenerationTests {
         schema_version = 1
         [sketchybar]
         left = ["spaces"]
-        right = ["volume", "clock"\(withBattery ? ", \"battery\", \"cpu\", \"memory\", \"wifi\", \"media\", \"apple\"" : "")]
+        right = ["volume", "clock"\(withBattery ? ", \"battery\", \"cpu\", \"memory\", \"wifi\", \"media\", \"apple\", \"toggle\"" : "")]
         hook = "hook.sh"
         """,
         source: root.appending(path: "profile.toml")

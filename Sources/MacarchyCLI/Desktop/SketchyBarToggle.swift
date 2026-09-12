@@ -69,7 +69,10 @@ struct SketchyBarToggle {
     do {
       guard try owns(token) else { return }
       guard try foreignToggleAbsent() else { throw ToggleError.foreignProcess }
-      try bar(["--bar", "hidden=off", "y_offset=0"])
+      try bar([
+        "--bar", "hidden=off", "y_offset=0",
+        "--set", "macarchy.toggle", "label.drawing=off",
+      ])
       var state = NativeMenuToggleState()
       var heartbeat = -Double.infinity
       var conflictCheck = uptime()
@@ -113,7 +116,7 @@ struct SketchyBarToggle {
         if try owns(token) {
           try bar([
             "--bar", "hidden=off", "y_offset=0", "--set", "macarchy.toggle", "drawing=on",
-            "icon.drawing=off", "label.drawing=on", "label=Toggle ERR: \(error)",
+            "icon.drawing=off", "label.drawing=on", "label=\(token)|Toggle ERR: \(error)",
           ])
         }
       } catch let presentation {
@@ -227,7 +230,7 @@ extension Desktop {
       guard let started = SketchyBarToggle.processStart(getpid()) else {
         throw ToggleError.processQuery
       }
-      try lock.withLock(root: URL(filePath: stateRoot)) {
+      _ = try lock.withLockIfAvailable(root: URL(filePath: stateRoot)) {
         try SketchyBarToggle(
           processRunner: .live, uptime: { ProcessInfo.processInfo.systemUptime },
           distance: SketchyBarToggle.cursorDistanceFromTop,
