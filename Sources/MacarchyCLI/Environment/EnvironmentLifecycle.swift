@@ -64,11 +64,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
   ) {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     guard let transaction = try store.readTransaction() else { return (false, nil, nil, nil) }
+    if transaction.operation == .standardMigration {
+      try finishStandardMigrationLocked(transaction)
+      return (true, nil, nil, nil)
+    }
     try validate(transaction.previousOwnership)
     try validate(transaction.proposedOwnership)
     switch transaction.direction {
     case .forward:
       switch transaction.operation {
+      case .standardMigration:
+        throw EnvironmentLifecycleError.blocked("standard migration requires scoped recovery")
       case .apply, .herdrTheme, .neovimMigration, .atuinMigration, .starshipMigration:
         guard let proposed = transaction.proposedOwnership else {
           throw EnvironmentLifecycleError.blocked("apply recovery has no proposed ownership")
@@ -149,7 +155,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
 
     switch (transaction.direction, transaction.operation) {
-    case (.forward, .neovimMigration), (.forward, .atuinMigration), (.forward, .starshipMigration):
+    case (.forward, .standardMigration), (.forward, .neovimMigration), (.forward, .atuinMigration),
+      (.forward, .starshipMigration):
       break
     case (.forward, .apply), (.forward, .herdrTheme):
       if let proposed = transaction.proposedOwnership,

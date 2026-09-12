@@ -6,6 +6,7 @@ enum EnvironmentTransactionOperation: String, Codable, Sendable {
   case neovimMigration = "neovim_migration"
   case atuinMigration = "atuin_migration"
   case starshipMigration = "starship_migration"
+  case standardMigration = "standard_migration"
   case teardown
 
   var nativeFileProvider: EnvironmentNativeFileMigration.Provider? {
@@ -16,7 +17,9 @@ enum EnvironmentTransactionOperation: String, Codable, Sendable {
     }
   }
 
-  var isNativeMigration: Bool { self == .neovimMigration || nativeFileProvider != nil }
+  var isNativeMigration: Bool {
+    self == .standardMigration || self == .neovimMigration || nativeFileProvider != nil
+  }
 }
 
 enum EnvironmentTransactionDirection: String, Codable, Sendable {
@@ -76,6 +79,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let schemaVersion: Int
   let operation: EnvironmentTransactionOperation
   let direction: EnvironmentTransactionDirection
+  let standardMigration: EnvironmentStandardMigration.Intent?
   let previousOwnership: EnvironmentOwnership?
   let proposedOwnership: EnvironmentOwnership?
   let previousCurrentDestination: String?
@@ -101,6 +105,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   init(
     operation: EnvironmentTransactionOperation,
     direction: EnvironmentTransactionDirection = .forward,
+    standardMigration: EnvironmentStandardMigration.Intent? = nil,
     previousOwnership: EnvironmentOwnership?,
     proposedOwnership: EnvironmentOwnership?,
     previousCurrentDestination: String?,
@@ -126,6 +131,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     schemaVersion = Self.currentSchemaVersion
     self.operation = operation
     self.direction = direction
+    self.standardMigration = standardMigration
     self.previousOwnership = previousOwnership
     self.proposedOwnership = proposedOwnership
     self.previousCurrentDestination = previousCurrentDestination
@@ -155,6 +161,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     return Self(
       operation: operation,
       direction: .rollback,
+      standardMigration: standardMigration,
       previousOwnership: previousOwnership,
       proposedOwnership: proposedOwnership,
       previousCurrentDestination: previousCurrentDestination,
@@ -191,6 +198,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     Self(
       operation: operation,
       direction: direction,
+      standardMigration: standardMigration,
       previousOwnership: previousOwnership,
       proposedOwnership: proposedOwnership,
       previousCurrentDestination: previousCurrentDestination,
@@ -219,6 +227,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     Self(
       operation: operation,
       direction: direction,
+      standardMigration: standardMigration,
       previousOwnership: previousOwnership,
       proposedOwnership: proposedOwnership,
       previousCurrentDestination: previousCurrentDestination,
@@ -245,6 +254,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case operation, direction
+    case standardMigration = "standard_migration"
     case previousOwnership = "previous_ownership"
     case proposedOwnership = "proposed_ownership"
     case previousCurrentDestination = "previous_current_destination"

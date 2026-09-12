@@ -189,16 +189,27 @@ struct EnvironmentStateStore: Sendable {
   }
 
   private static func providerReplacementsAreValid(_ transaction: EnvironmentTransaction) -> Bool {
+    guard (transaction.operation == .standardMigration) == (transaction.standardMigration != nil)
+    else { return false }
     if transaction.operation.isNativeMigration {
       let id: EnvironmentEntryID =
-        transaction.operation.nativeFileProvider?.entryID ?? .neovim
+        transaction.standardMigration?.provider.entryID
+        ?? transaction.operation.nativeFileProvider?.entryID ?? .neovim
       guard let previous = transaction.previousOwnership,
         let proposed = transaction.proposedOwnership,
-        let old = previous.records.first(where: { $0.id == id }),
-        let new = proposed.records.first(where: { $0.id == id })
+        let old = previous.records.first(where: { $0.id == id })
       else { return false }
-      return old.managedTarget != new.managedTarget
-        && previous.replacingTarget(for: id, with: new.managedTarget) == proposed
+      let changeIsValid: Bool
+      if transaction.operation == .standardMigration {
+        changeIsValid = previous.releasingStandardEntry(id) == proposed
+      } else if let new = proposed.records.first(where: { $0.id == id }) {
+        changeIsValid =
+          old.managedTarget != new.managedTarget
+          && previous.replacingTarget(for: id, with: new.managedTarget) == proposed
+      } else {
+        return false
+      }
+      return changeIsValid
         && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
         && transaction.previousThemeGenerationID == nil
         && transaction.rollbackThemeBridges.isEmpty
