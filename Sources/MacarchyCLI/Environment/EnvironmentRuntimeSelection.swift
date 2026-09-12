@@ -252,9 +252,7 @@ enum ThemeRuntimeSelection {
       neovimConfigurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
       starshipConfigurationURL: consumerPaths.starshipConfigurationURL,
       starshipBehaviorURL: EnvironmentNativeFileMigration(
-        provider: .starship,
-        homeDirectory: consumerPaths.starshipConfigurationURL.deletingLastPathComponent()
-          .deletingLastPathComponent(), stateRoot: stateRoot
+        provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot
       ).nativeTarget(in: ownership)
         ?? stateRoot.appending(
           path: "environment/current/starship/behavior.toml"

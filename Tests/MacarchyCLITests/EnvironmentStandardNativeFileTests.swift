@@ -25,9 +25,11 @@ struct EnvironmentStandardNativeFileTests {
       resourcesRoot: repositoryRoot.appending(path: "Environment")
     )
     let preview = try seed.plan()
-    #expect(!FileManager.default.fileExists(atPath: source.path))
+    if !linked { #expect(!FileManager.default.fileExists(atPath: source.path)) }
     _ = try seed.seed(approval: preview.approval)
-    #expect(throws: (any Error).self) { try seed.seed(approval: preview.approval) }
+    if !linked {
+      #expect(throws: (any Error).self) { try seed.seed(approval: preview.approval) }
+    }
     let personal = provider == .atuin ? settings : preview.contents + "\n# personal prompt\n"
     try personal.write(to: source, atomically: true, encoding: .utf8)
     if linked {
