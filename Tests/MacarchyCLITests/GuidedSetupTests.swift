@@ -379,7 +379,9 @@ struct GuidedSetupTests {
       apply: { context, _, packageApproval, _, _ in
         #expect(packageApproval != nil)
         let saved = try String(contentsOf: context.profileURL, encoding: .utf8)
-        #expect(saved == "schema_version = 1\n")
+        #expect(saved.hasPrefix("schema_version = 1\n"))
+        #expect(saved.contains("../macarchy-user/zshrc"))
+        #expect(saved.contains("../macarchy-user/neovim"))
         return ("applied including desktop", true)
       },
       io: io,
@@ -421,7 +423,8 @@ struct GuidedSetupTests {
       themesRoot: context.themesRoot,
       keybindingsResourcesRoot: context.keybindingsResourcesRoot,
       desktopResourcesRoot: context.desktopResourcesRoot,
-      environmentResourcesRoot: context.environmentResourcesRoot,
+      environmentResourcesRoot: context.themesRoot.deletingLastPathComponent().appending(
+        path: "Environment"),
       profileURL: context.profileURL,
       profileRequired: true,
       machineProfileURL: context.machineProfileURL,

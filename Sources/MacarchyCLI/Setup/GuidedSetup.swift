@@ -25,6 +25,16 @@ struct GuidedSetupAnswers: Sendable {
   var finderShowExtensions: Bool?
   var packageExclusions: [HomebrewPackageIdentity] = []
 
+  var nativeStarterProviders: [EnvironmentNativeSeed.Provider] {
+    [
+      shell ? .zsh : nil,
+      terminal ? .kitty : nil,
+      shell && history ? .atuin : nil,
+      shell && prompt ? .starship : nil,
+      editor ? .neovim : nil,
+    ].compactMap { $0 }
+  }
+
   var profileTOML: String {
     var sections = [[String]]()
     func add(_ table: String, _ fields: [String]) {
@@ -186,8 +196,25 @@ struct GuidedSetupCommandRunner: Sendable {
 
   func execute(
     context: UnifiedSetupPlanContext,
-    consumerPaths: ThemeConsumerPaths
+    consumerPaths: ThemeConsumerPaths,
+    resume: Bool = false
   ) async throws -> (output: String, succeeded: Bool) {
+    if resume {
+      let profile = try PortableProfileLoader().load(
+        portableAt: context.profileURL, portableRequired: true,
+        machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired)
+      var context = context
+      context.nativeStarterProviders = UnifiedSetupNativeStarters.pendingProviders(
+        context: context, profile: profile.profile)
+      let portable = try PortableProfileLoader().load(at: context.profileURL, required: true)
+      let exclusions = portable.packages.layers.flatMap { layer in
+        layer.excludedFormulae.map { HomebrewPackageIdentity(kind: .formula, name: $0) }
+          + layer.excludedCasks.map { HomebrewPackageIdentity(kind: .cask, name: $0) }
+      }
+      io.write("Reviewing retained profile without rewriting it: \(context.profileURL.path)\n")
+      return try await reviewAndApply(
+        context: context, consumerPaths: consumerPaths, packageExclusions: exclusions)
+    }
     let packages = try planner.standardBrewfile(
       context.environmentResourcesRoot.appending(path: "Brewfile")
     ).packages
@@ -200,9 +227,29 @@ struct GuidedSetupCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     answers: GuidedSetupAnswers
   ) async throws -> (output: String, succeeded: Bool) {
-    try GuidedSetupProfileWriter.write(answers.profileTOML, to: context.profileURL)
+    var context = context
+    context.nativeStarterProviders = answers.nativeStarterProviders
+    let directory = UnifiedSetupNativeStarters.relativeDirectory(context: context)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.withoutEscapingSlashes]
+    let nativeSources = try answers.nativeStarterProviders.map { provider in
+      let path = try encoder.encode("\(directory)/\(provider.starterName)")
+      return "[\(provider.rawValue)]\n\(provider.profileKey) = "
+        + String(decoding: path, as: UTF8.self) + "\n"
+    }.joined(separator: "\n")
+    try GuidedSetupProfileWriter.write(
+      answers.profileTOML + "\n" + nativeSources, to: context.profileURL)
     io.write("Wrote portable profile: \(context.profileURL.path)\n")
 
+    return try await reviewAndApply(
+      context: context, consumerPaths: consumerPaths, packageExclusions: answers.packageExclusions)
+  }
+
+  private func reviewAndApply(
+    context: UnifiedSetupPlanContext, consumerPaths: ThemeConsumerPaths,
+    packageExclusions: [HomebrewPackageIdentity]
+  ) async throws -> (output: String, succeeded: Bool) {
+    var context = context
     let preparation = try planner.prepare(context: context)
     let plan = planner.inspectedReport(preparation.report, context: context)
     io.write("\(try plan.render(json: false))\n")
@@ -216,7 +263,7 @@ struct GuidedSetupCommandRunner: Sendable {
       throw SetupPackageAdoptionError("The ready guided plan is missing package declarations.")
     }
     let effectiveExclusions = Set(declarations.exclusions.map(\.identity))
-    let overridden = answers.packageExclusions.filter { !effectiveExclusions.contains($0) }
+    let overridden = packageExclusions.filter { !effectiveExclusions.contains($0) }
     guard overridden.isEmpty else {
       return (
         "Machine package additions override these portable exclusions: "
@@ -230,12 +277,15 @@ struct GuidedSetupCommandRunner: Sendable {
     )
     guard model.packages.external.isEmpty else {
       return (
-        "Complete the plan's external prerequisites, then run macarchy setup apply.",
+        "Complete the plan's external prerequisites, then run macarchy setup guided --resume with the same profile options.",
         false
       )
     }
 
-    let cancelled = ("Guided setup stopped before mutation. The profile was retained.", true)
+    let cancelled = (
+      "Guided setup stopped before mutation. The profile was retained; no native starters were created. Continue with macarchy setup guided --resume and the same profile options.",
+      true
+    )
     // The single consent covers only the digests in the visible reviewed plan.
     // Unified apply still revalidates them before mutation.
     var approved = [String: String]()
@@ -257,9 +307,14 @@ struct GuidedSetupCommandRunner: Sendable {
     if let preferencesApproval {
       io.write("Native preference approval: \(preferencesApproval)\n")
     }
+    context.nativeStarterApprovals = Dictionary(
+      uniqueKeysWithValues: plan.nativeStarters.map {
+        ($0.provider, $0.approval)
+      })
     io.write(
       "Confirmation authorizes the reviewed package installation, configuration adoptions, "
-        + "native preferences and provider/service changes, including desktop keybindings when selected.\n"
+        + "absent native starters, native preferences and provider/service changes, including desktop keybindings when selected.\n"
+        + "Native starters become user-owned and are retained on failure or teardown; existing files are never replaced.\n"
         + "Homebrew effects are not rolled back with configuration. Permissions are never granted automatically.\n"
     )
     guard try io.confirm("Install & apply the reviewed setup now?") else {
