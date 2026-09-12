@@ -12,6 +12,10 @@ struct UnifiedSetupPlanContext: Sendable {
   let machineProfileRequired: Bool
   let stateRoot: URL
   let homeDirectory: URL
+  var nativeStarterProviders: [EnvironmentNativeSeed.Provider] = []
+  var nativeStarterApprovals: [String: String] = [:]
+  /// Prepared by this planner for its environment component, never persisted authority.
+  var nativeStarters: [EnvironmentNativeSeed] = []
 }
 
 struct UnifiedSetupDesiredModel: Sendable {
@@ -23,6 +27,7 @@ struct UnifiedSetupDesiredModel: Sendable {
   let enabledThemeAdapterIDs: [String]
   let capabilities: [SetupCapability]
   let packages: HomebrewInstallPlan
+  var nativeStarters: [EnvironmentNativeSeed] = []
 }
 
 enum UnifiedSetupPreparation {
@@ -95,7 +100,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         homeDirectory: context.homeDirectory,
         json: true,
         profile: profile,
-        bootstrapTheme: bootstrapTheme
+        bootstrapTheme: bootstrapTheme,
+        nativeStarters: context.nativeStarters
       )
       return try SetupComponentExecution(execution)
     },
@@ -259,6 +265,19 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       )
     }
 
+    let nativeStarters: [EnvironmentNativeSeed]
+    let starterPlans: [EnvironmentNativeSeed.Plan]
+    do {
+      nativeStarters = try UnifiedSetupNativeStarters.prepare(
+        context: context, profile: profile, theme: themeSelection.package)
+      starterPlans = try nativeStarters.map { try $0.plan() }
+    } catch {
+      return .blocked(
+        UnifiedSetupPlanReport.blocked(
+          layers: layered.layers.map(SetupProfileLayerReport.init),
+          fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue), error: String(describing: error)
+        ))
+    }
     let model = UnifiedSetupDesiredModel(
       profile: profile,
       layers: layered.layers.map(SetupProfileLayerReport.init),
@@ -269,11 +288,14 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       theme: themeSelection.plan,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs(profile),
       capabilities: capabilities,
-      packages: packages
+      packages: packages,
+      nativeStarters: nativeStarters
     )
     let desktop = try desktopPlanner(context, profile)
+    var environmentContext = context
+    environmentContext.nativeStarters = nativeStarters
     let environment = try environmentPlanner(
-      context, profile,
+      environmentContext, profile,
       themeSelection.plan.currentGenerationID == nil ? themeSelection.package : nil
     )
     let components = SetupComponentPlans(
@@ -325,7 +347,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         ? nil
         : try HomebrewBundleInstaller.Preview(
           packages: packages.identities, effectiveBrewfile: inventory.effectiveBrewfile,
-          context: context)
+          context: context),
+      nativeStarters: starterPlans
     )
     guard diagnostics.isEmpty else { return .blocked(report) }
     return .ready(model, report)
@@ -888,6 +911,7 @@ struct UnifiedSetupPlanReport: Encodable {
   var packageDeclarations: SetupPackageDeclarations? = nil
   var packageInventory: SetupPackageInventory? = nil
   var packageInstallation: HomebrewBundleInstaller.Preview? = nil
+  var nativeStarters: [EnvironmentNativeSeed.Plan] = []
 
   func approvalText() throws -> String {
     // Unrelated observed receipts and adoption history are not install authority.
@@ -972,6 +996,16 @@ struct UnifiedSetupPlanReport: Encodable {
     if !fieldOrigins.isEmpty {
       lines.append("Effective field origins:")
       lines += fieldOrigins.sorted { $0.key < $1.key }.map { "- \($0.key): \($0.value)" }
+    }
+    if !nativeStarters.isEmpty {
+      lines.append("Writable native starters (absent-only; retained on failure and teardown):")
+      for starter in nativeStarters {
+        if let parent = starter.parentDirectory {
+          lines.append("- Ensure ordinary user directory: \(parent) (0700 when created)")
+        }
+        lines.append("- \(starter.provider): \(starter.destination) — \(starter.approval)")
+        lines.append(starter.contents)
+      }
     }
     lines.append(capabilities.isEmpty ? "Core capabilities: none" : "Core capabilities:")
     lines += capabilities.map {

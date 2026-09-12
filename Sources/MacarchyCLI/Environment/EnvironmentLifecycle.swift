@@ -69,7 +69,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     switch transaction.direction {
     case .forward:
       switch transaction.operation {
-      case .apply, .herdrTheme, .neovimMigration:
+      case .apply, .herdrTheme, .neovimMigration, .atuinMigration, .starshipMigration:
         guard let proposed = transaction.proposedOwnership else {
           throw EnvironmentLifecycleError.blocked("apply recovery has no proposed ownership")
         }
@@ -88,7 +88,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
           spicetifyReplacementName: transaction.spicetifyReplacementName,
           tuicrReplacementName: transaction.tuicrReplacementName,
           herdrThemeOnly: transaction.operation == .herdrTheme,
-          neovimOnly: transaction.operation == .neovimMigration
+          neovimOnly: transaction.operation == .neovimMigration,
+          nativeFileOnly: transaction.operation.nativeFileProvider
         )
         if transaction.operation == .apply {
           try restoreReleasedThemeBridges(from: transaction.previousOwnership, to: proposed)
@@ -120,9 +121,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
         tuicrReplacementName: transaction.tuicrReplacementName,
         preserveLegacyHerdrOnRemoval: preserveLegacyHerdr,
         herdrThemeOnly: transaction.operation == .herdrTheme,
-        neovimOnly: transaction.operation == .neovimMigration
+        neovimOnly: transaction.operation == .neovimMigration,
+        nativeFileOnly: transaction.operation.nativeFileProvider
       )
-      if transaction.operation != .neovimMigration {
+      if !transaction.operation.isNativeMigration {
         try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
           transaction.previousCurrentDestination
         )
@@ -147,7 +149,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
 
     switch (transaction.direction, transaction.operation) {
-    case (.forward, .neovimMigration):
+    case (.forward, .neovimMigration), (.forward, .atuinMigration), (.forward, .starshipMigration):
       break
     case (.forward, .apply), (.forward, .herdrTheme):
       if let proposed = transaction.proposedOwnership,
@@ -818,8 +820,20 @@ struct EnvironmentTransactionCoordinator: Sendable {
     tuicrReplacementName: String?,
     preserveLegacyHerdrOnRemoval: Bool = false,
     herdrThemeOnly: Bool = false,
-    neovimOnly: Bool = false
+    neovimOnly: Bool = false,
+    nativeFileOnly: EnvironmentNativeFileMigration.Provider? = nil
   ) throws {
+    if let provider = nativeFileOnly {
+      guard let old, let new else {
+        throw EnvironmentLifecycleError.blocked(
+          "native migration requires both ownership snapshots")
+      }
+      try EnvironmentNativeFileMigration(
+        provider: provider, homeDirectory: homeDirectory, stateRoot: stateRoot
+      )
+      .transition(from: old, to: new)
+      return
+    }
     if neovimOnly {
       guard let old, let new else {
         throw EnvironmentLifecycleError.blocked(
@@ -1039,6 +1053,14 @@ struct EnvironmentTransactionCoordinator: Sendable {
     for record in ownership.records {
       guard let entry = allowed[record.id],
         EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
+          .allows(record, entry: entry)
+          || EnvironmentNativeFileMigration(
+            provider: .atuin, homeDirectory: homeDirectory, stateRoot: stateRoot
+          )
+          .allows(record, entry: entry)
+          || EnvironmentNativeFileMigration(
+            provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot
+          )
           .allows(record, entry: entry)
       else {
         throw EnvironmentLifecycleError.blocked(

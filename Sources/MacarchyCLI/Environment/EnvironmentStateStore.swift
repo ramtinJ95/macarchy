@@ -44,7 +44,8 @@ struct EnvironmentStateStore: Sendable {
   func readTransaction() throws -> EnvironmentTransaction? {
     try read(EnvironmentTransaction.self, at: transactionURL) { value in
       value.schemaVersion == EnvironmentTransaction.currentSchemaVersion
-        && (![.apply, .herdrTheme, .neovimMigration].contains(value.operation)
+        && (![.apply, .herdrTheme, .neovimMigration, .atuinMigration, .starshipMigration].contains(
+          value.operation)
           || value.proposedOwnership != nil)
         && (value.previousOwnership?.hasValidShape ?? true)
         && (value.proposedOwnership?.hasValidShape ?? true)
@@ -188,14 +189,16 @@ struct EnvironmentStateStore: Sendable {
   }
 
   private static func providerReplacementsAreValid(_ transaction: EnvironmentTransaction) -> Bool {
-    if transaction.operation == .neovimMigration {
+    if transaction.operation.isNativeMigration {
+      let id: EnvironmentEntryID =
+        transaction.operation.nativeFileProvider?.entryID ?? .neovim
       guard let previous = transaction.previousOwnership,
         let proposed = transaction.proposedOwnership,
-        let old = previous.records.first(where: { $0.id == .neovim }),
-        let new = proposed.records.first(where: { $0.id == .neovim })
+        let old = previous.records.first(where: { $0.id == id }),
+        let new = proposed.records.first(where: { $0.id == id })
       else { return false }
       return old.managedTarget != new.managedTarget
-        && previous.replacingNeovimTarget(new.managedTarget) == proposed
+        && previous.replacingTarget(for: id, with: new.managedTarget) == proposed
         && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
         && transaction.previousThemeGenerationID == nil
         && transaction.rollbackThemeBridges.isEmpty
