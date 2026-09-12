@@ -384,6 +384,8 @@ struct KeybindingProfileTests {
     hook = "portable.zsh"
     [tools]
     bat = false
+    [sketchybar]
+    automatic_clock = true
     """.write(to: portable, atomically: true, encoding: .utf8)
     try """
     schema_version = 1
@@ -396,6 +398,8 @@ struct KeybindingProfileTests {
     editor = "nvim"
     [tools]
     bat = true
+    [sketchybar]
+    automatic_clock = false
     """.write(to: machine, atomically: true, encoding: .utf8)
 
     let layered = try PortableProfileLoader().load(
@@ -419,6 +423,8 @@ struct KeybindingProfileTests {
     #expect(profile.environment.zsh.hookURL == portableDirectory.appending(path: "portable.zsh"))
     #expect(profile.environment.zsh.editor == "nvim")
     #expect(profile.environment.tools.bat)
+    #expect(profile.sketchyBar.automaticClock == false)
+    #expect(layered.fieldOrigins["sketchybar.automatic_clock"] == .machine)
     #expect(layered.layers.map(\.present) == [true, true])
     #expect(layered.fieldOrigins["kitty.font_family"] == .portable)
     #expect(layered.fieldOrigins["kitty.font_size"] == .machine)
