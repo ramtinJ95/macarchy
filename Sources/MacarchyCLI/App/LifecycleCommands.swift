@@ -135,6 +135,12 @@ extension Macarchy {
         abstract: "Select your setup in one menu, then review, install and apply."
       )
 
+      @Flag(
+        help:
+          "Review a retained profile and any absent native starters without rewriting the profile or opening the selection menu."
+      )
+      var resume = false
+
       @Option(
         name: .customLong("output-profile"),
         help: "New portable profile path. Defaults to ~/.config/macarchy/profile.toml."
@@ -170,7 +176,8 @@ extension Macarchy {
             stateRoot: state.stateRootURL,
             homeDirectory: home
           ),
-          consumerPaths: state.consumerPaths
+          consumerPaths: state.consumerPaths,
+          resume: resume
         )
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }
