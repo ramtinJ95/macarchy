@@ -8,16 +8,10 @@ enum UnifiedSetupNativeStarters {
   ) -> String {
     let base = context.profileURL.deletingLastPathComponent().resolvingSymlinksInPath()
       .pathComponents
-    let target = destination(provider, context: context).pathComponents
+    let target = provider.standardURL(homeDirectory: context.homeDirectory).pathComponents
     let common = zip(base, target).prefix { $0 == $1 }.count
     return (Array(repeating: "..", count: base.count - common) + target.dropFirst(common))
       .joined(separator: "/")
-  }
-
-  static func destination(
-    _ provider: EnvironmentNativeSeed.Provider, context: UnifiedSetupPlanContext
-  ) -> URL {
-    provider.standardURL(homeDirectory: context.homeDirectory)
   }
 
   static func prepare(
@@ -95,6 +89,6 @@ enum UnifiedSetupNativeStarters {
     }
     let legacy = parent.appending(path: directory).appending(path: filename).standardizedFileURL
     return provider.source(in: profile.environment)?.path == legacy.path
-      ? legacy : destination(provider, context: context)
+      ? legacy : provider.standardURL(homeDirectory: context.homeDirectory)
   }
 }

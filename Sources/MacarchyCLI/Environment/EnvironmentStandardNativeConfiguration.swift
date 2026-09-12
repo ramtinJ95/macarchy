@@ -9,15 +9,6 @@ enum EnvironmentStandardNativeConfiguration {
     sourceURL: URL? = nil
   ) throws {
     let source = sourceURL ?? provider.standardURL(homeDirectory: homeDirectory)
-    guard
-      EnvironmentNativeSource.targetIsAllowed(
-        source.path, homeDirectory: homeDirectory, stateRoot: stateRoot,
-        userOwnedPublicEntry: provider.entryID)
-    else {
-      throw EnvironmentLifecycleError.blocked(
-        "The standard \(provider.rawValue) configuration must not resolve into Macarchy state or another provider entry"
-      )
-    }
     switch provider {
     case .atuin, .starship:
       try EnvironmentNativeFileMigration(
@@ -28,6 +19,15 @@ enum EnvironmentStandardNativeConfiguration {
       try EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
         .validateNativeTree(at: source, userOwnedPublicEntry: true)
     case .zsh, .kitty:
+      guard
+        EnvironmentNativeSource.targetIsAllowed(
+          source.path, homeDirectory: homeDirectory, stateRoot: stateRoot,
+          userOwnedPublicEntry: provider.entryID)
+      else {
+        throw EnvironmentLifecycleError.blocked(
+          "The standard \(provider.rawValue) configuration must not resolve into Macarchy state or another provider entry"
+        )
+      }
       let resolved = source.resolvingSymlinksInPath()
       let data = try BoundedRegularFile.read(at: resolved).data
       guard access(resolved.path, R_OK | W_OK) == 0,

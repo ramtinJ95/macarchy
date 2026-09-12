@@ -13,7 +13,6 @@ struct NativeGuidedSetupTests {
     let context = context(fixture)
     let planner = planner(fixture)
     let apply = runner(planner: planner)
-    let responses = Mutex(["no", "yes"])
     let guided = GuidedSetupCommandRunner(
       planner: planner,
       apply: { context, paths, packages, preferences, adoptions in
@@ -21,26 +20,31 @@ struct NativeGuidedSetupTests {
           context: context, consumerPaths: paths, packageApproval: packages,
           preferencesApproval: preferences, adoptions: adoptions, json: true)
       },
-      io: GuidedSetupIO(
-        read: { responses.withLock { $0.isEmpty ? nil : $0.removeFirst() } }, write: { _ in }))
-    #expect(
-      try await guided.execute(
-        context: context, consumerPaths: testConsumerPaths(), answers: answers()
-      ).succeeded)
-    var retained = try String(contentsOf: context.profileURL, encoding: .utf8)
-    let parent = context.profileURL.deletingLastPathComponent()
-    let legacyDirectory =
-      parent.standardizedFileURL.path == context.stateRoot.standardizedFileURL.path
-      ? "../macarchy-user" : "native"
-    let names: [(EnvironmentNativeSeed.Provider, String)] = [
-      (.zsh, "zshrc"), (.kitty, "kitty.conf"), (.atuin, "atuin.toml"),
-      (.starship, "starship.toml"), (.neovim, "neovim"),
-    ]
-    for (provider, name) in names {
-      retained = retained.replacingOccurrences(
-        of: "\"" + UnifiedSetupNativeStarters.profilePath(provider, context: context) + "\"",
-        with: "\"\(legacyDirectory)/\(name)\"")
-    }
+      io: GuidedSetupIO(read: { "yes" }, write: { _ in }))
+    let retained = """
+      schema_version = 1
+      [desktop]
+      provider = "disabled"
+      [top_bar]
+      provider = "disabled"
+      [focus_ring]
+      provider = "disabled"
+      [tools]
+      bat = false
+      eza = false
+      btop = false
+      yazi = false
+      [zsh]
+      configuration = "../macarchy-user/zshrc"
+      [kitty]
+      configuration = "../macarchy-user/kitty.conf"
+      [atuin]
+      native_configuration = "../macarchy-user/atuin.toml"
+      [starship]
+      native_configuration = "../macarchy-user/starship.toml"
+      [neovim]
+      native_configuration = "../macarchy-user/neovim"
+      """
     try retained.write(to: context.profileURL, atomically: true, encoding: .utf8)
     let result = try await guided.execute(
       context: context, consumerPaths: testConsumerPaths(), resume: true)
@@ -49,11 +53,14 @@ struct NativeGuidedSetupTests {
     let ownership = try #require(
       try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership())
     #expect(ownership.standardNativeEntries == nil)
-    for (provider, name) in names {
+    for (id, name) in [
+      (EnvironmentEntryID.zsh, "zshrc"), (.kitty, "kitty.conf"),
+      (.atuinConfiguration, "atuin.toml"), (.starship, "starship.toml"), (.neovim, "neovim"),
+    ] {
       #expect(
         FileManager.default.fileExists(
-          atPath: parent.appending(path: "\(legacyDirectory)/\(name)").path))
-      #expect(ownership.records.contains { $0.id == provider.entryID })
+          atPath: fixture.home.appending(path: ".config/macarchy-user/\(name)").path))
+      #expect(ownership.records.contains { $0.id == id })
     }
   }
 
@@ -82,13 +89,15 @@ struct NativeGuidedSetupTests {
     #expect(cancelled.output.contains("--resume"))
     let profileBytes = try Data(contentsOf: context.profileURL)
     for provider in EnvironmentNativeSeed.Provider.allCases {
-      let source = UnifiedSetupNativeStarters.destination(provider, context: context)
+      let source = provider.standardURL(homeDirectory: context.homeDirectory)
       #expect(!FileManager.default.fileExists(atPath: source.path))
     }
     #expect(
       !FileManager.default.fileExists(
-        atPath: UnifiedSetupNativeStarters.destination(.kitty, context: context)
-          .deletingLastPathComponent().path))
+        atPath: EnvironmentNativeSeed.Provider.kitty.standardURL(
+          homeDirectory: context.homeDirectory
+        )
+        .deletingLastPathComponent().path))
     #expect(try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership() == nil)
     let applied = try await guided.execute(
       context: context, consumerPaths: testConsumerPaths(), resume: true)
@@ -101,7 +110,7 @@ struct NativeGuidedSetupTests {
     let resolver = EnvironmentConfigurationSourceResolver(
       homeDirectory: context.homeDirectory, stateRoot: context.stateRoot)
     for provider in EnvironmentNativeSeed.Provider.allCases {
-      let source = UnifiedSetupNativeStarters.destination(provider, context: context)
+      let source = provider.standardURL(homeDirectory: context.homeDirectory)
       #expect(provider.source(in: profile.environment)?.path == source.path)
       #expect(FileManager.default.fileExists(atPath: source.path))
       let selected = resolver.resolve(provider, profile: profile)
@@ -114,11 +123,14 @@ struct NativeGuidedSetupTests {
       #expect(receiptSelected.authority == "native_ownership")
       #expect(receiptSelected.source == source.path)
     }
-    let source = UnifiedSetupNativeStarters.destination(.zsh, context: context)
+    let source = EnvironmentNativeSeed.Provider.zsh.standardURL(
+      homeDirectory: context.homeDirectory)
     let edited = try String(contentsOf: source, encoding: .utf8) + "export PERSONAL=edited\n"
     try edited.write(to: source, atomically: true, encoding: .utf8)
-    let lock = UnifiedSetupNativeStarters.destination(.neovim, context: context)
-      .appending(path: "lazy-lock.json")
+    let lock = EnvironmentNativeSeed.Provider.neovim.standardURL(
+      homeDirectory: context.homeDirectory
+    )
+    .appending(path: "lazy-lock.json")
     try "{}\n".write(to: lock, atomically: true, encoding: .utf8)
     let repeated = try await apply.execute(
       context: context, consumerPaths: testConsumerPaths(), json: true)
@@ -146,7 +158,8 @@ struct NativeGuidedSetupTests {
     let context = context(fixture)
     let planner = planner(fixture)
     let apply = runner(planner: planner)
-    let source = UnifiedSetupNativeStarters.destination(.zsh, context: context)
+    let source = EnvironmentNativeSeed.Provider.zsh.standardURL(
+      homeDirectory: context.homeDirectory)
     let guided = GuidedSetupCommandRunner(
       planner: planner,
       apply: { received, paths, packages, preferences, adoptions in
