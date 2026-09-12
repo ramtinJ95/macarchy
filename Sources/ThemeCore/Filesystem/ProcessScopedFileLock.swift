@@ -47,15 +47,15 @@ package struct ProcessScopedFileLock<LockError: Error>: Sendable {
   }
 
   /// A periodic owner check must not queue another long-lived worker.
-  /// Contention alone returns nil; filesystem/locking failures still throw.
-  package func withLockIfAvailable<Output>(
-    root: URL, _ operation: () throws -> Output
-  ) throws -> Output? {
-    guard semaphore.wait(timeout: .now()) == .success else { return nil }
+  /// Contention skips the operation; filesystem/locking failures still throw.
+  package func withLockIfAvailable(
+    root: URL, _ operation: () throws -> Void
+  ) throws {
+    guard semaphore.wait(timeout: .now()) == .success else { return }
     defer { semaphore.signal() }
-    guard let descriptor = try acquire(root: root, wait: false) else { return nil }
+    guard let descriptor = try acquire(root: root, wait: false) else { return }
     defer { Darwin.close(descriptor) }
-    return try operation()
+    try operation()
   }
 
   private func acquire(root: URL) throws -> Int32 {

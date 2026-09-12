@@ -87,6 +87,7 @@ struct SketchyBarToggleTests {
       wait: {}, stopping: { false }, foreignToggleAbsent: { true }, pid: 7, started: 1_000_000)
     #expect(throws: (any Error).self) { try worker.execute(token: token) }
     #expect(state.value.withLock { $0.label.hasPrefix(token + "|Toggle ERR:") })
+    state.value.withLock { $0.calls.removeAll() }
     var stopped = false
     try SketchyBarToggle(
       processRunner: base, uptime: { 101 }, distance: { 60 },

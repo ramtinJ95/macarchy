@@ -346,7 +346,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         if expected.toggleStatePresent == true {
           let toggle: SketchyBarItemQuery = try query(
             control: Self.controlURL, arguments: ["--query", "macarchy.toggle"], timeout: 0.1)
-          presentationMatches = presentationMatches && validToggleHeartbeat(toggle.label.value)
+          presentationMatches =
+            presentationMatches && validToggleHeartbeat(ToggleHeartbeat.parse(toggle.label.value))
         }
         if expected.appleStatePresent == true {
           let apple: SketchyBarItemQuery = try query(
@@ -495,6 +496,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         clockLabelPresent,
         clock.scripting.script == expectedClockScript,
         clock.scripting.updateFrequency == 30,
+        clock.scripting.updates == "on",
         bits.count == 3, clock.scripting.updateMask.map({ $0 & mask == mask }) == true,
         try validClockPreview()
       else {
@@ -503,7 +505,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
             + "name=\(clock.name), type=\(clock.type), drawing=\(clock.geometry.drawing), "
             + "position=\(clock.geometry.position), label_drawing=\(clock.label.drawing), "
             + "label_present=\(clockLabelPresent), script=\(clock.scripting.script), "
-            + "update_freq=\(clock.scripting.updateFrequency)",
+            + "update_freq=\(clock.scripting.updateFrequency), "
+            + "updates=\(clock.scripting.updates ?? "missing")",
           palette: palette,
           items: items,
           spaceIndices: spaceIndices,
@@ -842,7 +845,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
             token: heartbeat.token),
         toggle.scripting.updateFrequency == 1, toggle.scripting.updates == "on",
         bits.count == 2, toggle.scripting.updateMask.map({ $0 & mask == mask }) == true,
-        validToggleHeartbeat(toggle.label.value)
+        validToggleHeartbeat(heartbeat)
       else {
         return drifted(
           "running SketchyBar native-menu toggle is not ready, failed, stale, or has lost process ownership",
@@ -972,8 +975,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     )
   }
 
-  private func validToggleHeartbeat(_ value: String) -> Bool {
-    guard let heartbeat = ToggleHeartbeat.parse(value) else { return false }
+  private func validToggleHeartbeat(_ heartbeat: ToggleHeartbeat?) -> Bool {
+    guard let heartbeat else { return false }
     return heartbeat.fresh(at: uptime()) && toggleProcessMatches(heartbeat)
   }
 
