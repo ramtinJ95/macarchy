@@ -7,6 +7,25 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-09-12
+
+### Changed
+
+- Keep zsh, Kitty, Atuin, Starship and Neovim behavior in writable user-owned
+  native configuration, with reviewed connections and theme-only reconciliation.
+- Default new guided setups to reviewed native starters under a user-owned
+  directory, with one apply confirmation and resumable setup.
+
+### Added
+
+- Absent-only configuration starters, scoped Atuin and Starship migrations, and
+  authoritative editable-source lookup through `environment configuration-source`.
+
+### Known limitations
+
+- Upgrading does not migrate existing configurations. Review native sources and
+  the connection plan before applying; existing user files are not overwritten.
+
 ## [0.9.5] - 2026-09-10
 
 ### Fixed
@@ -499,7 +518,8 @@ unqualified; review plans and reported prerequisites before applying changes.
 - Homebrew setup, teardown, update awareness, scoped upgrade, installed-layout
   verification, immutable release archives, checksums, and attestations.
 
-[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/ramtinJ95/macarchy/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/ramtinJ95/macarchy/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/ramtinJ95/macarchy/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/ramtinJ95/macarchy/compare/v0.9.3...v0.9.4
 [0.9.0]: https://github.com/ramtinJ95/macarchy/compare/v0.8.3...v0.9.0
