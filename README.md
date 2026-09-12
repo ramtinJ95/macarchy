@@ -68,12 +68,12 @@ and configures those selections without a separate apply or keybindings command.
 Blocked prerequisites still stop setup visibly. An interactive terminal is required.
 
 Enabled zsh, Kitty, Atuin, Starship and Neovim receive writable user configurations
-under `~/.config/macarchy-user`, separate from generated state. The plan shows
+at their standard application paths, separate from generated state. The plan shows
 their exact contents before creation; existing files are never replaced. Declining
 creates no starters. Run `macarchy setup guided --resume` with the same profile
 options to review the retained profile again without rewriting it. Created user
-files survive failures and teardown. A custom profile outside state uses its
-`native` subdirectory instead.
+files survive failures and teardown. Retained v0.9.6 questionnaires still resume
+at their originally reviewed paths; upgrading does not relocate existing files.
 
 **Already have a profile?** Use `macarchy setup plan --profile /path/to/profile.toml`
 and the [profile-driven workflow](#make-it-yours) instead. Guided setup will not
@@ -251,18 +251,19 @@ not start services or change running applications.
 ### Writable starter files
 
 Native-source fields accept absolute paths or paths relative to the profile that
-declares them, including `../macarchy-user/...` and personal symlinks. They cannot
-point into generated state or managed entry points. Tilde/environment expansion
+declares them, including personal symlinks. Each may explicitly select its own
+standard application path, but not generated state or another provider's entry.
+Tilde/environment expansion
 is not supported. Copied inputs and legacy hooks still stay beside their profile.
 
 For a new native configuration, preview an absent-only starter:
 
 ```sh
-macarchy environment seed-configuration zsh --destination ~/personal.zsh
-macarchy environment seed-configuration kitty --destination ~/personal-kitty.conf
-macarchy environment seed-configuration neovim --destination ~/personal-neovim
-macarchy environment seed-configuration atuin --destination ~/personal-atuin.toml
-macarchy environment seed-configuration starship --destination ~/personal-starship.toml
+macarchy environment seed-configuration zsh --destination ~/.zshrc
+macarchy environment seed-configuration kitty --destination ~/.config/kitty/kitty.conf
+macarchy environment seed-configuration neovim --destination ~/.config/nvim
+macarchy environment seed-configuration atuin --destination ~/.config/atuin/config.toml
+macarchy environment seed-configuration starship --destination ~/.config/starship.toml
 ```
 
 Repeat the chosen command with its exact `--approve` digest to create the file.
@@ -291,6 +292,64 @@ drift, source conflicts and required native setup return a nonzero exit status.
 It opens no editor, evaluates no user configuration and applies no changes.
 An editable profile input is not proof that pending connection changes are active.
 
+### User-owned standard configuration
+
+Fresh guided setup uses `~/.zshrc`, `~/.config/kitty/kitty.conf`,
+`~/.config/atuin/config.toml`, `~/.config/starship.toml` and `~/.config/nvim/`.
+These are personal files or deliberately chosen dotfile links, not mandatory
+wrappers. Normal apply, updates and teardown preserve them. Macarchy maintains
+only declared defaults and theme integration; arbitrary personal behavior is not
+a convergence guarantee. Includes into Macarchy state become inactive after
+teardown and may need deliberate removal from personal configuration.
+
+For a profile in `~/.config/macarchy`, explicit standard sources look like:
+
+```toml
+[zsh]
+configuration = "../../.zshrc"
+[kitty]
+configuration = "../kitty/kitty.conf"
+[atuin]
+native_configuration = "../atuin/config.toml"
+[starship]
+native_configuration = "../starship.toml"
+[neovim]
+native_configuration = "../nvim"
+```
+
+Keep these declarations when reapplying. Existing managed installations do not
+switch merely because a profile path changed. First prepare your personal source
+and review one scoped migration, for example:
+
+```sh
+macarchy environment migrate-standard kitty --source /absolute/dotfiles/kitty/kitty.conf
+macarchy environment migrate-standard kitty --source /absolute/dotfiles/kitty/kitty.conf --approve 'digest-from-preview'
+```
+
+The same command accepts `zsh`, `atuin`, `starship` and `neovim`. zsh must own its
+initialization; Kitty must end with exactly one canonical theme include described
+below. Atuin and Starship must already select their reserved themes/palettes.
+Neovim must already have its four theme links. Migration does not edit or merge
+these personal files. Review any preparatory edits separately.
+
+For the four files, migration replaces only the managed public entry with a
+user-owned link; Kitty links its containing directory. Original dotfile link
+spelling is preserved when it selects the chosen source. Neovim instead moves
+the complete ordinary writable source directory to `~/.config/nvim` on the same
+volume, preserving user files, plugins and lockfile without copying or downloading.
+For an existing `nvim-native` tree, pass that directory as `--source`.
+
+The preview identifies any retained original backup; it remains untouched and
+is not automatically restored by later teardown. Update explicit profile sources
+to the standard paths before reapply. Migration restarts no provider; open fresh
+shells, reload Kitty or restart Neovim deliberately. Interrupted migrations use
+the existing environment recovery path and never run unrelated providers.
+Standard-path ownership requires a compatible CLI; older versions reject its
+schema rather than overwrite personal files.
+
+The older sibling-seeding and external-source commands below remain supported
+for users deliberately keeping those layouts; they are not the new default.
+
 ### Live zsh configuration
 
 To keep shell behavior in a writable file beside your profile:
@@ -300,20 +359,23 @@ To keep shell behavior in a writable file beside your profile:
 configuration = "shell/personal.zsh"
 ```
 
-Macarchy manages only the `~/.zshrc` connection in this mode. It sources your
+For an external source, Macarchy manages only the `~/.zshrc` connection. It sources your
 file on each new shell; apply, updates and teardown never rewrite that file.
-The source must resolve to a regular file outside Macarchy state, not `~/.zshrc`
-itself. Dotfile symlinks are supported and remain user-owned.
+Alternatively, explicitly select `~/.zshrc` itself as user-owned standard
+configuration, using an absolute or profile-relative path. Sources must resolve
+to a regular file outside Macarchy state. Dotfile symlinks remain user-owned.
 Choose this mode or the legacy copied `zsh.hook`, not both.
 
 Your source controls initialization order. To opt into the live curated shell
 defaults (including selected Starship/Atuin initialization), add this once:
 
 ```zsh
-source "$MACARCHY_ZSH_DEFAULTS" || return 1
+source "$HOME/.config/macarchy/environment/current/zsh/defaults.zsh" || return 1
 # Personal paths, aliases and overrides follow here.
 ```
 
+Adjust the path for a custom state root. External wrappers also expose this path
+as `MACARCHY_ZSH_DEFAULTS`; a standard file does not need that wrapper variable.
 Do not also initialize those tools in your personal source. Alternatively,
 own initialization yourself and omit the defaults include. The existing
 environment plan/apply approval and teardown workflow manages the connection;
@@ -327,15 +389,20 @@ not arbitrary personal behavior. Changes affect new shells.
 configuration = "kitty/kitty.conf"
 ```
 
-This sources a writable native file beside your profile, preserving its relative
-includes. Use it instead of the legacy copied `kitty.override`. Macarchy adds
-only the final theme include; it does not silently layer its behavior underneath
+An external source preserves its relative includes. Use it instead of the legacy
+copied `kitty.override`. The external wrapper adds only the final theme include;
+it does not silently layer its behavior underneath
 your complete setup. To inherit curated defaults, explicitly include
 `~/.config/macarchy/environment/current/kitty/defaults.conf` at the beginning
 of your file (adjust for a custom state root), then add personal overrides.
 
-Keep the source outside `~/.config/kitty` and Macarchy state. Apply and teardown
-preserve it, including dotfile symlinks; edits take effect on Kitty configuration reload. Paths may contain
+Alternatively, select `~/.config/kitty/kitty.conf` itself as user-owned standard
+configuration. End that file with exactly one
+`include /absolute/home/.config/macarchy/state/adapters/kitty.conf` directive,
+using your actual home and state root. No behavior wrapper is installed in this
+mode. Keep external sources outside `~/.config/kitty`; all sources stay outside
+Macarchy state. Apply and teardown preserve personal files and dotfile symlinks;
+edits take effect on Kitty configuration reload. Paths may contain
 spaces but not `$` expansion or control characters. Native includes are trusted
 user configuration, not a sandbox; plan/status validate the connected file and
 owned theme seam, not arbitrary nested includes or behavior.
