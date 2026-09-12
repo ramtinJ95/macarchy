@@ -137,7 +137,7 @@ package struct AtuinAdapter: Sendable {
     )
   }
 
-  private static func selectsTheme(in configuration: String) -> Bool {
+  package static func selectsTheme(in configuration: String) -> Bool {
     let selection = CanonicalTOMLSelector(
       configuration: configuration,
       table: selectionTable,

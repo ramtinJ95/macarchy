@@ -59,12 +59,36 @@ package struct StarshipAdapter: Sendable {
     AdapterBridgeFile(url: bridgeURL)
   }
 
+  private var native: StarshipNativeConfiguration? {
+    let destination = configurationURL.deletingLastPathComponent()
+      .appending(path: "starship-native.toml")
+    let resolved = configurationURL.resolvingSymlinksInPath()
+    if resolved == destination.resolvingSymlinksInPath() {
+      return StarshipNativeConfiguration(url: resolved)
+    }
+    // External mutation authority is supplied explicitly by the owned environment
+    // connection, never inferred from an arbitrary public symlink alone.
+    let state = root.resolvingSymlinksInPath().path
+    guard resolved == behaviorURL.resolvingSymlinksInPath(),
+      resolved.path != state, !resolved.path.hasPrefix(state + "/")
+    else { return nil }
+    return StarshipNativeConfiguration(url: resolved)
+  }
+
   func preflight() throws {
     guard controlIsAvailable() else {
       throw StarshipAdapterError.controlUnavailable(executableURL)
     }
     try validateConfigurationLink()
-    _ = try readBehavior()
+    if let native {
+      let data = try native.read()
+      guard let text = String(data: data, encoding: .utf8) else {
+        throw StarshipAdapterError.invalidBehavior(native.url)
+      }
+      _ = try native.replacingPalette(in: data, with: text)
+    } else {
+      _ = try readBehavior()
+    }
   }
 
   func inspection() -> AdapterInspection {
@@ -72,9 +96,16 @@ package struct StarshipAdapter: Sendable {
       try preflight()
       do {
         try ActivationLock(root: root).withLock {
-          let desired = try desiredConfiguration()
-          guard try bridge.read() == desired else {
-            throw StarshipAdapterError.bridgeDoesNotMatch(bridgeURL)
+          if let native {
+            let current = try native.read()
+            guard try native.replacingPalette(in: current, with: activePalette()) == current else {
+              throw StarshipAdapterError.bridgeDoesNotMatch(native.url)
+            }
+          } else {
+            let desired = try desiredConfiguration()
+            guard try bridge.read() == desired else {
+              throw StarshipAdapterError.bridgeDoesNotMatch(bridgeURL)
+            }
           }
         }
       } catch ReconciliationStatusError.noActiveGeneration {
@@ -107,7 +138,13 @@ package struct StarshipAdapter: Sendable {
           )
         }
         do {
-          try bridge.publish(desiredConfiguration())
+          if let native {
+            let current = try native.read()
+            try native.publish(
+              native.replacingPalette(in: current, with: activePalette()), replacing: current)
+          } else {
+            try bridge.publish(desiredConfiguration())
+          }
         } catch {
           return AdapterOutcome(status: .failed, message: String(describing: error))
         }
@@ -120,7 +157,7 @@ package struct StarshipAdapter: Sendable {
           executableURL: executableURL,
           arguments: ["print-config"],
           timeout: 2,
-          environmentOverrides: ["STARSHIP_CONFIG": bridgeURL.path]
+          environmentOverrides: ["STARSHIP_CONFIG": native?.url.path ?? bridgeURL.path]
         )
       )
       let selection = "palette = \"\(Self.paletteName)\""
@@ -224,7 +261,7 @@ package struct StarshipAdapter: Sendable {
     {
       resolved = Self.destinationURL(next, from: resolved)
     }
-    guard resolved == bridgeURL else {
+    guard resolved == bridgeURL || resolved.resolvingSymlinksInPath() == native?.url else {
       throw CanonicalThemeLinkError.wrongDestination(
         configurationURL,
         expected: bridgeURL.path
