@@ -7,6 +7,104 @@ import Testing
 @testable import ThemeCore
 
 struct DesktopApplyCommandTests {
+  @Test(arguments: [false, true])
+  func yabaiOnlyUpgradePreservesOtherProvidersAndRollsBackFailure(failsVerification: Bool) throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    // A selected but unavailable bar hook must not even be composed in this scope.
+    try """
+    schema_version = 1
+    [sketchybar]
+    hook = "not-loaded-by-yabai-only.sh"
+    """.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    let barRoot = fixture.state.appending(path: "desktop/sketchybar")
+    try FileManager.default.createDirectory(at: barRoot, withIntermediateDirectories: true)
+    let barState = barRoot.appending(path: "transaction.json")
+    try "outside scope".write(to: barState, atomically: true, encoding: .utf8)
+    let bar = SketchyBarPublicLifecycleFixture()
+    let working = YabaiLifecycleFixture(running: true)
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: working.controller, sketchyBarLifecycle: bar.controller,
+      keybindings: nil, prerequisites: .assumed, theme: nil
+    )
+    let installed = try runner.execute(
+      resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
+      stateRoot: fixture.state, homeDirectory: fixture.home, adopt: nil, json: true,
+      scope: .yabaiOnly,
+      macarchyExecutableURL: URL(filePath: "/opt/homebrew/Cellar/macarchy/0.9.3/bin/macarchy")
+    )
+    #expect(installed.succeeded)
+    let previous = YabaiGenerationInspector(stateRoot: fixture.state).inspect()
+    let lifecycle = YabaiLifecycleFixture(
+      running: true, runtimeStatus: failsVerification ? .drifted : .converged
+    )
+    let upgraded = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller, sketchyBarLifecycle: bar.controller,
+      keybindings: nil, prerequisites: .assumed, theme: nil
+    ).execute(
+      resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
+      stateRoot: fixture.state, homeDirectory: fixture.home, adopt: nil, json: true,
+      scope: .yabaiOnly, macarchyExecutableURL: URL(filePath: "/opt/homebrew/bin/macarchy")
+    )
+    #expect(upgraded.succeeded == !failsVerification)
+    let current = YabaiGenerationInspector(stateRoot: fixture.state).inspect()
+    #expect(current.status == .current)
+    #expect((current.generationID == previous.generationID) == failsVerification)
+    #expect(
+      try YabaiOwnershipStore(stateRoot: fixture.state).read()?.generationID == current.generationID
+    )
+    #expect(
+      try YabaiLifecycleEvidenceStore(stateRoot: fixture.state).read()?.generationID
+        == current.generationID)
+    #expect(!YabaiTransactionStore(stateRoot: fixture.state).exists)
+    let rendered = try String(
+      contentsOf: fixture.home.appending(path: ".config/yabai/yabairc"), encoding: .utf8
+    )
+    #expect(
+      rendered.contains("/opt/homebrew/bin/macarchy reconcile wallpaper") == !failsVerification)
+    #expect(
+      lifecycle.calls.withLock { $0 }.filter { $0 == "restart" }.count
+        == (failsVerification ? 2 : 1))
+    #expect(bar.calls.withLock { $0 }.isEmpty)
+    #expect(try String(contentsOf: barState, encoding: .utf8) == "outside scope")
+  }
+
+  @Test
+  func yabaiOnlyBlocksPendingAggregateBeforeProviderMutation() throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try DesktopAggregateTransactionStore(stateRoot: fixture.state).write(
+      DesktopAggregateTransaction(operation: .apply, phase: .mutating)
+    )
+    let lifecycle = YabaiLifecycleFixture(running: true)
+    let execution = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller, keybindings: nil, prerequisites: .assumed, theme: nil
+    ).execute(
+      resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
+      stateRoot: fixture.state, homeDirectory: fixture.home, adopt: nil, json: true,
+      scope: .yabaiOnly
+    )
+    #expect(!execution.succeeded)
+    #expect(execution.output.contains("pending desktop/setup transaction"))
+    let plan = try DesktopPlanCommandRunner(keybindings: nil, prerequisites: .assumed).execute(
+      resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
+      stateRoot: fixture.state, homeDirectory: fixture.home, json: true, scope: .yabaiOnly
+    )
+    #expect(!plan.succeeded)
+    #expect(plan.output.contains("pending desktop/setup transaction"))
+    #expect(lifecycle.calls.withLock { $0 }.isEmpty)
+    #expect(YabaiGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
+  }
+
+  @Test
+  func yabaiOnlyCommandRejectsUnrelatedAdoption() throws {
+    #expect(try Desktop.Apply.parse(["--yabai-only", "--dry-run"]).yabaiOnly)
+    #expect(try Desktop.Plan.parse(["--yabai-only"]).yabaiOnly)
+    #expect(throws: (any Error).self) {
+      _ = try Desktop.Apply.parse(["--yabai-only", "--sketchybar-adopt", "digest"])
+    }
+  }
+
   @Test
   func yabaiAccessibilityEvidenceRequiresAnAXBackedWindow() throws {
     #expect(
@@ -851,20 +949,32 @@ private struct SketchyBarPublicCommandFixture {
 }
 
 private final class SketchyBarPublicLifecycleFixture: Sendable {
+  let calls = Mutex<[String]>([])
   private let running = Mutex(false)
 
   var isRunning: Bool { running.withLock { $0 } }
 
   var controller: SketchyBarLifecycleController {
     SketchyBarLifecycleController(
-      inspect: { self.running.withLock { $0 } ? Self.runtime : .stopped },
-      preflight: { self.running.withLock { $0 } },
-      reload: { _ in Self.runtime },
+      inspect: {
+        self.calls.withLock { $0.append("inspect") }
+        return self.running.withLock { $0 } ? Self.runtime : .stopped
+      },
+      preflight: {
+        self.calls.withLock { $0.append("preflight") }
+        return self.running.withLock { $0 }
+      },
+      reload: { _ in
+        self.calls.withLock { $0.append("reload") }
+        return Self.runtime
+      },
       start: {
+        self.calls.withLock { $0.append("start") }
         self.running.withLock { $0 = true }
         return Self.runtime
       },
       stop: {
+        self.calls.withLock { $0.append("stop") }
         self.running.withLock { $0 = false }
       }
     )

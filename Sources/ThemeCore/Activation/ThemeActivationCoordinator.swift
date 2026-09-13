@@ -95,11 +95,10 @@ package struct ThemeActivationCoordinator: Sendable {
     let controlIsAvailable: @Sendable (URL) -> Bool = {
       FileManager.default.isExecutableFile(atPath: $0.path)
     }
-    let macarchyExecutableURL =
-      (Bundle.main.executableURL
-      ?? URL(filePath: CommandLine.arguments.first ?? "macarchy"))
-      .resolvingSymlinksInPath()
-      .standardizedFileURL
+    let macarchyExecutableURL = MacarchyCommandPath.persistentURL(
+      for: Bundle.main.executableURL
+        ?? URL(filePath: CommandLine.arguments.first ?? "macarchy")
+    )
     self.init(
       root: root,
       consumerPaths: consumerPaths,

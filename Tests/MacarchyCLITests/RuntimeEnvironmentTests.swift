@@ -6,6 +6,49 @@ import Testing
 
 struct RuntimeEnvironmentTests {
   @Test
+  func homebrewCallbacksFollowUpgradesWithoutMovingResourceIdentity() throws {
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n", source: URL(filePath: "/fixtures/profile.toml")
+    )
+    var previousYabai: YabaiComposition?
+    var previousBar: SketchyBarComposition?
+    for version in ["0.9.3", "0.9.8", "1.0.0"] {
+      let executable = URL(filePath: "/opt/homebrew/Cellar/macarchy/\(version)/bin/macarchy")
+      let runtime = RuntimeEnvironment(executableURL: executable)
+      #expect(runtime.persistentCommandURL.path == "/opt/homebrew/bin/macarchy")
+      #expect(runtime.executableURL == executable)
+      let yabai = try YabaiConfigurationComposer().compose(
+        defaultsURL: repositoryRoot.appending(path: "Desktop/yabai/defaults.toml"),
+        profile: profile, macarchyExecutableURL: runtime.persistentCommandURL
+      )
+      let bar = try SketchyBarConfigurationComposer().compose(
+        defaultsURL: repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml"),
+        profile: profile, stateRoot: URL(filePath: "/fixtures/state"),
+        macarchyExecutableURL: runtime.persistentCommandURL
+      )
+      #expect(
+        yabai.renderedConfiguration.contains("/opt/homebrew/bin/macarchy reconcile wallpaper"))
+      if let previousYabai { #expect(yabai == previousYabai) }
+      if let previousBar { #expect(bar == previousBar) }
+      previousYabai = yabai
+      previousBar = bar
+    }
+  }
+
+  @Test
+  func nonHomebrewCommandsKeepTheirOwnExecutable() {
+    for path in [
+      "/tmp/release/bin/macarchy",
+      "/tmp/Cellar/macarchy/0.9.8/bin/macarchy",
+      "/opt/homebrew/Cellar/another-tool/0.9.8/bin/macarchy",
+      "/tmp/checkout/.build/debug/macarchy",
+    ] {
+      let runtime = RuntimeEnvironment(executableURL: URL(filePath: path))
+      #expect(runtime.persistentCommandURL == runtime.executableURL)
+    }
+  }
+
+  @Test
   func sourceVersionMatchesReleaseVersionFile() throws {
     let version = try String(
       contentsOf: repositoryRoot.appending(path: "VERSION.txt"),

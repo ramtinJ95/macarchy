@@ -32,6 +32,10 @@ struct RuntimeEnvironment: Sendable {
 
   let executableURL: URL
 
+  var persistentCommandURL: URL {
+    MacarchyCommandPath.persistentURL(for: executableURL)
+  }
+
   init(executableURL: URL) {
     self.executableURL = executableURL.resolvingSymlinksInPath().standardizedFileURL
   }

@@ -37,7 +37,7 @@ struct DesktopStatusCommandRunner: Sendable {
     homeDirectory: URL,
     json: Bool,
     consumerPaths: ThemeConsumerPaths? = nil,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState?

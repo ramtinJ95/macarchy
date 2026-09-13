@@ -90,6 +90,14 @@ installers and dependencies; their effects are not rolled back with configuratio
 
 ## Everyday use
 
+To reapply only yabai configuration (including its wallpaper callback), preview
+with `macarchy desktop apply --yabai-only --dry-run`, then run
+`macarchy desktop apply --yabai-only`. This may restart yabai and run its configured
+trusted hook; it does not reload SketchyBar, change keybindings, or reconcile theme
+adapters. Use `macarchy reconcile wallpaper` separately when needed. Homebrew
+callback paths follow the installed command link; upgrading does not automatically
+rewrite older generated configurations.
+
 ```sh
 macarchy theme browse                 # Preview themes and backgrounds, then Apply
 macarchy theme list
