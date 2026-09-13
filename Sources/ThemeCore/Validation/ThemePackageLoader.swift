@@ -9,6 +9,25 @@ public struct ThemePackageLoader: Sendable {
   public init() {}
 
   public func load(packageURL: URL) throws -> ThemePackage {
+    try load(metadata: loadMetadata(packageURL: packageURL))
+  }
+
+  func load(metadata: ThemePackageMetadata) throws -> ThemePackage {
+    let file = metadata.packageURL.appending(path: "theme.toml")
+    let index = try TOMLSourceIndex(text: readText(file, role: "theme manifest"), file: file)
+    var data: [String: Data] = [:]
+    for background in metadata.backgrounds {
+      data[background.id] = try loadBackground(
+        background, packageURL: metadata.packageURL, index: index, file: file)
+    }
+    return ThemePackage(
+      packageURL: metadata.packageURL, schemaVersion: metadata.schemaVersion,
+      id: metadata.id, displayName: metadata.displayName, appearance: metadata.appearance,
+      semantic: metadata.semantic, terminal: metadata.terminal,
+      backgrounds: metadata.backgrounds, backgroundData: data, mappings: metadata.mappings)
+  }
+
+  package func loadMetadata(packageURL: URL) throws -> ThemePackageMetadata {
     let themeFile = packageURL.appending(path: "theme.toml")
     let mappingsFile = packageURL.appending(path: "mappings.toml")
     let themeText = try readText(themeFile, role: "theme manifest")
@@ -25,10 +44,10 @@ public struct ThemePackageLoader: Sendable {
 
     let validated = try validate(theme: theme, themeIndex: themeIndex, themeFile: themeFile)
     try validate(mappings: mappings, index: mappingsIndex, file: mappingsFile)
-    let assets = try validateAssets(
+    let backgrounds = try validateBackgrounds(
       theme: theme, packageURL: packageURL, index: themeIndex, file: themeFile)
 
-    return ThemePackage(
+    return ThemePackageMetadata(
       packageURL: packageURL,
       schemaVersion: theme.schemaVersion,
       id: theme.id,
@@ -36,8 +55,7 @@ public struct ThemePackageLoader: Sendable {
       appearance: validated.appearance,
       semantic: validated.semantic,
       terminal: validated.terminal,
-      backgrounds: assets.backgrounds,
-      backgroundData: assets.data,
+      backgrounds: backgrounds,
       mappings: mappings.mappings
     )
   }
@@ -185,12 +203,12 @@ public struct ThemePackageLoader: Sendable {
     }
   }
 
-  private func validateAssets(
+  private func validateBackgrounds(
     theme: ThemeDocument,
     packageURL: URL,
     index: TOMLSourceIndex,
     file: URL
-  ) throws -> (backgrounds: [ThemeBackground], data: [String: Data]) {
+  ) throws -> [ThemeBackground] {
     let rawBackgrounds = theme.backgrounds ?? []
     if !rawBackgrounds.isEmpty {
       let provenance = packageURL.appending(path: "LICENSES/wallpaper.md")
@@ -200,7 +218,7 @@ public struct ThemePackageLoader: Sendable {
     }
 
     var backgrounds: [ThemeBackground] = []
-    var data: [String: Data] = [:]
+    var ids: Set<String> = []
     var resolvedPaths: Set<String> = []
     for raw in rawBackgrounds {
       try require(
@@ -208,7 +226,7 @@ public struct ThemePackageLoader: Sendable {
         message: "Background ID must match [a-z][a-z0-9]*(?:-[a-z0-9]+)*", index: index,
         file: file)
       try require(
-        data[raw.id] == nil, path: "backgrounds.id",
+        ids.insert(raw.id).inserted, path: "backgrounds.id",
         message: "Duplicate background identifier '\(raw.id)'", index: index, file: file)
       guard
         let format = ThemeBackgroundFormat(pathExtension: URL(filePath: raw.path).pathExtension)
@@ -232,20 +250,19 @@ public struct ThemePackageLoader: Sendable {
       try require(
         resolvedPaths.insert(resolvedPath).inserted, path: "backgrounds.path",
         message: "Background path '\(raw.path)' is listed more than once", index: index, file: file)
-      let bytes = try validateBackground(
+      _ = try validateBackgroundPath(
         background, packageURL: packageURL, index: index, file: file)
       backgrounds.append(background)
-      data[background.id] = bytes
     }
-    return (backgrounds, data)
+    return backgrounds
   }
 
-  private func validateBackground(
+  private func validateBackgroundPath(
     _ background: ThemeBackground,
     packageURL: URL,
     index: TOMLSourceIndex,
     file: URL
-  ) throws -> Data {
+  ) throws -> URL {
     let pathField = "backgrounds.path"
     let components = background.path.split(separator: "/", omittingEmptySubsequences: false)
     try require(
@@ -267,8 +284,10 @@ public struct ThemePackageLoader: Sendable {
         index: index, file: file)
     }
 
-    let backgroundURL = packageURL.appending(path: background.path)
     let resolvedPackage = packageURL.resolvingSymlinksInPath().standardizedFileURL
+    // Resolve the existing root first. Foundation may leave a missing leaf's
+    // /var alias unresolved; it must remain a missing asset, not a false escape.
+    let backgroundURL = resolvedPackage.appending(path: background.path)
     let resolvedBackground = backgroundURL.resolvingSymlinksInPath().standardizedFileURL
     try require(
       resolvedBackground.path.hasPrefix(resolvedPackage.path + "/"),
@@ -278,12 +297,27 @@ public struct ThemePackageLoader: Sendable {
       file: file
     )
 
+    return resolvedBackground
+  }
+
+  /// Recheck containment at the point of use, not just when the catalog opened.
+  func loadBackground(_ background: ThemeBackground, packageURL: URL) throws -> Data {
+    let file = packageURL.appending(path: "theme.toml")
+    let index = try TOMLSourceIndex(text: readText(file, role: "theme manifest"), file: file)
+    return try loadBackground(background, packageURL: packageURL, index: index, file: file)
+  }
+
+  private func loadBackground(
+    _ background: ThemeBackground, packageURL: URL, index: TOMLSourceIndex, file: URL
+  ) throws -> Data {
+    let resolvedBackground = try validateBackgroundPath(
+      background, packageURL: packageURL, index: index, file: file)
     do {
       return try ThemeImageAsset.load(at: resolvedBackground, format: background.format)
     } catch {
       throw ThemeDiagnostic(
-        location: index.location(for: pathField, file: file),
-        field: pathField,
+        location: index.location(for: "backgrounds.path", file: file),
+        field: "backgrounds.path",
         message: "Cannot load background '\(background.id)' at \(background.path): \(error)"
       )
     }

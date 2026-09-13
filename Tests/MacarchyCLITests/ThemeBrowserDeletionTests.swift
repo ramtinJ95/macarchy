@@ -85,10 +85,10 @@ struct ThemeBrowserDeletionTests {
     defer { fixture.remove() }
     let target = try fixture.target()
     let loader = ThemeBrowserCommandLoader(
-      loadPackages: ThemeBrowserCommandLoader.live.loadPackages,
+      loadMetadata: ThemeBrowserCommandLoader.live.loadMetadata,
       loadPreferences: { _ in [:] },
       loadActiveManifest: { _ in fixture.manifest() },
-      addPersonalBackgrounds: { _, package in package },
+      loadPersonalBackgrounds: { _, _ in [:] },
       renderPreview: ThemeBrowserCommandLoader.live.renderPreview
     )
     let activeContent = try loader.load(repository: fixture.repository, stateRoot: fixture.root)

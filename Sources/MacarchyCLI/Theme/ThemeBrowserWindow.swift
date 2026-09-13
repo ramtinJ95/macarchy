@@ -150,7 +150,7 @@ enum ThemeBrowserImageDecoder {
 }
 
 private enum ThemeBrowserImageOutcome: Sendable {
-  case failed
+  case failed(String)
   case loaded(CGImage)
 }
 
@@ -376,8 +376,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     if let selectedItem {
       cell.textField?.textColor =
         row == tableView.selectedRow
-        ? selectedItem.package.terminal.selectionForeground.nsColor
-        : selectedItem.package.semantic.text.nsColor
+        ? selectedItem.metadata.terminal.selectionForeground.nsColor
+        : selectedItem.metadata.semantic.text.nsColor
     }
     return cell
   }
@@ -385,9 +385,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
     guard let selectedItem else { return nil }
     return ThemeBrowserTableRowView(
-      normalTextColor: selectedItem.package.semantic.text.nsColor,
-      selectedTextColor: selectedItem.package.terminal.selectionForeground.nsColor,
-      selectedBackgroundColor: selectedItem.package.terminal.selectionBackground.nsColor
+      normalTextColor: selectedItem.metadata.semantic.text.nsColor,
+      selectedTextColor: selectedItem.metadata.terminal.selectionForeground.nsColor,
+      selectedBackgroundColor: selectedItem.metadata.terminal.selectionBackground.nsColor
     )
   }
 
@@ -534,7 +534,8 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     statusLabel.toolTip = statusLabel.stringValue
     statusLabel.textColor =
       outcome.succeeded
-      ? selectedItem?.package.semantic.accent.nsColor : selectedItem?.package.semantic.error.nsColor
+      ? selectedItem?.metadata.semantic.accent.nsColor
+      : selectedItem?.metadata.semantic.error.nsColor
     setControlsEnabled(true)
   }
 
@@ -542,7 +543,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     guard !isBusy, let item = selectedItem else { return }
     isApplying = true
     setControlsEnabled(false)
-    statusLabel.textColor = item.package.semantic.accent.nsColor
+    statusLabel.textColor = item.metadata.semantic.accent.nsColor
     statusLabel.stringValue = "Applying \(item.displayName)…"
     statusLabel.toolTip = nil
     do {
@@ -557,7 +558,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     } catch {
       isApplying = false
       setControlsEnabled(true)
-      statusLabel.textColor = item.package.semantic.error.nsColor
+      statusLabel.textColor = item.metadata.semantic.error.nsColor
       statusLabel.stringValue = "Could not start theme activation: \(error)"
       statusLabel.toolTip = String(describing: error)
     }
@@ -602,11 +603,11 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     setControlsEnabled(true)
     guard let item = selectedItem else { return }
     if status == 0 {
-      statusLabel.textColor = item.package.semantic.accent.nsColor
+      statusLabel.textColor = item.metadata.semantic.accent.nsColor
       statusLabel.stringValue = "Applied \(item.displayName). Choose another or press Esc to close."
       statusLabel.toolTip = nil
     } else {
-      statusLabel.textColor = item.package.semantic.error.nsColor
+      statusLabel.textColor = item.metadata.semantic.error.nsColor
       statusLabel.stringValue =
         "Theme activation failed\(status.map { " (exit \($0))" } ?? ""). See the test log for details."
       statusLabel.toolTip = "/tmp/macarchy-theme-browser-test.log"
@@ -671,7 +672,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     case .failed(let reason):
       statusLabel.stringValue = "Could not move the theme to Trash: \(reason)"
       statusLabel.toolTip = reason
-      statusLabel.textColor = selectedItem?.package.semantic.error.nsColor
+      statusLabel.textColor = selectedItem?.metadata.semantic.error.nsColor
     case .deleted(let content):
       refresh(content)
       statusLabel.stringValue =
@@ -683,7 +684,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       statusLabel.stringValue =
         "Moved \(deletedID) to Trash, but library refresh failed. Reopen the picker."
       statusLabel.toolTip = reason
-      statusLabel.textColor = selectedItem?.package.semantic.error.nsColor
+      statusLabel.textColor = selectedItem?.metadata.semantic.error.nsColor
     }
     setControlsEnabled(true)
     window?.makeKeyAndOrderFront(nil)
@@ -933,23 +934,23 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     guard let item = content.item(id: id) else { return }
     browserState.selectTheme(id: id)
     window?.appearance = NSAppearance(named: item.appearance == .dark ? .darkAqua : .aqua)
-    window?.backgroundColor = item.package.semantic.background.nsColor
-    rootView.layer?.backgroundColor = item.package.semantic.background.nsColor.cgColor
-    sidebar.layer?.backgroundColor = item.package.semantic.surface.nsColor.cgColor
+    window?.backgroundColor = item.metadata.semantic.background.nsColor
+    rootView.layer?.backgroundColor = item.metadata.semantic.background.nsColor.cgColor
+    sidebar.layer?.backgroundColor = item.metadata.semantic.surface.nsColor.cgColor
     themeNameLabel.stringValue = "\(item.displayName) · \(item.appearance.rawValue)"
-    themeNameLabel.textColor = item.package.semantic.text.nsColor
-    countLabel.textColor = item.package.semantic.mutedText.nsColor
-    previewLabel.textColor = item.package.semantic.mutedText.nsColor
-    backgroundLabel.textColor = item.package.semantic.mutedText.nsColor
-    screenSaverLabel.textColor = item.package.semantic.mutedText.nsColor
+    themeNameLabel.textColor = item.metadata.semantic.text.nsColor
+    countLabel.textColor = item.metadata.semantic.mutedText.nsColor
+    previewLabel.textColor = item.metadata.semantic.mutedText.nsColor
+    backgroundLabel.textColor = item.metadata.semantic.mutedText.nsColor
+    screenSaverLabel.textColor = item.metadata.semantic.mutedText.nsColor
     screenSaverLabel.stringValue =
       "Screensaver for this theme: "
       + (item.screenSaverBackgroundID.map { "Saved image · \($0)" } ?? "Follow wallpaper")
     screenSaverLabel.toolTip = screenSaverLabel.stringValue
     saveScreenSaverButton.isEnabled = !isBusy && !item.backgrounds.isEmpty
     followWallpaperButton.isEnabled = !isBusy && item.screenSaverBackgroundID != nil
-    statusLabel.textColor = item.package.semantic.mutedText.nsColor
-    keyboardHelp.textColor = item.package.semantic.mutedText.nsColor
+    statusLabel.textColor = item.metadata.semantic.mutedText.nsColor
+    keyboardHelp.textColor = item.metadata.semantic.mutedText.nsColor
     statusLabel.stringValue = browserState.deletionAvailability.explanation
     statusLabel.toolTip = browserState.deletionAvailability.explanation
     deleteButton.isEnabled = !isBusy && browserState.deletionAvailability.target != nil
@@ -1008,7 +1009,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       previews = [item.generatedPreview]
       previewIndex = 0
       updatePreviewPresentation()
-      statusLabel.textColor = item.package.semantic.error.nsColor
+      statusLabel.textColor = item.metadata.semantic.error.nsColor
       statusLabel.stringValue = "Imported preview gallery failed validation: \(reason)"
     }
   }
@@ -1024,7 +1025,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     let preview = previews[previewIndex]
     previewImageView.image = NSImage(data: preview.data)
     if previewImageView.image == nil {
-      statusLabel.textColor = item.package.semantic.error.nsColor
+      statusLabel.textColor = item.metadata.semantic.error.nsColor
       statusLabel.stringValue = ThemeBrowserError.cannotRenderPreview(themeID: item.id).description
     }
     previewLabel.stringValue = "\(previewIndex + 1) of \(previews.count) · \(preview.label)"
@@ -1076,6 +1077,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundLabel.stringValue =
       "\(index + 1) of \(item.backgrounds.count) · \(background.id) · \(format)"
     backgroundLabel.toolTip = background.path
+    backgroundLabel.textColor = item.metadata.semantic.mutedText.nsColor
     backgroundPicker.isEnabled = true
     let navigable = item.backgrounds.count > 1
     previousBackgroundButton.isEnabled = navigable
@@ -1093,10 +1095,6 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       return
     }
     backgroundImageView.image = nil
-    guard let data = item.backgroundData(id: backgroundID) else {
-      showBackgroundDecodeFailure(item: item, backgroundID: backgroundID)
-      return
-    }
     let result = ThemeBrowserAsyncResult<ThemeBrowserImageOutcome>()
     backgroundImageResult = result
     backgroundImageTask = Task.detached(priority: .userInitiated) {
@@ -1106,8 +1104,19 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
         return
       }
       guard !Task.isCancelled else { return }
-      let image = ThemeBrowserImageDecoder.thumbnail(data: data, maximumPixelSize: 1_200)
-      result.complete(image.map(ThemeBrowserImageOutcome.loaded) ?? .failed)
+      do {
+        // Catalog discovery never reads images. Validate only this selection,
+        // off the main thread, using the same bounded decoder as activation.
+        let data = try item.backgroundData(id: backgroundID)
+        guard !Task.isCancelled else { return }
+        let image = ThemeBrowserImageDecoder.thumbnail(data: data, maximumPixelSize: 1_200)
+        guard !Task.isCancelled else { return }
+        result.complete(
+          image.map(ThemeBrowserImageOutcome.loaded) ?? .failed("Thumbnail decoding failed"))
+      } catch {
+        guard !Task.isCancelled else { return }
+        result.complete(.failed(String(describing: error)))
+      }
     }
     backgroundImageTimer = Timer.scheduledTimer(
       timeInterval: 0.03,
@@ -1142,15 +1151,20 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
         cost: image.bytesPerRow * image.height
       )
       backgroundImageView.image = decoded
-    case .failed:
-      showBackgroundDecodeFailure(item: item, backgroundID: key.backgroundID)
+    case .failed(let reason):
+      showBackgroundDecodeFailure(item: item, backgroundID: key.backgroundID, reason: reason)
     }
   }
 
-  private func showBackgroundDecodeFailure(item: ThemeBrowserItem, backgroundID: String) {
-    statusLabel.textColor = item.package.semantic.error.nsColor
-    statusLabel.stringValue =
-      "Cannot render background '\(backgroundID)' for theme '\(item.id)'"
+  private func showBackgroundDecodeFailure(
+    item: ThemeBrowserItem, backgroundID: String, reason: String
+  ) {
+    // Keep image failures with the image. Gallery/apply status must neither hide
+    // this error nor remain stale when a different background loads successfully.
+    backgroundLabel.textColor = item.metadata.semantic.error.nsColor
+    backgroundLabel.stringValue =
+      "Cannot render background '\(backgroundID)' for theme '\(item.id)': \(reason)"
+    backgroundLabel.toolTip = backgroundLabel.stringValue
   }
 
   private func moveThemeSelection(by offset: Int) {
@@ -1196,9 +1210,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
           as? ThemeBrowserTableRowView
       else { continue }
       rowView.updatePalette(
-        normalTextColor: item.package.semantic.text.nsColor,
-        selectedTextColor: item.package.terminal.selectionForeground.nsColor,
-        selectedBackgroundColor: item.package.terminal.selectionBackground.nsColor
+        normalTextColor: item.metadata.semantic.text.nsColor,
+        selectedTextColor: item.metadata.terminal.selectionForeground.nsColor,
+        selectedBackgroundColor: item.metadata.terminal.selectionBackground.nsColor
       )
     }
   }

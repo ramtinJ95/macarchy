@@ -17,6 +17,10 @@ public struct ImportedThemePreviewLoader: Sendable {
   }
 
   public func load(package: ThemePackage) throws -> [ThemePreviewAsset] {
+    try load(metadata: package.metadata)
+  }
+
+  package func load(metadata package: ThemePackageMetadata) throws -> [ThemePreviewAsset] {
     let reportURL = package.packageURL.appending(path: "import.json")
     let packageDescriptor = package.packageURL.path.withCString {
       Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)

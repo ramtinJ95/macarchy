@@ -60,6 +60,29 @@ struct MacarchyConfiguration: Sendable {
   }
 
   func personalBackgrounds(themeID: String) throws -> [ThemeBackgroundAddition] {
+    try personalBackgroundMetadata(themeID: themeID).map { background in
+      do {
+        return ThemeBackgroundAddition(
+          background: background,
+          data: try ThemeImageAsset.load(
+            at: URL(filePath: background.path).resolvingSymlinksInPath().standardizedFileURL,
+            format: background.format))
+      } catch {
+        throw MacarchyConfigurationError.invalidWallpaperOverride(
+          themeID: themeID,
+          reason: "personal background '\(background.id)' is invalid: \(error)")
+      }
+    }
+  }
+
+  func personalBackgroundMetadata(themeIDs: [String]) throws -> [String: [ThemeBackground]] {
+    try Dictionary(
+      uniqueKeysWithValues: themeIDs.map {
+        ($0, try personalBackgroundMetadata(themeID: $0))
+      })
+  }
+
+  private func personalBackgroundMetadata(themeID: String) throws -> [ThemeBackground] {
     try (wallpaperAdditions[themeID] ?? []).map { addition in
       let id = addition.id
       let path = addition.path
@@ -70,25 +93,14 @@ struct MacarchyConfiguration: Sendable {
           reason: "personal background '\(id)' has unsupported image extension"
         )
       }
-      do {
-        return ThemeBackgroundAddition(
-          background: ThemeBackground(
-            id: id,
-            path: path,
-            source: "Personal wallpaper configured by the user",
-            author: "Personal; not verified",
-            license: "Personal use only; not bundled",
-            format: format,
-            origin: .personal
-          ),
-          data: try ThemeImageAsset.load(at: wallpaperURL, format: format)
-        )
-      } catch {
-        throw MacarchyConfigurationError.invalidWallpaperOverride(
-          themeID: themeID,
-          reason: "personal background '\(id)' is invalid: \(error)"
-        )
-      }
+      return ThemeBackground(
+        id: id,
+        path: path,
+        source: "Personal wallpaper configured by the user",
+        author: "Personal; not verified",
+        license: "Personal use only; not bundled",
+        format: format,
+        origin: .personal)
     }
   }
 }
@@ -105,6 +117,12 @@ package struct MacarchyConfigurationStore: Sendable {
     return try package.addingPersonalBackgrounds(
       configuration.personalBackgrounds(themeID: package.id)
     )
+  }
+
+  /// Read configuration once for a browser catalog without reading image bytes.
+  package func personalBackgroundMetadata(themeIDs: [String]) throws -> [String: [ThemeBackground]]
+  {
+    try load().personalBackgroundMetadata(themeIDs: themeIDs)
   }
 
   func load() throws -> MacarchyConfiguration {
