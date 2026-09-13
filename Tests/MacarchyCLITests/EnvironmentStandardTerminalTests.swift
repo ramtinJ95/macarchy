@@ -37,11 +37,24 @@ struct EnvironmentStandardTerminalTests {
     try kittyText.write(to: kitty, atomically: true, encoding: .utf8)
     try "map ctrl+shift+x new_window\n".write(
       to: kittyDirectory.appending(path: "bindings.conf"), atomically: true, encoding: .utf8)
+    let zshPath = linked ? "../home/.zshrc" : fixture.zshEntry.path
+    let kittyPath =
+      linked
+      ? "../home/.config/kitty/kitty.conf"
+      : fixture.kittyEntry.appending(path: "kitty.conf").path
     let profile =
       try String(contentsOf: fixture.profile, encoding: .utf8)
-      + "\n[zsh]\nconfiguration = \"\(fixture.zshEntry.path)\"\n"
-      + "\n[kitty]\nconfiguration = \"\(fixture.kittyEntry.appending(path: "kitty.conf").path)\"\n"
-    try profile.write(to: fixture.profile, atomically: true, encoding: .utf8)
+      + "\n[zsh]\nconfiguration = \"\(zshPath)\"\n"
+      + "\n[kitty]\nconfiguration = \"\(kittyPath)\"\n"
+    if linked {
+      let sourceProfile = personal.appending(path: "profile.toml")
+      try profile.write(to: sourceProfile, atomically: true, encoding: .utf8)
+      try FileManager.default.removeItem(at: fixture.profile)
+      try FileManager.default.createSymbolicLink(
+        at: fixture.profile, withDestinationURL: sourceProfile)
+    } else {
+      try profile.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    }
     let plan = try fixture.plan()
     #expect(plan.succeeded, "\(plan.output)")
     let applied = try await fixture.apply(adopt: nil)
