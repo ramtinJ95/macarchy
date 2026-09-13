@@ -27,7 +27,7 @@ struct DesktopDoctorCommandRunner: Sendable {
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
     json: Bool,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState

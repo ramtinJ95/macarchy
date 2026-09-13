@@ -1,7 +1,7 @@
 import Foundation
 import ThemeCore
 
-enum DesktopPlanScope: Sendable {
+enum DesktopProviderScope: Sendable {
   case allProviders
   case yabaiOnly
 }
@@ -23,8 +23,8 @@ struct DesktopPlanCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     json: Bool,
-    scope: DesktopPlanScope = .allProviders,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    scope: DesktopProviderScope = .allProviders,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil,
     requireRunningKeybindingProcess: Bool = true
   ) throws -> (output: String, succeeded: Bool) {
@@ -42,6 +42,25 @@ struct DesktopPlanCommandRunner: Sendable {
             code: "profile_invalid",
             source: profileURL.path,
             message: String(describing: error)
+          )
+        )
+      }
+    }
+
+    if scope == .yabaiOnly {
+      do {
+        if try DesktopAggregateTransactionStore(stateRoot: stateRoot).exists
+          || UnifiedSetupTransactionStore(stateRoot: stateRoot).read() != nil
+        {
+          throw DesktopApplyBlockedError(
+            reason: "complete the pending desktop/setup transaction before a yabai-only apply"
+          )
+        }
+      } catch {
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "parent_transaction_pending", source: stateRoot.path,
+            message: (error as? DesktopApplyBlockedError)?.reason ?? String(describing: error)
           )
         )
       }

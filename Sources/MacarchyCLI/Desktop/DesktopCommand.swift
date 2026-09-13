@@ -26,6 +26,9 @@ struct Desktop: ParsableCommand {
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
+    @Flag(help: "Plan only yabai; leave SketchyBar, keybindings, and theme adapters outside scope.")
+    var yabaiOnly = false
+
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
       let profileURL = profileOptions.url(homeDirectory: home)
@@ -35,7 +38,8 @@ struct Desktop: ParsableCommand {
         profileRequired: profileOptions.isRequired,
         stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
         homeDirectory: home,
-        json: json
+        json: json,
+        scope: yabaiOnly ? .yabaiOnly : .allProviders
       )
       print(execution.output)
       if !execution.succeeded {
@@ -68,6 +72,17 @@ struct Desktop: ParsableCommand {
     @Flag(help: "Emit machine-readable output.")
     var json = false
 
+    @Flag(
+      help:
+        "Apply only yabai configuration and its service lifecycle; do not reload other providers.")
+    var yabaiOnly = false
+
+    mutating func validate() throws {
+      if yabaiOnly, keybindingsAdopt != nil || sketchybarAdopt != nil {
+        throw ValidationError("--yabai-only cannot adopt keybindings or SketchyBar")
+      }
+    }
+
     mutating func run() async throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
       let profileURL = profileOptions.url(homeDirectory: home)
@@ -79,7 +94,19 @@ struct Desktop: ParsableCommand {
             profileRequired: profileOptions.isRequired,
             stateRoot: state.stateRootURL,
             homeDirectory: home,
-            json: json
+            json: json,
+            scope: yabaiOnly ? .yabaiOnly : .allProviders
+          )
+        } else if yabaiOnly {
+          try DesktopApplyCommandRunner.live.execute(
+            resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
+            profileURL: profileURL,
+            profileRequired: profileOptions.isRequired,
+            stateRoot: state.stateRootURL,
+            homeDirectory: home,
+            adopt: adopt,
+            json: json,
+            scope: .yabaiOnly
           )
         } else {
           try await DesktopApplyCommandRunner.live.executeAggregate(

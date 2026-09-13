@@ -50,7 +50,8 @@ struct DesktopApplyCommandRunner: Sendable {
     adopt: String?,
     sketchyBarAdopt: String? = nil,
     json: Bool,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL
+    scope: DesktopProviderScope = .allProviders,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState
     do {
@@ -59,7 +60,8 @@ struct DesktopApplyCommandRunner: Sendable {
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
-        macarchyExecutableURL: macarchyExecutableURL
+        macarchyExecutableURL: macarchyExecutableURL,
+        scope: scope
       )
     } catch {
       return try result(
@@ -76,6 +78,14 @@ struct DesktopApplyCommandRunner: Sendable {
     var sketchyBarBeforeFailure: ApplyResult?
     do {
       let results = try ActivationLock(root: stateRoot).withLock {
+        if scope == .yabaiOnly,
+          try DesktopAggregateTransactionStore(stateRoot: stateRoot).exists
+            || UnifiedSetupTransactionStore(stateRoot: stateRoot).read() != nil
+        {
+          throw DesktopApplyBlockedError(
+            reason: "complete the pending desktop/setup transaction before a yabai-only apply"
+          )
+        }
         if desired.sketchyBarComposition != nil {
           let palette = SketchyBarPalettePlanInspector().inspect(
             stateRoot: stateRoot,
@@ -104,17 +114,22 @@ struct DesktopApplyCommandRunner: Sendable {
             )
           }
         yabaiBeforeFailure = yabai
-        let sketchyBar = try applySketchyBarLocked(
-          composition: desired.sketchyBarComposition,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          adopt: sketchyBarAdopt
-        )
+        let sketchyBar: ApplyResult? =
+          if scope == .allProviders {
+            try applySketchyBarLocked(
+              composition: desired.sketchyBarComposition,
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              adopt: sketchyBarAdopt
+            )
+          } else {
+            nil
+          }
         sketchyBarBeforeFailure = sketchyBar
         return (yabai, sketchyBar)
       }
-      let changed = results.0.changed || results.1.changed
-      let recovered = results.1.lifecycle == "recovery"
+      let changed = results.0.changed || results.1?.changed == true
+      let recovered = results.1?.lifecycle == "recovery"
       return try self.result(
         outcome: recovered ? "recovered" : changed ? "applied" : "no_change",
         mutated: changed,
@@ -122,7 +137,9 @@ struct DesktopApplyCommandRunner: Sendable {
         sketchyBar: results.1,
         message: recovered
           ? "interrupted state was recovered; run desktop apply again"
-          : changed ? "desktop provider state changed" : "desktop providers are converged",
+          : scope == .yabaiOnly
+            ? "yabai-only apply completed; SketchyBar, keybindings, and theme adapters were not changed"
+            : changed ? "desktop provider state changed" : "desktop providers are converged",
         json: json,
         succeeded: !recovered
       )
@@ -145,7 +162,7 @@ struct DesktopApplyCommandRunner: Sendable {
         outcome: "failed",
         mutated: yabaiBeforeFailure?.changed == true || sketchyBarBeforeFailure?.changed == true
           || YabaiTransactionStore(stateRoot: stateRoot).exists
-          || SketchyBarTransactionStore(stateRoot: stateRoot).exists,
+          || (scope == .allProviders && SketchyBarTransactionStore(stateRoot: stateRoot).exists),
         yabai: yabaiBeforeFailure,
         sketchyBar: sketchyBarBeforeFailure,
         message: yabaiBeforeFailure?.changed == true || sketchyBarBeforeFailure?.changed == true
@@ -169,7 +186,7 @@ struct DesktopApplyCommandRunner: Sendable {
     keybindingsAdopt: String?,
     sketchyBarAdopt: String? = nil,
     json: Bool,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     deferFinalization: Bool = false,
     profile suppliedProfile: PortableProfile? = nil
   ) async throws -> (output: String, succeeded: Bool) {
@@ -1121,7 +1138,7 @@ struct DesktopTeardownCommandRunner: Sendable {
   }
 }
 
-private struct DesktopApplyBlockedError: Error {
+struct DesktopApplyBlockedError: Error {
   let reason: String
 }
 
@@ -1135,8 +1152,9 @@ struct DesktopDesiredState: Sendable {
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.executableURL,
-    profile suppliedProfile: PortableProfile? = nil
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
+    profile suppliedProfile: PortableProfile? = nil,
+    scope: DesktopProviderScope = .allProviders
   ) throws -> Self {
     let profile =
       try suppliedProfile
@@ -1152,7 +1170,7 @@ struct DesktopDesiredState: Sendable {
         nil
       }
     let sketchyBarComposition: SketchyBarComposition? =
-      if profile.topBar == .sketchybar {
+      if scope == .allProviders, profile.topBar == .sketchybar {
         try SketchyBarConfigurationComposer().compose(
           defaultsURL: resourcesRoot.appending(path: "sketchybar/defaults.toml"),
           profile: profile,
