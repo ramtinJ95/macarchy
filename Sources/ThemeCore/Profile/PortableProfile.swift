@@ -821,9 +821,10 @@ package struct PortableProfileLoader: Sendable {
         "\(field) must be an explicit absolute or profile-relative path without tilde expansion or control characters"
       )
     }
+    // File standardization can follow symlinks when dot segments remain.
     return
       (NSString(string: path).isAbsolutePath ? URL(filePath: path) : base.appending(path: path))
-      .standardizedFileURL
+      .standardized.standardizedFileURL
   }
 
   private static func resolvePortablePath(

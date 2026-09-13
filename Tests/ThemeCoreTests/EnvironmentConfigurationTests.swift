@@ -6,7 +6,7 @@ import Testing
 struct EnvironmentConfigurationTests {
   private let composer = EnvironmentConfigurationComposer()
 
-  @Test(arguments: ["relative", "absolute", "linked"])
+  @Test(arguments: ["relative", "absolute", "linked", "relative-linked"])
   func explicitNativeSourcesMayLeaveTheProfileDirectory(kind: String) throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -16,7 +16,13 @@ struct EnvironmentConfigurationTests {
     try FileManager.default.createDirectory(at: userRoot, withIntermediateDirectories: true)
     try FileManager.default.createSymbolicLink(
       at: profileRoot.appending(path: "user"), withDestinationURL: userRoot)
-    let path = kind == "absolute" ? userRoot.path : kind == "linked" ? "user" : "../macarchy-user"
+    let path: String
+    switch kind {
+    case "absolute": path = userRoot.path
+    case "linked": path = "user"
+    case "relative-linked": path = "../macarchy/user"
+    default: path = "../macarchy-user"
+    }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.withoutEscapingSlashes]
     let quoted = String(decoding: try encoder.encode(path), as: UTF8.self)
@@ -31,6 +37,10 @@ struct EnvironmentConfigurationTests {
       profile.environment.starship.nativeConfigurationURL,
       profile.environment.neovim.nativeConfigurationDirectoryURL,
     ] {
+      let expected =
+        kind == "linked" || kind == "relative-linked"
+        ? profileRoot.appending(path: "user") : userRoot
+      #expect(source?.path == expected.path)
       #expect(source?.resolvingSymlinksInPath().path == userRoot.path)
     }
   }
