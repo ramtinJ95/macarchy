@@ -16,6 +16,10 @@ public struct ThemePreviewRenderer: Sendable {
   public init() {}
 
   public func render(package: ThemePackage) -> GeneratedThemePreview {
+    render(metadata: package.metadata)
+  }
+
+  package func render(metadata package: ThemePackageMetadata) -> GeneratedThemePreview {
     let semantic = package.semantic
     let terminal = package.terminal
     let swatches = terminal.ansi.enumerated().map { index, color in

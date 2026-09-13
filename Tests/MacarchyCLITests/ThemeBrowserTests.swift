@@ -12,7 +12,7 @@ struct ThemeBrowserTests {
     let activePackage = try #require(packages.first(where: { $0.id == "kanagawa-wave" }))
     let activeBackground = try #require(activePackage.backgrounds.first)
     let loader = ThemeBrowserCommandLoader(
-      loadPackages: { _ in packages },
+      loadMetadata: { _ in packages.map(\.metadata) },
       loadPreferences: { _ in
         ["tokyo-night": "default", "kanagawa-wave": "removed-background"]
       },
@@ -22,8 +22,8 @@ struct ThemeBrowserTests {
           background: GenerationBackground(id: activeBackground.id, format: activeBackground.format)
         )
       },
-      addPersonalBackgrounds: { _, package in package },
-      renderPreview: { ThemePreviewRenderer().render(package: $0) }
+      loadPersonalBackgrounds: { _, _ in [:] },
+      renderPreview: { ThemePreviewRenderer().render(metadata: $0) }
     )
 
     let content = try loader.load(
@@ -66,7 +66,7 @@ struct ThemeBrowserTests {
       mappings: base.mappings
     )
     let item = ThemeBrowserItem(
-      package: package,
+      metadata: package.metadata,
       generatedPreview: ThemeBrowserPreview(
         label: "Generated palette",
         data: ThemePreviewRenderer().render(package: package).data
@@ -92,11 +92,11 @@ struct ThemeBrowserTests {
     let calls = Mutex(0)
     let package = try repository.package(id: "catppuccin-mocha")
     let content = try ThemeBrowserCommandLoader(
-      loadPackages: { _ in [package] },
+      loadMetadata: { _ in [package.metadata] },
       loadPreferences: { _ in [:] },
       loadActiveManifest: { _ in nil },
-      addPersonalBackgrounds: { _, package in package },
-      renderPreview: { ThemePreviewRenderer().render(package: $0) }
+      loadPersonalBackgrounds: { _, _ in [:] },
+      renderPreview: { ThemePreviewRenderer().render(metadata: $0) }
     ).load(
       repository: repository,
       stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory)
@@ -117,10 +117,15 @@ struct ThemeBrowserTests {
     let package = try repository.package(id: "catppuccin-mocha")
     let source = try #require(package.backgrounds.first)
     let personalData = package.data(for: source)
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let imageURL = root.appending(path: "samurai.webp")
+    try personalData.write(to: imageURL)
     let personal = ThemeBackgroundAddition(
       background: ThemeBackground(
         id: "samurai",
-        path: "/personal/samurai.webp",
+        path: imageURL.path,
         source: "Personal wallpaper configured by the user",
         author: "Personal; not verified",
         license: "Personal use only; not bundled",
@@ -130,13 +135,11 @@ struct ThemeBrowserTests {
       data: personalData
     )
     let content = try ThemeBrowserCommandLoader(
-      loadPackages: { _ in [package] },
+      loadMetadata: { _ in [package.metadata] },
       loadPreferences: { _ in [:] },
       loadActiveManifest: { _ in nil },
-      addPersonalBackgrounds: { _, loaded in
-        try loaded.addingPersonalBackgrounds([personal])
-      },
-      renderPreview: { ThemePreviewRenderer().render(package: $0) }
+      loadPersonalBackgrounds: { _, _ in [package.id: [personal.background]] },
+      renderPreview: { ThemePreviewRenderer().render(metadata: $0) }
     ).load(
       repository: repository,
       stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory)
@@ -146,8 +149,8 @@ struct ThemeBrowserTests {
     #expect(item.backgrounds.dropLast().map(\.origin).allSatisfy { $0 == .package })
     #expect(item.backgrounds.last?.id == "samurai")
     #expect(item.isPersonalBackground(id: "samurai"))
-    #expect(item.backgroundData(id: "samurai") == personalData)
-    #expect(item.backgroundData(id: source.id) == package.data(for: source))
+    #expect(try item.backgroundData(id: "samurai") == personalData)
+    #expect(try item.backgroundData(id: source.id) == package.data(for: source))
   }
 
   @Test

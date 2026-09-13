@@ -23,9 +23,19 @@ public struct ThemeRepository: Sendable {
     try loadPackages(in: [builtInRoot, userRoot].compactMap { $0 })
   }
 
+  package func metadata() throws -> [ThemePackageMetadata] {
+    try loadMetadata(in: [builtInRoot, userRoot].compactMap { $0 })
+  }
+
   /// A deletion selection binds a user-library directory, not just a reusable theme ID.
   /// Callers must revalidate it under ThemePackageLock immediately before mutation.
   package func deletionTarget(for package: ThemePackage) throws -> ThemePackageDeletionTarget? {
+    try deletionTarget(for: package.metadata)
+  }
+
+  package func deletionTarget(for package: ThemePackageMetadata) throws
+    -> ThemePackageDeletionTarget?
+  {
     let directory = package.packageURL.standardizedFileURL
     guard let userRoot = userRoot?.standardizedFileURL,
       directory.deletingLastPathComponent().path == userRoot.path,
@@ -73,7 +83,11 @@ public struct ThemeRepository: Sendable {
   }
 
   private func loadPackages(in roots: [URL]) throws -> [ThemePackage] {
-    var packages: [ThemePackage] = []
+    try loadMetadata(in: roots).map { try ThemePackageLoader().load(metadata: $0) }
+  }
+
+  private func loadMetadata(in roots: [URL]) throws -> [ThemePackageMetadata] {
+    var packages: [ThemePackageMetadata] = []
     for root in roots {
       let children: [URL]
       do {
@@ -98,7 +112,7 @@ public struct ThemeRepository: Sendable {
       for child in children.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
         let values = try child.resourceValues(forKeys: [.isDirectoryKey])
         guard values.isDirectory == true else { continue }
-        packages.append(try ThemePackageLoader().load(packageURL: child))
+        packages.append(try ThemePackageLoader().loadMetadata(packageURL: child))
       }
     }
 

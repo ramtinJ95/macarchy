@@ -9,30 +9,29 @@ struct ThemeBrowserPreview: Sendable {
 }
 
 struct ThemeBrowserItem: Sendable {
-  let package: ThemePackage
+  let metadata: ThemePackageMetadata
   let generatedPreview: ThemeBrowserPreview
   let initialBackgroundID: String?
   var screenSaverBackgroundID: String? = nil
   var deletion: ThemeBrowserDeletionAvailability = .unavailable(
     "Built-in themes cannot be deleted.")
 
-  var id: String { package.id }
-  var displayName: String { package.displayName }
-  var appearance: ThemeAppearance { package.appearance }
-  var backgrounds: [ThemeBackground] { package.backgrounds }
+  var id: String { metadata.id }
+  var displayName: String { metadata.displayName }
+  var appearance: ThemeAppearance { metadata.appearance }
+  var backgrounds: [ThemeBackground] { metadata.backgrounds }
 
   func isPersonalBackground(id: String) -> Bool {
-    package.background(id: id)?.origin == .personal
+    metadata.background(id: id)?.origin == .personal
   }
 
-  func backgroundData(id: String) -> Data? {
-    guard let background = package.backgrounds.first(where: { $0.id == id }) else { return nil }
-    return package.data(for: background)
+  func backgroundData(id: String) throws -> Data {
+    try metadata.backgroundData(id: id)
   }
 
   fileprivate func matches(_ terms: [String]) -> Bool {
     guard !terms.isEmpty else { return true }
-    let searchable = [package.id, package.displayName, package.appearance.rawValue]
+    let searchable = [metadata.id, metadata.displayName, metadata.appearance.rawValue]
       .joined(separator: "\n")
       .folding(
         options: [.caseInsensitive, .diacriticInsensitive], locale: themeBrowserSearchLocale)
@@ -268,17 +267,17 @@ enum ThemeBrowserError: Error, CustomStringConvertible, Sendable {
 }
 
 struct ThemeBrowserCommandLoader: Sendable {
-  let loadPackages: @Sendable (ThemeRepository) throws -> [ThemePackage]
+  let loadMetadata: @Sendable (ThemeRepository) throws -> [ThemePackageMetadata]
   let loadPreferences: @Sendable (URL) throws -> [String: String]
   let loadActiveManifest: @Sendable (URL) throws -> GenerationManifest?
-  let addPersonalBackgrounds: @Sendable (URL, ThemePackage) throws -> ThemePackage
-  let renderPreview: @Sendable (ThemePackage) -> GeneratedThemePreview
+  let loadPersonalBackgrounds: @Sendable (URL, [String]) throws -> [String: [ThemeBackground]]
+  let renderPreview: @Sendable (ThemePackageMetadata) -> GeneratedThemePreview
   var loadScreenSaverPreferences: @Sendable (URL) throws -> [String: String] = {
     try ScreenSaverPreferenceStore(root: $0).load().mapValues(\.backgroundID)
   }
 
   static let live = ThemeBrowserCommandLoader(
-    loadPackages: { try $0.packages() },
+    loadMetadata: { try $0.metadata() },
     loadPreferences: { try BackgroundPreferenceStore(root: $0).load() },
     loadActiveManifest: { root in
       do {
@@ -287,20 +286,21 @@ struct ThemeBrowserCommandLoader: Sendable {
         return nil
       }
     },
-    addPersonalBackgrounds: { root, package in
-      try MacarchyConfigurationStore(root: root).addingPersonalBackgrounds(to: package)
+    loadPersonalBackgrounds: { root, themeIDs in
+      try MacarchyConfigurationStore(root: root).personalBackgroundMetadata(themeIDs: themeIDs)
     },
-    renderPreview: { ThemePreviewRenderer().render(package: $0) }
+    renderPreview: { ThemePreviewRenderer().render(metadata: $0) }
   )
 
   func load(repository: ThemeRepository, stateRoot: URL) throws -> ThemeBrowserContent {
-    let packages = try loadPackages(repository)
+    let packages = try loadMetadata(repository)
     guard !packages.isEmpty else { throw ThemeBrowserError.noThemes }
     let preferences = try loadPreferences(stateRoot)
     let screenSaverPreferences = try loadScreenSaverPreferences(stateRoot)
     let activeManifest = try loadActiveManifest(stateRoot)
+    let personalBackgrounds = try loadPersonalBackgrounds(stateRoot, packages.map(\.id))
     let effectivePackages = try packages.map { package in
-      try addPersonalBackgrounds(stateRoot, package)
+      try package.addingPersonalBackgrounds(personalBackgrounds[package.id] ?? [])
     }
 
     let items = effectivePackages.map { package in
@@ -327,7 +327,7 @@ struct ThemeBrowserCommandLoader: Sendable {
         deletion = .unavailable("Cannot safely delete this package: \(error)")
       }
       return ThemeBrowserItem(
-        package: package,
+        metadata: package,
         generatedPreview: ThemeBrowserPreview(
           label: "Generated palette",
           data: preview.data
@@ -346,14 +346,14 @@ struct ThemeBrowserCommandLoader: Sendable {
 }
 
 struct ThemeBrowserGalleryLoader: Sendable {
-  let loadAssets: @Sendable (ThemePackage) throws -> [ThemePreviewAsset]
+  let loadAssets: @Sendable (ThemePackageMetadata) throws -> [ThemePreviewAsset]
 
   static let live = ThemeBrowserGalleryLoader(
-    loadAssets: { try ImportedThemePreviewLoader().load(package: $0) }
+    loadAssets: { try ImportedThemePreviewLoader().load(metadata: $0) }
   )
 
   func load(item: ThemeBrowserItem) throws -> [ThemeBrowserPreview] {
-    try loadAssets(item.package).map { asset in
+    try loadAssets(item.metadata).map { asset in
       ThemeBrowserPreview(
         label: asset.sourcePath,
         data: asset.data
