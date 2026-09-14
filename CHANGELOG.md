@@ -7,6 +7,14 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-09-14
+
+### Fixed
+
+- Keep SketchyBar toggle failures to a short indicator instead of crowding out
+  the clock and other widgets. Preserve full diagnostics in the service log
+  without corrupting the JSON ownership state needed for automatic recovery.
+
 ## [0.9.6] - 2026-09-12
 
 ### Changed
