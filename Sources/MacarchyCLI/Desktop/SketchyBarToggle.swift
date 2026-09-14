@@ -71,7 +71,7 @@ struct SketchyBarToggle {
       guard try foreignToggleAbsent() else { throw ToggleError.foreignProcess }
       try bar([
         "--bar", "hidden=off", "y_offset=0",
-        "--set", "macarchy.toggle", "label.drawing=off",
+        "--set", "macarchy.toggle", "drawing=off", "icon.drawing=off", "label.drawing=off",
       ])
       var state = NativeMenuToggleState()
       var heartbeat = -Double.infinity
@@ -114,9 +114,13 @@ struct SketchyBarToggle {
     } catch {
       do {
         if try owns(token) {
+          // SketchyBar does not JSON-escape queried text. Keep ownership in a
+          // hidden, JSON-safe label and show only a fixed short indicator;
+          // interpolating an error here can poison readback and prevent recovery.
+          // The original error is rethrown below for the CLI's service stderr.
           try bar([
             "--bar", "hidden=off", "y_offset=0", "--set", "macarchy.toggle", "drawing=on",
-            "icon.drawing=off", "label.drawing=on", "label=\(token)|Toggle ERR: \(error)",
+            "icon.drawing=on", "icon=Toggle ERR", "label.drawing=off", "label=\(token)|failed",
           ])
         }
       } catch let presentation {
