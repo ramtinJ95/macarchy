@@ -66,7 +66,7 @@ struct SketchyBarToggleTests {
     #expect(result.terminationStatus == 0, Comment(rawValue: result.output))
   }
 
-  @Test(arguments: ["cursor", "empty-query"])
+  @Test(arguments: ["cursor", "empty-query", "quoted-diagnostic"])
   func failedWorkerRetainsOwnershipForRecoveryAndClearsErrorPresentation(failure: String) throws {
     let state = State(token: token)
     let base = runner(state)
@@ -81,12 +81,37 @@ struct SketchyBarToggleTests {
       }
       return inject ? .init(terminationStatus: 0, output: "") : try base.run(request)
     }
+    let diagnostic = NSError(
+      domain: "ToggleTest", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: String(repeating: "\"quoted\" \\ path\n", count: 100)])
     let worker = SketchyBarToggle(
       processRunner: flaky, uptime: { 100 },
-      distance: { throw ToggleError.cursorScreenUnavailable },
+      distance: {
+        if failure == "quoted-diagnostic" { throw diagnostic }
+        throw ToggleError.cursorScreenUnavailable
+      },
       wait: {}, stopping: { false }, foreignToggleAbsent: { true }, pid: 7, started: 1_000_000)
-    #expect(throws: (any Error).self) { try worker.execute(token: token) }
-    #expect(state.value.withLock { $0.label.hasPrefix(token + "|Toggle ERR:") })
+    do {
+      try worker.execute(token: token)
+      Issue.record("Expected toggle failure")
+    } catch {
+      // The CLI still receives the original detailed error for service stderr.
+      if failure == "quoted-diagnostic" { #expect(error as NSError == diagnostic) }
+      if failure == "empty-query" { #expect(error is DecodingError) }
+    }
+    #expect(state.value.withLock { $0.label == token + "|failed" })
+    let presentation = try #require(state.value.withLock { $0.calls.last })
+    #expect(presentation.contains("drawing=on"))
+    #expect(presentation.contains("icon.drawing=on"))
+    #expect(presentation.contains("icon=Toggle ERR"))
+    #expect(presentation.contains("label.drawing=off"))
+    #expect(ToggleHeartbeat.parse(state.value.withLock { $0.label }) == nil)
+    // Match native SketchyBar's unescaped string serialization, not a safer fake.
+    let readback = try base.run(
+      .init(
+        executableURL: SketchyBarCoreRuntimeVerifier.controlURL,
+        arguments: ["--query", "macarchy.toggle"], timeout: 1))
+    _ = try JSONSerialization.jsonObject(with: Data(readback.output.utf8))
     state.value.withLock { $0.calls.removeAll() }
     var stopped = false
     try SketchyBarToggle(
@@ -95,6 +120,7 @@ struct SketchyBarToggleTests {
       pid: 8, started: 2_000_000
     ).execute(token: token)
     #expect(state.value.withLock { $0.calls.contains { $0.contains("label.drawing=off") } })
+    #expect(state.value.withLock { $0.calls.contains { $0.contains("icon.drawing=off") } })
     #expect(
       state.value.withLock { $0.calls.contains { $0.contains("label=\(token)|8|101000|2000000") } })
   }
@@ -164,7 +190,7 @@ struct SketchyBarToggleTests {
       foreignToggleAbsent: { false }, pid: 7, started: 1_000_000)
     #expect(throws: ToggleError.self) { try worker.execute(token: token) }
     #expect(
-      state.value.withLock { $0.calls.last?.contains("label=\(token)|Toggle ERR: foreignProcess") }
+      state.value.withLock { $0.calls.last?.contains("label=\(token)|failed") }
         == true)
     #expect(state.value.withLock { $0.calls.allSatisfy { !$0.contains("kill") } })
   }
@@ -197,7 +223,7 @@ struct SketchyBarToggleTests {
   private func runner(_ state: State) -> ProcessRunner {
     ProcessRunner { request in
       #expect(request.executableURL == SketchyBarCoreRuntimeVerifier.controlURL)
-      return try state.value.withLock {
+      return state.value.withLock {
         $0.calls.append(request.arguments)
         if request.arguments == ["--query", "bar"] {
           return .init(
@@ -207,9 +233,7 @@ struct SketchyBarToggleTests {
         if request.arguments == ["--query", "macarchy.toggle"] {
           return .init(
             terminationStatus: 0,
-            output: String(
-              decoding: try JSONSerialization.data(withJSONObject: ["label": ["value": $0.label]]),
-              as: UTF8.self))
+            output: "{\"label\":{\"value\":\"\($0.label)\"}}")
         }
         if let label = request.arguments.first(where: { $0.hasPrefix("label=") }) {
           $0.label = String(label.dropFirst(6))
