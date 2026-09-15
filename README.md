@@ -784,6 +784,28 @@ Tests use temporary roots, not your live Macarchy state. CI also validates the
 release archive and installed layout. The theme format is documented in
 [`Documentation/theme-json.md`](Documentation/theme-json.md).
 
+### CI behavior
+
+PRs run the complete Swift suite and release archive checks unless their entire
+diff changes only the root `README.md` and/or `AGENTS.md`. Shipped documentation,
+themes, defaults, scripts and unknown paths still require full verification.
+Classification failures fail CI; an intentionally skipped build still produces
+the final `macOS 26 arm64` check. New pushes cancel older runs of the same PR.
+Pushes to `main` always run the full checks and do not cancel each other.
+
+Ordinary CI caches SwiftPM dependency checkouts and debug/release build state,
+matched to the OS, architecture, compiler, SDK, package manifests and workflow.
+It always invokes the builds and tests after restoring a cache; a cache hit is
+not verification. The job summary reports cache reuse, and Actions step timings
+show its actual benefit. Stable release publication remains an uncached build
+with the full tests, archive validation and provenance checks.
+
+The lightweight change-classification tests run without Swift:
+
+```sh
+python3 -B Scripts/test-ci-changes.py
+```
+
 ## License
 
 [MIT](LICENSE). Bundled wallpapers carry provenance and licensing information
