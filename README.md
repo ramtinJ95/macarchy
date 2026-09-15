@@ -99,6 +99,7 @@ callback paths follow the installed command link; upgrading does not automatical
 rewrite older generated configurations.
 
 ```sh
+macarchy menu                         # Search actions; open existing native viewers
 macarchy theme browse                 # Preview themes and backgrounds, then Apply
 macarchy theme list
 macarchy theme set kanagawa-wave
@@ -109,8 +110,15 @@ macarchy setup status
 macarchy setup doctor
 ```
 
-The default shortcuts include **Command–Shift–T** for the theme browser and
-**Command–K** for the keybinding viewer. Browsing alone changes nothing.
+The default shortcuts include **Control–Option–Space** for the action menu,
+**Command–Shift–T** for the theme browser and **Command–K** for the keybinding
+viewer. The action menu currently offers themes/backgrounds and keybindings:
+use j/k or arrows to navigate, / to focus search, and Return to open. In search,
+letters type normally; Escape returns to the list without clearing the filter.
+Escape from the list dismisses. A highlighted row and mode hint show keyboard
+focus. It closes before handing off to the existing viewer. Browsing changes nothing.
+New curated bindings take effect through reviewed keybinding apply; updating
+the executable alone does not change an already-generated shortcut configuration.
 The browser can move inactive user-installed themes to Trash after confirmation;
 built-in and active themes are protected.
 

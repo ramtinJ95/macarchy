@@ -311,3 +311,10 @@ label = "Browse themes and backgrounds"
 category = "Macarchy"
 order = 485
 aliases = ["themes", "backgrounds", "picker"]
+
+[[bindings]]
+identity = "ctrl+alt-space"
+label = "Open Macarchy action menu"
+category = "Macarchy"
+order = 490
+aliases = ["actions", "menu", "configure", "appearance", "maintenance"]
