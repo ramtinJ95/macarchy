@@ -111,6 +111,53 @@ class GitDiffTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             ci_changes.classify("0" * 40, cwd=self.root)
 
+    def test_new_root_header_invalidates_cache_context(self):
+        before = ci_changes.cache_context(cwd=self.root)
+        self.write("VERSION", "1.0.0\n")
+        self.commit()
+        self.assertTrue(self.full())
+        self.assertNotEqual(before, ci_changes.cache_context(cwd=self.root))
+
+    def test_source_test_and_safe_doc_changes_keep_compatible_cache_context(self):
+        before = ci_changes.cache_context(cwd=self.root)
+        for path in ("Sources/example.swift", "Tests/example.swift",
+                     "README.md", "AGENTS.md"):
+            with self.subTest(path=path):
+                self.write(path, "changed input\n")
+                self.commit()
+                self.assertEqual(before, ci_changes.cache_context(cwd=self.root))
+
+    def test_other_root_inputs_and_directory_contents_invalidate_context(self):
+        before = ci_changes.cache_context(cwd=self.root)
+        for path in ("Package.swift", "Package.resolved", "VERSION.txt",
+                     ".github/workflows/ci.yml", "Environment/Brewfile",
+                     "Environment/Brewfile", "new-root/header.h"):
+            with self.subTest(path=path):
+                self.write(path, before + "\n")
+                self.commit()
+                after = ci_changes.cache_context(cwd=self.root)
+                self.assertNotEqual(before, after)
+                before = after
+
+    def test_root_rename_and_deletion_invalidate_context(self):
+        self.write("safe-name.txt", "same contents\n")
+        self.commit()
+        before = ci_changes.cache_context(cwd=self.root)
+        (self.root / "safe-name.txt").rename(self.root / "version")
+        self.commit()
+        after = ci_changes.cache_context(cwd=self.root)
+        self.assertNotEqual(before, after)
+        (self.root / "version").unlink()
+        self.commit()
+        self.assertNotEqual(after, ci_changes.cache_context(cwd=self.root))
+
+    def test_directory_named_like_safe_doc_is_not_ignored(self):
+        before = ci_changes.cache_context(cwd=self.root)
+        (self.root / "README.md").unlink()
+        self.write("README.md/header.h", "// new header\n")
+        self.commit()
+        self.assertNotEqual(before, ci_changes.cache_context(cwd=self.root))
+
 
 if __name__ == "__main__":
     unittest.main()

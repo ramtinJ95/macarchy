@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Conservative PR classification; unknown or empty changes require full CI."""
+"""Conservative PR classification and committed build-cache compatibility."""
 
+import hashlib
 import re
 import subprocess
 import sys
@@ -29,11 +30,37 @@ def classify(base, cwd=None):
     return requires_full_checks(paths)
 
 
+def cache_context(cwd=None):
+    # New root headers can shadow SDK headers without invalidating cached native
+    # objects (the historical VERSION/<version> collision). Everything outside
+    # the incremental source trees and safe root docs belongs in BOTH cache
+    # prefixes. Directory tree IDs also cover unknown future build-input roots.
+    result = subprocess.run(
+        ["git", "ls-tree", "-z", "HEAD"],
+        cwd=cwd, check=True, stdout=subprocess.PIPE,
+    )
+    digest = hashlib.sha256()
+    for entry in result.stdout.split(b"\0"):
+        if not entry:
+            continue
+        metadata, path = entry.split(b"\t", 1)
+        kind = metadata.split(b" ")[1]
+        if kind == b"tree" and path in {b"Sources", b"Tests"}:
+            continue
+        if kind == b"blob" and path in LIGHTWEIGHT_PATHS:
+            continue
+        digest.update(entry + b"\0")
+    return digest.hexdigest()
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        sys.exit("usage: ci-changes.py <pull-request-base-sha>")
+        sys.exit("usage: ci-changes.py <pull-request-base-sha> | --cache-context")
     try:
-        full = classify(sys.argv[1])
+        if sys.argv[1] == "--cache-context":
+            output = cache_context()
+        else:
+            output = "true" if classify(sys.argv[1]) else "false"
     except (ValueError, subprocess.CalledProcessError) as error:
-        sys.exit(f"Cannot classify PR changes: {error}")
-    print("true" if full else "false")
+        sys.exit(f"Cannot inspect CI inputs: {error}")
+    print(output)
