@@ -77,11 +77,13 @@ jobs:
       - name: Identify compatible build environment
         id: toolchain
         run: |
+          swift_version=$(swift --version)
+          print -r -- "$swift_version"
           fingerprint=$(
             {
               sw_vers
               uname -m
-              swift --version
+              print -r -- "$swift_version"
               xcrun clang --version
               xcrun --show-sdk-path
               xcrun --show-sdk-version
@@ -90,6 +92,10 @@ jobs:
             } | shasum -a 256 | cut -d ' ' -f 1
           )
           print -r -- "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          # Git tree IDs include paths, modes and contents, not checkout mtimes
+          # or unrelated commits. Add any future package source roots here.
+          inputs=$(git rev-parse HEAD:Sources HEAD:Tests | shasum -a 256 | cut -d ' ' -f 1)
+          print -r -- "inputs=$inputs" >> "$GITHUB_OUTPUT"
 
       # Keep dependency checkouts and both build configurations together. A
       # restore is only a build hint: never skip compilation or tests on a hit.
@@ -98,9 +104,9 @@ jobs:
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: .build
-          key: swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved', '.github/workflows/ci.yml') }}-${{ github.sha }}
+          key: swiftpm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved', '.github/workflows/ci.yml') }}-${{ steps.toolchain.outputs.inputs }}
           restore-keys: |
-            swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved', '.github/workflows/ci.yml') }}-
+            swiftpm-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved', '.github/workflows/ci.yml') }}-
 
       - name: Report cache reuse
         env:
@@ -114,17 +120,20 @@ jobs:
 
       - name: Build tests
         timeout-minutes: 10
-        run: swift build --build-tests
+        # Native driver hashing avoids timestamp-only recompilation. Keep these
+        # flags consistent across debug invocations; release optimization stays
+        # unchanged and does not use this incremental-only option.
+        run: swift build --build-tests -Xswiftc -enable-incremental-file-hashing
 
       - name: List tests
         timeout-minutes: 2
-        run: swift test --skip-build --disable-xctest list
+        run: swift test --skip-build --disable-xctest -Xswiftc -enable-incremental-file-hashing list
 
       - name: Test
         timeout-minutes: 5
         run: |
           zmodload zsh/zselect
-          swift test --skip-build --disable-xctest &
+          swift test --skip-build --disable-xctest -Xswiftc -enable-incremental-file-hashing &
           test_pid=$!
           (
             # Builtin wait avoids leaving a sleep subprocess after a fast run.
