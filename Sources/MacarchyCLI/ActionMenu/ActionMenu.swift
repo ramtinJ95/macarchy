@@ -210,7 +210,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
 
   func run() throws -> ActionMenuAction? {
     let app = NSApplication.shared
-    guard app.setActivationPolicy(.accessory) else {
+    guard app.activationPolicy() == .accessory || app.setActivationPolicy(.accessory) else {
       throw KeybindingsShowError.cannotActivateAccessoryApplication
     }
     app.delegate = self
