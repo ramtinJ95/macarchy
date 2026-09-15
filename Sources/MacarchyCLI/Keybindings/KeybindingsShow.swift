@@ -381,7 +381,10 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
 
   func run() throws {
     let application = NSApplication.shared
-    guard application.setActivationPolicy(.accessory) else {
+    guard
+      application.activationPolicy() == .accessory
+        || application.setActivationPolicy(.accessory)
+    else {
       throw KeybindingsShowError.cannotActivateAccessoryApplication
     }
     application.delegate = self

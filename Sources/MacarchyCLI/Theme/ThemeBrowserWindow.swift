@@ -323,7 +323,10 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
 
   func run() throws {
     let application = NSApplication.shared
-    guard application.setActivationPolicy(.accessory) else {
+    guard
+      application.activationPolicy() == .accessory
+        || application.setActivationPolicy(.accessory)
+    else {
       throw ThemeBrowserError.cannotActivateAccessoryApplication
     }
     application.delegate = self
