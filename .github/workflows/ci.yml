@@ -9,9 +9,50 @@ on:
 permissions:
   contents: read
 
+# Only newer updates of the same PR supersede work. Main runs remain independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.changes.outputs.full }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Test change classification
+        run: python3 -B Scripts/test-ci-changes.py
+
+      - name: Classify the complete PR diff
+        id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            full=$(python3 -B Scripts/ci-changes.py "$BASE_SHA")
+          else
+            full=true
+          fi
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          if [[ "$full" == false ]]; then
+            echo "Only root README.md / AGENTS.md changed; Swift and archive checks are not applicable." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Full Swift tests and release archive checks required." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   verify:
-    name: macOS 26 arm64
+    name: Build and test macOS 26 arm64
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     env:
@@ -32,6 +73,44 @@ jobs:
 
       - name: Lint Swift formatting
         run: swift format lint --strict --recursive Package.swift Sources Tests
+
+      - name: Identify compatible build environment
+        id: toolchain
+        run: |
+          fingerprint=$(
+            {
+              sw_vers
+              uname -m
+              swift --version
+              xcrun clang --version
+              xcrun --show-sdk-path
+              xcrun --show-sdk-version
+              xcrun --show-sdk-build-version
+              print -r -- "$DEVELOPER_DIR" "$GITHUB_WORKSPACE"
+            } | shasum -a 256 | cut -d ' ' -f 1
+          )
+          print -r -- "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      # Keep dependency checkouts and both build configurations together. A
+      # restore is only a build hint: never skip compilation or tests on a hit.
+      - name: Restore SwiftPM build cache
+        id: build-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .build
+          key: swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved', '.github/workflows/ci.yml') }}-${{ github.sha }}
+          restore-keys: |
+            swiftpm-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved', '.github/workflows/ci.yml') }}-
+
+      - name: Report cache reuse
+        env:
+          MATCHED_KEY: ${{ steps.build-cache.outputs.cache-matched-key }}
+        run: |
+          if [[ -n "$MATCHED_KEY" ]]; then
+            print -r -- "Restored SwiftPM cache: $MATCHED_KEY" >> "$GITHUB_STEP_SUMMARY"
+          else
+            print "No compatible SwiftPM cache; cold build." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Build tests
         timeout-minutes: 10
@@ -77,3 +156,31 @@ jobs:
             "$destination"/*.tar.gz \
             "$destination"/*.tar.gz.sha256 \
             "$revision"
+
+      # Save only after the entire verification path succeeds. GitHub scopes
+      # PR caches to their merge ref; main cannot restore a PR's cache.
+      - name: Save SwiftPM build cache
+        if: steps.build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: .build
+          key: ${{ steps.build-cache.outputs.cache-primary-key }}
+
+  result:
+    # Preserve the existing check name, including for intentionally skipped work.
+    name: macOS 26 arm64
+    needs: [changes, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require all applicable checks
+        env:
+          CLASSIFICATION: ${{ needs.changes.result }}
+          FULL: ${{ needs.changes.outputs.full }}
+          VERIFICATION: ${{ needs.verify.result }}
+        run: |
+          case "$CLASSIFICATION:$FULL:$VERIFICATION" in
+            success:true:success|success:false:skipped) exit 0 ;;
+            *) echo "::error::CI incomplete or failed ($CLASSIFICATION:$FULL:$VERIFICATION)"; exit 1 ;;
+          esac
