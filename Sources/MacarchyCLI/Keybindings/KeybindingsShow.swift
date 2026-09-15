@@ -116,7 +116,7 @@ struct KeybindingsShowCommandLoader: Sendable {
       read: readSkhdConfiguration,
       loadCatalog: { try SkhdKeybindingCatalogLoader().load(at: $0) },
       loadTheme: {
-        try loadKeybindingsPopupTheme(
+        try loadPopupTheme(
           stateRoot: $0,
           bundledThemesRoot: runtime.builtInThemesURL
         )
@@ -267,7 +267,7 @@ private func loadActiveTheme(stateRoot: URL) throws -> NormalizedTheme {
   return theme
 }
 
-private func loadKeybindingsPopupTheme(
+func loadPopupTheme(
   stateRoot: URL,
   bundledThemesRoot: URL
 ) throws -> NormalizedTheme {
@@ -292,7 +292,7 @@ private final class KeybindingsPopupWindow: NSWindow {
 }
 
 @MainActor
-private final class KeybindingsPopupTableRowView: NSTableRowView {
+final class PopupTableRowView: NSTableRowView {
   private let normalTextColor: NSColor
   private let selectedTextColor: NSColor
   private let selectedBackgroundColor: NSColor
@@ -441,7 +441,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
   }
 
   func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-    let view = KeybindingsPopupTableRowView(
+    let view = PopupTableRowView(
       normalTextColor: content.theme.semantic.text.nsColor,
       selectedTextColor: content.theme.terminal.selectionForeground.nsColor,
       selectedBackgroundColor: content.theme.terminal.selectionBackground.nsColor

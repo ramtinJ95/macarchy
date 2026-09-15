@@ -9,7 +9,7 @@ struct Macarchy: AsyncParsableCommand {
     abstract: "A cohesive, theme-driven macOS environment.",
     subcommands: [
       Theme.self, Keybindings.self, Desktop.self, EnvironmentCommand.self, PreferencesCommand.self,
-      Reconcile.self,
+      Reconcile.self, ActionMenu.self,
       Doctor.self, Setup.self, Teardown.self, Update.self, Version.self,
     ]
   )
