@@ -795,8 +795,11 @@ Pushes to `main` always run the full checks and do not cancel each other.
 
 Ordinary CI caches SwiftPM dependency checkouts and debug/release build state,
 matched to the OS, architecture, compiler, SDK, package manifests and workflow.
-Source/test Git trees identify cache entries, so unrelated commits do not upload
-duplicate build state. Debug builds use Swift's native incremental file hashing
+Source/test Git trees identify cache entries, so safe documentation commits do not
+upload duplicate build state. Other tracked inputs also constrain cache
+compatibility: changing root files, resources or scripts starts a cold build.
+This prevents cached native dependencies from hiding new header-name collisions.
+Debug builds use Swift's native incremental file hashing
 to recognize unchanged inputs despite fresh checkout timestamps; real edits
 still require compilation. No source timestamps are rewritten.
 It always invokes the builds and tests after restoring a cache; a cache hit is
