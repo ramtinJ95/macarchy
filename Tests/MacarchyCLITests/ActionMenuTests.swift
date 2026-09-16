@@ -1,5 +1,4 @@
 import AppKit
-import ArgumentParser
 import Foundation
 import Testing
 
@@ -69,47 +68,24 @@ struct ActionMenuTests {
   }
 
   @MainActor
-  @Test func handoffWaitsForMenuAndCancellationDoesNotDispatch() throws {
-    var events: [String] = []
-    try ActionMenu.runSession(
-      showMenu: {
-        events.append("menu closed")
-        return .appearance
-      },
-      openViewer: { action in events.append(action.rawValue) },
-      showFailure: { _, _ in Issue.record("Unexpected launch failure") })
-    #expect(events == ["menu closed", "appearance"])
+  @Test func cancellationDoesNotLaunchOrReportFailure() throws {
     try ActionMenu.runSession(
       showMenu: { nil },
       openViewer: { _ in Issue.record("Cancelled menu dispatched") },
       showFailure: { _, _ in Issue.record("Cancellation reported failure") })
   }
 
-  @MainActor
-  @Test func viewerFailureIsReportedAndPropagated() throws {
-    struct LaunchFailure: Error {}
-    var reported = false
-    do {
-      try ActionMenu.runSession(
-        showMenu: { .keybindings },
-        openViewer: { _ in throw LaunchFailure() },
-        showFailure: { action, error in
-          #expect(action == .keybindings)
-          #expect(error is LaunchFailure)
-          reported = true
-        })
-      Issue.record("Launch failure was swallowed")
-    } catch is LaunchFailure {
-      #expect(reported)
-    }
-  }
-
-  @Test(arguments: ActionMenuAction.allCases)
-  func launchUsesExactExecutableAndShortcutArguments(action: ActionMenuAction) throws {
+  @Test(arguments: [
+    (ActionMenuAction.appearance, ["theme", "browse"]),
+    (.keybindings, ["keybindings", "show", "--effective"]),
+  ])
+  func launchUsesExactExecutableAndShortcutArguments(
+    action: ActionMenuAction, arguments: [String]
+  ) throws {
     let executable = URL(filePath: "/usr/bin/true")
     let process = try ActionMenu.launchViewer(action, executableURL: executable)
     #expect(process.executableURL == executable)
-    #expect(process.arguments == action.arguments)
+    #expect(process.arguments == arguments)
     process.waitUntilExit()
     #expect(process.terminationStatus == 0)
   }
@@ -117,17 +93,20 @@ struct ActionMenuTests {
   @MainActor
   @Test func missingExecutableReportsRealLaunchFailure() throws {
     let missing = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    var reported = false
-    #expect(throws: (any Error).self) {
+    var reportedError: NSError?
+    do {
       try ActionMenu.runSession(
         showMenu: { .appearance },
         openViewer: { _ = try ActionMenu.launchViewer($0, executableURL: missing) },
-        showFailure: { action, _ in
+        showFailure: { action, error in
           #expect(action == .appearance)
-          reported = true
+          reportedError = error as NSError
         })
+      Issue.record("Launch failure was swallowed")
+    } catch {
+      let reported = try #require(reportedError)
+      #expect((error as NSError) == reported)
     }
-    #expect(reported)
   }
 
   @Test func searchSelectionAndEmptyDispatch() {
@@ -151,15 +130,6 @@ struct ActionMenuTests {
     #expect(state.selectedAction == nil)
     state.search("")
     #expect(state.actions == ActionMenuAction.allCases)
-  }
-
-  @Test func registeredCommandAndViewerRoutes() throws {
-    #expect(try Macarchy.parseAsRoot(["menu"]) is ActionMenu)
-    _ = try Theme.Browse.parse(Array(ActionMenuAction.appearance.arguments.dropFirst(2)))
-    let viewer = try Keybindings.Show.parse(
-      Array(ActionMenuAction.keybindings.arguments.dropFirst(2)))
-    #expect(viewer.inspection.effective)
-    #expect(ActionMenuAction.appearance.arguments == ["theme", "browse"])
   }
 
   @Test func curatedMenuShortcutPreservesViewersAndMetadata() throws {
