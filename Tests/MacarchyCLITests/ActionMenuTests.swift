@@ -69,9 +69,9 @@ struct ActionMenuTests {
   }
 
   @MainActor
-  @Test func handoffWaitsForMenuAndCancellationDoesNotDispatch() async throws {
+  @Test func handoffWaitsForMenuAndCancellationDoesNotDispatch() throws {
     var events: [String] = []
-    try await ActionMenu.runSession(
+    try ActionMenu.runSession(
       showMenu: {
         events.append("menu closed")
         return .appearance
@@ -79,18 +79,18 @@ struct ActionMenuTests {
       openViewer: { action in events.append(action.rawValue) },
       showFailure: { _, _ in Issue.record("Unexpected launch failure") })
     #expect(events == ["menu closed", "appearance"])
-    try await ActionMenu.runSession(
+    try ActionMenu.runSession(
       showMenu: { nil },
       openViewer: { _ in Issue.record("Cancelled menu dispatched") },
       showFailure: { _, _ in Issue.record("Cancellation reported failure") })
   }
 
   @MainActor
-  @Test func viewerFailureIsReportedAndPropagated() async throws {
+  @Test func viewerFailureIsReportedAndPropagated() throws {
     struct LaunchFailure: Error {}
     var reported = false
     do {
-      try await ActionMenu.runSession(
+      try ActionMenu.runSession(
         showMenu: { .keybindings },
         openViewer: { _ in throw LaunchFailure() },
         showFailure: { action, error in
@@ -102,6 +102,32 @@ struct ActionMenuTests {
     } catch is LaunchFailure {
       #expect(reported)
     }
+  }
+
+  @Test(arguments: ActionMenuAction.allCases)
+  func launchUsesExactExecutableAndShortcutArguments(action: ActionMenuAction) throws {
+    let executable = URL(filePath: "/usr/bin/true")
+    let process = try ActionMenu.launchViewer(action, executableURL: executable)
+    #expect(process.executableURL == executable)
+    #expect(process.arguments == action.arguments)
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+  }
+
+  @MainActor
+  @Test func missingExecutableReportsRealLaunchFailure() throws {
+    let missing = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    var reported = false
+    #expect(throws: (any Error).self) {
+      try ActionMenu.runSession(
+        showMenu: { .appearance },
+        openViewer: { _ = try ActionMenu.launchViewer($0, executableURL: missing) },
+        showFailure: { action, _ in
+          #expect(action == .appearance)
+          reported = true
+        })
+    }
+    #expect(reported)
   }
 
   @Test func searchSelectionAndEmptyDispatch() {
