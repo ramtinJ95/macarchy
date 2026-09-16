@@ -222,6 +222,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private var deletingThemeID: String?
 
   private let rootView = NSView()
+  private let focusBorder = PopupFocusBorder(accent: .clear)
   private let sidebar = NSStackView()
   private let searchField = NSSearchField()
   private let countLabel = NSTextField(labelWithString: "")
@@ -309,6 +310,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       }
     }
     configureContent(in: window)
+    focusBorder.attach(to: window)
     if let initialRow = browserState.visibleItems.firstIndex(where: {
       $0.id == browserState.selectedThemeID
     }) {
@@ -936,6 +938,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   private func selectTheme(id: String) {
     guard let item = content.item(id: id) else { return }
     browserState.selectTheme(id: id)
+    focusBorder.accent = item.metadata.semantic.accent.nsColor
     window?.appearance = NSAppearance(named: item.appearance == .dark ? .darkAqua : .aqua)
     window?.backgroundColor = item.metadata.semantic.background.nsColor
     rootView.layer?.backgroundColor = item.metadata.semantic.background.nsColor.cgColor

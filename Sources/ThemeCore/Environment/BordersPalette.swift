@@ -12,8 +12,10 @@ package struct BordersPalette: Equatable, Sendable {
     self.accent = accent
   }
 
+  package static let width = 6.0
+
   package static let appearanceArguments = [
-    "inactive_color=0x00000000", "background_color=0x00000000", "width=6.0",
+    "inactive_color=0x00000000", "background_color=0x00000000", "width=\(width)",
     "style=round", "hidpi=on", "ax_focus=off",
   ]
 

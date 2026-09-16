@@ -372,6 +372,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
     super.init(window: window)
     window.delegate = self
     configureContent(in: window)
+    PopupFocusBorder(accent: content.theme.semantic.accent.nsColor).attach(to: window)
   }
 
   @available(*, unavailable)
