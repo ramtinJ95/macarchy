@@ -115,7 +115,7 @@ struct ActionMenuTests {
     state.move(by: 1)
     #expect(state.selectedAction == .keybindings)
     state.move(by: 1)
-    #expect(state.selectedAction == .keybindings)
+    #expect(state.selectedAction == .maintenance(.plan))
     state.move(by: -20)
     #expect(state.selectedAction == .appearance)
     state.search("  WALLPAPER colors ")

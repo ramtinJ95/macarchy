@@ -99,7 +99,7 @@ callback paths follow the installed command link; upgrading does not automatical
 rewrite older generated configurations.
 
 ```sh
-macarchy menu                         # Search actions; open existing native viewers
+macarchy menu                         # Native viewers and read-only maintenance checks
 macarchy theme browse                 # Preview themes and backgrounds, then Apply
 macarchy theme list
 macarchy theme set kanagawa-wave
@@ -112,11 +112,28 @@ macarchy setup doctor
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding
-viewer. The action menu currently offers themes/backgrounds and keybindings:
+viewer. The action menu offers themes/backgrounds, keybindings and maintenance checks:
 use j/k or arrows to navigate, / to focus search, and Return to open. In search,
 letters type normally; Escape returns to the list without clearing the filter.
 Escape from the list dismisses. A highlighted row and mode hint show keyboard
-focus. It closes before handing off to the existing viewer. Browsing changes nothing.
+focus. It closes before handing off to the existing viewer or terminal. Browsing changes nothing.
+The native viewers use six-point accent focus outlines matching the desktop highlight.
+The theme picker previews the outline with its
+selected palette. These window-local borders need no extra permissions or border-service changes.
+Maintenance actions run `setup plan`, `setup status`, `setup doctor`, or `update check`
+in a centered, floating ordinary Kitty window. Every menu-launched terminal inherits
+its native appearance settings, including square or rounded corners, fonts and spacing;
+Macarchy supplies the active palette, not separate terminal decoration. The existing
+desktop focus-ring provider decorates these windows normally.
+Setup checks use the commands' normal portable
+and machine profile defaults, including existing symlinks. Output and the exit
+result stay visible until Enter closes the window; no apply or install is invoked.
+Update check refreshes its local check cache. Maintenance launch requires Kitty and
+running yabai. Before launch, it replaces the `macarchy-maintenance` runtime rule,
+matching only Kitty's fixed `Macarchy Maintenance` title, to float and center it.
+The rule remains until yabai restarts (or `yabai -m rule --remove macarchy-maintenance`)
+and is renewed on each launch; no config-file edit, remote control or service restart
+is needed. Rule failure is reported rather than silently opening a tiled window.
 New curated bindings take effect through reviewed keybinding apply; updating
 the executable alone does not change an already-generated shortcut configuration.
 The browser can move inactive user-installed themes to Trash after confirmation;

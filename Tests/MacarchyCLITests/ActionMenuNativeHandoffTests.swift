@@ -13,7 +13,7 @@ struct ActionMenuNativeHandoffTests {
   // That final CLI journey still requires the supported-machine acceptance check.
   @Test(
     .enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_ACTION_MENU_NATIVE"] == "1"),
-    arguments: ActionMenuAction.allCases)
+    arguments: [ActionMenuAction.appearance, .keybindings])
   func nativeMenuClosesBeforeLaunchingStandaloneCommand(action: ActionMenuAction) throws {
     let root = URL(filePath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().deletingLastPathComponent()
