@@ -59,25 +59,16 @@ struct ActionMenu: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "menu", abstract: "Search Macarchy actions in a native popup.")
 
+  @MainActor
   mutating func run() async throws {
     let runtime = RuntimeEnvironment.live
     let root = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/macarchy")
     let theme = try loadPopupTheme(stateRoot: root, bundledThemesRoot: runtime.builtInThemesURL)
-    try await Self.runSession(
-      showMenu: {
-        let controller = try ActionMenuWindowController(theme: theme)
-        return try controller.run()
-      },
+    let controller = try ActionMenuWindowController(theme: theme)
+    try Self.runSession(
+      showMenu: { try controller.run() },
       openViewer: { action in
-        let arguments = Array(action.arguments.dropFirst(2))
-        switch action {
-        case .appearance:
-          var command = try Theme.Browse.parse(arguments)
-          try await command.run()
-        case .keybindings:
-          var command = try Keybindings.Show.parse(arguments)
-          try await command.run()
-        }
+        _ = try Self.launchViewer(action, executableURL: runtime.executableURL)
       },
       showFailure: { action, error in
         let alert = NSAlert()
@@ -92,19 +83,29 @@ struct ActionMenu: AsyncParsableCommand {
   @MainActor
   static func runSession(
     showMenu: @MainActor () throws -> ActionMenuAction?,
-    openViewer: @MainActor (ActionMenuAction) async throws -> Void,
+    openViewer: @MainActor (ActionMenuAction) throws -> Void,
     showFailure: @MainActor (ActionMenuAction, any Error) -> Void
-  ) async throws {
+  ) throws {
     let action = try showMenu()
     guard let action else { return }
     do {
-      // The menu's event loop has stopped and its window is closed. Reuse the
-      // existing command in this process so launch errors remain visible.
-      try await openViewer(action)
+      // Launch synchronously before yielding to Swift's async-main executor:
+      // stopping the AppKit loop can otherwise end the process at the next await.
+      try openViewer(action)
     } catch {
       showFailure(action, error)
       throw error
     }
+  }
+
+  static func launchViewer(_ action: ActionMenuAction, executableURL: URL) throws -> Process {
+    // Match the standalone viewer shortcuts. Use this exact binary rather than
+    // PATH so development and installed menus launch their own matching version.
+    let process = Process()
+    process.executableURL = executableURL
+    process.arguments = action.arguments
+    try process.run()
+    return process
   }
 }
 
@@ -235,7 +236,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
   }
 
   func windowWillClose(_ notification: Notification) {
-    // Stop, not terminate: the selected native viewer owns the next event loop.
+    // Stop, not terminate: return the selection so the command can launch it.
     NSApplication.shared.stop(nil)
     if let event = NSEvent.otherEvent(
       with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
