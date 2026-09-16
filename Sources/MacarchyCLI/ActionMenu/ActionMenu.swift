@@ -35,14 +35,6 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
       "maintenance \(action.title) \(action.arguments.joined(separator: " "))".lowercased()
     }
   }
-
-  var arguments: [String] {
-    switch self {
-    case .appearance: ["theme", "browse"]
-    case .keybindings: ["keybindings", "show", "--effective"]
-    case .maintenance(let action): ["_menu-maintenance", action.rawValue]
-    }
-  }
 }
 
 struct ActionMenuState {
@@ -125,7 +117,12 @@ struct ActionMenu: AsyncParsableCommand {
     // PATH so development and installed menus launch their own matching version.
     let process = Process()
     process.executableURL = executableURL
-    process.arguments = action.arguments
+    switch action {
+    case .appearance: process.arguments = ["theme", "browse"]
+    case .keybindings: process.arguments = ["keybindings", "show", "--effective"]
+    case .maintenance:
+      throw ValidationError("Maintenance actions must launch through the maintenance terminal")
+    }
     try process.run()
     return process
   }

@@ -6,21 +6,25 @@ import Testing
 
 struct MenuMaintenanceTests {
   @Test(arguments: [
-    (MaintenanceAction.plan, ["setup", "plan"]),
-    (.status, ["setup", "status"]),
-    (.doctor, ["setup", "doctor"]),
-    (.updateCheck, ["update", "check"]),
+    (MaintenanceAction.plan, ["setup", "plan"], Int32(0)),
+    (.status, ["setup", "status"], Int32(1)),
+    (.doctor, ["setup", "doctor"], Int32(0)),
+    (.updateCheck, ["update", "check"], Int32(1)),
   ])
-  func routesOnlyToExistingReadOnlyCommands(action: MaintenanceAction, arguments: [String]) {
-    #expect(action.arguments == arguments)
-  }
-
-  @Test(arguments: [("/usr/bin/true", Int32(0)), ("/usr/bin/false", Int32(1))])
-  func resultRemainsVisibleUntilDismissal(executable: String, expectedStatus: Int32) {
+  func delegatesReadOnlyCommandAndHoldsItsResult(
+    action: MaintenanceAction, arguments: [String], expectedStatus: Int32
+  ) throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let executable = root.appending(path: "macarchy")
+    try "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.arguments\"\nexit \(expectedStatus)\n".write(
+      to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
     var output: [String] = []
     var dismissed = false
     let status = MenuMaintenance.runAndHold(
-      .status, executableURL: URL(filePath: executable), write: { output.append($0) },
+      action, executableURL: executable, write: { output.append($0) },
       dismiss: {
         #expect(output.contains(expectedStatus == 0 ? "\nSUCCESS (exit 0)" : "\nFAILED (exit 1)"))
         #expect(output.last == "Press Enter to close.")
@@ -28,6 +32,9 @@ struct MenuMaintenanceTests {
       })
     #expect(status == expectedStatus)
     #expect(dismissed)
+    let delegated = try String(contentsOfFile: executable.path + ".arguments", encoding: .utf8)
+      .split(separator: "\n").map(String.init)
+    #expect(delegated == arguments)
   }
 
   @Test func failedCommandLaunchIsVisibleAndHeld() {
@@ -45,10 +52,7 @@ struct MenuMaintenanceTests {
     #expect(dismissed)
   }
 
-  @Test(arguments: MaintenanceAction.allCases)
-  func terminalLaunchPreservesNativeAppearanceAndCanonicalColorsWithoutAShell(
-    action: MaintenanceAction
-  ) throws {
+  @Test func terminalLaunchPreservesNativeAppearanceAndCanonicalColorsWithoutAShell() throws {
     let theme = try theme()
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -59,7 +63,7 @@ struct MenuMaintenanceTests {
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: yabai.path)
     let executable = URL(filePath: "/tmp/Macarchy test $HOME;literal/macarchy")
     let process = try MenuMaintenance.launch(
-      action, theme: theme, executableURL: executable,
+      .plan, theme: theme, executableURL: executable,
       kittyURL: URL(filePath: "/usr/bin/true"), yabaiURL: yabai)
     let ruleArguments = try String(contentsOfFile: yabai.path + ".arguments", encoding: .utf8)
       .split(separator: "\n").map(String.init)
@@ -73,7 +77,7 @@ struct MenuMaintenanceTests {
     #expect(!arguments.contains("panel"))
     #expect(arguments.contains("startup_session=none"))
     #expect(arguments.contains("macos_quit_when_last_window_closed=yes"))
-    #expect(arguments.suffix(3) == [executable.path, "_menu-maintenance", action.rawValue])
+    #expect(arguments.suffix(3) == [executable.path, "_menu-maintenance", "plan"])
     #expect(arguments.contains("foreground=\(theme.terminal.foreground.rawValue)"))
     #expect(arguments.contains("background=\(theme.terminal.background.rawValue)"))
     for setting in [
@@ -86,7 +90,6 @@ struct MenuMaintenanceTests {
       #expect(arguments.contains("color\(index)=\(color.rawValue)"))
     }
     process.waitUntilExit()
-    #expect(process.terminationStatus == 0)
   }
 
   @MainActor
@@ -112,11 +115,23 @@ struct MenuMaintenanceTests {
 
   @Test func failedFloatingRulePreventsTerminalLaunch() throws {
     let theme = try theme()
-    #expect(throws: (any Error).self) {
-      try MenuMaintenance.launch(
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let kitty = root.appending(path: "kitty")
+    try "#!/bin/sh\nprintf launched > \"$0.launched\"\n".write(
+      to: kitty, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: kitty.path)
+    do {
+      _ = try MenuMaintenance.launch(
         .status, theme: theme, executableURL: URL(filePath: "/unused/macarchy"),
-        kittyURL: URL(filePath: "/usr/bin/true"), yabaiURL: URL(filePath: "/usr/bin/false"))
+        kittyURL: kitty, yabaiURL: URL(filePath: "/usr/bin/false"))
+      Issue.record("Floating-rule failure was swallowed")
+    } catch {
+      #expect(
+        String(describing: error).contains("Could not float the maintenance terminal (yabai 1)"))
     }
+    #expect(!FileManager.default.fileExists(atPath: kitty.path + ".launched"))
   }
 
   private func theme() throws -> NormalizedTheme {
