@@ -6,14 +6,17 @@ import ThemeCore
 enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   case appearance
   case keybindings
+  case profile(ProfileEditAction)
   case maintenance(MaintenanceAction)
 
   static var allCases: [Self] {
-    [.appearance, .keybindings] + MaintenanceAction.allCases.map(Self.maintenance)
+    ProfileEditAction.allCases.map(Self.profile)
+      + [.appearance, .keybindings] + MaintenanceAction.allCases.map(Self.maintenance)
   }
 
   var category: String {
     switch self {
+    case .profile: "Configure"
     case .appearance, .keybindings: "Appearance"
     case .maintenance: "Maintenance"
     }
@@ -23,6 +26,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     switch self {
     case .appearance: "Themes & backgrounds"
     case .keybindings: "Keybindings"
+    case .profile(let action): action.title
     case .maintenance(let action): action.title
     }
   }
@@ -31,6 +35,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     switch self {
     case .appearance: "appearance themes backgrounds wallpaper colors picker"
     case .keybindings: "appearance keybindings shortcuts bindings help"
+    case .profile(let action): "configure \(action.title) edit".lowercased()
     case .maintenance(let action):
       "maintenance \(action.title) \(action.arguments.joined(separator: " "))".lowercased()
     }
@@ -67,19 +72,27 @@ struct ActionMenu: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "menu", abstract: "Search Macarchy actions in a native popup.")
 
+  @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
+
   @MainActor
   mutating func run() async throws {
     let runtime = RuntimeEnvironment.live
     let root = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/macarchy")
     let theme = try loadPopupTheme(stateRoot: root, bundledThemesRoot: runtime.builtInThemesURL)
     let controller = try ActionMenuWindowController(theme: theme)
+    let profileArguments = profiles.menuArguments
     try Self.runSession(
       showMenu: { try controller.run() },
       openViewer: { action in
         switch action {
+        case .profile(let operation):
+          _ = try MenuTerminal.launch(
+            .profile, arguments: ["_menu-profile-edit", operation.rawValue] + profileArguments,
+            theme: theme, executableURL: runtime.executableURL)
         case .maintenance(let operation):
           _ = try MenuMaintenance.launch(
-            operation, theme: theme, executableURL: runtime.executableURL)
+            operation, theme: theme, executableURL: runtime.executableURL,
+            profileArguments: profileArguments)
         case .appearance, .keybindings:
           _ = try Self.launchViewer(action, executableURL: runtime.executableURL)
         }
@@ -120,8 +133,9 @@ struct ActionMenu: AsyncParsableCommand {
     switch action {
     case .appearance: process.arguments = ["theme", "browse"]
     case .keybindings: process.arguments = ["keybindings", "show", "--effective"]
-    case .maintenance:
-      throw ValidationError("Maintenance actions must launch through the maintenance terminal")
+    case .maintenance, .profile:
+      throw ValidationError(
+        "Configuration and maintenance actions must launch through their menu terminal")
     }
     try process.run()
     return process
@@ -194,7 +208,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
   private var dispatched: ActionMenuAction?
   private let search = NSSearchField()
   private let table = ActionMenuTable()
-  private let notice = NSTextField(labelWithString: "Appearance · Maintenance")
+  private let notice = NSTextField(labelWithString: "Configure · Appearance · Maintenance")
   private let hint = NSTextField(labelWithString: "")
   private let fieldEditor = ActionMenuFieldEditor()
 
