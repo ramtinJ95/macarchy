@@ -558,7 +558,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL,
     adopt: String?,
     deferFinalization: Bool,
-    profile: PortableProfile? = nil
+    profile: PortableProfile? = nil,
+    approvedInputDigest: String? = nil
   ) throws -> SetupIntegrationResult {
     guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
       throw KeybindingsApplyError.blocked(
@@ -574,7 +575,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
       adopt: adopt,
       evidence: Mutex(KeybindingsApplyEvidence()),
       deferFinalization: deferFinalization,
-      profile: profile
+      profile: profile,
+      approvedInputDigest: approvedInputDigest
     )
     return SetupIntegrationResult(
       id: KeybindingProviderInspector.ownershipID,
@@ -654,7 +656,8 @@ struct KeybindingsApplyCommandRunner: Sendable {
     adopt: String?,
     evidence: borrowing Mutex<KeybindingsApplyEvidence>,
     deferFinalization: Bool,
-    profile: PortableProfile? = nil
+    profile: PortableProfile? = nil,
+    approvedInputDigest: String? = nil
   ) throws -> KeybindingsApplyReport {
     let transactionStore = KeybindingApplyTransactionStore(stateRoot: stateRoot)
     try recoverInterruptedApply(
@@ -672,6 +675,16 @@ struct KeybindingsApplyCommandRunner: Sendable {
       adopt: adopt,
       profile: profile
     )
+
+    if let approvedInputDigest {
+      guard prepared.composition.inputDigest == approvedInputDigest,
+        prepared.eligibility.operation == .updateGeneration,
+        prepared.eligibility.lifecycle == .reload
+      else {
+        throw KeybindingsApplyError.blocked(
+          "Keybinding inputs or ownership changed since the scoped save was validated")
+      }
+    }
 
     if prepared.preparation.outcome == "no_change" {
       try lifecycle.verifyProcess()
