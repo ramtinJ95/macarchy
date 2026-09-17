@@ -64,7 +64,11 @@ private final class NativeMenuDriver: NSObject {
       Issue.record("Menu did not open")
       return
     }
-    if action == .keybindings { send("j", keyCode: 38) }
+    guard let row = ActionMenuAction.allCases.firstIndex(of: action) else {
+      Issue.record("Native test action is absent")
+      return
+    }
+    for _ in 0..<row { send("j", keyCode: 38) }
     send("\r", keyCode: 36)
   }
 

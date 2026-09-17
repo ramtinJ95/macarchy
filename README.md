@@ -99,7 +99,7 @@ callback paths follow the installed command link; upgrading does not automatical
 rewrite older generated configurations.
 
 ```sh
-macarchy menu                         # Native viewers and read-only maintenance checks
+macarchy menu                         # Profile editing, native viewers and maintenance checks
 macarchy theme browse                 # Preview themes and backgrounds, then Apply
 macarchy theme list
 macarchy theme set kanagawa-wave
@@ -126,7 +126,8 @@ its native appearance settings, including square or rounded corners, fonts and s
 Macarchy supplies the active palette, not separate terminal decoration. The existing
 desktop focus-ring provider decorates these windows normally.
 Setup checks use the commands' normal portable
-and machine profile defaults, including existing symlinks. Output and the exit
+and machine profile defaults, including existing symlinks; `menu --profile PATH
+--machine-profile PATH` forwards custom inputs to editors and setup checks. Output and the exit
 result stay visible until Enter closes the window; no apply or install is invoked.
 Update check refreshes its local check cache. Maintenance launch requires Kitty and
 running yabai. Before launch, it replaces the `macarchy-maintenance` runtime rule,
@@ -134,6 +135,23 @@ matching only Kitty's fixed `Macarchy Maintenance` title, to float and center it
 The rule remains until yabai restarts (or `yabai -m rule --remove macarchy-maintenance`)
 and is renewed on each launch; no config-file edit, remote control or service restart
 is needed. Rule failure is reported rather than silently opening a tiled window.
+
+Configure opens the portable profile, machine overrides, or the winning
+`[keybindings]` disabled-list layer in Neovim. It edits the physical user source,
+preserving dotfile links; missing profiles require confirmation before creation.
+The editor uses an ordinary Kitty window, with normal yabai tiling and native
+titles—not the maintenance window's floating style. Kitty starts through macOS
+LaunchServices so closing the menu's invoking terminal does not kill it.
+Generated state is never an editing surface.
+
+In these menu-launched sessions only, saving changes to `keybindings.disabled`
+can reload already-managed, initially converged keybindings. Validation failures
+retain the working generation and the saved edit. Source-path changes, other
+settings, external input changes, adoption and stale sessions require review;
+save never invokes full setup, installs packages, or changes native preferences.
+Broken profiles remain editable without automatic apply; fix/review them and
+reopen the editor to enable scoped saves. Other Neovim sessions are unaffected.
+
 New curated bindings take effect through reviewed keybinding apply; updating
 the executable alone does not change an already-generated shortcut configuration.
 The browser can move inactive user-installed themes to Trash after confirmation;
