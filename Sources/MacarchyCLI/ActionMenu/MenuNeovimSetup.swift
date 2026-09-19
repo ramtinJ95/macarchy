@@ -161,13 +161,20 @@ struct MenuNeovimSetup {
   }
 
   private func showProfile(_ edit: MenuNeovimProfileEdit) {
+    // Do not dump unrelated or potentially sensitive profile contents.
+    io.write(
+      "Effective Neovim source: \(edit.profile.environment.neovim.nativeConfigurationDirectoryURL!.path)\n"
+    )
     for file in edit.files where file.changed {
       io.write("Profile: \(file.declared.path)\nPhysical file: \(file.physical.path)\n")
-      // Do not dump unrelated or potentially sensitive profile contents.
-      io.write(
-        "  Select [neovim] native_configuration = \(edit.profile.environment.neovim.nativeConfigurationDirectoryURL!.path)\n"
-      )
       if file.before == nil { io.write("  Create schema_version = 1 profile.\n") }
+      let before = CanonicalTOMLSelector(
+        configuration: file.before ?? "", table: "neovim", key: "native_configuration")
+      let after = CanonicalTOMLSelector(
+        configuration: file.after, table: "neovim", key: "native_configuration")
+      if before.values != after.values {
+        io.write("  Set neovim.native_configuration = \(after.values.joined())\n")
+      }
       if file.before.map({
         !CanonicalTOMLSelector(configuration: $0, table: "neovim", key: "configuration").assignments
           .isEmpty
