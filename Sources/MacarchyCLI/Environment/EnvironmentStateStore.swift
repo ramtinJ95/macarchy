@@ -191,6 +191,19 @@ struct EnvironmentStateStore: Sendable {
   private static func providerReplacementsAreValid(_ transaction: EnvironmentTransaction) -> Bool {
     guard (transaction.operation == .standardMigration) == (transaction.standardMigration != nil)
     else { return false }
+    if transaction.operation == .neovimConnection {
+      return EnvironmentNeovimConnection.ownershipChangeIsValid(transaction)
+        && transaction.previousCurrentDestination
+          == transaction.previousOwnership.map({ "generations/\($0.generationID)" })
+        && transaction.previousThemeGenerationID == nil && transaction.rollbackThemeBridges.isEmpty
+        && transaction.btopReplacementName == nil && transaction.codexReplacementName == nil
+        && transaction.herdrReplacementName == nil && transaction.piReplacementName == nil
+        && transaction.spicetifyReplacementName == nil && transaction.tuicrReplacementName == nil
+        && transaction.herdrRuntimeTarget == nil && transaction.herdrRuntimeVerified == nil
+        && transaction.herdrLegacyMigration == nil && transaction.spicetifyRuntimeTarget == nil
+        && transaction.spicetifyRuntimeVerified == nil
+        && transaction.spicetifyRuntimeDeferred == nil
+    }
     if transaction.operation.isNativeMigration {
       let id: EnvironmentEntryID =
         transaction.standardMigration?.provider.entryID
@@ -337,6 +350,11 @@ struct EnvironmentStateStore: Sendable {
   }
 
   private static func spicetifyRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
+    if transaction.operation == .neovimConnection {
+      return transaction.spicetifyRuntimeTarget == nil
+        && transaction.spicetifyRuntimeVerified == nil
+        && transaction.spicetifyRuntimeDeferred == nil
+    }
     let expected =
       transaction.direction == .forward
       ? EnvironmentSpicetifyRuntimeTarget.required(

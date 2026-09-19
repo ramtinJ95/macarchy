@@ -244,6 +244,66 @@ struct HerdrPresetLifecycleTests {
     }
   }
 
+  @Test func neovimConnectionRecoveryPreservesCoOwnedProviders() async throws {
+    let fixture = try HerdrFixture(configuration: nil, otherPresets: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let inspection = try fixture.inspection(enabled: true)
+    let applied = try await fixture.commandApply(
+      enabled: true, adopt: inspection.adoptionEvidenceDigest,
+      runtime: EnvironmentHerdrRuntimeReloader { _, _ in "reloaded" })
+    try #require(applied.succeeded)
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    let previous = try #require(try store.readOwnership())
+    let source = fixture.home.appending(path: ".config/nvim")
+    let resources = repositoryRoot.appending(path: "Environment")
+    let seed = EnvironmentNativeSeed(
+      provider: .neovim, destination: source,
+      homeDirectory: fixture.home, stateRoot: fixture.state, resourcesRoot: resources)
+    _ = try seed.seed(approval: seed.plan().approval)
+    let connection = EnvironmentNeovimConnection(
+      homeDirectory: fixture.home,
+      stateRoot: fixture.state, source: source, resourcesRoot: resources)
+    let plan = try connection.plan()
+    let generations = EnvironmentGenerationStore(stateRoot: fixture.state)
+    let staged = try generations.stage(plan.composition)
+    let proposed = EnvironmentNeovimConnection.proposedOwnership(
+      previous: previous, generationID: staged.manifest.generationID,
+      publicURL: source, source: source, standard: true)
+    let paths = [
+      ".config/btop/btop.conf", ".codex/config.toml", ".pi/agent/settings.json",
+      ".config/spicetify/config-xpui.ini", ".config/tuicr/config.toml", ".config/herdr/config.toml",
+    ]
+    .map { fixture.home.appending(path: $0) }
+    let before = try paths.map { (try Data(contentsOf: $0), try metadata($0)) }
+    let transaction = EnvironmentTransaction(
+      operation: .neovimConnection,
+      previousOwnership: previous, proposedOwnership: proposed,
+      previousCurrentDestination: "generations/\(previous.generationID)")
+    for journal in [transaction, transaction.rollingBack] {
+      try store.writeTransaction(journal)
+      let recovery = try EnvironmentTransactionCoordinator(
+        homeDirectory: fixture.home, stateRoot: fixture.state
+      ).prepareRecoveryLocked()
+      #expect(recovery.recovered)
+      #expect(recovery.runtimeTarget == nil)
+      #expect(recovery.spicetifyRuntimeTarget == nil)
+      #expect(recovery.bordersRuntimeTarget == nil)
+      #expect(try store.readOwnership() == (journal.direction == .forward ? proposed : previous))
+      #expect(!store.transactionExists)
+      for (index, path) in paths.enumerated() {
+        #expect(try Data(contentsOf: path) == before[index].0)
+        #expect(try metadata(path) == before[index].1)
+      }
+    }
+    try store.writeTransaction(transaction)
+    let journal = fixture.state.appending(path: "environment/transaction.json")
+    var malformed = try #require(
+      JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as? [String: Any])
+    malformed["codex_replacement_name"] = ".macarchy-environment-codex-forbidden.replacement"
+    try JSONSerialization.data(withJSONObject: malformed).write(to: journal)
+    #expect(throws: (any Error).self) { try store.readTransaction() }
+  }
+
   @Test
   func disableRetainsProviderAdditionsToAnIntroducedConfiguration() throws {
     let fixture = try HerdrFixture(configuration: nil)

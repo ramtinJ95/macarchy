@@ -4,6 +4,7 @@ enum EnvironmentTransactionOperation: String, Codable, Sendable {
   case apply
   case herdrTheme = "herdr_theme"
   case neovimMigration = "neovim_migration"
+  case neovimConnection = "neovim_connection"
   case atuinMigration = "atuin_migration"
   case starshipMigration = "starship_migration"
   case standardMigration = "standard_migration"
@@ -180,14 +181,17 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       herdrLegacyMigration: herdrLegacyMigration,
       piReplacementName: piReplacementName,
       spicetifyReplacementName: spicetifyReplacementName,
-      spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(
-        from: proposedOwnership,
-        to: previousOwnership
-      ),
+      spicetifyRuntimeTarget: operation == .neovimConnection
+        ? nil
+        : EnvironmentSpicetifyRuntimeTarget.required(
+          from: proposedOwnership,
+          to: previousOwnership
+        ),
       spicetifyRuntimeVerified: nil,
       tuicrReplacementName: tuicrReplacementName,
       bordersPreviousRuntime: bordersPreviousRuntime,
       bordersRuntimeTarget: operation == .herdrTheme || operation.isNativeMigration
+        || operation == .neovimConnection
         ? nil
         : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership),
       bordersRuntimeAttempted: bordersRuntimeAttempted
