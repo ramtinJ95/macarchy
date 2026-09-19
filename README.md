@@ -152,6 +152,24 @@ save never invokes full setup, installs packages, or changes native preferences.
 Broken profiles remain editable without automatic apply; fix/review them and
 reopen the editor to enable scoped saves. Other Neovim sessions are unaffected.
 
+**Configure → Neovim** opens the authoritative configuration directory, like
+`nvim ~/.config/nvim`, using your normal Neovim directory browser in the same
+normally tiled editor. Custom configuration paths are respected. Existing files and writable plugin locks are
+preserved. If no tree exists, it previews an absent-only LazyVim starter. It
+separately reviews missing theme links, any Neovim profile changes, and the
+Neovim-only connection before opening the editor; it never applies other tools.
+An active Macarchy theme is required for a new connection. Existing owned legacy
+configurations use the established writable/standard-path migrations.
+
+Theme preparation supports LazyVim/lazy.nvim configurations loading `lua/plugins`;
+other plugin managers are not inferred from arbitrary Lua. Conflicting personal
+theme files are reported, not overwritten. Cancelling retains earlier approved
+steps; failed connection does not undo saved profile intent or personal files.
+Native Lua saves have **no automatic apply or plugin-restore hook**. Behavior
+changes take effect next instance; normal Neovim startup may bootstrap its own
+configured plugins. The existing narrow theme watcher remains responsible for
+live palette repaint.
+
 New curated bindings take effect through reviewed keybinding apply; updating
 the executable alone does not change an already-generated shortcut configuration.
 The browser can move inactive user-installed themes to Trash after confirmation;

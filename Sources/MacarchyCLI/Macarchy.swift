@@ -10,7 +10,7 @@ struct Macarchy: AsyncParsableCommand {
     subcommands: [
       Theme.self, Keybindings.self, Desktop.self, EnvironmentCommand.self, PreferencesCommand.self,
       Reconcile.self, ActionMenu.self, MenuMaintenance.self, MenuProfileEditor.self,
-      MenuProfileSave.self,
+      MenuProfileSave.self, MenuNeovimEditor.self,
       Doctor.self, Setup.self, Teardown.self, Update.self, Version.self,
     ]
   )
