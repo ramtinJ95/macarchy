@@ -113,7 +113,7 @@ struct MenuNeovimSetupTests {
     try FileManager.default.removeItem(at: fixture.profile)
     try FileManager.default.createSymbolicLink(at: fixture.profile, withDestinationURL: physical)
     let source = fixture.root.appending(path: "personal")
-    let edit = try MenuNeovimProfileEdit.prepare(context: context, source: source)
+    let edit = try MenuNativeProfileEdit.prepare(context: context, source: source)
     try edit.publish()
     let changed = try String(contentsOf: physical, encoding: .utf8)
     #expect(changed.contains("# keep this comment"))
@@ -124,7 +124,7 @@ struct MenuNeovimSetupTests {
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: fixture.profile.path)
         == physical.path)
-    let stale = try MenuNeovimProfileEdit.prepare(
+    let stale = try MenuNativeProfileEdit.prepare(
       context: context, source: fixture.root.appending(path: "other"))
     try (changed + "# subsequent user edit\n").write(
       to: physical, atomically: true, encoding: .utf8)

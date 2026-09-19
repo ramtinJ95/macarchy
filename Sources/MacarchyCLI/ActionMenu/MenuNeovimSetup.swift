@@ -11,7 +11,7 @@ struct MenuNeovimSetup {
   /// Each prompt authorizes one visible step. Cancellation retains earlier
   /// approved personal files and reports that fact; it never runs full setup.
   func prepareForEditing() throws -> MenuNeovimEditor.Target? {
-    var layered = try MenuNeovimProfileEdit.load(context)
+    var layered = try MenuNativeProfileEdit.load(context)
     let resolved = EnvironmentConfigurationSourceResolver(
       homeDirectory: homeDirectory, stateRoot: context.stateRoot
     ).resolve(.neovim, profile: layered.profile)
@@ -31,7 +31,7 @@ struct MenuNeovimSetup {
       active == nil, ownership?.records.contains(where: { $0.id == .neovim }) == true
     {
       guard try migrateLegacyToStandard() else { return nil }
-      layered = try MenuNeovimProfileEdit.load(context)
+      layered = try MenuNativeProfileEdit.load(context)
       return try MenuNeovimEditor.editTarget(
         profile: layered.profile,
         homeDirectory: homeDirectory, stateRoot: context.stateRoot)
@@ -50,11 +50,11 @@ struct MenuNeovimSetup {
         "the declared source differs from the active standard native Neovim tree; resolve that source conflict before editing. No files were changed"
       )
     }
-    let profileEdit = try MenuNeovimProfileEdit.prepare(context: context, source: source)
+    let profileEdit = try MenuNativeProfileEdit.prepare(context: context, source: source)
     if active?.path == source.path {
       guard try publishProfile(profileEdit) else { return nil }
       return try MenuNeovimEditor.editTarget(
-        profile: MenuNeovimProfileEdit.load(context).profile,
+        profile: MenuNativeProfileEdit.load(context).profile,
         homeDirectory: homeDirectory, stateRoot: context.stateRoot)
     }
     io.write(
@@ -145,11 +145,11 @@ struct MenuNeovimSetup {
       "Ready to edit. Normal Neovim startup can bootstrap its configured plugins; Macarchy adds no save-time apply or restore hook.\n"
     )
     return try MenuNeovimEditor.editTarget(
-      profile: MenuNeovimProfileEdit.load(context).profile,
+      profile: MenuNativeProfileEdit.load(context).profile,
       homeDirectory: homeDirectory, stateRoot: context.stateRoot)
   }
 
-  private func publishProfile(_ edit: MenuNeovimProfileEdit) throws -> Bool {
+  private func publishProfile(_ edit: MenuNativeProfileEdit) throws -> Bool {
     guard edit.files.contains(where: \.changed) else { return true }
     showProfile(edit)
     guard
@@ -160,7 +160,7 @@ struct MenuNeovimSetup {
     return true
   }
 
-  private func showProfile(_ edit: MenuNeovimProfileEdit) {
+  private func showProfile(_ edit: MenuNativeProfileEdit) {
     // Do not dump unrelated or potentially sensitive profile contents.
     io.write(
       "Effective Neovim source: \(edit.profile.environment.neovim.nativeConfigurationDirectoryURL!.path)\n"
@@ -205,7 +205,7 @@ struct MenuNeovimSetup {
       homeDirectory: homeDirectory, stateRoot: context.stateRoot)
     let (plan, _) = try migration.plan()
     let standard = homeDirectory.appending(path: ".config/nvim")
-    let edit = try MenuNeovimProfileEdit.prepare(context: context, source: standard)
+    let edit = try MenuNativeProfileEdit.prepare(context: context, source: standard)
     io.write(
       "\(plan.message)\nIntermediate writable tree: \(plan.destination)\nA separately reviewed move to \(standard.path) follows.\n"
     )
