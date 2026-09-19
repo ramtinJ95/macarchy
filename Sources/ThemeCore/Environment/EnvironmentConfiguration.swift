@@ -66,17 +66,45 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
   package init() {}
 
+  package static func nativeKittyWrapper(source: URL, stateRoot: URL) -> String {
+    "include " + source.path + "\n\ninclude "
+      + stateRoot.appending(path: KittyAdapter.bridgePath).path + "\n"
+  }
+
+  /// Shared by publication and connection verification; never execute the wrapper
+  /// to infer which personal source it loads.
+  package static func nativeZshWrapper(source: URL, stateRoot: URL) -> String {
+    let quote: (String) -> String = {
+      "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+    return """
+      # User-owned live configuration; Macarchy never rewrites this source.
+      export MACARCHY_ZSH_DEFAULTS=\(quote(stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path))
+      source \(quote(source.path)) || return 1
+      export MACARCHY_MANAGED_SESSION=1
+      """ + "\n"
+  }
+
   package func compose(
     resourcesRoot: URL,
     profile: PortableProfile,
     stateRoot: URL,
     proposedNativeFiles: [URL: Data] = [:]
   ) throws -> EnvironmentComposition {
+    try compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: stateRoot,
+      proposedNativeFiles: proposedNativeFiles, scope: nil)
+  }
+
+  private func compose(
+    resourcesRoot: URL, profile: PortableProfile, stateRoot: URL,
+    proposedNativeFiles: [URL: Data], scope: String?
+  ) throws -> EnvironmentComposition {
     var artifacts: [EnvironmentConfigurationArtifact] = []
     let options = profile.environment
     var kittyOverrideArtifacts: [EnvironmentConfigurationArtifact] = []
 
-    if options.focusRing == .borders {
+    if scope == nil, options.focusRing == .borders {
       artifacts.append(
         EnvironmentConfigurationArtifact(
           path: BordersConfiguration.artifactPath,
@@ -85,7 +113,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
     }
 
     var neovimConfigurationURL: URL?
-    if options.editor == .neovim {
+    if scope == nil, options.editor == .neovim {
       let neovim = try EnvironmentNeovimConfiguration().compose(
         resourcesRoot: resourcesRoot,
         configurationDirectoryURL: options.neovim.configurationDirectoryURL,
@@ -97,7 +125,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
       artifacts.append(contentsOf: neovim.artifacts)
     }
 
-    if options.tools.bat {
+    if scope == nil, options.tools.bat {
       let source = resourcesRoot.appending(path: "bat/config")
       artifacts.append(
         EnvironmentConfigurationArtifact(
@@ -107,7 +135,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
       )
     }
 
-    if options.tools.btop {
+    if scope == nil, options.tools.btop {
       let source = resourcesRoot.appending(path: "btop/btop.conf")
       var configuration = try readText(at: source)
       if let vimKeys = options.btop.vimKeys {
@@ -126,7 +154,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
       )
     }
 
-    if options.terminal == .kitty {
+    if scope == nil || scope == "kitty", options.terminal == .kitty {
       let source = resourcesRoot.appending(path: "kitty/defaults.conf")
       var configuration = try readText(at: source)
       configuration = appendKittyOptions(options.kitty, to: configuration)
@@ -148,16 +176,16 @@ package struct EnvironmentConfigurationComposer: Sendable {
         artifacts.append(
           EnvironmentConfigurationArtifact(path: "kitty/defaults.conf", contents: configuration)
         )
-        configuration = "include " + nativeSource.path + "\n"
+        configuration = Self.nativeKittyWrapper(source: nativeSource, stateRoot: stateRoot)
+      } else {
+        if let overrideURL = options.kitty.overrideDirectoryURL {
+          kittyOverrideArtifacts = try readKittyOverride(at: overrideURL)
+          configuration = appendLine("include override/kitty.conf", to: configuration)
+        }
+        configuration = appendLine(
+          "include " + stateRoot.appending(path: KittyAdapter.bridgePath).path,
+          to: configuration)
       }
-      if let overrideURL = options.kitty.overrideDirectoryURL {
-        kittyOverrideArtifacts = try readKittyOverride(at: overrideURL)
-        configuration = appendLine("include override/kitty.conf", to: configuration)
-      }
-      configuration = appendLine(
-        "include " + stateRoot.appending(path: KittyAdapter.bridgePath).path,
-        to: configuration
-      )
       artifacts.append(
         EnvironmentConfigurationArtifact(path: "kitty/kitty.conf", contents: configuration)
       )
@@ -165,7 +193,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
     }
 
     let zshHook: (text: String, digest: String)?
-    if options.shell == .zsh {
+    if scope == nil || scope == "zsh", options.shell == .zsh {
       if let source = options.zsh.configurationURL, options.zsh.hookURL != nil {
         throw EnvironmentConfigurationError.invalid(
           source, "zsh.configuration and zsh.hook are mutually exclusive"
@@ -258,15 +286,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
         artifacts.append(
           EnvironmentConfigurationArtifact(path: "zsh/defaults.zsh", contents: configuration)
         )
-        let quote: (String) -> String = {
-          "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        }
-        configuration = """
-          # User-owned live configuration; Macarchy never rewrites this source.
-          export MACARCHY_ZSH_DEFAULTS=\(quote(stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path))
-          source \(quote(source.path)) || return 1
-          export MACARCHY_MANAGED_SESSION=1
-          """ + "\n"
+        configuration = Self.nativeZshWrapper(source: source, stateRoot: stateRoot)
       }
       artifacts.append(
         EnvironmentConfigurationArtifact(path: "zsh/.zshrc", contents: configuration)
@@ -276,7 +296,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
     }
 
     var starshipBehaviorURL: URL?
-    if options.prompt == .starship {
+    if scope == nil || scope == "starship", options.prompt == .starship {
       if let source = options.starship.nativeConfigurationURL {
         guard options.starship.behaviorURL == nil else {
           throw EnvironmentConfigurationError.invalid(
@@ -308,7 +328,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
     }
 
     var atuinConfigurationURL: URL?
-    if options.history == .atuin {
+    if scope == nil || scope == "atuin", options.history == .atuin {
       if let source = options.atuin.nativeConfigurationURL {
         guard options.atuin.configurationURL == nil,
           options.atuin.searchMode == nil, options.atuin.keymapMode == nil,
@@ -357,7 +377,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
       }
     }
 
-    if options.tools.yazi {
+    if scope == nil, options.tools.yazi {
       let behaviorSource = resourcesRoot.appending(path: "yazi/yazi.toml")
       var behavior = try readText(at: behaviorSource)
       if let showHidden = options.yazi.showHidden {
@@ -447,6 +467,43 @@ package struct EnvironmentConfigurationComposer: Sendable {
       starshipBehaviorURL: nil, atuinConfigurationURL: nil,
       neovimConfigurationURL: source, renderedDigest: rendered,
       inputDigest: sha256Digest(identity))
+  }
+
+  /// Compose only the selected native provider. In particular zsh still sees
+  /// the declared prompt/history/tool choices, without reading or publishing
+  /// those providers' inputs. This is not full-profile convergence.
+  package func composeNativeConnection(
+    provider: String, resourcesRoot: URL, profile: PortableProfile, source: URL,
+    stateRoot: URL, retaining previous: [EnvironmentConfigurationArtifact],
+    previousInputDigest: String?
+  ) throws -> EnvironmentComposition {
+    guard ["kitty", "zsh", "starship", "atuin"].contains(provider) else {
+      throw EnvironmentConfigurationError.invalid(source, "unsupported native connection provider")
+    }
+    let scoped = try compose(
+      resourcesRoot: resourcesRoot, profile: profile, stateRoot: stateRoot,
+      proposedNativeFiles: [:], scope: provider)
+    guard !scoped.artifacts.isEmpty,
+      scoped.artifacts.allSatisfy({ $0.path.hasPrefix(provider + "/") })
+    else {
+      throw EnvironmentConfigurationError.invalid(source, "native connection provider is disabled")
+    }
+    let identity = EnvironmentConfigurationArtifact(
+      path: provider + "/native-source.txt", data: try JSONEncoder().encode(source.path))
+    let artifacts =
+      (previous.filter { !$0.path.hasPrefix(provider + "/") }
+      + scoped.artifacts + [identity]).sorted { $0.path < $1.path }
+    let rendered = Self.artifactDigest(artifacts)
+    return EnvironmentComposition(
+      profile: scoped.profile, artifacts: artifacts,
+      kittyOverrideURL: nil, zshHookURL: nil, zshHookDigest: nil,
+      starshipBehaviorURL: scoped.starshipBehaviorURL,
+      atuinConfigurationURL: scoped.atuinConfigurationURL, neovimConfigurationURL: nil,
+      renderedDigest: rendered,
+      inputDigest: sha256Digest(
+        try JSONEncoder().encode([
+          "native_connection_v1", provider, previousInputDigest ?? "absent", source.path, rendered,
+        ])))
   }
 
   private func appendKittyOptions(

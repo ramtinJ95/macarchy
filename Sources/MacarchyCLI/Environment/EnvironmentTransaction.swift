@@ -5,6 +5,10 @@ enum EnvironmentTransactionOperation: String, Codable, Sendable {
   case herdrTheme = "herdr_theme"
   case neovimMigration = "neovim_migration"
   case neovimConnection = "neovim_connection"
+  case atuinConnection = "atuin_connection"
+  case starshipConnection = "starship_connection"
+  case zshConnection = "zsh_connection"
+  case kittyConnection = "kitty_connection"
   case atuinMigration = "atuin_migration"
   case starshipMigration = "starship_migration"
   case standardMigration = "standard_migration"
@@ -21,6 +25,18 @@ enum EnvironmentTransactionOperation: String, Codable, Sendable {
   var isNativeMigration: Bool {
     self == .standardMigration || self == .neovimMigration || nativeFileProvider != nil
   }
+
+  var nativeConnectionProvider: EnvironmentNativeSeed.Provider? {
+    switch self {
+    case .atuinConnection: .atuin
+    case .starshipConnection: .starship
+    case .zshConnection: .zsh
+    case .kittyConnection: .kitty
+    default: nil
+    }
+  }
+
+  var isScopedConnection: Bool { self == .neovimConnection || nativeConnectionProvider != nil }
 }
 
 enum EnvironmentTransactionDirection: String, Codable, Sendable {
@@ -181,7 +197,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       herdrLegacyMigration: herdrLegacyMigration,
       piReplacementName: piReplacementName,
       spicetifyReplacementName: spicetifyReplacementName,
-      spicetifyRuntimeTarget: operation == .neovimConnection
+      spicetifyRuntimeTarget: operation.isScopedConnection
         ? nil
         : EnvironmentSpicetifyRuntimeTarget.required(
           from: proposedOwnership,
@@ -191,7 +207,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
       tuicrReplacementName: tuicrReplacementName,
       bordersPreviousRuntime: bordersPreviousRuntime,
       bordersRuntimeTarget: operation == .herdrTheme || operation.isNativeMigration
-        || operation == .neovimConnection
+        || operation.isScopedConnection
         ? nil
         : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership),
       bordersRuntimeAttempted: bordersRuntimeAttempted
