@@ -7,6 +7,30 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-19
+
+### Added
+
+- Configure actions for profiles, keybindings, Neovim, Starship, Atuin, Kitty,
+  zsh, desktop and bar settings, using normally tiled native Kitty editors.
+- Reviewed native starters and provider-scoped connections that preserve personal
+  files, dotfile links and unrelated providers during setup and recovery.
+- Themed floating terminals for menu maintenance checks, with visible results.
+
+### Changed
+
+- Validate native configuration saves without applying unrelated settings.
+  Eligible managed keybinding edits retain their scoped save-to-apply path.
+- Keep existing native hooks and overrides in their original shape. Managed
+  desktop/bar settings continue to require reviewed apply.
+- Improve native viewer handoff and focus indicators.
+
+### Known limitations
+
+- Native behavior takes effect on new prompts, invocations or shells as reported;
+  Kitty requires its native reload. No automatic application restart or migration
+  occurs on upgrade. Review & apply/update menu actions remain future work.
+
 ## [0.9.11] - 2026-09-14
 
 ### Fixed
