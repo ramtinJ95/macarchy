@@ -170,6 +170,25 @@ changes take effect next instance; normal Neovim startup may bootstrap its own
 configured plugins. The existing narrow theme watcher remains responsible for
 live palette repaint.
 
+**Configure → Starship / Atuin / Kitty / zsh** opens the authoritative personal
+source, preserving custom paths and dotfile links. First connections separately
+review absent-only starters, profile intent and provider-scoped connections;
+they never run full setup. Kitty also reviews preparing its canonical theme cache
+without signaling the app. Approved preparation remains after cancellation.
+Existing zsh hooks and Kitty override directories retain their shape and need
+reviewed environment plan/apply. Legacy managed Kitty/zsh settings open their
+profile section instead of copying or replacing the generated configuration.
+
+Native-file save feedback is read-only: Starship/Atuin check TOML and theme seams;
+Kitty/zsh do not evaluate arbitrary native syntax. Personal saves are not rolled
+back. Starship takes effect on new prompts, Atuin on new invocations, and zsh in
+new shells. Use Kitty's native reload; Macarchy does not signal or restart it.
+Kitty override directories use Neovim's directory browser, without per-child save
+validation. **Configure → Desktop / Bar** opens the relevant `[yabai]` or
+`[sketchybar]` profile layer. These managed settings validate the layered profile
+on save but require reviewed apply for live changes; opening or saving never
+authorizes adoption, provider switching, package installation or service restart.
+
 New curated bindings take effect through reviewed keybinding apply; updating
 the executable alone does not change an already-generated shortcut configuration.
 The browser can move inactive user-installed themes to Trash after confirmation;

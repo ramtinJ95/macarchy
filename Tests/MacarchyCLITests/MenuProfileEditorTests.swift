@@ -85,9 +85,13 @@ struct MenuProfileEditorTests {
 
   @Test(
     .enabled(if: FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/nvim")),
-    arguments: [(0, "[keybindings]"), (7, "  [ keybindings ]")])
-  func realNeovimHookIsBufferScopedQuotesPathsAndReportsResults(status: Int, header: String) throws
-  {
+    arguments: [
+      (0, "[keybindings]", false), (7, "  [ keybindings ]", false),
+      (7, "[keybindings]", true),
+    ])
+  func realNeovimHookIsBufferScopedQuotesPathsAndReportsResults(
+    status: Int, header: String, nativeValidation: Bool
+  ) throws {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy editor ' \(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
@@ -102,9 +106,14 @@ struct MenuProfileEditorTests {
       .write(
         to: helper, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+    let validationArguments = [
+      "_menu-config-validate", "atuin", target.path,
+      "--profile", root.appending(path: "portable ' profile.toml").path,
+    ]
     let generated = MenuProfileEditor.script(
-      target: target, section: "keybindings", executableURL: helper, sessionURL: session,
-      notice: "Scoped save only")
+      target: target, section: "keybindings", executableURL: helper,
+      notice: "Scoped save only",
+      saveArguments: nativeValidation ? validationArguments : ["_menu-profile-save", session.path])
     // No user config or live lifecycle. Exercise the actual Neovim event and
     // synchronous argv callback, including :wq-style failure acknowledgement.
     let probe = """
@@ -130,6 +139,7 @@ struct MenuProfileEditorTests {
     #expect(execution.terminationStatus == 0, "\(execution.output)")
     #expect(
       try String(contentsOf: URL(filePath: helper.path + ".args"), encoding: .utf8)
-        == "_menu-profile-save\n\(session.path)\n")
+        == (nativeValidation ? validationArguments : ["_menu-profile-save", session.path])
+        .joined(separator: "\n") + "\n")
   }
 }
