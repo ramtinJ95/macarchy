@@ -99,7 +99,8 @@ struct MenuProfileEditor: ParsableCommand {
     }
     let script = Self.script(
       target: resolved, section: action == .keybindings ? "keybindings" : nil,
-      executableURL: RuntimeEnvironment.live.executableURL, sessionURL: saveURL, notice: notice)
+      executableURL: RuntimeEnvironment.live.executableURL, notice: notice,
+      saveArguments: saveURL.map { ["_menu-profile-save", $0.path] })
     try script.write(to: scriptURL, atomically: true, encoding: .utf8)
     let editor = Process()
     editor.executableURL = neovim
@@ -140,12 +141,14 @@ struct MenuProfileEditor: ParsableCommand {
   }
 
   static func script(
-    target: URL, section: String?, executableURL: URL, sessionURL: URL?, notice: String
+    target: URL, section: String?, executableURL: URL, notice: String,
+    saveArguments: [String]?
   ) -> String {
     let callback: String
-    if let sessionURL {
+    if let arguments = saveArguments {
+      let command = ([executableURL.path] + arguments).map(luaString).joined(separator: ", ")
       callback = """
-          local output = vim.fn.system({\(luaString(executableURL.path)), '_menu-profile-save', \(luaString(sessionURL.path))})
+          local output = vim.fn.system({\(command)})
           local failed = vim.v.shell_error ~= 0
           vim.api.nvim_echo({{output, failed and 'ErrorMsg' or 'Normal'}}, true, {})
           if failed then vim.fn.input('Save/apply reported an error. Press Enter to continue editing: ') end

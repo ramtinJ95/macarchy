@@ -8,16 +8,18 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   case keybindings
   case profile(ProfileEditAction)
   case neovim
+  case configuration(MenuConfigurationAction)
   case maintenance(MaintenanceAction)
 
   static var allCases: [Self] {
     ProfileEditAction.allCases.map(Self.profile)
-      + [.neovim, .appearance, .keybindings] + MaintenanceAction.allCases.map(Self.maintenance)
+      + [.neovim] + MenuConfigurationAction.allCases.map(Self.configuration)
+      + [.appearance, .keybindings] + MaintenanceAction.allCases.map(Self.maintenance)
   }
 
   var category: String {
     switch self {
-    case .profile, .neovim: "Configure"
+    case .profile, .neovim, .configuration: "Configure"
     case .appearance, .keybindings: "Appearance"
     case .maintenance: "Maintenance"
     }
@@ -29,6 +31,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .keybindings: "Keybindings"
     case .profile(let action): action.title
     case .neovim: "Neovim"
+    case .configuration(let action): action.title
     case .maintenance(let action): action.title
     }
   }
@@ -39,6 +42,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .keybindings: "appearance keybindings shortcuts bindings help"
     case .profile(let action): "configure \(action.title) edit".lowercased()
     case .neovim: "configure neovim nvim editor lua native"
+    case .configuration(let action):
+      "configure \(action.title) \(action.rawValue) settings edit".lowercased()
     case .maintenance(let action):
       "maintenance \(action.title) \(action.arguments.joined(separator: " "))".lowercased()
     }
@@ -88,6 +93,10 @@ struct ActionMenu: AsyncParsableCommand {
       showMenu: { try controller.run() },
       openViewer: { action in
         switch action {
+        case .configuration(let operation):
+          _ = try MenuTerminal.launch(
+            .profile, arguments: ["_menu-config-edit", operation.rawValue] + profileArguments,
+            theme: theme, executableURL: runtime.executableURL)
         case .neovim:
           _ = try MenuTerminal.launch(
             .profile, arguments: ["_menu-neovim-edit"] + profileArguments,
@@ -140,7 +149,7 @@ struct ActionMenu: AsyncParsableCommand {
     switch action {
     case .appearance: process.arguments = ["theme", "browse"]
     case .keybindings: process.arguments = ["keybindings", "show", "--effective"]
-    case .maintenance, .profile, .neovim:
+    case .maintenance, .profile, .neovim, .configuration:
       throw ValidationError(
         "Configuration and maintenance actions must launch through their menu terminal")
     }
