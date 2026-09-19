@@ -54,6 +54,32 @@ struct EnvironmentNeovimMigration: Sendable {
         || (record.id == .neovim && targetIsAllowed(record.managedTarget)))
   }
 
+  /// The root's authority covers ordinary descendants, not a leaf link escaping
+  /// into generated state or another provider. Keep root and leaf checks distinct:
+  /// the public-entry exemption deliberately permits only the exact root path.
+  func writableInitURL(at source: URL) throws -> URL {
+    guard targetIsAllowed(source.path, userOwnedPublicEntry: true) else {
+      throw EnvironmentLifecycleError.blocked("Neovim source overlaps managed configuration")
+    }
+    let root = source.resolvingSymlinksInPath()
+    let file = root.appending(path: "init.lua").resolvingSymlinksInPath()
+    guard
+      file.path.hasPrefix(root.path + "/")
+        || EnvironmentNativeSource.targetIsAllowed(
+          file.path, homeDirectory: homeDirectory, stateRoot: stateRoot)
+    else {
+      throw EnvironmentLifecycleError.blocked("Neovim init.lua points into managed configuration")
+    }
+    var metadata = stat()
+    guard lstat(file.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG,
+      access(file.path, R_OK | W_OK) == 0
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "Neovim init.lua must be an ordinary readable, writable file")
+    }
+    return file
+  }
+
   func validateNativeTree(at selectedURL: URL? = nil, userOwnedPublicEntry: Bool = false) throws {
     let selected = selectedURL ?? self.nativeRoot
     guard targetIsAllowed(selected.path, userOwnedPublicEntry: userOwnedPublicEntry) else {

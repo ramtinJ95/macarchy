@@ -426,6 +426,29 @@ package struct EnvironmentConfigurationComposer: Sendable {
     )
   }
 
+  /// A reviewed Neovim connection preserves every other provider's validated
+  /// artifact bytes. Its digest deliberately does not claim full-profile apply.
+  package func composeNeovimConnection(
+    resourcesRoot: URL, source: URL, stateRoot: URL,
+    retaining previous: [EnvironmentConfigurationArtifact], previousInputDigest: String?
+  ) throws -> EnvironmentComposition {
+    let neovim = try EnvironmentNeovimConfiguration().compose(
+      resourcesRoot: resourcesRoot, configurationDirectoryURL: nil, stateRoot: stateRoot,
+      nativeConfigurationDirectoryURL: source)
+    let artifacts = (previous.filter { !$0.path.hasPrefix("neovim/") } + neovim.artifacts)
+      .sorted { $0.path < $1.path }
+    let rendered = Self.artifactDigest(artifacts)
+    let identity = try JSONEncoder().encode([
+      "neovim_connection_v1", previousInputDigest ?? "absent", source.path, rendered,
+    ])
+    return EnvironmentComposition(
+      profile: PortableProfile.defaults.environment, artifacts: artifacts,
+      kittyOverrideURL: nil, zshHookURL: nil, zshHookDigest: nil,
+      starshipBehaviorURL: nil, atuinConfigurationURL: nil,
+      neovimConfigurationURL: source, renderedDigest: rendered,
+      inputDigest: sha256Digest(identity))
+  }
+
   private func appendKittyOptions(
     _ options: KittyProfileOptions,
     to configuration: String
