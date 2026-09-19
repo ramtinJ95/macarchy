@@ -54,7 +54,7 @@ struct EnvironmentStateStore: Sendable {
           value.rollbackThemeBridges,
           stateRoot: stateRoot
         )
-        && Self.providerReplacementsAreValid(value)
+        && Self.providerReplacementsAreValid(value, stateRoot: stateRoot)
         && Self.herdrRuntimeIsValid(value)
         && Self.spicetifyRuntimeIsValid(value)
         && value.bordersRuntimeIsValid
@@ -188,11 +188,17 @@ struct EnvironmentStateStore: Sendable {
     return EnvironmentGenerationStore.isGenerationID(String(destination.dropFirst(prefix.count)))
   }
 
-  private static func providerReplacementsAreValid(_ transaction: EnvironmentTransaction) -> Bool {
+  private static func providerReplacementsAreValid(
+    _ transaction: EnvironmentTransaction, stateRoot: URL
+  ) -> Bool {
     guard (transaction.operation == .standardMigration) == (transaction.standardMigration != nil)
     else { return false }
-    if transaction.operation == .neovimConnection {
-      return EnvironmentNeovimConnection.ownershipChangeIsValid(transaction)
+    if transaction.operation.isScopedConnection {
+      let valid =
+        transaction.operation == .neovimConnection
+        ? EnvironmentNeovimConnection.ownershipChangeIsValid(transaction)
+        : EnvironmentNativeFileConnection.ownershipChangeIsValid(transaction, stateRoot: stateRoot)
+      return valid
         && transaction.previousCurrentDestination
           == transaction.previousOwnership.map({ "generations/\($0.generationID)" })
         && transaction.previousThemeGenerationID == nil && transaction.rollbackThemeBridges.isEmpty
@@ -348,7 +354,7 @@ struct EnvironmentStateStore: Sendable {
   }
 
   private static func spicetifyRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    if transaction.operation == .neovimConnection {
+    if transaction.operation.isScopedConnection {
       return transaction.spicetifyRuntimeTarget == nil
         && transaction.spicetifyRuntimeVerified == nil
         && transaction.spicetifyRuntimeDeferred == nil

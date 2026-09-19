@@ -6,6 +6,48 @@ import Testing
 struct EnvironmentConfigurationTests {
   private let composer = EnvironmentConfigurationComposer()
 
+  @Test(arguments: ["zsh", "kitty", "atuin", "starship"])
+  func nativeConnectionComposesOnlyItsProviderAndRetainsOtherArtifacts(provider: String) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = root.appending(path: "personal.conf")
+    let contents: String
+    switch provider {
+    case "atuin": contents = "[theme]\nname = \"macarchy-current\"\n"
+    case "starship":
+      contents =
+        "palette = \"macarchy_current\"\n"
+        + StarshipAdapter.render(package: try AdapterContractTests().catppuccinPackage())
+    default: contents = "# personal configuration\n"
+    }
+    try contents.write(to: source, atomically: true, encoding: .utf8)
+    let declarations = ["zsh", "kitty", "atuin", "starship", "neovim"].map { name in
+      let key = ["zsh", "kitty"].contains(name) ? "configuration" : "native_configuration"
+      return "[\(name)]\n\(key) = \"\(name == provider ? "personal.conf" : "missing-" + name)\"\n"
+    }.joined()
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n" + declarations, source: root.appending(path: "profile.toml"))
+    let retained = EnvironmentConfigurationArtifact(path: "unrelated/keep", contents: "unchanged")
+    let old = EnvironmentConfigurationArtifact(path: provider + "/old", contents: "replace")
+    let state = root.appending(path: "state")
+    let result = try composer.composeNativeConnection(
+      provider: provider, resourcesRoot: resourcesRoot, profile: profile, source: source,
+      stateRoot: state, retaining: [retained, old], previousInputDigest: "previous")
+    #expect(result.artifacts.filter { !$0.path.hasPrefix(provider + "/") } == [retained])
+    #expect(!result.artifacts.contains(old))
+    let identity = try #require(
+      result.artifacts.first { $0.path == provider + "/native-source.txt" })
+    #expect(try JSONDecoder().decode(String.self, from: identity.data) == source.path)
+    if provider == "zsh" {
+      let defaults = try #require(
+        result.artifacts.first { $0.path == "zsh/defaults.zsh" }?.textContents)
+      #expect(defaults.contains("atuin init zsh"))
+      #expect(defaults.contains("starship init zsh"))
+    }
+    #expect(result.inputDigest != "previous")
+    #expect(try Data(contentsOf: source) == Data(contents.utf8))
+  }
+
   @Test(arguments: ["relative", "absolute", "linked", "relative-linked"])
   func explicitNativeSourcesMayLeaveTheProfileDirectory(kind: String) throws {
     let root = try temporaryDirectory()

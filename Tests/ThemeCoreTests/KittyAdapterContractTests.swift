@@ -6,6 +6,35 @@ import Testing
 
 extension AdapterContractTests {
   @Test
+  func kittyFirstConnectionBridgePreparationIsAbsentOnlyAndDoesNotReload() async throws {
+    try await withTemporaryRoot(named: "macarchy-kitty-connection-tests") { root in
+      let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
+      let bridge = root.appending(path: KittyAdapter.bridgePath)
+      let generated = root.appending(
+        path: "generations/\(manifest.generationID)/generated/kitty.conf")
+      try KittyAdapter.prepareBridge(root: root)
+      #expect(try Data(contentsOf: bridge) == Data(contentsOf: generated))
+      let before = try bridge.resourceValues(forKeys: [.fileResourceIdentifierKey])
+      try KittyAdapter.prepareBridge(root: root)
+      let after = try bridge.resourceValues(forKeys: [.fileResourceIdentifierKey])
+      #expect(
+        String(describing: before.fileResourceIdentifier)
+          == String(describing: after.fileResourceIdentifier))
+      let personal = Data("foreign bridge\n".utf8)
+      try personal.write(to: bridge)
+      #expect(throws: (any Error).self) { try KittyAdapter.prepareBridge(root: root) }
+      #expect(try Data(contentsOf: bridge) == personal)
+      try FileManager.default.removeItem(at: bridge)
+      try FileManager.default.createSymbolicLink(
+        at: bridge, withDestinationURL: root.appending(path: "missing"))
+      #expect(throws: (any Error).self) { try KittyAdapter.prepareBridge(root: root) }
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(atPath: bridge.path)
+          == root.appending(path: "missing").path)
+    }
+  }
+
+  @Test
   func kittyRejectsInvalidBridgeFilesAndRebuildsSymlinks() async throws {
     try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
       let manifest = try testActivator(root: root).activate(package: catppuccinPackage())

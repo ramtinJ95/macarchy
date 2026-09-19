@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum KittyAdapterError: AdapterBridgeFileError, CustomStringConvertible, Sendable {
@@ -33,6 +34,30 @@ package struct KittyAdapter: Sendable {
   private static let killallURL = URL(filePath: "/usr/bin/killall")
   static let id = "kitty"
   package static let bridgePath = "state/adapters/kitty.conf"
+  /// Explicit first-connection preparation; never signals an application.
+  /// Existing noncanonical bridges are drift, not permission to replace them.
+  package static func prepareBridge(root: URL) throws {
+    let desired = try activeConfiguration(root: root)
+    let url = root.appending(path: bridgePath)
+    var metadata = stat()
+    if lstat(url.path, &metadata) == 0 {
+      try validatePreparedBridge(root: root)
+      return
+    }
+    guard errno == ENOENT else {
+      throw KittyAdapterError.cannotReadBridge(url, "Cannot inspect bridge")
+    }
+    try AdapterBridgeFile<KittyAdapterError>(url: url).publish(desired)
+  }
+
+  package static func validatePreparedBridge(root: URL) throws {
+    let desired = try activeConfiguration(root: root)
+    let url = root.appending(path: bridgePath)
+    guard try AdapterBridgeFile<KittyAdapterError>(url: url).read() == desired else {
+      throw KittyAdapterError.bridgeDoesNotMatch(url)
+    }
+  }
+
   static let outputPath = "generated/kitty.conf"
   static let rendererVersion = 2
 
@@ -66,7 +91,7 @@ package struct KittyAdapter: Sendable {
       try preflight()
       do {
         try ActivationLock(root: root).withLock {
-          let desired = try activeConfiguration()
+          let desired = try Self.activeConfiguration(root: root)
           guard try bridge.read() == desired else {
             throw KittyAdapterError.bridgeDoesNotMatch(bridgeURL)
           }
@@ -104,7 +129,7 @@ package struct KittyAdapter: Sendable {
           return AdapterOutcome(status: .drifted, message: String(describing: error))
         }
 
-        let desired = try activeConfiguration()
+        let desired = try Self.activeConfiguration(root: root)
         do {
           try bridge.publish(desired)
         } catch {
@@ -140,7 +165,7 @@ package struct KittyAdapter: Sendable {
     }
   }
 
-  private func activeConfiguration() throws -> Data {
+  private static func activeConfiguration(root: URL) throws -> Data {
     let manifest = try ReconciliationStatusStore(root: root).activeManifest()
     return try BoundedRegularFile.read(
       at: root.appending(

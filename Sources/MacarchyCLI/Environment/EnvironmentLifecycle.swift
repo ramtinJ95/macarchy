@@ -64,6 +64,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
   ) {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     guard let transaction = try store.readTransaction() else { return (false, nil, nil, nil) }
+    if transaction.operation.nativeConnectionProvider != nil {
+      try finishNativeFileConnectionLocked(transaction)
+      return (true, nil, nil, nil)
+    }
     if transaction.operation == .neovimConnection {
       try finishNeovimConnectionLocked(transaction)
       return (true, nil, nil, nil)
@@ -77,7 +81,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     switch transaction.direction {
     case .forward:
       switch transaction.operation {
-      case .standardMigration, .neovimConnection:
+      case .standardMigration, .neovimConnection, .atuinConnection, .starshipConnection,
+        .zshConnection, .kittyConnection:
         throw EnvironmentLifecycleError.blocked("standard migration requires scoped recovery")
       case .apply, .herdrTheme, .neovimMigration, .atuinMigration, .starshipMigration:
         guard let proposed = transaction.proposedOwnership else {
@@ -160,6 +165,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
 
     switch (transaction.direction, transaction.operation) {
     case (.forward, .standardMigration), (.forward, .neovimConnection),
+      (.forward, .atuinConnection), (.forward, .starshipConnection),
+      (.forward, .zshConnection), (.forward, .kittyConnection),
       (.forward, .neovimMigration), (.forward, .atuinMigration),
       (.forward, .starshipMigration):
       break

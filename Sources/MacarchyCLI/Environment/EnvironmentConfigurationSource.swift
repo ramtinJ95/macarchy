@@ -35,6 +35,63 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
   let homeDirectory: URL
   let stateRoot: URL
 
+  /// Stronger than editor authority: prove the declared source is connected.
+  /// Deliberately does not validate personal syntax, so broken files can be repaired.
+  func connectedSource(
+    _ provider: EnvironmentNativeSeed.Provider, profile: PortableProfile
+  ) throws -> EnvironmentConfigurationSource {
+    let source = resolve(provider, profile: profile)
+    guard source.status == .editable, source.authority != "copied_profile_input",
+      let declaredPath = source.source
+    else { throw EnvironmentLifecycleError.blocked(source.message) }
+    let store = EnvironmentStateStore(stateRoot: stateRoot)
+    guard let ownership = try store.readOwnership() else {
+      throw EnvironmentLifecycleError.blocked(
+        "\(provider.rawValue) source is editable but not connected; reviewed connection is required."
+      )
+    }
+    if provider == .atuin {
+      let inspector = EnvironmentProviderInspector()
+      let theme = inspector.allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        .first { $0.id == .atuinTheme }!
+      guard let record = ownership.records.first(where: { $0.id == .atuinTheme }),
+        record.publicPath == theme.url.path, record.managedKind == theme.kind.rawValue,
+        record.managedTarget == theme.target, try inspector.managedEntryIsExact(theme)
+      else {
+        throw EnvironmentLifecycleError.drift(
+          "Atuin's owned theme link is missing or changed; review environment status before editing."
+        )
+      }
+    }
+    if ownership.standardNativeEntries?.contains(provider.entryID) == true {
+      guard provider.standardURL(homeDirectory: homeDirectory).path == declaredPath else {
+        throw EnvironmentLifecycleError.drift("The standard native source and profile differ")
+      }
+      return source
+    }
+    guard ownership.records.contains(where: { $0.id == provider.entryID }) else {
+      throw EnvironmentLifecycleError.blocked(
+        "\(provider.rawValue) has no owned connection; review its connection before editing.")
+    }
+    if provider == .zsh || provider == .kitty {
+      let path = provider == .zsh ? "zsh/.zshrc" : "kitty/kitty.conf"
+      let expected =
+        provider == .zsh
+        ? EnvironmentConfigurationComposer.nativeZshWrapper(
+          source: URL(filePath: declaredPath), stateRoot: stateRoot)
+        : EnvironmentConfigurationComposer.nativeKittyWrapper(
+          source: URL(filePath: declaredPath), stateRoot: stateRoot)
+      let actual = try EnvironmentGenerationStore(stateRoot: stateRoot).validatedArtifact(
+        generationID: ownership.generationID, path: path)
+      guard actual == Data(expected.utf8) else {
+        throw EnvironmentLifecycleError.blocked(
+          "\(provider.rawValue)'s active wrapper does not load the declared source; review the pending connection change."
+        )
+      }
+    }
+    return source
+  }
+
   func resolve(
     _ provider: EnvironmentNativeSeed.Provider, profile: PortableProfile
   ) -> EnvironmentConfigurationSource {
@@ -171,6 +228,21 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
     } catch {
       return report(.blocked, message: String(describing: error))
     }
+  }
+}
+
+extension EnvironmentConfigurationSourceResolver {
+  /// Copied native hooks remain valid editing surfaces, but are not live connections.
+  func menuEditingSource(
+    _ provider: EnvironmentNativeSeed.Provider, profile: PortableProfile
+  ) throws -> EnvironmentConfigurationSource {
+    let source = resolve(provider, profile: profile)
+    if provider == .zsh || provider == .kitty,
+      source.authority == "copied_profile_input", source.status == .editable
+    {
+      return source
+    }
+    return try connectedSource(provider, profile: profile)
   }
 }
 

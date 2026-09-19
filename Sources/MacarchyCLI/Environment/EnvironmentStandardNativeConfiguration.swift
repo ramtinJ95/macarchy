@@ -6,7 +6,7 @@ import ThemeCore
 enum EnvironmentStandardNativeConfiguration {
   static func validate(
     _ provider: EnvironmentNativeSeed.Provider, homeDirectory: URL, stateRoot: URL,
-    sourceURL: URL? = nil
+    sourceURL: URL? = nil, ownsKittyThemeInclude: Bool = true
   ) throws {
     let source = sourceURL ?? provider.standardURL(homeDirectory: homeDirectory)
     switch provider {
@@ -36,7 +36,7 @@ enum EnvironmentStandardNativeConfiguration {
         throw EnvironmentLifecycleError.blocked(
           "The standard \(provider.rawValue) configuration must be writable UTF-8")
       }
-      if provider == .kitty {
+      if provider == .kitty && ownsKittyThemeInclude {
         let lines = text.split(whereSeparator: \.isNewline)
           .map { $0.trimmingCharacters(in: .whitespaces) }
           .filter { !$0.isEmpty && !$0.hasPrefix("#") }
