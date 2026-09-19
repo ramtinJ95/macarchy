@@ -200,9 +200,7 @@ struct EnvironmentStateStore: Sendable {
         && transaction.herdrReplacementName == nil && transaction.piReplacementName == nil
         && transaction.spicetifyReplacementName == nil && transaction.tuicrReplacementName == nil
         && transaction.herdrRuntimeTarget == nil && transaction.herdrRuntimeVerified == nil
-        && transaction.herdrLegacyMigration == nil && transaction.spicetifyRuntimeTarget == nil
-        && transaction.spicetifyRuntimeVerified == nil
-        && transaction.spicetifyRuntimeDeferred == nil
+        && transaction.herdrLegacyMigration == nil
     }
     if transaction.operation.isNativeMigration {
       let id: EnvironmentEntryID =

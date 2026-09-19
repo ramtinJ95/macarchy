@@ -41,7 +41,7 @@ struct MenuNeovimSetupTests {
           return "no"
         }, write: { _ in })
     ).prepareForEditing()
-    #expect(reopened?.file == target.file)
+    #expect(reopened?.physicalRoot == target.physicalRoot)
     #expect(try store.readOwnership() == before)
     #expect(try String(contentsOf: fixture.profile, encoding: .utf8) == source)
   }

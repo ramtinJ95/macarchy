@@ -45,8 +45,8 @@ struct MenuNeovimEditor: ParsableCommand {
   struct Target {
     let declaredRoot: URL
     let physicalRoot: URL
-    let file: URL
-    let notice: String
+    let notice =
+      "Native Neovim files: behavior changes take effect next instance; no Macarchy apply on save."
 
     // Let the user's normal Neovim directory handler choose its file browser.
     // Do not force a plugin, explorer command, or an init.lua buffer.
@@ -65,18 +65,13 @@ struct MenuNeovimEditor: ParsableCommand {
       let physical = source.resolvedSource
     else { throw ValidationError(source.message) }
     let root = URL(filePath: physical, directoryHint: .isDirectory)
-    // Resolve the leaf as well as the root, preserving dotfile links when an
-    // editor writes by rename. A personal init link is not permission to edit
-    // generated configuration or another managed provider entry.
-    let file = try EnvironmentNeovimMigration(
+    // Validate the bootstrap even though the directory is the launch target;
+    // its leaf link must not escape into generated state or another provider.
+    _ = try EnvironmentNeovimMigration(
       homeDirectory: homeDirectory, stateRoot: stateRoot
     ).writableInitURL(at: URL(filePath: declared))
-    let notice =
-      source.authority == "copied_profile_input"
-      ? "Copied Neovim input: saves require reviewed apply; no automatic apply or plugin restore."
-      : "Native Neovim files: behavior changes take effect next instance; no Macarchy apply on save."
     return Target(
       declaredRoot: URL(filePath: declared, directoryHint: .isDirectory),
-      physicalRoot: root, file: file, notice: notice)
+      physicalRoot: root)
   }
 }

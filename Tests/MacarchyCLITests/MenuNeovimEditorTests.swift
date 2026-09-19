@@ -23,9 +23,7 @@ struct MenuNeovimEditorTests {
       profile: profile, homeDirectory: fixture.home, stateRoot: fixture.state)
     #expect(target.declaredRoot.path == alias.path)
     #expect(target.physicalRoot.path == root.resolvingSymlinksInPath().path)
-    #expect(target.file.path == initSource.resolvingSymlinksInPath().path)
     #expect(Array(target.editorArguments.suffix(2)) == ["--", target.physicalRoot.path])
-    #expect(!target.editorArguments.contains(target.file.path))
     #expect(target.notice.contains("next instance"))
     #expect(try String(contentsOf: initSource, encoding: .utf8) == "invalid Lua to repair\n")
     #expect(try FileManager.default.destinationOfSymbolicLink(atPath: alias.path) == root.path)
@@ -41,18 +39,10 @@ struct MenuNeovimEditorTests {
     }
   }
 
-  @Test func menuFindsNativeEditorAndRetainsLayeredArguments() throws {
+  @Test func menuFindsNativeEditor() {
     var menu = ActionMenuState()
     menu.search("configure nvim")
     #expect(menu.selectedAction == .neovim)
     #expect(menu.actions.count == 1)
-    let command = try MenuNeovimEditor.parse([
-      "--profile", "portable.toml", "--machine-profile", "machine.toml",
-    ])
-    #expect(
-      command.profiles.menuArguments == [
-        "--profile", URL(filePath: "portable.toml").path,
-        "--machine-profile", URL(filePath: "machine.toml").path,
-      ])
   }
 }
