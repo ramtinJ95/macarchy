@@ -159,11 +159,28 @@ struct SketchyBarConfigurationTests {
       #expect(composition.automaticClock == !explicit)
       let clock = try #require(composition.artifacts.first { $0.path == "plugins/clock.sh" })
       #expect(clock.contents.contains("--position '\(explicit ? "right" : "auto")'"))
+      #expect(clock.contents.contains("--update-indicator"))
       let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
       #expect(entry.contents.contains("macarchy.clock.preview right"))
       #expect(entry.contents.contains("mouse.clicked display_change system_woke"))
+      let update = try #require(composition.artifacts.first { $0.path == "plugins/update.sh" })
+      #expect(update.contents.contains("desktop _update-indicator"))
+      #expect(update.contents.contains("--state-root '\(root.path)'"))
       try requireValidShellSyntax(composition.artifacts, root: root)
     }
+  }
+
+  @Test func disablingClockAlsoRemovesItsAutomaticUpdateChecks() throws {
+    let root = try configurationRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let profile = try PortableProfileLoader().decode(
+      "schema_version = 1\n[sketchybar]\nleft = []\ncenter = []\nright = []\n",
+      source: root.appending(path: "profile.toml"))
+    let composition = try SketchyBarConfigurationComposer().compose(
+      defaultsURL: defaultsURL, profile: profile, stateRoot: root)
+    #expect(!composition.artifacts.contains { $0.path == "plugins/update.sh" })
+    let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
+    #expect(!entry.contents.contains("macarchy.update"))
   }
 
   @Test
@@ -292,6 +309,7 @@ struct SketchyBarConfigurationTests {
       first.artifacts.map { $0.path }
         == [
           "sketchybarrc", "plugins/clock.sh", "plugins/space-indexes.sh", "plugins/toggle.sh",
+          "plugins/update.sh",
           "plugins/volume.sh",
           "plugins/battery.sh", "plugins/cpu.sh", "plugins/memory.sh", "plugins/wifi.sh",
           "plugins/apple.sh", "plugins/media.sh",

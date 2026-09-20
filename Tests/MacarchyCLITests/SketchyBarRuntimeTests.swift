@@ -6,6 +6,34 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarRuntimeTests {
+  @Test(arguments: ["hidden", "warning", "script", "frequency", "events"])
+  func updateIndicatorRequiresWiringButNeverNetworkAvailability(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let verifier = fixture.verifier { request in
+      let result = Self.dynamicResult(request, fixture: fixture, indices: [1])
+      guard request.arguments == ["--query", SketchyBarUpdateIndicator.item] else { return result }
+      var output = result.output
+      switch condition {
+      case "warning":
+        output = output.replacingOccurrences(
+          of: "\"drawing\":\"off\"", with: "\"drawing\":\"on\"",
+          range: output.range(of: "\"drawing\":\"off\""))
+      case "script":
+        output = output.replacingOccurrences(of: "plugins/update.sh", with: "plugins/wrong.sh")
+      case "frequency":
+        output = output.replacingOccurrences(of: "\"update_freq\":60", with: "\"update_freq\":0")
+      case "events":
+        output = output.replacingOccurrences(of: "\"update_mask\":233", with: "\"update_mask\":0")
+      default: break
+      }
+      return .init(terminationStatus: 0, output: output)
+    }
+    #expect(
+      verifier.inspect(fixture.dynamicComposition).status
+        == (["hidden", "warning"].contains(condition) ? .converged : .drifted))
+  }
+
   @Test(arguments: ["custom", "theme-drift", "not-ready"])
   func nativeBehaviorDoesNotWeakenThemeOrCompletionChecks(condition: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
@@ -236,6 +264,10 @@ struct SketchyBarRuntimeTests {
         {
           output = output.replacingOccurrences(of: "\"value\":\"0\"", with: "\"value\":\"bad\"")
         }
+        if request.arguments == ["--query", SketchyBarUpdateIndicator.item] {
+          output = output.replacingOccurrences(
+            of: "\"position\":\"right\"", with: "\"position\":\"center\"")
+        }
         return ProcessResult(terminationStatus: result.terminationStatus, output: output)
       }, waitForSettle: {}, waitForPresentation: {}, hasExternalDisplay: { true })
     #expect(
@@ -259,7 +291,7 @@ struct SketchyBarRuntimeTests {
     #expect(
       inspection.items == [
         "macarchy.clock", "macarchy.clock.preview", "macarchy.space.1", "macarchy.space.2",
-        "macarchy.theme.ready",
+        "macarchy.theme.ready", "macarchy.update", "macarchy.update.detail",
       ])
   }
 
@@ -275,10 +307,11 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready"]}
+             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail"]}
             """
         )
-      case ["--query", "macarchy.clock.preview"], ["--query", "events"]:
+      case ["--query", "macarchy.clock.preview"], ["--query", "events"],
+        ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.clock"]:
         return ProcessResult(
@@ -348,11 +381,17 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready"]}
+             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail"]}
             """
         )
       case ["--query", "macarchy.clock.preview"], ["--query", "events"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
+      case ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"]:
+        let result = Self.dynamicResult(request, fixture: fixture, indices: [])
+        return .init(
+          terminationStatus: 0,
+          output: result.output.replacingOccurrences(
+            of: "\"position\":\"right\"", with: "\"position\":\"center\""))
       case ["--query", "macarchy.clock"]:
         return ProcessResult(
           terminationStatus: 0,
@@ -868,7 +907,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.space.1"\(extra)]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.space.1"\(extra)]}
               """
           )
         }
@@ -907,7 +946,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.space.1","\(extra)"]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.space.1","\(extra)"]}
               """
           )
         }
@@ -990,8 +1029,8 @@ struct SketchyBarRuntimeTests {
     #expect(waits.withLock { $0 } == 20)
   }
 
-  @Test
-  func rollbackSettleRestoresThePreviousObservableRuntime() throws {
+  @Test(arguments: [false, true])
+  func rollbackSettleRestoresThePreviousObservableRuntime(legacy: Bool) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let current = fixture.verifier {
@@ -1002,7 +1041,7 @@ struct SketchyBarRuntimeTests {
       message: "evidence from the previous theme",
       themeGenerationID: "g-00000000-0000-0000-0000-000000000001",
       barColor: "0xff000000",
-      items: current.items,
+      items: legacy ? current.items.filter { !$0.hasPrefix("macarchy.update") } : current.items,
       spaceIndices: current.spaceIndices,
       clockLabelPresent: current.clockLabelPresent,
       volumeLevelPresent: current.volumeLevelPresent ?? false
@@ -1031,16 +1070,25 @@ struct SketchyBarRuntimeTests {
         }
         let result = Self.dynamicResult(request, fixture: fixture, indices: [1])
         // Current-generation checks must not reject a restored older clock.
+        var output = result.output
+        if request.arguments == ["--query", "macarchy.clock"] {
+          output = output.replacingOccurrences(
+            of: "\"updates\":\"on\"", with: "\"updates\":\"when_shown\"")
+        }
+        if legacy {
+          output = output.replacingOccurrences(
+            of: ",\"macarchy.update\",\"macarchy.update.detail\"", with: "")
+        }
         return ProcessResult(
           terminationStatus: result.terminationStatus,
-          output: result.output.replacingOccurrences(
-            of: "\"updates\":\"on\"", with: "\"updates\":\"when_shown\""))
+          output: output)
       },
       waitForSettle: { waits.withLock { $0 += 1 } },
       waitForPresentation: {}, hasExternalDisplay: { false }
     )
 
-    #expect(expected.agreesWithProviderRuntime(current))
+    #expect(expected.isValidEvidence)
+    #expect(expected.agreesWithProviderRuntime(current) == !legacy)
     #expect(verifier.settleRestored(expected))
     #expect(waits.withLock { $0 } == 20)
   }
@@ -1056,7 +1104,10 @@ struct SketchyBarRuntimeTests {
       return ProcessResult(terminationStatus: 0, output: "[\(spaces)]")
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "bar"]):
       let names =
-        ["macarchy.clock", "macarchy.clock.preview", "macarchy.theme.ready"]
+        [
+          "macarchy.clock", "macarchy.clock.preview", "macarchy.theme.ready", "macarchy.update",
+          "macarchy.update.detail",
+        ]
         + indices.map { "macarchy.space.\($0)" }
       let items = names.map { "\"\($0)\"" }.joined(separator: ",")
       return ProcessResult(
@@ -1074,7 +1125,24 @@ struct SketchyBarRuntimeTests {
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "events"]):
       return ProcessResult(
         terminationStatus: 0,
-        output: #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16}}"#)
+        output:
+          #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16},"mouse.entered":{"bit":32},"mouse.exited":{"bit":64},"mouse.exited.global":{"bit":128}}"#
+      )
+    case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.update"]):
+      let item = itemJSON(
+        name: "macarchy.update", drawing: "off", position: "right",
+        script: fixture.state.appending(path: "desktop/sketchybar/current/plugins/update.sh").path,
+        updateFrequency: 60, updateMask: 233, updates: "on")
+      return .init(
+        terminationStatus: 0,
+        output: String(item.dropLast())
+          + ",\"popup\":{\"drawing\":\"off\",\"items\":[\"macarchy.update.detail\"]}}")
+    case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.update.detail"]):
+      return .init(
+        terminationStatus: 0,
+        output: itemJSON(
+          name: "macarchy.update.detail", drawing: "on", position: "popup",
+          label: "Last update check failed", labelDrawing: "on"))
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.clock"]):
       return ProcessResult(
         terminationStatus: 0,

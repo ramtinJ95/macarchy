@@ -23,7 +23,9 @@ struct SketchyBarCalendar {
     return displays.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) == 0 }
   }
 
-  func execute(sender: String, position: String, format: String) throws {
+  func execute(sender: String, position: String, format: String, updateIndicator: Bool = false)
+    throws
+  {
     guard ["auto", "left", "center", "right"].contains(position), format.hasPrefix("+") else {
       throw CalendarError.invalidInvocation
     }
@@ -45,12 +47,20 @@ struct SketchyBarCalendar {
       try Double(previewDeadline()) > uptime() * 1000
       ? "Week \(date("+%V"))"
       : date(compact ? format.replacingOccurrences(of: "  %H", with: " %H") : format)
-    try bar([
+    var arguments = [
       "--set", "macarchy.clock", "position=\(actualPosition)",
       "padding_left=\(compact ? 6 : 8)", "padding_right=\(compact ? 2 : 8)",
       "label.padding_left=\(compact ? 1 : 3)", "label.padding_right=\(compact ? 1 : 3)",
       "label=\(label)",
-    ])
+    ]
+    if updateIndicator {
+      // Right-side items are laid out in reverse order; keep the indicator visually right of the clock.
+      arguments += [
+        "--set", SketchyBarUpdateIndicator.item, "position=\(actualPosition)",
+        "--move", SketchyBarUpdateIndicator.item, compact ? "before" : "after", "macarchy.clock",
+      ]
+    }
+    try bar(arguments)
   }
 
   private func previewDeadline() throws -> UInt64 {
@@ -90,6 +100,7 @@ extension Desktop {
     @Option var sender = "forced"
     @Option var position: String
     @Option var format: String
+    @Flag var updateIndicator = false
 
     mutating func run() throws {
       try SketchyBarCalendar(
@@ -97,7 +108,7 @@ extension Desktop {
         hasExternalDisplay: SketchyBarCalendar.externalDisplayPresent,
         uptime: { ProcessInfo.processInfo.systemUptime }, sleep: Thread.sleep(forTimeInterval:)
       )
-      .execute(sender: sender, position: position, format: format)
+      .execute(sender: sender, position: position, format: format, updateIndicator: updateIndicator)
     }
   }
 }
