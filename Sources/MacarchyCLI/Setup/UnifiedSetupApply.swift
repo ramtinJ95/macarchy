@@ -168,12 +168,17 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     packageApproval: String? = nil,
     preferencesApproval: String? = nil,
     adoptions: UnifiedSetupAdoptionApprovals = .none,
+    reviewedPlan: String? = nil,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
     let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
     do {
       try SetupPackageInstallationStore(context: context).requireResolved()
       if try transactionStore.read() != nil {
+        if reviewedPlan != nil {
+          throw UnifiedSetupTransactionError.recoveryRequired(
+            "Interrupted setup requires explicit recovery, not menu apply.")
+        }
         return try await recoverInterrupted(
           context: context,
           consumerPaths: consumerPaths,
@@ -212,6 +217,10 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       )
     }
     do {
+      if let reviewedPlan, try plan.approvalText() != reviewedPlan {
+        throw EnvironmentLifecycleError.blocked(
+          "The reviewed setup plan changed; review it again before applying.")
+      }
       try adoptions.validate(required: plan.adoption)
       let starterApprovals = Dictionary(
         uniqueKeysWithValues: plan.nativeStarters.map {

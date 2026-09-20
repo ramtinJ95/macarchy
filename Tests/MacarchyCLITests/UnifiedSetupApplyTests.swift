@@ -7,6 +7,122 @@ import Testing
 @testable import ThemeCore
 
 struct UnifiedSetupApplyTests {
+  @Test(arguments: [false, true])
+  func menuReviewAuthorizesPackagesAndPreferencesOnlyAfterConsent(confirm: Bool) async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try fixture.activateSetupOwnedTheme()
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try "schema_version = 1\n[macos_preferences]\nenabled = true\ndock_autohide = true\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    let inventory = try InventoryFixture()
+    defer { inventory.cleanup() }
+    let installed = Mutex(false)
+    let os = PreferencesTests.MemoryPreferences()
+    let runner = fixture.runner(
+      available: { _ in true }, preferences: .init(native: os.native),
+      packages: try SetupBrewfile.parse("brew 'jq'\n"),
+      inventory: {
+        inventory.reader(formulae: installed.withLock { $0 } ? "jq" : "", casks: "").read()
+      },
+      installer: .init(apply: { url, _ in
+        #expect(confirm)
+        #expect(try String(contentsOf: url, encoding: .utf8) == "brew \"jq\"\n")
+        try inventory.formula("jq", tap: "homebrew/core")
+        installed.withLock { $0 = true }
+        return .init(status: 0, diagnostic: "")
+      }),
+      theme: { _, _ in
+        Issue.record("No theme change reviewed")
+        return try applyComponent("{}")
+      },
+      desktop: { _, _, _, _, _ in
+        Issue.record("No desktop change reviewed")
+        return try applyComponent("{}")
+      },
+      environment: { _, _, _, _, _ in
+        Issue.record("No environment change reviewed")
+        return try applyComponent("{}")
+      })
+    let plan = try runner.planner.prepare(context: fixture.context).report
+    #expect(plan.packageInstallation?.approvalDigest != nil)
+    #expect(try plan.preferencesApprovalDigest != nil)
+    let result = try await MenuSetupReview(
+      runner: runner,
+      io: .init(read: { confirm ? "y" : "n" }, write: { _ in })
+    ).execute(
+      context: fixture.context, consumerPaths: testConsumerPaths())
+    #expect(result.succeeded, "\(result.output)")
+    #expect(installed.withLock { $0 } == confirm)
+    #expect(os.state.withLock { $0.writes } == (confirm ? [.dockAutohide] : []))
+  }
+
+  @Test(arguments: ["no", "stale", "apply", "failure", "recovery"])
+  func menuReviewUsesExactPlanAndNeverInfersRecovery(mode: String) async throws {
+    let fixture = try ApplyFixture()
+    defer { fixture.cleanup() }
+    try "schema_version = 1\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    let calls = Mutex([String]())
+    let output = Mutex("")
+    let runner = fixture.runner(
+      available: { _ in true },
+      requiredAdoptions: .init(
+        yabai: "reviewed-yabai", keybindings: nil, sketchybar: nil, environment: nil),
+      plannedStages: [.desktop],
+      theme: { _, _ in
+        calls.withLock { $0.append("theme") }
+        return try applyComponent(
+          #"{"operation":"theme_set","outcome":"success","committed":true}"#)
+      },
+      desktop: { _, _, _, approvals, _ in
+        #expect(approvals.yabai == "reviewed-yabai")
+        calls.withLock { $0.append("desktop") }
+        return try applyComponent(
+          mode == "failure"
+            ? #"{"outcome":"failed","mutated":false}"# : #"{"outcome":"applied","mutated":true}"#,
+          succeeded: mode != "failure")
+      },
+      environment: { _, _, _, _, _ in
+        Issue.record("Unreviewed environment mutation")
+        return try applyComponent("{}")
+      })
+    let review = MenuSetupReview(
+      runner: runner,
+      io: .init(
+        read: {
+          if mode == "stale" {
+            do {
+              try fixture.writeMachineProfile(
+                "schema_version = 1\n[desktop]\nprovider = 'disabled'\n")
+            } catch { Issue.record(error) }
+          }
+          if mode == "recovery" {
+            do {
+              try UnifiedSetupTransactionStore(stateRoot: fixture.state).write(
+                .init(
+                  operation: .apply, stages: [.desktop], desiredAppearance: .dark,
+                  contextDigest: "sha256:" + String(repeating: "a", count: 64)))
+            } catch { Issue.record(error) }
+          }
+          return mode == "no" ? "n" : "y"
+        }, write: { value in output.withLock { $0 += value } }))
+    let execution = try await review.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths())
+    #expect(output.withLock { $0.contains("reviewed-yabai") })
+    if mode == "apply" || mode == "failure" {
+      #expect(calls.withLock { $0 } == ["theme", "desktop"])
+      #expect(execution.succeeded == (mode == "apply"), "\(execution.output)")
+    } else {
+      #expect(calls.withLock { $0.isEmpty })
+      #expect(execution.succeeded == (mode == "no"))
+    }
+    if mode == "recovery" {
+      #expect(
+        try UnifiedSetupTransactionStore(stateRoot: fixture.state).read()?.stages == [.desktop])
+      try UnifiedSetupTransactionStore(stateRoot: fixture.state).remove()
+    }
+  }
+
   @Test
   func cleanApplyUsesOneLayeredModelAndRunsStagesInOrder() async throws {
     let fixture = try ApplyFixture()
