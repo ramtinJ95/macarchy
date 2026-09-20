@@ -78,6 +78,7 @@ struct ActionMenuTests {
   @Test(arguments: [
     (ActionMenuAction.appearance, ["theme", "browse"]),
     (.keybindings, ["keybindings", "show", "--effective"]),
+    (.screenshot, ["capture", "screenshot", "--alert-on-error"]),
   ])
   func launchUsesExactExecutableAndShortcutArguments(
     action: ActionMenuAction, arguments: [String]
@@ -126,6 +127,9 @@ struct ActionMenuTests {
     #expect(state.selectedAction == nil)
     state.search("shortcuts")
     #expect(state.selectedAction == .keybindings)
+    state.search("capture clipboard")
+    #expect(state.selectedAction == .screenshot)
+    #expect(state.actions.count == 1)
     state.select(row: -1)
     #expect(state.selectedAction == nil)
     state.search("")
@@ -146,5 +150,8 @@ struct ActionMenuTests {
     #expect(KeybindingsPopupRow(menu).category == "Macarchy")
     #expect(bindings.contains { $0.binding.command == "macarchy keybindings show --effective" })
     #expect(bindings.contains { $0.binding.command == "macarchy theme browse" })
+    let capture = try #require(bindings.first { $0.binding.identity == "ctrl+alt-c" })
+    #expect(capture.binding.command == "macarchy capture screenshot --alert-on-error")
+    #expect(KeybindingsPopupRow(capture).category == "Capture")
   }
 }

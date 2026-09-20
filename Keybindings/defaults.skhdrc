@@ -58,3 +58,4 @@ alt - a : open -a 'kitty'
 cmd - k : macarchy keybindings show --effective
 cmd + shift - t : macarchy theme browse
 ctrl + alt - space : macarchy menu
+ctrl + alt - c : macarchy capture screenshot --alert-on-error
