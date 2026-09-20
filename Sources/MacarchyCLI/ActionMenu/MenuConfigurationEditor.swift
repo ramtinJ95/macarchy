@@ -26,10 +26,10 @@ enum MenuConfigurationAction: String, CaseIterable, ExpressibleByArgument, Senda
     }
   }
 
-  var profileSection: String? {
+  var desktopProvider: DesktopPersonalProvider? {
     switch self {
-    case .desktop: "yabai"
-    case .bar: "sketchybar"
+    case .desktop: .yabai
+    case .bar: .sketchybar
     default: nil
     }
   }
@@ -44,9 +44,9 @@ enum MenuConfigurationAction: String, CaseIterable, ExpressibleByArgument, Senda
     case .zsh:
       "Native zsh edits affect new shells. Macarchy does not source arbitrary shell code on save."
     case .desktop:
-      "Managed yabai settings: save preserves your profile; reviewed desktop apply is required for live changes."
+      MenuDesktopConfiguration.notice(.yabai)
     case .bar:
-      "Managed SketchyBar settings: save preserves your profile; reviewed desktop apply is required for live changes."
+      MenuDesktopConfiguration.notice(.sketchybar)
     }
   }
 }
@@ -66,11 +66,17 @@ struct MenuConfigurationEditor: ParsableCommand {
       let home = FileManager.default.homeDirectoryForCurrentUser
       let context = profiles.context(stateRoot: home.appending(path: ".config/macarchy"))
       let selected: URL?
-      if let provider = action.nativeProvider {
+      let desktopSession: MenuDesktopEditSession?
+      if let provider = action.desktopProvider {
+        desktopSession = try MenuDesktopConfiguration(provider: provider, context: context)
+          .prepareForEditing()
+        selected = desktopSession?.target
+      } else if let provider = action.nativeProvider {
+        desktopSession = nil
         selected = try MenuNativeConfigurationSetup(provider: provider, context: context)
           .prepareForEditing()
       } else {
-        selected = try Self.target(action, context: context)
+        throw ValidationError("No configuration provider for \(action.rawValue)")
       }
       guard let target = selected else { return }
       let notice = try Self.notice(action, context: context)
@@ -84,8 +90,7 @@ struct MenuConfigurationEditor: ParsableCommand {
       let script = temporary.appending(path: "editor.lua")
       try MenuProfileEditor.script(
         target: target,
-        section: try Self.usesManagedProfile(action, context: context)
-          ? action.rawValue : action.profileSection,
+        section: try Self.usesManagedProfile(action, context: context) ? action.rawValue : nil,
         executableURL: RuntimeEnvironment.live.executableURL,
         notice: notice,
         saveArguments: ["_menu-config-validate", action.rawValue, target.path]
@@ -99,6 +104,7 @@ struct MenuConfigurationEditor: ParsableCommand {
       guard editor.terminationReason == .exit, editor.terminationStatus == 0 else {
         throw ValidationError("Neovim exited with status \(editor.terminationStatus)")
       }
+      if let result = try desktopSession?.finish() { print(result.message) }
     } catch {
       print("Could not edit \(action.title): \(error)\nPress Enter to close.")
       _ = readLine()
@@ -145,8 +151,11 @@ struct MenuConfigurationEditor: ParsableCommand {
     _ action: MenuConfigurationAction, context: UnifiedSetupPlanContext,
     io: GuidedSetupIO = .live
   ) throws -> URL? {
+    guard let provider = action.nativeProvider else {
+      throw ValidationError("Desktop configuration requires a reviewed editor session")
+    }
     let layered = try MenuNativeProfileEdit.load(context)
-    if let provider = action.nativeProvider, try !usesManagedProfile(action, context: context) {
+    if try !usesManagedProfile(action, context: context) {
       let source = try EnvironmentConfigurationSourceResolver(
         homeDirectory: context.homeDirectory,
         stateRoot: context.stateRoot
@@ -157,7 +166,7 @@ struct MenuConfigurationEditor: ParsableCommand {
       }
       return URL(filePath: physical)
     }
-    let section = action.profileSection ?? action.rawValue
+    let section = action.rawValue
     let origins = Set(layered.fieldOrigins.filter { $0.key.hasPrefix(section + ".") }.map(\.value))
     let layer: PortableProfileLayerKind
     if origins.count > 1 {

@@ -7,6 +7,265 @@ import Testing
 @testable import ThemeCore
 
 struct DesktopApplyCommandTests {
+  @Test(arguments: [0, 1, 2])
+  func personalYabaiReviewsConnectionAndActivatesOnlyOnExit(approvals: Int) throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let physicalProfile = fixture.root.appending(path: "dotfiles.toml")
+    try FileManager.default.moveItem(at: fixture.profile, to: physicalProfile)
+    try FileManager.default.createSymbolicLink(
+      at: fixture.profile, withDestinationURL: physicalProfile)
+    let lifecycle = YabaiLifecycleFixture(running: true)
+    let bar = SketchyBarPublicLifecycleFixture()
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      sketchyBarLifecycle: bar.controller, keybindings: nil, prerequisites: .assumed, theme: nil)
+    #expect(
+      try runner.execute(
+        resourcesRoot: fixture.resources, profileURL: fixture.profile,
+        profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
+        adopt: nil, json: true, scope: .yabaiOnly
+      ).succeeded)
+    let original = try String(contentsOf: fixture.profile, encoding: .utf8)
+    let generation = YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID
+    lifecycle.calls.withLock { $0 = [] }
+    let answers = Mutex(Array(repeating: "y", count: approvals) + ["n"])
+    let context = Self.personalContext(
+      root: fixture.root, home: fixture.home, state: fixture.state,
+      profile: fixture.profile, resources: fixture.resources)
+    let setup = MenuDesktopConfiguration(
+      provider: .yabai, context: context,
+      io: GuidedSetupIO(read: { answers.withLock { $0.removeFirst() } }, write: { _ in }))
+    let session = try setup.prepareForEditing()
+    let source = fixture.root.appending(path: "overrides/yabai.sh")
+    #expect(FileManager.default.fileExists(atPath: source.path) == (approvals > 0))
+    #expect(lifecycle.calls.withLock { $0.isEmpty })
+    #expect(bar.calls.withLock { $0.isEmpty })
+    #expect(YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID == generation)
+    if approvals < 2 {
+      #expect(session == nil)
+      #expect(try String(contentsOf: fixture.profile, encoding: .utf8) == original)
+      return
+    }
+    let selected = try #require(session)
+    #expect(selected.target == source)
+    try "\"$YABAI\" -m config window_gap 123\n".write(to: source, atomically: true, encoding: .utf8)
+    #expect(try selected.finish(runner: runner)?.changed == true)
+    #expect(lifecycle.calls.withLock { $0.filter { $0 == "restart" }.count } == 1)
+    #expect(bar.calls.withLock { $0.isEmpty })
+    let reopened = try #require(try setup.prepareForEditing())
+    lifecycle.calls.withLock { $0 = [] }
+    #expect(try reopened.finish(runner: runner) == nil)
+    try "if then\n".write(to: source, atomically: true, encoding: .utf8)
+    let active = YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID
+    #expect(throws: (any Error).self) { try reopened.finish(runner: runner) }
+    #expect(lifecycle.calls.withLock { $0.isEmpty })
+    #expect(YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID == active)
+    #expect(try String(contentsOf: source, encoding: .utf8) == "if then\n")
+    let repair = try #require(try setup.prepareForEditing())
+    try "\"$YABAI\" -m config layout stack\n".write(to: source, atomically: true, encoding: .utf8)
+    #expect(try repair.finish(runner: runner)?.changed == true)
+    #expect(bar.calls.withLock { $0.isEmpty })
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: fixture.profile.path)
+        == physicalProfile.path)
+    // Drift predating the editor must not ride along with a personal-file save.
+    try "schema_version = 1\n[yabai]\nwindow_gap = 99\n".write(
+      to: context.machineProfileURL, atomically: true, encoding: .utf8)
+    let drifted = try #require(try setup.prepareForEditing())
+    try "# another personal edit\n".write(to: source, atomically: true, encoding: .utf8)
+    lifecycle.calls.withLock { $0 = [] }
+    #expect(throws: (any Error).self) { try drifted.finish(runner: runner) }
+    #expect(lifecycle.calls.withLock { $0.isEmpty })
+  }
+
+  @Test(arguments: ["contents", "link"])
+  func changedLegacyHookCannotBeRetiredByStaleConsent(change: String) throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let hook = fixture.state.appending(path: "hook.sh")
+    let physical = fixture.state.appending(path: "original.sh")
+    let replacement = fixture.state.appending(path: "replacement.sh")
+    for file in [physical, replacement] {
+      try "# original hook\n".write(to: file, atomically: true, encoding: .utf8)
+    }
+    try FileManager.default.createSymbolicLink(at: hook, withDestinationURL: physical)
+    let profile =
+      "schema_version = 1\n[yabai]\nhook = \"hook.sh\"\n[top_bar]\nprovider = \"disabled\"\n"
+    try profile.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    let lifecycle = YabaiLifecycleFixture(running: true)
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil, prerequisites: .assumed, theme: nil)
+    #expect(
+      try runner.execute(
+        resourcesRoot: fixture.resources, profileURL: fixture.profile,
+        profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
+        adopt: nil, json: true, scope: .yabaiOnly
+      ).succeeded)
+    let generation = YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID
+    lifecycle.calls.withLock { $0 = [] }
+    let confirmations = Mutex(0)
+    let context = Self.personalContext(
+      root: fixture.root, home: fixture.home, state: fixture.state,
+      profile: fixture.profile, resources: fixture.resources)
+    let setup = MenuDesktopConfiguration(
+      provider: .yabai, context: context,
+      io: GuidedSetupIO(
+        read: {
+          let count = confirmations.withLock {
+            $0 += 1
+            return $0
+          }
+          if count == 2 {
+            do {
+              if change == "contents" {
+                try "# newly edited hook\n".write(to: physical, atomically: true, encoding: .utf8)
+              } else {
+                try FileManager.default.removeItem(at: hook)
+                try FileManager.default.createSymbolicLink(
+                  at: hook, withDestinationURL: replacement)
+              }
+            } catch { Issue.record("Fixture mutation failed: \(error)") }
+          }
+          return "y"
+        }, write: { _ in }))
+    #expect(throws: (any Error).self) { try setup.prepareForEditing() }
+    #expect(try String(contentsOf: fixture.profile, encoding: .utf8) == profile)
+    #expect(
+      try String(contentsOf: fixture.state.appending(path: "overrides/yabai.sh"), encoding: .utf8)
+        .contains("# original hook"))
+    #expect(YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID == generation)
+    #expect(lifecycle.calls.withLock { $0.isEmpty })
+  }
+
+  @Test(arguments: ["profile", "source", "generation"])
+  func personalYabaiSessionRejectsStaleInputs(change: String) throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let lifecycle = YabaiLifecycleFixture(running: true)
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil, prerequisites: .assumed, theme: nil)
+    #expect(
+      try runner.execute(
+        resourcesRoot: fixture.resources, profileURL: fixture.profile,
+        profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
+        adopt: nil, json: true, scope: .yabaiOnly
+      ).succeeded)
+    let context = Self.personalContext(
+      root: fixture.root, home: fixture.home, state: fixture.state,
+      profile: fixture.profile, resources: fixture.resources)
+    let session = try #require(
+      try MenuDesktopConfiguration(
+        provider: .yabai, context: context,
+        io: GuidedSetupIO(read: { "y" }, write: { _ in })
+      ).prepareForEditing())
+    try "# saved change\n".write(to: session.target, atomically: true, encoding: .utf8)
+    switch change {
+    case "profile":
+      try "schema_version = 1\n[yabai]\nwindow_gap = 17\n".write(
+        to: context.machineProfileURL, atomically: true, encoding: .utf8)
+    case "source":
+      let replacement = fixture.state.appending(path: "replacement.sh")
+      try "# other\n".write(to: replacement, atomically: true, encoding: .utf8)
+      try FileManager.default.removeItem(at: session.target)
+      try FileManager.default.createSymbolicLink(
+        at: session.target, withDestinationURL: replacement)
+    default:
+      _ = try runner.execute(
+        resourcesRoot: fixture.resources, profileURL: fixture.profile,
+        profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
+        adopt: nil, json: true, scope: .yabaiOnly)
+    }
+    lifecycle.calls.withLock { $0 = [] }
+    #expect(throws: (any Error).self) { try session.finish(runner: runner) }
+    #expect(lifecycle.calls.withLock { $0.isEmpty })
+  }
+
+  @Test(arguments: [false, true])
+  func personalBarUsesOnlyReloadAndRetainsSavedIntentOnRuntimeFailure(fails: Bool) throws {
+    let fixture = try SketchyBarPublicCommandFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let yabai = YabaiLifecycleFixture(running: false)
+    let nativeEvidence = SketchyBarCoreRuntimeInspection(
+      status: .partial,
+      message: "native integration verified", themeGenerationID: fixture.core.themeGenerationID,
+      barColor: fixture.core.barColor, items: ["macarchy.theme.ready", "personal.clock"],
+      nativeConfiguration: true)
+    let inspect: @Sendable (SketchyBarComposition) -> SketchyBarCoreRuntimeInspection = {
+      composition in
+      if !composition.nativeConfiguration { return fixture.core }
+      return fails ? .init(status: .drifted, message: "personal script failed") : nativeEvidence
+    }
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: yabai.controller,
+      sketchyBarLifecycle: fixture.lifecycle.controller,
+      sketchyBarCoreRuntime: .init(
+        inspect: inspect, settle: inspect, settleRestored: { _ in true }),
+      keybindings: nil, prerequisites: .assumed, theme: nil)
+    #expect(
+      try runner.execute(
+        resourcesRoot: fixture.resources, profileURL: fixture.profile,
+        profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
+        adopt: nil, json: true
+      ).succeeded)
+    let generation = SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().generationID
+    let context = Self.personalContext(
+      root: fixture.root, home: fixture.home, state: fixture.state,
+      profile: fixture.profile, resources: fixture.resources)
+    let session = try #require(
+      try MenuDesktopConfiguration(
+        provider: .sketchybar, context: context,
+        io: GuidedSetupIO(read: { "y" }, write: { _ in })
+      ).prepareForEditing())
+    let personal = "\"$SKETCHYBAR\" --remove macarchy.clock --add item personal.clock left\n"
+    try personal.write(to: session.target, atomically: true, encoding: .utf8)
+    fixture.lifecycle.calls.withLock { $0 = [] }
+    yabai.calls.withLock { $0 = [] }
+    if fails {
+      #expect(throws: (any Error).self) { try session.finish(runner: runner) }
+      #expect(
+        SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().generationID == generation
+      )
+    } else {
+      #expect(try session.finish(runner: runner)?.changed == true)
+      #expect(
+        SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().generationID != generation
+      )
+    }
+    #expect(try String(contentsOf: session.target, encoding: .utf8) == personal)
+    #expect(
+      try MenuNativeProfileEdit.load(context).profile.sketchyBar.configurationURL == session.source)
+    #expect(yabai.calls.withLock { $0.isEmpty })
+    let calls = fixture.lifecycle.calls.withLock { $0 }
+    #expect(calls.contains("reload"))
+    #expect(!calls.contains("start") && !calls.contains("stop"))
+    if !fails {
+      try "schema_version = 1\n[sketchybar]\nleft = []\n".write(
+        to: context.machineProfileURL, atomically: true, encoding: .utf8)
+      let drifted = try #require(
+        try MenuDesktopConfiguration(provider: .sketchybar, context: context)
+          .prepareForEditing())
+      try (personal + "# changed\n").write(to: session.target, atomically: true, encoding: .utf8)
+      fixture.lifecycle.calls.withLock { $0 = [] }
+      #expect(throws: (any Error).self) { try drifted.finish(runner: runner) }
+      #expect(fixture.lifecycle.calls.withLock { $0.isEmpty })
+    }
+  }
+
+  private static func personalContext(
+    root: URL, home: URL, state: URL, profile: URL,
+    resources: URL
+  ) -> UnifiedSetupPlanContext {
+    UnifiedSetupPlanContext(
+      themesRoot: root, keybindingsResourcesRoot: root,
+      desktopResourcesRoot: resources, environmentResourcesRoot: root,
+      profileURL: profile, profileRequired: true,
+      machineProfileURL: state.appending(path: "machine.toml"), machineProfileRequired: false,
+      stateRoot: state, homeDirectory: home)
+  }
+
   @Test(arguments: [false, true])
   func yabaiOnlyUpgradePreservesOtherProvidersAndRollsBackFailure(failsVerification: Bool) throws {
     let fixture = try DesktopApplyFixture()

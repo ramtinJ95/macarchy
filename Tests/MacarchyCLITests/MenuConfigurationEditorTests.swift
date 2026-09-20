@@ -105,32 +105,6 @@ struct MenuConfigurationEditorTests {
     }
   }
 
-  @Test func managedSettingsRespectLayerAndDoNotWriteGeneratedState() throws {
-    let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let context = context(fixture)
-    try "schema_version = 1\n[yabai]\nwindow_gap = 8\n"
-      .write(to: fixture.profile, atomically: true, encoding: .utf8)
-    let machine = fixture.root.appending(path: "personal-machine.toml")
-    try "schema_version = 1\n[sketchybar]\nautomatic_clock = true\n"
-      .write(to: machine, atomically: true, encoding: .utf8)
-    try FileManager.default.createSymbolicLink(
-      at: context.machineProfileURL, withDestinationURL: machine)
-    #expect(
-      try MenuConfigurationEditor.target(.desktop, context: context)?.path
-        == fixture.profile.resolvingSymlinksInPath().path)
-    #expect(
-      try MenuConfigurationEditor.target(.bar, context: context)?.path
-        == machine.resolvingSymlinksInPath().path)
-    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
-    try "schema_version = 1\n[yabai]\nwindow_gap = 8\n[sketchybar]\nleft = [\"spaces\"]\n"
-      .write(to: fixture.profile, atomically: true, encoding: .utf8)
-    let portable = try MenuConfigurationEditor.target(
-      .bar, context: context,
-      io: GuidedSetupIO(read: { "no" }, write: { _ in }))
-    #expect(portable?.path == fixture.profile.resolvingSymlinksInPath().path)
-  }
-
   @Test(arguments: [MenuConfigurationAction.starship, .atuin, .kitty, .zsh])
   func saveValidationIsReadOnlyAndReportsNativeLimits(action: MenuConfigurationAction) async throws
   {
