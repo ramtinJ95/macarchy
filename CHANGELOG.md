@@ -7,6 +7,14 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-20
+
+### Fixed
+
+- Give maintenance commands terminal foreground ownership so Review & apply and
+  Review & update wait for confirmation instead of immediately reporting closed
+  input. Restore terminal ownership before the result window's Enter dismissal.
+
 ## [0.12.0] - 2026-09-20
 
 ### Added
