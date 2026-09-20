@@ -7,6 +7,25 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-19
+
+### Fixed
+
+- Configure keybindings now edits personal skhd commands rather than the profile's
+  disabled list, with reviewed first connection and keybinding-only save/reload.
+- Configure Desktop and Bar now open personal shell configurations that can
+  override shipped defaults. Successful editor exit validates and restarts only
+  yabai or reloads only SketchyBar; ordinary saves do not execute shell code.
+- Reject unrelated pending settings and stale hook consent during scoped native
+  configuration changes. Preserve saved edits on validation or runtime failure.
+
+### Known limitations
+
+- First connections require review; upgrading does not create personal files or
+  restart providers. Native behavior is only partially observable, while theme,
+  readiness and permission checks remain explicit. SketchyBar theme reloads also
+  re-execute personal code. Live editor/provider acceptance remains pending.
+
 ## [0.11.0] - 2026-09-19
 
 ### Added
