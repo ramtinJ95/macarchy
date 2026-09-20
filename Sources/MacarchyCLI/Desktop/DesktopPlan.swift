@@ -279,6 +279,8 @@ struct DesktopPlanCommandRunner: Sendable {
         moduleCapabilities: sketchyBarComposition.map(Self.moduleCapabilities),
         hook: sketchyBarComposition?.hookURL?.path,
         hookDigest: sketchyBarComposition?.hookDigest,
+        behaviorAuthority: sketchyBarComposition?.nativeConfiguration == true
+          ? "personal_configuration" : "managed",
         renderedArtifacts: sketchyBarComposition.map {
           Dictionary(uniqueKeysWithValues: $0.artifacts.map { ($0.path, $0.contents) })
         },
@@ -299,6 +301,8 @@ struct DesktopPlanCommandRunner: Sendable {
       packagedDefaults: resourcesRoot.appending(path: "yabai/defaults.toml").path,
       hook: yabaiComposition?.hookURL?.path,
       hookDigest: yabaiComposition?.hookDigest,
+      behaviorAuthority: yabaiComposition?.nativeConfigurationDigest != nil
+        ? "personal_configuration" : "managed",
       settings: yabaiComposition?.settings,
       renderedYabairc: yabaiComposition?.renderedConfiguration,
       renderedDigest: yabaiComposition?.renderedDigest,
@@ -508,6 +512,7 @@ private struct DesktopPlanReport: Encodable {
   let packagedDefaults: String
   let hook: String?
   let hookDigest: String?
+  let behaviorAuthority: String
   let settings: YabaiSettings?
   let renderedYabairc: String?
   let renderedDigest: String?
@@ -529,10 +534,11 @@ private struct DesktopPlanReport: Encodable {
       "- desktop provider: \(desktopProvider ?? "unavailable")",
       "- top-bar provider: \(topBarProvider ?? "unavailable")",
       "- packaged yabai defaults: \(packagedDefaults)",
-      "- trusted yabai hook: \(hook ?? "none")",
+      "- behavior authority: \(behaviorAuthority)",
+      "- trusted yabai \(behaviorAuthority == "managed" ? "hook" : "personal configuration"): \(hook ?? "none")",
       "- hook digest: \(hookDigest ?? "none")",
-      "- effective layout: \(settings?.layout ?? "unavailable")",
-      "- effective window gap: \(settings.map { String($0.windowGap) } ?? "unavailable")",
+      "- \(behaviorAuthority == "managed" ? "effective" : "before personal input") layout: \(settings?.layout ?? "unavailable")",
+      "- \(behaviorAuthority == "managed" ? "effective" : "before personal input") window gap: \(settings.map { String($0.windowGap) } ?? "unavailable")",
       "- proposed input digest: \(proposedInputDigest ?? "unavailable")",
       "- rendered digest: \(renderedDigest ?? "unavailable")",
       "- current generation [\(currentGenerationStatus)]: \(currentGenerationID ?? "none")",
@@ -594,6 +600,7 @@ private struct DesktopPlanReport: Encodable {
     case packagedDefaults = "packaged_defaults"
     case hook
     case hookDigest = "hook_digest"
+    case behaviorAuthority = "behavior_authority"
     case settings
     case renderedYabairc = "rendered_yabairc"
     case renderedDigest = "rendered_digest"
@@ -617,6 +624,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
   let moduleCapabilities: [String: String]?
   let hook: String?
   let hookDigest: String?
+  let behaviorAuthority: String
   let renderedArtifacts: [String: String]?
   let renderedDigest: String?
   let proposedInputDigest: String?
@@ -628,13 +636,14 @@ private struct DesktopSketchyBarPlanReport: Encodable {
   var humanLines: [String] {
     [
       "- packaged SketchyBar defaults: \(packagedDefaults)",
+      "- SketchyBar behavior authority: \(behaviorAuthority); module fields describe the baseline before personal input",
       "- SketchyBar left modules: \(modules(layout?.left))",
       "- SketchyBar center modules: \(modules(layout?.center))",
       "- SketchyBar right modules: \(modules(layout?.right))",
       "- SketchyBar automatic clock placement: \(automaticClock.map { $0 ? "on" : "off" } ?? "unavailable")",
       "- SketchyBar Space module: \(spaceModule ?? "unavailable")",
       "- SketchyBar optional module capabilities: \(capabilities)",
-      "- trusted SketchyBar hook: \(hook ?? "none")",
+      "- trusted SketchyBar \(behaviorAuthority == "managed" ? "hook" : "personal configuration"): \(hook ?? "none")",
       "- SketchyBar hook digest: \(hookDigest ?? "none")",
       "- SketchyBar proposed input digest: \(proposedInputDigest ?? "unavailable")",
       "- SketchyBar rendered digest: \(renderedDigest ?? "unavailable")",
@@ -673,6 +682,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
     case moduleCapabilities = "module_capabilities"
     case hook
     case hookDigest = "hook_digest"
+    case behaviorAuthority = "behavior_authority"
     case renderedArtifacts = "rendered_artifacts"
     case renderedDigest = "rendered_digest"
     case proposedInputDigest = "proposed_input_digest"

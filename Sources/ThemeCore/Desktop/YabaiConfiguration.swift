@@ -55,6 +55,12 @@ package struct YabaiComposition: Equatable, Sendable {
   package let renderedConfiguration: String
   package let renderedDigest: String
   package let inputDigest: String
+  package let baselineInputDigest: String
+  package let nativeConfigurationDigest: String?
+
+  package var nativeReadyLabel: String? {
+    nativeConfigurationDigest.map { "macarchy-native-" + $0 }
+  }
 }
 
 package enum YabaiConfigurationError: Error, CustomStringConvertible, Sendable {
@@ -84,7 +90,8 @@ package struct YabaiConfigurationComposer: Sendable {
   package func compose(
     defaultsURL: URL,
     profile: PortableProfile,
-    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy")
+    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy"),
+    includePersonalConfiguration: Bool = true
   ) throws -> YabaiComposition {
     let defaults = try loadDefaults(at: defaultsURL)
     let options = profile.desktop.yabai
@@ -106,32 +113,46 @@ package struct YabaiConfigurationComposer: Sendable {
       externalBarHeight: defaults.externalBarHeight,
       rules: defaults.rules
     )
-    let hook = try options.hookURL.map(readHook)
+    guard options.configurationURL == nil || options.hookURL == nil else {
+      throw YabaiConfigurationError.invalid(
+        options.configurationURL!, "select configuration or legacy hook, not both")
+    }
+    let configurationURL = includePersonalConfiguration ? options.configurationURL : nil
+    let hook = try (configurationURL ?? options.hookURL).map(readHook)
+    let nativeDigest = configurationURL == nil ? nil : hook?.digest
+    if let source = options.configurationURL, let hook {
+      try DesktopShellSyntax.validate(hook.text, source: source)
+    }
     let rendered = render(
       settings: settings,
       topBarEnabled: profile.topBar == .sketchybar,
       hook: hook?.text,
+      nativeDigest: nativeDigest,
       macarchyExecutablePath: macarchyExecutableURL.standardizedFileURL.path
     )
     let renderedDigest = sha256Digest(Data(rendered.utf8))
-    let input = YabaiInputIdentity(
+    var input = YabaiInputIdentity(
       schemaVersion: 1,
       desktopProvider: profile.desktop.provider.rawValue,
       topBarProvider: profile.topBar.rawValue,
       settings: settings,
-      hookDigest: hook?.digest,
+      hookDigest: nativeDigest.map { "native:" + $0 } ?? hook?.digest,
       macarchyExecutablePath: macarchyExecutableURL.standardizedFileURL.path
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    let inputDigest = sha256Digest(try encoder.encode(input))
+    input.hookDigest = nil
     return YabaiComposition(
       settings: settings,
       externalBarEnabled: profile.topBar == .sketchybar,
-      hookURL: options.hookURL,
+      hookURL: configurationURL ?? options.hookURL,
       hookDigest: hook?.digest,
       renderedConfiguration: rendered,
       renderedDigest: renderedDigest,
-      inputDigest: sha256Digest(try encoder.encode(input))
+      inputDigest: inputDigest,
+      baselineInputDigest: sha256Digest(try encoder.encode(input)),
+      nativeConfigurationDigest: nativeDigest
     )
   }
 
@@ -259,6 +280,7 @@ package struct YabaiConfigurationComposer: Sendable {
     settings: YabaiSettings,
     topBarEnabled: Bool,
     hook: String?,
+    nativeDigest: String?,
     macarchyExecutablePath: String
   ) -> String {
     let command = #""$YABAI" -m config"#
@@ -297,13 +319,22 @@ package struct YabaiConfigurationComposer: Sendable {
       }.joined(separator: " ")
       return "\"$YABAI\" -m rule --add \(selectors) manage=off"
     }
+    if let nativeDigest, let hook {
+      lines += [
+        "", "# Personal behavior runs after defaults; integration is installed only on success.",
+        "(", "set -e", hook, ")",
+        "MACARCHY_NATIVE_STATUS=$?",
+        "[ \"$MACARCHY_NATIVE_STATUS\" -eq 0 ] || exit \"$MACARCHY_NATIVE_STATUS\"",
+        "\"$YABAI\" -m signal --add event=application_launched label=macarchy-native-\(nativeDigest) action=true || exit $?",
+      ]
+    }
     lines += [
       "",
       "# Reconcile canonical wallpaper when an inactive Space becomes active.",
       #""$YABAI" -m signal --remove macarchy-wallpaper >/dev/null 2>&1 || true"#,
       "\"$YABAI\" -m signal --add event=space_changed label=macarchy-wallpaper action=\(Self.shellLiteral("\(macarchyExecutablePath) reconcile wallpaper"))",
     ]
-    if let hook {
+    if nativeDigest == nil, let hook {
       lines += ["", "# Begin trusted user hook."]
       lines.append(hook.hasSuffix("\n") ? String(hook.dropLast()) : hook)
       lines.append("# End trusted user hook.")
@@ -328,7 +359,7 @@ private struct YabaiInputIdentity: Encodable {
   let desktopProvider: String
   let topBarProvider: String
   let settings: YabaiSettings
-  let hookDigest: String?
+  var hookDigest: String?
   let macarchyExecutablePath: String
 
   enum CodingKeys: String, CodingKey {

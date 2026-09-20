@@ -10,6 +10,7 @@ package struct SketchyBarGenerationManifest: Codable, Equatable, Sendable {
   package let generationID: String
   package let inputDigest: String
   package let renderedDigest: String
+  package let baselineInputDigest: String?
   package let artifacts: [String: String]
 
   package init(generationID: String, composition: SketchyBarComposition) {
@@ -18,6 +19,7 @@ package struct SketchyBarGenerationManifest: Codable, Equatable, Sendable {
     self.generationID = generationID
     inputDigest = composition.inputDigest
     renderedDigest = composition.renderedDigest
+    baselineInputDigest = composition.baselineInputDigest
     artifacts = Dictionary(
       uniqueKeysWithValues: composition.artifacts.map { ($0.path, $0.digest) }
     )
@@ -29,6 +31,7 @@ package struct SketchyBarGenerationManifest: Codable, Equatable, Sendable {
     case generationID = "generation_id"
     case inputDigest = "input_digest"
     case renderedDigest = "rendered_digest"
+    case baselineInputDigest = "baseline_input_digest"
     case artifacts
   }
 }

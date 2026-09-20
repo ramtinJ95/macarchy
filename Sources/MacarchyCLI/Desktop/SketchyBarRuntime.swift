@@ -24,6 +24,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
   let mediaStatePresent: Bool?
   let appleStatePresent: Bool?
   let toggleStatePresent: Bool?
+  let nativeConfiguration: Bool?
 
   static let wifiItems = [
     "macarchy.wifi", "macarchy.wifi.up", "macarchy.wifi.down",
@@ -45,7 +46,8 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     wifiStatePresent: Bool = false,
     mediaStatePresent: Bool = false,
     appleStatePresent: Bool = false,
-    toggleStatePresent: Bool = false
+    toggleStatePresent: Bool = false,
+    nativeConfiguration: Bool? = nil
   ) {
     schemaVersion = 1
     self.status = status
@@ -62,6 +64,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     self.mediaStatePresent = mediaStatePresent
     self.appleStatePresent = appleStatePresent
     self.toggleStatePresent = toggleStatePresent
+    self.nativeConfiguration = nativeConfiguration
   }
 
   var isValidEvidence: Bool {
@@ -81,6 +84,13 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
       Set(spaceIndices).count == spaceIndices.count,
       spaceIndices.allSatisfy({ (1..<UInt32.bitWidth).contains($0) })
     else { return false }
+    if nativeConfiguration == true {
+      return status == .partial && items.contains(SketchyBarConfigurationComposer.readyItem)
+        && spaceIndices.isEmpty && !clockLabelPresent && volumeLevelPresent != true
+        && batteryStatePresent != true && (metricModules ?? []).isEmpty
+        && wifiStatePresent != true && mediaStatePresent != true
+        && appleStatePresent != true && toggleStatePresent != true
+    }
     let hasClock = items.contains("macarchy.clock")
     guard hasClock == clockLabelPresent else { return false }
     let hasVolume = items.contains("macarchy.volume")
@@ -150,6 +160,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
 
   func agreesWithProviderRuntime(_ current: Self) -> Bool {
     status == current.status
+      && (nativeConfiguration ?? false) == (current.nativeConfiguration ?? false)
       && items == current.items
       && spaceIndices == current.spaceIndices
       && clockLabelPresent == current.clockLabelPresent
@@ -188,6 +199,7 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
     case mediaStatePresent = "media_state_present"
     case appleStatePresent = "apple_state_present"
     case toggleStatePresent = "toggle_state_present"
+    case nativeConfiguration = "native_configuration"
   }
 }
 
@@ -422,10 +434,53 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     return false
   }
 
+  private func probeNative(palette: (generationID: String, color: String)) throws
+    -> SketchyBarCoreRuntimeInspection
+  {
+    let bar: SketchyBarBarQuery = try query(
+      control: Self.controlURL, arguments: ["--query", "bar"], timeout: 0.1)
+    let ready: SketchyBarItemQuery = try query(
+      control: Self.controlURL,
+      arguments: ["--query", SketchyBarConfigurationComposer.readyItem], timeout: 0.1)
+    guard bar.drawing == "on", bar.color.lowercased() == palette.color,
+      ready.name == SketchyBarConfigurationComposer.readyItem,
+      ready.type == "item", ready.geometry.drawing == "off",
+      ready.geometry.position == "right"
+    else {
+      return drifted(
+        "personal bar configuration is incomplete or its theme integration drifted",
+        palette: palette, items: bar.items.sorted(), spaceIndices: [])
+    }
+    let final: SketchyBarBarQuery = try query(
+      control: Self.controlURL, arguments: ["--query", "bar"], timeout: 0.1)
+    guard final.items.sorted() == bar.items.sorted(), final.drawing == bar.drawing,
+      final.color == bar.color
+    else {
+      return drifted(
+        "personal bar changed during verification",
+        palette: palette, items: final.items.sorted(), spaceIndices: [])
+    }
+    let evidence = SketchyBarCoreRuntimeInspection(
+      status: .partial,
+      message:
+        "personal configuration completed; canonical bar color and readiness verified; personal layout and item behavior are not fully inspectable",
+      themeGenerationID: palette.generationID, barColor: palette.color,
+      items: bar.items.sorted(), nativeConfiguration: true)
+    guard evidence.isValidEvidence else {
+      return drifted(
+        "personal bar inventory exceeds supported evidence bounds",
+        palette: palette, items: bar.items.sorted(), spaceIndices: [])
+    }
+    return evidence
+  }
+
   private func probe(
     _ composition: SketchyBarComposition
   ) throws -> SketchyBarCoreRuntimeInspection {
     let palette = try activePalette()
+    if composition.nativeConfiguration {
+      return try probeNative(palette: palette)
+    }
     let spaceIndices = try expectedSpaceIndices(composition.spaceModule)
     let expectedItems = expectedItemNames(
       layout: composition.layout,

@@ -10,13 +10,18 @@ package struct YabaiGenerationManifest: Codable, Equatable, Sendable {
   package let generationID: String
   package let inputDigest: String
   package let renderedDigest: String
+  package let baselineInputDigest: String?
 
-  package init(generationID: String, inputDigest: String, renderedDigest: String) {
+  package init(
+    generationID: String, inputDigest: String, renderedDigest: String,
+    baselineInputDigest: String? = nil
+  ) {
     schemaVersion = Self.schemaVersion
     rendererVersion = Self.rendererVersion
     self.generationID = generationID
     self.inputDigest = inputDigest
     self.renderedDigest = renderedDigest
+    self.baselineInputDigest = baselineInputDigest
   }
 
   enum CodingKeys: String, CodingKey {
@@ -25,6 +30,7 @@ package struct YabaiGenerationManifest: Codable, Equatable, Sendable {
     case generationID = "generation_id"
     case inputDigest = "input_digest"
     case renderedDigest = "rendered_digest"
+    case baselineInputDigest = "baseline_input_digest"
   }
 }
 
@@ -203,7 +209,8 @@ package struct YabaiGenerationActivator: Sendable {
     let manifest = YabaiGenerationManifest(
       generationID: generationID,
       inputDigest: composition.inputDigest,
-      renderedDigest: composition.renderedDigest
+      renderedDigest: composition.renderedDigest,
+      baselineInputDigest: composition.baselineInputDigest
     )
     let providerRoot = stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
     let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)

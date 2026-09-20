@@ -123,6 +123,17 @@ struct YabaiLifecycleController: Sendable {
   }
 
   private static func inspectLive(_ composition: YabaiComposition) -> YabaiRuntimeInspection {
+    inspectRuntime(
+      composition, processEvidence: settledProcessEvidence,
+      accessibility: requireAccessibilityEvidence, query: { try run(arguments: $0) })
+  }
+
+  static func inspectRuntime(
+    _ composition: YabaiComposition,
+    processEvidence: () throws -> (processID: Int32, executablePath: String)?,
+    accessibility: () throws -> Void,
+    query: ([String]) throws -> ProcessResult
+  ) -> YabaiRuntimeInspection {
     var expected: [(String, String)] = [
       ("layout", composition.settings.layout),
       ("window_placement", composition.settings.windowPlacement),
@@ -144,12 +155,15 @@ struct YabaiLifecycleController: Sendable {
         ("external_bar", "all:\(composition.settings.externalBarHeight):0")
       )
     }
+    // Personal behavior owns settings and rules; retain process, Accessibility,
+    // script-completion and wallpaper integration checks in native mode.
+    if composition.nativeConfigurationDigest != nil { expected = [] }
     var verified: [String] = []
     do {
-      guard let process = try settledProcessEvidence() else { return .stopped }
-      try requireAccessibilityEvidence()
+      guard let process = try processEvidence() else { return .stopped }
+      try accessibility()
       for (name, value) in expected {
-        let result = try run(arguments: ["-m", "config", name])
+        let result = try query(["-m", "config", name])
         guard result.terminationStatus == 0 else {
           if verified.isEmpty { return .stopped }
           return drifted("cannot query yabai setting \(name)", verified: verified)
@@ -163,7 +177,7 @@ struct YabaiLifecycleController: Sendable {
         verified.append(name)
       }
 
-      let rules = try run(arguments: ["-m", "rule", "--list"])
+      let rules = try query(["-m", "rule", "--list"])
       guard rules.terminationStatus == 0 else {
         return drifted("cannot query yabai rules", verified: verified)
       }
@@ -173,7 +187,9 @@ struct YabaiLifecycleController: Sendable {
       else {
         return drifted("yabai returned invalid rule evidence", verified: verified)
       }
-      let missingRules = composition.settings.rules.filter { expected in
+      let requiredRules =
+        composition.nativeConfigurationDigest == nil ? composition.settings.rules : []
+      let missingRules = requiredRules.filter { expected in
         !observedRules.contains { observed in
           ruleField(expected.label, key: "label", observed: observed)
             && ruleField(expected.app, key: "app", observed: observed)
@@ -188,9 +204,9 @@ struct YabaiLifecycleController: Sendable {
           verified: verified
         )
       }
-      let requiredLabels = composition.settings.rules.compactMap { $0.label ?? $0.app }.sorted()
+      let requiredLabels = requiredRules.compactMap { $0.label ?? $0.app }.sorted()
 
-      let signals = try run(arguments: ["-m", "signal", "--list"])
+      let signals = try query(["-m", "signal", "--list"])
       guard
         signals.terminationStatus == 0,
         signals.output.contains("macarchy-wallpaper"),
@@ -198,6 +214,23 @@ struct YabaiLifecycleController: Sendable {
       else {
         return drifted(
           "the canonical wallpaper space_changed signal is missing", verified: verified)
+      }
+      if let readyLabel = composition.nativeReadyLabel {
+        guard
+          let observed = try JSONSerialization.jsonObject(with: Data(signals.output.utf8))
+            as? [[String: Any]],
+          observed.contains(where: {
+            $0["label"] as? String == readyLabel
+              && $0["event"] as? String == "application_launched"
+              && $0["action"] as? String == "true"
+          })
+        else { return drifted("personal yabai configuration did not complete", verified: verified) }
+        return YabaiRuntimeInspection(
+          status: .partial,
+          message:
+            "personal configuration completed; process, Accessibility and wallpaper integration verified; personal behavior is not fully inspectable",
+          verifiedSettings: [], verifiedRuleLabels: [], wallpaperSignalVerified: true,
+          processID: process.processID, executablePath: process.executablePath)
       }
       let partial = composition.hookURL != nil
       return YabaiRuntimeInspection(

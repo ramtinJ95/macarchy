@@ -388,6 +388,7 @@ struct SketchyBarProviderTransaction: Sendable {
     composition: SketchyBarComposition
   ) -> Bool {
     inspection.isValidEvidence
+      && (inspection.nativeConfiguration ?? false) == composition.nativeConfiguration
       && (inspection.status == .converged
         || (inspection.status == .partial && composition.hookURL != nil))
   }

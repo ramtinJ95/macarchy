@@ -62,6 +62,8 @@ package struct SketchyBarProfileOptions: Equatable, Sendable {
   package let automaticClock: Bool?
   package let hookURL: URL?
   package let hookRootURL: URL?
+  package var configurationURL: URL? = nil
+  package var configurationRootURL: URL? = nil
 }
 
 package struct YabaiProfileOptions: Equatable, Sendable {
@@ -74,6 +76,7 @@ package struct YabaiProfileOptions: Equatable, Sendable {
   package let windowGap: Int?
   package let mouseFollowsFocus: Bool?
   package let hookURL: URL?
+  package var configurationURL: URL? = nil
 }
 
 package struct DesktopProfile: Equatable, Sendable {
@@ -229,6 +232,7 @@ package struct PortableProfileLoader: Sendable {
     "yabai.window_gap",
     "yabai.mouse_follows_focus",
     "yabai.hook",
+    "yabai.configuration",
     "top_bar.provider",
     "focus_ring.provider",
     "sketchybar.left",
@@ -236,6 +240,7 @@ package struct PortableProfileLoader: Sendable {
     "sketchybar.right",
     "sketchybar.automatic_clock",
     "sketchybar.hook",
+    "sketchybar.configuration",
     "terminal.provider",
     "kitty.font_family",
     "kitty.font_size",
@@ -513,6 +518,9 @@ package struct PortableProfileLoader: Sendable {
             base: base,
             source: source
           )
+        },
+        configurationURL: try options?.configuration.map {
+          try Self.resolvePortablePath($0, field: "yabai.configuration", base: base, source: source)
         }
       )
     )
@@ -558,7 +566,12 @@ package struct PortableProfileLoader: Sendable {
       right: document?.right,
       automaticClock: document?.automaticClock,
       hookURL: hookURL,
-      hookRootURL: hookURL == nil ? nil : base
+      hookRootURL: hookURL == nil ? nil : base,
+      configurationURL: try document?.configuration.map {
+        try Self.resolvePortablePath(
+          $0, field: "sketchybar.configuration", base: base, source: source)
+      },
+      configurationRootURL: document?.configuration == nil ? nil : base
     )
   }
 
@@ -1134,7 +1147,10 @@ package struct PortableProfileLoader: Sendable {
           machineProfile.desktop.yabai.mouseFollowsFocus
         ),
         hookURL: value(
-          "yabai.hook", portableProfile.desktop.yabai.hookURL, machineProfile.desktop.yabai.hookURL)
+          "yabai.hook", portableProfile.desktop.yabai.hookURL, machineProfile.desktop.yabai.hookURL),
+        configurationURL: value(
+          "yabai.configuration", portableProfile.desktop.yabai.configurationURL,
+          machineProfile.desktop.yabai.configurationURL)
       )
     }
 
@@ -1157,7 +1173,13 @@ package struct PortableProfileLoader: Sendable {
         ),
         hookRootURL: sketchyBarHookFromMachine
           ? machineProfile.sketchyBar.hookRootURL
-          : portableProfile.sketchyBar.hookRootURL
+          : portableProfile.sketchyBar.hookRootURL,
+        configurationURL: value(
+          "sketchybar.configuration", portableProfile.sketchyBar.configurationURL,
+          machineProfile.sketchyBar.configurationURL),
+        configurationRootURL: machineFields.contains("sketchybar.configuration")
+          ? machineProfile.sketchyBar.configurationRootURL
+          : portableProfile.sketchyBar.configurationRootURL
       )
     }
 
@@ -1537,6 +1559,7 @@ private struct YabaiDocument: Decodable {
   let windowGap: Int?
   let mouseFollowsFocus: Bool?
   let hook: String?
+  let configuration: String?
 
   enum CodingKeys: String, CodingKey {
     case layout
@@ -1548,6 +1571,7 @@ private struct YabaiDocument: Decodable {
     case windowGap = "window_gap"
     case mouseFollowsFocus = "mouse_follows_focus"
     case hook
+    case configuration
   }
 }
 
@@ -1565,9 +1589,10 @@ private struct SketchyBarDocument: Decodable {
   let right: [SketchyBarModule]?
   let automaticClock: Bool?
   let hook: String?
+  let configuration: String?
 
   enum CodingKeys: String, CodingKey {
-    case left, center, right, hook
+    case left, center, right, hook, configuration
     case automaticClock = "automatic_clock"
   }
 }
