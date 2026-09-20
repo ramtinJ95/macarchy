@@ -339,18 +339,28 @@ extension Macarchy {
       @Option(help: "Exact native preferences approval digest from setup plan.")
       var approvePreferences: String?
 
+      @Flag(help: .hidden)
+      var review = false
+
       @Flag(help: "Emit machine-readable output.")
       var json = false
 
       mutating func run() async throws {
-        let execution = try await UnifiedSetupApplyCommandRunner.live.execute(
-          context: profile.context(stateRoot: state.stateRootURL),
-          consumerPaths: state.consumerPaths,
-          packageApproval: approvePackages,
-          preferencesApproval: approvePreferences,
-          adoptions: try adoption.resolve(),
-          json: json
-        )
+        let execution: (output: String, succeeded: Bool)
+        if review {
+          execution = try await MenuSetupReview(runner: .live, io: .live).execute(
+            context: profile.context(stateRoot: state.stateRootURL),
+            consumerPaths: state.consumerPaths)
+        } else {
+          execution = try await UnifiedSetupApplyCommandRunner.live.execute(
+            context: profile.context(stateRoot: state.stateRootURL),
+            consumerPaths: state.consumerPaths,
+            packageApproval: approvePackages,
+            preferencesApproval: approvePreferences,
+            adoptions: try adoption.resolve(),
+            json: json
+          )
+        }
         print(execution.output)
         if !execution.succeeded { throw ExitCode.failure }
       }
