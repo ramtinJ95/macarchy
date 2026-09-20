@@ -1,5 +1,4 @@
 import ArgumentParser
-import Darwin
 import Foundation
 import ThemeCore
 
@@ -110,38 +109,10 @@ struct MenuProfileEditor: ParsableCommand {
     let editor = Process()
     editor.executableURL = neovim
     editor.arguments = ["-S", scriptURL.path, "--", resolved.path]
-    try Self.runEditor(editor)
+    try MenuTerminal.runForeground(editor)
     guard editor.terminationReason == .exit, editor.terminationStatus == 0 else {
       throw ValidationError(
         "Neovim ended with \(editor.terminationReason), status \(editor.terminationStatus)")
-    }
-  }
-
-  static func runEditor(_ editor: Process) throws {
-    let foreground = tcgetpgrp(STDIN_FILENO)
-    try editor.run()
-    guard foreground >= 0 else {
-      editor.waitUntilExit()
-      return
-    }
-    // Foundation gives the child its own process group. An interactive editor
-    // must own the terminal or its first read stops it with SIGTTIN. Ignore
-    // SIGTTOU in this waiting parent only so it can restore foreground ownership.
-    let previousHandler = signal(SIGTTOU, SIG_IGN)
-    defer { _ = signal(SIGTTOU, previousHandler) }
-    guard tcsetpgrp(STDIN_FILENO, editor.processIdentifier) == 0 else {
-      let reason = String(cString: strerror(errno))
-      editor.terminate()
-      _ = kill(editor.processIdentifier, SIGCONT)
-      editor.waitUntilExit()
-      throw ValidationError("Could not give Neovim the terminal: \(reason)")
-    }
-    // Resume a child that raced the handoff and already stopped on a tty read.
-    _ = kill(editor.processIdentifier, SIGCONT)
-    editor.waitUntilExit()
-    guard tcsetpgrp(STDIN_FILENO, foreground) == 0 else {
-      throw ValidationError(
-        "Could not restore terminal foreground ownership: \(String(cString: strerror(errno)))")
     }
   }
 

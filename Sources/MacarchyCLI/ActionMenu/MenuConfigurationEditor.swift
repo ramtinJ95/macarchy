@@ -100,7 +100,7 @@ struct MenuConfigurationEditor: ParsableCommand {
       editor.executableURL = neovim
       editor.currentDirectoryURL = target.deletingLastPathComponent()
       editor.arguments = ["-S", script.path, "--", target.path]
-      try MenuProfileEditor.runEditor(editor)
+      try MenuTerminal.runForeground(editor)
       guard editor.terminationReason == .exit, editor.terminationStatus == 0 else {
         throw ValidationError("Neovim exited with status \(editor.terminationStatus)")
       }

@@ -1,4 +1,5 @@
 import ArgumentParser
+import Darwin
 import Foundation
 import ThemeCore
 
@@ -6,6 +7,33 @@ enum MenuTerminal {
   enum Kind {
     case maintenance
     case profile
+  }
+
+  static func runForeground(_ process: Process) throws {
+    let foreground = tcgetpgrp(STDIN_FILENO)
+    try process.run()
+    guard foreground >= 0 else {
+      process.waitUntilExit()
+      return
+    }
+    // Foundation creates a separate child group. Terminal reads need foreground
+    // ownership; ignore SIGTTOU in the waiting parent so it can restore ownership.
+    let previousHandler = signal(SIGTTOU, SIG_IGN)
+    defer { _ = signal(SIGTTOU, previousHandler) }
+    guard tcsetpgrp(STDIN_FILENO, process.processIdentifier) == 0 else {
+      let reason = String(cString: strerror(errno))
+      process.terminate()
+      _ = kill(process.processIdentifier, SIGCONT)
+      process.waitUntilExit()
+      throw ValidationError("Could not give the child command the terminal: \(reason)")
+    }
+    // Resume a child that raced the handoff and stopped on its first tty read.
+    _ = kill(process.processIdentifier, SIGCONT)
+    process.waitUntilExit()
+    guard tcsetpgrp(STDIN_FILENO, foreground) == 0 else {
+      throw ValidationError(
+        "Could not restore terminal foreground ownership: \(String(cString: strerror(errno)))")
+    }
   }
 
   static func launch(
