@@ -41,6 +41,36 @@ struct DesktopApplyCommandRunner: Sendable {
     self.sketchyBarFaultInjector = sketchyBarFaultInjector
   }
 
+  /// Caller holds ActivationLock and has checked the frozen editor session.
+  /// Deliberately bypasses aggregate apply, adoption and unrelated recovery.
+  func applyPersonalConfigurationLocked(
+    _ composition: DesktopPersonalComposition, context: UnifiedSetupPlanContext
+  ) throws -> ApplyResult {
+    let result: ApplyResult
+    switch composition {
+    case .yabai(let value):
+      result = try applyLocked(
+        composition: value, stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory, adopt: nil)
+    case .sketchybar(let value):
+      let palette = SketchyBarPalettePlanInspector().inspect(
+        stateRoot: context.stateRoot, enabled: true)
+      guard palette.status == .current else {
+        throw DesktopApplyBlockedError(reason: palette.message)
+      }
+      result = try applySketchyBarLocked(
+        composition: value, stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory, adopt: nil)
+    }
+    return ApplyResult(
+      changed: result.changed, generationID: result.generationID,
+      lifecycle: result.lifecycle,
+      message: result.changed
+        ? "Personal configuration activated; Macarchy integration verified. Personal behavior remains only partially observable."
+        : "Personal configuration is already active; Macarchy integration verified. Personal behavior remains only partially observable."
+    )
+  }
+
   func execute(
     resourcesRoot: URL,
     profileURL: URL,

@@ -81,6 +81,8 @@ package struct SketchyBarComposition: Equatable, Sendable {
   package let artifacts: [SketchyBarConfigurationArtifact]
   package let renderedDigest: String
   package let inputDigest: String
+  package let baselineInputDigest: String
+  package let nativeConfiguration: Bool
 }
 
 package enum SketchyBarConfigurationError: Error, CustomStringConvertible, Sendable {
@@ -135,7 +137,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
     defaultsURL: URL,
     profile: PortableProfile,
     stateRoot: URL,
-    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy")
+    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy"),
+    includePersonalConfiguration: Bool = true
   ) throws -> SketchyBarComposition {
     let defaults = try loadDefaults(at: defaultsURL)
     let settings = defaults.settings
@@ -165,9 +168,18 @@ package struct SketchyBarConfigurationComposer: Sendable {
       stateRoot
       .appending(path: "desktop/sketchybar/current/plugins", directoryHint: .isDirectory)
       .standardizedFileURL.path
+    guard profile.sketchyBar.configurationURL == nil || profile.sketchyBar.hookURL == nil else {
+      throw SketchyBarConfigurationError.invalid(
+        profile.sketchyBar.configurationURL!, "select configuration or legacy hook, not both")
+    }
+    let configurationURL = includePersonalConfiguration ? profile.sketchyBar.configurationURL : nil
+    let native = configurationURL != nil
     let hook: (text: String, digest: String)?
-    if let hookURL = profile.sketchyBar.hookURL {
-      guard let hookRootURL = profile.sketchyBar.hookRootURL else {
+    if let hookURL = configurationURL ?? profile.sketchyBar.hookURL {
+      guard
+        let hookRootURL = native
+          ? profile.sketchyBar.configurationRootURL : profile.sketchyBar.hookRootURL
+      else {
         throw SketchyBarConfigurationError.invalid(hookURL, "trusted hook root is unavailable")
       }
       hook = try readHook(at: hookURL, root: hookRootURL)
@@ -185,6 +197,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
           palettePath: palettePath,
           pluginPath: pluginPath,
           hasHook: hook != nil,
+          nativeConfiguration: native,
           macarchyExecutablePath: macarchyExecutablePath
         )
       ),
@@ -266,14 +279,14 @@ package struct SketchyBarConfigurationComposer: Sendable {
       artifacts.append(
         SketchyBarConfigurationArtifact(
           path: "plugins/user-hook.sh",
-          contents: hook.text
+          contents: native ? "set -e\n" + hook.text : hook.text
         )
       )
     }
     let renderedDigest = sketchyBarArtifactDigest(
       Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
-    let identity = SketchyBarInputIdentity(
+    var identity = SketchyBarInputIdentity(
       schemaVersion: 1,
       topBarProvider: profile.topBar.rawValue,
       desktopProvider: profile.desktop.provider.rawValue,
@@ -281,23 +294,27 @@ package struct SketchyBarConfigurationComposer: Sendable {
       layout: layout,
       automaticClock: automaticClock,
       spaceModule: spaceModule,
-      hookDigest: hook?.digest,
+      hookDigest: native ? hook.map { "native:" + $0.digest } : hook?.digest,
       macarchyExecutablePath: macarchyExecutablePath,
       palettePath: palettePath,
       pluginPath: pluginPath
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    let inputDigest = sha256Digest(try encoder.encode(identity))
+    identity.hookDigest = nil
     return SketchyBarComposition(
       settings: settings,
       layout: layout,
       automaticClock: automaticClock,
       spaceModule: spaceModule,
-      hookURL: profile.sketchyBar.hookURL,
+      hookURL: configurationURL ?? profile.sketchyBar.hookURL,
       hookDigest: hook?.digest,
       artifacts: artifacts,
       renderedDigest: renderedDigest,
-      inputDigest: sha256Digest(try encoder.encode(identity))
+      inputDigest: inputDigest,
+      baselineInputDigest: sha256Digest(try encoder.encode(identity)),
+      nativeConfiguration: native
     )
   }
 
@@ -404,6 +421,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     palettePath: String,
     pluginPath: String,
     hasHook: Bool,
+    nativeConfiguration: Bool,
     macarchyExecutablePath: String
   ) -> String {
     let font = Self.shellLiteral("\(settings.font):Semibold:\(settings.fontSize).0")
@@ -545,6 +563,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
         lines.append("")
       }
     }
+    if nativeConfiguration { lines += helperCommands }
     if hasHook {
       lines += [
         "export SKETCHYBAR YABAI PLUGIN_DIR PALETTE MACARCHY_BAR_COLOR MACARCHY_TEXT_COLOR MACARCHY_MUTED_COLOR MACARCHY_ACCENT_COLOR",
@@ -552,7 +571,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       ]
     }
     lines += [Self.managedReadyMarkerDeclaration, "\"$SKETCHYBAR\" --update"]
-    lines += helperCommands
+    if !nativeConfiguration { lines += helperCommands }
     return lines.joined(separator: "\n") + "\n"
   }
 
@@ -617,7 +636,11 @@ package struct SketchyBarConfigurationComposer: Sendable {
     guard !text.contains("\0") else {
       throw SketchyBarConfigurationError.invalid(source, "trusted hook contains a NUL byte")
     }
-    try validateShellSyntax(data, source: source)
+    do {
+      try DesktopShellSyntax.validate(text, source: source)
+    } catch {
+      throw SketchyBarConfigurationError.invalid(source, String(describing: error))
+    }
     return (text, sha256Digest(data))
   }
 
@@ -646,32 +669,6 @@ package struct SketchyBarConfigurationComposer: Sendable {
       url: source,
       maximumSize: 1_048_576
     ).data
-  }
-
-  private func validateShellSyntax(_ data: Data, source: URL) throws {
-    let process = Process()
-    let input = Pipe()
-    process.executableURL = URL(filePath: "/bin/sh")
-    process.arguments = ["-n"]
-    process.standardInput = input
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    do {
-      try process.run()
-      try input.fileHandleForWriting.write(contentsOf: data)
-      try input.fileHandleForWriting.close()
-      process.waitUntilExit()
-    } catch {
-      try? input.fileHandleForWriting.close()
-      if process.isRunning {
-        process.terminate()
-        process.waitUntilExit()
-      }
-      throw SketchyBarConfigurationError.invalid(source, "cannot validate trusted hook syntax")
-    }
-    guard process.terminationStatus == 0 else {
-      throw SketchyBarConfigurationError.invalid(source, "trusted hook has invalid /bin/sh syntax")
-    }
   }
 
   static func managedPaletteAssignment(stateRoot: URL) -> String {
@@ -721,7 +718,7 @@ private struct SketchyBarInputIdentity: Encodable {
   let layout: SketchyBarLayout
   let automaticClock: Bool
   let spaceModule: SketchyBarSpaceModule
-  let hookDigest: String?
+  var hookDigest: String?
   let macarchyExecutablePath: String
   let palettePath: String
   let pluginPath: String

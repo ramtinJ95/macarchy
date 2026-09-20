@@ -6,6 +6,40 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarRuntimeTests {
+  @Test(arguments: ["custom", "theme-drift", "not-ready"])
+  func nativeBehaviorDoesNotWeakenThemeOrCompletionChecks(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try "# personal\n".write(
+      to: fixture.root.appending(path: "personal.sh"), atomically: true, encoding: .utf8)
+    let native = try fixture.composition(
+      "schema_version = 1\n[sketchybar]\nconfiguration = \"personal.sh\"\n")
+    let verifier = fixture.verifier { request in
+      if request.arguments == ["--query", "bar"] {
+        return .init(
+          terminationStatus: 0,
+          output: """
+            {"position":"bottom","drawing":"on","color":"\(condition == "theme-drift" ? "0xff000000" : "0xf01e1e2e")","height":70,"margin":12,"corner_radius":8,"hidden":"off","y_offset":0,"topmost":"off","items":["personal.clock","macarchy.theme.ready"]}
+            """)
+      }
+      return .init(
+        terminationStatus: 0,
+        output: Self.itemJSON(
+          name: "macarchy.theme.ready",
+          drawing: condition == "not-ready" ? "on" : "off", position: "right"))
+    }
+    let evidence = verifier.inspect(native)
+    #expect(evidence.status == (condition == "custom" ? .partial : .drifted))
+    if condition == "custom" {
+      #expect(evidence.nativeConfiguration == true && evidence.isValidEvidence)
+      let roundtrip = try JSONDecoder().decode(
+        SketchyBarCoreRuntimeInspection.self,
+        from: JSONEncoder().encode(evidence))
+      #expect(roundtrip == evidence)
+      #expect(verifier.inspect(fixture.dynamicComposition).status != .converged)
+    }
+  }
+
   @Test(arguments: [
     "visible", "hidden", "stale", "dead", "starting", "error", "position",
     "script", "frequency", "updates", "events",
