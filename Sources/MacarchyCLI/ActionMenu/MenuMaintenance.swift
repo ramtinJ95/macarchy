@@ -4,23 +4,29 @@ import ThemeCore
 
 enum MaintenanceAction: String, CaseIterable, ExpressibleByArgument, Sendable {
   case plan
+  case apply
   case status
   case doctor
   case updateCheck = "update-check"
+  case update
 
   var title: String {
     switch self {
     case .plan: "Preview setup changes"
+    case .apply: "Review & apply configuration"
     case .status: "Setup status"
     case .doctor: "Setup doctor"
     case .updateCheck: "Check for updates"
+    case .update: "Review & update Macarchy"
     }
   }
 
   var arguments: [String] {
     switch self {
     case .plan, .status, .doctor: ["setup", rawValue]
+    case .apply: ["setup", "apply", "--review"]
     case .updateCheck: ["update", "check"]
+    case .update: ["update", "--review"]
     }
   }
 }
@@ -60,13 +66,18 @@ struct MenuMaintenance: ParsableCommand {
     profileArguments: [String] = [],
     write: (String) -> Void, dismiss: () -> Void
   ) -> Int32 {
-    let arguments = action.arguments + (action == .updateCheck ? [] : profileArguments)
+    let arguments =
+      action.arguments + (action == .updateCheck || action == .update ? [] : profileArguments)
     write(action.title)
     write("macarchy " + arguments.joined(separator: " "))
-    write(
-      action == .updateCheck
-        ? "Refreshes the local update-check cache; does not install updates.\n"
-        : "Inspection only; no apply or install.\n")
+    switch action {
+    case .apply, .update:
+      write("Review first; mutation requires explicit confirmation.\n")
+    case .updateCheck:
+      write("Refreshes the local update-check cache; does not install updates.\n")
+    default:
+      write("Inspection only; no apply or install.\n")
+    }
     let process = Process()
     process.executableURL = executableURL
     process.arguments = arguments
