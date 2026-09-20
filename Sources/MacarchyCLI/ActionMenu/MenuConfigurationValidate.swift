@@ -22,6 +22,19 @@ struct MenuConfigurationValidate: ParsableCommand {
     _ action: MenuConfigurationAction, target: URL, context: UnifiedSetupPlanContext
   ) throws -> String {
     let layered = try MenuNativeProfileEdit.load(context)
+    if let provider = action.desktopProvider,
+      let source = provider.source(in: layered.profile)
+    {
+      guard source.resolvingSymlinksInPath() == target,
+        try MenuProfileSource.prepare(
+          source, stateRoot: context.stateRoot, confirmCreation: { _ in false }) == target
+      else {
+        throw ValidationError("Personal source changed; reopen Configure.")
+      }
+      let text = try BoundedRegularFile.readUTF8(at: target, maximumSize: 1_048_576)
+      try DesktopShellSyntax.validate(text, source: target)
+      return "Shell syntax is valid; no code executed. " + action.saveNotice
+    }
     if try action.nativeProvider == nil
       || MenuConfigurationEditor.usesManagedProfile(action, context: context)
     {
@@ -31,6 +44,10 @@ struct MenuConfigurationValidate: ParsableCommand {
           target, stateRoot: context.stateRoot,
           confirmCreation: { _ in false }) != nil
       else { throw ValidationError("Profile target changed; reopen Configure from the menu.") }
+      if action.desktopProvider != nil {
+        return
+          "Layered profile is valid. No managed state was changed. Legacy profile edits require reviewed desktop apply."
+      }
       return "Layered profile is valid. No managed state was changed. "
         + (try MenuConfigurationEditor.notice(action, context: context))
     }

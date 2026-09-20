@@ -136,18 +136,28 @@ The rule remains until yabai restarts (or `yabai -m rule --remove macarchy-maint
 and is renewed on each launch; no config-file edit, remote control or service restart
 is needed. Rule failure is reported rather than silently opening a tiled window.
 
-Configure opens the portable profile, machine overrides, or the winning
-`[keybindings]` disabled-list layer in Neovim. It edits the physical user source,
+Configure opens the portable profile, machine overrides, or the personal native
+skhd override in Neovim. It edits the physical user source,
 preserving dotfile links; missing profiles require confirmation before creation.
 The editor uses an ordinary Kitty window, with normal yabai tiling and native
 titles—not the maintenance window's floating style. Kitty starts through macOS
 LaunchServices so closing the menu's invoking terminal does not kill it.
 Generated state is never an editing surface.
 
-In these menu-launched sessions only, saving changes to `keybindings.disabled`
-can reload already-managed, initially converged keybindings. Validation failures
+**Configure → Keybindings** opens the layered profile's `keybindings.override`
+file, never the generated skhdrc. If none is declared, it offers a comment-only
+`overrides/keybindings.skhdrc` beside the physical portable profile, then separately
+reviews its profile connection and keybinding-only apply. Packaged defaults remain
+live; personal chords add bindings or replace default commands. Disable default
+identities through `[keybindings] disabled` in the profile. This uses Macarchy's
+bounded skhd parser, not arbitrary modes, includes or process maps. Optional
+metadata remains a separately declared input requiring reviewed apply.
+
+In these menu-launched sessions only, saving the selected native override—or
+`keybindings.disabled` in a profile editor—can reload already-managed, initially
+converged keybindings. Unchanged effective bindings need no reload. Validation failures
 retain the working generation and the saved edit. Source-path changes, other
-settings, external input changes, adoption and stale sessions require review;
+settings, inputs outside the selected editor, adoption and stale sessions require review;
 save never invokes full setup, installs packages, or changes native preferences.
 Broken profiles remain editable without automatic apply; fix/review them and
 reopen the editor to enable scoped saves. Other Neovim sessions are unaffected.
@@ -184,10 +194,41 @@ Kitty/zsh do not evaluate arbitrary native syntax. Personal saves are not rolled
 back. Starship takes effect on new prompts, Atuin on new invocations, and zsh in
 new shells. Use Kitty's native reload; Macarchy does not signal or restart it.
 Kitty override directories use Neovim's directory browser, without per-child save
-validation. **Configure → Desktop / Bar** opens the relevant `[yabai]` or
-`[sketchybar]` profile layer. These managed settings validate the layered profile
-on save but require reviewed apply for live changes; opening or saving never
-authorizes adoption, provider switching, package installation or service restart.
+validation.
+
+**Configure → Desktop / Bar** opens a personal `/bin/sh` configuration. First use
+separately reviews an absent-only starter beside the physical profile
+(`overrides/yabai.sh` or `overrides/sketchybar.sh`) and its profile connection:
+`[yabai] configuration = "overrides/yabai.sh"` or the corresponding `[sketchybar]`
+field. Dotfile links are preserved. Existing legacy hook code is copied into an
+absent starter before its declaration is retired; an existing personal file is
+never overwritten. Managed profiles without this field keep their original rules.
+
+Defaults run first; personal code can replace settings, rules, item placement or
+items rather than merely add to them. Macarchy snapshots the selected file into
+its generation—do not edit the generated entry point. Save feedback checks syntax
+without executing code. After a successful editor exit, changed input is checked
+again and activates **only yabai via restart** or **only SketchyBar via reload**.
+A reviewed first connection also activates on editor exit. There is no every-save
+restart, watcher, adoption, installation or aggregate apply. Changed profile layers,
+source links, packaged defaults or provider generations invalidate the session.
+Unrelated settings already pending before the editor opens also block scoped
+activation; keep the personal edit and review desktop apply instead. Older
+generations without enough baseline evidence require that same explicit review.
+
+Native status is **partial**: yabai verifies process/Accessibility, completion and
+its wallpaper callback; SketchyBar verifies completion, a stable item inventory
+and canonical bar color, not your personal layout or item behavior. Keep Macarchy's
+hidden bar ready marker and theme color. SketchyBar personal code uses the existing
+three-second runner; detached/background work is unsupported. Theme changes also
+reload the bar and re-execute personal code. Only the selected file is snapshotted
+and syntax-checked, not dynamically sourced dependencies; use explicit paths for
+those dependencies rather than assuming the personal file's directory is the
+runtime working directory.
+
+Syntax failure keeps the edit without activation. Runtime failure is reported and
+uses existing provider recovery, but cannot undo arbitrary shell side effects.
+Saved files and profile intent remain for repair; they are not silently reverted.
 
 New curated bindings take effect through reviewed keybinding apply; updating
 the executable alone does not change an already-generated shortcut configuration.
