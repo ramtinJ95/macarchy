@@ -318,3 +318,10 @@ label = "Open Macarchy action menu"
 category = "Macarchy"
 order = 490
 aliases = ["actions", "menu", "configure", "appearance", "maintenance"]
+
+[[bindings]]
+identity = "ctrl+alt-c"
+label = "Copy a screenshot to the clipboard"
+category = "Capture"
+order = 500
+aliases = ["screenshot", "image", "region", "window", "clipboard"]

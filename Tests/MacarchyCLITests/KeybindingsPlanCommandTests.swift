@@ -33,8 +33,8 @@ struct KeybindingsPlanCommandTests {
     #expect(execution.succeeded)
     #expect(report["outcome"] as? String == "ready")
     #expect(report["mutated"] as? Bool == false)
-    #expect(summary["effective"] as? Int == 49)
-    #expect(summary["packaged_defaults"] as? Int == 49)
+    #expect(summary["effective"] as? Int == 50)
+    #expect(summary["packaged_defaults"] as? Int == 50)
     #expect(
       actions.map { $0["id"] as? String }
         == ["publish_generation", "install_provider_entry"]
