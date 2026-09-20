@@ -29,7 +29,7 @@ struct MenuNeovimEditor: ParsableCommand {
       // A constant native message survives the initial screen clear. There is
       // deliberately no BufWritePost callback or executable Lua interpolation.
       editor.arguments = target.editorArguments
-      try MenuProfileEditor.runEditor(editor)
+      try MenuTerminal.runForeground(editor)
       guard editor.terminationReason == .exit, editor.terminationStatus == 0 else {
         throw ValidationError("Neovim exited with status \(editor.terminationStatus)")
       }

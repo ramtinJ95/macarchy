@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -5,6 +6,68 @@ import Testing
 @testable import ThemeCore
 
 struct MenuMaintenanceTests {
+  @Test func confirmationAndDismissalReceiveTerminalInput() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // Run only this test in a real controlling PTY: pipe-only subprocess tests
+    // cannot detect Foundation's separate-child-process-group behavior.
+    if ProcessInfo.processInfo.environment["MACARCHY_TEST_MAINTENANCE_PTY"] != "1" {
+      let driver = root.appending(path: "terminal.exp")
+      try """
+      set timeout 10
+      spawn -noecho {*}$argv
+      expect {
+        "Fixture confirmation: " { send -- "n\\r" }
+        timeout { exit 10 }
+        eof { exit 11 }
+      }
+      expect {
+        "Press Enter to close." { send -- "\\r" }
+        timeout { exit 12 }
+        eof { exit 13 }
+      }
+      expect {
+        eof {}
+        timeout { exit 14 }
+      }
+      exit [lindex [wait] 3]
+      """.write(to: driver, atomically: true, encoding: .utf8)
+      let bundleArgument = try #require(CommandLine.arguments.firstIndex(of: "--test-bundle-path"))
+      let bundle = CommandLine.arguments[bundleArgument + 1]
+      let result = try ProcessRunner.live.run(
+        .init(
+          executableURL: URL(filePath: "/usr/bin/expect"),
+          arguments: [
+            driver.path, CommandLine.arguments[0], "--test-bundle-path", bundle,
+            "--filter", "MenuMaintenanceTests/confirmationAndDismissalReceiveTerminalInput",
+            bundle, "--testing-library", "swift-testing",
+          ], timeout: 15,
+          environmentOverrides: ["MACARCHY_TEST_MAINTENANCE_PTY": "1"]))
+      #expect(result.terminationStatus == 0, "\(result.output)")
+      return
+    }
+
+    #expect(tcgetpgrp(STDIN_FILENO) == getpgrp())
+    let executable = root.appending(path: "confirm")
+    try """
+    #!/bin/sh
+    printf 'Fixture confirmation: '
+    IFS= read -r answer || exit 9
+    [ "$answer" = n ] || exit 8
+    """.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+    let status = MenuMaintenance.runAndHold(
+      .apply, executableURL: executable,
+      write: { FileHandle.standardOutput.write(Data(($0 + "\n").utf8)) },
+      dismiss: {
+        #expect(tcgetpgrp(STDIN_FILENO) == getpgrp())
+        #expect(readLine() == "")
+      })
+    #expect(status == 0)
+  }
+
   @Test(arguments: [
     (MaintenanceAction.plan, ["setup", "plan"], Int32(0)),
     (.status, ["setup", "status"], Int32(1)),

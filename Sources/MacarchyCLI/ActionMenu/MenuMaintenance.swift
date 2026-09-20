@@ -83,8 +83,7 @@ struct MenuMaintenance: ParsableCommand {
     process.arguments = arguments
     let status: Int32
     do {
-      try process.run()
-      process.waitUntilExit()
+      try MenuTerminal.runForeground(process)
       if process.terminationReason == .uncaughtSignal {
         status = 128 + process.terminationStatus
         write("\nTERMINATED by signal \(process.terminationStatus)")
