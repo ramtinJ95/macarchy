@@ -9,11 +9,27 @@ struct Update: ParsableCommand {
     subcommands: [Status.self, Check.self]
   )
 
+  @Flag(help: .hidden)
+  var review = false
+
   mutating func run() throws {
     let root = FileManager.default.homeDirectoryForCurrentUser
       .appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    var approval: HomebrewUpdateApproval?
+    if review {
+      approval = try MenuUpdateReview(
+        runner: .live,
+        inspectRelease: {
+          try UpdateChecker(root: root, httpClient: .live, now: Date.init).inspectRelease()
+        }, io: .live
+      ).approval()
+      guard approval != nil else {
+        print("Cancelled; no update cache, Homebrew metadata or packages changed.")
+        return
+      }
+    }
     let execution = try StateFileLock(root: root, identity: .homebrewUpdate).withLock {
-      try HomebrewUpdateRunner.live.execute(stateRoot: root)
+      try HomebrewUpdateRunner.live.execute(stateRoot: root, approval: approval)
     }
     print(execution.output)
     if !execution.succeeded {
