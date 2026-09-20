@@ -225,6 +225,23 @@ package struct SketchyBarConfigurationComposer: Sendable {
 
             """))
     }
+    if layout.position(of: .clock) != nil {
+      artifacts.append(
+        SketchyBarConfigurationArtifact(
+          path: "plugins/update.sh",
+          contents: [
+            "#!/bin/sh",
+            "set -eu",
+            "[ \"${NAME-}\" = macarchy.update ] || exit 1",
+            ". \(Self.shellLiteral(palettePath))",
+            "if \(Self.shellLiteral(macarchyExecutablePath)) desktop _update-indicator --sender \"${SENDER-forced}\" --state-root \(Self.shellLiteral(stateRoot.path)) --accent \"$MACARCHY_ACCENT_COLOR\" --warning \"$MACARCHY_BATTERY_RED\"; then",
+            "  exit 0",
+            "else",
+            "  /opt/homebrew/bin/sketchybar --set macarchy.update drawing=on icon='!' icon.color=\"$MACARCHY_BATTERY_RED\" --set macarchy.update.detail label='Update indicator failed; see SketchyBar stderr for details.'",
+            "  exit 1",
+            "fi",
+          ].joined(separator: "\n") + "\n"))
+    }
     if layout.position(of: .volume) != nil {
       artifacts.append(
         SketchyBarConfigurationArtifact(
@@ -475,6 +492,9 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.clock \(position.rawValue) \\",
             "  --set macarchy.clock icon.drawing=off label.font='SF Mono:Semibold:13.0' label.align=center updates=on update_freq=30 script=\"$PLUGIN_DIR/clock.sh\"",
             "\"$SKETCHYBAR\" --subscribe macarchy.clock mouse.clicked display_change system_woke",
+            "\"$SKETCHYBAR\" --add item macarchy.update \(position.rawValue) --set macarchy.update drawing=off icon='↻' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=60 script=\"$PLUGIN_DIR/update.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.update.detail popup.macarchy.update --set macarchy.update.detail icon.drawing=off label='Checking Macarchy updates…'",
+            "\"$SKETCHYBAR\" --subscribe macarchy.update mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke",
           ]
         case .toggle:
           lines += [
@@ -584,7 +604,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "set -eu",
       "[ \"${NAME-}\" = macarchy.clock ] || exit 1",
       ". \(Self.shellLiteral(palettePath))",
-      "if \(Self.shellLiteral(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(Self.shellLiteral(position)) --format \(Self.shellLiteral(settings.clockFormat)); then",
+      "if \(Self.shellLiteral(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(Self.shellLiteral(position)) --format \(Self.shellLiteral(settings.clockFormat)) --update-indicator; then",
       "  /opt/homebrew/bin/sketchybar --set macarchy.clock label.color=\"$MACARCHY_TEXT_COLOR\"",
       "else",
       "  echo 'Macarchy: calendar query failed' >&2",

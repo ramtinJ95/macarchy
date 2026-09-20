@@ -28,12 +28,14 @@ struct UpdateChecker: Sendable {
     lock = StateFileLock(root: root, identity: .updateCheck)
   }
 
-  func check(ifStaleOnly: Bool) -> UpdateCheckExecution {
+  func check(ifStaleOnly: Bool, freshnessInterval: TimeInterval = Self.freshnessInterval)
+    -> UpdateCheckExecution
+  {
     do {
       return try lock.withLock {
         let existing = cacheStore.read()
         if ifStaleOnly, case .available(let cache) = existing,
-          Self.isFresh(cache, at: now())
+          Self.isFresh(cache, at: now(), interval: freshnessInterval)
         {
           return UpdateCheckExecution(cache: cache, refreshed: false, succeeded: true)
         }
@@ -59,9 +61,11 @@ struct UpdateChecker: Sendable {
     return try success(response: response, checkedAt: now(), previous: nil).release
   }
 
-  static func isFresh(_ cache: UpdateCacheDocument, at date: Date) -> Bool {
+  static func isFresh(
+    _ cache: UpdateCacheDocument, at date: Date, interval: TimeInterval = freshnessInterval
+  ) -> Bool {
     let age = date.timeIntervalSince(cache.lastAttempt.checkedAt)
-    return age < freshnessInterval
+    return age < interval
   }
 
   private func refresh(previous: UpdateCacheRead) -> UpdateCheckExecution {

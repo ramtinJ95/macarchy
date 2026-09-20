@@ -6,6 +6,22 @@ import ThemeCore
 @testable import MacarchyCLI
 
 struct SketchyBarCalendarTests {
+  @Test(arguments: [false, true])
+  func updateCompanionFollowsClockAcrossDisplays(external: Bool) throws {
+    let state = State()
+    let calendar = SketchyBarCalendar(
+      processRunner: runner(state), hasExternalDisplay: { external },
+      uptime: { 100 }, sleep: { _ in })
+    try calendar.execute(
+      sender: "display_change", position: "auto", format: "+%H:%M", updateIndicator: true)
+    let args = try #require(state.value.withLock { $0.calls.last })
+    #expect(
+      args.suffix(7) == [
+        "--set", "macarchy.update", "position=\(external ? "center" : "right")", "--move",
+        "macarchy.update", external ? "after" : "before", "macarchy.clock",
+      ])
+  }
+
   @Test(arguments: ["auto-internal", "auto-external", "left", "center", "right"])
   func adaptsOnlyAutomaticPlacementAndUsesPersonalSpacing(mode: String) throws {
     let state = State()

@@ -140,6 +140,16 @@ a lagging tap reports packaging pending. Installation verification uses the exis
 update workflow. Declining either review changes no configuration or packages;
 declining update also leaves its cache and Homebrew metadata untouched. These actions
 retain their results in the same window. Updates do not apply profiles or restart providers.
+The managed SketchyBar clock includes a circular-arrow indicator when a newer stable
+Macarchy release is known. Hover for details; click to open **Review & update**.
+Its minute-by-minute cache refresh checks GitHub only when the last attempt is at
+least six hours old, including after failed attempts. Failed checks show a warning
+without discarding a previously known update. It never refreshes Homebrew metadata
+or installs packages in the background. `MACARCHY_DISABLE_UPDATE_CHECKS=1` in
+SketchyBar's environment disables network checks while retaining cached indicators.
+Disabling the clock also removes this companion and its polling. After upgrading,
+use **Review & apply** to activate changed generated bar configuration; installation
+alone does not reload it. Personal native bar configurations can override defaults.
 Update check refreshes its local check cache. Maintenance launch requires Kitty and
 running yabai. Before launch, it replaces the `macarchy-maintenance` runtime rule,
 matching only Kitty's fixed `Macarchy Maintenance` title, to float and center it.
