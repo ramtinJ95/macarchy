@@ -24,16 +24,6 @@ enum ProfileEditAction: String, CaseIterable, ExpressibleByArgument, Sendable {
     }
   }
 
-  func target(portable: URL, machine: URL) throws -> URL {
-    switch self {
-    case .portable: return portable
-    case .machine: return machine
-    case .keybindings:
-      let layered = try PortableProfileLoader().load(
-        portableAt: portable, portableRequired: false, machineAt: machine, machineRequired: false)
-      return layered.fieldOrigins["keybindings.disabled"] == .machine ? machine : portable
-    }
-  }
 }
 
 struct MenuProfileEditor: ParsableCommand {
@@ -60,19 +50,30 @@ struct MenuProfileEditor: ParsableCommand {
     }
     let home = FileManager.default.homeDirectoryForCurrentUser
     let context = profiles.context(stateRoot: home.appending(path: ".config/macarchy"))
-    let target = try action.target(portable: context.profileURL, machine: context.machineProfileURL)
-    // A physical edit target preserves the user's Stow leaf even when their
-    // editor writes by rename. Relative inputs still resolve at this location.
-    guard
-      let resolved = try MenuProfileSource.prepare(
-        target, stateRoot: context.stateRoot,
-        confirmCreation: { destination in
-          print(
-            "Create profile at \(destination.path) with schema_version = 1? No adoption or provider connection will be applied. [y/N]"
-          )
-          return readLine()?.lowercased() == "y"
-        })
-    else { return }
+    let target: URL
+    let resolved: URL
+    if action == .keybindings {
+      guard let source = try MenuKeybindingSetup(context: context).prepareForEditing() else {
+        return
+      }
+      target = source
+      resolved = source
+    } else {
+      target = action == .machine ? context.machineProfileURL : context.profileURL
+      // A physical edit target preserves the user's Stow leaf even when their
+      // editor writes by rename. Relative inputs still resolve at this location.
+      guard
+        let source = try MenuProfileSource.prepare(
+          target, stateRoot: context.stateRoot,
+          confirmCreation: { destination in
+            print(
+              "Create profile at \(destination.path) with schema_version = 1? No adoption or provider connection will be applied. [y/N]"
+            )
+            return readLine()?.lowercased() == "y"
+          })
+      else { return }
+      resolved = source
+    }
     print("\(action.title): \(target.path)\nEditing source: \(resolved.path)")
     let temporary = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-menu-edit-\(UUID().uuidString)")
@@ -91,14 +92,18 @@ struct MenuProfileEditor: ParsableCommand {
       try JSONEncoder().encode(session).write(to: sessionURL, options: .atomic)
       saveURL = sessionURL
       notice =
-        "Save-to-apply: [keybindings] disabled only (current winning layer: \(origin)). "
-        + "Other changes are saved but require reviewed apply. No native override/metadata files are edited."
+        session.nativeSource != nil
+        ? "Save-to-apply: this personal skhd override only. Packaged defaults load first. "
+          + "Supported binding syntax only; invalid edits stay saved and retain the last working generation. "
+          + "Profile connections, metadata and other providers are not applied."
+        : "Save-to-apply: [keybindings] disabled only (current winning layer: \(origin)). "
+          + "Other changes are saved but require reviewed apply. No native override/metadata files are edited."
     } catch {
       notice =
         "Editing only; save-to-apply unavailable: \(error). Fix/review, then reopen from the menu."
     }
     let script = Self.script(
-      target: resolved, section: action == .keybindings ? "keybindings" : nil,
+      target: resolved, section: nil,
       executableURL: RuntimeEnvironment.live.executableURL, notice: notice,
       saveArguments: saveURL.map { ["_menu-profile-save", $0.path] })
     try script.write(to: scriptURL, atomically: true, encoding: .utf8)

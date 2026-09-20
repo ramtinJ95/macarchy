@@ -3,7 +3,7 @@ import Foundation
 import ThemeCore
 
 /// A menu-session snapshot, not another source of configuration truth. Only the
-/// selected profile's disabled bindings may change without a reviewed apply.
+/// selected profile's disabled bindings or declared native override may change.
 struct MenuKeybindingSaveSession: Codable {
   struct Source: Codable {
     let path: URL
@@ -28,6 +28,7 @@ struct MenuKeybindingSaveSession: Codable {
   let portable: Source
   let machine: Source
   let target: URL
+  let nativeSource: URL?
   let resourcesRoot: URL
   let homeDirectory: URL
   let dependencyDigests: [String: String]
@@ -48,14 +49,23 @@ struct MenuKeybindingSaveSession: Codable {
     guard portable.resolvedPath != machine.resolvedPath else {
       throw ValidationError("Portable and machine profiles must be distinct files")
     }
-    guard [portable.resolvedPath, machine.resolvedPath].contains(target.resolvingSymlinksInPath())
-    else {
-      throw ValidationError("Save target must be one of this session's profile sources")
-    }
     let layered = try PortableProfileLoader().load(
       portableAt: portableURL, portableRequired: portableRequired,
       machineAt: machineURL, machineRequired: machineRequired)
     let profile = layered.profile
+    let physical = target.resolvingSymlinksInPath()
+    let nativeSource = profile.keybindings.overrideURL.flatMap {
+      $0.resolvingSymlinksInPath() == physical ? $0 : nil
+    }
+    guard nativeSource != nil || [portable.resolvedPath, machine.resolvedPath].contains(physical)
+    else {
+      throw ValidationError("Save target must be a profile source or its declared native override")
+    }
+    if nativeSource != nil {
+      guard ![portable.resolvedPath, machine.resolvedPath].contains(physical),
+        profile.keybindings.metadataURL?.resolvingSymlinksInPath() != physical
+      else { throw ValidationError("Native override must be distinct from profiles and metadata") }
+    }
     guard profile.desktop.provider == .yabaiSkhd else {
       throw ValidationError("Keybinding saves require the existing yabai-skhd provider")
     }
@@ -70,9 +80,10 @@ struct MenuKeybindingSaveSession: Codable {
           + preparation.blockingMessages.joined(separator: "; "))
     }
     let dependencies = [profile.keybindings.overrideURL, profile.keybindings.metadataURL].compactMap
-    { $0 }
+    { $0 }.filter { $0 != nativeSource }
     let session = Self(
       portable: portable, machine: machine, target: target.resolvingSymlinksInPath(),
+      nativeSource: nativeSource,
       resourcesRoot: resourcesRoot, homeDirectory: homeDirectory,
       dependencyDigests: try Dictionary(
         dependencies.map { ($0.path, try digest($0)) },
@@ -81,6 +92,11 @@ struct MenuKeybindingSaveSession: Codable {
   }
 
   func validatedProfile() throws -> PortableProfile {
+    if let nativeSource {
+      guard nativeSource.resolvingSymlinksInPath() == target else {
+        throw ValidationError("Native override link changed; reopen from the menu before applying")
+      }
+    }
     for source in [portable, machine] {
       guard source.path.resolvingSymlinksInPath() == source.resolvedPath else {
         throw ValidationError("Profile link changed; reopen from the menu before applying")

@@ -5,6 +5,64 @@ import Testing
 @testable import ThemeCore
 
 struct MenuKeybindingSaveTests {
+  @Test func nativeSavePreservesStowLinkAndRejectsInvalidInputAndScopeDrift() throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let native = fixture.root.appending(path: "personal.skhdrc")
+    let physical = fixture.root.appending(path: "dotfiles.skhdrc")
+    let machine = fixture.stateRoot.appending(path: "machine.toml")
+    try "# Personal bindings\n".write(to: physical, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(at: native, withDestinationURL: physical)
+    let original = "schema_version = 1\n[keybindings]\noverride = \"personal.skhdrc\"\n"
+    try original.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+    #expect(try fixture.execute(runner: runner, json: true).succeeded)
+    var session = try MenuKeybindingSaveSession.begin(
+      portableURL: fixture.profile, machineURL: machine, target: physical,
+      resourcesRoot: fixture.resources, homeDirectory: fixture.home, planner: runner.planner
+    ).session
+    session = try JSONDecoder().decode(
+      MenuKeybindingSaveSession.self, from: JSONEncoder().encode(session))
+    let initial = session.generationID
+    lifecycle.calls.withLock { $0 = [] }
+    try "alt - j : personal command\nalt - k : another command\n".write(
+      to: physical, atomically: true, encoding: .utf8)
+    _ = try session.apply(runner: runner)
+    #expect(session.generationID != initial)
+    #expect(lifecycle.calls.withLock { $0.contains("reload") && !$0.contains("restart") })
+    let generated = try String(
+      contentsOf: fixture.stateRoot.appending(path: "keybindings/current/skhdrc"), encoding: .utf8)
+    #expect(generated.contains("personal command") && generated.contains("another command"))
+    #expect(!generated.contains("focus south"))
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: native.path) == physical.path)
+    let active = session.generationID
+    lifecycle.calls.withLock { $0 = [] }
+    try ".load \"other.skhdrc\"\n".write(to: physical, atomically: true, encoding: .utf8)
+    #expect(throws: (any Error).self) { try session.apply(runner: runner) }
+    #expect(try String(contentsOf: physical, encoding: .utf8).contains(".load"))
+    #expect(
+      KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot).generationID == active)
+    #expect(lifecycle.calls.withLock { $0.isEmpty })
+    try "alt - j : recovered\n".write(to: physical, atomically: true, encoding: .utf8)
+    _ = try session.apply(runner: runner)
+    lifecycle.calls.withLock { $0 = [] }
+    // Native sessions freeze both profile layers, including disabled-list edits.
+    try (original + "disabled = [\"alt-j\"]\n").write(
+      to: fixture.profile, atomically: true, encoding: .utf8)
+    #expect(throws: (any Error).self) { try session.apply(runner: runner) }
+    try original.write(to: fixture.profile, atomically: true, encoding: .utf8)
+    try "schema_version = 1\n".write(to: machine, atomically: true, encoding: .utf8)
+    #expect(throws: (any Error).self) { try session.apply(runner: runner) }
+    try FileManager.default.removeItem(at: machine)
+    let other = fixture.root.appending(path: "retargeted.skhdrc")
+    try FileManager.default.copyItem(at: physical, to: other)
+    try FileManager.default.removeItem(at: native)
+    try FileManager.default.createSymbolicLink(at: native, withDestinationURL: other)
+    #expect(throws: (any Error).self) { try session.apply(runner: runner) }
+    #expect(lifecycle.calls.withLock { $0.isEmpty })
+  }
+
   @Test func authorizedSaveUsesExistingReloadAndInvalidSaveRetainsGeneration() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

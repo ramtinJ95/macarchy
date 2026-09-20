@@ -16,7 +16,6 @@ struct MenuNativeProfileEdit {
   }
 
   let context: UnifiedSetupPlanContext
-  let provider: EnvironmentNativeSeed.Provider
   let files: [File]
   let profile: PortableProfile
 
@@ -24,12 +23,40 @@ struct MenuNativeProfileEdit {
     context: UnifiedSetupPlanContext, source: URL,
     provider: EnvironmentNativeSeed.Provider = .neovim
   ) throws -> Self {
+    let edit = try prepare(
+      context: context, source: source, table: provider.rawValue, key: provider.profileKey,
+      copiedKeys: provider.copiedProfileKeys,
+      currentSource: { provider.source(in: $0.environment) })
+    guard provider.copiedSource(in: edit.profile.environment) == nil
+    else {
+      throw EnvironmentLifecycleError.blocked(
+        "layered \(provider.rawValue) intent does not select the reviewed native source")
+    }
+    return edit
+  }
+
+  static func keybindings(context: UnifiedSetupPlanContext, source: URL) throws -> Self {
+    try prepare(
+      context: context, source: source, table: "keybindings", key: "override",
+      copiedKeys: [], currentSource: { $0.keybindings.overrideURL })
+  }
+
+  static func desktop(
+    context: UnifiedSetupPlanContext, source: URL, provider: DesktopPersonalProvider
+  ) throws -> Self {
+    try prepare(
+      context: context, source: source, table: provider.rawValue,
+      key: "configuration", copiedKeys: ["hook"], currentSource: { provider.source(in: $0) })
+  }
+
+  private static func prepare(
+    context: UnifiedSetupPlanContext, source: URL, table: String, key: String,
+    copiedKeys: [String], currentSource: (PortableProfile) -> URL?
+  ) throws -> Self {
     let layered = try load(context)
-    let table = provider.rawValue
-    let key = provider.profileKey
     let selected =
       layered.fieldOrigins[table + "." + key]
-      ?? layered.fieldOrigins[table + "." + provider.copiedProfileKeys[0]] ?? .portable
+      ?? copiedKeys.first.flatMap { layered.fieldOrigins[table + "." + $0] } ?? .portable
     var files = try [context.profileURL, context.machineProfileURL].map {
       try inspect($0, stateRoot: context.stateRoot)
     }
@@ -39,7 +66,7 @@ struct MenuNativeProfileEdit {
     }
     for index in files.indices {
       let layer: PortableProfileLayerKind = index == 0 ? .portable : .machine
-      for copiedKey in provider.copiedProfileKeys
+      for copiedKey in copiedKeys
       where layered.layers[index].declaredFields.contains(table + "." + copiedKey) {
         let selector = CanonicalTOMLSelector(
           configuration: files[index].after, table: table, key: copiedKey)
@@ -50,7 +77,7 @@ struct MenuNativeProfileEdit {
         files[index].after.removeSubrange(selector.assignments[0].fullRange)
       }
       guard layer == selected else { continue }
-      if provider.source(in: layered.profile.environment)?.path == source.path {
+      if currentSource(layered.profile)?.path == source.path {
         continue
       }
       if files[index].before == nil { files[index].after = "schema_version = 1\n" }
@@ -85,13 +112,12 @@ struct MenuNativeProfileEdit {
     let proposed = Dictionary(
       uniqueKeysWithValues: files.filter(\.changed).map { ($0.physical, $0.after) })
     let profile = try load(context, proposed: proposed).profile
-    guard provider.source(in: profile.environment)?.path == source.path,
-      provider.copiedSource(in: profile.environment) == nil
+    guard currentSource(profile)?.path == source.path
     else {
       throw EnvironmentLifecycleError.blocked(
         "layered \(table) intent does not select the reviewed native source")
     }
-    return Self(context: context, provider: provider, files: files, profile: profile)
+    return Self(context: context, files: files, profile: profile)
   }
 
   func validateBefore() throws {
