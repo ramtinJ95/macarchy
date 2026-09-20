@@ -49,6 +49,16 @@ struct UpdateChecker: Sendable {
     }
   }
 
+  /// Fresh review evidence without a lock file, cache write, or metadata refresh.
+  func inspectRelease() throws -> StableRelease? {
+    let response = try httpClient.send(
+      UpdateHTTPRequest(url: Self.latestReleaseURL, headers: requestHeaders(lastSuccess: nil)))
+    guard response.body.count <= UpdateHTTPClient.maximumResponseSize else {
+      throw UpdateCheckError.responseTooLarge
+    }
+    return try success(response: response, checkedAt: now(), previous: nil).release
+  }
+
   static func isFresh(_ cache: UpdateCacheDocument, at date: Date) -> Bool {
     let age = date.timeIntervalSince(cache.lastAttempt.checkedAt)
     return age < freshnessInterval

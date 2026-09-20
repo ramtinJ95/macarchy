@@ -7,6 +7,97 @@ import Testing
 @testable import ThemeCore
 
 struct HomebrewLifecycleTests {
+  @Test(arguments: ["cancel", "approve", "stale-release"])
+  func menuUpdateConsentBindsReleaseBeforeScopedUpgrade(mode: String) throws {
+    let calls = Mutex([String]())
+    let runner = HomebrewUpdateRunner(
+      buildInformation: { Self.build() },
+      refreshRelease: { _ in Self.check(version: mode == "stale-release" ? "0.3.0" : "0.2.0") },
+      tapVersion: { .available("0.2.0") },
+      streamProcess: { request in
+        calls.withLock { $0.append(request.arguments.joined(separator: " ")) }
+        return 0
+      },
+      verifyInstallation: { version in
+        #expect(version == "0.2.0")
+        calls.withLock { $0.append("verify") }
+      },
+      writeEvidence: { _, _ in calls.withLock { $0.append("evidence") } }, now: Date.init,
+      inspectInstallation: { (URL(filePath: "/unused/0.1.0"), Self.build()) })
+    let review = MenuUpdateReview(
+      runner: runner,
+      inspectRelease: { Self.check(version: "0.2.0").cache.lastSuccess?.release },
+      io: .init(read: { mode == "cancel" ? "n" : "y" }, write: { _ in }))
+    let approval = try review.approval()
+    #expect(calls.withLock { $0.isEmpty })
+    if mode == "cancel" {
+      #expect(approval == nil)
+      return
+    }
+    let approved = try #require(approval)
+    let result = try runner.execute(
+      stateRoot: URL(filePath: "/unused"), approval: approved)
+    if mode == "approve" {
+      #expect(result.succeeded)
+      #expect(
+        calls.withLock { $0 } == [
+          "update", "evidence", "upgrade --formula --no-ask ramtinj95/tap/macarchy", "verify",
+          "evidence",
+        ])
+    } else {
+      #expect(!result.succeeded)
+      #expect(calls.withLock { $0 } == ["update"])
+    }
+  }
+
+  @Test func reviewRejectsChangedActivePrefixEvenWithTheOldKegRetained() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    for version in ["0.1.0", "0.2.0"] {
+      let executable = root.appending(path: "\(version)/bin/macarchy")
+      try FileManager.default.createDirectory(
+        at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let report =
+        "{\"schema_version\":1,\"version\":\"\(version)\",\"revision\":\"\(String(repeating: "a", count: 40))\",\"platform\":\"macos-arm64\",\"installation\":\"homebrew\"}"
+      try "#!/bin/sh\nprintf '%s\\n' '\(report)'\n".write(
+        to: executable, atomically: true, encoding: .utf8)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    }
+    let active = root.appending(path: "opt")
+    try FileManager.default.createSymbolicLink(
+      at: active, withDestinationURL: root.appending(path: "0.1.0"))
+    let verifier = HomebrewInstallationVerifier(
+      processRunner: .init { request in
+        if request.arguments == HomebrewInstallationVerifier.prefixRequest.arguments {
+          return .init(terminationStatus: 0, output: active.path)
+        }
+        #expect(request.arguments == ["version", "--json"])
+        return try ProcessRunner.live.run(request)
+      })
+    var runner = Self.runner(
+      streamProcess: { _ in
+        Issue.record("Stale approval must block before Homebrew mutation")
+        return 1
+      },
+      writeEvidence: { _, _ in Issue.record("Stale approval must not write evidence") })
+    runner.inspectInstallation = verifier.inspect
+    let review = MenuUpdateReview(
+      runner: runner,
+      inspectRelease: { Self.check(version: "0.2.0").cache.lastSuccess?.release },
+      io: .init(read: { "y" }, write: { _ in }))
+    let approval = try #require(try review.approval())
+    try FileManager.default.removeItem(at: active)
+    try FileManager.default.createSymbolicLink(
+      at: active, withDestinationURL: root.appending(path: "0.2.0"))
+    #expect(FileManager.default.fileExists(atPath: root.appending(path: "0.1.0/bin/macarchy").path))
+    #expect(try runner.buildInformation().version == "0.1.0")
+    let result = try runner.execute(stateRoot: root, approval: approval)
+    #expect(!result.succeeded)
+    #expect(result.outcome == .refused)
+    #expect(result.output.contains("installed build changed"))
+  }
+
   @Test
   func unmanagedBuildRefusesBeforeHomebrewOrNetworkWork() throws {
     let runner = HomebrewUpdateRunner(

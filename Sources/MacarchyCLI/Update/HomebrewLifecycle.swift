@@ -22,6 +22,12 @@ struct HomebrewUpdateExecution: Sendable {
   let succeeded: Bool
 }
 
+struct HomebrewUpdateApproval: Sendable {
+  let prefix: URL
+  let build: MacarchyBuildInformation
+  let release: StableRelease
+}
+
 struct HomebrewUpdateRunner: Sendable {
   static let brewURL = URL(filePath: "/opt/homebrew/bin/brew")
   static let formula = HomebrewTapVersionReader.formula
@@ -57,6 +63,8 @@ struct HomebrewUpdateRunner: Sendable {
   let verifyInstallation: @Sendable (String) throws -> Void
   let writeEvidence: @Sendable (URL, HomebrewUpgradeEvidence) throws -> Void
   let now: @Sendable () -> Date
+  var inspectInstallation: @Sendable () throws -> (prefix: URL, build: MacarchyBuildInformation) =
+    HomebrewInstallationVerifier.live.inspect
 
   static let live = HomebrewUpdateRunner(
     buildInformation: RuntimeEnvironment.live.buildInformation,
@@ -73,8 +81,21 @@ struct HomebrewUpdateRunner: Sendable {
     now: Date.init
   )
 
-  func execute(stateRoot: URL) throws -> HomebrewUpdateExecution {
-    let build = try buildInformation()
+  func execute(stateRoot: URL, approval: HomebrewUpdateApproval? = nil) throws
+    -> HomebrewUpdateExecution
+  {
+    let build: MacarchyBuildInformation
+    if let approval {
+      let current = try inspectInstallation()
+      build = current.build
+      guard approval.prefix == current.prefix, approval.build == build else {
+        return failure(
+          .refused, build: build,
+          message: "The installed build changed; review the update again. No metadata refresh ran.")
+      }
+    } else {
+      build = try buildInformation()
+    }
     guard build.installation == .homebrew,
       let installed = StableVersion(build.version)
     else {
@@ -117,6 +138,13 @@ struct HomebrewUpdateRunner: Sendable {
     }
 
     let tap = tapVersion()
+    if let approval, approval.release != release {
+      return failure(
+        .refused, build: build,
+        message:
+          "The stable release changed after review. Metadata was refreshed, but no upgrade ran; review again."
+      )
+    }
     guard let tapValue = tap.version, let tapVersion = StableVersion(tapValue) else {
       return failure(
         .tapInspectionFailed,
@@ -422,7 +450,7 @@ struct HomebrewInstallationVerifier: Sendable {
 
   static let live = HomebrewInstallationVerifier(processRunner: .live)
 
-  func verify(expectedVersion: String) throws {
+  func inspect() throws -> (prefix: URL, build: MacarchyBuildInformation) {
     let result = try processRunner.run(Self.prefixRequest)
     guard result.terminationStatus == 0 else {
       throw HomebrewVerificationError(
@@ -435,7 +463,7 @@ struct HomebrewInstallationVerifier: Sendable {
       throw HomebrewVerificationError(reason: "Homebrew returned an invalid formula prefix")
     }
 
-    let prefix = URL(filePath: result.output, directoryHint: .isDirectory)
+    let prefix = URL(filePath: result.output, directoryHint: .isDirectory).resolvingSymlinksInPath()
     let executable = prefix.appending(path: "bin/macarchy")
     guard isExecutableRegularFile(executable) else {
       throw HomebrewVerificationError(reason: "installed executable is not an executable file")
@@ -477,13 +505,26 @@ struct HomebrewInstallationVerifier: Sendable {
       throw HomebrewVerificationError(reason: "installed version output is invalid")
     }
     guard version.schemaVersion == 1,
-      version.version == expectedVersion,
       version.installation == InstallationOwnership.homebrew.rawValue,
       version.platform == "macos-arm64"
     else {
       throw HomebrewVerificationError(
-        reason: "installed version output does not match \(expectedVersion) on Homebrew arm64"
+        reason: "installed version output is not a Homebrew arm64 installation"
       )
+    }
+    return (
+      prefix,
+      MacarchyBuildInformation(
+        version: version.version, revision: version.revision, platform: version.platform,
+        installation: .homebrew)
+    )
+  }
+
+  func verify(expectedVersion: String) throws {
+    let (prefix, build) = try inspect()
+    guard build.version == expectedVersion else {
+      throw HomebrewVerificationError(
+        reason: "installed version output does not match \(expectedVersion) on Homebrew arm64")
     }
 
     let repository = ThemeRepository(
@@ -533,12 +574,14 @@ struct HomebrewInstallationVerifier: Sendable {
 private struct InstalledVersionReport: Decodable {
   let schemaVersion: Int
   let version: String
+  let revision: String
   let platform: String
   let installation: String
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
     case version
+    case revision
     case platform
     case installation
   }

@@ -7,6 +7,19 @@ import Testing
 
 @Suite(.serialized)
 struct UpdateAwarenessTests {
+  @Test func reviewFetchDoesNotCreateCacheOrLockFiles() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    let checker = UpdateChecker(
+      root: root,
+      httpClient: .init { request in
+        #expect(request.headers["If-None-Match"] == nil)
+        return UpdateHTTPResponse(
+          statusCode: 200, headers: [:], body: releaseJSON(version: "0.2.0"))
+      }, now: Date.init)
+    #expect(try checker.inspectRelease()?.version == "0.2.0")
+    #expect(!FileManager.default.fileExists(atPath: root.path))
+  }
+
   @Test
   func explicitCheckCachesStableReleaseAndReportsPackagingPending() throws {
     let root = try temporaryRoot()
