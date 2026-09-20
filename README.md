@@ -120,7 +120,7 @@ focus. It closes before handing off to the existing viewer or terminal. Browsing
 The native viewers use six-point accent focus outlines matching the desktop highlight.
 The theme picker previews the outline with its
 selected palette. These window-local borders need no extra permissions or border-service changes.
-Maintenance actions run `setup plan`, `setup status`, `setup doctor`, or `update check`
+Maintenance checks run `setup plan`, `setup status`, `setup doctor`, or `update check`
 in a centered, floating ordinary Kitty window. Every menu-launched terminal inherits
 its native appearance settings, including square or rounded corners, fonts and spacing;
 Macarchy supplies the active palette, not separate terminal decoration. The existing
@@ -128,7 +128,18 @@ desktop focus-ring provider decorates these windows normally.
 Setup checks use the commands' normal portable
 and machine profile defaults, including existing symlinks; `menu --profile PATH
 --machine-profile PATH` forwards custom inputs to editors and setup checks. Output and the exit
-result stay visible until Enter closes the window; no apply or install is invoked.
+result stay visible until Enter closes the window; checks never apply or install.
+**Review & apply configuration** displays the existing layered profile's setup plan
+and asks before authorizing its package installation, configuration adoption,
+preferences and provider/service changes. It neither creates an onboarding profile
+nor implicitly recovers interrupted setup. Changed plans require another review.
+**Review & update Macarchy** reads the current stable release without writing the
+update cache, shows installed/release/local-tap versions, then asks before refreshing
+Homebrew metadata and upgrading only Macarchy. A changed release stops the upgrade;
+a lagging tap reports packaging pending. Installation verification uses the existing
+update workflow. Declining either review changes no configuration or packages;
+declining update also leaves its cache and Homebrew metadata untouched. These actions
+retain their results in the same window. Updates do not apply profiles or restart providers.
 Update check refreshes its local check cache. Maintenance launch requires Kitty and
 running yabai. Before launch, it replaces the `macarchy-maintenance` runtime rule,
 matching only Kitty's fixed `Macarchy Maintenance` title, to float and center it.

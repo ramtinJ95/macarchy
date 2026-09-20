@@ -10,8 +10,10 @@ struct MenuMaintenanceTests {
     (.status, ["setup", "status"], Int32(1)),
     (.doctor, ["setup", "doctor"], Int32(0)),
     (.updateCheck, ["update", "check"], Int32(1)),
+    (.apply, ["setup", "apply", "--review"], Int32(0)),
+    (.update, ["update", "--review"], Int32(1)),
   ])
-  func delegatesReadOnlyCommandAndHoldsItsResult(
+  func delegatesCommandAndHoldsItsResult(
     action: MaintenanceAction, arguments: [String], expectedStatus: Int32
   ) throws {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
@@ -38,7 +40,9 @@ struct MenuMaintenanceTests {
     #expect(dismissed)
     let delegated = try String(contentsOfFile: executable.path + ".arguments", encoding: .utf8)
       .split(separator: "\n").map(String.init)
-    #expect(delegated == arguments + (action == .updateCheck ? [] : profileArguments))
+    #expect(
+      delegated == arguments + (action == .updateCheck || action == .update ? [] : profileArguments)
+    )
   }
 
   @Test func failedCommandLaunchIsVisibleAndHeld() {
