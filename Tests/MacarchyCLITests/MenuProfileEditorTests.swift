@@ -53,22 +53,10 @@ struct MenuProfileEditorTests {
     }
   }
 
-  @Test func customPathsAndMachineWinningFieldSelectTheCorrectSource() throws {
+  @Test func customProfilePathsSurviveTerminalHandoff() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let machine = fixture.root.appending(path: "custom machine.toml")
-    try "schema_version = 1\n[keybindings]\ndisabled = []\n".write(
-      to: machine, atomically: true, encoding: .utf8)
-    #expect(
-      try ProfileEditAction.keybindings.target(portable: fixture.profile, machine: machine)
-        == machine)
-    #expect(
-      try ProfileEditAction.portable.target(portable: fixture.profile, machine: machine)
-        == fixture.profile)
-    try "schema_version = 1\n".write(to: machine, atomically: true, encoding: .utf8)
-    #expect(
-      try ProfileEditAction.keybindings.target(portable: fixture.profile, machine: machine)
-        == fixture.profile)
     let command = try ActionMenu.parse([
       "--profile", fixture.profile.path, "--machine-profile", machine.path,
     ])

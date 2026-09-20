@@ -6,7 +6,8 @@ enum MenuProfileSource {
   /// Resolve only declared profile files, never a generated-state editing surface.
   /// Return nil on declined creation; preserve existing links and bytes.
   static func prepare(
-    _ target: URL, stateRoot: URL, confirmCreation: (URL) -> Bool
+    _ target: URL, stateRoot: URL, initialContents: String = "schema_version = 1\n",
+    confirmCreation: (URL) -> Bool
   ) throws -> URL? {
     let resolved = target.resolvingSymlinksInPath()
     for name in [
@@ -44,7 +45,7 @@ enum MenuProfileSource {
     guard confirmCreation(resolved) else { return nil }
     try FileManager.default.createDirectory(
       at: resolved.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data("schema_version = 1\n".utf8).write(to: resolved, options: .withoutOverwriting)
+    try Data(initialContents.utf8).write(to: resolved, options: .withoutOverwriting)
     return resolved
   }
 }
