@@ -7,6 +7,29 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-20
+
+### Added
+
+- Review & apply configuration and Review & update Macarchy in the action menu,
+  with explicit consent, stale-plan/release rejection and retained terminal results.
+- A circular-arrow update indicator beside the SketchyBar clock, following its
+  automatic display placement. Stable-release checks share the update cache and
+  run at most every six hours during normal operation; hover shows details and
+  clicking opens the reviewed updater. Failed checks remain visibly distinct from
+  an up-to-date installation. No background Homebrew update or upgrade.
+
+### Fixed
+
+- Reviewed updates revalidate the active Homebrew prefix and build rather than
+  trusting an old executable retained in a previous Cellar keg.
+
+### Known limitations
+
+- Installing a release does not apply profiles or reload providers. Review & apply
+  the bar configuration to activate the new clock companion. Native menu/bar visual
+  acceptance remains pending; personal bar configurations may override the defaults.
+
 ## [0.11.1] - 2026-09-20
 
 ### Fixed
