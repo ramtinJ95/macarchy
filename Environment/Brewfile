@@ -1,5 +1,6 @@
 # Macarchy standard package-only defaults. Provider requirements are composed separately.
 # Personal declarations must remain separate; do not edit release defaults.
+tap "flameshot-org/flameshot"
 tap "hashicorp/tap"
 brew "azure-cli"
 brew "cmake"
@@ -41,7 +42,7 @@ brew "zoxide"
 cask "anki"
 cask "cursor"
 cask "docker"
-cask "flameshot"
+cask "flameshot-org/flameshot/flameshot-org-flameshot"
 cask "font-blex-mono-nerd-font"
 cask "font-meslo-lg-nerd-font"
 cask "font-sketchybar-app-font"

@@ -4,8 +4,29 @@ import Foundation
 
 struct CaptureCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
-    commandName: "capture", abstract: "Capture with the native macOS screenshot picker.",
-    subcommands: [Screenshot.self])
+    commandName: "capture", abstract: "Capture screenshots or annotate with Flameshot.",
+    subcommands: [Screenshot.self, Annotate.self])
+
+  struct Annotate: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Select, annotate and copy a screenshot using Flameshot.")
+
+    @Flag(help: "Emit the outcome as JSON, without image or clipboard contents.")
+    var json = false
+
+    @Flag(help: .hidden)
+    var alertOnError = false
+
+    @MainActor
+    mutating func run() async throws {
+      do {
+        print(try FlameshotCapture.live.execute().render(json: json))
+      } catch {
+        if alertOnError { CaptureCommand.showFailure(error) }
+        throw error
+      }
+    }
+  }
 
   struct Screenshot: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -37,22 +58,23 @@ struct CaptureCommand: ParsableCommand {
           window: window, saveURL: save.map { URL(filePath: $0).standardizedFileURL })
         print(try outcome.render(json: json))
       } catch {
-        if alertOnError { Self.showFailure(error) }
+        if alertOnError { CaptureCommand.showFailure(error) }
         throw error
       }
     }
 
-    @MainActor
-    static func showFailure(_ error: any Error) {
-      let app = NSApplication.shared
-      _ = app.setActivationPolicy(.accessory)
-      app.finishLaunching()
-      let alert = NSAlert()
-      alert.messageText = "Screenshot not completed"
-      alert.informativeText = String(describing: error)
-      alert.alertStyle = .critical
-      app.activate(ignoringOtherApps: true)
-      alert.runModal()
-    }
+  }
+
+  @MainActor
+  static func showFailure(_ error: any Error) {
+    let app = NSApplication.shared
+    _ = app.setActivationPolicy(.accessory)
+    app.finishLaunching()
+    let alert = NSAlert()
+    alert.messageText = "Screenshot not completed"
+    alert.informativeText = String(describing: error)
+    alert.alertStyle = .critical
+    app.activate(ignoringOtherApps: true)
+    alert.runModal()
   }
 }

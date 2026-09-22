@@ -79,6 +79,7 @@ struct ActionMenuTests {
     (ActionMenuAction.appearance, ["theme", "browse"]),
     (.keybindings, ["keybindings", "show", "--effective"]),
     (.screenshot, ["capture", "screenshot", "--alert-on-error"]),
+    (.annotate, ["capture", "annotate", "--alert-on-error"]),
   ])
   func launchUsesExactExecutableAndShortcutArguments(
     action: ActionMenuAction, arguments: [String]
@@ -127,9 +128,11 @@ struct ActionMenuTests {
     #expect(state.selectedAction == nil)
     state.search("shortcuts")
     #expect(state.selectedAction == .keybindings)
-    state.search("capture clipboard")
+    state.search("capture region")
     #expect(state.selectedAction == .screenshot)
     #expect(state.actions.count == 1)
+    state.search("flameshot annotation")
+    #expect(state.actions == [.annotate])
     state.select(row: -1)
     #expect(state.selectedAction == nil)
     state.search("")
@@ -153,5 +156,8 @@ struct ActionMenuTests {
     let capture = try #require(bindings.first { $0.binding.identity == "ctrl+alt-c" })
     #expect(capture.binding.command == "macarchy capture screenshot --alert-on-error")
     #expect(KeybindingsPopupRow(capture).category == "Capture")
+    let annotate = try #require(bindings.first { $0.binding.identity == "ctrl+alt+shift-c" })
+    #expect(annotate.binding.command == "macarchy capture annotate --alert-on-error")
+    #expect(KeybindingsPopupRow(annotate).category == "Capture")
   }
 }

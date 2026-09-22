@@ -325,3 +325,10 @@ label = "Copy a screenshot to the clipboard"
 category = "Capture"
 order = 500
 aliases = ["screenshot", "image", "region", "window", "clipboard"]
+
+[[bindings]]
+identity = "ctrl+alt+shift-c"
+label = "Annotate a screenshot with Flameshot"
+category = "Capture"
+order = 510
+aliases = ["screenshot", "image", "annotation", "flameshot", "clipboard", "draw"]

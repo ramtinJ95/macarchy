@@ -280,6 +280,40 @@ just by installing/building this code. Use the existing reviewed configuration
 apply to activate the new shortcut; personal overrides and disabled chords remain
 authoritative. Native macOS screenshot shortcuts are unchanged.
 
+#### Annotate with Flameshot
+
+Choose **Annotate screenshot** in the menu, or use **Control–Option–Shift–C**
+after applying the updated defaults:
+
+```sh
+macarchy capture annotate
+macarchy capture annotate --json
+```
+
+Select a harmless region, add arrows/shapes/text in Flameshot, then choose **Copy**.
+Macarchy waits for completion and checks for a new clipboard image; it does not
+save a file, enable history, change Flameshot preferences or manage its background
+process. Flameshot retains its own Save/Upload controls: use Copy, not Upload, to
+keep this workflow local. Other applications can still replace the shared clipboard.
+
+The provider must be installed at `/Applications/Flameshot.app` and manually opened
+before use. The standard package declaration uses the upstream
+`flameshot-org/flameshot/flameshot-org-flameshot` cask. Homebrew's former `flameshot`
+cask is disabled for failing Gatekeeper checks. **The upstream 14.0.0 cask uses the
+same ad-hoc-signed application; changing taps does not fix signing.** Using it
+requires your explicit trust decision and may require a manual, per-app **Open
+Anyway** exception in macOS Privacy & Security. Macarchy does not grant trust,
+bypass Gatekeeper, remove quarantine or grant Screen Recording permission. If you
+do not accept that exception, keep using native screenshot capture instead.
+An older Homebrew receipt may remain after moving the old app to Trash; this change
+does not automatically migrate or uninstall it.
+
+Flameshot 14 uses exit 2 for both cancellation and some capture failures. Therefore
+Escape produces an explicit **aborted** error/alert, not a claim of successful
+cancellation. Other failures retain provider diagnostics. A successful process
+without a new image is also an error; there is no automatic retry or native fallback.
+The existing native capture shortcut and cancellation behavior are unchanged.
+
 ### Bring an Omarchy theme
 
 ```sh

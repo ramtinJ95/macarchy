@@ -7,6 +7,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   case appearance
   case keybindings
   case screenshot
+  case annotate
   case profile(ProfileEditAction)
   case neovim
   case configuration(MenuConfigurationAction)
@@ -15,14 +16,15 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   static var allCases: [Self] {
     ProfileEditAction.allCases.map(Self.profile)
       + [.neovim] + MenuConfigurationAction.allCases.map(Self.configuration)
-      + [.appearance, .keybindings, .screenshot] + MaintenanceAction.allCases.map(Self.maintenance)
+      + [.appearance, .keybindings, .screenshot, .annotate]
+      + MaintenanceAction.allCases.map(Self.maintenance)
   }
 
   var category: String {
     switch self {
     case .profile, .neovim, .configuration: "Configure"
     case .appearance, .keybindings: "Appearance"
-    case .screenshot: "Capture"
+    case .screenshot, .annotate: "Capture"
     case .maintenance: "Maintenance"
     }
   }
@@ -32,6 +34,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .appearance: "Themes & backgrounds"
     case .keybindings: "Keybindings"
     case .screenshot: "Screenshot to clipboard"
+    case .annotate: "Annotate screenshot"
     case .profile(let action): action.title
     case .neovim: "Neovim"
     case .configuration(let action): action.title
@@ -44,6 +47,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .appearance: "appearance themes backgrounds wallpaper colors picker"
     case .keybindings: "appearance keybindings shortcuts bindings help"
     case .screenshot: "capture screenshot clipboard region window image"
+    case .annotate: "capture screenshot clipboard annotate annotation flameshot draw arrow"
     case .profile(let action): "configure \(action.title) edit".lowercased()
     case .neovim: "configure neovim nvim editor lua native"
     case .configuration(let action):
@@ -113,7 +117,7 @@ struct ActionMenu: AsyncParsableCommand {
           _ = try MenuMaintenance.launch(
             operation, theme: theme, executableURL: runtime.executableURL,
             profileArguments: profileArguments)
-        case .appearance, .keybindings, .screenshot:
+        case .appearance, .keybindings, .screenshot, .annotate:
           _ = try Self.launchViewer(action, executableURL: runtime.executableURL)
         }
       },
@@ -154,6 +158,7 @@ struct ActionMenu: AsyncParsableCommand {
     case .appearance: process.arguments = ["theme", "browse"]
     case .keybindings: process.arguments = ["keybindings", "show", "--effective"]
     case .screenshot: process.arguments = ["capture", "screenshot", "--alert-on-error"]
+    case .annotate: process.arguments = ["capture", "annotate", "--alert-on-error"]
     case .maintenance, .profile, .neovim, .configuration:
       throw ValidationError(
         "Configuration and maintenance actions must launch through their menu terminal")
