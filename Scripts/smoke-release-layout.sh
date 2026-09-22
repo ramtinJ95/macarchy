@@ -189,7 +189,7 @@ HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   --catalog "$layout/share/macarchy/keybindings/metadata.toml" \
   --json > "$temporary_directory/keybindings-list.json"
 grep -q '"schema_version" : 1' "$temporary_directory/keybindings-list.json"
-[[ "$(grep -c '"identity" :' "$temporary_directory/keybindings-list.json")" == "49" ]]
+[[ "$(grep -c '"identity" :' "$temporary_directory/keybindings-list.json")" == "51" ]]
 
 "$script_directory/verify-keybindings-portability.sh" "$binary"
 

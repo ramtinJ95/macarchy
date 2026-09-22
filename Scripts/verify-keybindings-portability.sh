@@ -205,6 +205,8 @@ cmd-6
 cmd-7
 cmd-k
 cmd-x
+ctrl+alt+shift-c
+ctrl+alt-c
 ctrl+alt-h
 ctrl+alt-j
 ctrl+alt-k
@@ -300,10 +302,10 @@ cmp "$temporary_directory/resources-before.txt" "$temporary_directory/resources-
 [[ "$(/usr/bin/plutil -extract mutated raw -o - \
   "$temporary_directory/default-first.json")" == "false" ]]
 [[ "$(/usr/bin/plutil -extract summary.effective raw -o - \
-  "$temporary_directory/default-first.json")" == "49" ]]
+  "$temporary_directory/default-first.json")" == "51" ]]
 [[ "$(/usr/bin/plutil -extract mutated raw -o - "$temporary_directory/first.json")" == "false" ]]
-[[ "$(/usr/bin/plutil -extract summary.effective raw -o - "$temporary_directory/first.json")" == "49" ]]
-[[ "$(/usr/bin/plutil -extract summary.packaged_defaults raw -o - "$temporary_directory/first.json")" == "49" ]]
+[[ "$(/usr/bin/plutil -extract summary.effective raw -o - "$temporary_directory/first.json")" == "51" ]]
+[[ "$(/usr/bin/plutil -extract summary.packaged_defaults raw -o - "$temporary_directory/first.json")" == "51" ]]
 [[ "$(/usr/bin/plutil -extract summary.user_replacements raw -o - "$temporary_directory/first.json")" == "1" ]]
 [[ "$(/usr/bin/plutil -extract summary.user_additions raw -o - "$temporary_directory/first.json")" == "1" ]]
 [[ "$(/usr/bin/plutil -extract summary.disabled_defaults raw -o - "$temporary_directory/first.json")" == "1" ]]
