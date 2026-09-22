@@ -29,12 +29,20 @@ struct KeybindingsPlanCommandTests {
     let report = try jsonObject(execution.output)
     let summary = try #require(report["summary"] as? [String: Any])
     let actions = try #require(report["actions"] as? [[String: Any]])
+    let bindings = try #require(report["bindings"] as? [[String: Any]])
+    let defaults = SkhdConfigurationParser().parse(
+      try String(
+        contentsOf: repositoryRoot.appending(path: "Keybindings/defaults.skhdrc"),
+        encoding: .utf8))
 
     #expect(execution.succeeded)
     #expect(report["outcome"] as? String == "ready")
     #expect(report["mutated"] as? Bool == false)
-    #expect(summary["effective"] as? Int == 50)
-    #expect(summary["packaged_defaults"] as? Int == 50)
+    #expect(defaults.diagnostics.isEmpty)
+    #expect(!defaults.bindings.isEmpty)
+    #expect(bindings.count == defaults.bindings.count)
+    #expect(summary["effective"] as? Int == bindings.count)
+    #expect(summary["packaged_defaults"] as? Int == defaults.bindings.count)
     #expect(
       actions.map { $0["id"] as? String }
         == ["publish_generation", "install_provider_entry"]

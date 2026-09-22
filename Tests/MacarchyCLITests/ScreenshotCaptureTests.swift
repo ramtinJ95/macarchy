@@ -34,40 +34,32 @@ struct ScreenshotCaptureTests {
     #expect(try fixture.files() == [])
   }
 
-  @Test func nonzeroExitIsNotSilentlyClassifiedAsCancellation() throws {
+  @Test(arguments: [
+    (Int32(1), "", false),
+    (Int32(1), "Screen capture permission denied", true),
+    (Int32(0), "unexpected diagnostic", false),
+  ])
+  func nativeFailuresPreserveDiagnosticsWithoutRetryOrClipboardRestoration(
+    status: Int32, diagnostic: String, clipboardChanged: Bool
+  ) throws {
     let fixture = try ScreenshotFixture()
-    fixture.operation = { _ in .init(terminationStatus: 1, output: "") }
+    fixture.operation = { [unowned fixture] _ in
+      if clipboardChanged { fixture.changeCount += 1 }
+      return .init(terminationStatus: status, output: diagnostic)
+    }
     do {
       _ = try fixture.runner.execute()
       Issue.record("Native failure was accepted")
     } catch ScreenshotError.nativeFailure(let actual, let detail) {
-      #expect(actual == 1)
-      #expect(detail.isEmpty)
+      #expect(actual == status)
+      #expect(detail == diagnostic)
+      if !diagnostic.isEmpty {
+        #expect(
+          String(describing: ScreenshotError.nativeFailure(actual, detail)).contains(diagnostic))
+      }
     }
     #expect(fixture.requests.count == 1)
     #expect(fixture.copied.isEmpty)
-  }
-
-  @Test func permissionDiagnosticsRemainVisibleWithoutRetryOrClipboardRestoration() throws {
-    let fixture = try ScreenshotFixture()
-    fixture.operation = { [unowned fixture] _ in
-      fixture.changeCount += 1
-      return .init(terminationStatus: 1, output: "Screen capture permission denied")
-    }
-    do {
-      _ = try fixture.runner.execute()
-      Issue.record("Denied capture was accepted")
-    } catch {
-      #expect(String(describing: error).contains("Screen capture permission denied"))
-    }
-    #expect(fixture.requests.count == 1)
-    #expect(fixture.copied.isEmpty)
-  }
-
-  @Test func unexpectedNativeDiagnosticsAreNotDiscarded() throws {
-    let fixture = try ScreenshotFixture()
-    fixture.operation = { _ in .init(terminationStatus: 0, output: "unexpected diagnostic") }
-    #expect(throws: ScreenshotError.self) { try fixture.runner.execute() }
   }
 
   @Test func changedNonImageClipboardFailsWithoutOverwritingIt() throws {
