@@ -59,3 +59,4 @@ cmd - k : macarchy keybindings show --effective
 cmd + shift - t : macarchy theme browse
 ctrl + alt - space : macarchy menu
 ctrl + alt - c : macarchy capture screenshot --alert-on-error
+ctrl + alt + shift - c : macarchy capture annotate --alert-on-error

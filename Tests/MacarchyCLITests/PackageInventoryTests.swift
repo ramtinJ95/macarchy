@@ -238,7 +238,8 @@ struct PackageInventoryTests {
       "yazi", "zig", "zoxide", "zsh-autosuggestions", "zsh-syntax-highlighting",
     ])
     let expectedCasks = Set([
-      "anki", "cursor", "docker", "flameshot", "font-blex-mono-nerd-font",
+      "anki", "cursor", "docker", "flameshot-org/flameshot/flameshot-org-flameshot",
+      "font-blex-mono-nerd-font",
       "font-meslo-lg-nerd-font", "font-sketchybar-app-font", "font-symbols-only-nerd-font",
       "google-chrome", "kitty", "slack", "spotify", "tailscale", "zen", "zoom",
     ])

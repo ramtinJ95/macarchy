@@ -66,6 +66,7 @@ macarchy keybindings show --effective
 | Command–Shift–T | Browse themes and backgrounds |
 | Command–K | Search keybindings |
 | Control–Option–C | Capture a screenshot to the clipboard |
+| Control–Option–Shift–C | Annotate a screenshot with Flameshot |
 
 Shortcuts require the corresponding defaults to be applied.
 Theme changes repaint supported apps where possible; some need a reload or fresh
