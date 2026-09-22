@@ -467,7 +467,13 @@ package struct SketchyBarConfigurationComposer: Sendable {
           switch spaceModule {
           case .dynamicYabai:
             lines += [
-              "SPACE_INDICES=$(\"$PLUGIN_DIR/space-indexes.sh\")",
+              "\"$SKETCHYBAR\" --add item macarchy.spaces.startup \(position.rawValue) --set macarchy.spaces.startup icon='!' label='Waiting for Spaces' label.color=\"$MACARCHY_MUTED_COLOR\"",
+              "if SPACE_INDICES=$(\"$PLUGIN_DIR/space-indexes.sh\"); then",
+              "  \"$SKETCHYBAR\" --remove macarchy.spaces.startup",
+              "else",
+              "  \"$SKETCHYBAR\" --set macarchy.spaces.startup label='Spaces ERR' label.color=\"$MACARCHY_BATTERY_RED\"",
+              "  exit 1",
+              "fi",
               "for sid in $SPACE_INDICES; do",
               "  item=\"macarchy.space.$sid\"",
               "  \"$SKETCHYBAR\" --add space \"$item\" \(position.rawValue) \\",
@@ -615,10 +621,32 @@ package struct SketchyBarConfigurationComposer: Sendable {
   }
 
   private func renderSpaceIndexes() -> String {
+    // launchd does not order SketchyBar after yabai. Retry only its known
+    // not-listening response; malformed inventory and other errors stay fatal.
+    // This startup allowance does not relax lifecycle verification deadlines.
     [
       "#!/bin/sh",
       "set -eu",
-      "JSON=$(/opt/homebrew/bin/yabai -m query --spaces)",
+      "ATTEMPT=0",
+      "while ! JSON=$(/opt/homebrew/bin/yabai -m query --spaces 2>&1); do",
+      "  case \"$JSON\" in",
+      "    'yabai-msg: failed to connect to socket..') ;;",
+      "    *) printf '%s\\n' \"$JSON\" >&2; exit 1 ;;",
+      "  esac",
+      "  if [ \"$ATTEMPT\" -ge 40 ]; then",
+      "    echo 'Macarchy: yabai socket still unavailable after 41 attempts; reload SketchyBar after yabai is ready' >&2",
+      "    printf '%s\\n' \"$JSON\" >&2",
+      "    exit 1",
+      "  fi",
+      "  if [ \"$ATTEMPT\" -eq 0 ]; then",
+      "    echo 'Macarchy: waiting for yabai socket before loading Spaces' >&2",
+      "  fi",
+      "  ATTEMPT=$((ATTEMPT + 1))",
+      "  /bin/sleep 0.25",
+      "done",
+      "if [ \"$ATTEMPT\" -gt 0 ]; then",
+      "  echo 'Macarchy: yabai socket ready; loading Spaces' >&2",
+      "fi",
       "INDICES=$(printf '%s\\n' \"$JSON\" | /usr/bin/grep -Eo '\"index\"[[:space:]]*:[[:space:]]*[0-9]+' | /usr/bin/sed -E 's/.*:[[:space:]]*//') || {",
       "  echo 'cannot parse yabai Space inventory' >&2",
       "  exit 1",
