@@ -345,7 +345,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
         EnvironmentPlanAction(
           id: "configure_herdr",
           message:
-            "Configure Herdr's [theme] selector and established 16-key [theme.custom] surface."
+            "Configure Herdr's [theme] selector and 19-key [theme.custom] surface."
         )
       )
     }

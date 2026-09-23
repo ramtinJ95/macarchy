@@ -68,7 +68,7 @@ extension AdapterContractTests {
       }
       if request.executableURL == HerdrAdapter.liveExecutableURL {
         return request.arguments == ["--version"]
-          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
           : ProcessResult(
             terminationStatus: 0,
             output: herdrReloadSuccess
@@ -566,7 +566,7 @@ extension AdapterContractTests {
       processRunner: ProcessRunner { request in
         if request.executableURL == HerdrAdapter.liveExecutableURL {
           return request.arguments == ["--version"]
-            ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+            ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
             : ProcessResult(
               terminationStatus: 0,
               output: herdrReloadSuccess

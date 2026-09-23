@@ -427,6 +427,9 @@ struct ThemeCoreSliceTests {
         == [
           "accent": "#cba6f7",
           "panel_bg": "#1e1e2e",
+          "sidebar_bg": "#1e1e2e",
+          "active_row_bg": "#313244",
+          "selection_bg": package.semantic.selection.rawValue,
           "surface0": "#313244",
           "surface1": "#45475a",
           "surface_dim": "#1e1e2e",

@@ -83,7 +83,7 @@ extension AdapterContractTests {
       processRunner: ProcessRunner { request in
         requests.withLock { $0.append(request) }
         return request.arguments == ["--version"]
-          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
           : ProcessResult(
             terminationStatus: 0,
             output: herdrReloadSuccess
@@ -186,7 +186,7 @@ extension AdapterContractTests {
       controlIsAvailable: { true },
       processRunner: ProcessRunner { request in
         if request.arguments == ["--version"] {
-          return ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          return ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
         }
         if request.arguments == ["server", "reload-config"] {
           let attempt = reloadAttempts.withLock {
@@ -215,7 +215,7 @@ extension AdapterContractTests {
       controlIsAvailable: { true },
       processRunner: ProcessRunner { request in
         request.arguments == ["--version"]
-          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
           : request.arguments == ["status", "server"]
             ? ProcessResult(terminationStatus: 0, output: "status: stopped")
             : ProcessResult(terminationStatus: 1, output: "server unavailable")
@@ -495,7 +495,7 @@ extension AdapterContractTests {
 private func successfulHerdrProcessRunner() -> ProcessRunner {
   ProcessRunner { request in
     request.arguments == ["--version"]
-      ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.0")
+      ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
       : ProcessResult(
         terminationStatus: 0,
         output: herdrReloadSuccess
