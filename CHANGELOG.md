@@ -7,6 +7,32 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-09-23
+
+### Added
+
+- Native region screenshots to clipboard or file, a separate Flameshot annotation
+  action, and on-device English region-to-text OCR in the menu and capture CLI.
+  Cancellation and empty OCR results preserve the clipboard.
+
+### Fixed
+
+- Imported Herdr themes now color sidebar, focused-row and selection backgrounds.
+  Existing managed palettes migrate without losing rollback or original settings.
+- SketchyBar waits briefly for yabai's socket during startup, showing an explicit
+  waiting or error state instead of silently leaving an Apple-only bar.
+
+### Changed
+
+- The optional Herdr preset now requires Herdr 0.8.2 or newer.
+
+### Known limitations
+
+- Installation alone does not activate generated theme or bar changes. Select the
+  theme again to regenerate them; Herdr applies its palette through live reload.
+- OCR is English-only and requires macOS screen-capture permission in the launching
+  application's context. Fresh-user permission onboarding remains unqualified.
+
 ## [0.12.1] - 2026-09-20
 
 ### Fixed
