@@ -80,6 +80,7 @@ struct ActionMenuTests {
     (.keybindings, ["keybindings", "show", "--effective"]),
     (.screenshot, ["capture", "screenshot", "--alert-on-error"]),
     (.annotate, ["capture", "annotate", "--alert-on-error"]),
+    (.ocr, ["capture", "ocr", "--alert-on-error"]),
   ])
   func launchUsesExactExecutableAndShortcutArguments(
     action: ActionMenuAction, arguments: [String]
@@ -130,7 +131,9 @@ struct ActionMenuTests {
     #expect(state.selectedAction == .keybindings)
     state.search("capture region")
     #expect(state.selectedAction == .screenshot)
-    #expect(state.actions.count == 1)
+    #expect(state.actions == [.screenshot, .ocr])
+    state.search("OCR")
+    #expect(state.actions == [.ocr])
     state.search("flameshot annotation")
     #expect(state.actions == [.annotate])
     state.select(row: -1)

@@ -4,8 +4,38 @@ import Foundation
 
 struct CaptureCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
-    commandName: "capture", abstract: "Capture screenshots or annotate with Flameshot.",
-    subcommands: [Screenshot.self, Annotate.self])
+    commandName: "capture",
+    abstract: "Capture screenshots, recognize text or annotate with Flameshot.",
+    subcommands: [Screenshot.self, Annotate.self, OCR.self])
+
+  struct OCR: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      commandName: "ocr", abstract: "Select a region and copy English text using on-device Vision.",
+      discussion: """
+        Escape cancels. Do not hold Control: it redirects the native capture to an image copy.
+        The private temporary PNG is deleted before recognition; recognized text is never printed.
+        """)
+
+    @Flag(help: "Emit status only as JSON, never recognized text.")
+    var json = false
+
+    @Flag(help: .hidden)
+    var alertOnError = false
+
+    @MainActor
+    mutating func run() async throws {
+      do {
+        let outcome = try RegionTextCapture.live.execute()
+        print(try outcome.render(json: json))
+        if alertOnError && outcome == .noText {
+          CaptureCommand.showAlert(try outcome.render(json: false), style: .informational)
+        }
+      } catch {
+        if alertOnError { CaptureCommand.showAlert(String(describing: error)) }
+        throw error
+      }
+    }
+  }
 
   struct Annotate: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -22,7 +52,7 @@ struct CaptureCommand: ParsableCommand {
       do {
         print(try FlameshotCapture.live.execute().render(json: json))
       } catch {
-        if alertOnError { CaptureCommand.showFailure(error) }
+        if alertOnError { CaptureCommand.showAlert(String(describing: error)) }
         throw error
       }
     }
@@ -58,7 +88,7 @@ struct CaptureCommand: ParsableCommand {
           window: window, saveURL: save.map { URL(filePath: $0).standardizedFileURL })
         print(try outcome.render(json: json))
       } catch {
-        if alertOnError { CaptureCommand.showFailure(error) }
+        if alertOnError { CaptureCommand.showAlert(String(describing: error)) }
         throw error
       }
     }
@@ -66,14 +96,14 @@ struct CaptureCommand: ParsableCommand {
   }
 
   @MainActor
-  static func showFailure(_ error: any Error) {
+  static func showAlert(_ message: String, style: NSAlert.Style = .critical) {
     let app = NSApplication.shared
     _ = app.setActivationPolicy(.accessory)
     app.finishLaunching()
     let alert = NSAlert()
-    alert.messageText = "Screenshot not completed"
-    alert.informativeText = String(describing: error)
-    alert.alertStyle = .critical
+    alert.messageText = "Capture not completed"
+    alert.informativeText = message
+    alert.alertStyle = style
     app.activate(ignoringOtherApps: true)
     alert.runModal()
   }

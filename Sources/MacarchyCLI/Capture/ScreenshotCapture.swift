@@ -105,19 +105,32 @@ struct ScreenshotCapture {
   }
 
   private func captureAndSave(arguments: [String], destination: URL) throws -> ScreenshotOutcome {
-    // Only --save stages on disk. A private per-attempt file avoids exporting
-    // an unrelated copy if another application changes the shared clipboard.
+    guard let data = try capturedPNG(arguments: arguments) else { return .cancelled }
+    // Exclusive final write preserves a destination created while selecting.
+    try data.write(to: destination, options: .withoutOverwriting)
+    do { try clipboard.copyPNG(data) } catch {
+      throw ScreenshotError.savedButNotCopied(destination.path, String(describing: error))
+    }
+    return ScreenshotOutcome(status: .copied, savedPath: destination.path)
+  }
+
+  /// File-save and OCR share private staging; direct image copy stays disk-free.
+  /// Remove the image before returning bytes, including on provider failure.
+  func capturedPNG(arguments: [String] = ["-i", "-t", "png"]) throws -> Data? {
+    guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
+      throw ScreenshotError.missingProvider(executableURL.path)
+    }
     let folder = temporaryRoot.appending(
       path: "macarchy-capture-\(UUID())", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(
       at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-    let result = Result { () throws -> ScreenshotOutcome in
+    let result = Result { () throws -> Data? in
       let captured = folder.appending(path: "capture.png")
       let before = clipboard.changeCount()
       try capture(arguments + [captured.path])
       guard FileManager.default.fileExists(atPath: captured.path) else {
         guard clipboard.changeCount() == before else { throw ScreenshotError.missingSavedImage }
-        return .cancelled
+        return nil
       }
       let data = try BoundedRegularFile.read(at: captured, maximumSize: 128 * 1_048_576).data
       guard let image = CGImageSourceCreateWithData(data as CFData, nil),
@@ -126,18 +139,12 @@ struct ScreenshotCapture {
         CGImageSourceGetCount(image) == 1,
         CGImageSourceCreateImageAtIndex(image, 0, nil) != nil
       else { throw ScreenshotError.invalidImage }
-      // Do not combine .atomic with .withoutOverwriting: the latter is the
-      // explicit no-clobber contract, including a destination created mid-picker.
-      try data.write(to: destination, options: .withoutOverwriting)
-      do { try clipboard.copyPNG(data) } catch {
-        throw ScreenshotError.savedButNotCopied(destination.path, String(describing: error))
-      }
-      return ScreenshotOutcome(status: .copied, savedPath: destination.path)
+      return data
     }
     do { try FileManager.default.removeItem(at: folder) } catch {
       let preceding: String
       switch result {
-      case .success(let outcome): preceding = try outcome.render(json: false)
+      case .success: preceding = "Capture was not published."
       case .failure(let failure): preceding = String(describing: failure)
       }
       throw ScreenshotError.cleanup(folder.path, preceding, String(describing: error))
