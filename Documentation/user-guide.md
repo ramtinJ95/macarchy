@@ -314,6 +314,37 @@ cancellation. Other failures retain provider diagnostics. A successful process
 without a new image is also an error; there is no automatic retry or native fallback.
 The existing native capture shortcut and cancellation behavior are unchanged.
 
+### Copy text from a region
+
+Choose **Copy text from region** in the action menu, or run:
+
+```sh
+macarchy capture ocr
+macarchy capture ocr --json
+```
+
+Select readable English text; Apple Vision recognizes it on-device and copies
+plain text, joining recognized lines with newlines. English (`en-US`) accurate
+recognition with language correction is the current supported configuration,
+not a promise of arbitrary language, handwriting or complex-layout accuracy.
+There is no OCR-specific default shortcut; the existing capture shortcuts stay unchanged.
+
+Escape reports `cancelled`; a blank region reports `noText` (with an informational
+alert from the menu). Neither result writes the clipboard. Success reports
+`copied`; stdout/JSON never contains recognized text. Errors remain explicit.
+Do not hold Control during selection: macOS can redirect the image to the
+clipboard instead of producing the requested file; Macarchy reports that as an
+error and does not restore old clipboard contents.
+
+The Apple screenshot picker writes a PNG in a private temporary directory.
+Macarchy deletes it before recognition, including cleanup on capture failure;
+cleanup failure stops publication and reports the directory for manual recovery.
+A force-quit or system crash can leave that directory behind. No image/text
+history, upload, telemetry or extra OCR application is enabled. Other clipboard
+managers you run can still collect the resulting text.
+Screen Recording permission belongs to the actual launching context, as with
+native screenshots; Macarchy does not grant it or retry automatically.
+
 ### Bring an Omarchy theme
 
 ```sh
