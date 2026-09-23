@@ -134,6 +134,48 @@ struct ScreenshotCaptureTests {
     #expect(try fixture.files() == [])
   }
 
+  @Test(arguments: [false, true])
+  func cleanupFailureBlocksPublicationAndReportsRecoveryPath(ocr: Bool) throws {
+    let fixture = try ScreenshotFixture()
+    let png = try screenshotPNG()
+    var staging: URL?
+    defer {
+      if let staging {
+        try? FileManager.default.setAttributes(
+          [.posixPermissions: 0o700], ofItemAtPath: staging.path)
+      }
+    }
+    fixture.operation = { request in
+      let captured = URL(filePath: try #require(request.arguments.last))
+      let folder = captured.deletingLastPathComponent()
+      staging = folder
+      try png.write(to: captured)
+      // Keep the PNG readable but deny removal, exercising actual cleanup failure.
+      try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+      return .init(terminationStatus: 0, output: "")
+    }
+    do {
+      if ocr {
+        _ = try RegionTextCapture(
+          capture: { try fixture.runner.capturedPNG() },
+          recognize: { _ in
+            Issue.record("Recognition ran despite failed cleanup")
+            return ["text"]
+          }, copyText: { _ in Issue.record("Text published despite failed cleanup") }
+        ).execute()
+      } else {
+        _ = try fixture.runner.execute(saveURL: fixture.destination)
+      }
+      Issue.record("Cleanup failure was accepted")
+    } catch ScreenshotError.cleanup(let path, _, let detail) {
+      #expect(path == staging?.path)
+      #expect(!detail.isEmpty)
+      #expect(FileManager.default.fileExists(atPath: path))
+    }
+    #expect(!FileManager.default.fileExists(atPath: fixture.destination.path))
+    #expect(fixture.copied.isEmpty)
+  }
+
   @Test func invalidPNGIsNotSavedOrCopied() throws {
     let fixture = try ScreenshotFixture()
     fixture.captureFile(Data("not an image".utf8))
