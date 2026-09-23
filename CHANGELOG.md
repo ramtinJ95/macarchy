@@ -7,6 +7,14 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-09-23
+
+### Fixed
+
+- Continue bounded Spotify replacement-process verification after the specific
+  transient Launch Services error -600. A stable replacement is still required;
+  no extra launch attempts occur, and exhaustion preserves the original error.
+
 ## [0.12.2] - 2026-09-23
 
 ### Added
