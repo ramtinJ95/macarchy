@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/2634deb7-fadb-46f4-995e-3425e18bb98d
 - **Themes:** a visual picker, wallpapers, and coordinated colors across supported
   apps. Ships with Catppuccin Mocha, Tokyo Night, and Kanagawa Wave;
   imports compatible Omarchy themes.
-- **Daily actions:** a searchable menu for configuration, themes, screenshots,
+- **Daily actions:** a searchable menu for configuration, themes, screenshots, region-to-text OCR,
   and reviewed updates.
 - **Your configuration:** choose the pieces you want and keep personal settings
   in your own dotfiles. Optional integrations include Pi, Codex, Herdr and Spotify.
