@@ -480,6 +480,7 @@ package struct SpicetifyAdapter: Sendable {
     // The provider can quit successfully but race its macOS relaunch. Launch
     // Services is permitted only after every original process has disappeared.
     var launched = false
+    var transientLaunchFailure: String?
     var previousReplacement: Set<Int32>?
     for attempt in 0..<21 {
       try Task.checkCancellation()
@@ -497,9 +498,19 @@ package struct SpicetifyAdapter: Sendable {
             ProcessRequest(
               executableURL: URL(filePath: "/usr/bin/open"),
               arguments: ["-g", "-a", Self.liveSpotifyBundleURL.path], timeout: 2))
-          guard launch.terminationStatus == 0 else {
-            throw SpicetifyAdapterError.processInspectionFailed(
-              launch.output.isEmpty ? "Cannot relaunch Spotify" : launch.output)
+          if launch.terminationStatus != 0 {
+            // Spicetify starts open asynchronously. Launch Services can still be
+            // retiring the old application while its replacement is in flight.
+            // Only procNotFound (-600) permits observation, never another launch.
+            let diagnostic = launch.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard
+              diagnostic
+                == "_LSOpenURLsWithCompletionHandler() failed for the application \(Self.liveSpotifyBundleURL.path) with error -600."
+            else {
+              throw SpicetifyAdapterError.processInspectionFailed(
+                launch.output.isEmpty ? "Cannot relaunch Spotify" : launch.output)
+            }
+            transientLaunchFailure = diagnostic
           }
           launched = true
         }
@@ -507,7 +518,8 @@ package struct SpicetifyAdapter: Sendable {
       if attempt < 20 { try waitBetweenProcessChecks() }
     }
     throw SpicetifyAdapterError.processInspectionFailed(
-      "Spotify restart did not produce a stable replacement process")
+      "Spotify restart did not produce a stable replacement process"
+        + (transientLaunchFailure.map { "; launch reported: \($0)" } ?? ""))
   }
 
   private var runtimeEvidenceURL: URL {
