@@ -157,7 +157,7 @@ struct EnvironmentHerdrDocument {
       let parsed = try HerdrAdapter.parseConfiguration(original)
       guard parsed.custom.isEmpty else {
         throw EnvironmentLifecycleError.blocked(
-          "pre-existing Herdr custom colors conflict with the managed 16-key surface"
+          "pre-existing Herdr custom colors conflict with the managed theme surface"
         )
       }
     }
@@ -239,7 +239,7 @@ struct EnvironmentHerdrDocument {
       } ?? false
     guard parsed.custom.isEmpty || replacesAuthenticatedSurface else {
       throw EnvironmentLifecycleError.blocked(
-        "pre-existing Herdr custom colors conflict with the managed 16-key surface"
+        "pre-existing Herdr custom colors conflict with the managed theme surface"
       )
     }
     let result = try HerdrAdapter.replacingManagedSurface(

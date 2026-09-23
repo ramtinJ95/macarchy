@@ -106,7 +106,7 @@ struct HerdrPresetLifecycleTests {
   }
 
   @Test
-  func importedThemeOwnsAndRemovesExactlyTheEstablishedSixteenCustomKeys() throws {
+  func importedThemeOwnsAndRemovesExactlyTheNineteenCustomKeys() throws {
     let fixture = try HerdrFixture(
       configuration: "[theme]\nname = \"personal\"\n",
       importedPalette: true
@@ -121,7 +121,7 @@ struct HerdrPresetLifecycleTests {
     )
     let managed = try String(contentsOf: fixture.configuration, encoding: .utf8)
     #expect(managed.contains("[theme.custom]"))
-    #expect(HerdrAdapter.customKeys.count == 16)
+    #expect(HerdrAdapter.customKeys.count == 19)
     for key in HerdrAdapter.customKeys {
       #expect(managed.contains("\n\(key) = \""))
     }

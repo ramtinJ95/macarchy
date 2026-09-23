@@ -159,7 +159,7 @@ enum ThemeRuntimeSelection {
           homeDirectory: homeDirectory,
           stateRoot: stateRoot
         ).preflightManagedHerdr(desired, requireActiveMatch: true)
-        return "Herdr's 16-key theme surface is owned by the applied environment"
+        return "Herdr's generated theme surface is owned by the applied environment"
       },
       reconcile: { desired in
         try reconcileManagedHerdr(

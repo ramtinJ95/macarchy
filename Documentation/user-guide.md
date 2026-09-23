@@ -445,6 +445,11 @@ herdr = true
 override = "keybindings.skhdrc"
 ```
 
+The optional Herdr preset requires Herdr 0.8.2 or newer. Imported palettes include
+sidebar, focused-row and selection backgrounds; built-in mappings retain Herdr's
+native theme colors. After upgrading Macarchy, select the theme again to regenerate
+its palette and live-reload Herdr. Installation alone does not activate a theme.
+
 Put `keybindings.skhdrc` beside this profile to replace or add selected bindings:
 
 ```text

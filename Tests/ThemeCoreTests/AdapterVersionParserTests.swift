@@ -45,8 +45,8 @@ struct AdapterVersionParserTests {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let executable = root.appending(path: label)
     let provider = label == "codex-cli" ? "Codex" : "Herdr"
-    let minimum = label == "codex-cli" ? "0.151.0" : "0.8.0"
-    let belowMinimum = label == "codex-cli" ? "0.150.9" : "0.7.9"
+    let minimum = label == "codex-cli" ? "0.151.0" : "0.8.2"
+    let belowMinimum = label == "codex-cli" ? "0.150.9" : "0.8.1"
 
     func supportedVersion(_ output: String, status: Int32 = 0) throws -> String {
       let runner = ProcessRunner { request in

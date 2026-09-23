@@ -58,7 +58,7 @@ enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
 }
 
 package struct GeneratedHerdrTheme: Codable, Equatable, Sendable {
-  static let currentSchemaVersion = 1
+  static let currentSchemaVersion = 2
 
   package let schemaVersion: Int
   package let name: String
@@ -71,9 +71,11 @@ package struct GeneratedHerdrTheme: Codable, Equatable, Sendable {
   }
 
   package func validated() throws -> Self {
-    guard schemaVersion == Self.currentSchemaVersion,
+    guard [1, Self.currentSchemaVersion].contains(schemaVersion),
       HerdrAdapter.supportedThemes.contains(name),
-      custom.isEmpty || Set(custom.keys) == HerdrAdapter.customKeySet,
+      custom.isEmpty
+        || Set(custom.keys)
+          == (schemaVersion == 1 ? HerdrAdapter.legacyCustomKeySet : HerdrAdapter.customKeySet),
       custom.values.allSatisfy({ SRGBColor(rawValue: $0) != nil })
     else {
       throw HerdrAdapterError.invalidGeneratedTheme
@@ -116,7 +118,7 @@ package struct HerdrManagedMode: Sendable {
 package struct HerdrAdapter: Sendable {
   package static let id = "herdr"
   package static let outputPath = "generated/herdr.txt"
-  static let rendererVersion = 3
+  static let rendererVersion = 4
   package static var liveExecutableURL: URL {
     executableURL(homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
   }
@@ -128,15 +130,18 @@ package struct HerdrAdapter: Sendable {
       homebrewExecutableName: "herdr"
     )
   }
-  package static let minimumVersion = "0.8.0"
+  package static let minimumVersion = "0.8.2"
 
   static let supportedThemes = Set([
     "catppuccin", "tokyo-night", "kanagawa",
   ])
-  package static let customKeys = [
+  private static let legacyCustomKeys = [
     "accent", "panel_bg", "surface0", "surface1", "surface_dim", "overlay0", "overlay1",
     "text", "subtext0", "mauve", "green", "yellow", "red", "blue", "teal", "peach",
   ]
+  static let legacyCustomKeySet = Set(legacyCustomKeys)
+  package static let customKeys =
+    legacyCustomKeys + ["sidebar_bg", "active_row_bg", "selection_bg"]
   static let customKeySet = Set(customKeys)
   private static let importedBaseTheme = "catppuccin"
 
@@ -459,6 +464,9 @@ package struct HerdrAdapter: Sendable {
       custom: [
         "accent": semantic.accent.rawValue,
         "panel_bg": semantic.background.rawValue,
+        "sidebar_bg": semantic.background.rawValue,
+        "active_row_bg": semantic.surface.rawValue,
+        "selection_bg": semantic.selection.rawValue,
         "surface0": semantic.surface.rawValue,
         "surface1": semantic.overlay.rawValue,
         "surface_dim": semantic.background.rawValue,
@@ -514,13 +522,19 @@ package struct HerdrAdapter: Sendable {
       return GeneratedHerdrTheme(name: value)
     }
 
-    guard rendererVersion == Self.rendererVersion,
+    guard [3, Self.rendererVersion].contains(rendererVersion),
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
       Set(object.keys) == Set(["schema_version", "name", "custom"])
     else {
       throw HerdrAdapterError.invalidGeneratedTheme
     }
-    return try JSONDecoder().decode(GeneratedHerdrTheme.self, from: data).validated()
+    let theme = try JSONDecoder().decode(GeneratedHerdrTheme.self, from: data).validated()
+    guard
+      theme.schemaVersion == (rendererVersion == 3 ? 1 : GeneratedHerdrTheme.currentSchemaVersion)
+    else {
+      throw HerdrAdapterError.invalidGeneratedTheme
+    }
+    return theme
   }
 
   private func readConfiguration() throws -> (data: Data, text: String) {
@@ -774,10 +788,14 @@ package struct HerdrAdapter: Sendable {
         backupDigest.hasPrefix("sha256:"),
         backupDigest.dropFirst(7).allSatisfy({ $0.isHexDigit && $0.isASCII }),
         desired.name.map(HerdrAdapter.supportedThemes.contains) == true,
-        desired.custom.isEmpty || Set(desired.custom.keys) == HerdrAdapter.customKeySet,
+        desired.custom.isEmpty
+          || [HerdrAdapter.legacyCustomKeySet, HerdrAdapter.customKeySet].contains(
+            Set(desired.custom.keys)),
         desired.custom.values.allSatisfy({ SRGBColor(rawValue: $0) != nil }),
         before.map({
-          $0.custom.isEmpty || Set($0.custom.keys) == HerdrAdapter.customKeySet
+          $0.custom.isEmpty
+            || [HerdrAdapter.legacyCustomKeySet, HerdrAdapter.customKeySet].contains(
+              Set($0.custom.keys))
         }) != false,
         before?.custom.values.allSatisfy({ SRGBColor(rawValue: $0) != nil }) != false
       else {
@@ -1051,9 +1069,15 @@ package struct HerdrAdapter: Sendable {
       return updated
     }
 
+    let keys: [String]
+    switch Set(desired.custom.keys) {
+    case legacyCustomKeySet: keys = legacyCustomKeys
+    case customKeySet: keys = customKeys
+    default: throw HerdrAdapterError.invalidGeneratedTheme
+    }
     let reparsed = try parseConfiguration(updated)
     let customLines =
-      customKeys.map { key in
+      keys.map { key in
         "\(key) = \"\(desired.custom[key]!)\""
       }.joined(separator: newline) + newline
     if let header = reparsed.customHeaderIndex {
