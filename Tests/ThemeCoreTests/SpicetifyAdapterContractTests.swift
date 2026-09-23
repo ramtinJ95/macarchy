@@ -286,6 +286,8 @@ extension AdapterContractTests {
     arguments: [
       "closed", "replacement", "fallback", "stuck", "unstable", "restart-failed", "open-failed",
       "refresh-failed",
+      "delayed-shutdown", "transient-open", "transient-open-exhausted",
+      "transient-open-unstable",
     ], [false, true])
   func spicetifyRestartVerifiesProcessesAndPreservesFailureEvidence(
     scenario: String, restoring: Bool
@@ -309,14 +311,28 @@ extension AdapterContractTests {
             return $0.queries
           }
           if scenario == "closed" { return ProcessResult(terminationStatus: 1, output: "") }
-          if query == 1 || scenario == "stuck" {
+          if query == 1 || scenario == "stuck"
+            || (scenario == "delayed-shutdown" && query <= 4)
+          {
             return ProcessResult(terminationStatus: 0, output: "123\n")
           }
-          if (scenario == "fallback" && query == 2) || scenario == "open-failed" {
+          if (scenario == "fallback" && query == 2) || scenario == "open-failed"
+            || scenario == "transient-open-exhausted"
+            || (scenario.hasPrefix("transient-open") && query <= 4)
+          {
             return ProcessResult(terminationStatus: 1, output: "")
           }
           return ProcessResult(
-            terminationStatus: 0, output: scenario == "unstable" ? "\(query + 200)\n" : "456\n")
+            terminationStatus: 0,
+            output: ["unstable", "transient-open-unstable"].contains(scenario)
+              ? "\(query + 200)\n" : "456\n")
+        }
+        if scenario.hasPrefix("transient-open"), request.executableURL.lastPathComponent == "open" {
+          return ProcessResult(
+            terminationStatus: 1,
+            output:
+              "_LSOpenURLsWithCompletionHandler() failed for the application /Applications/Spotify.app with error -600.\n"
+          )
         }
         let failed =
           (scenario == "restart-failed" && request.arguments == ["restart"])
@@ -325,7 +341,8 @@ extension AdapterContractTests {
         return ProcessResult(
           terminationStatus: failed ? 1 : 0, output: failed ? "provider rejected" : "")
       }, waitBetweenProcessChecks: {})
-    let succeeds = ["closed", "replacement", "fallback"].contains(scenario)
+    let succeeds = ["closed", "replacement", "fallback", "delayed-shutdown", "transient-open"]
+      .contains(scenario)
     do {
       if restoring {
         #expect(try adapter.refreshRestoredConfiguration(clearRuntimeEvidence: true) == .applied)
@@ -335,6 +352,10 @@ extension AdapterContractTests {
       #expect(succeeds)
     } catch {
       #expect(!succeeds)
+      if scenario.hasPrefix("transient-open") {
+        #expect(String(describing: error).contains("error -600."))
+        #expect(String(describing: error).contains("stable replacement"))
+      }
     }
     if succeeds && !restoring {
       #expect(try await adapter.reconciliation().run().status == .applied)
@@ -345,11 +366,15 @@ extension AdapterContractTests {
         == (["closed", "refresh-failed"].contains(scenario) ? 0 : 1))
     #expect(
       requests.filter { $0.executableURL.lastPathComponent == "open" }.count
-        == (["fallback", "open-failed"].contains(scenario) ? 1 : 0))
+        == (["fallback", "open-failed"].contains(scenario) || scenario.hasPrefix("transient-open")
+          ? 1 : 0))
     #expect(
       FileManager.default.fileExists(atPath: root.appending(path: "state/spicetify.json").path)
         == (succeeds && !restoring))
     #expect(state.withLock { $0.queries } <= 22)
+    if ["transient-open-exhausted", "transient-open-unstable"].contains(scenario) {
+      #expect(state.withLock { $0.queries } == 22)
+    }
   }
 
   private func spicetifyConfiguration(root: URL) throws -> (
