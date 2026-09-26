@@ -7,6 +7,61 @@ import Testing
 @testable import ThemeCore
 
 struct DesktopApplyCommandTests {
+  @Test(arguments: [false, true])
+  func yabaiRebootIdentityAndReviewedMigrationRestoreOriginal(legacy: Bool) throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularConfiguration("# original yabai\n")
+    let lifecycle = YabaiLifecycleFixture(running: true)
+    let runner = DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil, prerequisites: .assumed, theme: nil)
+    #expect(
+      try runner.execute(
+        resourcesRoot: fixture.resources, profileURL: fixture.profile,
+        profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
+        adopt: try fixture.adoptionDigest(), json: true, scope: .yabaiOnly
+      ).succeeded)
+    let store = YabaiOwnershipStore(stateRoot: fixture.state)
+    var record = try #require(try store.read())
+    let uuid = try #require(record.original.volumeUUID)
+    record.original = try ownershipFixtureReplacing(
+      record.original,
+      [
+        "device": try #require(record.original.device) + 2,
+        "volumeUUID": legacy ? NSNull() : uuid as Any,
+      ])
+    try store.write(record)
+    let receipt = fixture.state.appending(path: "desktop/yabai/ownership.json")
+    let before = try Data(contentsOf: receipt)
+    let calls = lifecycle.calls.withLock { $0 }
+    let migration = RetainedOwnershipMigration(homeDirectory: fixture.home)
+    let preview = try migration.execute(provider: .yabai)
+    #expect(preview.status == (legacy ? "review_required" : "already_bound"))
+    #expect(try Data(contentsOf: receipt) == before)
+    if legacy {
+      #expect(throws: (any Error).self) {
+        try YabaiProviderTransaction.authenticateRetained(record)
+      }
+      #expect(
+        try migration.execute(provider: .yabai, approval: preview.evidenceDigest).status
+          == "migrated")
+    }
+    #expect(lifecycle.calls.withLock { $0 } == calls)
+    record = try #require(try store.read())
+    try YabaiProviderTransaction.authenticateRetained(record)
+    #expect(
+      YabaiProviderPlanInspector().inspect(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.state, enabled: true
+      ).status == .managed)
+    try YabaiProviderTransaction(homeDirectory: fixture.home, stateRoot: fixture.state)
+      .restoreOriginal(record)
+    var restored = stat()
+    #expect(lstat(entry.path, &restored) == 0)
+    #expect(UInt64(restored.st_ino) == record.original.inode)
+  }
+
   @Test(arguments: [0, 1, 2])
   func personalYabaiReviewsConnectionAndActivatesOnlyOnExit(approvals: Int) throws {
     let fixture = try DesktopApplyFixture()

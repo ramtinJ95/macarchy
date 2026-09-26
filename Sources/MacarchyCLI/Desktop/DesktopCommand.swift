@@ -6,7 +6,8 @@ struct Desktop: ParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Plan and manage the default desktop providers.",
     subcommands: [
-      Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, RunSketchyBarHook.self,
+      Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, MigrateOwnership.self,
+      RunSketchyBarHook.self,
       Borders.self, CPULoad.self, WiFi.self, AudioOutputCommand.self, AudioPicker.self,
       Calendar.self, Media.self, Toggle.self, UpdateIndicator.self,
     ]

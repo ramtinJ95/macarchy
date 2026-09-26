@@ -8,6 +8,112 @@ import Testing
 
 @Suite(.serialized)
 struct SketchyBarTransactionTests {
+  @Test(arguments: [false, true])
+  func rebootIdentitySurvivesInspectionAndRestoration(legacy: Bool) throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let entry = try fixture.installRegularEntry("personal bar\n")
+    _ = try fixture.transaction().convergeLocked(
+      composition: fixture.composition, adoptionEvidenceDigest: try fixture.adoptionDigest())
+    let store = SketchyBarOwnershipStore(stateRoot: fixture.state)
+    var record = try #require(try store.read())
+    let uuid = try #require(record.original.volumeUUID)
+    record.original = try ownershipFixtureReplacing(
+      record.original,
+      [
+        "device": try #require(record.original.device) + 2,
+        "volume_uuid": legacy ? NSNull() : uuid as Any,
+      ])
+    try store.write(record)
+    let receipt = fixture.state.appending(path: "desktop/sketchybar/ownership.json")
+    let before = try Data(contentsOf: receipt)
+    let calls = fixture.lifecycle.events
+    let migration = RetainedOwnershipMigration(homeDirectory: fixture.home)
+    let preview = try migration.execute(provider: .sketchybar)
+    #expect(preview.status == (legacy ? "review_required" : "already_bound"))
+    #expect(try Data(contentsOf: receipt) == before)
+    #expect(fixture.lifecycle.events == calls)
+    if legacy {
+      #expect(throws: (any Error).self) {
+        try SketchyBarProviderTransaction.authenticateRetained(record)
+      }
+      #expect(throws: (any Error).self) {
+        try migration.execute(provider: .sketchybar, approval: "stale")
+      }
+      #expect(try Data(contentsOf: receipt) == before)
+      #expect(
+        try migration.execute(provider: .sketchybar, approval: preview.evidenceDigest).status
+          == "migrated")
+      #expect(try migration.execute(provider: .sketchybar).status == "already_bound")
+    }
+    #expect(fixture.lifecycle.events == calls)
+    record = try #require(try store.read())
+    try SketchyBarProviderTransaction.authenticateRetained(record)
+    #expect(
+      SketchyBarProviderPlanInspector().inspect(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.state, enabled: true,
+        generation: SketchyBarGenerationInspector(stateRoot: fixture.state).inspect()
+      ).status == .managed)
+    if !legacy {
+      let interrupted = fixture.transaction { checkpoint in
+        if checkpoint == .providerRestored { throw SketchyBarInterruptionError.injected }
+      }
+      #expect(throws: SketchyBarInterruptionError.self) {
+        try interrupted.teardownLocked(dryRun: false)
+      }
+    }
+    _ = try fixture.transaction().teardownLocked(dryRun: false)
+    var restored = stat()
+    #expect(lstat(entry.path, &restored) == 0)
+    #expect(UInt64(restored.st_ino) == record.original.inode)
+    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal bar\n")
+  }
+
+  @Test(arguments: ["volume", "inode", "contents", "pending", "stale"])
+  func ownershipMigrationRefusesOtherDrift(change: String) throws {
+    let fixture = try SketchyBarTransactionFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    _ = try fixture.installRegularEntry("personal bar\n")
+    _ = try fixture.transaction().convergeLocked(
+      composition: fixture.composition, adoptionEvidenceDigest: try fixture.adoptionDigest())
+    let store = SketchyBarOwnershipStore(stateRoot: fixture.state)
+    var record = try #require(try store.read())
+    record.original.volumeUUID = nil
+    try store.write(record)
+    let migration = RetainedOwnershipMigration(homeDirectory: fixture.home)
+    let preview = try migration.execute(provider: .sketchybar)
+    switch change {
+    case "volume": record.original.volumeUUID = UUID().uuidString
+    case "inode":
+      record.original = try ownershipFixtureReplacing(
+        record.original,
+        [
+          "inode": try #require(record.original.inode) + 1
+        ])
+    case "contents":
+      try Data("changed bytes\n".utf8).write(
+        to: URL(filePath: try #require(record.retainedOriginalPath)))
+    case "pending":
+      try Data("{}".utf8).write(
+        to: fixture.state.appending(path: "desktop/aggregate-transaction.json"))
+    default:
+      // Still valid surviving evidence, but not the receipt whose digest was approved.
+      record.original = try ownershipFixtureReplacing(
+        record.original,
+        [
+          "device": try #require(record.original.device) + 2
+        ])
+    }
+    try store.write(record)
+    let receipt = fixture.state.appending(path: "desktop/sketchybar/ownership.json")
+    let before = try Data(contentsOf: receipt)
+    #expect(throws: (any Error).self) {
+      try migration.execute(provider: .sketchybar, approval: preview.evidenceDigest)
+    }
+    #expect(try Data(contentsOf: receipt) == before)
+  }
+
   @Test
   func interruptedAdoptionRestoresTheExactRegularFileInode() throws {
     let fixture = try SketchyBarTransactionFixture()

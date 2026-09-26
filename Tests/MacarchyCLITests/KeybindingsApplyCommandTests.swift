@@ -8,6 +8,65 @@ import Testing
 @testable import ThemeCore
 
 struct KeybindingsApplyCommandTests {
+  @Test(arguments: [false, true])
+  func retainedSkhdIdentitySurvivesRebootAndReviewedMigration(legacy: Bool) throws {
+    let fixture = try KeybindingsApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let skhd = fixture.home.appending(path: ".config/skhd")
+    try FileManager.default.removeItem(at: skhd)
+    let source = fixture.root.appending(path: "dotfiles/skhd")
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    try Data("alt - x : original\n".utf8).write(to: source.appending(path: "skhdrc"))
+    try FileManager.default.createSymbolicLink(
+      atPath: skhd.path, withDestinationPath: "../../dotfiles/skhd")
+    let lifecycle = LifecycleFixture()
+    let runner = fixture.runner(lifecycle: lifecycle.controller)
+    #expect(try fixture.execute(runner: runner, adopt: true, json: true).succeeded)
+    let manager = SetupOwnershipManager()
+    let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
+    var records = try manager.readRecords(context: context)
+    let index = try #require(
+      records.firstIndex { $0.id == KeybindingProviderInspector.ownershipID })
+    let uuid = try #require(records[index].originalVolumeUUID)
+    records[index] = try ownershipFixtureReplacing(
+      records[index],
+      [
+        "original_device": try #require(records[index].originalDevice) + 2,
+        "original_volume_uuid": legacy ? NSNull() : uuid as Any,
+      ])
+    try manager.persist(records: records, context: context)
+    let receipt = fixture.stateRoot.appending(path: "state/setup/ownership.json")
+    let before = try Data(contentsOf: receipt)
+    let calls = lifecycle.calls.withLock { $0 }
+    let migration = RetainedOwnershipMigration(homeDirectory: fixture.home)
+    let preview = try migration.execute(provider: .skhd)
+    #expect(preview.status == (legacy ? "review_required" : "already_bound"))
+    #expect(try Data(contentsOf: receipt) == before)
+    if legacy {
+      #expect(throws: (any Error).self) {
+        try KeybindingProviderTransaction(homeDirectory: fixture.home)
+          .preflightRetainedOriginalClaim(records[index])
+      }
+      #expect(
+        try migration.execute(provider: .skhd, approval: preview.evidenceDigest).status
+          == "migrated")
+    }
+    #expect(lifecycle.calls.withLock { $0 } == calls)
+    #expect(
+      KeybindingProviderInspector().inspect(
+        homeDirectory: fixture.home,
+        stateRoot: fixture.stateRoot,
+        generation: KeybindingGenerationInspector().inspect(stateRoot: fixture.stateRoot)
+      ).status == .managed)
+    _ = try runner.teardownLocked(
+      stateRoot: fixture.stateRoot, homeDirectory: fixture.home, dryRun: false)
+    var restored = stat()
+    #expect(lstat(skhd.path, &restored) == 0)
+    #expect(UInt64(restored.st_ino) == records[index].originalInode)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: skhd.path) == "../../dotfiles/skhd")
+  }
+
   @Test
   func reviewedLegacyFallbackAdoptionNeverMutatesFallbackAndTeardownRevealsIt() throws {
     let fixture = try KeybindingsApplyFixture()
