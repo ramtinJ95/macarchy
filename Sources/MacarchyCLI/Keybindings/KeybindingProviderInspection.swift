@@ -1049,7 +1049,7 @@ struct KeybindingProviderInspector: Sendable {
     return record.phase == .applied ? .claimed(record) : .prepared
   }
 
-  private func validateManagedOwnershipMarkers(
+  func validateManagedOwnershipMarkers(
     directoryDescriptor: Int32,
     entry: URL,
     record: SetupOwnershipRecord
@@ -1190,6 +1190,7 @@ struct KeybindingProviderInspector: Sendable {
     let target = context.homeDirectory.appending(path: ".config/skhd/skhdrc")
     let expectedTarget = Self.managedTarget
     guard
+      record.originalVolumeUUID.map({ UUID(uuidString: $0)?.uuidString == $0 }) ?? true,
       [.prepared, .applied, .teardownPrepared].contains(record.phase),
       record.kind == .symbolicLink,
       record.targetPath == target.path,
@@ -1216,6 +1217,7 @@ struct KeybindingProviderInspector: Sendable {
         record.originalFileMode == nil,
         record.originalMetadataDigest == nil,
         record.originalDevice == nil,
+        record.originalVolumeUUID == nil,
         record.originalInode == nil,
         record.originalSourceDigest == nil,
         record.originalInventory == nil,
@@ -1237,6 +1239,7 @@ struct KeybindingProviderInspector: Sendable {
         record.originalFileMode != nil,
         record.originalMetadataDigest != nil,
         record.originalDevice != nil,
+        record.originalVolumeUUID == nil,
         record.originalInode != nil,
         record.originalSourceDigest == record.originalDigest,
         record.originalInventory == [],
@@ -1288,6 +1291,7 @@ struct KeybindingProviderInspector: Sendable {
       && record.originalFileMode == nil
       && record.originalMetadataDigest == nil
       && record.originalDevice == nil
+      && record.originalVolumeUUID == nil
       && record.originalInode == nil
       && record.originalSourceDigest == nil
       && record.originalInventory == nil

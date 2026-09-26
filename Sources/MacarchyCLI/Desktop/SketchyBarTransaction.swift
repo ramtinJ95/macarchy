@@ -439,7 +439,7 @@ struct SketchyBarProviderTransaction: Sendable {
           entry: entry
         )
         guard
-          publicEvidence == transaction.ownership.original
+          transaction.ownership.original.matchesObserved(publicEvidence)
             || originalInodeIsPublic(transaction.ownership.original)
         else {
           throw SketchyBarDesktopError.invalidState(
@@ -578,7 +578,7 @@ struct SketchyBarProviderTransaction: Sendable {
       directory: configurationDirectory,
       entry: entry
     )
-    guard restored == transaction.ownership.original else {
+    guard transaction.ownership.original.matchesObserved(restored) else {
       throw SketchyBarDesktopError.invalidState(
         "SketchyBar teardown restoration does not match approved evidence"
       )
@@ -613,7 +613,7 @@ struct SketchyBarProviderTransaction: Sendable {
         directory: configurationDirectory,
         entry: entry
       )
-      guard publicEvidence == transaction.ownership.original else {
+      guard transaction.ownership.original.matchesObserved(publicEvidence) else {
         throw SketchyBarDesktopError.invalidState(
           "deferred SketchyBar teardown cannot restore managed ownership"
         )
@@ -799,7 +799,7 @@ struct SketchyBarProviderTransaction: Sendable {
       directory: configurationDirectory,
       entry: entry
     )
-    guard restored == ownership.original else {
+    guard ownership.original.matchesObserved(restored) else {
       throw SketchyBarDesktopError.invalidState(
         "restored SketchyBar entry does not match approved evidence"
       )
@@ -813,7 +813,9 @@ struct SketchyBarProviderTransaction: Sendable {
     var metadata = stat()
     guard
       lstat(retained.path, &metadata) == 0,
-      UInt64(metadata.st_dev) == original.device,
+      try RetainedOriginalIdentity.matches(
+        at: retained, metadata: metadata,
+        volumeUUID: original.volumeUUID, device: original.device),
       UInt64(metadata.st_ino) == original.inode,
       Int(metadata.st_mode & 0o777) == original.permissions,
       metadata.st_nlink == 1
@@ -916,7 +918,9 @@ struct SketchyBarProviderTransaction: Sendable {
     var metadata = stat()
     guard
       lstat(original.publicPath, &metadata) == 0,
-      UInt64(metadata.st_dev) == original.device,
+      (try? RetainedOriginalIdentity.matches(
+        at: URL(filePath: original.publicPath), metadata: metadata,
+        volumeUUID: original.volumeUUID, device: original.device)) == true,
       UInt64(metadata.st_ino) == original.inode,
       Int(metadata.st_mode & 0o777) == original.permissions,
       metadata.st_nlink == 1

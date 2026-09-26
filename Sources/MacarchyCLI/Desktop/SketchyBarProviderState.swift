@@ -111,6 +111,17 @@ struct SketchyBarAdoptionEvidence: Codable, Equatable, Sendable {
   let device: UInt64?
   let inode: UInt64?
   let inventory: [String]
+  var volumeUUID: String? = nil
+
+  /// Compare persisted identity after a reboot, not a same-operation approval snapshot.
+  func matchesObserved(_ observed: Self?) -> Bool {
+    guard let observed else { return false }
+    return kind == observed.kind && publicPath == observed.publicPath
+      && linkTarget == observed.linkTarget && contentDigest == observed.contentDigest
+      && permissions == observed.permissions && inode == observed.inode
+      && inventory == observed.inventory
+      && (volumeUUID.map { $0 == observed.volumeUUID } ?? (device == observed.device))
+  }
 
   var digest: String {
     let values =
@@ -118,7 +129,7 @@ struct SketchyBarAdoptionEvidence: Codable, Equatable, Sendable {
         kind.rawValue, publicPath, linkTarget ?? "", contentDigest ?? "",
         permissions.map(String.init) ?? "", device.map(String.init) ?? "",
         inode.map(String.init) ?? "",
-      ] + inventory
+      ] + inventory + (volumeUUID.map { [$0] } ?? [])
     var data = Data()
     for value in values {
       let bytes = Data(value.utf8)
@@ -130,6 +141,7 @@ struct SketchyBarAdoptionEvidence: Codable, Equatable, Sendable {
 
   var isValid: Bool {
     guard
+      volumeUUID.map({ UUID(uuidString: $0)?.uuidString == $0 }) ?? true,
       publicPath.hasPrefix("/"),
       URL(filePath: publicPath).standardizedFileURL.path == publicPath,
       inventory == inventory.sorted(),
@@ -144,7 +156,7 @@ struct SketchyBarAdoptionEvidence: Codable, Equatable, Sendable {
     switch kind {
     case .absent:
       return linkTarget == nil && contentDigest == nil && permissions == nil
-        && device == nil && inode == nil && inventory.isEmpty
+        && device == nil && inode == nil && volumeUUID == nil && inventory.isEmpty
     case .regularFile:
       return hasIdentity && linkTarget == nil && inventory.isEmpty
     case .entrySymlink:
@@ -171,6 +183,7 @@ struct SketchyBarAdoptionEvidence: Codable, Equatable, Sendable {
     case linkTarget = "link_target"
     case contentDigest = "content_digest"
     case permissions, device, inode, inventory
+    case volumeUUID = "volume_uuid"
   }
 }
 
@@ -178,7 +191,7 @@ struct SketchyBarOwnershipRecord: Codable, Equatable, Sendable {
   let schemaVersion: Int
   let generationID: String
   let managedTarget: String
-  let original: SketchyBarAdoptionEvidence
+  var original: SketchyBarAdoptionEvidence
   let retainedOriginalPath: String?
   let createdConfigurationDirectory: Bool
   let priorServiceRunning: Bool
@@ -362,7 +375,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     var directoryMetadata = stat()
     guard lstat(directory.path, &directoryMetadata) == 0 else {
       if errno == ENOENT {
-        return evidence(kind: .absent, publicPath: entry, metadata: nil)
+        return try evidence(kind: .absent, publicPath: entry, metadata: nil)
       }
       throw SketchyBarDesktopError.system(
         "inspect SketchyBar configuration directory",
@@ -401,7 +414,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
         name: "sketchybarrc",
         url: source
       ).data
-      return evidence(
+      return try evidence(
         kind: .directorySymlink,
         publicPath: directory,
         metadata: directoryMetadata,
@@ -420,7 +433,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     var entryMetadata = stat()
     guard lstat(entry.path, &entryMetadata) == 0 else {
       if errno == ENOENT {
-        return evidence(kind: .absent, publicPath: entry, metadata: nil)
+        return try evidence(kind: .absent, publicPath: entry, metadata: nil)
       }
       throw SketchyBarDesktopError.system("inspect sketchybarrc", entry, errno)
     }
@@ -430,7 +443,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     switch entryMetadata.st_mode & S_IFMT {
     case S_IFREG:
       let data = try BoundedRegularFile.read(at: entry).data
-      return evidence(
+      return try evidence(
         kind: .regularFile,
         publicPath: entry,
         metadata: entryMetadata,
@@ -441,7 +454,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
         throw SketchyBarDesktopError.invalidState("cannot read sketchybarrc symlink")
       }
       let data = try BoundedRegularFile.read(at: resolveLink(target, at: entry)).data
-      return evidence(
+      return try evidence(
         kind: .entrySymlink,
         publicPath: entry,
         metadata: entryMetadata,
@@ -455,7 +468,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     }
   }
 
-  private func inspectManaged(
+  func inspectManaged(
     _ ownership: SketchyBarOwnershipRecord,
     entry: URL,
     expectedTarget: String,
@@ -527,7 +540,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     linkTarget: String? = nil,
     contentDigest: String? = nil,
     inventory: [String] = []
-  ) -> SketchyBarAdoptionEvidence {
+  ) throws -> SketchyBarAdoptionEvidence {
     SketchyBarAdoptionEvidence(
       kind: kind,
       publicPath: publicPath.path,
@@ -536,7 +549,10 @@ struct SketchyBarProviderPlanInspector: Sendable {
       permissions: metadata.map { Int($0.st_mode & 0o777) },
       device: metadata.map { UInt64($0.st_dev) },
       inode: metadata.map { UInt64($0.st_ino) },
-      inventory: inventory
+      inventory: inventory,
+      volumeUUID: try metadata.map {
+        try RetainedOriginalIdentity.volumeUUID(at: publicPath, matching: $0)
+      }
     )
   }
 

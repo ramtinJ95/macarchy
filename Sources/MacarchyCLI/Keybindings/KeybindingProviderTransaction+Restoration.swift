@@ -574,7 +574,7 @@ extension KeybindingProviderTransaction {
       if originalKind(record) == .symbolicLink,
         destination == record.originalLinkDestination
       {
-        if try markerMatches || originalIdentityMatches(metadata, record: record) {
+        if try markerMatches || originalIdentityMatches(metadata, url: url, record: record) {
           return .original
         }
       }
@@ -621,7 +621,7 @@ extension KeybindingProviderTransaction {
         url: url
       )
       guard destination == record.originalLinkDestination else { return .other }
-      return try markerMatches || originalIdentityMatches(metadata, record: record)
+      return try markerMatches || originalIdentityMatches(metadata, url: url, record: record)
         ? .original : .other
     }
     guard metadata.st_mode & S_IFMT == S_IFDIR else { return .other }

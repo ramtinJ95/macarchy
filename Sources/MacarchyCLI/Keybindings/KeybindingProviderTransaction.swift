@@ -96,7 +96,8 @@ struct KeybindingProviderTransaction: Sendable {
       approvedEvidenceDigest: approvedEvidenceDigest
     )
     defer { original.closePinnedDescriptor() }
-    let record = original.record(entry: entry, backup: backup, manager: manager, context: context)
+    let record = try original.record(
+      entry: entry, backup: backup, manager: manager, context: context)
     do {
       try faultInjector(.regularCaptureReady)
       try revalidateCapturedRegularOriginal(original, manager: manager)
@@ -778,10 +779,12 @@ extension SetupOwnershipRecord {
       originalLinkDestination: originalLinkDestination,
       originalFileMode: originalFileMode,
       originalMetadataDigest: originalMetadataDigest,
+      originalVolumeUUID: originalVolumeUUID,
       originalDevice: originalDevice,
       originalInode: originalInode,
       originalSourceDigest: originalSourceDigest,
       originalInventory: originalInventory,
+      retainedOriginalPath: retainedOriginalPath,
       claimNonce: claimNonce
     )
   }
@@ -824,7 +827,7 @@ private struct OriginalEntry {
     backup: URL,
     manager: SetupOwnershipManager,
     context: SetupOwnershipManager.Context
-  ) -> SetupOwnershipRecord {
+  ) throws -> SetupOwnershipRecord {
     let nonce = UUID().uuidString.lowercased()
     let retainedOriginalPath: String? =
       switch kind {
@@ -854,6 +857,14 @@ private struct OriginalEntry {
       originalLinkDestination: linkDestination,
       originalFileMode: fileMode,
       originalMetadataDigest: metadataDigest,
+      originalVolumeUUID: try retainedOriginalPath.map { _ in
+        let path = kind == .directorySymbolicLink ? entry.deletingLastPathComponent() : entry
+        var metadata = stat()
+        guard lstat(path.path, &metadata) == 0,
+          UInt64(metadata.st_dev) == fileDevice, UInt64(metadata.st_ino) == fileInode
+        else { throw SetupOwnershipError.ownershipDrift(path) }
+        return try RetainedOriginalIdentity.volumeUUID(at: path, matching: metadata)
+      },
       originalDevice: fileDevice,
       originalInode: fileInode,
       originalSourceDigest: kind == .absent ? nil : sourceDigest,
