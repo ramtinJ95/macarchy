@@ -7,6 +7,14 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Retained SketchyBar, yabai, and skhd originals now use persistent volume UUIDs
+  plus inode identity so mount-device renumbering after reboot does not cause
+  ownership drift. Legacy records require a separately reviewed, provider-scoped
+  `desktop migrate-ownership` operation; migration does not restart services or
+  regenerate configuration.
+
 ## [0.12.3] - 2026-09-23
 
 ### Fixed
