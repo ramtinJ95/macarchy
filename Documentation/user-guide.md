@@ -957,6 +957,25 @@ manual work, and restart requirements. If an operation is interrupted, follow
 its reported recovery instructions rather than deleting state or forcing a
 replacement. Redact local paths and configured commands before sharing reports.
 
+If a reboot makes a retained SketchyBar, yabai, or skhd original fail ownership
+inspection, do not edit receipts or re-adopt the provider. New adoptions record
+a persistent volume UUID and inode instead of relying on a mount-time device
+number. Older ownership records can be explicitly reviewed and migrated:
+
+```sh
+macarchy desktop migrate-ownership sketchybar --json
+macarchy desktop migrate-ownership sketchybar --approve 'digest-from-preview'
+```
+
+Use `yabai` or `skhd` to review those providers separately. This command handles
+the canonical `~/.config/macarchy` installation. Without `--approve` it is
+read-only. Review the retained path, inode, observed volume UUID, and warning:
+legacy records cannot prove their historical volume UUID. Approval binds the
+otherwise matching surviving original to the observed volume. Other drift,
+stale consent, or pending provider/setup transactions block migration.
+Only the ownership record changes; originals, generated configuration, and
+services remain untouched. Applying configuration updates is a separate review.
+
 To undo unified setup, preview the restoration first:
 
 ```sh
