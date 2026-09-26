@@ -86,6 +86,7 @@ extension SetupOwnershipManager {
       record.originalFileMode == nil,
       record.originalMetadataDigest == nil,
       record.originalDevice == nil,
+      record.originalVolumeUUID == nil,
       record.originalInode == nil,
       record.originalSourceDigest == nil,
       record.originalInventory == nil,
@@ -282,6 +283,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let originalLinkDestination: String?
   let originalFileMode: UInt16?
   let originalMetadataDigest: String?
+  var originalVolumeUUID: String?
   let originalDevice: UInt64?
   let originalInode: UInt64?
   let originalSourceDigest: String?
@@ -304,6 +306,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
       originalLinkDestination: originalLinkDestination,
       originalFileMode: originalFileMode,
       originalMetadataDigest: originalMetadataDigest,
+      originalVolumeUUID: originalVolumeUUID,
       originalDevice: originalDevice,
       originalInode: originalInode,
       originalSourceDigest: originalSourceDigest,
@@ -327,6 +330,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     case originalLinkDestination = "original_link_destination"
     case originalFileMode = "original_file_mode"
     case originalMetadataDigest = "original_metadata_digest"
+    case originalVolumeUUID = "original_volume_uuid"
     case originalDevice = "original_device"
     case originalInode = "original_inode"
     case originalSourceDigest = "original_source_digest"
@@ -349,6 +353,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     originalLinkDestination: String? = nil,
     originalFileMode: UInt16? = nil,
     originalMetadataDigest: String? = nil,
+    originalVolumeUUID: String? = nil,
     originalDevice: UInt64? = nil,
     originalInode: UInt64? = nil,
     originalSourceDigest: String? = nil,
@@ -369,6 +374,7 @@ struct SetupOwnershipRecord: Codable, Equatable {
     self.originalLinkDestination = originalLinkDestination
     self.originalFileMode = originalFileMode
     self.originalMetadataDigest = originalMetadataDigest
+    self.originalVolumeUUID = originalVolumeUUID
     self.originalDevice = originalDevice
     self.originalInode = originalInode
     self.originalSourceDigest = originalSourceDigest

@@ -288,7 +288,7 @@ struct YabaiProviderTransaction: Sendable {
       directory: configurationDirectory,
       entry: entry
     )
-    guard restored == original else {
+    guard original.matchesObserved(restored) else {
       throw YabaiDesktopError.invalidState("restored yabai entry does not match approved evidence")
     }
   }
@@ -363,7 +363,7 @@ struct YabaiProviderTransaction: Sendable {
       directory: configurationDirectory,
       entry: entry
     )
-    guard restored == transaction.ownership.original else {
+    guard transaction.ownership.original.matchesObserved(restored) else {
       throw YabaiDesktopError.invalidState("teardown restoration does not match approved evidence")
     }
     try lifecycle.restoreService(wasRunning: transaction.ownership.priorServiceRunning)
@@ -438,10 +438,11 @@ struct YabaiProviderTransaction: Sendable {
   }
 
   private func originalIsPublic(_ original: YabaiAdoptionEvidence) -> Bool {
-    (try? YabaiProviderPlanInspector().captureUnowned(
-      directory: configurationDirectory,
-      entry: entry
-    )) == original
+    original.matchesObserved(
+      try? YabaiProviderPlanInspector().captureUnowned(
+        directory: configurationDirectory,
+        entry: entry
+      ))
   }
 
   static func authenticateRetained(_ ownership: YabaiOwnershipRecord) throws {
@@ -451,7 +452,9 @@ struct YabaiProviderTransaction: Sendable {
     var metadata = stat()
     guard
       lstat(retained.path, &metadata) == 0,
-      UInt64(metadata.st_dev) == original.device,
+      try RetainedOriginalIdentity.matches(
+        at: retained, metadata: metadata,
+        volumeUUID: original.volumeUUID, device: original.device),
       UInt64(metadata.st_ino) == original.inode,
       Int(metadata.st_mode & 0o777) == original.permissions,
       metadata.st_nlink == 1

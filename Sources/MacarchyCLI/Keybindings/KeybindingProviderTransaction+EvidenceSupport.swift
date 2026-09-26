@@ -312,12 +312,15 @@ extension KeybindingProviderTransaction {
 
   func originalIdentityMatches(
     _ metadata: stat,
+    url: URL,
     record: SetupOwnershipRecord
   ) throws -> Bool {
     guard let device = record.originalDevice, let inode = record.originalInode else {
       throw SetupOwnershipError.invalidManifest("keybinding original identity is missing")
     }
-    return UInt64(metadata.st_dev) == device && UInt64(metadata.st_ino) == inode
+    return try RetainedOriginalIdentity.matches(
+      at: url, metadata: metadata,
+      volumeUUID: record.originalVolumeUUID, device: device) && UInt64(metadata.st_ino) == inode
       && metadata.st_nlink == 1
   }
 
@@ -578,7 +581,10 @@ extension KeybindingProviderTransaction {
       name: name,
       url: url.deletingLastPathComponent().appending(path: name)
     )
-    guard try originalIdentityMatches(metadata, record: record) else {
+    guard
+      try originalIdentityMatches(
+        metadata, url: url.deletingLastPathComponent().appending(path: name), record: record)
+    else {
       throw SetupOwnershipError.ownershipDrift(url)
     }
     switch originalKind(record) {
@@ -689,6 +695,7 @@ extension KeybindingProviderTransaction {
       originalLinkDestination: record.originalLinkDestination,
       originalFileMode: record.originalFileMode,
       originalMetadataDigest: record.originalMetadataDigest,
+      originalVolumeUUID: record.originalVolumeUUID,
       originalDevice: UInt64(metadata.st_dev),
       originalInode: UInt64(metadata.st_ino),
       originalSourceDigest: record.originalSourceDigest,
