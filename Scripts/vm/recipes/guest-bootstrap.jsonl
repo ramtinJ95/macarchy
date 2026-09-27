@@ -1,0 +1,7 @@
+{"action":"capture"}
+{"action":"key","key":"space"}
+{"action":"expect-text","text":"English"}
+{"action":"key","key":"down"}
+{"action":"key","key":"return"}
+{"action":"expect-text","text":"Select Your Country or Region"}
+{"action":"stop"}

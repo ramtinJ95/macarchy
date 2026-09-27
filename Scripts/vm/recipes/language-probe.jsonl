@@ -1,0 +1,5 @@
+{"action":"capture"}
+{"action":"key","key":"space"}
+{"action":"click-text","text":"English"}
+{"action":"wait","seconds":10}
+{"action":"stop"}
