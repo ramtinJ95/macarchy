@@ -346,5 +346,97 @@ class CredentialTests(unittest.TestCase):
                     type_secret.assert_not_called()
 
 
+class DesktopBaselineTests(unittest.TestCase):
+    def test_homebrew_baseline_requires_inspection_and_preserves_clean_master(self):
+        source = "desktop-check-01"
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(lab, "STATE", Path(temporary)), \
+                patch.object(lab, "check_version"), \
+                patch.object(lab, "require_stopped", return_value={"State": "stopped"}), \
+                patch.object(lab, "run_tart") as tart, contextlib.redirect_stdout(io.StringIO()):
+            directory = Path(temporary) / "runs" / source
+            directory.mkdir(parents=True)
+            lab.write_json(directory / "report.json", {"inputs": {}})
+            inspection = directory / "ssh-inspect-homebrew.json"
+            lab.write_json(inspection, {"run": source, "status": "blocked"})
+            lab.write_password(directory, "test42")
+            with self.assertRaises(lab.LabError):
+                lab.save_test_baseline({}, source)
+            tart.assert_not_called()
+            lab.write_json(inspection, {"run": source, "status": "passed"})
+            lab.save_test_baseline({}, source)
+            self.assertEqual(tart.call_args.args, ({}, "clone", source, lab.TEST_BASE))
+            self.assertEqual(lab.desktop_baseline({}, prepared=True), lab.TEST_BASE)
+            with self.assertRaises(lab.LabError):
+                lab.save_test_baseline({}, source)
+            self.assertFalse((Path(temporary) / "desktop-baseline").exists())
+
+    def test_mutated_guest_cannot_be_saved_as_test_baseline(self):
+        source = "desktop-check-01"
+        with tempfile.TemporaryDirectory() as temporary, patch.object(lab, "STATE", Path(temporary)), \
+                patch.object(lab, "run_tart") as tart:
+            directory = Path(temporary) / "runs" / source
+            directory.mkdir(parents=True)
+            lab.write_json(directory / "report.json", {"inputs": {}})
+            lab.write_json(directory / "ssh-inspect-homebrew.json", {"run": source, "status": "passed"})
+            (directory / "ssh-mark.json").touch()
+            with self.assertRaises(lab.LabError):
+                lab.save_test_baseline({}, source)
+            tart.assert_not_called()
+
+    def test_save_keeps_manual_provenance_and_refuses_replacement(self):
+        source = "setup-123456789abc"
+        inputs = {"pinned": "fixture"}
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(lab, "STATE", Path(temporary)), \
+                patch.object(lab, "check_version"), \
+                patch.object(lab, "require_stopped", return_value={"State": "stopped"}), \
+                patch.object(lab, "run_tart") as tart, contextlib.redirect_stdout(io.StringIO()):
+            directory = Path(temporary) / "runs" / source
+            directory.mkdir(parents=True)
+            lab.write_json(directory / "report.json", {"inputs": inputs})
+            lab.write_password(directory, "test42")
+            lab.save_desktop_baseline(inputs, source)
+            self.assertEqual(tart.call_args.args, (inputs, "clone", source, lab.DESKTOP_BASE))
+            saved = Path(temporary) / "desktop-baseline"
+            receipt = json.loads((saved / "receipt.json").read_text())
+            self.assertEqual(receipt["provisioning"], "manual-setup-assistant")
+            self.assertFalse(receipt["credential_login_verified"])
+            self.assertNotIn("test42", json.dumps(receipt))
+            self.assertEqual(lab.guest_password(saved, create=False), "test42")
+            self.assertEqual(lab.desktop_baseline(inputs), lab.DESKTOP_BASE)
+            with self.assertRaises(lab.LabError):
+                lab.save_desktop_baseline(inputs, source)
+            self.assertEqual(tart.call_count, 1)
+
+    def test_running_source_cannot_be_saved(self):
+        source = "setup-123456789abc"
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(lab, "STATE", Path(temporary)), \
+                patch.object(lab, "check_version"), \
+                patch.object(lab, "run_tart", return_value=Mock(stdout='{"State":"running"}')) as tart:
+            directory = Path(temporary) / "runs" / source
+            directory.mkdir(parents=True)
+            lab.write_json(directory / "report.json", {"inputs": {}})
+            with self.assertRaises(lab.LabError):
+                lab.save_desktop_baseline({}, source)
+            self.assertEqual(tart.call_args.args[1], "get")
+            self.assertEqual(tart.call_count, 1)
+            self.assertFalse((Path(temporary) / "desktop-baseline").exists())
+
+    def test_missing_or_mismatched_baseline_has_no_installer_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(lab, "STATE", Path(temporary)), \
+                patch.object(lab, "run_tart") as tart:
+            for receipt in (None, {"inputs": {"different": True}}):
+                if receipt is not None:
+                    directory = Path(temporary) / "desktop-baseline"
+                    directory.mkdir()
+                    lab.write_json(directory / "receipt.json", receipt)
+                with self.assertRaises(lab.LabError):
+                    lab.desktop_baseline({})
+            tart.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
