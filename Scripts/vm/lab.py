@@ -29,6 +29,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 STATE = ROOT / "artifacts" / "vm"
 BASE = "installer-base"
+DESKTOP_BASE = "desktop-base"
+TEST_BASE = "test-base"
 
 
 class LabError(Exception):
@@ -150,6 +152,74 @@ def ensure_base(inputs, log):
              str(machine["memory_mb"]), "--display", machine["display"],
              "--no-display-refit", stdout=log, stderr=log, timeout=30)
     write_json(receipt, inputs)
+
+
+def save_desktop_baseline(inputs, source):
+    """Operator-approved manual setup, not a claim of automated provisioning."""
+    if not re.fullmatch(r"setup-[0-9a-f]{12}", source):
+        raise LabError("Source must be a recorded lab setup run.")
+    source_directory = STATE / "runs" / source
+    if json.loads((source_directory / "report.json").read_text())["inputs"] != inputs:
+        raise LabError("Source run has different input pins.")
+    destination = STATE / "desktop-baseline"
+    if destination.exists() or (STATE / "tart/vms" / DESKTOP_BASE).exists():
+        raise LabError("Desktop baseline already exists or is incomplete; refusing to overwrite it.")
+    check_version(inputs)
+    machine = require_stopped(inputs, source)
+    # Read first: never invent a new password for an already-created account.
+    password = guest_password(source_directory, create=False)
+    destination.mkdir(mode=0o700)
+    with (destination / "clone.log").open("w") as log:
+        run_tart(inputs, "clone", source, DESKTOP_BASE, stdout=log, stderr=log, timeout=120)
+    require_stopped(inputs, DESKTOP_BASE)
+    write_password(destination, password)
+    write_json(destination / "receipt.json", {
+        "inputs": inputs, "source": source, "machine": machine,
+        "provisioning": "manual-setup-assistant", "credential_login_verified": False,
+        "qualification": "guest security, SSH, clone boot and reset remain unqualified",
+    })
+    print("Stopped desktop baseline saved. Sessions clone it; the master is never run.")
+
+
+def save_test_baseline(inputs, source):
+    if not re.fullmatch(r"(?:setup-[0-9a-f]{12}|desktop-check-[0-9]{2})", source):
+        raise LabError("Source must be a recorded disposable lab run.")
+    source_directory = STATE / "runs" / source
+    report = json.loads((source_directory / "report.json").read_text())
+    evidence = json.loads((source_directory / "ssh-inspect-homebrew.json").read_text())
+    if report["inputs"] != inputs or evidence["run"] != source or evidence["status"] != "passed":
+        raise LabError("Source requires matching inputs and successful Homebrew guest inspection.")
+    if (source_directory / "ssh-mark.json").exists():
+        raise LabError("Do not preserve a guest already used for mutation tests.")
+    destination = STATE / "test-baseline"
+    if destination.exists() or (STATE / "tart/vms" / TEST_BASE).exists():
+        raise LabError("Test baseline already exists or is incomplete; refusing replacement.")
+    check_version(inputs)
+    machine = require_stopped(inputs, source)
+    password = guest_password(source_directory, create=False)
+    destination.mkdir(mode=0o700)
+    with (destination / "clone.log").open("w") as log:
+        run_tart(inputs, "clone", source, TEST_BASE, stdout=log, stderr=log, timeout=120)
+    require_stopped(inputs, TEST_BASE)
+    write_password(destination, password)
+    write_json(destination / "receipt.json", {
+        "inputs": inputs, "source": source, "machine": machine,
+        "provisioning": "manual-setup-and-remote-login-plus-pinned-homebrew-recipe",
+        "inspection": evidence, "source_provenance": report,
+        "qualification": "prepared; clone reboot and reset evidence is separate",
+    })
+    print("Stopped Homebrew test baseline saved; no-Homebrew desktop baseline retained.")
+
+
+def desktop_baseline(inputs, prepared=False):
+    directory = STATE / ("test-baseline" if prepared else "desktop-baseline")
+    name = TEST_BASE if prepared else DESKTOP_BASE
+    receipt = directory / "receipt.json"
+    if not receipt.exists() or json.loads(receipt.read_text())["inputs"] != inputs:
+        raise LabError("No complete requested baseline for these input pins; no installer fallback.")
+    check_version(inputs)
+    require_stopped(inputs, name)
+    return name
 
 
 def audit_no_listener(pid):
@@ -399,8 +469,13 @@ def probe(inputs, interactive=False, baseline="installer"):
         if not all(report["permissions"].values()):
             raise LabError("Host Accessibility and Screen Recording approval required; no VM started, no prompt requested.")
         with (directory / "restore.log").open("w") as restore_log:
-            ensure_base(inputs, restore_log)
-            source = BASE
+            if baseline in ("desktop", "test"):
+                source = desktop_baseline(inputs, prepared=baseline == "test")
+                credential = STATE / ("test-baseline" if baseline == "test" else "desktop-baseline")
+                write_password(directory, guest_password(credential, create=False))
+            else:
+                ensure_base(inputs, restore_log)
+                source = BASE
             run_tart(inputs, "clone", source, run_id, stdout=restore_log, stderr=restore_log, timeout=120)
         log_path = directory / "tart.log"
         with log_path.open("w") as log:
@@ -447,8 +522,14 @@ def probe(inputs, interactive=False, baseline="installer"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "preflight", "probe", "session"))
+    parser.add_argument("command", choices=("prepare", "preflight", "probe", "session", "save-baseline", "save-test-baseline"))
+    parser.add_argument("--source", help="Stopped lab setup run to preserve as the desktop baseline")
+    parser.add_argument("--baseline", choices=("installer", "desktop", "test"))
     args = parser.parse_args()
+    if (args.command in ("save-baseline", "save-test-baseline")) != (args.source is not None):
+        parser.error("--source is required only for baseline saving")
+    if args.baseline is not None and args.command != "session":
+        parser.error("--baseline is only supported for session")
     inputs = initialize()
     with (STATE / "lab.lock").open("a") as lock:
         try:
@@ -462,7 +543,14 @@ def main():
             result = control(build_controller(), "preflight")
             print(json.dumps(result))
             return 0 if all(result.values()) else 1
-        return probe(inputs, interactive=args.command == "session")
+        if args.command == "save-baseline":
+            save_desktop_baseline(inputs, args.source)
+            return 0
+        if args.command == "save-test-baseline":
+            save_test_baseline(inputs, args.source)
+            return 0
+        baseline = args.baseline or ("test" if args.command == "session" else "installer")
+        return probe(inputs, interactive=args.command == "session", baseline=baseline)
 
 
 if __name__ == "__main__":

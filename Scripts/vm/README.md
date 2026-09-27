@@ -5,10 +5,15 @@ inspectable by a person or agent. Nothing here is included in Macarchy products,
 release archives or Homebrew dependencies. Ordinary builds/tests/CI never start
 a VM. The existing release-layout exact-inventory check enforces that boundary.
 
-## Installer and guest GUI control
+## Verified scope
 
-Keyboard sessions and private credential input are implemented. Mouse and
-unattended OS bootstrap remain unqualified; SSH/prepared baselines follow.
+The lab now has a reusable Homebrew-equipped macOS baseline. Disposable clones
+have passed password login, scoped SSH inspection, guest reboot/reconnection and
+reset-marker isolation. All retained VMs are stopped after qualification.
+This is not yet a Macarchy onboarding test or unattended OS bootstrap: Setup
+Assistant and Remote Login required explicit human preparation, and scripted
+mouse control remains unqualified. Native permissions and visual judgments are
+not replaced by SSH assertions.
 
 The native-window path has been observed on host macOS 26.7 with Tart 2.39.0 and
 guest macOS 26.6.2: a screenshot of Welcome, a targeted Space keystroke, then a
@@ -30,6 +35,7 @@ From the repository root:
 ```sh
 # Pure checks: no VM, downloads or permission changes.
 python3 -B Scripts/vm/test_lab.py
+python3 -B Scripts/vm/test_guest.py
 
 # Compile the isolated window helper and inspect existing permissions. No prompts.
 uv run --project Scripts/vm --locked python Scripts/vm/lab.py preflight
@@ -77,7 +83,7 @@ fixed guest display; these are semantic visual checkpoints, not pixel goldens.
 line. A bounded recipe can be invoked without an interactive shell:
 
 ```sh
-uv run --project Scripts/vm --locked python Scripts/vm/lab.py session \
+uv run --project Scripts/vm --locked python Scripts/vm/lab.py session --baseline installer \
   < Scripts/vm/recipes/language-probe.jsonl
 ```
 
@@ -136,8 +142,8 @@ visibly focused a link, but subsequent Tab/backtab did not move its focus.
 The lab paused instead of reactivating Tart. This is an unresolved input seam,
 not proof that keyboard navigation alone completes setup. Modifiers now include
 the public IOLLEvent.h left-device flags as well as aggregate flags.
-The user subsequently completed setup manually. Saving the configured desktop
-and qualifying SSH/reboot/reset follow; full account-creation replay is unqualified.
+The user subsequently completed setup; clone login/SSH/reboot/reset are qualified
+below. Full account-creation replay remains unqualified.
 Do not repeatedly run this unchanged or silently use global mouse events.
 
 Tart's `--no-usb-accessories` flag was removed: its source shows that it removes
@@ -146,6 +152,98 @@ input devices are required for mouse qualification; this attaches no physical
 host USB device. Restoring them alone did not resolve the observed click failure.
 The current helper does not warp the host cursor or post global mouse events.
 
+## Reuse the configured desktop
+
+Three immutable, stopped baselines serve different purposes:
+
+| Baseline | Purpose |
+| --- | --- |
+| `installer-base` | Explicit Setup Assistant/control experiments |
+| `desktop-base` | Manually configured desktop without Homebrew; first-install coverage |
+| `test-base` | Default ordinary testing: desktop, Remote Login, Homebrew and Apple CLT |
+
+The first guest's remaining Setup Assistant steps were completed by the user.
+Its desktop was visually verified, shut down through the guest's native dialog,
+and saved as a separate, stopped `desktop-base`. This preserves the manual setup;
+it does **not** claim the image can be rebuilt unattended from the IPSW yet.
+
+```sh
+# Once, after completing setup and shutting down a recorded lab guest:
+uv run --project Scripts/vm --locked python Scripts/vm/lab.py save-baseline \
+  --source setup-<run-id>
+
+# Later, clone the saved desktop instead of repeating Setup Assistant.
+# Launch only when native Tart startup taking focus is acceptable.
+uv run --project Scripts/vm --locked python Scripts/vm/lab.py session \
+  < your-desktop-actions.jsonl
+
+# Explicit no-Homebrew variant; no silent fallback between baselines.
+uv run --project Scripts/vm --locked python Scripts/vm/lab.py session \
+  --baseline desktop < your-desktop-actions.jsonl
+```
+
+The master is never a session target. Each desktop session clones it and copies
+its private credential reference into the new run, so discarding a test guest
+does not change the baseline. Saving refuses live sources, mismatched input pins,
+or an existing/incomplete baseline; loading never falls back to the installer.
+The original configured guest is retained as well. Do not run installer recipes
+against a desktop clone or put Macarchy/Homebrew under test into the master.
+
+Ordinary tests should not repeat OS setup. A replacement OS/build baseline or a
+deliberate Setup Assistant test may need it again. A disposable clone booted to
+normal login and reached the desktop with the saved credential. System Settings
+showed the Apple Account sign-in invitation. PID-targeted Spotlight opened guest
+Settings, but keyboard navigation did not reliably reach Remote Login's switch;
+the user enabled it manually. The user also explicitly retained Remote Application
+Scripting. That extra service is not required by the lab; do not silently remove
+it or claim it is a prerequisite. FileVault was observed off, not disabled by the lab.
+
+## SSH preparation and qualification
+
+`guest.py` targets only a recorded, running disposable guest, resolving its private
+IPv4 through the isolated Tart store. The current manual fixture's short account
+name is `omarchy` (display name `macarchy`), not an arbitrary host account.
+Native SSH ignores host SSH config, keys and agents; no agent/X11/port forwarding.
+Run-local `known_hosts` uses explicit trust-on-first-use (`accept-new`); changed
+keys fail. This is a local trusted lab, not authentication against hostile peers.
+The private credential travels through SSH askpass or sudo stdin, never arguments
+or reports. No passwordless sudo, personal keys or guest Full Disk Access grant
+is needed. Failed operations retain reports and are not silently replayed.
+
+After manual Remote Login on a no-Homebrew clone, these explicit commands prepare
+and save the ordinary-test master. Replace `setup-<run-id>` with the recorded run:
+
+```sh
+uv run --project Scripts/vm --locked python Scripts/vm/guest.py inspect --run setup-<run-id>
+uv run --project Scripts/vm --locked python Scripts/vm/guest.py install-homebrew --run setup-<run-id>
+uv run --project Scripts/vm --locked python Scripts/vm/guest.py inspect --expect-homebrew --run setup-<run-id>
+uv run --project Scripts/vm --locked python Scripts/vm/guest.py shutdown --run setup-<run-id>
+uv run --project Scripts/vm --locked python Scripts/vm/lab.py save-test-baseline --source setup-<run-id>
+```
+
+`prepare-homebrew.sh` is a **guest-only** recipe invoked over SSH, never a host
+bootstrap command. It verifies a pinned official installer revision/digest and
+uses its supported SUDO_ASKPASS mechanism with a temporary private credential,
+then removes that credential and invalidates sudo's timestamp. The installer
+chooses current Homebrew/Apple CLT versions: those dependencies are observed,
+not falsely described as pinned. Analytics are disabled during installation and
+persistently afterward. No formula/cask set or Macarchy is installed by this recipe.
+
+Observed preparation: macOS26.6.2/25G83, Homebrew7.0.6 at
+`570982948a8a194f0f42f43f4a5bce2d1c9f64cb`, Apple CLT27.0.0.0.1788430756.
+SIP and Gatekeeper were enabled; Macarchy/yabai were absent from PATH and checked
+standard locations (not an exhaustive disk scan). Guest-only inspection passes
+with and without Homebrew as explicitly requested.
+
+For an already-running **test clone**, `guest.py mark --run <id>` creates an
+exclusive sentinel, then `reboot --run <id>` requires a changed kernel boot UUID,
+successful SSH reconnection and the same sentinel. After stopping it, create a
+new clone from `test-base`; `reset-check --run <new-id>` requires that sentinel
+to be absent. This proves reset by replacement, not in-place cleanup of a dirty VM.
+The qualified sequence used desktop-check-02 and a freshly cloned desktop-check-04;
+both were shut down cleanly through guest SSH. A VM-window screenshot also showed
+the normal login screen after reboot. The baselines were never booted or mutated.
+
 ## Storage and security
 
 All generated state lives in the already ignored `artifacts/vm/`:
@@ -153,6 +251,8 @@ All generated state lives in the already ignored `artifacts/vm/`:
 - `downloads/` and `tools/`: verified installer, local Tart app and window helper;
 - `tart/`: isolated `TART_HOME`, never the user's normal `~/.tart` store;
 - `runs/<id>/`: screenshots, private logs and a result report;
+- `desktop-baseline/`: manual-provisioning receipt, clone log and private credential;
+- `test-baseline/`: Homebrew inspection/provenance, clone log and private credential;
 - `prepared.json` / `baseline.json`: local input receipts, not credentials.
 
 The lab root is private to the host user. **Retained logs from the rejected VNC
@@ -172,3 +272,18 @@ our baseline. Packer's default installer-control path also uses the rejected
 experimental VNC; do not introduce it without revisiting that boundary.
 Tart uses FSL-1.1-ALv2 (internal use permitted); it is downloaded, not redistributed
 as a Macarchy dependency.
+
+## Next slice
+
+The reference interaction model is Oligarchy's small guest-control client:
+explicit sessions, guest screenshots, input actions and fresh/prepared disks.
+Its Linux QEMU/QMP implementation is not a macOS backend; fleet/server/issue
+tracking infrastructure is intentionally outside this local lab's scope.
+
+Use the prepared test baseline for the smallest scenario that completes actual
+Macarchy onboarding. Use the retained no-Homebrew desktop when testing Homebrew
+bootstrap itself. Preserve explicit permission/consent checkpoints. Then add seeded
+dotfiles (including symlink ownership), repeat/reboot and recovery scenarios.
+Keep screenshots and visual judgments distinct from machine-readable assertions.
+Do not confuse a candidate-build test with the published Homebrew install path,
+or a VM check with physical display/sleep/hardware qualification.
