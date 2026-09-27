@@ -25,6 +25,13 @@ Tests use temporary roots, not your live Macarchy state. CI also validates the
 release archive and installed layout. The theme format is documented in
 [theme-json.md](theme-json.md).
 
+### Local GUI VM lab
+
+The opt-in [VM lab](../Scripts/vm/README.md) keeps reproducible macOS guest
+recipes and checks beside the code without shipping them. It is separate from
+ordinary tests and CI. VM disks, downloads, credentials and captured evidence
+stay in local ignored storage; no personal host configuration is a fixture.
+
 ### CI behavior
 
 PRs run the complete Swift suite and release archive checks unless their entire

@@ -1,0 +1,19 @@
+{
+  "tart": {
+    "version": "2.39.0",
+    "url": "https://github.com/openai/tart/releases/download/2.39.0/tart.tar.gz",
+    "sha256": "cd17a1cb48fbdb72972a4f4cd467c0ed681f1225b3c0ce3c318c41c229e0dd42"
+  },
+  "macos": {
+    "version": "26.6.2",
+    "build": "25G83",
+    "url": "https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-75212/A2A24B94-1FC1-45A3-93F7-C51B02AF1F4D/UniversalMac_26.6.2_25G83_Restore.ipsw",
+    "sha256": "885503b7f4b06609e9a512f2befd40f59730640a3f1233e3892d60affdd51c95"
+  },
+  "machine": {
+    "cpu": 4,
+    "memory_mb": 8192,
+    "disk_gb": 100,
+    "display": "1440x900px"
+  }
+}
