@@ -30,6 +30,10 @@ logs/
 *.log
 .lavish/
 
+# Opt-in Python VM tooling (VMs/downloads/evidence use artifacts/vm/ below)
+Scripts/vm/.venv/
+Scripts/vm/__pycache__/
+
 # Local environment and secrets
 .env
 .env.*

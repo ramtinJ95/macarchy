@@ -1,0 +1,9 @@
+[project]
+name = "macarchy-vm-lab"
+version = "0.0.0"
+description = "Opt-in local GUI qualification; never a Macarchy runtime dependency"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
