@@ -11,6 +11,43 @@ import lab
 
 
 class SSHTests(unittest.TestCase):
+    def test_macarchy_install_requires_explicit_formula_trust(self):
+        client = guest.Guest.__new__(guest.Guest)
+        client.command = Mock()
+        with self.assertRaisesRegex(lab.LabError, "trust"):
+            client.install_macarchy(False)
+        client.command.assert_not_called()
+
+    def test_macarchy_install_uses_documented_formula_path_and_native_test(self):
+        info = {"version": "0.12.3", "installation": "homebrew", "platform": "macos-arm64"}
+        with tempfile.TemporaryDirectory() as temporary:
+            client = guest.Guest.__new__(guest.Guest)
+            client.directory = Path(temporary)
+            client.command = Mock(side_effect=[Mock(returncode=0, stdout="", stderr="") for _ in range(5)]
+                                  + [Mock(stdout=json.dumps(info))])
+            result = client.install_macarchy(True)
+            commands = [call.args[0] for call in client.command.call_args_list]
+            self.assertTrue(commands[2].endswith('trust --formula ramtinj95/tap/macarchy'))
+            self.assertTrue(commands[3].endswith('install --formula --no-ask ramtinj95/tap/macarchy'))
+            self.assertTrue(commands[4].endswith('test ramtinj95/tap/macarchy'))
+            self.assertNotIn('--formula', commands[4])
+            self.assertIn('HOMEBREW_NO_INSTALL_UPGRADE=1', commands[3])
+            self.assertNotIn('setup guided', ' '.join(commands))
+            self.assertEqual(result["version"], info)
+            self.assertFalse(result["baseline_saved"])
+            self.assertEqual(result["guided_setup"], "not_run")
+
+    def test_native_install_failure_stops_before_formula_test(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            client = guest.Guest.__new__(guest.Guest)
+            client.directory = Path(temporary)
+            client.command = Mock(side_effect=[Mock(returncode=0, stdout="", stderr="") for _ in range(3)]
+                                  + [Mock(returncode=1, stdout="", stderr="native refusal")])
+            with self.assertRaisesRegex(lab.LabError, "install failed"):
+                client.install_macarchy(True)
+            self.assertEqual(client.command.call_count, 4)
+            self.assertIn("native refusal", (client.directory / "macarchy-install.log").read_text())
+
     def test_targets_only_private_ipv4_and_isolated_native_ssh(self):
         args = guest.ssh_arguments("192.168.64.19", "desktop-check-01", Path("/private/run"))
         for option in ("IdentityAgent=none", "ForwardAgent=no", "ForwardX11=no",

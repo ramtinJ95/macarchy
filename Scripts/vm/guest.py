@@ -114,6 +114,41 @@ class Guest:
         value = self.command("/usr/sbin/sysctl -n kern.bootsessionuuid").stdout.strip()
         return str(uuid.UUID(value))
 
+    def install_macarchy(self, trust_formula):
+        if not trust_formula:
+            raise lab.LabError("Explicit formula-only guest trust approval is required.")
+        # Installation is the scenario, not a way to produce another prepared master.
+        self.command('test ! -e /opt/homebrew/Cellar/macarchy && '
+                     'test ! -L /opt/homebrew/bin/macarchy')
+        brew = ('HOMEBREW_NO_ANALYTICS=1 HOMEBREW_NO_AUTOREMOVE=1 '
+                'HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_INSTALL_UPGRADE=1 '
+                'HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK=1 /opt/homebrew/bin/brew ')
+        transcript = []
+        try:
+            for operation in ('tap ramtinj95/tap',
+                              'trust --formula ramtinj95/tap/macarchy',
+                              'install --formula --no-ask ramtinj95/tap/macarchy'):
+                result = self.command(brew + operation, check=False, timeout=900)
+                transcript.append(f"==> brew {operation}\n" + result.stdout + result.stderr)
+                if result.returncode:
+                    raise lab.LabError(f"Guest brew {operation.split()[0]} failed; inspect macarchy-install.log.")
+            return self.verify_macarchy()
+        finally:
+            (self.directory / "macarchy-install.log").write_text("\n".join(transcript))
+
+    def verify_macarchy(self):
+        # brew test accepts formula names, not install's --formula option.
+        result = self.command('HOMEBREW_NO_ANALYTICS=1 /opt/homebrew/bin/brew test '
+                              'ramtinj95/tap/macarchy', check=False, timeout=900)
+        (self.directory / "macarchy-test.log").write_text(result.stdout + result.stderr)
+        if result.returncode:
+            raise lab.LabError("Guest formula test failed; inspect macarchy-test.log.")
+        info = json.loads(self.command('/opt/homebrew/bin/macarchy version --json').stdout)
+        if info.get("installation") != "homebrew" or info.get("platform") != "macos-arm64":
+            raise lab.LabError("Installed Macarchy did not report the expected Homebrew identity.")
+        return {"version": info, "formula_test": "passed", "guided_setup": "not_run",
+                "formula_trust": "ramtinj95/tap/macarchy only", "baseline_saved": False}
+
     def mark(self):
         token = uuid.uuid4().hex
         self.command('test ! -e "$HOME/.macarchy-vm-reset-check" && '
@@ -149,12 +184,16 @@ def main():
                                            create=False) + "\n")
         return
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("inspect", "install-homebrew", "mark", "reboot", "reset-check", "shutdown"))
+    parser.add_argument("operation", choices=("inspect", "install-homebrew", "install-macarchy", "verify-macarchy", "mark", "reboot", "reset-check", "shutdown"))
     parser.add_argument("--run", required=True)
     parser.add_argument("--expect-homebrew", action="store_true")
+    parser.add_argument("--trust-macarchy-formula", action="store_true",
+                        help="Explicit approval of formula-only Homebrew trust inside this disposable guest")
     args = parser.parse_args()
     if args.expect_homebrew and args.operation != "inspect":
         parser.error("--expect-homebrew is only valid with inspect")
+    if args.trust_macarchy_formula != (args.operation == "install-macarchy"):
+        parser.error("--trust-macarchy-formula is required only with install-macarchy")
     inputs = lab.initialize()
     lab.check_version(inputs)
     directory = run_directory(args.run)
@@ -173,6 +212,10 @@ def main():
             guest = Guest(inputs, args.run, askpass)
             if args.operation == "inspect":
                 report["evidence"] = guest.inspect(inputs, homebrew=args.expect_homebrew)
+            elif args.operation == "install-macarchy":
+                report["evidence"] = guest.install_macarchy(args.trust_macarchy_formula)
+            elif args.operation == "verify-macarchy":
+                report["evidence"] = guest.verify_macarchy()
             elif args.operation == "install-homebrew":
                 remote = "/tmp/macarchy-prepare-" + uuid.uuid4().hex + ".sh"
                 guest.command(f"umask 077; set -C; cat > {remote}",

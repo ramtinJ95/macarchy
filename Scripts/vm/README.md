@@ -228,6 +228,9 @@ does not change the baseline. Saving refuses live sources, mismatched input pins
 or an existing/incomplete baseline; loading never falls back to the installer.
 The original configured guest is retained as well. Do not run installer recipes
 against a desktop clone or put Macarchy/Homebrew under test into the master.
+Both baseline-save commands also reject recorded product-install attempts
+(including failed/partial attempts) and reset-marker tests. An installed test
+guest is disposable, never a new clean master.
 
 Ordinary tests should not repeat OS setup. A replacement OS/build baseline or a
 deliberate Setup Assistant test may need it again. A disposable clone booted to
@@ -283,6 +286,52 @@ to be absent. This proves reset by replacement, not in-place cleanup of a dirty 
 The qualified sequence used desktop-check-02 and a freshly cloned desktop-check-04;
 both were shut down cleanly through guest SSH. A VM-window screenshot also showed
 the normal login screen after reboot. The baselines were never booted or mutated.
+
+## Install the published Macarchy release in a disposable clone
+
+This tests the real Homebrew release, not the current repository build. It does
+not run guided setup, apply a profile, or save another baseline.
+
+```sh
+# Create a recorded STOPPED clone of test-base, with a private credential copy.
+uv run --project Scripts/vm --locked python Scripts/vm/lab.py clone
+
+# Use the returned name. Native Tart runs until the guest shuts down.
+VM='setup-<run-id>'
+env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  TART_HOME="$PWD/artifacts/vm/tart" TART_NO_AUTO_PRUNE=1 CI=true \
+  "$PWD/artifacts/vm/tools/tart-2.39.0/tart.app/Contents/MacOS/tart" \
+  run "$VM" --no-clipboard --no-audio
+```
+
+From another terminal after boot, use that same run name:
+
+```sh
+uv run --project Scripts/vm --locked python Scripts/vm/guest.py inspect \
+  --expect-homebrew --run "$VM"
+# Requires explicit approval after reviewing the tap's Macarchy formula.
+uv run --project Scripts/vm --locked python Scripts/vm/guest.py install-macarchy \
+  --trust-macarchy-formula --run "$VM"
+```
+
+The operation follows the documented tap/formula-only trust/install path, with
+the same no-unrelated-upgrade/cleanup flags. It runs native `brew test` and records
+the installed binary's Homebrew identity, version and source revision. Failure
+stops the sequence and retains diagnostics. `verify-macarchy --run "$VM"` can
+perform the separate verification without reinstalling after an install-side
+check failure; original failure evidence is retained.
+
+Observed on a fresh test-base clone: released Macarchy0.12.3 at
+`5ca71eefb423ecf0109c086d308db48944d249c2` installed and its formula test passed.
+The initial runner mistakenly passed `--formula` to `brew test`; the corrected
+command was rerun alone, not the installation. Native `brew test` enables
+Homebrew developer mode and may fetch its test gems, another reason not to
+promote this clone. User login subsequently showed the normal guest desktop;
+no guided setup or provider configuration was performed.
+
+Keep the current clone only for its test session. Afterward, shut it down with
+`guest.py shutdown --run "$VM"`; the next `lab.py clone` starts again from the
+unchanged setup image. Retention of a disposable disk/log is not baseline promotion.
 
 ## Storage and security
 
