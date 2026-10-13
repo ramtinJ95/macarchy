@@ -45,6 +45,24 @@ The caller owns VM lifecycle; stop the disposable guest through the existing
 not proof the remote workload stopped; inspect/shut down that owned guest before
 retrying. Do not reuse old test binaries with `--skip-build`.
 
+## Verify the current source CLI in a guest
+
+`verify.py` drives real `macarchy` CLI journeys of the current working tree inside a
+fresh `test-base` clone. It reuses `lab.py` clone records and pins, `guest.py` SSH and
+shutdown, and the `run-tests.py` snapshot; Macarchy is built (`swift build --product
+macarchy`) and run only in the guest. `start` boots the clone detached and records the
+exact Tart process; `launch` builds; `doctor` is read-only; `drive --journey
+theme` runs the qualified listing/status journey; `evidence` indexes retained proof;
+`cleanup --shutdown` removes only the session's marked guest directory and stops only
+what it owns. Evidence stays in `artifacts/vm/runs/<run>/verify-<session>/`.
+The agent-facing recipe and feature map are in
+`.cursor/skills/verify-macarchy/` (also linked for Pi from `.pi/skills/`). Journeys
+are source-CLI evidence only, not Homebrew, GUI or guided-setup qualification.
+
+```sh
+python3 -B Scripts/vm/test_verify.py   # Pure checks; no VM, SSH or special files.
+```
+
 ## Verified scope
 
 The lab now has a reusable Homebrew-equipped macOS baseline. Disposable clones
