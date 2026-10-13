@@ -481,10 +481,18 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     }
     if profile.desktop.provider == .yabaiSkhd {
       result.append(
-        UnifiedSetupService(id: "yabai", ownership: "managed", lifecycle: "restart_and_verify")
+        UnifiedSetupService(
+          id: "yabai", ownership: "native_user_service",
+          lifecycle:
+            "register_and_start_if_missing; restart_and_verify; restore_prior_state_on_rollback_and_teardown; manual_accessibility"
+        )
       )
       result.append(
-        UnifiedSetupService(id: "skhd", ownership: "managed", lifecycle: "restart_or_reload")
+        UnifiedSetupService(
+          id: "skhd", ownership: "native_user_service",
+          lifecycle:
+            "register_and_start_if_missing; restart_or_reload; restore_prior_state_on_rollback_and_teardown; manual_accessibility"
+        )
       )
     }
     if profile.topBar == .sketchybar {

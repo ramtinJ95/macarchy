@@ -27,20 +27,23 @@ struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
   let generationID: String
   let previousGenerationID: String?
   let generationCreated: Bool
+  var service: SkhdServiceChange?
 
   init(
     operation: KeybindingApplyOperation,
     phase: KeybindingApplyPhase,
     generationID: String,
     previousGenerationID: String?,
-    generationCreated: Bool
+    generationCreated: Bool,
+    service: SkhdServiceChange? = nil
   ) {
-    schemaVersion = 1
+    schemaVersion = service == nil ? 1 : 2
     self.operation = operation
     self.phase = phase
     self.generationID = generationID
     self.previousGenerationID = previousGenerationID
     self.generationCreated = generationCreated
+    self.service = service
   }
 
   func withPhase(_ phase: KeybindingApplyPhase) -> Self {
@@ -49,7 +52,8 @@ struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
       phase: phase,
       generationID: generationID,
       previousGenerationID: previousGenerationID,
-      generationCreated: generationCreated
+      generationCreated: generationCreated,
+      service: service
     )
   }
 
@@ -59,6 +63,7 @@ struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
     case generationID = "generation_id"
     case previousGenerationID = "previous_generation_id"
     case generationCreated = "generation_created"
+    case service
   }
 }
 
@@ -96,7 +101,7 @@ struct KeybindingApplyTransactionStore: Sendable {
       throw KeybindingApplyTransactionError.invalid("transaction root must be an object")
     }
     let allowed = Set(KeybindingApplyTransaction.CodingKeys.allCases.map(\.stringValue))
-    let required = allowed.subtracting(["previous_generation_id"])
+    let required = allowed.subtracting(["previous_generation_id", "service"])
     guard Set(object.keys).isSubset(of: allowed), Set(object.keys).isSuperset(of: required) else {
       throw KeybindingApplyTransactionError.invalid("transaction fields are incomplete or unknown")
     }
@@ -106,8 +111,14 @@ struct KeybindingApplyTransactionStore: Sendable {
     } catch {
       throw KeybindingApplyTransactionError.invalid(String(describing: error))
     }
-    guard transaction.schemaVersion == 1 else {
+    guard
+      (transaction.schemaVersion == 1 && transaction.service == nil)
+        || (transaction.schemaVersion == 2 && transaction.service != nil)
+    else {
       throw KeybindingApplyTransactionError.invalid("unsupported transaction schema")
+    }
+    guard transaction.service?.isValid ?? true else {
+      throw KeybindingApplyTransactionError.invalid("invalid service transaction evidence")
     }
     guard KeybindingGenerationInspector.isGenerationID(transaction.generationID) else {
       throw KeybindingApplyTransactionError.invalid("transaction generation identity is invalid")
@@ -347,7 +358,7 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
     guard
       evidence.schemaVersion == KeybindingLifecycleEvidence.currentSchemaVersion,
       KeybindingGenerationInspector.isGenerationID(evidence.generationID),
-      evidence.action != .none,
+      [.start, .restart, .reload].contains(evidence.action),
       !evidence.providerEntryPoint.isEmpty,
       !evidence.providerTarget.isEmpty,
       evidence.processID > 0,
@@ -428,7 +439,7 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
     guard
       evidence.schemaVersion == KeybindingLifecycleEvidence.currentSchemaVersion,
       KeybindingGenerationInspector.isGenerationID(evidence.generationID),
-      evidence.action != .none,
+      [.start, .restart, .reload].contains(evidence.action),
       !evidence.providerEntryPoint.isEmpty,
       !evidence.providerTarget.isEmpty,
       evidence.processID > 0,

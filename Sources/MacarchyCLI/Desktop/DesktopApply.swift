@@ -556,6 +556,7 @@ struct DesktopApplyCommandRunner: Sendable {
           )
         }
       }
+      _ = try lifecycle.service?.prepare(home: homeDirectory, stateRoot: stateRoot)
       _ = try lifecycle.preflight()
       if let keybindings {
         let preview = try keybindings.preview(
@@ -753,7 +754,11 @@ struct DesktopApplyCommandRunner: Sendable {
       createdDirectory = original.kind == .absent && lstat(directory.path, &metadata) != 0
     }
 
+    let serviceChange = try lifecycle.service?.prepare(home: homeDirectory, stateRoot: stateRoot)
     let serviceWasRunning = try lifecycle.preflight()
+    if let serviceChange, serviceChange.previous.running != serviceWasRunning {
+      throw YabaiDesktopError.lifecycle("yabai service changed during preflight; review again")
+    }
     let activator = YabaiGenerationActivator(stateRoot: stateRoot)
     let prepared = try activator.prepare(composition)
     let previousLifecycle = try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).read()
@@ -794,7 +799,8 @@ struct DesktopApplyCommandRunner: Sendable {
       ownership: ownership,
       previousOwnership: previousOwnership,
       previousLifecycle: previousLifecycle,
-      serviceWasRunning: serviceWasRunning
+      serviceWasRunning: serviceWasRunning,
+      service: serviceChange
     )
     try transactionStore.write(transaction)
 
@@ -823,7 +829,31 @@ struct DesktopApplyCommandRunner: Sendable {
 
       transaction.phase = .serviceChanging
       try transactionStore.write(transaction)
-      try lifecycle.restart()
+      if var change = transaction.service, let service = lifecycle.service,
+        !change.previous.running
+      {
+        if change.previous.registration == nil {
+          change.installationAttempted = true
+          transaction.service = change
+          try transactionStore.write(transaction)
+          change.installed = try service.install(home: homeDirectory)
+          transaction.service = change
+          try transactionStore.write(transaction)
+        }
+        guard let registration = change.expectedRegistration else {
+          throw YabaiDesktopError.lifecycle("yabai service registration is missing")
+        }
+        try service.start(home: homeDirectory, expected: registration)
+        try lifecycle.verifyStarted()
+      } else {
+        try lifecycle.restart()
+      }
+      if let service = lifecycle.service {
+        guard try service.inspect(home: homeDirectory).running else {
+          throw YabaiDesktopError.lifecycle(
+            "yabai user service is not running after activation; grant Accessibility manually")
+        }
+      }
       transaction.phase = .serviceChanged
       try transactionStore.write(transaction)
       let runtime = lifecycle.inspectAfterRestart(composition)
@@ -837,12 +867,12 @@ struct DesktopApplyCommandRunner: Sendable {
         )
       )
       if !deferFinalization {
-        try transactionStore.remove()
+        try providerTransaction.commitDeferred(lifecycle: lifecycle)
       }
       return ApplyResult(
         changed: true,
         generationID: prepared.manifest.generationID,
-        lifecycle: "restart",
+        lifecycle: serviceChange?.previous.running == false ? "start" : "restart",
         message: runtime.message
       )
     } catch is YabaiInterruptionError {

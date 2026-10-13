@@ -71,6 +71,8 @@ struct YabaiLifecycleController: Sendable {
   let stop: @Sendable () throws -> Void
   let inspect: @Sendable (YabaiComposition) -> YabaiRuntimeInspection
   let waitBetweenInspections: @Sendable () -> Void
+  var service: YabaiUserService? = nil
+  var verifyStarted: @Sendable () throws -> Void = {}
 
   static let live = YabaiLifecycleController(
     preflight: {
@@ -106,7 +108,15 @@ struct YabaiLifecycleController: Sendable {
     },
     stop: { try requireSuccess(arguments: ["--stop-service"], operation: "stop service") },
     inspect: inspectLive,
-    waitBetweenInspections: { Thread.sleep(forTimeInterval: 0.1) }
+    waitBetweenInspections: { Thread.sleep(forTimeInterval: 0.1) },
+    service: .live,
+    verifyStarted: {
+      guard runtimeReady(), accessibilityReady() else {
+        throw YabaiDesktopError.lifecycle(
+          "yabai did not become queryable with Accessibility references after start; grant Accessibility manually and keep an ordinary application window open"
+        )
+      }
+    }
   )
 
   func inspectAfterRestart(_ composition: YabaiComposition) -> YabaiRuntimeInspection {
@@ -376,17 +386,25 @@ struct YabaiLifecycleController: Sendable {
     }
   }
 
-  private static func settledProcessEvidence() throws -> (
+  static func settledProcessEvidence() throws -> (
     processID: Int32, executablePath: String
   )? {
+    try settledProcessEvidence(
+      inspect: processEvidence, wait: { Thread.sleep(forTimeInterval: 0.1) })
+  }
+
+  static func settledProcessEvidence(
+    inspect: () throws -> (processID: Int32, executablePath: String)?,
+    wait: () -> Void
+  ) throws -> (processID: Int32, executablePath: String)? {
     var lastError: (any Error)?
     for attempt in 0..<20 {
       do {
-        return try processEvidence()
+        return try inspect()
       } catch {
         lastError = error
       }
-      if attempt < 19 { Thread.sleep(forTimeInterval: 0.1) }
+      if attempt < 19 { wait() }
     }
     throw lastError!
   }

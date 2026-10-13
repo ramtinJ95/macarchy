@@ -26,6 +26,7 @@ struct YabaiTransaction: Codable, Equatable, Sendable {
   let previousOwnership: YabaiOwnershipRecord?
   let previousLifecycle: YabaiLifecycleEvidence?
   let serviceWasRunning: Bool
+  var service: YabaiServiceChange?
 
   init(
     operation: YabaiTransactionOperation,
@@ -36,9 +37,10 @@ struct YabaiTransaction: Codable, Equatable, Sendable {
     ownership: YabaiOwnershipRecord,
     previousOwnership: YabaiOwnershipRecord?,
     previousLifecycle: YabaiLifecycleEvidence?,
-    serviceWasRunning: Bool
+    serviceWasRunning: Bool,
+    service: YabaiServiceChange? = nil
   ) {
-    schemaVersion = 1
+    schemaVersion = service == nil ? 1 : 2
     self.operation = operation
     self.phase = phase
     self.generationID = generationID
@@ -48,11 +50,12 @@ struct YabaiTransaction: Codable, Equatable, Sendable {
     self.previousOwnership = previousOwnership
     self.previousLifecycle = previousLifecycle
     self.serviceWasRunning = serviceWasRunning
+    self.service = service
   }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
-    case operation, phase
+    case operation, phase, service
     case generationID = "generation_id"
     case previousGenerationID = "previous_generation_id"
     case generationCreated = "generation_created"
@@ -79,7 +82,9 @@ struct YabaiTransactionStore: Sendable {
     let data = try BoundedRegularFile.read(at: file, maximumSize: 65_536).data
     let transaction = try JSONDecoder().decode(YabaiTransaction.self, from: data)
     guard
-      transaction.schemaVersion == 1,
+      transaction.schemaVersion == (transaction.service == nil ? 1 : 2),
+      transaction.service?.isValid ?? true,
+      transaction.service.map({ $0.previous.running == transaction.serviceWasRunning }) ?? true,
       YabaiGenerationInspector.isGenerationID(transaction.generationID),
       transaction.previousGenerationID.map(YabaiGenerationInspector.isGenerationID) ?? true
     else {
@@ -178,7 +183,11 @@ struct YabaiProviderTransaction: Sendable {
           "would restore exact \(ownership.original.kind.rawValue) evidence \(ownership.original.digest)"
       )
     }
+    let service = try lifecycle.service?.prepare(home: homeDirectory, stateRoot: stateRoot)
     let serviceWasRunning = try lifecycle.preflight()
+    if let service, service.previous.running != serviceWasRunning {
+      throw YabaiDesktopError.lifecycle("yabai service changed during preflight; review again")
+    }
     var transaction = YabaiTransaction(
       operation: .teardown,
       phase: .providerChanging,
@@ -188,7 +197,8 @@ struct YabaiProviderTransaction: Sendable {
       ownership: ownership,
       previousOwnership: ownership,
       previousLifecycle: try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).read(),
-      serviceWasRunning: serviceWasRunning
+      serviceWasRunning: serviceWasRunning,
+      service: service
     )
     try transactionStore.write(transaction)
     try restoreOriginal(ownership)
@@ -300,6 +310,12 @@ struct YabaiProviderTransaction: Sendable {
     guard transaction.operation == .apply else {
       throw YabaiDesktopError.invalidState("cannot roll back a teardown as an apply")
     }
+    if let change = transaction.service {
+      guard let service = lifecycle.service else {
+        throw YabaiDesktopError.invalidState("yabai service recovery controller is unavailable")
+      }
+      try service.validateRecovery(change, home: homeDirectory)
+    }
     let managed = isManagedEntry(target: transaction.ownership.managedTarget)
     let originalPublic = originalIsPublic(transaction.ownership.original)
     let retainedExists =
@@ -324,7 +340,12 @@ struct YabaiProviderTransaction: Sendable {
       transaction.previousGenerationID
     )
     if transaction.phase == .serviceChanging || transaction.phase == .serviceChanged {
-      try lifecycle.restoreService(wasRunning: transaction.serviceWasRunning)
+      if let change = transaction.service, let service = lifecycle.service {
+        try service.rollback(change, home: homeDirectory, stateRoot: stateRoot)
+        if transaction.serviceWasRunning { try lifecycle.restart() }
+      } else {
+        try lifecycle.restoreService(wasRunning: transaction.serviceWasRunning)
+      }
     }
     let ownershipStore = YabaiOwnershipStore(stateRoot: stateRoot)
     if let previous = transaction.previousOwnership {
@@ -366,11 +387,26 @@ struct YabaiProviderTransaction: Sendable {
     guard transaction.ownership.original.matchesObserved(restored) else {
       throw YabaiDesktopError.invalidState("teardown restoration does not match approved evidence")
     }
-    try lifecycle.restoreService(wasRunning: transaction.ownership.priorServiceRunning)
+    if let ownership = transaction.service?.previousOwnership {
+      guard let service = lifecycle.service else {
+        throw YabaiDesktopError.invalidState("yabai service recovery controller is unavailable")
+      }
+      // After the durable serviceChanged boundary, native uninstall may already
+      // have completed. Finalization is idempotent; do not try to stop it again.
+      if transaction.phase != .serviceChanged {
+        try service.restoreOriginal(ownership, home: homeDirectory)
+        if ownership.original.running { try lifecycle.restart() }
+      }
+    } else {
+      try lifecycle.restoreService(wasRunning: transaction.ownership.priorServiceRunning)
+    }
     var completing = transaction
     completing.phase = .serviceChanged
     try YabaiTransactionStore(stateRoot: stateRoot).write(completing)
     if deferFinalization { return }
+    if let ownership = transaction.service?.previousOwnership, let service = lifecycle.service {
+      try service.finalizeTeardown(ownership, home: homeDirectory, stateRoot: stateRoot)
+    }
     try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).remove()
     try YabaiOwnershipStore(stateRoot: stateRoot).remove()
     try YabaiGenerationActivator(stateRoot: stateRoot).restoreCurrent(nil)
@@ -387,6 +423,12 @@ struct YabaiProviderTransaction: Sendable {
       try recoverApply(transaction, lifecycle: lifecycle)
       return
     }
+    if let change = transaction.service {
+      guard let service = lifecycle.service else {
+        throw YabaiDesktopError.invalidState("yabai service recovery controller is unavailable")
+      }
+      try service.validateRecovery(change, home: homeDirectory)
+    }
     let managed = isManagedEntry(target: transaction.ownership.managedTarget)
     if !managed {
       let originalPublic = originalIsPublic(transaction.ownership.original)
@@ -397,7 +439,12 @@ struct YabaiProviderTransaction: Sendable {
       }
       try installManaged(transaction.ownership)
     }
-    try lifecycle.restoreService(wasRunning: transaction.serviceWasRunning)
+    if let change = transaction.service, let service = lifecycle.service {
+      try service.rollback(change, home: homeDirectory, stateRoot: stateRoot)
+      if transaction.serviceWasRunning { try lifecycle.restart() }
+    } else {
+      try lifecycle.restoreService(wasRunning: transaction.serviceWasRunning)
+    }
     if let previous = transaction.previousLifecycle {
       try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).write(previous)
     }
@@ -415,6 +462,12 @@ struct YabaiProviderTransaction: Sendable {
         throw YabaiDesktopError.invalidState(
           "deferred yabai apply is not ready to commit"
         )
+      }
+      if let change = transaction.service {
+        guard let service = lifecycle.service else {
+          throw YabaiDesktopError.invalidState("yabai service commit controller is unavailable")
+        }
+        try service.commit(change, home: homeDirectory, stateRoot: stateRoot)
       }
       try store.remove()
     case .teardown:

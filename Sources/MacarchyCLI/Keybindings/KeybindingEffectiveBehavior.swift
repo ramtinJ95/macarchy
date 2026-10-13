@@ -344,13 +344,26 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
       provider: provider,
       process: process
     )
-    let classification = classify(
+    var classification = classify(
       desired: desired,
       provider: provider,
       transaction: transaction,
       process: process,
       lifecycleEvidence: lifecycleEvidence
     )
+    if transaction.status == .clear {
+      do {
+        if let ownership = try SkhdServiceOwnershipStore(stateRoot: stateRoot).read(),
+          try SkhdUserService.live.registration(home: homeDirectory) != ownership.registration
+        {
+          classification = (
+            .blocked, "Owned skhd LaunchAgent has drifted; service ownership is not converged."
+          )
+        }
+      } catch {
+        classification = (.blocked, "Cannot validate skhd service ownership: \(error)")
+      }
+    }
     let behavior = KeybindingEffectiveBehavior(
       desired: desired,
       provider: provider,

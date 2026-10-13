@@ -9,10 +9,12 @@ enum DesktopProviderScope: Sendable {
 struct DesktopPlanCommandRunner: Sendable {
   let keybindings: DesktopKeybindingOrchestrator?
   let prerequisites: DesktopPrerequisiteInspector
+  var service: YabaiUserService? = nil
 
   static let live = DesktopPlanCommandRunner(
     keybindings: .live,
-    prerequisites: .live
+    prerequisites: .live,
+    service: .live
   )
 
   func execute(
@@ -67,6 +69,17 @@ struct DesktopPlanCommandRunner: Sendable {
     }
 
     let yabaiEnabled = profile?.desktop.provider == .yabaiSkhd
+    var serviceChange: YabaiServiceChange?
+    if yabaiEnabled, let service {
+      do {
+        serviceChange = try service.prepare(home: homeDirectory, stateRoot: stateRoot)
+      } catch {
+        diagnostics.append(
+          DesktopPlanDiagnostic(
+            code: "yabai_service_prerequisite", source: service.propertyList(homeDirectory).path,
+            message: String(describing: error)))
+      }
+    }
     let sketchyBarEnabled = scope == .allProviders && profile?.topBar == .sketchybar
     let prerequisiteStatuses =
       scope == .allProviders
@@ -252,7 +265,8 @@ struct DesktopPlanCommandRunner: Sendable {
         provider: yabaiProvider,
         composition: yabaiComposition,
         generation: yabaiGeneration,
-        blocked: blocked
+        blocked: blocked,
+        serviceChange: serviceChange
       )
       + keybindingActions(
         enabled: yabaiEnabled,
@@ -324,7 +338,8 @@ struct DesktopPlanCommandRunner: Sendable {
     provider: YabaiProviderPlanInspection,
     composition: YabaiComposition?,
     generation: YabaiGenerationInspection,
-    blocked: Bool
+    blocked: Bool,
+    serviceChange: YabaiServiceChange?
   ) -> [DesktopPlanAction] {
     guard !blocked else { return [] }
     if !enabled {
@@ -341,7 +356,9 @@ struct DesktopPlanCommandRunner: Sendable {
       generation.status == .current
       && generation.manifest?.inputDigest == composition.inputDigest
       && generation.manifest?.renderedDigest == composition.renderedDigest
-    if provider.status == .managed, generationAgrees { return [] }
+    if provider.status == .managed, generationAgrees, serviceChange?.previous.running != false {
+      return []
+    }
     var actions: [DesktopPlanAction] = []
     if !generationAgrees {
       actions.append(
@@ -375,8 +392,11 @@ struct DesktopPlanCommandRunner: Sendable {
     }
     actions.append(
       DesktopPlanAction(
-        id: "restart_yabai_service",
-        message: "Restart yabai through its built-in service lifecycle and verify runtime state."
+        id: serviceChange?.previous.running == false
+          ? "start_yabai_service" : "restart_yabai_service",
+        message: serviceChange?.previous.running == false
+          ? "Register the native user service if missing, start yabai and verify runtime state; Accessibility remains manual. Rollback and teardown restore prior service state."
+          : "Use yabai's native service lifecycle: register/start if missing, otherwise restart, and verify runtime state. Accessibility remains manual; restore prior service state on rollback/teardown."
       )
     )
     return actions
