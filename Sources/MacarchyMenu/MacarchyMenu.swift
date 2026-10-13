@@ -11,7 +11,7 @@ enum MenuFailure: Error, CustomStringConvertible {
   var description: String {
     switch self {
     case .permission:
-      "Accessibility permission required for macarchy-menu. Enable it manually in System Settings > Privacy & Security > Accessibility."
+      "Apple-menu helper needs Accessibility permission for its launch context. Enable the responsible application manually in System Settings > Privacy & Security > Accessibility (SketchyBar when launched by the Macarchy bar), then retry."
     case .unsupported:
       "Required private SkyLight entry points are unavailable on this macOS release."
     case .frontApplication: "Cannot identify the front application's Apple menu."

@@ -90,6 +90,19 @@ struct SketchyBarMediaTests {
     }
   }
 
+  @Test func metadataDeadlineAllowsNativeInactivePollingButTimeoutIsStillFailure() throws {
+    let media = SketchyBarMedia(
+      processRunner: ProcessRunner { request in
+        #expect(request.arguments == ["get-raw"])
+        #expect(request.timeout == 5)
+        throw ProcessRunnerError.timedOut(request.executableURL, 5)
+      },
+      uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in })
+    #expect(throws: ProcessRunnerError.self) {
+      try media.execute(name: "macarchy.media", sender: "routine")
+    }
+  }
+
   @Test func artworkIsPrivateBoundedAndRemovedAfterSuccessOrFailure() throws {
     let data = try #require(
       Data(
@@ -139,9 +152,11 @@ struct SketchyBarMediaTests {
     let metadata = output ?? metadata()
     return ProcessRunner { request in
       if request.executableURL.path == "/opt/homebrew/bin/nowplaying-cli" {
+        #expect(request.timeout == (request.arguments == ["get-raw"] ? 5 : 2))
         state.value.withLock { $0.provider.append(request.arguments) }
         return .init(terminationStatus: 0, output: request.arguments == ["get-raw"] ? metadata : "")
       }
+      #expect(request.timeout == 2)
       return state.value.withLock {
         $0.calls.append(request.arguments)
         if request.arguments.first == "--query" {

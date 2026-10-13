@@ -3,6 +3,14 @@ import Testing
 @testable import MacarchyMenu
 
 struct MenuCommandTests {
+  @Test func permissionDiagnosticNamesTheLaunchContextRatherThanDemandingAHelperEntry() {
+    let message = MenuFailure.permission.description
+    #expect(message.contains("launch context"))
+    #expect(message.contains("SketchyBar"))
+    #expect(message.contains("manually"))
+    #expect(!message.contains("required for macarchy-menu"))
+  }
+
   @Test func checkNeverOpensTheMenuAndHelpNeverChecksPermission() throws {
     var checks = 0
     var opens = 0

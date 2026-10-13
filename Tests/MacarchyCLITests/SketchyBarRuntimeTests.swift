@@ -6,6 +6,46 @@ import Testing
 @testable import ThemeCore
 
 struct SketchyBarRuntimeTests {
+  @Test(arguments: ["transient-empty", "persistent-empty", "malformed", "empty-yabai"])
+  func emptySketchyBarRepliesSettleWithoutAcceptingMalformedJSON(mode: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let queries = Mutex(0)
+    let waits = Mutex(0)
+    let verifier = SketchyBarCoreRuntimeVerifier(
+      stateRoot: fixture.state,
+      processRunner: ProcessRunner { request in
+        let selected =
+          mode == "empty-yabai"
+          ? request.executableURL == SketchyBarCoreRuntimeVerifier.yabaiURL
+          : request.executableURL == SketchyBarCoreRuntimeVerifier.controlURL
+            && request.arguments == ["--query", "bar"]
+        if selected {
+          let count = queries.withLock {
+            $0 += 1
+            return $0
+          }
+          if mode != "transient-empty" || count <= 2 {
+            return ProcessResult(terminationStatus: 0, output: mode == "malformed" ? "{" : "")
+          }
+        }
+        return Self.dynamicResult(request, fixture: fixture, indices: [1])
+      },
+      waitForSettle: { waits.withLock { $0 += 1 } },
+      waitForPresentation: {}, hasExternalDisplay: { false })
+    let result = verifier.settle(fixture.dynamicComposition)
+    #expect(result.status == (mode == "transient-empty" ? .converged : .failed))
+    if mode == "transient-empty" {
+      #expect(waits.withLock { $0 } == 2)
+    } else if mode == "persistent-empty" {
+      #expect(waits.withLock { $0 } == 40)
+      #expect(queries.withLock { $0 } == 41)
+      #expect(result.message.contains("no response to --query bar"))
+    } else {
+      #expect(waits.withLock { $0 } == 0)
+    }
+  }
+
   @Test(arguments: ["hidden", "warning", "script", "frequency", "events"])
   func updateIndicatorRequiresWiringButNeverNetworkAvailability(condition: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
