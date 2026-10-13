@@ -347,6 +347,37 @@ class CredentialTests(unittest.TestCase):
 
 
 class DesktopBaselineTests(unittest.TestCase):
+    def test_stopped_clone_reuses_prepared_master_without_launching_it(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(lab, "STATE", Path(temporary)), \
+                patch.object(lab, "desktop_baseline", return_value=lab.TEST_BASE) as baseline, \
+                patch.object(lab, "require_stopped"), patch.object(lab, "run_tart") as tart, \
+                contextlib.redirect_stdout(io.StringIO()):
+            credential = Path(temporary) / "test-baseline"
+            credential.mkdir()
+            lab.write_password(credential, "fixture42")
+            run_id = lab.prepare_clone({}, "test")
+            directory = Path(temporary) / "runs" / run_id
+            baseline.assert_called_once_with({}, prepared=True)
+            self.assertEqual(tart.call_args.args, ({}, "clone", lab.TEST_BASE, run_id))
+            self.assertEqual(lab.guest_password(directory, create=False), "fixture42")
+            self.assertEqual(json.loads((directory / "report.json").read_text())["status"],
+                             "prepared_stopped_clone")
+
+    def test_product_install_attempt_can_never_become_either_saved_baseline(self):
+        source = "setup-123456789abc"
+        with tempfile.TemporaryDirectory() as temporary, patch.object(lab, "STATE", Path(temporary)), \
+                patch.object(lab, "run_tart") as tart:
+            directory = Path(temporary) / "runs" / source
+            directory.mkdir(parents=True)
+            lab.write_json(directory / "report.json", {"inputs": {}})
+            lab.write_json(directory / "ssh-inspect-homebrew.json", {"run": source, "status": "passed"})
+            # Even a failed/partial install must never contaminate a clean master.
+            lab.write_json(directory / "ssh-install-macarchy.json", {"status": "blocked"})
+            for save in (lab.save_desktop_baseline, lab.save_test_baseline):
+                with self.assertRaisesRegex(lab.LabError, "Never preserve"):
+                    save({}, source)
+            tart.assert_not_called()
+
     def test_homebrew_baseline_requires_inspection_and_preserves_clean_master(self):
         source = "desktop-check-01"
         with tempfile.TemporaryDirectory() as temporary, \
