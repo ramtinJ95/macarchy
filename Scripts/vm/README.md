@@ -5,6 +5,46 @@ inspectable by a person or agent. Nothing here is included in Macarchy products,
 release archives or Homebrew dependencies. Ordinary builds/tests/CI never start
 a VM. The existing release-layout exact-inventory check enforces that boundary.
 
+## VM-only filesystem tests
+
+Iru/Kandji's file scanner was observed indefinitely blocked in `fifo_open` on the
+managed host during FIFO/race tests. Do not reproduce this on the host. See the
+critical rule in `AGENTS.md`; a passing test and deleted fixture do not establish
+scanner safety.
+
+The test-only `TestSafety` module owns special-file creation. It requires kernel
+VM identity, explicit `MACARCHY_TEST_VM=1`, absence of the affected extension, and
+a pinned directory on guest-local APFS. It throws rather than skipping coverage.
+The environment flag cannot bypass a physical-host refusal. The portability
+script compiles the same guard; CI checks for raw creation calls outside it.
+Hosted CI opts in but must pass the same runtime checks, with no CI exemption.
+
+Use the existing clone/native-launch procedure below with `--baseline test`.
+Then, against that **running disposable clone**, not a baseline:
+
+```sh
+# Full suite in the guest; current dirty source is snapshotted, not host-mounted.
+python3 -B Scripts/vm/run-tests.py --run setup-<run-id>
+
+# Narrow regression coverage, including the shell portability verifier:
+python3 -B Scripts/vm/run-tests.py --run setup-<run-id> \
+  --filter 'IsolatedTestEnvironmentTests|fifoInputsFailAsNonregularWithoutBlocking|filesystemSnapshotRejectsFIFOsAndSymlinksWithoutFollowingThem|filesystemSnapshotRejectsARegularFileReplacedAfterOpen|importedGalleryRequiresMatchingSafeReportPathsAndOrdinaryDirectories' \
+  --portability
+
+# Pure host-safe boundary/runner checks; no VM, special files, or SSH:
+python3 -B Scripts/test-test-safety.py
+python3 -B Scripts/vm/test_run_tests.py
+```
+
+Results, source archive/hash and output are retained under
+`artifacts/vm/runs/<run>/tests-<id>/`. Source is copied to a private guest directory;
+fixtures use the guest's temporary disk, never shared host paths. No automatic
+VM boot, installation, host-test fallback, or security configuration change occurs.
+The caller owns VM lifecycle; stop the disposable guest through the existing
+`guest.py shutdown --run <run>` operation afterward. A timeout is a blocked run,
+not proof the remote workload stopped; inspect/shut down that owned guest before
+retrying. Do not reuse old test binaries with `--skip-build`.
+
 ## Verified scope
 
 The lab now has a reusable Homebrew-equipped macOS baseline. Disposable clones

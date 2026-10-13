@@ -154,6 +154,11 @@ def ensure_base(inputs, log):
     write_json(receipt, inputs)
 
 
+def require_untested_source(directory):
+    if any((directory / name).exists() for name in ("ssh-mark.json", "ssh-install-macarchy.json")):
+        raise LabError("Never preserve a guest used for product or mutation tests as a baseline.")
+
+
 def save_desktop_baseline(inputs, source):
     """Operator-approved manual setup, not a claim of automated provisioning."""
     if not re.fullmatch(r"setup-[0-9a-f]{12}", source):
@@ -161,6 +166,7 @@ def save_desktop_baseline(inputs, source):
     source_directory = STATE / "runs" / source
     if json.loads((source_directory / "report.json").read_text())["inputs"] != inputs:
         raise LabError("Source run has different input pins.")
+    require_untested_source(source_directory)
     destination = STATE / "desktop-baseline"
     if destination.exists() or (STATE / "tart/vms" / DESKTOP_BASE).exists():
         raise LabError("Desktop baseline already exists or is incomplete; refusing to overwrite it.")
@@ -189,8 +195,7 @@ def save_test_baseline(inputs, source):
     evidence = json.loads((source_directory / "ssh-inspect-homebrew.json").read_text())
     if report["inputs"] != inputs or evidence["run"] != source or evidence["status"] != "passed":
         raise LabError("Source requires matching inputs and successful Homebrew guest inspection.")
-    if (source_directory / "ssh-mark.json").exists():
-        raise LabError("Do not preserve a guest already used for mutation tests.")
+    require_untested_source(source_directory)
     destination = STATE / "test-baseline"
     if destination.exists() or (STATE / "tart/vms" / TEST_BASE).exists():
         raise LabError("Test baseline already exists or is incomplete; refusing replacement.")
@@ -452,6 +457,38 @@ def session(helper, process, inputs, run_id, directory, report):
         print(json.dumps({"screenshot": str(path), "window": target}), flush=True)
 
 
+def clone_into_run(inputs, baseline, run_id, directory):
+    with (directory / "restore.log").open("w") as restore_log:
+        if baseline in ("desktop", "test"):
+            source = desktop_baseline(inputs, prepared=baseline == "test")
+            credential = STATE / ("test-baseline" if baseline == "test" else "desktop-baseline")
+            write_password(directory, guest_password(credential, create=False))
+        else:
+            ensure_base(inputs, restore_log)
+            source = BASE
+        run_tart(inputs, "clone", source, run_id, stdout=restore_log, stderr=restore_log, timeout=120)
+
+
+def prepare_clone(inputs, baseline):
+    """Prepare a stopped disposable target for native Tart/SSH without a GUI loop."""
+    run_id = "setup-" + uuid.uuid4().hex[:12]
+    directory = STATE / "runs" / run_id
+    directory.mkdir(parents=True)
+    report = {"run": run_id, "inputs": inputs, "baseline": baseline, "status": "in_progress"}
+    write_json(directory / "report.json", report)
+    try:
+        clone_into_run(inputs, baseline, run_id, directory)
+        require_stopped(inputs, run_id)
+        report["status"] = "prepared_stopped_clone"
+    except Exception:
+        report["status"] = "blocked"
+        raise
+    finally:
+        write_json(directory / "report.json", report)
+    print(json.dumps(report))
+    return run_id
+
+
 def probe(inputs, interactive=False, baseline="installer"):
     run_id = ("setup-" if interactive else "window-") + uuid.uuid4().hex[:12]
     directory = STATE / "runs" / run_id
@@ -468,15 +505,7 @@ def probe(inputs, interactive=False, baseline="installer"):
         report["permissions"] = control(helper, "preflight")
         if not all(report["permissions"].values()):
             raise LabError("Host Accessibility and Screen Recording approval required; no VM started, no prompt requested.")
-        with (directory / "restore.log").open("w") as restore_log:
-            if baseline in ("desktop", "test"):
-                source = desktop_baseline(inputs, prepared=baseline == "test")
-                credential = STATE / ("test-baseline" if baseline == "test" else "desktop-baseline")
-                write_password(directory, guest_password(credential, create=False))
-            else:
-                ensure_base(inputs, restore_log)
-                source = BASE
-            run_tart(inputs, "clone", source, run_id, stdout=restore_log, stderr=restore_log, timeout=120)
+        clone_into_run(inputs, baseline, run_id, directory)
         log_path = directory / "tart.log"
         with log_path.open("w") as log:
             process = subprocess.Popen(
@@ -522,14 +551,14 @@ def probe(inputs, interactive=False, baseline="installer"):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "preflight", "probe", "session", "save-baseline", "save-test-baseline"))
+    parser.add_argument("command", choices=("prepare", "preflight", "probe", "session", "clone", "save-baseline", "save-test-baseline"))
     parser.add_argument("--source", help="Stopped lab setup run to preserve as the desktop baseline")
     parser.add_argument("--baseline", choices=("installer", "desktop", "test"))
     args = parser.parse_args()
     if (args.command in ("save-baseline", "save-test-baseline")) != (args.source is not None):
         parser.error("--source is required only for baseline saving")
-    if args.baseline is not None and args.command != "session":
-        parser.error("--baseline is only supported for session")
+    if args.baseline is not None and args.command not in ("session", "clone"):
+        parser.error("--baseline is only supported for session or clone")
     inputs = initialize()
     with (STATE / "lab.lock").open("a") as lock:
         try:
@@ -549,7 +578,10 @@ def main():
         if args.command == "save-test-baseline":
             save_test_baseline(inputs, args.source)
             return 0
-        baseline = args.baseline or ("test" if args.command == "session" else "installer")
+        baseline = args.baseline or ("test" if args.command in ("session", "clone") else "installer")
+        if args.command == "clone":
+            prepare_clone(inputs, baseline)
+            return 0
         return probe(inputs, interactive=args.command == "session", baseline=baseline)
 
 
