@@ -270,7 +270,9 @@ struct DesktopKeybindingOrchestrator: Sendable {
     DesktopKeybindingPlan(
       outcome: preparation.outcome,
       effectiveStatus: preparation.effectiveBehavior.status.rawValue,
-      message: preparation.effectiveBehavior.statusMessage,
+      message: preparation.outcome == "blocked"
+        ? preparation.blockingMessages.joined(separator: "; ")
+        : preparation.effectiveBehavior.statusMessage,
       generationID: preparation.generation.generationID,
       providerStatus: preparation.provider.status.rawValue,
       ownership: preparation.provider.ownership,

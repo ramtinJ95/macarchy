@@ -3,8 +3,14 @@ import ThemeCore
 
 struct KeybindingsPlanCommandRunner: Sendable {
   let effectiveInspector: KeybindingEffectiveBehaviorInspector
+  let service: SkhdUserService?
 
-  static let live = KeybindingsPlanCommandRunner(effectiveInspector: .live)
+  init(effectiveInspector: KeybindingEffectiveBehaviorInspector, service: SkhdUserService? = nil) {
+    self.effectiveInspector = effectiveInspector
+    self.service = service
+  }
+
+  static let live = KeybindingsPlanCommandRunner(effectiveInspector: .live, service: .live)
 
   func execute(
     resourcesRoot: URL,
@@ -100,7 +106,18 @@ struct KeybindingsPlanCommandRunner: Sendable {
         )
       )
     }
-    if requireRunningProcess, provider.status != .blocked {
+    var serviceChange: SkhdServiceChange?
+    if requireRunningProcess, provider.status != .blocked, let service {
+      do {
+        serviceChange = try service.prepare(home: homeDirectory, stateRoot: stateRoot)
+      } catch {
+        diagnostics.append(
+          .error(
+            code: "skhd_service_prerequisite",
+            source: service.propertyList(homeDirectory), message: String(describing: error)))
+      }
+    }
+    if requireRunningProcess, provider.status != .blocked, service == nil {
       switch effectiveState.process.status {
       case .running:
         break
@@ -135,7 +152,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     let rendered = composition?.renderedConfiguration
     let renderedDigest = composition?.renderedDigest
     let proposedInputDigest = composition?.inputDigest
-    let actions = plannedActions(
+    var actions = plannedActions(
       generation: generation,
       provider: provider,
       lifecycleEvidence: effectiveState.lifecycleEvidence,
@@ -143,6 +160,18 @@ struct KeybindingsPlanCommandRunner: Sendable {
       inputDigest: proposedInputDigest,
       isBlocked: diagnostics.contains { $0.severity == "error" }
     )
+    if let serviceChange, !serviceChange.previous.running,
+      !diagnostics.contains(where: { $0.severity == "error" })
+    {
+      actions.append(
+        KeybindingsPlanAction(
+          id: "start_service",
+          message:
+            serviceChange.previous.registration == nil
+            ? "Register and start the missing skhd user service; remove the unchanged owned registration on rollback/teardown. Accessibility remains manual."
+            : "Start the existing supported skhd user service without adopting its file; restore its stopped state on rollback/teardown."
+        ))
+    }
     let outcome: String
     if diagnostics.contains(where: { $0.severity == "error" }) {
       outcome = "blocked"

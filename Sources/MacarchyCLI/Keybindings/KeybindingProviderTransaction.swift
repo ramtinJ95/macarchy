@@ -69,6 +69,18 @@ struct KeybindingProviderTransaction: Sendable {
     expectedEvidence: KeybindingAdoptionEvidence,
     approvedEvidenceDigest: String?
   ) throws {
+    if expectedEvidence.kind == .absent, approvedEvidenceDigest == nil {
+      let stateRoot = homeDirectory.appending(path: ".config/macarchy")
+      let inspection = KeybindingProviderInspector().inspect(
+        homeDirectory: homeDirectory, stateRoot: stateRoot,
+        generation: KeybindingGenerationInspector().inspect(stateRoot: stateRoot))
+      if inspection.status == .installRequired, inspection.ownership == "absent",
+        inspection.adoptionEvidence == expectedEvidence
+      {
+        guard try !backupExists() else { throw SetupOwnershipError.orphanedBackup(backup) }
+        return
+      }
+    }
     let original = try captureApprovedOriginal(
       expectedEvidence: expectedEvidence,
       approvedEvidenceDigest: approvedEvidenceDigest
@@ -80,6 +92,17 @@ struct KeybindingProviderTransaction: Sendable {
     expectedEvidence: KeybindingAdoptionEvidence,
     approvedEvidenceDigest: String?
   ) throws {
+    if expectedEvidence.kind == .absent {
+      try preflightInstall(
+        expectedEvidence: expectedEvidence, approvedEvidenceDigest: approvedEvidenceDigest)
+      let configuration = try PinnedFilesystem.openDirectory(at: configurationDirectory)
+      defer { Darwin.close(configuration) }
+      // Empty native configuration parents are retained, like other setup-created
+      // directories. Only the provider entry is owned and removed on teardown.
+      let native = try PinnedFilesystem.openOrCreateChildDirectory(
+        parentDescriptor: configuration, name: "skhd", url: directory)
+      Darwin.close(native)
+    }
     let manager = SetupOwnershipManager()
     let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     var records = try manager.readRecords(context: context)

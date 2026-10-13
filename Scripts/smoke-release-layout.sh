@@ -202,18 +202,19 @@ grep -q '"operation" : "desktop_plan"' "$temporary_directory/desktop-plan.json"
 grep -q '"mutated" : false' "$temporary_directory/desktop-plan.json"
 grep -q '"desktop_provider" : "yabai-skhd"' "$temporary_directory/desktop-plan.json"
 if (( desktop_plan_status == 1 )); then
-  grep -q '"code" : "desktop_prerequisite_missing"' \
+  grep -Eq '"code" : "(desktop_prerequisite_missing|keybindings_blocked|yabai_service_prerequisite)"' \
     "$temporary_directory/desktop-plan.json"
   unexpected_desktop_diagnostic="$(
     grep '"code" :' "$temporary_directory/desktop-plan.json" \
-      | grep -Ev '"code" : "(desktop_prerequisite_missing|keybindings_blocked)"' || true
+      | grep -Ev '"code" : "(desktop_prerequisite_missing|keybindings_blocked|yabai_service_prerequisite)"' || true
   )"
   if [[ -n "$unexpected_desktop_diagnostic" ]]; then
     cat "$temporary_directory/desktop-plan.json"
     exit 1
   fi
   if grep -q '"code" : "keybindings_blocked"' "$temporary_directory/desktop-plan.json"; then
-    grep -q '"source" : "skhd"' "$temporary_directory/desktop-plan.json"
+    # The isolated HOME can lack a service registration even when the host's
+    # supported skhd binary and process are present. Never borrow that service.
     grep -q '"provider_status" : "install_required"' \
       "$temporary_directory/desktop-plan.json"
     grep -q '"ownership" : "absent"' "$temporary_directory/desktop-plan.json"

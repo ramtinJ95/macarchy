@@ -86,9 +86,19 @@ struct DesktopStatusCommandRunner: Sendable {
       diagnostics.append(String(describing: error))
     }
     let runtime =
+      // Service receipt drift is independent of configuration and AX evidence.
       yabaiEnabled
       ? desired?.yabaiComposition.map(lifecycle.inspect) ?? .stopped
       : .disabled
+    do {
+      if let ownership = try YabaiServiceOwnershipStore(stateRoot: stateRoot).read() {
+        guard let service = lifecycle.service,
+          try service.registration(home: homeDirectory) == ownership.registration
+        else { throw YabaiDesktopError.lifecycle("owned yabai LaunchAgent has drifted") }
+      }
+    } catch {
+      diagnostics.append(String(describing: error))
+    }
 
     let generationAgrees =
       generation.status == .current

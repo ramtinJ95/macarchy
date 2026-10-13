@@ -277,11 +277,17 @@ run_plan() {
     print -u2 "keybinding plan failed outside the supported lifecycle boundary"
     exit 1
   fi
-  [[ "$(/usr/bin/plutil -extract process.status raw -o - "$destination")" \
-    == "not_running" ]]
   [[ "$(/usr/bin/plutil -extract diagnostics raw -o - "$destination")" == "1" ]]
-  [[ "$(/usr/bin/plutil -extract diagnostics.0.code raw -o - "$destination")" \
-    == "skhd_process_prerequisite" ]]
+  local prerequisite
+  prerequisite=$(/usr/bin/plutil -extract diagnostics.0.code raw -o - "$destination")
+  [[ "$prerequisite" == "skhd_process_prerequisite" \
+    || "$prerequisite" == "skhd_service_prerequisite" ]]
+  if [[ "$prerequisite" == "skhd_process_prerequisite" ]]; then
+    [[ "$(/usr/bin/plutil -extract process.status raw -o - "$destination")" \
+      == "not_running" ]]
+  fi
+  # A host process can be running while this isolated HOME has no matching
+  # LaunchAgent. That is a service prerequisite, not authority to control it.
   [[ "$(/usr/bin/plutil -extract actions raw -o - "$destination")" == "0" ]]
 }
 
