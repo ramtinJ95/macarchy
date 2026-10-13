@@ -1,6 +1,13 @@
 import Foundation
 import ThemeCore
 
+private struct SketchyBarQueryNoResponse: Error, CustomStringConvertible {
+  let arguments: [String]
+  var description: String {
+    "SketchyBar returned no response to \(arguments.joined(separator: " ")); its messaging endpoint may not be ready"
+  }
+}
+
 enum SketchyBarCoreRuntimeStatus: String, Codable, Sendable {
   case converged
   case partial
@@ -295,6 +302,10 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
           return inspection
         }
         lastDrift = inspection
+      } catch let error as SketchyBarQueryNoResponse {
+        // The v2.24 CLI exits zero when its Mach endpoint/reply is unavailable.
+        // Retry absence, not malformed JSON, inside the existing settle budget.
+        lastFailure = error
       } catch let error as ProcessRunnerError {
         if composition.hookURL != nil {
           lastFailure = error
@@ -1261,11 +1272,14 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
           : result.output
       )
     }
+    if control == Self.controlURL, result.output.isEmpty {
+      throw SketchyBarQueryNoResponse(arguments: arguments)
+    }
     do {
       return try JSONDecoder().decode(Value.self, from: Data(result.output.utf8))
     } catch {
       throw SketchyBarDesktopError.lifecycle(
-        "cannot decode \(control.lastPathComponent) runtime state: \(error)"
+        "cannot decode \(control.lastPathComponent) \(arguments.joined(separator: " ")) runtime state: \(error)"
       )
     }
   }

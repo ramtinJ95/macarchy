@@ -105,7 +105,10 @@ struct SketchyBarMedia {
     } else if name != "macarchy.media" {
       return
     }
-    let media = try NowPlayingMedia.parse(run("/opt/homebrew/bin/nowplaying-cli", ["get-raw"]))
+    // nowplaying-cli 2.1.0 polls the inactive controller for ~2.5s and has a
+    // 3.5s hard deadline. Let it report genuine empty metadata before timing out.
+    let media = try NowPlayingMedia.parse(
+      run("/opt/homebrew/bin/nowplaying-cli", ["get-raw"], timeout: 5))
     guard media.playing else {
       try bar([
         "--set", "macarchy.media", "drawing=off", "label=inactive", "label.drawing=off",
@@ -175,9 +178,11 @@ struct SketchyBarMedia {
     try run("/opt/homebrew/bin/sketchybar", arguments)
   }
 
-  private func run(_ path: String, _ arguments: [String]) throws -> String {
+  private func run(_ path: String, _ arguments: [String], timeout: TimeInterval = 2) throws
+    -> String
+  {
     let result = try processRunner.run(
-      .init(executableURL: URL(filePath: path), arguments: arguments, timeout: 2))
+      .init(executableURL: URL(filePath: path), arguments: arguments, timeout: timeout))
     guard result.terminationStatus == 0 else { throw MediaError.providerFailed }
     return result.output
   }
