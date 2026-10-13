@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import TestSafety
 import Testing
 
 @testable import ThemeCore
@@ -15,6 +16,7 @@ struct BoundedRegularFileTests {
 
   @Test
   func fifoInputsFailAsNonregularWithoutBlocking() throws {
+    try IsolatedTestEnvironment.requireGuest()
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-bounded-file-tests-\(UUID().uuidString)",
       directoryHint: .isDirectory
@@ -22,7 +24,7 @@ struct BoundedRegularFileTests {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let fifo = root.appending(path: "input.fifo")
-    #expect(mkfifo(fifo.path, 0o600) == 0)
+    try IsolatedTestEnvironment.makeFIFO(at: fifo)
 
     #expect(throws: BoundedRegularFileError.self) {
       _ = try BoundedRegularFile.read(at: fifo)

@@ -26,6 +26,8 @@ jobs:
         shell: zsh -euo pipefail {0}
     env:
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
+      # Opt-in is insufficient on its own: TestSafety still verifies the guest.
+      MACARCHY_TEST_VM: "1"
       TAG: ${{ github.ref_name }}
     steps:
       - name: Check out approved tag
@@ -56,6 +58,9 @@ jobs:
           print -r -- \
             "ARCHIVE_NAME=macarchy-${version}-arm64-apple-darwin.tar.gz" \
             >> "$GITHUB_ENV"
+
+      - name: Check filesystem-test safety boundary
+        run: python3 -B Scripts/test-test-safety.py
 
       - name: Lint Swift formatting
         run: swift format lint --strict --recursive Package.swift Sources Tests

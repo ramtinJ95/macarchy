@@ -13,6 +13,11 @@ repository_root=${script_directory:h}
 fixture="$repository_root/Tests/Fixtures/Keybindings/Portability/portable"
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/macarchy-keybindings-portability.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
+# Compile the same test-only guard used by Swift fixtures. There is no host bypass.
+safety_helper="$temporary_directory/test-safety"
+xcrun swiftc -parse-as-library -D MACARCHY_TEST_SAFETY_CLI \
+  "$repository_root/Tests/TestSafety/IsolatedTestEnvironment.swift" -o "$safety_helper"
+"$safety_helper" --check-directory "$temporary_directory"
 snapshot_source="$script_directory/keybindings-portability-snapshot.swift"
 snapshot_helper="$temporary_directory/keybindings-portability-snapshot"
 binary_directory=${binary:h}
@@ -85,7 +90,7 @@ assert_snapshot_rejected \
 
 fifo_root="$temporary_directory/snapshot-fifo"
 mkdir -p "$fifo_root"
-mkfifo "$fifo_root/entry"
+"$safety_helper" --create-fifo "$fifo_root/entry"
 assert_snapshot_rejected \
   fifo "$fifo_root" "snapshot entry is not a pinned regular file or directory"
 

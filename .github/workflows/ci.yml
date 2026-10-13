@@ -30,6 +30,12 @@ jobs:
       - name: Test change classification
         run: python3 -B Scripts/test-ci-changes.py
 
+      - name: Check filesystem-test safety boundary
+        run: python3 -B Scripts/test-test-safety.py
+
+      - name: Test isolated VM helpers without starting a guest
+        run: python3 -B -m unittest discover -s Scripts/vm -p 'test_*.py'
+
       - name: Classify the complete PR diff
         id: changes
         env:
@@ -57,6 +63,8 @@ jobs:
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
+      # This opts in only; the runtime guard still requires a real, unaffected VM.
+      MACARCHY_TEST_VM: "1"
     defaults:
       run:
         shell: zsh -euo pipefail {0}
