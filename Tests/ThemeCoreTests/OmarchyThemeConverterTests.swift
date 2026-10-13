@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import ImageIO
+import TestSafety
 import Testing
 
 @testable import ThemeCore
@@ -214,6 +215,7 @@ struct OmarchyThemeConverterTests {
 
   @Test
   func importedGalleryRequiresMatchingSafeReportPathsAndOrdinaryDirectories() throws {
+    try IsolatedTestEnvironment.requireGuest()
     let fixture = try ConversionFixture()
     defer { fixture.remove() }
     try fixture.addValidInputs()
@@ -292,7 +294,7 @@ struct OmarchyThemeConverterTests {
     )
     let fifoURL = previewsURL.appending(path: "preview.png")
     try FileManager.default.removeItem(at: fifoURL)
-    try #require(mkfifo(fifoURL.path, 0o600) == 0)
+    try IsolatedTestEnvironment.makeFIFO(at: fifoURL)
     let fifoDiagnostic = try previewDiagnostic {
       _ = try ImportedThemePreviewLoader().load(package: converted.package)
     }

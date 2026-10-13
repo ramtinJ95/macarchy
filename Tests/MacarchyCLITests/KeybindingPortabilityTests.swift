@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Synchronization
+import TestSafety
 import Testing
 
 @testable import MacarchyCLI
@@ -419,13 +420,14 @@ struct KeybindingPortabilityTests {
 
   @Test
   func filesystemSnapshotRejectsFIFOsAndSymlinksWithoutFollowingThem() throws {
+    try IsolatedTestEnvironment.requireGuest()
     let environment = try isolatedEnvironment()
     defer { try? FileManager.default.removeItem(at: environment.root) }
 
     let fifoRoot = environment.root.appending(path: "fifo", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: fifoRoot, withIntermediateDirectories: false)
     let fifo = fifoRoot.appending(path: "entry")
-    #expect(mkfifo(fifo.path, 0o600) == 0)
+    try IsolatedTestEnvironment.makeFIFO(at: fifo)
     #expect(throws: FilesystemSnapshotError.unsupportedEntry("entry")) {
       _ = try filesystemSnapshot(at: fifoRoot)
     }
@@ -443,6 +445,7 @@ struct KeybindingPortabilityTests {
 
   @Test
   func filesystemSnapshotRejectsARegularFileReplacedAfterOpen() throws {
+    try IsolatedTestEnvironment.requireGuest()
     let environment = try isolatedEnvironment()
     defer { try? FileManager.default.removeItem(at: environment.root) }
     let inventory = environment.root.appending(path: "race", directoryHint: .isDirectory)
@@ -456,9 +459,7 @@ struct KeybindingPortabilityTests {
         guard opened == entry, !replaced else { return }
         replaced = true
         try FileManager.default.removeItem(at: opened)
-        guard mkfifo(opened.path, 0o600) == 0 else {
-          throw FilesystemSnapshotError.cannotOpen("entry")
-        }
+        try IsolatedTestEnvironment.makeFIFO(at: opened)
       }
     }
   }

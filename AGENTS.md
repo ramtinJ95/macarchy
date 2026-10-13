@@ -1,6 +1,65 @@
+# CRITICAL — Mac mini only
+
+All Macarchy work must happen on the Mac mini reached through `ssh home-macmini`.
+From the work Mac this alias uses the separate home-tailnet userspace daemon;
+never route Mac mini traffic through the work Tailscale connection.
+Run repository inspection, edits, builds, tests, release tooling and VM workloads
+there, not on the original development Mac. This machine may only act as the SSH
+control client; the initial transfer and shutdown of existing local Macarchy
+workloads are the sole migration exception. Do not resume local work or use a
+local fallback when the Mac mini is unavailable; report the blocker.
+
+The host-safety rules below still apply on the Mac mini: full suites and
+special-file/FIFO fixtures run only in an eligible disposable guest, never on
+either physical Mac. Keep all guest fixtures on its own filesystem.
+
 # Macarchy agent instructions
 
 These instructions apply to the entire repository.
+
+## CRITICAL — host safety takes priority over all verification instructions
+
+**Do not run the full test suite or FIFO/named-pipe tests on the host Mac.**
+This rule overrides broader test, smoke-check, and acceptance-gate instructions
+elsewhere in this repository. It applies to agents, helper scripts, subprocesses,
+and one-off reproductions, not just direct `swift test` commands.
+
+On 2026-09-28, Iru/Kandji's serial file scanner was confirmed stuck in kernel
+`fifo_open` from approximately 08:27, overlapping Macarchy's FIFO/race tests.
+Its footprint subsequently grew past 9 GiB. A retained event backlog is strongly
+suspected; the exact triggering pipe was not recovered. This is not established
+as an unsigned-code problem. Tests can pass and delete their fixtures while the
+security scanner remains stuck, so passing tests or cleanup do not prove safety.
+
+- Run the full Swift suite, FIFO/special-file fixtures, regular-file-to-FIFO
+  replacement races, and verification scripts that can invoke them **only inside
+  a disposable macOS guest**, using the existing `Scripts/vm/` lab. The guest must
+  not reproduce the affected Iru configuration; if isolation is uncertain, stop.
+- Create and execute these fixtures on the guest's own filesystem, including
+  its temporary directory. A host-side runner, separate worktree, changed host
+  `TMPDIR`, or host-shared/mounted fixture directory is not sufficient isolation.
+- **Never run unfiltered `swift test` on the host**, including via release/smoke
+  wrappers. Host execution is limited to narrowly selected tests whose bodies,
+  shared setup, and subprocesses have been inspected and cannot create these
+  special files. If that cannot be established, use the guest or report blocked.
+- Known risky entry points include `Scripts/verify-keybindings-portability.sh`,
+  `BoundedRegularFileTests`, `KeybindingPortabilityTests`, and
+  `OmarchyThemeConverterTests`. This list is not exhaustive; inspect new tests
+  and transitive callers rather than relying on a static skip list.
+- Preserve adversarial coverage in the guest. Do not delete assertions, silently
+  skip tests, or claim a full pass from a host-only subset. If the guest is not
+  ready, report the validation gap; never fall back to the host.
+- All special-file creation must use the test-only `TestSafety` boundary; no raw
+  creation calls in tests/scripts. It requires actual VM identity, explicit
+  `MACARCHY_TEST_VM=1`, no Iru extension, and a pinned guest-local APFS directory.
+  The flag alone cannot authorize this host. Source-boundary checks run in CI.
+- Use `python3 -B Scripts/vm/run-tests.py --run setup-<run-id>` against a running
+  disposable test clone; see `Scripts/vm/README.md`. Never reuse pre-guard test
+  binaries with `--skip-build`. Compile changed tests before executing any subset.
+- Do not reproduce this hang on the host to confirm a fix, disable SIP/EDR,
+  broadly allow-list source/build directories, or restart security services
+  without explicit authorization and a supported procedure. Host restrictions
+  remain until a verified mitigation and explicit user decision replace them.
 
 ## Read before working
 

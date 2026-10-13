@@ -61,6 +61,16 @@ let package = Package(
       path: "Tests/Fixtures/ThemeContractConsumer",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
+    .target(
+      name: "TestSafety",
+      path: "Tests/TestSafety",
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .testTarget(
+      name: "TestSafetyTests",
+      dependencies: ["TestSafety", .product(name: "Testing", package: "swift-testing")],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
     .testTarget(
       name: "MacarchyMenuTests",
       dependencies: ["MacarchyMenu", .product(name: "Testing", package: "swift-testing")],
@@ -69,6 +79,7 @@ let package = Package(
       name: "ThemeCoreTests",
       dependencies: [
         "ThemeCore",
+        "TestSafety",
         .product(name: "Testing", package: "swift-testing"),
       ],
       path: "Tests/ThemeCoreTests",
@@ -79,6 +90,7 @@ let package = Package(
       dependencies: [
         "MacarchyCLI",
         "ThemeCore",
+        "TestSafety",
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Testing", package: "swift-testing"),
       ],
