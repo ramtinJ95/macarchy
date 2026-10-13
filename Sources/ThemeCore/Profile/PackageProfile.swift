@@ -1,6 +1,7 @@
 import Foundation
 
 package enum PackageBaseline: String, Codable, Sendable {
+  case core
   case standard
   case personal
 }
@@ -20,5 +21,5 @@ package struct PackageProfile: Equatable, Sendable {
   package let baseline: PackageBaseline
   package let layers: [Layer]
 
-  package static let defaults = Self(baseline: .standard, layers: [])
+  package static let defaults = Self(baseline: .core, layers: [])
 }

@@ -16,7 +16,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
 
   let planner: UnifiedSetupPlanCommandRunner
   let themeInspection: UnifiedSetupThemeInspection
-  let packageInstaller: HomebrewBundleInstaller
+  var packageInstaller: HomebrewBundleInstaller
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let themeApply: ThemeApply
@@ -49,6 +49,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     self.environmentApply = environmentApply
     self.transactionTeardown = transactionTeardown
     self.faultInjector = faultInjector
+  }
+
+  static var guided: Self {
+    var runner = live
+    runner.packageInstaller = .guided(
+      homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+    return runner
   }
 
   static let live = Self(

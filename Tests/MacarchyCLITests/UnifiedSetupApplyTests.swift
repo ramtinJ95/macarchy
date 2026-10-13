@@ -12,8 +12,10 @@ struct UnifiedSetupApplyTests {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
-    try "schema_version = 1\n[macos_preferences]\nenabled = true\ndock_autohide = true\n".write(
-      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    try
+      "schema_version = 1\n[packages]\nbaseline = 'standard'\n[macos_preferences]\nenabled = true\ndock_autohide = true\n"
+      .write(
+        to: fixture.context.profileURL, atomically: true, encoding: .utf8)
     let inventory = try InventoryFixture()
     defer { inventory.cleanup() }
     let installed = Mutex(false)
@@ -410,7 +412,8 @@ struct UnifiedSetupApplyTests {
     let inventory = try InventoryFixture()
     defer { inventory.cleanup() }
     try inventory.formula("orphan", tap: "homebrew/core")
-    try fixture.writeMachineProfile("schema_version = 1\n[packages]\nexclude_formulae = ['jq']\n")
+    try fixture.writeMachineProfile(
+      "schema_version = 1\n[packages]\nbaseline = 'standard'\nexclude_formulae = ['jq']\n")
     let profile = try Data(contentsOf: fixture.context.machineProfileURL)
     let installed = Mutex(false)
     let calls = Mutex([String]())

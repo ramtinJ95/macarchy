@@ -377,7 +377,7 @@ final class InstallationFixture: Sendable {
     try inventory.write(
       thirdParty
         ? "schema_version = 1\n[packages]\nbaseline = 'personal'\nbrewfile = 'Brewfile'\n"
-        : "schema_version = 1\n", at: context.profileURL)
+        : "schema_version = 1\n[packages]\nbaseline = 'standard'\n", at: context.profileURL)
     if thirdParty {
       try inventory.write(
         "tap \"unrelated/tap\"\n" + declaration, at: inventory.root.appending(path: "Brewfile"))

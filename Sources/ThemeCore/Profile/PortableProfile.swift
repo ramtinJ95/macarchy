@@ -407,7 +407,7 @@ package struct PortableProfileLoader: Sendable {
   ) throws -> PackageProfile {
     guard let document else { return .defaults }
     return PackageProfile(
-      baseline: document.baseline ?? .standard,
+      baseline: document.baseline ?? .core,
       layers: [
         .init(
           kind: kind, sourceURL: source,
@@ -1054,7 +1054,7 @@ package struct PortableProfileLoader: Sendable {
       packages: PackageProfile(
         baseline: declaredValue(
           "packages.baseline", portableProfile.packages.baseline, machineProfile.packages.baseline,
-          default: .standard),
+          default: .core),
         layers: portableProfile.packages.layers + machineProfile.packages.layers),
       macOSPreferences: MacOSPreferencesProfile(
         enabled: roles.value(

@@ -212,9 +212,11 @@ struct PackageInventoryTests {
   }
 
   @Test
-  func defaultPreviewUsesOneObservationForTheApprovedSet() throws {
+  func explicitStandardPreviewUsesOneObservationForTheApprovedSet() throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
+    try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
     var planner = fixture.planner(available: { _ in false })
     let observations = Mutex(0)
     planner.packageInventoryReader = {
@@ -238,10 +240,10 @@ struct PackageInventoryTests {
       "yazi", "zig", "zoxide", "zsh-autosuggestions", "zsh-syntax-highlighting",
     ])
     let expectedCasks = Set([
-      "anki", "cursor", "docker", "flameshot-org/flameshot/flameshot-org-flameshot",
+      "anki", "cursor", "docker-desktop", "flameshot-org/flameshot/flameshot-org-flameshot",
       "font-blex-mono-nerd-font",
       "font-meslo-lg-nerd-font", "font-sketchybar-app-font", "font-symbols-only-nerd-font",
-      "google-chrome", "kitty", "slack", "spotify", "tailscale", "zen", "zoom",
+      "google-chrome", "kitty", "slack", "spotify", "tailscale-app", "zen",
     ])
     #expect(
       Set(packages.proposed.filter { $0.identity.kind == .formula }.map(\.identity.name))
@@ -249,8 +251,8 @@ struct PackageInventoryTests {
     #expect(
       Set(packages.proposed.filter { $0.identity.kind == .cask }.map(\.identity.name))
         == expectedCasks)
-    #expect(packages.proposed.count == 66)
-    #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 51)
+    #expect(packages.proposed.count == 65)
+    #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 50)
     #expect(packages.proposed.allSatisfy { $0.homebrewStatus == "missing" })
     #expect(packages.proposed.map(\.identity.key) == packages.proposed.map(\.identity.key).sorted())
     for name in ["herdr", "slack", "spotify"] {
@@ -278,6 +280,8 @@ struct PackageInventoryTests {
     defer { fixture.cleanup() }
     try """
     schema_version = 1
+    [packages]
+    baseline = "standard"
     [presets]
     herdr = true
     spicetify = true
@@ -296,7 +300,7 @@ struct PackageInventoryTests {
     let report = planner.inspectedReport(
       try planner.prepare(context: fixture.context).report, context: fixture.context)
     let packages = try #require(report.packageInventory)
-    #expect(packages.proposed.count == 67)  // Only spicetify-cli adds a package.
+    #expect(packages.proposed.count == 66)  // Only spicetify-cli adds a package.
     for (name, field, layer, source) in [
       ("herdr", "presets.herdr", "portable", fixture.context.profileURL.path),
       ("spotify", "presets.spicetify", "portable", fixture.context.profileURL.path),
@@ -334,8 +338,8 @@ struct PackageInventoryTests {
     let report = planner.inspectedReport(preparation.report, context: fixture.context)
     let packages = try #require(report.packageInventory)
     #expect(!packages.proposed.contains { ["bat", "sketchybar"].contains($0.identity.token) })
-    #expect(packages.proposed.count == 63)
-    #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 51)
+    #expect(packages.proposed.count == 15)
+    #expect(packages.proposed.allSatisfy { $0.standardDeclaration == nil })
     let yabai = try #require(packages.proposed.first { $0.identity.token == "yabai" })
     #expect(yabai.identity.name == "asmvik/formulae/yabai")
     #expect(yabai.requirements[0].selectionField == "desktop.provider")
@@ -358,7 +362,7 @@ struct PackageInventoryTests {
     #expect(planJSON["package_inventory"]?["observation"]?["status"]?.string == "unavailable")
     #expect(planJSON["package_inventory"]?["observation"]?["issues"]?.array?.count == 1)
     let proposed = try #require(planJSON["package_inventory"]?["proposed"]?.array)
-    #expect(proposed.count == 66)
+    #expect(proposed.count == 18)
     #expect(proposed.allSatisfy { $0["homebrew_status"]?.string == "unknown" })
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: planner, themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,

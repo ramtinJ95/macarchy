@@ -11,6 +11,7 @@ struct PackageAdoptionTests {
   func previewApprovalAndRepeatCrossTheSameInertInventoryWithoutFullSetup() async throws {
     let fixture = try AdoptionFixture()
     defer { fixture.cleanup() }
+    let originalProfile = try Data(contentsOf: fixture.context.profileURL)
     let runner = fixture.runner()
     let preview = try await fixture.run(runner)
     #expect(preview.succeeded && preview.outcome == "preview")
@@ -33,7 +34,7 @@ struct PackageAdoptionTests {
     let repeated = try await fixture.run(runner, approval: digest)
     #expect(repeated.succeeded && repeated.outcome == "no_change")
     #expect(try Data(contentsOf: fixture.store.url) == data)
-    #expect(!FileManager.default.fileExists(atPath: fixture.context.profileURL.path))
+    #expect(try Data(contentsOf: fixture.context.profileURL) == originalProfile)
     #expect(!FileManager.default.fileExists(atPath: fixture.context.homeDirectory.path))
     #expect(try SetupCoreOwnershipStore(stateRoot: fixture.context.stateRoot).read() == nil)
     let inventory = try fixture.status(runner)
@@ -155,7 +156,8 @@ struct PackageAdoptionTests {
       "schema_version = 1\n[tools]\nbat = false\n", at: fixture.context.profileURL)
     let undeclared = try fixture.status(runner)
     #expect(!undeclared.proposed.contains { $0.identity.name == "bat" })
-    #expect(undeclared.retainedAdoptionsOutsideProposed.map(\.entry.identity.name) == ["bat"])
+    #expect(
+      undeclared.retainedAdoptionsOutsideProposed.map(\.entry.identity.name) == ["bat", "jq"])
     #expect(undeclared.retainedAdoptionsOutsideProposed.first?.status == "adopted")
     #expect(try Data(contentsOf: fixture.store.url) == ledgerBytes)
   }
@@ -215,7 +217,8 @@ struct PackageAdoptionTests {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = root.appending(path: "profile.toml")
-    try "schema_version = 1\n".write(to: profile, atomically: true, encoding: .utf8)
+    try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
+      to: profile, atomically: true, encoding: .utf8)
     let state = root.appending(path: "state")
     let executable = URL(filePath: FileManager.default.currentDirectoryPath)
       .appending(path: ".build/debug/macarchy")
@@ -277,6 +280,8 @@ private struct AdoptionFixture {
   init() throws {
     inventory = try InventoryFixture()
     stateRoot = inventory.root.appending(path: "state")
+    try inventory.write(
+      "schema_version = 1\n[packages]\nbaseline = 'standard'\n", at: context.profileURL)
     for token in ["bat", "jq", "orphan"] {
       try inventory.formula(token, tap: "homebrew/core")
     }

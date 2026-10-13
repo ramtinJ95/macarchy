@@ -5,6 +5,20 @@ import Testing
 @testable import ThemeCore
 
 struct SetupBrewfileTests {
+  @Test(arguments: [("docker", "docker-desktop"), ("tailscale", "tailscale-app")])
+  func officialCaskRenamesPreserveOldDeclarationsAndOptOuts(old: String, current: String) throws {
+    let expected = HomebrewPackageIdentity(kind: .cask, name: current)
+    #expect(try SetupBrewfile.parse("cask '\(old)'\n").packages == [expected])
+    #expect(try SetupPackageAdoptionCommandRunner.parseTargets(["cask:\(old)"]) == [expected])
+    #expect(HomebrewPackageIdentity(kind: .cask, name: "homebrew/cask/\(old)") == expected)
+    #expect(HomebrewPackageIdentity(kind: .formula, name: old).name == old)
+    #expect(
+      HomebrewPackageIdentity(kind: .cask, name: "vendor/tap/\(old)").name == "vendor/tap/\(old)")
+    #expect(throws: (any Error).self) {
+      try SetupPackageAdoptionCommandRunner.parseTargets(["cask:\(old)", "cask:\(current)"])
+    }
+  }
+
   @Test
   func literalDeclarationsNormalizeAndRenderDeterministically() throws {
     let file = try SetupBrewfile.parse(
@@ -168,6 +182,8 @@ struct SetupBrewfileTests {
   func unavailableDefaultsDoNotSilentlyBecomeAnEmptyBaseline() throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
+    try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
     var planner = fixture.planner()
     planner.standardBrewfile = { _ in throw SetupPackageAdoptionError("Missing packaged Brewfile") }
     #expect(throws: SetupPackageAdoptionError.self) {

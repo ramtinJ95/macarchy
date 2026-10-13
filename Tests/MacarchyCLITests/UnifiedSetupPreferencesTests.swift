@@ -11,6 +11,8 @@ struct UnifiedSetupPreferencesTests {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     try selectDock(true, fixture: fixture)
+    try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
     let os = PreferencesTests.MemoryPreferences()
     let runner = fixture.runner(
       available: { _ in true }, preferences: .init(native: os.native),

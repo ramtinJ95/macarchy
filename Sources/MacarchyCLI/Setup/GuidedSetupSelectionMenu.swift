@@ -4,8 +4,11 @@ import ThemeCore
 
 /// Interaction only: the ordinary profile compiler remains authoritative.
 struct GuidedSetupSelectionMenu {
+  typealias Requirements = @Sendable (GuidedSetupAnswers) throws -> Set<HomebrewPackageIdentity>
+
   let io: GuidedSetupIO
   let packages: [HomebrewPackageIdentity]
+  let requirements: Requirements
 
   private enum Setting {
     case flag(WritableKeyPath<GuidedSetupAnswers, Bool>)
@@ -44,11 +47,13 @@ struct GuidedSetupSelectionMenu {
     let rows = rows
     var notice = ""
     while true {
+      let required = try requirements(answers)
       let first = max(0, min(cursor - 5, rows.count - 10))
       io.write("\u{1B}[H\u{1B}[2JMacarchy setup — choose what to install and manage\n")
       io.write("Up/Down: move   Space: toggle   Enter: review   q/Ctrl-C: cancel\n")
       io.write("Native settings cycle: unmanaged -> true -> false.\n")
-      io.write("Package-only choices do not enable presets; opt-outs never uninstall.\n\n")
+      io.write(
+        "Extras default off; required packages follow components. Opt-outs never uninstall.\n\n")
       for index in first..<min(first + 10, rows.count) {
         let (title, setting) = rows[index]
         let state: String
@@ -57,7 +62,10 @@ struct GuidedSetupSelectionMenu {
         case .preference(let key):
           state = answers[keyPath: key].map { $0 ? "true" : "false" } ?? "unmanaged"
         case .package(let identity):
-          state = answers.packageExclusions.contains(identity) ? " " : "x"
+          state =
+            required.contains(identity)
+            ? "required"
+            : answers.packageAdditions.contains(identity) ? "x" : " "
         }
         io.write("\(index == cursor ? ">" : " ") [\(state)] \(title)\n")
       }
@@ -67,7 +75,12 @@ struct GuidedSetupSelectionMenu {
       switch input {
       case "up": cursor = (cursor + rows.count - 1) % rows.count
       case "down": cursor = (cursor + 1) % rows.count
-      case "", "enter": return answers
+      case "", "enter":
+        answers.packageAdditions.removeAll { required.contains($0) }
+        answers.packageExclusions = packages.filter {
+          !required.contains($0) && !answers.packageAdditions.contains($0)
+        }
+        return answers
       case "q", "cancel": throw GuidedSetupError.inputClosed
       case " ":
         switch rows[cursor].1 {
@@ -89,10 +102,12 @@ struct GuidedSetupSelectionMenu {
           case false: answers[keyPath: key] = nil
           }
         case .package(let identity):
-          if answers.packageExclusions.contains(identity) {
-            answers.packageExclusions.removeAll { $0 == identity }
+          if required.contains(identity) {
+            notice = "Required by a selected component; disable that component first."
+          } else if answers.packageAdditions.contains(identity) {
+            answers.packageAdditions.removeAll { $0 == identity }
           } else {
-            answers.packageExclusions.append(identity)
+            answers.packageAdditions.append(identity)
           }
         }
       default: notice = "Use Up/Down, Space, Enter or q."
@@ -102,7 +117,10 @@ struct GuidedSetupSelectionMenu {
 }
 
 enum GuidedSetupTerminal {
-  static func collect(packages: [HomebrewPackageIdentity]) throws -> GuidedSetupAnswers {
+  static func collect(
+    packages: [HomebrewPackageIdentity],
+    requirements: @escaping GuidedSetupSelectionMenu.Requirements
+  ) throws -> GuidedSetupAnswers {
     guard isatty(STDIN_FILENO) == 1, isatty(STDOUT_FILENO) == 1,
       ProcessInfo.processInfo.environment["TERM"] != "dumb"
     else { throw GuidedSetupError.terminalUnavailable }
@@ -125,7 +143,7 @@ enum GuidedSetupTerminal {
       write("\u{1B}[?25h\u{1B}[?1049l")
     }
     return try GuidedSetupSelectionMenu(
-      io: .init(read: readKey, write: write), packages: packages
+      io: .init(read: readKey, write: write), packages: packages, requirements: requirements
     ).collect()
   }
 

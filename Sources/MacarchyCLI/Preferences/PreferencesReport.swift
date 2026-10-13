@@ -29,6 +29,7 @@ struct PreferencesReport: Encodable, Sendable {
   let runtime =
     "Public Apple Events; changes take effect without restart/logout. Dock inspection may start Apple's System Events query helper. No consent prompts or permission grants."
   var approvalDigest: String?
+  var automationPermission: MacOSPreference?
   var preferences: [Row] = []
   var actions: [Action] = []
   var diagnostics: [Diagnostic] = []
@@ -51,10 +52,14 @@ struct PreferencesReport: Encodable, Sendable {
     case PreferencesError.rolledBack: outcome = "rolled_back"
     default: outcome = "blocked"
     }
-    return Self(
+    var report = Self(
       outcome: outcome, mutated: outcome == "recovery_required" ? nil : outcome == "rolled_back",
       receiptPath: PreferencesStore(context: context).url.path,
       diagnostics: [.init(message: String(describing: error))])
+    if case PreferencesError.automationRequired(let key) = error {
+      report.automationPermission = key
+    }
+    return report
   }
 
   func render(json: Bool) throws -> String {

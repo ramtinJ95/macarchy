@@ -23,7 +23,7 @@ struct SetupPackageDeclarations: Encodable, Sendable {
   let exclusions: [Exclusion]
   let taps: [Tap]
 
-  static let empty = Self(baseline: .standard, packages: [], exclusions: [], taps: [])
+  static let empty = Self(baseline: .core, packages: [], exclusions: [], taps: [])
 
   static func compile(
     standard: SetupBrewfile, profile: PackageProfile, requirements: [SetupCapability],

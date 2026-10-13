@@ -64,9 +64,7 @@ enum NativePreferenceEvent {
     return event
   }
 
-  fileprivate static func send(key: MacOSPreference, value: Bool? = nil) throws
-    -> NSAppleEventDescriptor
-  {
+  private static func target(for key: MacOSPreference) throws -> NSAppleEventDescriptor {
     try requireSupportedVersion(ProcessInfo.processInfo.operatingSystemVersion)
     let app = application(for: key)
     // System Events is an on-demand OS query helper, not a resident Macarchy service.
@@ -90,9 +88,31 @@ enum NativePreferenceEvent {
       throw PreferencesError.unavailable(
         "\(app.url.lastPathComponent) is not running in this GUI session.")
     }
+    return .init(processIdentifier: process.processIdentifier)
+  }
+
+  // Only guided setup calls this, after separate, explicit permission consent.
+  static func requestAutomation(for key: MacOSPreference) throws {
+    let recipient = try target(for: key)
+    guard let descriptor = recipient.aeDesc else {
+      throw PreferencesError.unavailable("Cannot address the native Automation recipient.")
+    }
+    let status = AEDeterminePermissionToAutomateTarget(
+      descriptor, AEEventClass(kAECoreSuite), AEEventID(kAEGetData), true)
+    guard status == noErr else {
+      throw PreferencesError.unavailable(
+        "Automation consent for \(application(for: key).url.lastPathComponent) failed (\(status)). "
+          + "Review System Settings > Privacy & Security > Automation, then resume guided setup.")
+    }
+  }
+
+  fileprivate static func send(key: MacOSPreference, value: Bool? = nil) throws
+    -> NSAppleEventDescriptor
+  {
+    let recipient = try target(for: key)
     do {
       let reply = try request(
-        key: key, value: value, target: .init(processIdentifier: process.processIdentifier)
+        key: key, value: value, target: recipient
       ).sendEvent(options: sendOptions, timeout: 2)
       if let error = reply.paramDescriptor(forKeyword: AEKeyword(keyErrorNumber)),
         error.int32Value != 0
@@ -102,6 +122,9 @@ enum NativePreferenceEvent {
       return reply
     } catch {
       let code = (error as NSError).code
+      if code == errAEEventWouldRequireUserConsent {
+        throw PreferencesError.automationRequired(key)
+      }
       if value != nil, ![-1743, -1744, -600, -1708].contains(code) {
         throw PreferencesError.uncertain(
           "\(key.rawValue) setter did not confirm completion (\(code)). The OS may still finish it; do not retry blindly. \(error)"
@@ -109,7 +132,8 @@ enum NativePreferenceEvent {
       }
       throw PreferencesError.unavailable(
         "\(key.rawValue) Apple Event failed (\(code)). No permission prompt or fallback was attempted. "
-          + "Automation permissions, if required, must be configured manually. \(error)")
+          + "Review System Settings > Privacy & Security > Automation if access was denied. \(error)"
+      )
     }
   }
 
@@ -135,6 +159,7 @@ enum NativePreferenceEvent {
 enum PreferencesError: Error, CustomStringConvertible, Sendable {
   case invalid(String)
   case unavailable(String)
+  case automationRequired(MacOSPreference)
   case drift(String)
   case recoveryRequired(String)
   case uncertain(String)
@@ -144,6 +169,8 @@ enum PreferencesError: Error, CustomStringConvertible, Sendable {
     switch self {
     case .invalid(let reason): "Invalid macOS preferences state: \(reason)"
     case .unavailable(let reason): "macOS preferences unavailable: \(reason)"
+    case .automationRequired(let key):
+      "\(key.rawValue) requires Automation consent. No permission prompt was attempted. Run macarchy setup guided --resume with the same profile options to request Apple's consent dialog."
     case .drift(let reason): "macOS preferences drift: \(reason)"
     case .recoveryRequired(let reason): "macOS preferences recovery required: \(reason)"
     case .uncertain(let reason): "macOS preferences write outcome uncertain: \(reason)"

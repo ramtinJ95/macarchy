@@ -43,6 +43,8 @@ struct UnifiedSetupLifecycleTests {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
     guard case .ready(let model, _) = try fixture.planner().prepare(context: fixture.context) else {
       Issue.record("Expected a ready unified model")
       return

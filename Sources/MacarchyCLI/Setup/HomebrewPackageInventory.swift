@@ -13,7 +13,16 @@ struct HomebrewPackageIdentity: Hashable, Codable, Sendable {
   init(kind: Kind, name: String) {
     self.kind = kind
     let official = kind == .formula ? "homebrew/core/" : "homebrew/cask/"
-    self.name = name.hasPrefix(official) ? String(name.dropFirst(official.count)) : name
+    let normalized = name.hasPrefix(official) ? String(name.dropFirst(official.count)) : name
+    // Homebrew's recorded official cask renames. Normalize declarations and
+    // exclusions together so a stock rename cannot silently undo an opt-out.
+    // Never apply these aliases to formulae or third-party cask identities.
+    if kind == .cask {
+      self.name =
+        ["docker": "docker-desktop", "tailscale": "tailscale-app"][normalized] ?? normalized
+    } else {
+      self.name = normalized
+    }
   }
 
   var key: String { "\(kind.rawValue):\(name)" }
