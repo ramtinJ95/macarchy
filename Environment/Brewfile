@@ -1,5 +1,5 @@
-# Macarchy standard package-only defaults. Provider requirements are composed separately.
-# Personal declarations must remain separate; do not edit release defaults.
+# Macarchy optional package catalog. Extras are off unless explicitly selected.
+# Provider requirements are composed separately. Explicit baseline="standard" selects this list.
 tap "flameshot-org/flameshot"
 tap "hashicorp/tap"
 brew "azure-cli"
@@ -41,7 +41,7 @@ brew "zig"
 brew "zoxide"
 cask "anki"
 cask "cursor"
-cask "docker"
+cask "docker-desktop"
 cask "flameshot-org/flameshot/flameshot-org-flameshot"
 cask "font-blex-mono-nerd-font"
 cask "font-meslo-lg-nerd-font"
@@ -50,6 +50,5 @@ cask "font-symbols-only-nerd-font"
 cask "google-chrome"
 cask "slack"
 cask "spotify"
-cask "tailscale"
+cask "tailscale-app"
 cask "zen"
-cask "zoom"

@@ -14,6 +14,7 @@ struct NativeGuidedSetupTests {
     let planner = planner(fixture)
     let apply = runner(planner: planner)
     let guided = GuidedSetupCommandRunner(
+      packageTrust: .testAlreadyTrusted,
       planner: planner,
       apply: { context, paths, packages, preferences, adoptions in
         try await apply.execute(
@@ -74,6 +75,7 @@ struct NativeGuidedSetupTests {
     let transcript = Mutex("")
     let responses = Mutex(["no", "yes"])
     let guided = GuidedSetupCommandRunner(
+      packageTrust: .testAlreadyTrusted,
       planner: planner,
       apply: { context, paths, packages, preferences, adoptions in
         try await apply.execute(
@@ -161,6 +163,7 @@ struct NativeGuidedSetupTests {
     let source = EnvironmentNativeSeed.Provider.zsh.standardURL(
       homeDirectory: context.homeDirectory)
     let guided = GuidedSetupCommandRunner(
+      packageTrust: .testAlreadyTrusted,
       planner: planner,
       apply: { received, paths, packages, preferences, adoptions in
         var received = received

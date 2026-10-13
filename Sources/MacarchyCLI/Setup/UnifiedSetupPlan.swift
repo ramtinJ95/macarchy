@@ -1063,6 +1063,20 @@ struct UnifiedSetupPlanReport: Encodable {
       try components?.preferences.report.optionalString("approval_digest", at: "preferences")
     }
   }
+
+  var preferencesAutomationPermission: MacOSPreference? {
+    get throws {
+      guard
+        let value = try components?.preferences.report.optionalString(
+          "automation_permission", at: "preferences")
+      else { return nil }
+      guard let key = MacOSPreference(rawValue: value) else {
+        throw SetupComponentReportError(
+          description: "Unknown preferences Automation recipient: \(value)")
+      }
+      return key
+    }
+  }
 }
 
 enum JSONValue: Codable, Sendable {

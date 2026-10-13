@@ -13,6 +13,7 @@ struct PackageLayeringTests {
     try fixture.profiles(
       portable: """
         [packages]
+        baseline = "standard"
         brewfile = "Brewfile"
         exclude_formulae = ["jq"]
         exclude_casks = ["spotify"]
@@ -32,7 +33,7 @@ struct PackageLayeringTests {
       names.contains("formula:hello") && names.contains("formula:jq")
         && names.contains("formula:git"))
     #expect(!names.contains("cask:spotify"))
-    #expect(names.contains("cask:docker") == emptyMachineExclusions)
+    #expect(names.contains("cask:docker-desktop") == emptyMachineExclusions)
     #expect(report.exclusions.first { $0.identity.name == "spotify" }?.source.layer == "portable")
     #expect(
       report.proposed.first { $0.identity.name == "hello" }?.personalDeclarations.first?.layer
@@ -69,7 +70,9 @@ struct PackageLayeringTests {
     #expect(
       report.proposed.contains { $0.identity.key == "formula:bat" && !$0.requirements.isEmpty })
     #expect(
-      !report.proposed.contains { ["jq", "git", "spotify", "docker"].contains($0.identity.name) })
+      !report.proposed.contains {
+        ["jq", "git", "spotify", "docker-desktop"].contains($0.identity.name)
+      })
     #expect(report.proposed.allSatisfy { $0.standardDeclaration == nil })
     #expect(report.taps.map(\.name) == (emptyFragment ? [] : ["vendor/tools"]))
     #expect(report.effectiveBrewfile.contains("tap \"vendor/tools\"") == !emptyFragment)
@@ -82,11 +85,13 @@ struct PackageLayeringTests {
       id: "bat", category: .requiredAdapter, status: .present,
       requirement: "bat", remediation: .formula("bat"))
     _ = try SetupPackageDeclarations.compile(
-      standard: SetupBrewfile(packages: Array(names.dropLast())), profile: .defaults,
+      standard: SetupBrewfile(packages: Array(names.dropLast())),
+      profile: .init(baseline: .standard, layers: []),
       requirements: [requirement])
     #expect(throws: SetupPackageAdoptionError.self) {
       try SetupPackageDeclarations.compile(
-        standard: SetupBrewfile(packages: names), profile: .defaults, requirements: [requirement])
+        standard: SetupBrewfile(packages: names),
+        profile: .init(baseline: .standard, layers: []), requirements: [requirement])
     }
   }
 

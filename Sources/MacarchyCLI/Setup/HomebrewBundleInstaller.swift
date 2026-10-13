@@ -48,9 +48,9 @@ struct HomebrewBundleInstaller: Sendable {
 
   static let arguments = ["bundle", "install", "--no-upgrade", "--file"]
   static let caskEffects =
-    "Homebrew cask installation may invoke sudo using existing authorization and Bundle may adopt identical existing application artifacts. Macarchy supplies no credentials and adds no trust or permission-repair commands or elevated retries."
+    "Homebrew cask installation may invoke sudo; guided setup allows native terminal authentication, while noninteractive execution needs existing authorization. Bundle may adopt identical existing application artifacts. Macarchy supplies no credentials or elevated retries."
   static let tapEffects =
-    "Homebrew acquires required named taps from its default remotes and executes package code and dependencies under native policy. Fully qualified names may authorize this invocation without persistent trust. Macarchy adds no trust grants, custom tap URLs, automatic retries or rollback; native trust/authentication failures remain visible and partial."
+    "Homebrew acquires required named taps from its default remotes and executes package code and dependencies under native policy, which may persist item trust. Macarchy's guided formula-trust commands require separate exact-name consent. No whole-tap grants, custom tap URLs, automatic retries or rollback; native trust/authentication failures remain visible and partial."
 
   static func nativeEffects(for packages: [HomebrewPackageIdentity]) -> [String] {
     (packages.contains { $0.tap != nil } ? [tapEffects] : [])
@@ -98,6 +98,57 @@ struct HomebrewBundleInstaller: Sendable {
       })
   }
 
+  // Full guided setup only: unlike named install/add, it owns no durable package
+  // session journal. Native output and password input stay in the user's terminal.
+  static func guided(homeDirectory: URL) -> Self {
+    Self(
+      preflight: {
+        try validateConfiguration(homeDirectory: homeDirectory)
+        guard isatty(STDIN_FILENO) == 1, isatty(STDOUT_FILENO) == 1,
+          tcgetpgrp(STDIN_FILENO) >= 0
+        else { throw GuidedSetupError.terminalUnavailable }
+      },
+      apply: { brewfile, _ in
+        try validateConfiguration(homeDirectory: homeDirectory)
+        guard isatty(STDIN_FILENO) == 1, isatty(STDOUT_FILENO) == 1,
+          tcgetpgrp(STDIN_FILENO) >= 0
+        else { throw GuidedSetupError.terminalUnavailable }
+        let process = guidedProcess(brewfile: brewfile, homeDirectory: homeDirectory)
+        try MenuTerminal.runForeground(process)
+        let status =
+          process.terminationReason == .exit
+          ? process.terminationStatus : 128 + process.terminationStatus
+        return .init(
+          status: status,
+          diagnostic:
+            "Interactive Homebrew exited with status \(status). See native output above; partial package effects are retained."
+        )
+      })
+  }
+
+  static func nativeArguments(
+    homeDirectory: URL, arguments: [String],
+    inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> [String] {
+    [
+      "-i", "HOME=\(homeDirectory.path)",
+      "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL=C",
+    ]
+      + executionEnvironment(inheriting: inheritedEnvironment)
+      + ["/opt/homebrew/bin/brew"] + arguments
+  }
+
+  static func guidedProcess(brewfile: URL, homeDirectory: URL) -> Process {
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/bin/env")
+    process.arguments = nativeArguments(
+      homeDirectory: homeDirectory, arguments: arguments + [brewfile.path])
+    process.standardInput = FileHandle.standardInput
+    process.standardOutput = FileHandle.standardOutput
+    process.standardError = FileHandle.standardError
+    return process
+  }
+
   static func request(
     brewfile: URL, log: URL, homeDirectory: URL,
     inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment
@@ -110,11 +161,11 @@ struct HomebrewBundleInstaller: Sendable {
       executableURL: URL(filePath: "/bin/sh"),
       arguments: [
         "-c", #"log=$1; shift; exec "$@" < /dev/null > "$log" 2>&1"#,
-        "macarchy-bundle-install", log.path, "/usr/bin/env", "-i",
-        "HOME=\(homeDirectory.path)", "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        "LC_ALL=C",
-      ] + executionEnvironment(inheriting: inheritedEnvironment)
-        + ["/opt/homebrew/bin/brew"] + arguments + [brewfile.path],
+        "macarchy-bundle-install", log.path, "/usr/bin/env",
+      ]
+        + nativeArguments(
+          homeDirectory: homeDirectory, arguments: arguments + [brewfile.path],
+          inheritedEnvironment: inheritedEnvironment),
       timeout: 1800)
   }
 

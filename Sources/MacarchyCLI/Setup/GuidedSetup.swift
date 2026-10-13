@@ -23,6 +23,7 @@ struct GuidedSetupAnswers: Sendable {
   var tuicr = false
   var dockAutohide: Bool?
   var finderShowExtensions: Bool?
+  var packageAdditions: [HomebrewPackageIdentity] = []
   var packageExclusions: [HomebrewPackageIdentity] = []
 
   var nativeStarterProviders: [EnvironmentNativeSeed.Provider] {
@@ -36,6 +37,10 @@ struct GuidedSetupAnswers: Sendable {
   }
 
   var profileTOML: String {
+    profileTOML(addingBrewfile: nil)
+  }
+
+  func profileTOML(addingBrewfile: String?) -> String {
     var sections = [[String]]()
     func add(_ table: String, _ fields: [String]) {
       if !fields.isEmpty { sections.append(["[\(table)]"] + fields) }
@@ -83,6 +88,7 @@ struct GuidedSetupAnswers: Sendable {
     add(
       "packages",
       [
+        addingBrewfile.map { "brewfile = \($0)" },
         formulae.isEmpty ? nil : "exclude_formulae = [\(formulae.joined(separator: ", "))]",
         casks.isEmpty ? nil : "exclude_casks = [\(casks.joined(separator: ", "))]",
       ].compactMap { $0 }
@@ -137,6 +143,33 @@ enum GuidedSetupError: Error, CustomStringConvertible, Sendable {
 }
 
 enum GuidedSetupProfileWriter {
+  static func write(
+    answers: GuidedSetupAnswers, nativeSources: String, to target: URL
+  ) throws -> URL? {
+    guard !answers.packageAdditions.isEmpty else {
+      try write(answers.profileTOML + "\n" + nativeSources, to: target)
+      return nil
+    }
+    // Reuse personal package intent, with create-only publication. A crash before
+    // the profile leaves an unreferenced fragment, never a dangling live profile.
+    let fragment = target.deletingLastPathComponent().appending(
+      path: "guided-packages-\(UUID().uuidString.lowercased()).Brewfile")
+    let brewfile = SetupBrewfile.installing(answers.packageAdditions)
+    _ = try SetupBrewfile.parse(brewfile.text)
+    let quoted = String(
+      decoding: try JSONEncoder().encode(fragment.lastPathComponent), as: UTF8.self)
+    try write(brewfile.text, to: fragment)
+    do {
+      try write(
+        answers.profileTOML(addingBrewfile: quoted) + "\n" + nativeSources, to: target)
+    } catch {
+      throw SetupPackageAdoptionError(
+        "Profile publication failed: \(error). Unreferenced package fragment retained at \(fragment.path); no installation ran."
+      )
+    }
+    return fragment
+  }
+
   static func write(_ profile: String, to target: URL) throws {
     let target = target.standardizedFileURL
     let parent = target.deletingLastPathComponent()
@@ -171,17 +204,24 @@ struct GuidedSetupCommandRunner: Sendable {
       UnifiedSetupAdoptionApprovals
     ) async throws -> (output: String, succeeded: Bool)
 
+  let packageTrust: GuidedHomebrewTrust
   let planner: UnifiedSetupPlanCommandRunner
   let apply: Apply
   let io: GuidedSetupIO
-  var select: @Sendable ([HomebrewPackageIdentity]) throws -> GuidedSetupAnswers =
-    GuidedSetupTerminal.collect
+  var select:
+    @Sendable (
+      [HomebrewPackageIdentity], @escaping GuidedSetupSelectionMenu.Requirements
+    ) throws -> GuidedSetupAnswers =
+      GuidedSetupTerminal.collect
+  var requestAutomation: @Sendable (MacOSPreference) throws -> Void =
+    NativePreferenceEvent.requestAutomation
 
   static func live(io: GuidedSetupIO = .live) -> Self {
     Self(
+      packageTrust: .live(homeDirectory: FileManager.default.homeDirectoryForCurrentUser),
       planner: .live,
       apply: { context, consumerPaths, packageApproval, preferencesApproval, adoptions in
-        try await UnifiedSetupApplyCommandRunner.live.execute(
+        try await UnifiedSetupApplyCommandRunner.guided.execute(
           context: context,
           consumerPaths: consumerPaths,
           packageApproval: packageApproval,
@@ -218,7 +258,16 @@ struct GuidedSetupCommandRunner: Sendable {
     let packages = try planner.standardBrewfile(
       context.environmentResourcesRoot.appending(path: "Brewfile")
     ).packages
-    let answers = try select(packages)
+    let answers = try select(packages) { answers in
+      let profile = try PortableProfileLoader().decode(
+        answers.profileTOML, source: context.profileURL)
+      return Set(
+        try DependencyProfile.personal(homeDirectory: context.homeDirectory).selectedForSetup(
+          profile,
+          defaultsURL: context.desktopResourcesRoot.appending(
+            path: "sketchybar/defaults.toml")
+        ).compactMap { $0.remediation.homebrewPackage })
+    }
     return try await execute(context: context, consumerPaths: consumerPaths, answers: answers)
   }
 
@@ -237,8 +286,11 @@ struct GuidedSetupCommandRunner: Sendable {
       return "[\(provider.rawValue)]\n\(provider.profileKey) = "
         + String(decoding: path, as: UTF8.self) + "\n"
     }.joined(separator: "\n")
-    try GuidedSetupProfileWriter.write(
-      answers.profileTOML + "\n" + nativeSources, to: context.profileURL)
+    if let fragment = try GuidedSetupProfileWriter.write(
+      answers: answers, nativeSources: nativeSources, to: context.profileURL)
+    {
+      io.write("Wrote personal package fragment: \(fragment.path)\n")
+    }
     io.write("Wrote portable profile: \(context.profileURL.path)\n")
 
     return try await reviewAndApply(
@@ -247,15 +299,42 @@ struct GuidedSetupCommandRunner: Sendable {
 
   private func reviewAndApply(
     context: UnifiedSetupPlanContext, consumerPaths: ThemeConsumerPaths,
-    packageExclusions: [HomebrewPackageIdentity]
+    packageExclusions: [HomebrewPackageIdentity], trustReviewed: Bool = false
   ) async throws -> (output: String, succeeded: Bool) {
     var context = context
-    let preparation = try planner.prepare(context: context)
+    var preparation = try planner.prepare(context: context)
+    var requested = Set<MacOSPreference>()
+    while let key = try preparation.report.preferencesAutomationPermission,
+      requested.insert(key).inserted
+    {
+      io.write("\(try preparation.report.render(json: false))\n")
+      let recipient = NativePreferenceEvent.application(for: key).url.deletingPathExtension()
+        .lastPathComponent
+      io.write(
+        "Inspecting \(key.rawValue) needs Automation access to Apple's \(recipient). "
+          + "macOS controls this permission; requesting it installs nothing and changes no preferences.\n"
+      )
+      guard try io.confirm("Show Apple's Automation consent dialog for \(recipient)?") else {
+        return (
+          "Automation consent was not requested. The profile was retained; continue with macarchy setup guided --resume and the same profile options.",
+          false
+        )
+      }
+      do {
+        try requestAutomation(key)
+      } catch {
+        return (
+          "\(error) The profile was retained; continue with macarchy setup guided --resume and the same profile options.",
+          false
+        )
+      }
+      preparation = try planner.prepare(context: context)
+    }
     let plan = planner.inspectedReport(preparation.report, context: context)
     io.write("\(try plan.render(json: false))\n")
     guard case .ready(let model, _) = preparation else {
       return (
-        "Guided setup stopped because the unified plan is blocked. The profile was retained.",
+        "Guided setup stopped because the unified plan is blocked. The profile was retained; continue with macarchy setup guided --resume and the same profile options.",
         false
       )
     }
@@ -277,13 +356,51 @@ struct GuidedSetupCommandRunner: Sendable {
     )
     guard model.packages.external.isEmpty else {
       return (
-        "Complete the plan's external prerequisites, then run macarchy setup guided --resume with the same profile options.",
+        "Complete these external prerequisites:\n"
+          + model.packages.external.map { "- \($0.capabilityID): \($0.instruction)" }.joined(
+            separator: "\n")
+          + "\nThen run macarchy setup guided --resume with the same profile options.",
         false
       )
     }
 
+    var grantedTrust = false
+    do {
+      let untrusted = try packageTrust.missing(model.packages.identities)
+      if !untrusted.isEmpty {
+        guard !trustReviewed else {
+          throw SetupPackageAdoptionError(
+            "Formula trust remains unresolved or the selected scope changed. Review and resume; no automatic retry."
+          )
+        }
+        io.write(
+          "Homebrew needs persistent trust for these exact formulae:\n"
+            + untrusted.map { "- \($0.name)" }.joined(separator: "\n")
+            + "\nThis permits loading their package code, not entire taps. Trust survives cancellation; it installs nothing.\n"
+        )
+        guard try io.confirm("Trust only these named Homebrew formulae?") else {
+          return (
+            "Formula trust declined. Profile retained; resume after resolving trust. No installation started.",
+            false
+          )
+        }
+        for package in untrusted { try packageTrust.grant(package) }
+        grantedTrust = true
+      }
+    } catch {
+      return (
+        "\(error) Any completed trust grants remain. Profile retained; review and resume. No installation started.",
+        false
+      )
+    }
+    if grantedTrust {
+      return try await reviewAndApply(
+        context: context, consumerPaths: consumerPaths, packageExclusions: packageExclusions,
+        trustReviewed: true)
+    }
+
     let cancelled = (
-      "Guided setup stopped before mutation. The profile was retained; no native starters were created. Continue with macarchy setup guided --resume and the same profile options.",
+      "Guided setup stopped before installation or configuration mutation. Prior permission/trust grants remain. The profile was retained; no native starters were created. Continue with macarchy setup guided --resume and the same profile options.",
       true
     )
     // The single consent covers only the digests in the visible reviewed plan.
@@ -316,6 +433,7 @@ struct GuidedSetupCommandRunner: Sendable {
         + "absent native starters, native preferences and provider/service changes, including desktop keybindings when selected.\n"
         + "Native starters become user-owned and are retained on failure or teardown; existing files are never replaced.\n"
         + "Homebrew effects are not rolled back with configuration. Permissions are never granted automatically.\n"
+        + "Homebrew runs visibly in this terminal and may ask for your administrator password through sudo. Macarchy does not collect or store it.\n"
     )
     guard try io.confirm("Install & apply the reviewed setup now?") else {
       return cancelled
