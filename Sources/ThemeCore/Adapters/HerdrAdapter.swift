@@ -306,12 +306,14 @@ package struct HerdrAdapter: Sendable {
     }
 
     let status = try processRunner.run(
-      ProcessRequest(executableURL: executableURL, arguments: ["status", "server"], timeout: 1)
+      ProcessRequest(
+        executableURL: executableURL, arguments: ["status", "server", "--json"], timeout: 1)
     )
-    let statusLines = status.output.split(whereSeparator: \Character.isNewline)
     if status.terminationStatus == 0,
-      statusLines.count == 1,
-      statusLines[0].trimmingCharacters(in: .whitespaces) == "status: stopped"
+      Self.serverStatusIsConfirmedStopped(
+        status.output,
+        expectedSocket: configurationURL.deletingLastPathComponent().appending(path: "herdr.sock")
+          .path)
     {
       return (true, "Herdr will use the active \(subject) on next launch")
     }
@@ -427,6 +429,44 @@ package struct HerdrAdapter: Sendable {
       throw HerdrAdapterError.unsupportedVersion(result.output)
     }
     return version.map(String.init).joined(separator: ".")
+  }
+
+  package static func serverStatusIsConfirmedStopped(
+    _ output: String, expectedSocket: String
+  ) -> Bool {
+    // Source-qualified 0.8.2–0.9.1 status server --json. Do not infer absence
+    // from reload errors, a human-readable substring, or another session/socket.
+    struct Flags: Decodable {
+      let running: Bool
+      let restartNeeded: Bool
+      let serverBinaryStale: Bool?
+
+      enum CodingKeys: String, CodingKey {
+        case running
+        case restartNeeded = "restart_needed"
+        case serverBinaryStale = "server_binary_stale"
+      }
+    }
+    let required: Set<String> = [
+      "status", "running", "version", "protocol", "capabilities", "compatible",
+      "socket", "session", "restart_needed",
+    ]
+    let allowed = required.union(["endpoint_compatible", "server_binary_stale"])
+    let data = Data(output.utf8)
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      required.isSubset(of: Set(object.keys)), Set(object.keys).isSubset(of: allowed),
+      object.keys.allSatisfy({ output.components(separatedBy: "\"\($0)\"").count == 2 }),
+      object["status"] as? String == "not_running",
+      object["socket"] as? String == expectedSocket,
+      ["version", "protocol", "capabilities", "compatible", "session"].allSatisfy({
+        object[$0] is NSNull
+      }),
+      object["endpoint_compatible"] == nil || object["endpoint_compatible"] is NSNull,
+      let flags = try? JSONDecoder().decode(Flags.self, from: data),
+      !flags.running, !flags.restartNeeded,
+      object["server_binary_stale"] == nil || flags.serverBinaryStale == false
+    else { return false }
+    return true
   }
 
   package static func reloadResponseIsUnambiguousSuccess(_ output: String) -> Bool {

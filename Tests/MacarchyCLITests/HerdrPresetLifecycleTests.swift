@@ -7,6 +7,42 @@ import Testing
 @testable import ThemeCore
 
 struct HerdrPresetLifecycleTests {
+  @Test func stoppedServerRequiresCanonicalUnambiguousNativeJSON() throws {
+    let socket = "/Users/test/.config/herdr/herdr.sock"
+    var object: [String: Any] = [
+      "status": "not_running", "running": false, "socket": socket,
+      "session": NSNull(), "version": NSNull(), "protocol": NSNull(),
+      "capabilities": NSNull(), "compatible": NSNull(), "restart_needed": false,
+    ]
+    func text(_ value: [String: Any]) throws -> String {
+      String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self)
+    }
+    #expect(HerdrAdapter.serverStatusIsConfirmedStopped(try text(object), expectedSocket: socket))
+    object["endpoint_compatible"] = NSNull()
+    object["server_binary_stale"] = false
+    let current = try text(object)
+    #expect(HerdrAdapter.serverStatusIsConfirmedStopped(current, expectedSocket: socket))
+    for (key, value) in [
+      ("status", "running" as Any), ("running", true), ("running", 0),
+      ("socket", "/tmp/other.sock"), ("session", "other"),
+      ("version", "0.9.1"), ("restart_needed", true), ("server_binary_stale", true),
+      ("error", "unavailable"), ("endpoint_compatible", false),
+    ] {
+      var invalid = object
+      invalid[key] = value
+      #expect(
+        !HerdrAdapter.serverStatusIsConfirmedStopped(try text(invalid), expectedSocket: socket))
+    }
+    for invalid in [
+      "", "{", "status: stopped", "status: not running\nsocket: \(socket)",
+      current.replacingOccurrences(
+        of: "{", with: "{\"running\":true,", options: [],
+        range: current.startIndex..<current.index(after: current.startIndex)),
+    ] {
+      #expect(!HerdrAdapter.serverStatusIsConfirmedStopped(invalid, expectedSocket: socket))
+    }
+  }
+
   @Test
   func reloadContractRequiresUnambiguousSuccess() {
     #expect(

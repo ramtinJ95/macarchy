@@ -216,8 +216,14 @@ extension AdapterContractTests {
       processRunner: ProcessRunner { request in
         request.arguments == ["--version"]
           ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
-          : request.arguments == ["status", "server"]
-            ? ProcessResult(terminationStatus: 0, output: "status: stopped")
+          : request.arguments == ["status", "server", "--json"]
+            ? ProcessResult(
+              terminationStatus: 0,
+              output: """
+                {"status":"not_running","running":false,"version":null,"protocol":null,
+                 "capabilities":null,"compatible":null,"socket":"\(configuration.deletingLastPathComponent().appending(path: "herdr.sock").path)",
+                 "session":null,"restart_needed":false}
+                """)
             : ProcessResult(terminationStatus: 1, output: "server unavailable")
       }
     )
