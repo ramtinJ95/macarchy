@@ -173,6 +173,13 @@ struct EnvironmentPlanCommandRunner: Sendable {
       return migration.nativeTarget(in: provider?.ownership)
         ?? composition.profile.neovim.nativeConfigurationDirectoryURL
     }
+    let freshNativeNeovim =
+      try homeDirectory.map {
+        try EnvironmentNeovimPreparer.requiresFreshNativePreparation(
+          profile: composition.profile, ownership: provider?.ownership,
+          homeDirectory: $0, stateRoot: stateRoot, resourcesRoot: resourcesRoot,
+          proposedStarters: starterPlans)
+      } ?? false
     let report = EnvironmentPlanReport(
       outcome: blocked ? "blocked" : "ready",
       profile: profileURL.path,
@@ -217,6 +224,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       actions: Self.actions(
         for: composition.profile,
         nativeNeovim: nativeNeovimRoot != nil,
+        freshNativeNeovim: freshNativeNeovim,
         adoptionRequired: provider?.adoptionEvidenceDigest != nil,
         restorationRequired: provider?.entries.contains {
           $0.status == .restorationRequired
@@ -230,6 +238,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
   private static func actions(
     for profile: EnvironmentProfile,
     nativeNeovim: Bool,
+    freshNativeNeovim: Bool,
     adoptionRequired: Bool,
     restorationRequired: Bool
   ) -> [EnvironmentPlanAction] {
@@ -283,7 +292,15 @@ struct EnvironmentPlanCommandRunner: Sendable {
             : "Configure immutable Neovim behavior and canonical theme integration. Use environment migrate-neovim before interactive Lazy changes."
         )
       )
-      if !nativeNeovim {
+      if freshNativeNeovim {
+        actions.append(
+          EnvironmentPlanAction(
+            id: "prepare_fresh_neovim_plugins",
+            message:
+              "First connection of the unchanged curated Neovim starter: download/build and verify its locked plugins with a 180-second limit using a temporary config copy. Preserve user files and lock; plugin/cache changes survive rollback. Existing native configurations and ordinary reapply skip this step."
+          )
+        )
+      } else if !nativeNeovim {
         actions.append(
           EnvironmentPlanAction(
             id: "restore_neovim_plugins",

@@ -66,6 +66,36 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
   package init() {}
 
+  package static func nativeZshDefaultsSource(stateRoot: URL) -> String {
+    let path = stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path
+    return "source '" + path.replacingOccurrences(of: "'", with: "'\\''") + "' || return 1"
+  }
+
+  /// Narrow first-run classification, not ownership of arbitrary native behavior.
+  package func matchesCuratedNeovimStarter(
+    at source: URL, resourcesRoot: URL, stateRoot: URL
+  ) throws -> Bool {
+    let expected = try compose(
+      resourcesRoot: resourcesRoot, profile: .defaults, stateRoot: stateRoot
+    ).artifacts.filter { $0.path.hasPrefix("neovim/") }
+    let links = Dictionary(
+      uniqueKeysWithValues: NeovimAdapter.managedThemePaths.map {
+        ($0, stateRoot.appending(path: "environment/current/neovim/\($0)").path)
+      })
+    // A different/unsupported personal tree is deliberately not bootstrap authority.
+    // Its normal native connection remains responsible for its own validation.
+    guard
+      let tree = try? EnvironmentNativeTreeReader().read(
+        at: source, targetRoot: "neovim", allowLegacyThemeLink: false,
+        allowedThemeLinks: links)
+    else { return false }
+    let behavior = expected.filter {
+      !NeovimAdapter.managedThemePaths.contains(String($0.path.dropFirst("neovim/".count)))
+    }
+    return Dictionary(uniqueKeysWithValues: tree.artifacts.map { ($0.path, $0.data) })
+      == Dictionary(uniqueKeysWithValues: behavior.map { ($0.path, $0.data) })
+  }
+
   package static func nativeKittyWrapper(source: URL, stateRoot: URL) -> String {
     "include " + source.path + "\n\ninclude "
       + stateRoot.appending(path: KittyAdapter.bridgePath).path + "\n"
@@ -921,7 +951,8 @@ struct EnvironmentNativeTreeReader {
   func read(
     at root: URL,
     targetRoot: String,
-    allowLegacyThemeLink: Bool
+    allowLegacyThemeLink: Bool,
+    allowedThemeLinks: [String: String] = [:]
   ) throws -> Tree {
     let descriptor: Int32
     do {
@@ -941,6 +972,7 @@ struct EnvironmentNativeTreeReader {
       relativeDirectory: "",
       targetRoot: targetRoot,
       allowLegacyThemeLink: allowLegacyThemeLink,
+      allowedThemeLinks: allowedThemeLinks,
       artifacts: &artifacts,
       entries: &entries,
       bytes: &bytes,
@@ -959,6 +991,7 @@ struct EnvironmentNativeTreeReader {
     relativeDirectory: String,
     targetRoot: String,
     allowLegacyThemeLink: Bool,
+    allowedThemeLinks: [String: String],
     artifacts: inout [EnvironmentConfigurationArtifact],
     entries: inout Int,
     bytes: inout Int,
@@ -1007,6 +1040,7 @@ struct EnvironmentNativeTreeReader {
             relativeDirectory: relative,
             targetRoot: targetRoot,
             allowLegacyThemeLink: allowLegacyThemeLink,
+            allowedThemeLinks: allowedThemeLinks,
             artifacts: &artifacts,
             entries: &entries,
             bytes: &bytes,
@@ -1033,6 +1067,13 @@ struct EnvironmentNativeTreeReader {
             data: data
           )
         )
+      case S_IFLNK where allowedThemeLinks[relative] != nil:
+        guard
+          try PinnedFilesystem.symlinkDestination(
+            parentDescriptor: descriptor, name: name, url: child) == allowedThemeLinks[relative]
+        else {
+          throw EnvironmentConfigurationError.invalid(root, "unexpected native theme link")
+        }
       case S_IFLNK
       where
         allowLegacyThemeLink && relative == "lua/macarchy/current.lua":

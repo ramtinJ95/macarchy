@@ -57,14 +57,13 @@ struct EnvironmentNativeSeed: Sendable {
     var files: [String: Data] = [:]
     switch provider {
     case .zsh:
-      let defaults = stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path
       let source =
         destination == provider.standardURL(homeDirectory: homeDirectory)
-        ? "'" + defaults.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        : "\"$MACARCHY_ZSH_DEFAULTS\""
+        ? EnvironmentConfigurationComposer.nativeZshDefaultsSource(stateRoot: stateRoot)
+        : "source \"$MACARCHY_ZSH_DEFAULTS\" || return 1"
       contents = """
         # User-owned configuration. Put overrides after the optional curated defaults.
-        source \(source) || return 1
+        \(source)
 
         """
     case .kitty:

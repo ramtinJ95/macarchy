@@ -245,54 +245,81 @@ private func defaultConsumerReconciliationFailureMessage(
 struct EnvironmentNeovimPreparer: Sendable {
   let prepare: @Sendable (EnvironmentProfile, URL) -> EnvironmentVerification?
 
+  static func requiresFreshNativePreparation(
+    profile: EnvironmentProfile, ownership: EnvironmentOwnership?,
+    homeDirectory: URL, stateRoot: URL, resourcesRoot: URL,
+    proposedStarters: [EnvironmentNativeSeed.Plan] = []
+  ) throws -> Bool {
+    let standard = homeDirectory.appending(path: ".config/nvim")
+    guard profile.editor == .neovim,
+      profile.neovim.nativeConfigurationDirectoryURL?.path == standard.path,
+      ownership?.standardNativeEntries?.contains(.neovim) != true,
+      ownership?.records.contains(where: { $0.id == .neovim }) != true
+    else { return false }
+    if proposedStarters.contains(where: {
+      $0.provider == "neovim" && $0.destination == standard.path
+    }) {
+      return true
+    }
+    try EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      .validateNativeTree(at: standard, userOwnedPublicEntry: true)
+    return try EnvironmentConfigurationComposer().matchesCuratedNeovimStarter(
+      at: standard, resourcesRoot: resourcesRoot, stateRoot: stateRoot)
+  }
+
   private static let verifyPluginPins =
     #"lua local ok,message=pcall(require("config.macarchy-theme").verify_plugins); if not ok then vim.api.nvim_err_writeln(message); vim.cmd("cquit 1") end"#
 
   static let assumed = Self { _, _ in nil }
 
-  static let live = Self { profile, homeDirectory in
-    guard profile.editor == .neovim else { return nil }
-    let temporaryRoot = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-neovim-\(UUID().uuidString.lowercased())",
-      directoryHint: .isDirectory
-    )
-    do {
-      let configurationRoot = temporaryRoot.appending(
-        path: "nvim",
+  static let live = live(processRunner: .live)
+
+  static func live(processRunner: ProcessRunner) -> Self {
+    Self { profile, homeDirectory in
+      guard profile.editor == .neovim else { return nil }
+      let temporaryRoot = FileManager.default.temporaryDirectory.appending(
+        path: "macarchy-neovim-\(UUID().uuidString.lowercased())",
         directoryHint: .isDirectory
       )
-      try FileManager.default.createDirectory(at: temporaryRoot, withIntermediateDirectories: false)
-      defer { try? FileManager.default.removeItem(at: temporaryRoot) }
-      try FileManager.default.copyItem(
-        at: homeDirectory.appending(path: ".config/nvim").resolvingSymlinksInPath(),
-        to: configurationRoot
-      )
-      try makeWritable(configurationRoot)
-      let result = try ProcessRunner.live.run(
-        ProcessRequest(
-          executableURL: NeovimAdapter.liveExecutableURL,
-          arguments: ["--headless", "+Lazy! restore", "+\(Self.verifyPluginPins)", "+qa"],
-          timeout: 180,
-          environmentOverrides: [
-            "HOME": homeDirectory.path,
-            "XDG_CONFIG_HOME": temporaryRoot.path,
-          ]
+      do {
+        let configurationRoot = temporaryRoot.appending(
+          path: "nvim",
+          directoryHint: .isDirectory
         )
-      )
-      return EnvironmentVerification(
-        id: "neovim_plugins",
-        status: result.terminationStatus == 0 ? "verified" : "failed",
-        message: result.terminationStatus == 0
-          ? "Neovim restored and verified the selected plugin graph from its lock."
-          : (result.output.isEmpty
-            ? "Neovim could not restore the selected plugin graph." : result.output)
-      )
-    } catch {
-      return EnvironmentVerification(
-        id: "neovim_plugins",
-        status: "failed",
-        message: String(describing: error)
-      )
+        try FileManager.default.createDirectory(
+          at: temporaryRoot, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: temporaryRoot) }
+        try FileManager.default.copyItem(
+          at: homeDirectory.appending(path: ".config/nvim").resolvingSymlinksInPath(),
+          to: configurationRoot
+        )
+        try makeWritable(configurationRoot)
+        let result = try processRunner.run(
+          ProcessRequest(
+            executableURL: NeovimAdapter.liveExecutableURL,
+            arguments: ["--headless", "+Lazy! restore", "+\(Self.verifyPluginPins)", "+qa"],
+            timeout: 180,
+            environmentOverrides: [
+              "HOME": homeDirectory.path,
+              "XDG_CONFIG_HOME": temporaryRoot.path,
+            ]
+          )
+        )
+        return EnvironmentVerification(
+          id: "neovim_plugins",
+          status: result.terminationStatus == 0 ? "verified" : "failed",
+          message: result.terminationStatus == 0
+            ? "Neovim restored and verified the selected plugin graph from its lock."
+            : (result.output.isEmpty
+              ? "Neovim could not restore the selected plugin graph." : result.output)
+        )
+      } catch {
+        return EnvironmentVerification(
+          id: "neovim_plugins",
+          status: "failed",
+          message: String(describing: error)
+        )
+      }
     }
   }
 
@@ -312,6 +339,9 @@ struct EnvironmentNeovimPreparer: Sendable {
           errno
         )
       }
+      // Native starters contain canonical theme links. Never chmod their targets
+      // while preparing the disposable writable behavior/lock copy.
+      if metadata.st_mode & S_IFMT == S_IFLNK { continue }
       try FileManager.default.setAttributes(
         [.posixPermissions: metadata.st_mode & S_IFMT == S_IFDIR ? 0o700 : 0o600],
         ofItemAtPath: item.path
@@ -708,6 +738,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
       )
     }
     let applyResult: (changed: Bool, generationID: String)
+    var prepareFreshNativeNeovim = false
     do {
       applyResult = try ActivationLock(root: stateRoot).withLock {
         let lockedInspection = EnvironmentProviderInspector().inspect(
@@ -716,6 +747,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
           stateRoot: stateRoot,
           bordersService: bordersService
         )
+        prepareFreshNativeNeovim = try EnvironmentNeovimPreparer.requiresFreshNativePreparation(
+          profile: profile.environment, ownership: lockedInspection.ownership,
+          homeDirectory: homeDirectory, stateRoot: stateRoot, resourcesRoot: resourcesRoot)
         let previousThemeGenerationID: String?
         if theme != nil, !profile.environment.selectedThemeAdapterIDs.isEmpty {
           previousThemeGenerationID = try ReconciliationStatusStore(root: stateRoot)
@@ -766,19 +800,22 @@ struct EnvironmentApplyCommandRunner: Sendable {
         homeDirectory: homeDirectory,
         runtime: herdrRuntime
       )
-      // After reviewed native migration, Lazy and its writable lock belong to the
-      // user. Environment reapply must not restore the immutable seed's plugin graph.
+      // Only the first connection of an unchanged standard curated starter may
+      // prepare plugins. Existing native owners and edited sources retain Lazy
+      // ownership; ordinary reapply must never restore their plugin graph.
       let nativeNeovim = EnvironmentNeovimMigration(
         homeDirectory: homeDirectory, stateRoot: stateRoot
       )
       .isNative(try EnvironmentStateStore(stateRoot: stateRoot).readOwnership())
       let neovimVerification: EnvironmentVerification? =
-        nativeNeovim && profile.environment.editor == .neovim
+        nativeNeovim && !prepareFreshNativeNeovim && profile.environment.editor == .neovim
         ? EnvironmentVerification(
           id: "neovim_plugin_ownership", status: "verified",
           message: "Neovim plugin management is user-owned; no install, update or restore was run.")
         : neovim.prepare(profile.environment, homeDirectory)
-      neovimPluginPreparationRan = !nativeNeovim && neovimVerification != nil
+      neovimPluginPreparationRan =
+        (!nativeNeovim || prepareFreshNativeNeovim)
+        && neovimVerification != nil
       if let neovimVerification, neovimVerification.status != "verified" {
         throw EnvironmentLifecycleError.blocked(neovimVerification.message)
       }
