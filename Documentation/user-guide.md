@@ -31,10 +31,12 @@ macarchy setup guided
 The Homebrew controls avoid unrelated automatic upgrades and cleanup during
 Macarchy installation. Guided setup opens one selection menu: use Up/Down to
 move, Space to toggle, and Enter to review. Providers, optional presets, native
-settings and individual standard packages appear together with curated defaults
-selected. The desktop choice includes tiling and Macarchy's default keybindings.
+settings and individual optional packages appear together. Core components start
+selected; package-only extras start off. The desktop choice includes tiling and Macarchy's default keybindings.
 Package-only choices do not enable optional presets; selected providers still
-require their dependencies. Native settings cycle through unmanaged, true and
+require their dependencies, shown as required rather than independently toggleable.
+Optional package selections are saved in a personal Brewfile beside the profile.
+Native settings cycle through unmanaged, true and
 false. Press q or Ctrl-C to cancel without saving.
 
 The menu saves a small profile and displays the unified plan. One default-no
@@ -42,6 +44,14 @@ The menu saves a small profile and displays the unified plan. One default-no
 configuration adoptions, writable native starters, native settings and service changes. Setup then installs
 and configures those selections without a separate apply or keybindings command.
 Blocked prerequisites still stop setup visibly. An interactive terminal is required.
+
+For skhd and yabai, approved setup registers and starts missing native user services.
+Rollback and teardown restore its previous running/stopped state and remove only
+an unchanged registration created by Macarchy. Existing/custom LaunchAgents are
+not replaced; explicitly disabled or failed loaded services require attention.
+Accessibility grants remain manual; yabai must observe an ordinary application
+window with Accessibility references before setup can succeed. Empty native configuration directories may
+remain after rollback or teardown; user configuration is not deleted.
 
 Enabled zsh, Kitty, Atuin, Starship and Neovim receive writable user configurations
 at their standard application paths, separate from generated state. The plan shows
@@ -511,6 +521,14 @@ to connect it. Seeding alone changes neither the active configuration nor your
 profile, and does not migrate existing personal behavior. Existing owned native
 targets require the corresponding reviewed `migrate-* --source` cutover.
 
+The first connection of an unchanged curated Neovim starter at `~/.config/nvim`
+previews plugin preparation before theme verification. It uses a temporary config
+copy and a 180-second limit to download/build and verify the locked plugins,
+without rewriting your files or lock. Plugin/cache changes survive rollback;
+an unchanged, unconnected starter can be retried. Edited or external native
+configurations and already-connected native setups manage plugins themselves;
+ordinary reapply never restores the starter's plugin graph.
+
 ### Finding the user-owned configuration
 
 ```sh
@@ -904,8 +922,10 @@ access. Keep other preference editors idle during apply/recovery. A custom
 
 ### Choose your packages
 
-The [standard Brewfile](../Environment/Brewfile) lists package-only defaults;
-selected providers add their own requirements. Add a personal Brewfile beside
+The [optional catalog](../Environment/Brewfile) lists package-only extras, off by
+default. The default `core` baseline includes only selected components' requirements
+and explicit personal additions. Existing unselected software is not removed.
+Add a personal Brewfile beside
 your profile and reference it:
 
 ```toml
@@ -921,9 +941,11 @@ cask "visual-studio-code"
 ```
 
 Personal Brewfiles accept literal `brew`, `cask`, and `tap` declarations, not
-arbitrary Ruby, hooks, or package options. Set `baseline = "personal"` in
-`[packages]` to replace the standard extras with your own manifest; selected
-provider requirements still apply. Exclusions do not uninstall software.
+arbitrary Ruby, hooks, or package options. An explicit `baseline = "standard"`
+opts into the entire catalog. `baseline = "personal"` requires your own manifest
+and never loads catalog extras. Both retain selected-provider requirements.
+Omitting the baseline uses `core`, including in older profiles; explicit package
+choices are preserved. Exclusions do not uninstall software.
 
 For a named addition without applying the rest of your setup:
 
