@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 
 package struct ProcessRequest: Equatable, Sendable {
   package let executableURL: URL
@@ -66,16 +67,28 @@ package struct ProcessRunner: Sendable {
     try process.run()
     let data: Data
     if let timeout = request.timeout, let completion {
+      // Drain concurrently: waiting for exit first deadlocks when a provider's
+      // stdout/stderr fills the pipe (for example starship print-config).
+      let captured = Mutex(Data())
+      let drained = DispatchSemaphore(value: 0)
+      // A blocking reader must not depend on the cooperative/global pool that
+      // callers may already saturate while waiting for their subprocesses.
+      Thread.detachNewThread {
+        let bytes = output.fileHandleForReading.readDataToEndOfFile()
+        captured.withLock { $0 = bytes }
+        drained.signal()
+      }
       if completion.wait(timeout: .now() + timeout) == .timedOut {
         process.terminate()
         if completion.wait(timeout: .now() + 1) == .timedOut {
           Darwin.kill(process.processIdentifier, SIGKILL)
           process.waitUntilExit()
         }
-        _ = output.fileHandleForReading.readDataToEndOfFile()
+        drained.wait()
         throw ProcessRunnerError.timedOut(request.executableURL, timeout)
       }
-      data = output.fileHandleForReading.readDataToEndOfFile()
+      drained.wait()
+      data = captured.withLock { $0 }
     } else {
       data = output.fileHandleForReading.readDataToEndOfFile()
       process.waitUntilExit()
