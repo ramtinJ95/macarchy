@@ -57,8 +57,9 @@ package struct EzaAdapter: Sendable {
     let shell = try readShellConfiguration()
     let directive = Self.environmentDirective(configurationDirectoryURL: configurationDirectoryURL)
     guard
-      containsExactLine(directive, in: shell)
+      try containsExactLine(directive, in: shell)
         || containsExactLine(Self.managedEnvironmentDirective, in: shell)
+        || inheritsManagedDirective(in: shell)
     else {
       throw EzaAdapterError.missingEnvironmentDirective(directive)
     }
@@ -221,6 +222,23 @@ package struct EzaAdapter: Sendable {
       tooLarge: EzaAdapterError.configurationTooLarge(shellConfigurationURL),
       unreadable: EzaAdapterError.cannotReadShellConfiguration(shellConfigurationURL)
     )
+  }
+
+  private func inheritsManagedDirective(in shell: String) throws -> Bool {
+    // Recognize only the explicit standard-path starter seam we publish. Do not
+    // execute user shell code or recursively follow arbitrary source statements.
+    guard
+      containsExactLine(
+        EnvironmentConfigurationComposer.nativeZshDefaultsSource(stateRoot: root), in: shell)
+    else { return false }
+    let defaults = root.appending(path: "environment/current/zsh/defaults.zsh")
+    let text = try AdapterConfigurationFile.readUTF8(
+      at: defaults.resolvingSymlinksInPath(),
+      tooLarge: EzaAdapterError.configurationTooLarge(defaults),
+      unreadable: EzaAdapterError.cannotReadShellConfiguration(defaults))
+    return containsExactLine(Self.managedEnvironmentDirective, in: text)
+      || containsExactLine(
+        Self.environmentDirective(configurationDirectoryURL: configurationDirectoryURL), in: text)
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

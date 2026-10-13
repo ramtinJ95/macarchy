@@ -71,7 +71,13 @@ struct NativeGuidedSetupTests {
     defer { fixture.cleanup() }
     let context = context(fixture)
     let planner = planner(fixture)
-    let apply = runner(planner: planner)
+    let preparations = Mutex(0)
+    let apply = runner(
+      planner: planner,
+      neovim: EnvironmentNeovimPreparer { _, _ in
+        preparations.withLock { $0 += 1 }
+        return EnvironmentVerification(id: "neovim_plugins", status: "verified", message: "fixture")
+      })
     let transcript = Mutex("")
     let responses = Mutex(["no", "yes"])
     let guided = GuidedSetupCommandRunner(
@@ -101,9 +107,12 @@ struct NativeGuidedSetupTests {
         )
         .deletingLastPathComponent().path))
     #expect(try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership() == nil)
+    #expect(preparations.withLock { $0 } == 0)
+    #expect(transcript.withLock { $0 }.contains("prepare_fresh_neovim_plugins"))
     let applied = try await guided.execute(
       context: context, consumerPaths: testConsumerPaths(), resume: true)
     #expect(applied.succeeded, "\(applied.output)\n\(transcript.withLock { $0 })")
+    #expect(preparations.withLock { $0 } == 1)
     #expect(responses.withLock { $0.isEmpty })
     #expect(try Data(contentsOf: context.profileURL) == profileBytes)
     let ownership = try #require(
@@ -137,6 +146,7 @@ struct NativeGuidedSetupTests {
     let repeated = try await apply.execute(
       context: context, consumerPaths: testConsumerPaths(), json: true)
     #expect(repeated.succeeded, "\(repeated.output)")
+    #expect(preparations.withLock { $0 } == 1)
     #expect(
       try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership()?.generationID
         == ownership.generationID)
@@ -222,7 +232,13 @@ struct NativeGuidedSetupTests {
       standardBrewfile: { _ in SetupBrewfile(packages: []) })
   }
 
-  private func runner(planner: UnifiedSetupPlanCommandRunner) -> UnifiedSetupApplyCommandRunner {
+  private func runner(
+    planner: UnifiedSetupPlanCommandRunner,
+    neovim: EnvironmentNeovimPreparer = .init { _, _ in
+      Issue.record("This native connection must not prepare plugins")
+      return nil
+    }
+  ) -> UnifiedSetupApplyCommandRunner {
     UnifiedSetupApplyCommandRunner(
       planner: planner,
       themeInspection: { model, _, _ in
@@ -248,10 +264,7 @@ struct NativeGuidedSetupTests {
         try await SetupComponentExecution(
           EnvironmentApplyCommandRunner(
             prerequisites: .assumed, theme: nil, verifier: .assumed,
-            neovim: .init { _, _ in
-              Issue.record("Native starter must not restore or download plugins")
-              return nil
-            }
+            neovim: neovim
           ).execute(
             resourcesRoot: context.environmentResourcesRoot, profileURL: context.profileURL,
             profileRequired: true, stateRoot: context.stateRoot,

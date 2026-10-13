@@ -5,6 +5,36 @@ import Testing
 @testable import ThemeCore
 
 extension AdapterContractTests {
+  @Test(arguments: ["valid", "disabled", "commented", "other-source", "missing"])
+  func ezaRecognizesOnlyThePublishedNativeStarterAndItsActualDefaults(mode: String) throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let paths = try Self.consumerPaths(root: root, adapterIDs: ["eza"])
+    let defaults = root.appending(path: "environment/current/zsh/defaults.zsh")
+    try FileManager.default.createDirectory(
+      at: defaults.deletingLastPathComponent(), withIntermediateDirectories: true)
+    if mode != "missing" {
+      try
+        (mode == "disabled" ? "# eza disabled\n" : "export EZA_CONFIG_DIR=\"$HOME/.config/eza\"\n")
+        .write(to: defaults, atomically: true, encoding: .utf8)
+    }
+    let source = EnvironmentConfigurationComposer.nativeZshDefaultsSource(
+      stateRoot: mode == "other-source" ? root.appending(path: "other") : root)
+    try ((mode == "commented" ? "# " : "") + source + "\n")
+      .write(to: paths.shellConfigurationURL, atomically: true, encoding: .utf8)
+    let adapter = EzaAdapter(
+      root: root, configurationDirectoryURL: paths.ezaConfigurationDirectoryURL,
+      shellConfigurationURL: paths.shellConfigurationURL,
+      executableURL: URL(filePath: "/test/eza"), controlIsAvailable: { true },
+      processRunner: ProcessRunner { _ in
+        Issue.record("inspection must not execute shell code")
+        return ProcessResult(terminationStatus: 0, output: "")
+      })
+    #expect(
+      adapter.inspection().status
+        == (mode == "valid" ? .ready : mode == "missing" ? .failed : .drifted))
+  }
+
   @Test
   func invocationBoundAdaptersUseCanonicalLinksAndExpectedProcesses() async throws {
     let root = try temporaryDirectory()
