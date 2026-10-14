@@ -27,20 +27,7 @@ package struct BordersPalette: Equatable, Sendable {
 
   package static func read(root: URL) throws -> Self {
     let manifest = try ReconciliationStatusStore(root: root).activeManifest()
-    let theme = try JSONDecoder().decode(
-      NormalizedTheme.self,
-      from: BoundedRegularFile.read(
-        at: root.appending(path: "generations/\(manifest.generationID)/theme.json")
-      ).data
-    )
-    guard theme.generationID == manifest.generationID,
-      theme.themeID == manifest.themeID,
-      theme.schemaVersion == manifest.themeSchemaVersion
-    else {
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "theme.json does not match the active manifest"
-      )
-    }
+    let theme = try manifest.normalizedTheme(root: root)
     return Self(
       generationID: manifest.generationID, themeID: manifest.themeID,
       accent: theme.semantic.accent.rawValue

@@ -133,6 +133,11 @@ package struct EnvironmentConfigurationComposer: Sendable {
     var artifacts: [EnvironmentConfigurationArtifact] = []
     let options = profile.environment
     var kittyOverrideArtifacts: [EnvironmentConfigurationArtifact] = []
+    /// A native source's proposed bytes when supplied, else its current contents.
+    func nativeText(_ source: URL) throws -> String {
+      try proposedNativeFiles[source].map { String(decoding: $0, as: UTF8.self) }
+        ?? readText(at: source.resolvingSymlinksInPath())
+    }
 
     if scope == nil, options.focusRing == .borders {
       artifacts.append(
@@ -193,9 +198,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
           throw EnvironmentConfigurationError.invalid(
             nativeSource, "kitty.configuration and kitty.override are mutually exclusive")
         }
-        _ =
-          try proposedNativeFiles[nativeSource].map { String(decoding: $0, as: UTF8.self) }
-          ?? readText(at: nativeSource.resolvingSymlinksInPath())
+        _ = try nativeText(nativeSource)
         guard !nativeSource.path.contains("$"),
           !nativeSource.path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
         else {
@@ -222,7 +225,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
       artifacts.append(contentsOf: kittyOverrideArtifacts)
     }
 
-    let zshHook: (text: String, digest: String)?
+    let zshHookDigest: String?
     if scope == nil || scope == "zsh", options.shell == .zsh {
       if let source = options.zsh.configurationURL, options.zsh.hookURL != nil {
         throw EnvironmentConfigurationError.invalid(
@@ -259,32 +262,10 @@ package struct EnvironmentConfigurationComposer: Sendable {
           """,
           to: configuration
         )
-        configuration = appendLine(
-          "MACARCHY_ATUIN_INIT=\"$(atuin init zsh)\" || return 1",
-          to: configuration
-        )
-        configuration = appendLine(
-          "eval \"$MACARCHY_ATUIN_INIT\" || return 1",
-          to: configuration
-        )
-        configuration = appendLine(
-          "unset MACARCHY_ATUIN_INIT",
-          to: configuration
-        )
+        configuration = appendInitialization(of: "atuin", to: configuration)
       }
       if options.prompt == .starship {
-        configuration = appendLine(
-          "MACARCHY_STARSHIP_INIT=\"$(starship init zsh)\" || return 1",
-          to: configuration
-        )
-        configuration = appendLine(
-          "eval \"$MACARCHY_STARSHIP_INIT\" || return 1",
-          to: configuration
-        )
-        configuration = appendLine(
-          "unset MACARCHY_STARSHIP_INIT",
-          to: configuration
-        )
+        configuration = appendInitialization(of: "starship", to: configuration)
       }
       configuration = appendSection(
         """
@@ -297,17 +278,15 @@ package struct EnvironmentConfigurationComposer: Sendable {
       configuration = appendLine("export MACARCHY_MANAGED_SESSION=1", to: configuration)
       if let hookURL = options.zsh.hookURL {
         let text = try readText(at: hookURL)
-        zshHook = (text, sha256Digest(Data(text.utf8)))
+        zshHookDigest = sha256Digest(Data(text.utf8))
         configuration = appendSection(text, to: configuration)
       } else {
-        zshHook = nil
+        zshHookDigest = nil
       }
       if let source = options.zsh.configurationURL {
         // Validate availability without making writable behavior part of generation identity.
         // The source decides whether and where curated initialization runs.
-        _ =
-          try proposedNativeFiles[source].map { String(decoding: $0, as: UTF8.self) }
-          ?? readText(at: source.resolvingSymlinksInPath())
+        _ = try nativeText(source)
         let entry = stateRoot.appending(path: "environment/current/zsh/.zshrc")
         guard source.resolvingSymlinksInPath() != entry.resolvingSymlinksInPath() else {
           throw EnvironmentConfigurationError.invalid(
@@ -322,7 +301,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
         EnvironmentConfigurationArtifact(path: "zsh/.zshrc", contents: configuration)
       )
     } else {
-      zshHook = nil
+      zshHookDigest = nil
     }
 
     var starshipBehaviorURL: URL?
@@ -368,9 +347,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
             source,
             "atuin.native_configuration cannot be combined with copied Atuin behavior options")
         }
-        let text =
-          try proposedNativeFiles[source].map { String(decoding: $0, as: UTF8.self) }
-          ?? readText(at: source.resolvingSymlinksInPath())
+        let text = try nativeText(source)
         guard AtuinAdapter.selectsTheme(in: text) else {
           throw EnvironmentConfigurationError.invalid(
             source, "atuin.native_configuration must select the Macarchy theme")
@@ -460,19 +437,17 @@ package struct EnvironmentConfigurationComposer: Sendable {
       ],
       artifacts: Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.digest) })
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     return EnvironmentComposition(
       profile: options,
       artifacts: artifacts,
       kittyOverrideURL: options.kitty.overrideDirectoryURL,
       zshHookURL: options.zsh.hookURL,
-      zshHookDigest: zshHook?.digest,
+      zshHookDigest: zshHookDigest,
       starshipBehaviorURL: starshipBehaviorURL,
       atuinConfigurationURL: atuinConfigurationURL,
       neovimConfigurationURL: neovimConfigurationURL,
       renderedDigest: renderedDigest,
-      inputDigest: sha256Digest(try encoder.encode(identity))
+      inputDigest: try canonicalJSONDigest(identity)
     )
   }
 
@@ -595,25 +570,23 @@ package struct EnvironmentConfigurationComposer: Sendable {
     entries: inout Int,
     bytes: inout Int
   ) throws {
-    let names: [String]
+    let listing: (entries: [String], truncated: Bool)
     do {
-      let listing = try PinnedFilesystem.directoryEntries(
+      listing = try PinnedFilesystem.directoryEntries(
         descriptor: directoryDescriptor,
         url: directory,
         limit: max(0, Self.maximumOverrideEntries - entries)
       )
-      guard !listing.truncated else {
-        throw EnvironmentConfigurationError.unsafeOverride(
-          root,
-          "contains more than \(Self.maximumOverrideEntries) entries"
-        )
-      }
-      names = listing.entries
     } catch {
-      if let error = error as? EnvironmentConfigurationError { throw error }
       throw EnvironmentConfigurationError.cannotRead(directory, String(describing: error))
     }
-    for name in names {
+    guard !listing.truncated else {
+      throw EnvironmentConfigurationError.unsafeOverride(
+        root,
+        "contains more than \(Self.maximumOverrideEntries) entries"
+      )
+    }
+    for name in listing.entries {
       entries += 1
       guard entries <= Self.maximumOverrideEntries else {
         throw EnvironmentConfigurationError.unsafeOverride(
@@ -736,12 +709,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
   }
 
   private func validateStarship(_ text: String, source: URL) throws {
-    let document: StarshipThemeOwnership
-    do {
-      document = try TOMLDecoder().decode(StarshipThemeOwnership.self, from: text)
-    } catch {
-      throw EnvironmentConfigurationError.invalid(source, "Starship behavior is not valid TOML")
-    }
+    let document = try decodeTOML(
+      StarshipThemeOwnership.self, from: text, source: source, role: "Starship")
     guard document.palette == nil, document.palettes == nil else {
       throw EnvironmentConfigurationError.invalid(
         source,
@@ -751,12 +720,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
   }
 
   private func validateAtuin(_ text: String, source: URL) throws {
-    let document: AtuinThemeOwnership
-    do {
-      document = try TOMLDecoder().decode(AtuinThemeOwnership.self, from: text)
-    } catch {
-      throw EnvironmentConfigurationError.invalid(source, "Atuin behavior is not valid TOML")
-    }
+    let document = try decodeTOML(
+      AtuinThemeOwnership.self, from: text, source: source, role: "Atuin")
     guard document.theme == nil else {
       throw EnvironmentConfigurationError.invalid(
         source,
@@ -766,12 +731,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
   }
 
   private func validateEffectiveAtuin(_ text: String, source: URL) throws {
-    let settings: AtuinEffectiveSettings
-    do {
-      settings = try TOMLDecoder().decode(AtuinEffectiveSettings.self, from: text)
-    } catch {
-      throw EnvironmentConfigurationError.invalid(source, "Atuin behavior is not valid TOML")
-    }
+    let settings = try decodeTOML(
+      AtuinEffectiveSettings.self, from: text, source: source, role: "Atuin")
     if settings.searchMode == "daemon-fuzzy", settings.daemon?.enabled != true {
       throw EnvironmentConfigurationError.invalid(
         source,
@@ -866,8 +827,14 @@ package struct EnvironmentConfigurationComposer: Sendable {
   }
 
   private func validateTOML(_ text: String, source: URL, role: String) throws {
+    _ = try decodeTOML(TOMLValidationDocument.self, from: text, source: source, role: role)
+  }
+
+  private func decodeTOML<Document: Decodable>(
+    _ type: Document.Type, from text: String, source: URL, role: String
+  ) throws -> Document {
     do {
-      _ = try TOMLDecoder().decode(TOMLValidationDocument.self, from: text)
+      return try TOMLDecoder().decode(type, from: text)
     } catch {
       throw EnvironmentConfigurationError.invalid(source, "\(role) behavior is not valid TOML")
     }
@@ -897,20 +864,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
   }
 
   private func readText(at source: URL) throws -> String {
-    let parent = source.deletingLastPathComponent()
-    let descriptor: Int32
     do {
-      descriptor = try PinnedFilesystem.openDirectory(at: parent)
-    } catch {
-      throw EnvironmentConfigurationError.cannotRead(source, String(describing: error))
-    }
-    defer { Darwin.close(descriptor) }
-    do {
-      let file = try PinnedFilesystem.readRegularFile(
-        parentDescriptor: descriptor,
-        name: source.lastPathComponent,
-        url: source
-      )
+      let file = try PinnedFilesystem.readRegularFile(at: source)
       guard let text = String(data: file.data, encoding: .utf8) else {
         throw BoundedRegularFileError.invalidUTF8
       }
@@ -922,6 +877,16 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
   private func appendLine(_ line: String, to text: String) -> String {
     appendSection(line + "\n", to: text)
+  }
+
+  /// Evaluates `<tool> init zsh`, failing the session setup when it fails.
+  private func appendInitialization(of tool: String, to text: String) -> String {
+    let variable = "MACARCHY_\(tool.uppercased())_INIT"
+    return [
+      "\(variable)=\"$(\(tool) init zsh)\" || return 1",
+      "eval \"$\(variable)\" || return 1",
+      "unset \(variable)",
+    ].reduce(text) { appendLine($1, to: $0) }
   }
 
   private func appendSection(_ section: String, to text: String) -> String {
