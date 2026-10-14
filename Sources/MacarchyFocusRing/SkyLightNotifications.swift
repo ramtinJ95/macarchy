@@ -44,10 +44,6 @@ final class SkyLightNotifications: @unchecked Sendable {
   typealias RequestFn = @convention(c) (Int32, UnsafeMutablePointer<UInt32>?, Int32) -> Int32
   typealias Deliver = @MainActor @Sendable (FocusEventBatch) -> Void
 
-  struct Failure: Error, CustomStringConvertible {
-    let description: String
-  }
-
   static let events = FocusEventBatch.globalEvents.union(FocusEventBatch.windowEvents).sorted()
 
   // Retained so registrations leaked by a failed removal keep SkyLight loaded.
@@ -86,10 +82,8 @@ final class SkyLightNotifications: @unchecked Sendable {
   func start() throws {
     guard !running else { return }
     if context != nil {
-      throw Failure(
-        description:
-          "SkyLight notification source cannot be restarted; remaining registrations: \(registered)"
-      )
+      throw FocusRingError(
+        "SkyLight notification source cannot be restarted; remaining registrations: \(registered)")
     }
     let context = Unmanaged.passRetained(self)
     self.context = context
@@ -99,8 +93,8 @@ final class SkyLightNotifications: @unchecked Sendable {
       let code = register(Self.callback, event, context.toOpaque())
       guard code == 0 else {
         let failure = "SLSRegisterNotifyProc(\(event)) failed: \(code)"
-        do { try stop() } catch { throw Failure(description: "\(failure); cleanup: \(error)") }
-        throw Failure(description: failure)
+        do { try stop() } catch { throw FocusRingError("\(failure); cleanup: \(error)") }
+        throw FocusRingError(failure)
       }
       registered.append(event)
     }
@@ -126,8 +120,7 @@ final class SkyLightNotifications: @unchecked Sendable {
       return code != 0
     }
     guard failures.isEmpty else {
-      throw Failure(
-        description: "SLSRemoveNotifyProc failed for \(failures.joined(separator: ", "))")
+      throw FocusRingError("SLSRemoveNotifyProc failed for \(failures.joined(separator: ", "))")
     }
     // Keep the callback context alive until this bounded helper process exits.
   }
@@ -136,21 +129,21 @@ final class SkyLightNotifications: @unchecked Sendable {
   /// subscription changes; target windows are never mutated.
   @MainActor
   func observe(windowIDs: [UInt32], excluding own: UInt32?) throws {
-    var ids = Set(windowIDs.filter { $0 != own }).sorted()
+    let observed = Set(windowIDs.filter { $0 != own })
+    var ids = observed.sorted()
     guard ids.count <= Int(Int32.max) else {
-      throw Failure(description: "Too many windows to observe: \(ids.count)")
+      throw FocusRingError("Too many windows to observe: \(ids.count)")
     }
     if ids != requestedIDs {
       let code = ids.withUnsafeMutableBufferPointer {
         request(connection, $0.isEmpty ? nil : $0.baseAddress, Int32($0.count))
       }
       guard code == 0 else {
-        throw Failure(
-          description: "SLSRequestNotificationsForWindows(\(ids.count) windows) failed: \(code)")
+        throw FocusRingError(
+          "SLSRequestNotificationsForWindows(\(ids.count) windows) failed: \(code)")
       }
       requestedIDs = ids
     }
-    let observed = Set(ids)
     locked {
       self.observed = observed
       ownID = own
