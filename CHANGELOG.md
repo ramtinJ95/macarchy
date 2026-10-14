@@ -7,7 +7,23 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.4] - 2026-10-14
+
+### Added
+
+- Tokyo Night's Liftoff rocket wallpaper is selectable in the theme browser and CLI.
+- Explicit, read-only-first `environment migrate-ownership herdr` repairs legacy
+  Herdr directory-link identity after reviewed approval, without changing user
+  configuration or restarting applications.
+
 ### Fixed
+
+- Herdr directory-link ownership now uses a persistent volume UUID plus inode,
+  preserving link-target and metadata checks across reboot-time device renumbering.
+- Herdr detects a stopped server through its native JSON status contract.
+- Fresh native environment starters, setup consent and optional-package defaults,
+  native skhd/yabai service restoration, SketchyBar readiness, and bounded process
+  output draining include the previously merged onboarding fixes.
 
 - Retained SketchyBar, yabai, and skhd originals now use persistent volume UUIDs
   plus inode identity so mount-device renumbering after reboot does not cause
