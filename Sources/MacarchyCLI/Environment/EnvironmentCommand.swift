@@ -9,7 +9,7 @@ struct EnvironmentCommand: ParsableCommand {
     subcommands: [
       Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, MigrateNeovim.self,
       SeedConfiguration.self, MigrateAtuin.self, MigrateStarship.self, ConfigurationSource.self,
-      MigrateStandard.self,
+      MigrateStandard.self, MigrateOwnership.self,
     ]
   )
 

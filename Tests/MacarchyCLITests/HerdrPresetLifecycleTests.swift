@@ -1,3 +1,4 @@
+import ArgumentParser
 import Darwin
 import Foundation
 import Synchronization
@@ -448,22 +449,7 @@ struct HerdrPresetLifecycleTests {
   {
     let fixture = try HerdrFixture(configuration: nil)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let dotfiles = fixture.home.appending(path: "dotfiles/herdr", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
-    let target = dotfiles.appending(path: "config.toml")
-    try "[theme]\nname = \"personal\"\n".write(
-      to: target,
-      atomically: true,
-      encoding: .utf8
-    )
-    try FileManager.default.createDirectory(
-      at: fixture.configuration.deletingLastPathComponent().deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try FileManager.default.createSymbolicLink(
-      at: fixture.configuration.deletingLastPathComponent(),
-      withDestinationURL: dotfiles
-    )
+    let target = try fixture.makeDirectoryLink()
     let linkBefore = try metadata(fixture.configuration.deletingLastPathComponent())
     let destinationBefore = try FileManager.default.destinationOfSymbolicLink(
       atPath: fixture.configuration.deletingLastPathComponent().path
@@ -486,6 +472,158 @@ struct HerdrPresetLifecycleTests {
     #expect(try String(contentsOf: target, encoding: .utf8) == "[theme]\nname = \"personal\"\n")
     #expect(try metadata(fixture.configuration.deletingLastPathComponent()) == linkBefore)
     #expect(try metadata(target).mode == targetBefore.mode)
+  }
+
+  @Test
+  func uuidBoundHerdrThemeSwitchAndDisableSurviveMountRenumbering() async throws {
+    let fixture = try HerdrFixture(configuration: nil, otherPresets: true)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    _ = try fixture.makeDirectoryLink()
+    let inspection = try fixture.inspection(enabled: true)
+    let runtime = EnvironmentHerdrRuntimeReloader { _, _ in "reloaded" }
+    let applied = try await fixture.commandApply(
+      enabled: true, adopt: inspection.adoptionEvidenceDigest, runtime: runtime)
+    try #require(applied.succeeded)
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    let ownership = try #require(try store.readOwnership())
+    let herdr = try #require(ownership.herdr)
+    #expect(herdr.directoryVolumeUUID != nil)
+    let link = try #require(herdr.directoryLink)
+    let renumbered = try ownershipFixtureReplacing(
+      link, ["device": try #require(link.device) + 7])
+    let afterReboot = try ownershipFixtureReplacing(
+      herdr,
+      [
+        "directory_link": try JSONSerialization.jsonObject(with: JSONEncoder().encode(renumbered))
+      ])
+    try store.writeOwnership(ownership.replacingHerdr(afterReboot))
+    #expect(!(try fixture.inspection(enabled: true)).isBlocked)
+    let result = try await fixture.themeSetRunner(
+      runtime: EnvironmentHerdrRuntimeReloader { _, _ in "reloaded" }
+    ).execute(
+      repository: ThemeRepository(builtInRoot: repositoryRoot.appending(path: "Themes")),
+      themeID: "tokyo-night", stateRoot: fixture.state, consumerPaths: fixture.consumerPaths,
+      dryRun: false, json: true)
+    #expect(result.succeeded)
+    let updated = try #require(try store.readOwnership()?.herdr)
+    #expect(updated.directoryVolumeUUID == herdr.directoryVolumeUUID)
+    #expect(updated.managedTheme.name == "tokyo-night")
+    let disabled = try await fixture.commandApply(enabled: false, runtime: runtime)
+    #expect(disabled.succeeded)
+    #expect(
+      try String(contentsOf: fixture.configuration, encoding: .utf8)
+        == "[theme]\nname = \"personal\"\n")
+  }
+
+  @Test(arguments: [false, true])
+  func legacyHerdrMigrationRequiresReviewAndChangesOnlyIdentity(enabled: Bool) throws {
+    let fixture = try HerdrFixture(configuration: nil)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let target = try fixture.makeDirectoryLink()
+    let inspection = try fixture.inspection(enabled: true)
+    _ = try fixture.apply(
+      enabled: true, inspection: inspection, adoptionDigest: inspection.adoptionEvidenceDigest)
+    if !enabled { _ = try fixture.apply(enabled: false) }
+    let legacy = try fixture.persistLegacyDirectoryIdentity()
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    let file = EnvironmentHerdrFileTransaction(
+      homeDirectory: fixture.home, stateRoot: fixture.state)
+    #expect(throws: (any Error).self) {
+      if enabled {
+        try file.preflight(try #require(legacy.herdr))
+      } else {
+        try file.preflightOriginal(try #require(legacy.herdr))
+      }
+    }
+    let receipt = fixture.state.appending(path: "environment/ownership.json")
+    let receiptBefore = try Data(contentsOf: receipt)
+    let targetBefore = try Data(contentsOf: target)
+    let targetIdentity = try metadata(target)
+    let link = fixture.configuration.deletingLastPathComponent()
+    let linkBefore = try metadata(link)
+    let migration = EnvironmentHerdrOwnershipMigration(homeDirectory: fixture.home)
+    let preview = try migration.execute()
+    #expect(preview.status == "review_required")
+    #expect(preview.recordedDevice != preview.observedDevice)
+    #expect(try Data(contentsOf: receipt) == receiptBefore)
+    #expect(throws: (any Error).self) { try migration.execute(approval: "stale") }
+    #expect(try Data(contentsOf: receipt) == receiptBefore)
+    #expect(try migration.execute(approval: preview.evidenceDigest).status == "migrated")
+    let updated = try #require(try store.readOwnership())
+    var expected = try #require(legacy.herdr)
+    expected.directoryVolumeUUID = preview.volumeUUID
+    #expect(updated == legacy.replacingHerdr(expected))
+    #expect(try Data(contentsOf: target) == targetBefore)
+    #expect(try metadata(target) == targetIdentity)
+    #expect(try metadata(link) == linkBefore)
+    let bound = try migration.execute()
+    #expect(bound.status == "already_bound")
+    let receiptAfter = try Data(contentsOf: receipt)
+    #expect(try migration.execute(approval: bound.evidenceDigest) == bound)
+    #expect(try Data(contentsOf: receipt) == receiptAfter)
+    #expect(!(try fixture.inspection(enabled: enabled)).isBlocked)
+  }
+
+  @Test(arguments: [
+    "volume", "inode", "mode", "metadata", "link", "configuration", "pending", "generation",
+    "stale",
+  ])
+  func herdrIdentityMigrationRejectsOtherDriftWithoutWriting(change: String) throws {
+    let fixture = try HerdrFixture(configuration: nil)
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    _ = try fixture.makeDirectoryLink()
+    let inspection = try fixture.inspection(enabled: true)
+    _ = try fixture.apply(
+      enabled: true, inspection: inspection, adoptionDigest: inspection.adoptionEvidenceDigest)
+    var legacy = try fixture.persistLegacyDirectoryIdentity()
+    var herdr = try #require(legacy.herdr)
+    let migration = EnvironmentHerdrOwnershipMigration(homeDirectory: fixture.home)
+    let preview = try migration.execute()
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    let link = try #require(herdr.directoryLink)
+    var fields: [String: Any] = [:]
+    switch change {
+    case "volume": herdr.directoryVolumeUUID = UUID().uuidString
+    case "inode": fields["inode"] = try #require(link.inode) + 1
+    case "mode": fields["mode"] = try #require(link.mode) ^ 1
+    case "metadata": fields["metadata_digest"] = "sha256:changed"
+    case "link": fields["link_destination"] = "other"
+    case "configuration":
+      try "[theme]\nname = \"changed\"\n".write(
+        to: fixture.configuration, atomically: true, encoding: .utf8)
+    case "pending":
+      try Data("{}".utf8).write(to: fixture.state.appending(path: "environment/transaction.json"))
+    case "generation":
+      try FileManager.default.removeItem(at: fixture.state.appending(path: "environment/current"))
+    default:
+      // Even an unrelated receipt change invalidates the reviewed digest.
+      legacy = try ownershipFixtureReplacing(legacy, ["slack_enabled": !legacy.slackEnabled])
+    }
+    if !fields.isEmpty {
+      let altered = try ownershipFixtureReplacing(link, fields)
+      herdr = try ownershipFixtureReplacing(
+        herdr,
+        [
+          "directory_link": try JSONSerialization.jsonObject(with: JSONEncoder().encode(altered))
+        ])
+    }
+    try store.writeOwnership(legacy.replacingHerdr(herdr))
+    let receipt = fixture.state.appending(path: "environment/ownership.json")
+    let before = try Data(contentsOf: receipt)
+    #expect(throws: (any Error).self) { try migration.execute(approval: preview.evidenceDigest) }
+    #expect(try Data(contentsOf: receipt) == before)
+    if change != "stale" {
+      #expect(throws: (any Error).self) { try migration.execute() }
+    }
+  }
+
+  @Test
+  func herdrOwnershipMigrationCLIRequiresTheExplicitProvider() throws {
+    let preview = try EnvironmentCommand.MigrateOwnership.parse(["herdr", "--json"])
+    #expect(preview.provider == .herdr)
+    #expect(preview.approve == nil)
+    #expect(throws: (any Error).self) { try EnvironmentCommand.MigrateOwnership.parse(["all"]) }
+    #expect(throws: (any Error).self) { try EnvironmentCommand.MigrateOwnership.parse([]) }
   }
 
   @Test
@@ -837,6 +975,33 @@ private struct HerdrFixture {
         mappings: [:]
       ) : loadedPackage
     _ = try ThemeActivator(root: state).activate(package: package)
+  }
+
+  func makeDirectoryLink() throws -> URL {
+    let dotfiles = home.appending(path: "dotfiles/herdr", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+    let target = dotfiles.appending(path: "config.toml")
+    try "[theme]\nname = \"personal\"\n".write(to: target, atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: configuration.deletingLastPathComponent(), withDestinationURL: dotfiles)
+    return target
+  }
+
+  func persistLegacyDirectoryIdentity() throws -> EnvironmentOwnership {
+    let store = EnvironmentStateStore(stateRoot: state)
+    let ownership = try #require(try store.readOwnership())
+    let herdr = try #require(ownership.herdr)
+    let link = try #require(herdr.directoryLink)
+    let renumbered = try ownershipFixtureReplacing(link, ["device": try #require(link.device) + 7])
+    let legacy = try ownershipFixtureReplacing(
+      herdr,
+      [
+        "directory_volume_uuid": NSNull(),
+        "directory_link": try JSONSerialization.jsonObject(with: JSONEncoder().encode(renumbered)),
+      ])
+    let updated = ownership.replacingHerdr(legacy)
+    try store.writeOwnership(updated)
+    return updated
   }
 
   func inspection(enabled: Bool) throws -> EnvironmentProviderInspection {

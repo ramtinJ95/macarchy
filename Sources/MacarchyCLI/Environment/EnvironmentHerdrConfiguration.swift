@@ -13,6 +13,7 @@ struct EnvironmentHerdrOwnership: Codable, Equatable, Sendable {
   let originalCustomTableExisted: Bool
   let introducedCustomTablePrefix: String
   let directoryLink: EnvironmentEntryEvidence?
+  var directoryVolumeUUID: String?
   let migratedLegacy: Bool
   let managedTheme: GeneratedHerdrTheme
 
@@ -26,6 +27,7 @@ struct EnvironmentHerdrOwnership: Codable, Equatable, Sendable {
     case originalCustomTableExisted = "original_custom_table_existed"
     case introducedCustomTablePrefix = "introduced_custom_table_prefix"
     case directoryLink = "directory_link"
+    case directoryVolumeUUID = "directory_volume_uuid"
     case migratedLegacy = "migrated_legacy"
     case managedTheme = "managed_theme"
   }
@@ -40,6 +42,7 @@ struct EnvironmentHerdrOwnership: Codable, Equatable, Sendable {
     originalCustomTableExisted: Bool,
     introducedCustomTablePrefix: String,
     directoryLink: EnvironmentEntryEvidence?,
+    directoryVolumeUUID: String? = nil,
     migratedLegacy: Bool = false,
     managedTheme: GeneratedHerdrTheme
   ) {
@@ -52,6 +55,7 @@ struct EnvironmentHerdrOwnership: Codable, Equatable, Sendable {
     self.originalCustomTableExisted = originalCustomTableExisted
     self.introducedCustomTablePrefix = introducedCustomTablePrefix
     self.directoryLink = directoryLink
+    self.directoryVolumeUUID = directoryVolumeUUID
     self.migratedLegacy = migratedLegacy
     self.managedTheme = managedTheme
   }
@@ -82,6 +86,7 @@ struct EnvironmentHerdrOwnership: Codable, Equatable, Sendable {
       EnvironmentEntryEvidence.self,
       forKey: .directoryLink
     )
+    directoryVolumeUUID = try container.decodeIfPresent(String.self, forKey: .directoryVolumeUUID)
     migratedLegacy = try container.decodeIfPresent(Bool.self, forKey: .migratedLegacy) ?? false
     managedTheme = try container.decode(GeneratedHerdrTheme.self, forKey: .managedTheme)
   }
@@ -94,6 +99,8 @@ struct EnvironmentHerdrOwnership: Codable, Equatable, Sendable {
       && Self.validPrefix(introducedThemeTablePrefix)
       && Self.validPrefix(introducedCustomTablePrefix)
       && ((try? managedTheme.validated()) != nil)
+      && (directoryVolumeUUID.map { directoryLink != nil && UUID(uuidString: $0)?.uuidString == $0 }
+        ?? true)
       && (directoryLink.map {
         $0.kind == .symbolicLink && $0.linkDestination != nil && $0.inventory.isEmpty
       } ?? true)
@@ -114,6 +121,7 @@ struct EnvironmentHerdrOwnership: Codable, Equatable, Sendable {
       originalCustomTableExisted: originalCustomTableExisted,
       introducedCustomTablePrefix: introducedCustomTablePrefix,
       directoryLink: directoryLink,
+      directoryVolumeUUID: directoryVolumeUUID,
       migratedLegacy: migratedLegacy,
       managedTheme: managedTheme
     )
@@ -550,8 +558,8 @@ struct EnvironmentHerdrFileTransaction: Sendable {
     else { throw EnvironmentLifecycleError.blocked("Herdr ownership path is invalid") }
     if let expected = ownership.directoryLink {
       let directory = url.deletingLastPathComponent()
-      guard try EnvironmentProviderInspector().capture(directory, directoryLink: nil) == expected
-      else { throw EnvironmentLifecycleError.drift("Herdr directory symlink") }
+      try EnvironmentHerdrDirectoryIdentity.validate(
+        expected, volumeUUID: ownership.directoryVolumeUUID, at: directory)
     }
   }
 
@@ -696,6 +704,46 @@ struct EnvironmentHerdrFileTransaction: Sendable {
         Darwin.close(descriptor)
         descriptor = next
       }
+    }
+  }
+}
+
+/// Persisted Herdr link identity survives mount renumbering; approval/race evidence stays strict.
+enum EnvironmentHerdrDirectoryIdentity {
+  static func volumeUUID(at url: URL, matching evidence: EnvironmentEntryEvidence) throws -> String
+  {
+    var metadata = stat()
+    guard lstat(url.path, &metadata) == 0,
+      evidence.kind == .symbolicLink, metadata.st_mode & S_IFMT == S_IFLNK,
+      UInt64(metadata.st_dev) == evidence.device, UInt64(metadata.st_ino) == evidence.inode,
+      UInt32(metadata.st_mode) == evidence.mode, Int64(metadata.st_size) == evidence.size
+    else { throw EnvironmentLifecycleError.drift("Herdr directory symlink") }
+    return try RetainedOriginalIdentity.volumeUUID(at: url, matching: metadata)
+  }
+
+  static func validate(
+    _ expected: EnvironmentEntryEvidence, volumeUUID: String?, at url: URL
+  ) throws {
+    let observed = try EnvironmentProviderInspector().capture(url, directoryLink: nil)
+    guard let volumeUUID else {
+      // Legacy receipts cannot establish their historical volume. Do not silently rebind them.
+      guard observed == expected else {
+        throw EnvironmentLifecycleError.drift(
+          "Herdr directory symlink; review `macarchy environment migrate-ownership herdr`")
+      }
+      return
+    }
+    guard try self.volumeUUID(at: url, matching: observed) == volumeUUID else {
+      throw EnvironmentLifecycleError.drift("Herdr directory symlink volume")
+    }
+    // UUID authenticates the volume; retain every other existing link/metadata check.
+    let expectedOnCurrentMount = EnvironmentEntryEvidence(
+      kind: expected.kind, device: observed.device, inode: expected.inode, mode: expected.mode,
+      size: expected.size, linkDestination: expected.linkDestination,
+      contentDigest: expected.contentDigest, metadataDigest: expected.metadataDigest,
+      inventory: expected.inventory)
+    guard observed == expectedOnCurrentMount else {
+      throw EnvironmentLifecycleError.drift("Herdr directory symlink")
     }
   }
 }
