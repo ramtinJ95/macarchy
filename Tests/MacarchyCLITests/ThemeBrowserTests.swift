@@ -42,6 +42,34 @@ struct ThemeBrowserTests {
   }
 
   @Test
+  func bundledLiftoffAppearsInTokyoNightBrowserAndDecodes() throws {
+    let loader = ThemeBrowserCommandLoader(
+      loadMetadata: { try $0.metadata() },
+      loadPreferences: { _ in ["tokyo-night": "liftoff"] },
+      loadActiveManifest: { _ in nil },
+      loadPersonalBackgrounds: { _, _ in [:] },
+      renderPreview: { ThemePreviewRenderer().render(metadata: $0) },
+      loadScreenSaverPreferences: { _ in [:] }
+    )
+    let content = try loader.load(
+      repository: repository,
+      stateRoot: URL(filePath: "/test/state", directoryHint: .isDirectory)
+    )
+    let item = try #require(content.item(id: "tokyo-night"))
+    #expect(item.initialBackgroundID == "liftoff")
+    #expect(item.backgrounds.last?.id == "liftoff")
+    #expect(!item.isPersonalBackground(id: "liftoff"))
+    let data = try item.backgroundData(id: "liftoff")
+    #expect(
+      sha256Digest(data)
+        == "sha256:c7e65d41f1a10e678d8fde799e4f01e81e1c9a95a7f1cb7b52e5f81ca7007e72")
+    let thumbnail = try #require(
+      ThemeBrowserImageDecoder.thumbnail(data: data, maximumPixelSize: 320)
+    )
+    #expect(max(thumbnail.width, thumbnail.height) <= 320)
+  }
+
+  @Test
   func navigationChangesOnlyLocalSelectionAndBackgroundsWrap() throws {
     let base = try repository.package(id: "catppuccin-mocha")
     let first = try #require(base.backgrounds.first)
