@@ -109,7 +109,7 @@ extension EnvironmentProviderInspector {
         "Herdr configuration cannot be safely adopted"
       )
     }
-    let proposed = try EnvironmentHerdrDocument.ownership(
+    var proposed = try EnvironmentHerdrDocument.ownership(
       original: original,
       source: url,
       resolvedSource: resolved,
@@ -118,6 +118,10 @@ extension EnvironmentProviderInspector {
       migratedLegacy: migratedLegacy,
       managedTheme: desired
     )
+    if let directoryEvidence {
+      proposed.directoryVolumeUUID = try EnvironmentHerdrDirectoryIdentity.volumeUUID(
+        at: herdrDirectory, matching: directoryEvidence)
+    }
     return (
       EnvironmentEntryInspection(
         id: "herdr_configuration",

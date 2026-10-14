@@ -998,6 +998,23 @@ stale consent, or pending provider/setup transactions block migration.
 Only the ownership record changes; originals, generated configuration, and
 services remain untouched. Applying configuration updates is a separate review.
 
+The same reboot-stable identity applies to an adopted Herdr directory symlink.
+If theme switching reports `Herdr directory symlink` ownership drift after a
+reboot, review the Herdr-specific migration rather than changing your dotfiles:
+
+```sh
+macarchy environment migrate-ownership herdr --json
+macarchy environment migrate-ownership herdr --approve 'digest-from-preview'
+```
+
+Review its path, inode, observed volume UUID and historical-identity warning.
+It requires the link target, permissions, metadata, and managed theme surface
+to still match; a changed link, stale approval or pending transaction blocks it.
+Approval adds only the persistent identity to the existing ownership record.
+It does not change Herdr configuration, restart applications or activate a theme.
+Repeat the theme selection after migration. New Herdr adoptions record the
+stable identity immediately and need no migration after a reboot.
+
 To undo unified setup, preview the restoration first:
 
 ```sh
