@@ -54,9 +54,7 @@ package struct ManualThemePayloadStore: Sendable {
       )
     }
 
-    let artifactURL = root.appending(
-      path: "generations/\(manifest.generationID)/\(target.artifactPath)"
-    )
+    let artifactURL = manifest.artifactURL(root: root, path: target.artifactPath)
     let data = try BoundedRegularFile.read(at: artifactURL).data
     guard let payload = String(data: data, encoding: .utf8) else {
       throw ManualThemePayloadError.invalidText(targetID)

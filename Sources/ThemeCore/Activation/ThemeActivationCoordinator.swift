@@ -326,7 +326,8 @@ package struct ThemeActivationCoordinator: Sendable {
           return background
         },
         onCommittedLocked: { manifest in
-          try persistPreference(manifest: manifest)
+          var preferences = try backgroundPreferences.load()
+          try rememberBackground(of: manifest, in: &preferences)
         }
       )
 
@@ -393,6 +394,14 @@ package struct ThemeActivationCoordinator: Sendable {
     includeRuntimeChecks: Bool = false
   ) throws -> [AdapterInspection] {
     try validateSelection(adapterIDs)
+    func appearanceFailure(_ error: any Error) -> AdapterInspection {
+      AdapterInspection(
+        adapterID: MacOSAppearanceAdapter.id,
+        requirement: .required,
+        status: .failed,
+        message: "Cannot inspect active theme appearance: \(error)"
+      )
+    }
     var context = AdapterResolutionContext(includeRuntimeChecks: includeRuntimeChecks)
     do {
       let manifest = try statusStore.activeManifest()
@@ -400,12 +409,7 @@ package struct ThemeActivationCoordinator: Sendable {
       do {
         context.desiredAppearance = try activeAppearance(manifest: manifest)
       } catch {
-        context.appearanceInspectionOverride = AdapterInspection(
-          adapterID: MacOSAppearanceAdapter.id,
-          requirement: .required,
-          status: .failed,
-          message: "Cannot inspect active theme appearance: \(error)"
-        )
+        context.appearanceInspectionOverride = appearanceFailure(error)
       }
       let wallpaperURL = activeWallpaperURL(manifest: manifest)
       context.desiredWallpaperURL = wallpaperURL
@@ -413,12 +417,7 @@ package struct ThemeActivationCoordinator: Sendable {
     } catch ReconciliationStatusError.noActiveGeneration {
       context.wallpaperIntentionallyUnmanaged = false
     } catch {
-      context.appearanceInspectionOverride = AdapterInspection(
-        adapterID: MacOSAppearanceAdapter.id,
-        requirement: .required,
-        status: .failed,
-        message: "Cannot inspect active theme appearance: \(error)"
-      )
+      context.appearanceInspectionOverride = appearanceFailure(error)
       context.wallpaperInspectionOverride = AdapterInspection(
         adapterID: WallpaperAdapter.id,
         requirement: .required,
@@ -533,33 +532,13 @@ package struct ThemeActivationCoordinator: Sendable {
         }
       )
     case .atuin:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try atuin.preflight() },
-        inspection: atuin.inspection,
-        reconciliation: atuin.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: atuin)
     case .bat:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try bat.preflight() },
-        inspection: bat.inspection,
-        reconciliation: bat.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: bat)
     case .btop:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try btop.preflight() },
-        inspection: btop.inspection,
-        reconciliation: btop.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: btop)
     case .borders:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try borders.preflight() },
-        inspection: borders.inspection,
-        reconciliation: borders.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: borders)
     case .codex:
       return ConfiguredAdapter(
         entry: entry,
@@ -568,12 +547,7 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: codex.reconciliation
       )
     case .eza:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try eza.preflight() },
-        inspection: eza.inspection,
-        reconciliation: eza.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: eza)
     case .herdr:
       return configuredNamedThemeAdapter(
         entry: entry,
@@ -585,12 +559,7 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: herdr.reconciliation
       )
     case .kitty:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try kitty.preflight() },
-        inspection: kitty.inspection,
-        reconciliation: kitty.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: kitty)
     case .neovim:
       return configuredNamedThemeAdapter(
         entry: entry,
@@ -620,26 +589,11 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: sketchyBar.reconciliation
       )
     case .spicetify:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try spicetify.preflight() },
-        inspection: spicetify.inspection,
-        reconciliation: spicetify.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: spicetify)
     case .starship:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try starship.preflight() },
-        inspection: starship.inspection,
-        reconciliation: starship.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: starship)
     case .tuicr:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try tuicr.preflight() },
-        inspection: tuicr.inspection,
-        reconciliation: tuicr.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: tuicr)
     case .wallpaper:
       return ConfiguredAdapter(
         entry: entry,
@@ -688,14 +642,7 @@ package struct ThemeActivationCoordinator: Sendable {
               try wallpaperSignal.preflight()
               return AdapterOutcome(status: .applied, message: messages.joined(separator: "; "))
             } catch {
-              let status: AdapterStatus =
-                if case YabaiWallpaperSignalError.missingDirective = error {
-                  .drifted
-                } else if case YabaiWallpaperSignalError.runtimeSignalMissing = error {
-                  .drifted
-                } else {
-                  .failed
-                }
+              let status: AdapterStatus = Self.isSignalDrift(error) ? .drifted : .failed
               messages.append(String(describing: error))
               return AdapterOutcome(status: status, message: messages.joined(separator: "; "))
             }
@@ -703,33 +650,12 @@ package struct ThemeActivationCoordinator: Sendable {
         }
       )
     case .yazi:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try yazi.preflight() },
-        inspection: yazi.inspection,
-        reconciliation: yazi.reconciliation
-      )
+      return ConfiguredAdapter(entry: entry, adapter: yazi)
     }
   }
 
   private func activeAppearance(manifest: GenerationManifest) throws -> ThemeAppearance {
-    let themeURL = root.appending(
-      path: "generations/\(manifest.generationID)/\(ThemeRenderer.themeOutputPath)"
-    )
-    let normalized = try JSONDecoder().decode(
-      NormalizedTheme.self,
-      from: BoundedRegularFile.read(at: themeURL).data
-    )
-    guard
-      normalized.generationID == manifest.generationID,
-      normalized.themeID == manifest.themeID,
-      normalized.schemaVersion == manifest.themeSchemaVersion
-    else {
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "theme.json does not match the active manifest"
-      )
-    }
-    return normalized.appearance
+    try manifest.normalizedTheme(root: root).appearance
   }
 
   private func prepare(
@@ -746,15 +672,7 @@ package struct ThemeActivationCoordinator: Sendable {
       let active = try activeManifestIfPresent(),
       active.manifestSchemaVersion == GenerationManifest.currentSchemaVersion
     {
-      let prior = preferences
-      if let background = active.background {
-        preferences[active.themeID] = background.id
-      } else {
-        preferences.removeValue(forKey: active.themeID)
-      }
-      if preferences != prior {
-        try backgroundPreferences.persist(preferences)
-      }
+      try rememberBackground(of: active, in: &preferences)
     }
     let background = try BackgroundSelectionResolver.resolve(
       package: effectivePackage,
@@ -773,9 +691,7 @@ package struct ThemeActivationCoordinator: Sendable {
 
   private func activeWallpaperURL(manifest: GenerationManifest) -> URL? {
     guard manifest.artifacts[WallpaperAdapter.outputPath] != nil else { return nil }
-    return root.appending(
-      path: "generations/\(manifest.generationID)/\(WallpaperAdapter.outputPath)"
-    )
+    return manifest.artifactURL(root: root, path: WallpaperAdapter.outputPath)
   }
 
   private func inspectWallpaper(
@@ -818,18 +734,11 @@ package struct ThemeActivationCoordinator: Sendable {
         message: messages.joined(separator: "; ")
       )
     } catch {
-      let signalStatus: AdapterInspectionStatus
-      if case YabaiWallpaperSignalError.missingDirective = error {
-        signalStatus = .drifted
-      } else if case YabaiWallpaperSignalError.runtimeSignalMissing = error {
-        signalStatus = .drifted
-      } else {
-        signalStatus = .failed
-      }
       return AdapterInspection(
         adapterID: WallpaperAdapter.id,
         requirement: .required,
-        status: Self.mostSevere(wallpaperInspection.status, signalStatus),
+        status: Self.mostSevere(
+          wallpaperInspection.status, Self.isSignalDrift(error) ? .drifted : .failed),
         message: [wallpaperInspection.message, String(describing: error)]
           .compactMap { $0 }
           .joined(separator: "; ")
@@ -845,14 +754,13 @@ package struct ThemeActivationCoordinator: Sendable {
     }
   }
 
-  private func persistPreference(manifest: GenerationManifest) throws {
-    var preferences = try backgroundPreferences.load()
+  /// Records the manifest's background choice, persisting only when it changed.
+  private func rememberBackground(
+    of manifest: GenerationManifest,
+    in preferences: inout [String: String]
+  ) throws {
     let prior = preferences
-    if let background = manifest.background {
-      preferences[manifest.themeID] = background.id
-    } else {
-      preferences.removeValue(forKey: manifest.themeID)
-    }
+    preferences[manifest.themeID] = manifest.background?.id
     if preferences != prior {
       try backgroundPreferences.persist(preferences)
     }
@@ -860,15 +768,12 @@ package struct ThemeActivationCoordinator: Sendable {
 
   private func previousReconciliationEvidence() throws -> PreviousReconciliationEvidence? {
     guard let manifest = try activeManifestIfPresent() else { return nil }
-    let state: ReconciliationState
-    do {
-      state = try statusStore.reconciliationState(for: manifest)
-    } catch {
-      return PreviousReconciliationEvidence(manifest: manifest, record: nil)
-    }
-    guard case .current(let record) = state else {
-      return PreviousReconciliationEvidence(manifest: manifest, record: nil)
-    }
+    let record: ReconciliationRecord? =
+      if case .current(let record)? = try? statusStore.reconciliationState(for: manifest) {
+        record
+      } else {
+        nil
+      }
     return PreviousReconciliationEvidence(manifest: manifest, record: record)
   }
 
@@ -929,6 +834,16 @@ package struct ThemeActivationCoordinator: Sendable {
     }
   }
 
+  /// A missing directive or unloaded signal is repairable drift, not a failure.
+  private static func isSignalDrift(_ error: any Error) -> Bool {
+    switch error {
+    case YabaiWallpaperSignalError.missingDirective, YabaiWallpaperSignalError.runtimeSignalMissing:
+      true
+    default:
+      false
+    }
+  }
+
   private static func mostSevere(
     _ first: AdapterInspectionStatus,
     _ second: AdapterInspectionStatus
@@ -944,10 +859,7 @@ package struct ThemeActivationCoordinator: Sendable {
     guard manifest.artifacts[ThemeRenderer.capabilitiesOutputPath] != nil else {
       return []
     }
-    let url = root.appending(
-      path:
-        "generations/\(manifest.generationID)/\(ThemeRenderer.capabilitiesOutputPath)"
-    )
+    let url = manifest.artifactURL(root: root, path: ThemeRenderer.capabilitiesOutputPath)
     do {
       let capabilities = try JSONDecoder().decode(
         GeneratedThemeCapabilities.self,
@@ -1028,6 +940,24 @@ private struct AdapterPreflightContext: Sendable {
   let hasSelectedWallpaper: Bool
 }
 
+/// Adapters whose wiring needs neither the preflight package nor resolution context.
+private protocol ContextFreeThemeAdapter: Sendable {
+  func preflight() throws
+  func inspection() -> AdapterInspection
+  func reconciliation() -> AdapterReconciliation
+}
+
+extension AtuinAdapter: ContextFreeThemeAdapter {}
+extension BatAdapter: ContextFreeThemeAdapter {}
+extension BtopAdapter: ContextFreeThemeAdapter {}
+extension BordersAdapter: ContextFreeThemeAdapter {}
+extension EzaAdapter: ContextFreeThemeAdapter {}
+extension KittyAdapter: ContextFreeThemeAdapter {}
+extension SpicetifyAdapter: ContextFreeThemeAdapter {}
+extension StarshipAdapter: ContextFreeThemeAdapter {}
+extension TuicrAdapter: ContextFreeThemeAdapter {}
+extension YaziAdapter: ContextFreeThemeAdapter {}
+
 private struct ConfiguredAdapter: Sendable {
   let entry: ConsumerCatalogEntry
   private let runPreflight: @Sendable (AdapterPreflightContext) throws -> Void
@@ -1044,6 +974,15 @@ private struct ConfiguredAdapter: Sendable {
     runPreflight = preflight
     inspect = inspection
     reconcile = reconciliation
+  }
+
+  init(entry: ConsumerCatalogEntry, adapter: some ContextFreeThemeAdapter) {
+    self.init(
+      entry: entry,
+      preflight: { _ in try adapter.preflight() },
+      inspection: { adapter.inspection() },
+      reconciliation: { adapter.reconciliation() }
+    )
   }
 
   var id: String { entry.id.rawValue }

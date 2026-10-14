@@ -325,10 +325,7 @@ package struct HerdrAdapter: Sendable {
 
   static func render(package: ThemePackage) throws -> String {
     let desired = try desiredTheme(for: package)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var data = try encoder.encode(desired)
-    data.append(0x0a)
+    let data = try prettyJSONDocument(desired)
     return String(decoding: data, as: UTF8.self)
   }
 
@@ -885,10 +882,7 @@ package struct HerdrAdapter: Sendable {
   }
 
   private func writeOwnership(_ state: HerdrOwnershipState) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var data = try encoder.encode(state)
-    data.append(0x0a)
+    let data = try prettyJSONDocument(state)
     try FileManager.default.createDirectory(
       at: ownershipURL.deletingLastPathComponent(),
       withIntermediateDirectories: true

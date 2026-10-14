@@ -239,16 +239,15 @@ public struct ThemeActivator: Sendable {
         throw claimError
       }
 
-      var cleanupError: String?
       do {
         try FileManager.default.removeItem(at: currentClaim)
         if statusClaimed { try FileManager.default.removeItem(at: statusClaim) }
         makeWritableForRemoval(generationClaim)
         try FileManager.default.removeItem(at: generationClaim)
+        return nil
       } catch {
-        cleanupError = String(describing: error)
+        return String(describing: error)
       }
-      return cleanupError
     }
 
     if !dryRun { postDarwinNotification(ThemeChanged.darwinNotificationName) }
@@ -290,21 +289,13 @@ public struct ThemeActivator: Sendable {
         background: background,
         interruptedTrash: interruptedTrash
       )
-      do {
-        try onCommittedLocked(result.manifest)
-      } catch {
-        throw committedError(result.manifest, String(describing: error))
-      }
+      try afterCommit(result.manifest) { try onCommittedLocked(result.manifest) }
       return result
     }
 
     onThemeChanged(ThemeChanged(manifest: result.manifest))
     postDarwinNotification(ThemeChanged.darwinNotificationName)
-    do {
-      try faultInjector(.changePublished)
-    } catch {
-      throw committedError(result.manifest, String(describing: error))
-    }
+    try afterCommit(result.manifest) { try faultInjector(.changePublished) }
 
     var cleanupError = result.cleanupError
     for trashURL in result.trashURLs where cleanupError == nil {
@@ -315,13 +306,9 @@ public struct ThemeActivator: Sendable {
         cleanupError = String(describing: error)
       }
     }
-    do {
-      try faultInjector(.generationsCleaned)
-    } catch {
-      throw committedError(result.manifest, String(describing: error))
-    }
+    try afterCommit(result.manifest) { try faultInjector(.generationsCleaned) }
     if let cleanupError {
-      throw committedError(result.manifest, cleanupError)
+      throw ThemeCommittedActivationError(manifest: result.manifest, cause: cleanupError)
     }
     return result.manifest
   }
@@ -397,7 +384,7 @@ public struct ThemeActivator: Sendable {
       rendererVersions: Self.rendererVersions,
       artifacts: rendered.manifestArtifacts
     )
-    let manifestData = try encode(manifest)
+    let manifestData = try prettyJSONDocument(manifest)
     try requireGeneratedFileSize(
       manifestData,
       path: "manifest.json",
@@ -464,11 +451,7 @@ public struct ThemeActivator: Sendable {
     previousGenerationID: String?,
     interruptedTrash: [URL]
   ) throws -> LockedActivationResult {
-    do {
-      try faultInjector(.currentReplaced)
-    } catch {
-      throw committedError(manifest, String(describing: error))
-    }
+    try afterCommit(manifest) { try faultInjector(.currentReplaced) }
 
     let collection = collectGenerations(
       currentGenerationID: manifest.generationID,
@@ -490,11 +473,9 @@ public struct ThemeActivator: Sendable {
         at: generationsRoot,
         includingPropertiesForKeys: nil
       ) {
-        if isStagingName(item.lastPathComponent), isRealDirectory(item) {
-          makeWritableForRemoval(item)
-          try FileManager.default.removeItem(at: item)
-        } else if item.lastPathComponent != activeGenerationID,
-          isRecoverablePublishedGeneration(item)
+        if (isStagingName(item.lastPathComponent) && isRealDirectory(item))
+          || (item.lastPathComponent != activeGenerationID
+            && isRecoverablePublishedGeneration(item))
         {
           makeWritableForRemoval(item)
           try FileManager.default.removeItem(at: item)
@@ -524,7 +505,10 @@ public struct ThemeActivator: Sendable {
         at: generationsRoot,
         includingPropertiesForKeys: nil,
         options: [.skipsHiddenFiles]
-      ).compactMap(validGenerationForCleanup)
+      )
+      // The current generation is always retained, so skip validating (hashing) it.
+      .filter { $0.lastPathComponent != currentGenerationID }
+      .compactMap(validGenerationForCleanup)
     } catch {
       return ([], String(describing: error))
     }
@@ -535,15 +519,11 @@ public struct ThemeActivator: Sendable {
       generations.contains(where: { $0.url.lastPathComponent == previousGenerationID })
     {
       retained.insert(previousGenerationID)
-    } else if let prior =
-      generations
-      .filter({ $0.url.lastPathComponent != currentGenerationID })
-      .sorted(by: {
-        $0.modified == $1.modified
-          ? $0.url.lastPathComponent < $1.url.lastPathComponent
-          : $0.modified > $1.modified
-      }).first
-    {
+    } else if let prior = generations.sorted(by: {
+      $0.modified == $1.modified
+        ? $0.url.lastPathComponent < $1.url.lastPathComponent
+        : $0.modified > $1.modified
+    }).first {
       retained.insert(prior.url.lastPathComponent)
     }
 
@@ -708,16 +688,7 @@ public struct ThemeActivator: Sendable {
   }
 
   private func isTemporaryName(_ name: String, prefix: String) -> Bool {
-    guard name.hasPrefix(prefix) else { return false }
-    let value = name.dropFirst(prefix.count)
-    guard value.count == 75 else { return false }
-    let separator = value.index(value.startIndex, offsetBy: 38)
-    guard value[separator] == "-" else { return false }
-    let generationID = String(value[..<separator])
-    let nonce = String(value[value.index(after: separator)...])
-    return isGenerationID(generationID)
-      && nonce == nonce.lowercased()
-      && UUID(uuidString: nonce) != nil
+    isGenerationScopedTemporaryName(name, prefix: prefix, isGenerationID: isGenerationID)
   }
 
   private func isRealDirectory(_ url: URL) -> Bool {
@@ -812,11 +783,16 @@ public struct ThemeActivator: Sendable {
     return isGenerationID(generationID) ? generationID : nil
   }
 
-  private func committedError(
+  /// Failures after the pointer swap must still report the committed manifest.
+  private func afterCommit(
     _ manifest: GenerationManifest,
-    _ cause: String
-  ) -> ThemeCommittedActivationError {
-    ThemeCommittedActivationError(manifest: manifest, cause: cause)
+    _ operation: () throws -> Void
+  ) throws {
+    do {
+      try operation()
+    } catch {
+      throw ThemeCommittedActivationError(manifest: manifest, cause: String(describing: error))
+    }
   }
 
   private func reusableGeneration(
@@ -898,9 +874,7 @@ public struct ThemeActivator: Sendable {
       "manifest generation_id '\(manifest.generationID)' does not match its directory"
     )
     try requireReusable(
-      generationID.hasPrefix("g-")
-        && generationID == generationID.lowercased()
-        && UUID(uuidString: String(generationID.dropFirst(2))) != nil,
+      isGenerationID(generationID),
       generationURL,
       "generation identifier is not in g-<uuid> form"
     )
@@ -966,7 +940,7 @@ public struct ThemeActivator: Sendable {
       background: background.selection,
       wallpaperDigest: background.data.map(sha256Digest)
     )
-    return sha256Digest(try encode(input))
+    return sha256Digest(try prettyJSONDocument(input))
   }
 
   private func validate(background: PreparedThemeBackground) throws {
@@ -987,7 +961,7 @@ public struct ThemeActivator: Sendable {
 
   private func generationThemeDigest(package: ThemePackage) throws -> String {
     sha256Digest(
-      try encode(
+      try prettyJSONDocument(
         GenerationThemeInput(
           manifestSchemaVersion: GenerationManifest.currentSchemaVersion,
           themeSchemaVersion: package.schemaVersion,
@@ -1000,14 +974,6 @@ public struct ThemeActivator: Sendable {
         )
       )
     )
-  }
-
-  private func encode<Value: Encodable>(_ value: Value) throws -> Data {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var data = try encoder.encode(value)
-    data.append(0x0a)
-    return data
   }
 
   private func requireGeneratedFileSize(_ artifact: RenderedArtifact) throws {

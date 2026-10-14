@@ -210,9 +210,7 @@ package struct StarshipAdapter: Sendable {
   private func activePalette() throws -> String {
     let manifest = try ReconciliationStatusStore(root: root).activeManifest()
     let data = try BoundedRegularFile.read(
-      at: root.appending(
-        path: "generations/\(manifest.generationID)/\(Self.outputPath)"
-      )
+      at: manifest.artifactURL(root: root, path: Self.outputPath)
     ).data
     guard let palette = String(data: data, encoding: .utf8) else {
       throw StarshipAdapterError.bridgeDoesNotMatch(bridgeURL)
