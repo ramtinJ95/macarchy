@@ -17,8 +17,6 @@ final class SkyLightOutlineMover {
   // and use an explicit committed-position postcondition instead.
   private typealias TransactionMoveWindow = @convention(c) (CFTypeRef, UInt32, CGPoint) -> Void
   private typealias TransactionCommit = @convention(c) (CFTypeRef, Int32) -> Void
-  private typealias GetWindowBounds =
-    @convention(c) (Int32, UInt32, UnsafeMutablePointer<CGRect>) -> Int32
 
   let windowID: UInt32
   private let connection: Int32
@@ -28,17 +26,20 @@ final class SkyLightOutlineMover {
   private let createTransaction: TransactionCreate
   private let moveWindow: TransactionMoveWindow
   private let commitTransaction: TransactionCommit
-  private let windowBounds: GetWindowBounds
+  private let windowBounds: (UInt32) throws -> CGRect
 
-  init(library: SkyLightLibrary, connection: Int32, windowID: UInt32) throws {
+  init(
+    library: SkyLightLibrary, connection: Int32, windowID: UInt32,
+    bounds: @escaping (UInt32) throws -> CGRect
+  ) throws {
     self.library = library
     self.connection = connection
     self.windowID = windowID
+    windowBounds = bounds
     windowOwner = try library.symbol("SLSGetWindowOwner")
     createTransaction = try library.symbol("SLSTransactionCreate")
     moveWindow = try library.symbol("SLSTransactionMoveWindowWithGroup")
     commitTransaction = try library.symbol("SLSTransactionCommit")
-    windowBounds = try library.symbol("SLSGetWindowBounds")
     try verifyOwnership()
   }
 
@@ -54,16 +55,7 @@ final class SkyLightOutlineMover {
     moveWindow(transaction, windowID, origin)
     commitTransaction(transaction, 0)
     // Single query, no polling: the committed frame must already be at `origin`.
-    try verifyCommittedOrigin(origin)
-  }
-
-  private func verifyCommittedOrigin(_ requested: CGPoint) throws {
-    var bounds = CGRect.zero
-    let status = windowBounds(connection, windowID, &bounds)
-    guard status == 0 else {
-      throw FocusRingError("SLSGetWindowBounds failed for window \(windowID) (\(status))")
-    }
-    try Self.validateCommittedBounds(actual: bounds, requestedOrigin: requested)
+    try Self.validateCommittedBounds(actual: windowBounds(windowID), requestedOrigin: origin)
   }
 
   nonisolated static let originTolerance: CGFloat = 0.5

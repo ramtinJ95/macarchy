@@ -14,12 +14,11 @@ struct FocusEventBatch: Equatable, Sendable {
   static let settleEvents: Set<UInt32> = [723, 808, 1322, 1401, 1508]
 
   /// Merges one callback; returns false when the event is filtered out.
-  mutating func merge(event: UInt32, windowID: UInt32?, observed: Set<UInt32>, own: UInt32?) -> Bool
-  {
+  mutating func merge(event: UInt32, windowID: UInt32?, observed: Set<UInt32>) -> Bool {
     if Self.globalEvents.contains(event) {
       requiresFullRefresh = true
     } else if Self.windowEvents.contains(event) {
-      guard let windowID, windowID != own, observed.contains(windowID) else { return false }
+      guard let windowID, observed.contains(windowID) else { return false }
       if Self.geometryEvents.contains(event) {
         geometryIDs.insert(windowID)
       } else {
@@ -29,7 +28,7 @@ struct FocusEventBatch: Equatable, Sendable {
       return false
     }
     if Self.settleEvents.contains(event) { settle = true }
-    if count < .max { count += 1 }
+    count += 1
     return true
   }
 }
@@ -57,14 +56,12 @@ final class SkyLightNotifications: @unchecked Sendable {
   // Main-actor state.
   private var context: Unmanaged<SkyLightNotifications>?
   private var registered: [UInt32] = []
-  private var running = false
   private var requestedIDs: [UInt32]?
 
   // Callback state, guarded by `lock`.
   private let lock = NSLock()
   private var handler: Deliver?
   private var observed: Set<UInt32> = []
-  private var ownID: UInt32?
   private var pending = FocusEventBatch()
   private var scheduled = false
 
@@ -80,14 +77,12 @@ final class SkyLightNotifications: @unchecked Sendable {
 
   @MainActor
   func start() throws {
-    guard !running else { return }
     if context != nil {
       throw FocusRingError(
         "SkyLight notification source cannot be restarted; remaining registrations: \(registered)")
     }
     let context = Unmanaged.passRetained(self)
     self.context = context
-    running = true
     locked { handler = deliver }
     for event in Self.events {
       let code = register(Self.callback, event, context.toOpaque())
@@ -107,7 +102,6 @@ final class SkyLightNotifications: @unchecked Sendable {
   /// Failed removals are explicit and a later call retries them.
   @MainActor
   func stop() throws {
-    running = false
     locked {
       handler = nil
       pending = FocusEventBatch()
@@ -144,10 +138,7 @@ final class SkyLightNotifications: @unchecked Sendable {
       }
       requestedIDs = ids
     }
-    locked {
-      self.observed = observed
-      ownID = own
-    }
+    locked { self.observed = observed }
   }
 
   // Runs on an arbitrary thread: copy the payload before returning and never
@@ -164,7 +155,7 @@ final class SkyLightNotifications: @unchecked Sendable {
   private func receive(event: UInt32, windowID: UInt32?) {
     let schedule = locked { () -> Bool in
       guard handler != nil,
-        pending.merge(event: event, windowID: windowID, observed: observed, own: ownID),
+        pending.merge(event: event, windowID: windowID, observed: observed),
         !scheduled
       else { return false }
       scheduled = true

@@ -32,7 +32,7 @@ struct Borders: ParsableCommand {
     var renderer: BordersPreviewRenderer = .borders
 
     func validate() throws {
-      guard seconds.isFinite, (1...300).contains(seconds) else {
+      guard seconds.isFinite, BordersPalette.previewSeconds.contains(seconds) else {
         throw ValidationError("--seconds must be between 1 and 300.")
       }
     }

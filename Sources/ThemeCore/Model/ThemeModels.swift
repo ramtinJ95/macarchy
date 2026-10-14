@@ -15,6 +15,15 @@ public struct SRGBColor: RawRepresentable, Codable, Sendable {
     self.rawValue = rawValue.lowercased()
   }
 
+  /// sRGB channels in 0...1.
+  public var components: (red: Double, green: Double, blue: Double) {
+    let value = Int(rawValue.dropFirst(), radix: 16)!
+    return (
+      Double((value >> 16) & 0xff) / 255, Double((value >> 8) & 0xff) / 255,
+      Double(value & 0xff) / 255
+    )
+  }
+
   public init(from decoder: any Decoder) throws {
     let container = try decoder.singleValueContainer()
     let value = try container.decode(String.self)

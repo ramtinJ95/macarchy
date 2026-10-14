@@ -668,12 +668,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
 extension SRGBColor {
   @MainActor
   var nsColor: NSColor {
-    let value = Int(rawValue.dropFirst(), radix: 16)!
-    return NSColor(
-      srgbRed: CGFloat((value >> 16) & 0xff) / 255,
-      green: CGFloat((value >> 8) & 0xff) / 255,
-      blue: CGFloat(value & 0xff) / 255,
-      alpha: 1
-    )
+    let (red, green, blue) = components
+    return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
   }
 }

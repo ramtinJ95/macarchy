@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Testing
+import ThemeCore
 
 @testable import MacarchyFocusRing
 
@@ -8,20 +9,23 @@ private typealias Bit = FocusTargetPolicy.Bit
 
 @Suite struct FocusRingPolicyTests {
   @Test func durationAcceptsInclusiveFiniteBoundsOnly() {
-    for seconds in [1.0, 30, 300] { #expect(FocusRingDuration.isValid(seconds)) }
+    func parse(_ seconds: Double) throws {
+      _ = try FocusRingOptions.parse(["--state-root", "/x", "--seconds", "\(seconds)"])
+    }
+    for seconds in [1.0, 30, 300] { #expect(throws: Never.self) { try parse(seconds) } }
     for seconds in [0.999, 300.001, 0, -1, .nan, .infinity, -.infinity] {
-      #expect(!FocusRingDuration.isValid(seconds))
+      #expect(throws: (any Error).self) { try parse(seconds) }
     }
   }
 
   @Test func accentParsesOnlyHashedHexTriplets() {
-    let color = OutlineColor(accent: "#FF8000")
-    #expect(color == OutlineColor(accent: "#ff8000"))
-    #expect(color?.red == 1)
-    #expect(color?.green == 128.0 / 255)
-    #expect(color?.blue == 0)
+    let color = SRGBColor(rawValue: "#FF8000")
+    #expect(color?.rawValue == SRGBColor(rawValue: "#ff8000")?.rawValue)
+    #expect(color?.components.red == 1)
+    #expect(color?.components.green == 128.0 / 255)
+    #expect(color?.components.blue == 0)
     for accent in ["", "#", "FF8000", "#FF800", "#FF80000", "#FF800G", " #ff800", "#ff80 0"] {
-      #expect(OutlineColor(accent: accent) == nil)
+      #expect(SRGBColor(rawValue: accent) == nil)
     }
   }
 

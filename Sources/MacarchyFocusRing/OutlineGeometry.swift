@@ -44,34 +44,3 @@ enum OutlineOrdering {
     !isVisible || previousTarget != target || levelChanged
   }
 }
-
-/// An opaque sRGB stroke color from the active palette's `#RRGGBB` accent.
-struct OutlineColor: Equatable, Sendable {
-  let red: Double
-  let green: Double
-  let blue: Double
-
-  init?(accent: String) {
-    let bytes = Array(accent.utf8)
-    guard bytes.count == 7, bytes[0] == UInt8(ascii: "#") else { return nil }
-    var value: UInt32 = 0
-    for byte in bytes.dropFirst() {
-      guard let digit = Self.hexDigit(byte) else { return nil }
-      value = value << 4 | UInt32(digit)
-    }
-    red = Double(value >> 16 & 0xff) / 255
-    green = Double(value >> 8 & 0xff) / 255
-    blue = Double(value & 0xff) / 255
-  }
-
-  var cgColor: CGColor { CGColor(srgbRed: red, green: green, blue: blue, alpha: 1) }
-
-  private static func hexDigit(_ byte: UInt8) -> UInt8? {
-    switch byte {
-    case UInt8(ascii: "0")...UInt8(ascii: "9"): byte - UInt8(ascii: "0")
-    case UInt8(ascii: "a")...UInt8(ascii: "f"): byte - UInt8(ascii: "a") + 10
-    case UInt8(ascii: "A")...UInt8(ascii: "F"): byte - UInt8(ascii: "A") + 10
-    default: nil
-    }
-  }
-}
