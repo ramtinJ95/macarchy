@@ -61,13 +61,9 @@ package enum ConsumerMode: Sendable {
     return kind
   }
 
-  fileprivate var requiresRenderer: Bool {
-    switch self {
-    case .manual:
-      true
-    case .runtime:
-      false
-    }
+  fileprivate var isManual: Bool {
+    if case .manual = self { return true }
+    return false
   }
 }
 
@@ -146,6 +142,24 @@ package struct ConsumerRendererRegistration: Sendable {
     self.version = version
     self.artifacts = artifacts
     self.render = render
+  }
+}
+
+extension ConsumerRendererRegistration {
+  /// One text artifact whose path is shared by its metadata and its rendered output.
+  fileprivate static func text(
+    id: String,
+    version: Int,
+    path: String,
+    requirement: RenderedArtifactRequirement = .required,
+    render: @escaping @Sendable (_ package: ThemePackage, _ generationID: String) throws -> String
+  ) -> Self {
+    Self(
+      id: id, version: version,
+      artifacts: [RenderedArtifactMetadata(path: path, requirement: requirement)]
+    ) { package, generationID, _ in
+      [ConsumerRenderedOutput(path: path, string: try render(package, generationID))]
+    }
   }
 }
 
@@ -259,10 +273,7 @@ package struct ConsumerCatalog: Sendable {
         throw ConsumerCatalogError.invalidRenderer(entry.id.rawValue)
       }
 
-      let isManual = {
-        if case .manual = entry.mode { return true }
-        return false
-      }()
+      let isManual = entry.mode.isManual
       guard isManual == (entry.manualNotice != nil) else {
         throw ConsumerCatalogError.invalidManualNotice(entry.id.rawValue)
       }
@@ -284,7 +295,7 @@ package struct ConsumerCatalog: Sendable {
       }
 
       guard let renderer = entry.renderer else {
-        if entry.mode.requiresRenderer {
+        if isManual {
           throw ConsumerCatalogError.invalidRenderer(entry.id.rawValue)
         }
         continue
@@ -369,15 +380,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .atuin,
       mode: .runtime(.atuin, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: AtuinAdapter.id,
-        version: AtuinAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: AtuinAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: AtuinAdapter.outputPath, string: AtuinAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: AtuinAdapter.id, version: AtuinAdapter.rendererVersion,
+        path: AtuinAdapter.outputPath
+      ) { package, _ in
+        AtuinAdapter.render(package: package)
       },
       dependencies: [.init(id: AtuinAdapter.id, role: .requiredAdapter)],
       setupManaged: true
@@ -385,16 +392,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .bat,
       mode: .runtime(.bat, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: TextMateThemeArtifact.rendererID,
-        version: TextMateThemeArtifact.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: TextMateThemeArtifact.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: TextMateThemeArtifact.outputPath,
-            string: TextMateThemeArtifact.render(package: package))
-        ]
+      renderer: .text(
+        id: TextMateThemeArtifact.rendererID, version: TextMateThemeArtifact.rendererVersion,
+        path: TextMateThemeArtifact.outputPath
+      ) { package, _ in
+        TextMateThemeArtifact.render(package: package)
       },
       dependencies: [.init(id: BatAdapter.id, role: .requiredAdapter)],
       setupManaged: true
@@ -407,15 +409,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .btop,
       mode: .runtime(.btop, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: BtopAdapter.id,
-        version: BtopAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: BtopAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: BtopAdapter.outputPath, string: BtopAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: BtopAdapter.id, version: BtopAdapter.rendererVersion,
+        path: BtopAdapter.outputPath
+      ) { package, _ in
+        BtopAdapter.render(package: package)
       },
       dependencies: [.init(id: BtopAdapter.id, role: .requiredAdapter)],
       setupManaged: true
@@ -429,15 +427,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .eza,
       mode: .runtime(.eza, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: EzaAdapter.id,
-        version: EzaAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: EzaAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: EzaAdapter.outputPath, string: EzaAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: EzaAdapter.id, version: EzaAdapter.rendererVersion,
+        path: EzaAdapter.outputPath
+      ) { package, _ in
+        EzaAdapter.render(package: package)
       },
       dependencies: [.init(id: EzaAdapter.id, role: .requiredAdapter)],
       setupManaged: true
@@ -445,22 +439,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .herdr,
       mode: .runtime(.herdr, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: HerdrAdapter.id,
-        version: HerdrAdapter.rendererVersion,
-        artifacts: [
-          RenderedArtifactMetadata(
-            path: HerdrAdapter.outputPath,
-            requirement: .requiredWhenRendererVersion(
-              renderer: .herdr, minimumVersion: 3
-            )
-          )
-        ]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: HerdrAdapter.outputPath, string: try HerdrAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: HerdrAdapter.id, version: HerdrAdapter.rendererVersion, path: HerdrAdapter.outputPath,
+        requirement: .requiredWhenRendererVersion(renderer: .herdr, minimumVersion: 3)
+      ) { package, _ in
+        try HerdrAdapter.render(package: package)
       },
       dependencies: [.init(id: HerdrAdapter.id, role: .requiredAdapter)],
       setupManaged: true,
@@ -469,15 +452,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .kitty,
       mode: .runtime(.kitty, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: KittyAdapter.id,
-        version: KittyAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: KittyAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: KittyAdapter.outputPath, string: KittyAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: KittyAdapter.id, version: KittyAdapter.rendererVersion,
+        path: KittyAdapter.outputPath
+      ) { package, _ in
+        KittyAdapter.render(package: package)
       },
       dependencies: [.init(id: KittyAdapter.id, role: .desktopSubstrate)],
       setupManaged: true
@@ -485,23 +464,12 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .neovim,
       mode: .runtime(.neovim, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: NeovimAdapter.id,
-        version: NeovimAdapter.rendererVersion,
-        artifacts: [
-          RenderedArtifactMetadata(
-            path: NeovimAdapter.outputPath,
-            requirement: .requiredWhenRendererVersion(
-              renderer: .neovim, minimumVersion: 4
-            )
-          )
-        ]
-      ) { package, generationID, _ in
-        [
-          ConsumerRenderedOutput(
-            path: NeovimAdapter.outputPath,
-            string: try NeovimAdapter.render(package: package, generationID: generationID))
-        ]
+      renderer: .text(
+        id: NeovimAdapter.id, version: NeovimAdapter.rendererVersion,
+        path: NeovimAdapter.outputPath,
+        requirement: .requiredWhenRendererVersion(renderer: .neovim, minimumVersion: 4)
+      ) { package, generationID in
+        try NeovimAdapter.render(package: package, generationID: generationID)
       },
       dependencies: [.init(id: NeovimAdapter.id, role: .requiredAdapter)],
       setupManaged: true,
@@ -510,15 +478,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .pi,
       mode: .runtime(.pi, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: PiAdapter.id,
-        version: PiAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: PiAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: PiAdapter.outputPath, string: try PiAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: PiAdapter.id, version: PiAdapter.rendererVersion,
+        path: PiAdapter.outputPath
+      ) { package, _ in
+        try PiAdapter.render(package: package)
       },
       dependencies: [.init(id: PiAdapter.id, role: .requiredAdapter)],
       setupManaged: true
@@ -561,20 +525,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .slack,
       mode: .manual,
-      renderer: ConsumerRendererRegistration(
-        id: SlackAdapter.id,
-        version: SlackAdapter.rendererVersion,
-        artifacts: [
-          RenderedArtifactMetadata(
-            path: SlackAdapter.outputPath,
-            requirement: .requiredWhenRendererVersion(renderer: .slack, minimumVersion: 1)
-          )
-        ]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: SlackAdapter.outputPath, string: SlackAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: SlackAdapter.id, version: SlackAdapter.rendererVersion, path: SlackAdapter.outputPath,
+        requirement: .requiredWhenRendererVersion(renderer: .slack, minimumVersion: 1)
+      ) { package, _ in
+        SlackAdapter.render(package: package)
       },
       dependencies: [.init(id: SlackAdapter.id, role: .optionalAdapter)],
       manualNotice: ConsumerManualNotice(
@@ -589,15 +544,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .spicetify,
       mode: .runtime(.spicetify, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: SpicetifyAdapter.id,
-        version: SpicetifyAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: SpicetifyAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: SpicetifyAdapter.outputPath, string: SpicetifyAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: SpicetifyAdapter.id, version: SpicetifyAdapter.rendererVersion,
+        path: SpicetifyAdapter.outputPath
+      ) { package, _ in
+        SpicetifyAdapter.render(package: package)
       },
       dependencies: [
         .init(id: SpicetifyAdapter.id, role: .requiredAdapter),
@@ -608,15 +559,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .starship,
       mode: .runtime(.starship, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: StarshipAdapter.id,
-        version: StarshipAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: StarshipAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: StarshipAdapter.outputPath, string: StarshipAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: StarshipAdapter.id, version: StarshipAdapter.rendererVersion,
+        path: StarshipAdapter.outputPath
+      ) { package, _ in
+        StarshipAdapter.render(package: package)
       },
       dependencies: [.init(id: StarshipAdapter.id, role: .requiredAdapter)],
       setupManaged: true
@@ -624,15 +571,11 @@ package struct ConsumerCatalog: Sendable {
     ConsumerCatalogEntry(
       id: .tuicr,
       mode: .runtime(.tuicr, requirement: .required),
-      renderer: ConsumerRendererRegistration(
-        id: TuicrAdapter.id,
-        version: TuicrAdapter.rendererVersion,
-        artifacts: [RenderedArtifactMetadata(path: TuicrAdapter.outputPath)]
-      ) { package, _, _ in
-        [
-          ConsumerRenderedOutput(
-            path: TuicrAdapter.outputPath, string: TuicrAdapter.render(package: package))
-        ]
+      renderer: .text(
+        id: TuicrAdapter.id, version: TuicrAdapter.rendererVersion,
+        path: TuicrAdapter.outputPath
+      ) { package, _ in
+        TuicrAdapter.render(package: package)
       },
       dependencies: [.init(id: TuicrAdapter.id, role: .requiredAdapter)],
       setupManaged: true
