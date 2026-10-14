@@ -85,3 +85,10 @@ path = "wallpapers/omarchy.webp"
 source = "Omarchy themes/tokyo-night/backgrounds/omarchy.webp at 0b3f1b7ead00ac4bcbaae8bac16bab3f7efbe516"
 author = "Omarchy contributors"
 license = "MIT (Omarchy repository)"
+
+[[backgrounds]]
+id = "liftoff"
+path = "wallpapers/0-liftoff.webp"
+source = "Omarchy themes/tokyo-night/backgrounds/0-liftoff.webp at 84cfb93959f4fe0bbb71de71593b36647d2ba78d"
+author = "Omarchy contributors"
+license = "MIT (Omarchy repository)"

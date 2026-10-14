@@ -26,7 +26,7 @@ struct BuiltInOmarchyParityTests {
   }
 
   @Test
-  func builtInBackgroundsAreExactOmarchyAssetsInOmarchyOrder() throws {
+  func builtInBackgroundsAreExactOmarchyAssetsInStableOrder() throws {
     let tokyoNight = try repository.package(id: "tokyo-night")
     #expect(
       tokyoNight.backgrounds.map(\.path) == [
@@ -38,6 +38,7 @@ struct BuiltInOmarchyParityTests {
         "wallpapers/5-oma-cityscape.jpg",
         "wallpapers/6-oma.webp",
         "wallpapers/omarchy.webp",
+        "wallpapers/0-liftoff.webp",
       ])
     #expect(
       tokyoNight.backgrounds.map { sha256Digest(tokyoNight.data(for: $0)) } == [
@@ -49,7 +50,20 @@ struct BuiltInOmarchyParityTests {
         "sha256:22e1d639722b33fa6f0d3ac2733450b4bae961b481f5665cb16397bc5f714e5c",
         "sha256:1dae1555422c3713381f09dd20b8ed91eaaf42cf73e73bfe255dfefe89b1d004",
         "sha256:ef9c6d4c7763a1d56e97e4e5300ffd45d10995e35273e8b16d3a1e4b36a45566",
+        "sha256:c7e65d41f1a10e678d8fde799e4f01e81e1c9a95a7f1cb7b52e5f81ca7007e72",
       ])
+
+    #expect(
+      tokyoNight.backgrounds.map(\.id) == [
+        "default", "quattro", "swirl-buck", "sunset-lake", "omakub", "oma-cityscape",
+        "oma", "omarchy", "liftoff",
+      ])
+    let liftoff = try #require(tokyoNight.background(id: "liftoff"))
+    #expect(liftoff.format == .webp)
+    #expect(
+      liftoff.source
+        == "Omarchy themes/tokyo-night/backgrounds/0-liftoff.webp at 84cfb93959f4fe0bbb71de71593b36647d2ba78d"
+    )
 
     let kanagawa = try repository.package(id: "kanagawa-wave")
     #expect(
