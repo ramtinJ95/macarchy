@@ -22,12 +22,14 @@ public struct ImportedThemePreviewLoader: Sendable {
 
   package func load(metadata package: ThemePackageMetadata) throws -> [ThemePreviewAsset] {
     let reportURL = package.packageURL.appending(path: "import.json")
+    func failure(field: String? = nil, message: String) -> ThemeDiagnostic {
+      ThemeDiagnostic(location: .init(file: reportURL), field: field, message: message)
+    }
     let packageDescriptor = package.packageURL.path.withCString {
       Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
     }
     guard packageDescriptor >= 0 else {
-      throw ThemeDiagnostic(
-        location: .init(file: reportURL),
+      throw failure(
         message: "Cannot open imported theme package: \(String(cString: strerror(errno)))"
       )
     }
@@ -38,8 +40,7 @@ public struct ImportedThemePreviewLoader: Sendable {
     }
     guard reportDescriptor >= 0 else {
       if errno == ENOENT { return [] }
-      throw ThemeDiagnostic(
-        location: .init(file: reportURL),
+      throw failure(
         message: "Cannot open Omarchy import report: \(String(cString: strerror(errno)))"
       )
     }
@@ -55,14 +56,10 @@ public struct ImportedThemePreviewLoader: Sendable {
         ).data
       )
     } catch {
-      throw ThemeDiagnostic(
-        location: .init(file: reportURL),
-        message: "Cannot read Omarchy import report: \(error)"
-      )
+      throw failure(message: "Cannot read Omarchy import report: \(error)")
     }
     guard report.schemaVersion == OmarchyThemeConversionReport.currentSchemaVersion else {
-      throw ThemeDiagnostic(
-        location: .init(file: reportURL),
+      throw failure(
         field: "schema_version",
         message:
           "Unsupported Omarchy import report schema version \(report.schemaVersion); expected "
@@ -70,15 +67,13 @@ public struct ImportedThemePreviewLoader: Sendable {
       )
     }
     guard report.themeID == package.id else {
-      throw ThemeDiagnostic(
-        location: .init(file: reportURL),
+      throw failure(
         field: "theme_id",
         message: "Omarchy import report theme '\(report.themeID)' does not match '\(package.id)'"
       )
     }
     guard report.previews.count <= maximumPreviewCount else {
-      throw ThemeDiagnostic(
-        location: .init(file: reportURL),
+      throw failure(
         field: "previews",
         message: "Imported preview inventory exceeds the \(maximumPreviewCount)-entry limit"
       )
@@ -93,8 +88,7 @@ public struct ImportedThemePreviewLoader: Sendable {
       )
     }
     guard previewsDescriptor >= 0 else {
-      throw ThemeDiagnostic(
-        location: .init(file: reportURL),
+      throw failure(
         field: "previews.package_path",
         message: "Cannot open imported previews directory: \(String(cString: strerror(errno)))"
       )
@@ -113,8 +107,7 @@ public struct ImportedThemePreviewLoader: Sendable {
         !preview.sourcePath.contains("\0"),
         sourceComponents.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
       else {
-        throw ThemeDiagnostic(
-          location: .init(file: reportURL),
+        throw failure(
           field: "previews.source_path",
           message: "Imported preview source path must be a safe relative path"
         )
@@ -130,8 +123,7 @@ public struct ImportedThemePreviewLoader: Sendable {
         !preview.packagePath.contains("\0"),
         packageComponents.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
       else {
-        throw ThemeDiagnostic(
-          location: .init(file: reportURL),
+        throw failure(
           field: "previews.package_path",
           message: "Imported preview must name one file directly under previews/"
         )
@@ -140,15 +132,13 @@ public struct ImportedThemePreviewLoader: Sendable {
         let format = ThemeBackgroundFormat(
           pathExtension: URL(filePath: preview.packagePath).pathExtension)
       else {
-        throw ThemeDiagnostic(
-          location: .init(file: reportURL),
+        throw failure(
           field: "previews.package_path",
           message: "Imported preview has an unsupported image extension"
         )
       }
       guard sourceComponents.last == packageComponents[1] else {
-        throw ThemeDiagnostic(
-          location: .init(file: reportURL),
+        throw failure(
           field: "previews.source_path",
           message: "Imported preview source and package filenames must match"
         )
@@ -157,8 +147,7 @@ public struct ImportedThemePreviewLoader: Sendable {
       let filename = String(packageComponents[1])
       let collisionKey = filename.precomposedStringWithCanonicalMapping.lowercased()
       guard filenames.insert(collisionKey).inserted else {
-        throw ThemeDiagnostic(
-          location: .init(file: reportURL),
+        throw failure(
           field: "previews.package_path",
           message: "Imported preview path '\(preview.packagePath)' is listed more than once"
         )
@@ -168,8 +157,7 @@ public struct ImportedThemePreviewLoader: Sendable {
         openat(previewsDescriptor, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
       }
       guard descriptor >= 0 else {
-        throw ThemeDiagnostic(
-          location: .init(file: reportURL),
+        throw failure(
           field: "previews.package_path",
           message:
             "Cannot open imported preview '\(preview.packagePath)': "
@@ -190,8 +178,7 @@ public struct ImportedThemePreviewLoader: Sendable {
             maximumTotalBytes.isMultiple(of: Int64(unit))
             ? "\(maximumTotalBytes / Int64(unit)) MiB"
             : "\(maximumTotalBytes) bytes"
-          throw ThemeDiagnostic(
-            location: .init(file: reportURL),
+          throw failure(
             field: "previews",
             message: "Imported previews exceed the \(limit) aggregate limit"
           )
@@ -207,8 +194,7 @@ public struct ImportedThemePreviewLoader: Sendable {
       } catch let diagnostic as ThemeDiagnostic {
         throw diagnostic
       } catch {
-        throw ThemeDiagnostic(
-          location: .init(file: reportURL),
+        throw failure(
           field: "previews.package_path",
           message: "Cannot load imported preview '\(preview.packagePath)': \(error)"
         )

@@ -221,12 +221,6 @@ public struct OmarchyThemeConverter: Sendable {
     let hasLightModeMarker: Bool
   }
 
-  private struct ImportTarget {
-    let packagePath: String
-    let isBackground: Bool
-    let format: ThemeBackgroundFormat
-  }
-
   private static func inventory(checkout: URL) throws -> [InventoryFile] {
     var files: [InventoryFile] = []
     try walk(directory: checkout, relativeDirectory: "", files: &files)
@@ -313,33 +307,19 @@ public struct OmarchyThemeConverter: Sendable {
 
       let parts = file.path.split(separator: "/")
       let ext = URL(filePath: file.path).pathExtension.lowercased()
-      let supportedFormat = ThemeBackgroundFormat(pathExtension: ext)
-      let target: ImportTarget?
-      if parts.count == 2, parts[0] == "backgrounds", let supportedFormat {
-        target = ImportTarget(
-          packagePath: "backgrounds/\(parts[1])",
-          isBackground: true,
-          format: supportedFormat
-        )
-      } else if parts.count == 1, parts[0].lowercased() == "preview.\(ext)",
-        let supportedFormat
-      {
-        target = ImportTarget(
-          packagePath: "previews/\(parts[0])",
-          isBackground: false,
-          format: supportedFormat
-        )
-      } else if parts.count == 2, parts[0] == "preview", let supportedFormat {
-        target = ImportTarget(
-          packagePath: "previews/\(parts[1])",
-          isBackground: false,
-          format: supportedFormat
-        )
-      } else {
-        target = nil
-      }
+      let isBackground = parts.count == 2 && parts[0] == "backgrounds"
+      let packagePath: String? =
+        if isBackground {
+          "backgrounds/\(parts[1])"
+        } else if parts.count == 1, parts[0].lowercased() == "preview.\(ext)" {
+          "previews/\(parts[0])"
+        } else if parts.count == 2, parts[0] == "preview" {
+          "previews/\(parts[1])"
+        } else {
+          nil
+        }
 
-      guard let target else {
+      guard let packagePath, let format = ThemeBackgroundFormat(pathExtension: ext) else {
         let reason: OmarchyIgnoredFileReason
         if parts.first == "backgrounds", parts.count > 2 {
           reason = .nestedBackgroundFile
@@ -364,7 +344,7 @@ public struct OmarchyThemeConverter: Sendable {
         continue
       }
 
-      let collisionKey = target.packagePath.precomposedStringWithCanonicalMapping.lowercased()
+      let collisionKey = packagePath.precomposedStringWithCanonicalMapping.lowercased()
       guard outputKeys.insert(collisionKey).inserted else {
         throw OmarchyThemeConversionError.unsafeEntry(
           path: file.path,
@@ -373,11 +353,11 @@ public struct OmarchyThemeConverter: Sendable {
       }
       let image = try loadImage(
         sourcePath: file.path,
-        packagePath: target.packagePath,
-        expectedFormat: target.format,
+        packagePath: packagePath,
+        expectedFormat: format,
         checkout: checkout
       )
-      if target.isBackground {
+      if isBackground {
         backgrounds.append(image)
       } else {
         previews.append(image)
@@ -566,10 +546,7 @@ public struct OmarchyThemeConverter: Sendable {
   }
 
   private static func writeReport(_ report: OmarchyThemeConversionReport, to url: URL) throws {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var data = try encoder.encode(report)
-    data.append(0x0a)
+    let data = try prettyJSONDocument(report)
     guard data.count <= OmarchyThemeConversionReport.maximumEncodedSize else {
       throw OmarchyThemeConversionError.packageFilesystem(
         "generated import.json exceeds the 32 MiB report limit"

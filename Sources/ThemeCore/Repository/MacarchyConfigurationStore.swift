@@ -133,13 +133,10 @@ package struct MacarchyConfigurationStore: Sendable {
     }
 
     let resolved = configurationURL.resolvingSymlinksInPath().standardizedFileURL
-    let data: Data
+    let text: String
     do {
-      data = try BoundedRegularFile.read(at: resolved).data
+      text = try BoundedRegularFile.readUTF8(at: resolved)
     } catch {
-      throw MacarchyConfigurationError.cannotRead(configurationURL)
-    }
-    guard let text = String(data: data, encoding: .utf8) else {
       throw MacarchyConfigurationError.cannotRead(configurationURL)
     }
 

@@ -113,14 +113,7 @@ package struct OmarchyThemePackageInstallation: Sendable {
   }
 
   fileprivate static func swap(_ first: URL, _ second: URL, operation: String) throws {
-    let result = first.path.withCString { firstPath in
-      second.path.withCString { secondPath in
-        Darwin.renamex_np(firstPath, secondPath, UInt32(RENAME_SWAP))
-      }
-    }
-    guard result == 0 else {
-      throw OmarchyThemePackageInstallationError.publication(operation: operation, code: errno)
-    }
+    try renamex(first, second, flags: UInt32(RENAME_SWAP), operation: operation)
   }
 
   fileprivate static func renameExclusive(
@@ -128,9 +121,18 @@ package struct OmarchyThemePackageInstallation: Sendable {
     _ destination: URL,
     operation: String
   ) throws {
+    try renamex(source, destination, flags: UInt32(RENAME_EXCL), operation: operation)
+  }
+
+  private static func renamex(
+    _ source: URL,
+    _ destination: URL,
+    flags: UInt32,
+    operation: String
+  ) throws {
     let result = source.path.withCString { sourcePath in
       destination.path.withCString { destinationPath in
-        Darwin.renamex_np(sourcePath, destinationPath, UInt32(RENAME_EXCL))
+        Darwin.renamex_np(sourcePath, destinationPath, flags)
       }
     }
     guard result == 0 else {

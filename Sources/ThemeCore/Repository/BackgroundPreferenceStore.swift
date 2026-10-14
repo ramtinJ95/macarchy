@@ -104,10 +104,7 @@ package struct BackgroundPreferenceStore: Sendable {
     )
     defer { try? FileManager.default.removeItem(at: temporaryURL) }
 
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var data = try encoder.encode(BackgroundPreferenceDocument(selections: selections))
-    data.append(0x0a)
+    let data = try prettyJSONDocument(BackgroundPreferenceDocument(selections: selections))
     guard data.count <= BoundedRegularFile.maximumSize else {
       throw BackgroundPreferenceStoreError.invalid("exceeds the 1 MiB file limit")
     }
