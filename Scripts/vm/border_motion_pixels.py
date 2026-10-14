@@ -54,11 +54,11 @@ def _runs(row, predicate, min_length):
     return runs
 
 
-def detect_row(row, min_green=MIN_GREEN):
+def detect_row(row):
     if len(row) % 3:
         raise AnalysisError('RGB row length is not a multiple of 3')
     out = dict(valid=False, reason=None, left=None, right=None, left_gap=None, right_gap=None)
-    greens = _runs(row, _green, min_green)
+    greens = _runs(row, _green, MIN_GREEN)
     widest = max((b - a for a, b in greens), default=None)
     best = [run for run in greens if run[1] - run[0] == widest]
     if len(best) != 1:

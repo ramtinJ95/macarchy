@@ -34,12 +34,6 @@ def _v():
     return verify
 
 
-def _get(record, *keys):
-    for key in keys:
-        record = record[key] if isinstance(record, dict) else getattr(record, key)
-    return record
-
-
 def _text(value):
     if isinstance(value, bytes):
         return value.decode('utf-8', 'replace')
@@ -177,15 +171,10 @@ def _context(source, scratch, bin_dir):
 
 def prepare(client, record, evidence, report):
     v = _v()
-    source = str(_get(record, 'guest', 'source'))
+    source = str(record['guest']['source'])
     scratch = source + '/' + pathlib.Path(evidence).name
     state = scratch + '/state'
     section = _section(report)
-    for key in ('session_id', 'run_id'):
-        try:
-            section[key] = _get(record, key)
-        except (KeyError, AttributeError):
-            pass
 
     def sh(name, command, **kwargs):
         return run(client, evidence, report, name, command, **kwargs)
@@ -297,7 +286,7 @@ def _prior(record, evidence, source):
 def preparation(client, record, evidence, report):
     '''Reuse the newest fully prepared earlier report after live guest checks; else prepare fresh.'''
     v, section = _v(), _section(report)
-    source = str(_get(record, 'guest', 'source'))
+    source = str(record['guest']['source'])
     name, old, ctx, report_sha, rejected = _prior(record, evidence, source)
     section['preparation_rejected'] = rejected
     if name is None:
@@ -358,9 +347,8 @@ def build_candidate(client, ctx, evidence, report, run_id, name):
     if candidate.get('run') != run_id or candidate.get('status') != 'ready':
         raise v.Blocked('candidate %s is not a ready session of %s' % (name, run_id))
     v.guest_identity(client, candidate)
-    swift = 'cd %s && env DEVELOPER_DIR=%s swift build -c release' % (
-        q(source), q('/Library/Developer/CommandLineTools'))
-    for product in ('macarchy', 'macarchy-focus-ring'):
+    swift = 'cd %s && env %s swift build -c release' % (q(source), DEV)
+    for product in PRODUCTS:
         sh('candidate-build-' + product, swift + ' --product ' + q(product),
            timeout=BUILD_TIMEOUT)
     lines = sh('candidate-bin-path', swift + ' --show-bin-path', timeout=600,
@@ -368,7 +356,7 @@ def build_candidate(client, ctx, evidence, report, run_id, name):
     bin_dir = lines[-1] if lines else ''
     if not bin_dir.startswith(source + '/.build/') or '..' in bin_dir.split('/'):
         raise v.Blocked('candidate-bin-path: %r is outside %s/.build' % (bin_dir, source))
-    paths = {p: bin_dir + '/' + p for p in ('macarchy', 'macarchy-focus-ring')}
+    paths = {p: bin_dir + '/' + p for p in PRODUCTS}
     sh('candidate-regular-files', ' && '.join('test -f %s && test ! -L %s' % (q(p), q(p))
                                               for p in paths.values()), blocked=True)
     digests = _sha256(sh, 'candidate-sha256', tuple(paths.values()))
@@ -390,7 +378,6 @@ def build_current_fixture(client, ctx, evidence, report):
 
     Product binaries come from candidate_build when present, otherwise the prepared snapshot;
     only the fixture is this harness version.'''
-    import base64
     import lab
 
     def sh(n, command, **kwargs):
@@ -406,8 +393,8 @@ def build_current_fixture(client, ctx, evidence, report):
     sh('harness-mkdir', new_dir % (q(harness), q(harness), q(harness)), blocked=True)
     sh('harness-upload', 'umask 077 && base64 -D > %s' % q(src),
        data=base64.b64encode(raw).decode('ascii'))
-    sh('harness-build', 'umask 077 && env DEVELOPER_DIR=%s swiftc -O -parse-as-library -o %s %s'
-       % (q('/Library/Developer/CommandLineTools'), q(out), q(src)), timeout=600)
+    sh('harness-build', 'umask 077 && env %s swiftc -O -parse-as-library -o %s %s'
+       % (DEV, q(out), q(src)), timeout=600)
     digests = _sha256(sh, 'harness-sha256', (src, out))
     source = hashlib.sha256(raw).hexdigest()
     if digests[src] != source:
@@ -426,8 +413,6 @@ def _rect(f):
 
 
 def _borders_case(v, w, s, n, renderer, key):
-    import json
-    import time
     checks, out, pv, h, last = [], {}, None, None, n - 1
     scratch = s.ctx['work'] + '/' + key
     motion = n == 1 and bool(s.ctx.get('border_motion'))
@@ -546,12 +531,8 @@ def _update_driver(rep, motion):
 
 
 def run_journey(client, record, evidence, report, run_id, border_count=None):
-    import hashlib
-    import json
-    from pathlib import Path
-
     import border_workload as w
-    v, ev, here = _v(), Path(evidence), Path(__file__).resolve().parent
+    v, ev, here = _v(), pathlib.Path(evidence), pathlib.Path(__file__).resolve().parent
     report['not_covered'] = ['physical Mac hardware/GPU (Tart guest only)', 'multiple displays',
                              'manual Spaces/other desktops (native fullscreen is asserted only in a completed journey)',
                              'real third-party apps (fixture windows only)']
