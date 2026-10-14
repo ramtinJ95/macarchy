@@ -64,34 +64,39 @@ struct Borders: ParsableCommand {
       try emit(.plan(palette, seconds: seconds))
       if dryRun { return }
 
-      let events: [BordersPreviewEvent]
-      do {
-        let interrupted = Mutex(false)
-        let handledSignals: [Int32] = [SIGINT, SIGTERM, SIGHUP]
-        let priorHandlers = handledSignals.map { Darwin.signal($0, SIG_IGN) }
-        let signals = handledSignals.map { number in
-          let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-          source.setEventHandler { interrupted.withLock { $0 = true } }
-          source.resume()
-          return source
-        }
-        defer {
-          for source in signals { source.cancel() }
-          for (number, handler) in zip(handledSignals, priorHandlers) {
-            Darwin.signal(number, handler)
-          }
-        }
-        // Never write to stdout while owning the child: a closed or stalled
-        // output pipe must not bypass cleanup or extend the visible preview.
-        events = try runner.run(
+      // Never write to stdout while owning the child: a closed or stalled
+      // output pipe must not bypass cleanup or extend the visible preview.
+      let events = try withPreviewStopSignals { received in
+        try runner.run(
           initial: palette,
           seconds: seconds,
-          shouldStop: { interrupted.withLock { $0 } }
+          shouldStop: { received() != nil }
         )
       }
       for event in events { try emit(event) }
     }
   }
+}
+
+/// Ignores SIGINT/SIGTERM/SIGHUP while `body` owns a preview child, exposing the first
+/// one received; the prior handlers are restored after `body` and its cleanup return.
+func withPreviewStopSignals<T>(_ body: (_ received: () -> Int32?) throws -> T) rethrows -> T {
+  let received = Mutex<Int32?>(nil)
+  let handledSignals: [Int32] = [SIGINT, SIGTERM, SIGHUP]
+  let priorHandlers = handledSignals.map { Darwin.signal($0, SIG_IGN) }
+  let signals = handledSignals.map { number in
+    let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
+    source.setEventHandler { received.withLock { $0 = $0 ?? number } }
+    source.resume()
+    return source
+  }
+  defer {
+    for source in signals { source.cancel() }
+    for (number, handler) in zip(handledSignals, priorHandlers) {
+      Darwin.signal(number, handler)
+    }
+  }
+  return try body { received.withLock { $0 } }
 }
 
 struct BordersPreviewEvent: Encodable {

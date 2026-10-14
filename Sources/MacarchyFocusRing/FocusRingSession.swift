@@ -136,7 +136,7 @@ final class FocusRingSession {
       return hide("unknown-space-type-\(type)")
     }
     let target = try focus.firstSuitableWindow(in: context, excluding: ownID)
-    try subscribe(focus.observedWindowIDs.filter { $0 != ownID }, excluding: ownID)
+    try subscribe(focus.observedWindowIDs, excluding: ownID)
     guard let target else { return hide("no-eligible-window") }
     (cachedTarget, cachedConnection) = (target, context.ownConnection)
     try updateGeometry(target, connection: context.ownConnection)
@@ -314,15 +314,7 @@ final class FocusRingSession {
     let reason = stopReason ?? "unknown"
     if let failure { Self.writeError("focus ring failed: \(failure)") }
     do {
-      let summaryParts: [String] = [
-        "Focus ring \(outcome) (\(reason)) after \(Int(elapsed))s, ",
-        "\(diagnostics.observations.count) state changes, \(eventCount) events, ",
-        "\(fullRefreshCount) full/\(geometryRefreshCount) geometry/",
-        "\(watchdogRefreshCount) watchdog refreshes; target is ",
-        "\(FocusTargetPolicy.selectionLabel), event-driven with 2s reconciliation, ",
-        "not exact focus.",
-      ]
-      var data = Data(summaryParts.joined().utf8)
+      var data: Data
       if options.json {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
@@ -333,6 +325,16 @@ final class FocusRingSession {
             droppedObservations: diagnostics.dropped, eventCount: eventCount,
             fullRefreshCount: fullRefreshCount, geometryRefreshCount: geometryRefreshCount,
             watchdogRefreshCount: watchdogRefreshCount, directMoveCount: ownMoveCount))
+      } else {
+        let summaryParts: [String] = [
+          "Focus ring \(outcome) (\(reason)) after \(Int(elapsed))s, ",
+          "\(diagnostics.observations.count) state changes, \(eventCount) events, ",
+          "\(fullRefreshCount) full/\(geometryRefreshCount) geometry/",
+          "\(watchdogRefreshCount) watchdog refreshes; target is ",
+          "\(FocusTargetPolicy.selectionLabel), event-driven with 2s reconciliation, ",
+          "not exact focus.",
+        ]
+        data = Data(summaryParts.joined().utf8)
       }
       data.append(0x0A)
       try FileHandle.standardOutput.write(contentsOf: data)

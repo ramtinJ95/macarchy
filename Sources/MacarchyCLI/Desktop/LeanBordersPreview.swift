@@ -1,7 +1,6 @@
 import ArgumentParser
 import Darwin
 import Foundation
-import Synchronization
 import ThemeCore
 
 enum BordersPreviewRenderer: String, CaseIterable, ExpressibleByArgument {
@@ -26,42 +25,26 @@ enum LeanBordersPreview {
 
   /// Returns the handled signal that ended supervision, or nil after a clean exit.
   static func supervise(helper: URL, arguments: [String], limit: TimeInterval) throws -> Int32? {
-    let received = Mutex<Int32?>(nil)
-    let handledSignals: [Int32] = [SIGINT, SIGTERM, SIGHUP]
-    let priorHandlers = handledSignals.map { Darwin.signal($0, SIG_IGN) }
-    let signals = handledSignals.map { number in
-      let source = DispatchSource.makeSignalSource(signal: number, queue: .global())
-      source.setEventHandler { received.withLock { $0 = $0 ?? number } }
-      source.resume()
-      return source
-    }
-    defer {
-      for source in signals { source.cancel() }
-      for (number, handler) in zip(handledSignals, priorHandlers) {
-        Darwin.signal(number, handler)
+    try withPreviewStopSignals { received -> Int32? in
+      // The helper reports only after hiding and closing its window, so it may
+      // share stdout; a stalled reader is bounded by the deadline below.
+      let process = try BordersPreviewProcess.start(
+        executableURL: helper, arguments: arguments, standardOutput: .standardOutput)
+      // Stops the owned child on every exit path before the signal handlers are restored.
+      defer { process.stop() }
+      let deadline = ProcessInfo.processInfo.systemUptime + limit
+      while process.isRunning() {
+        if let signal = received() { return signal }
+        guard ProcessInfo.processInfo.systemUptime < deadline else {
+          throw LeanBordersPreviewError.didNotExit(limit)
+        }
+        Thread.sleep(forTimeInterval: 0.1)
       }
+      if let signal = received() { return signal }
+      let status = process.terminationStatus()
+      guard status == 0 else { throw LeanBordersPreviewError.exited(status) }
+      return nil
     }
-    // The helper reports only after hiding and closing its window, so it may
-    // share stdout; a stalled reader is bounded by the deadline below.
-    let process = try BordersPreviewProcess.start(
-      executableURL: helper, arguments: arguments, standardOutput: .standardOutput)
-    defer { process.stop() }
-    let deadline = ProcessInfo.processInfo.systemUptime + limit
-    while process.isRunning() {
-      if let signal = received.withLock({ $0 }) {
-        process.stop()
-        return signal
-      }
-      guard ProcessInfo.processInfo.systemUptime < deadline else {
-        process.stop()
-        throw LeanBordersPreviewError.didNotExit(limit)
-      }
-      Thread.sleep(forTimeInterval: 0.1)
-    }
-    if let signal = received.withLock({ $0 }) { return signal }
-    let status = process.terminationStatus()
-    guard status == 0 else { throw LeanBordersPreviewError.exited(status) }
-    return nil
   }
 }
 
