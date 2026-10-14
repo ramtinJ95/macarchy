@@ -203,28 +203,17 @@ public struct OmarchyThemeStager: Sendable {
       "SSH_ASKPASS": "/usr/bin/false",
       "XDG_CONFIG_HOME": isolatedHome.path,
     ]
-    let staged: StagedOmarchyTheme
-    do {
-      let clone: ProcessResult
+    func runGit(
+      _ arguments: [String],
+      timeout: TimeInterval,
+      failure: (String) -> OmarchyThemeStagingError
+    ) throws -> ProcessResult {
       do {
-        clone = try processRunner.run(
+        return try processRunner.run(
           ProcessRequest(
             executableURL: Self.gitExecutableURL,
-            arguments: [
-              "-c", "core.hooksPath=/dev/null",
-              "-c", "protocol.ext.allow=never",
-              "-c", "protocol.file.allow=never",
-              "clone",
-              "--quiet",
-              "--depth=1",
-              "--single-branch",
-              "--no-tags",
-              "--no-recurse-submodules",
-              "--",
-              parsedSource.repositoryURL.absoluteString,
-              checkoutURL.path,
-            ],
-            timeout: 120,
+            arguments: ["-c", "core.hooksPath=/dev/null"] + arguments,
+            timeout: timeout,
             environmentOverrides: environment,
             environmentRemovals: Self.gitEnvironmentRemovals
           )
@@ -232,34 +221,39 @@ public struct OmarchyThemeStager: Sendable {
       } catch is CancellationError {
         throw CancellationError()
       } catch {
-        throw OmarchyThemeStagingError.fetchFailed(Self.bounded(error))
+        throw failure(Self.bounded(error))
       }
+    }
+    let staged: StagedOmarchyTheme
+    do {
+      let clone = try runGit(
+        [
+          "-c", "protocol.ext.allow=never",
+          "-c", "protocol.file.allow=never",
+          "clone",
+          "--quiet",
+          "--depth=1",
+          "--single-branch",
+          "--no-tags",
+          "--no-recurse-submodules",
+          "--",
+          parsedSource.repositoryURL.absoluteString,
+          checkoutURL.path,
+        ],
+        timeout: 120,
+        failure: OmarchyThemeStagingError.fetchFailed
+      )
       guard clone.terminationStatus == 0 else {
         throw OmarchyThemeStagingError.fetchFailed(Self.bounded(clone.output))
       }
 
       try Self.validateStagingBounds(at: sessionRoot)
 
-      let resolution: ProcessResult
-      do {
-        resolution = try processRunner.run(
-          ProcessRequest(
-            executableURL: Self.gitExecutableURL,
-            arguments: [
-              "-c", "core.hooksPath=/dev/null",
-              "-C", checkoutURL.path,
-              "rev-parse", "--verify", "HEAD^{commit}",
-            ],
-            timeout: 10,
-            environmentOverrides: environment,
-            environmentRemovals: Self.gitEnvironmentRemovals
-          )
-        )
-      } catch is CancellationError {
-        throw CancellationError()
-      } catch {
-        throw OmarchyThemeStagingError.commitResolutionFailed(Self.bounded(error))
-      }
+      let resolution = try runGit(
+        ["-C", checkoutURL.path, "rev-parse", "--verify", "HEAD^{commit}"],
+        timeout: 10,
+        failure: OmarchyThemeStagingError.commitResolutionFailed
+      )
       guard resolution.terminationStatus == 0, Self.isSHA1Commit(resolution.output) else {
         throw OmarchyThemeStagingError.commitResolutionFailed(
           Self.bounded(resolution.output))
@@ -276,12 +270,7 @@ public struct OmarchyThemeStager: Sendable {
       throw error
     }
 
-    let callbackResult: Result<Output, Error>
-    do {
-      callbackResult = .success(try operation(staged))
-    } catch {
-      callbackResult = .failure(error)
-    }
+    let callbackResult = Result { try operation(staged) }
     do {
       try FileManager.default.removeItem(at: sessionRoot)
     } catch {
