@@ -106,7 +106,7 @@ final class FocusRingSession {
       running = false
       stop("run-loop-exit", code: 1, error: "AppKit run loop ended early")
     }
-    sources.forEach { $0.cancel() }
+    for source in sources { source.cancel() }
     return report(elapsed: ProcessInfo.processInfo.systemUptime - start)
   }
 
