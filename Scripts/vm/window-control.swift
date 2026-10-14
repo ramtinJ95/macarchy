@@ -147,6 +147,8 @@ func evenPixels(_ value: CGFloat) -> Int { max(2, Int((value / 2).rounded()) * 2
 
 @MainActor
 func record(_ args: [String]) async throws {
+  // Requested capture pacing, not a measured delivery rate.
+  let requestedFPS: Int32 = 60
   guard args.count == 6, let pid = Int32(args[1]), pid > 0,
     let seconds = Int(args[4]), (2...180).contains(seconds)
   else { throw ControlError.invalidArguments }
@@ -169,7 +171,7 @@ func record(_ args: [String]) async throws {
   config.capturesAudio = false
   config.captureMicrophone = false
   config.showsCursor = false
-  config.minimumFrameInterval = CMTime(value: 1, timescale: args[0] == "record60" ? 60 : 30)
+  config.minimumFrameInterval = CMTime(value: 1, timescale: requestedFPS)
   config.width = evenPixels(width * shrink)
   config.height = evenPixels(height * shrink)
   let recording = SCRecordingOutputConfiguration()
@@ -242,7 +244,7 @@ func record(_ args: [String]) async throws {
     "pid": pid, "window_id": window,
     "bounds": [bounds.minX, bounds.minY, bounds.width, bounds.height],
     "output": url.path, "duration": duration, "frame_count": frames, "nominal_fps": fps,
-    "requested_fps": args[0] == "record60" ? 60 : 30,
+    "requested_fps": requestedFPS,
     "width": Int(size.width), "height": Int(size.height), "capture_scope": "owned-window-only",
   ])
 }
@@ -251,7 +253,7 @@ do {
   let args = Array(CommandLine.arguments.dropFirst())
   if args == ["preflight"] {
     try emit(permissions())
-  } else if args.first == "record" || args.first == "record60" {
+  } else if args.first == "record" {
     // Only record runs async. ScreenCaptureKit's status item creates an NSWindow,
     // which AppKit requires on the physical main thread; dispatchMain() terminates
     // that thread, so the window landed on a background thread and crashed. Run

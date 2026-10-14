@@ -2,6 +2,7 @@
 # theme via the supported environment/theme CLI, and the pinned incumbent build.
 # Called by verify.py's closed 'borders' journey; verify is imported lazily.
 import base64
+import functools
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ GUEST_USER = 'omarchy'
 ZSHRC = '/Users/omarchy/.zshrc'
 THEME = 'catppuccin-mocha'
 BUILD_TIMEOUT = 2400
+RECORD_SECONDS = 20
 INCUMBENT_URL = 'https://github.com/FelixKratz/JankyBorders.git'
 INCUMBENT_COMMIT = 'a7297ca7d1933f3a30b12e8f10750e8d84eeee1e'  # tag 1.9.0
 RECIPE = 'borders-prepare-v1'  # reuse guard for future reports; legacy reports lack it
@@ -70,6 +72,31 @@ def run(client, evidence, report, name, command, timeout=30, data=None, blocked=
         kind = v.Blocked if blocked or error is not None else v.Failed
         raise kind('%s failed (exit %s%s); see %s' % (name, code, ', ' + error if error else '', log))
     return out
+
+
+def _runner(client, evidence, report):
+    return functools.partial(run, client, evidence, report)
+
+
+def _absent(path):
+    return 'test ! -e %s && test ! -L %s' % (q(path), q(path))
+
+
+def _regular(paths):
+    return ' && '.join('test -f %s && test ! -L %s' % (q(p), q(p)) for p in paths)
+
+
+def _build_products(sh, source, label):
+    '''Release-build PRODUCTS in the guest source; returns its bin dir, pinned under source/.build.'''
+    swift = 'cd %s && env %s swift build -c release' % (q(source), DEV)
+    for product in PRODUCTS:
+        sh(label + 'build-' + product, swift + ' --product ' + q(product), timeout=BUILD_TIMEOUT)
+    lines = sh(label + 'bin-path', swift + ' --show-bin-path', timeout=BUILD_TIMEOUT,
+               blocked=True).strip().splitlines()
+    bin_dir = lines[-1].strip() if lines else ''
+    if not bin_dir.startswith(source + '/.build/') or '..' in bin_dir.split('/'):
+        raise _v().Blocked('%sbin-path: %r is outside %s/.build' % (label, bin_dir, source))
+    return bin_dir
 
 
 def cli(binary, *args):
@@ -173,30 +200,16 @@ def prepare(client, record, evidence, report):
     v = _v()
     source = str(record['guest']['source'])
     scratch = source + '/' + pathlib.Path(evidence).name
-    state = scratch + '/state'
     section = _section(report)
+    sh = _runner(client, evidence, report)
 
-    def sh(name, command, **kwargs):
-        return run(client, evidence, report, name, command, **kwargs)
-
-    sh('scratch-absent', 'test ! -e %s && test ! -L %s' % (q(scratch), q(scratch)), blocked=True)
-    sh('zshrc-absent', 'test ! -e %s && test ! -L %s' % (q(ZSHRC), q(ZSHRC)), blocked=True)
+    sh('scratch-absent', _absent(scratch), blocked=True)
+    sh('zshrc-absent', _absent(ZSHRC), blocked=True)
     sh('scratch-create', 'mkdir -m 0700 %s && mkdir -m 0700 %s %s'
        % (q(scratch), q(scratch + '/consumers'), q(scratch + '/home')))
 
-    in_source = 'cd %s && %s ' % (q(source), DEV)
-    for product in PRODUCTS:
-        sh('build-' + product, in_source + 'swift build -c release --product ' + product,
-           timeout=BUILD_TIMEOUT)
-    lines = sh('bin-path', in_source + 'swift build -c release --show-bin-path',
-               timeout=BUILD_TIMEOUT).strip().splitlines()
-    if not lines:
-        raise v.Failed('bin-path: empty output')
-    bin_dir = lines[-1].strip()
-    if not bin_dir.startswith(source + '/.build/'):
-        raise v.Blocked('Release binary path escaped the snapshotted guest source')
-    binary, helper = bin_dir + '/macarchy', bin_dir + '/macarchy-focus-ring'
-    fixture = scratch + '/border-fixture'
+    context = _context(source, scratch, _build_products(sh, source, ''))
+    binary, helper, fixture = context['binary'], context['helper'], context['fixture']
     sh('build-border-fixture', '%s swiftc -O -parse-as-library %s -o %s' % (
         DEV, q(source + '/Scripts/vm/border-fixture.swift'), q(fixture)), timeout=BUILD_TIMEOUT)
     digests = _sha256(sh, 'artifact-sha256', (binary, helper, fixture))
@@ -208,18 +221,17 @@ def prepare(client, record, evidence, report):
         'border-fixture': {'path': fixture, 'sha256': digests[fixture]},
     }
 
-    profile = scratch + '/profile.toml'
+    profile = context['profile']
     encoded = base64.b64encode(PROFILE.encode()).decode()
     sh('profile-write', 'umask 077 && set -C && printf %s ' + q(encoded)
        + ' | /usr/bin/base64 -D > ' + q(profile))
-    context = _context(source, scratch, bin_dir)
     section['recipe'] = RECIPE
     section['mutation_scope'] = {
         'shell_config': ZSHRC, 'scratch': scratch,
         'excluded_from_acceptance': ['aggregate setup', 'native consumers'],
     }
     _checked_json(client, evidence, report, 'environment-plan', cli(
-        binary, 'environment', 'plan', '--profile', profile, '--state-root', state, '--json'))
+        binary, 'environment', 'plan', '--profile', profile, '--state-root', context['state'], '--json'))
     _checked_json(client, evidence, report, 'environment-apply', cli(
         binary, 'environment', 'apply', '--profile', profile, '--json', *context['flags']))
     set_theme(client, evidence, report, context)
@@ -295,15 +307,12 @@ def preparation(client, record, evidence, report):
     for key in ('builds', 'incumbent', 'mutation_scope'):
         section[key] = old['borders'][key]
     inc = section['incumbent']
-
-    def sh(n, command, **kwargs):
-        return run(client, evidence, report, n, command, **kwargs)
+    sh = _runner(client, evidence, report)
 
     v.require_session_directory(client, record['session'])
     paths = {'macarchy': ctx['binary'], 'macarchy-focus-ring': ctx['helper'],
              'border-fixture': ctx['fixture'], 'incumbent': inc['path']}
-    sh('reuse-regular-files', ' && '.join('test -f %s && test ! -L %s' % (q(p), q(p))
-                                          for p in paths.values()), blocked=True)
+    sh('reuse-regular-files', _regular(paths.values()), blocked=True)
     digests = _sha256(sh, 'reuse-sha256', tuple(paths.values()))
     actual = {k: digests[p] for k, p in paths.items()}
     expected = dict({k: section['builds'][k]['sha256'] for k in paths if k != 'incumbent'},
@@ -321,7 +330,7 @@ def preparation(client, record, evidence, report):
     except ValueError as exc:
         raise v.Failed('environment-status: output is not JSON: %s' % exc)
     ctx['work'] = ctx['scratch'] + '/' + pathlib.Path(evidence).name
-    sh('reuse-work-absent', 'test ! -e %s && test ! -L %s' % (q(ctx['work']), q(ctx['work'])), blocked=True)
+    sh('reuse-work-absent', _absent(ctx['work']), blocked=True)
     set_theme(client, evidence, report, ctx)
     ctx['incumbent'] = dict(inc, dir=ctx['scratch'] + '/incumbent')
     return ctx
@@ -334,12 +343,8 @@ def build_candidate(client, ctx, evidence, report, run_id, name):
     binaries and theme sources move to the candidate snapshot.'''
     import guest
     v = _v()
+    sh = _runner(client, evidence, report)
 
-    def sh(n, command, **kwargs):
-        return run(client, evidence, report, n, command, **kwargs)
-
-    if name == report['session']:
-        raise v.Blocked('candidate session must differ from the prepared session')
     candidate = v.session_ready(guest.run_directory(run_id), name)
     source = candidate['guest']['source']
     if source != v.guest_directory(name):
@@ -347,18 +352,9 @@ def build_candidate(client, ctx, evidence, report, run_id, name):
     if candidate.get('run') != run_id or candidate.get('status') != 'ready':
         raise v.Blocked('candidate %s is not a ready session of %s' % (name, run_id))
     v.guest_identity(client, candidate)
-    swift = 'cd %s && env %s swift build -c release' % (q(source), DEV)
-    for product in PRODUCTS:
-        sh('candidate-build-' + product, swift + ' --product ' + q(product),
-           timeout=BUILD_TIMEOUT)
-    lines = sh('candidate-bin-path', swift + ' --show-bin-path', timeout=600,
-               blocked=True).strip().splitlines()
-    bin_dir = lines[-1] if lines else ''
-    if not bin_dir.startswith(source + '/.build/') or '..' in bin_dir.split('/'):
-        raise v.Blocked('candidate-bin-path: %r is outside %s/.build' % (bin_dir, source))
+    bin_dir = _build_products(sh, source, 'candidate-')
     paths = {p: bin_dir + '/' + p for p in PRODUCTS}
-    sh('candidate-regular-files', ' && '.join('test -f %s && test ! -L %s' % (q(p), q(p))
-                                              for p in paths.values()), blocked=True)
+    sh('candidate-regular-files', _regular(paths.values()), blocked=True)
     digests = _sha256(sh, 'candidate-sha256', tuple(paths.values()))
     report['candidate_build'] = {
         'session': name, 'snapshot_sha256': candidate['host_source']['snapshot_sha256'],
@@ -379,18 +375,15 @@ def build_current_fixture(client, ctx, evidence, report):
     Product binaries come from candidate_build when present, otherwise the prepared snapshot;
     only the fixture is this harness version.'''
     import lab
-
-    def sh(n, command, **kwargs):
-        return run(client, evidence, report, n, command, **kwargs)
+    sh = _runner(client, evidence, report)
 
     raw = (lab.HERE / 'border-fixture.swift').read_bytes()
     work = ctx['work']
     harness = work + '/harness'
     src, out = harness + '/source.swift', harness + '/border-fixture'
-    new_dir = 'test ! -e %s && test ! -L %s && mkdir -m 700 %s'
     if work != ctx['scratch']:  # reused preparation: work was only asserted absent
-        sh('harness-work-mkdir', new_dir % (q(work), q(work), q(work)), blocked=True)
-    sh('harness-mkdir', new_dir % (q(harness), q(harness), q(harness)), blocked=True)
+        sh('harness-work-mkdir', _absent(work) + ' && mkdir -m 700 ' + q(work), blocked=True)
+    sh('harness-mkdir', _absent(harness) + ' && mkdir -m 700 ' + q(harness), blocked=True)
     sh('harness-upload', 'umask 077 && base64 -D > %s' % q(src),
        data=base64.b64encode(raw).decode('ascii'))
     sh('harness-build', 'umask 077 && env %s swiftc -O -parse-as-library -o %s %s'
@@ -442,7 +435,7 @@ def _borders_case(v, w, s, n, renderer, key):
     s.sample('steady', h)
     s.capture('initial')
     if motion:
-        s.record_start('motion', 20, fps=60)
+        s.record_start('motion', RECORD_SECONDS)
         time.sleep(1.5)
         mc = act('A', 'motion', 0, timeout=18)['motionCheck']
         out['motion'] = {k: mc[k] for k in ('sequence', 'ticks', 'moving_ticks', 'elapsed_seconds', 'requested_hz')}
@@ -455,7 +448,7 @@ def _borders_case(v, w, s, n, renderer, key):
         if not pixels['sampling_passed']:
             raise v.Failed(f'{key}: motion video sampling insufficient: {pixels["sampling_failures"]}')
     elif n == 8:
-        s.record_start('journey', 20, fps=60)
+        s.record_start('journey', RECORD_SECONDS)
         time.sleep(1.5)
         for a, i, shot in (('focus', last, 'focused'), ('move', last, 'move'), ('resize', last, 'resize'),
                            ('animate', last, None), ('focus', 0, None), ('minimize', 0, 'minimized'),
@@ -465,9 +458,10 @@ def _borders_case(v, w, s, n, renderer, key):
                 s.capture(shot)
         s.record_finish()
         t = next(e['t'] for e in s.timeline if e['event'] == 'record-start')
-        # Host-clock bound: only these acks can appear in the 20 s video.
-        acks = [e['sequence'] for e in s.timeline if e['event'] == 'ack' and e['label'] == 'A' and t <= e['t'] <= t + 20]
-        out['video'] = {'host_t': [t, t + 20], 'acks_in_window': acks}
+        # Host-clock bound: only these acks can appear in the recorded video.
+        end = t + RECORD_SECONDS
+        acks = [e['sequence'] for e in s.timeline if e['event'] == 'ack' and e['label'] == 'A' and t <= e['t'] <= end]
+        out['video'] = {'host_t': [t, end], 'acks_in_window': acks}
         s.fixture(1, 'B', scratch + '/B')
         out['crossapp_id'] = w.window(act('B', 'focus', 0), 0)['id']
         s.capture('crossapp')
@@ -530,8 +524,9 @@ def _update_driver(rep, motion):
     return {'update_driver': drv, 'geometry_refresh_count': geo, 'event_count': events}, ok
 
 
-def run_journey(client, record, evidence, report, run_id, border_count=None):
+def run_journey(client, record, evidence, report):
     import border_workload as w
+    import lab
     v, ev, here = _v(), pathlib.Path(evidence), pathlib.Path(__file__).resolve().parent
     report['not_covered'] = ['physical Mac hardware/GPU (Tart guest only)', 'multiple displays',
                              'manual Spaces/other desktops (native fullscreen is asserted only in a completed journey)',
@@ -543,9 +538,8 @@ def run_journey(client, record, evidence, report, run_id, border_count=None):
     report['harness_sha256'] = {f: hashlib.sha256((here / f).read_bytes()).hexdigest() for f in (
         'verify.py', 'verify_borders.py', 'border_workload.py', 'window-control.swift',
         'border-fixture.swift', 'border_motion_pixels.py')}
+    border_count, run_id = report.get('border_count'), record['run']
     if report.get('border_motion'):
-        if border_count != 1:
-            raise ValueError('border_motion requires border_count 1')
         report['claim'] = 'Fixed 14 s 60 Hz fixture motion; 60 fps is requested capture, not measured. ' + report['claim']
     ctx = preparation(client, record, evidence, report)
     ctx['border_motion'] = bool(report.get('border_motion'))
@@ -553,8 +547,7 @@ def run_journey(client, record, evidence, report, run_id, border_count=None):
         build_candidate(client, ctx, evidence, report, record['run'], report['candidate_session'])
     build_current_fixture(client, ctx, evidence, report)
     require_console_user(client, evidence, report)
-    if border_count is not None and border_count not in (1, 8, 24):
-        raise ValueError(f'unsupported border_count {border_count!r}; expected 1, 8 or 24')
+    controller = lab.build_controller()
     counts = (border_count,) if border_count is not None else (1, 8, 24)
     report['counts'] = list(counts)
     if border_count is not None:
@@ -564,8 +557,8 @@ def run_journey(client, record, evidence, report, run_id, border_count=None):
         for r in ('none', 'borders', 'lean'):
             key = f'{r}-{n}'
             (ev / key).mkdir()
-            with w.Session(client, ev / key, report, ctx, run_id) as s:
-                s.host_setup()  # rebuilt per case (~10 s); accepted for simplicity
+            with w.Session(client, ev / key, report, ctx, run_id, controller) as s:
+                s.host_setup()
                 cases[key] = _borders_case(v, w, s, n, r, key)
     displays = [c['display'] for c in cases.values()]
     if any(d != displays[0] for d in displays):
@@ -584,15 +577,15 @@ def run_journey(client, record, evidence, report, run_id, border_count=None):
                       for m, f in (('footprint', 'footprint_bytes'), ('cpu', 'cpu_percent_excl_first'))}
         row['lean_footprint_pct_of_incumbent'] = round(
             100 * row['lean']['helper_footprint'] / row['borders']['helper_footprint'], 1)
-    if 24 in counts:
-        lean, base = (savings['24'][r]['helper_footprint'] for r in ('lean', 'borders'))
-        report['memory_gate'] = {'rule': 'lean 24-window helper footprint median <= 50% of pinned JankyBorders '
-                                         '(qualification threshold chosen for this journey, not a universal guarantee)',
-                                 'percent': savings['24']['lean_footprint_pct_of_incumbent'], 'passed': 2 * lean <= base,
-                                 'evaluated': True}
-    else:
-        report['memory_gate'] = {'evaluated': False, 'reason': '24-window workload not selected'}
     report['cpu'] = 'CPU medians (first top sample excluded) reported for transparency; not gated'
-    if 24 in counts and 2 * lean > base:
+    if 24 not in counts:
+        report['memory_gate'] = {'evaluated': False, 'reason': '24-window workload not selected'}
+        return 'passed'
+    lean, base = (savings['24'][r]['helper_footprint'] for r in ('lean', 'borders'))
+    report['memory_gate'] = {'rule': 'lean 24-window helper footprint median <= 50% of pinned JankyBorders '
+                                     '(qualification threshold chosen for this journey, not a universal guarantee)',
+                             'percent': savings['24']['lean_footprint_pct_of_incumbent'], 'passed': 2 * lean <= base,
+                             'evaluated': True}
+    if 2 * lean > base:
         raise v.Failed(f'lean 24-window helper footprint {lean} B exceeds 50% of incumbent {base} B')
     return 'passed'
