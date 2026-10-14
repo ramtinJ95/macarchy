@@ -39,8 +39,9 @@ func int(_ v: Any?) -> Int? {
     srcs: [DispatchSourceSignal] = []
   var err: String?, reason: String?, poll: Timer?, fsx: [String: Any] = [:]
   var an: (q: Int, i: Int, a: NSRect, b: NSRect, n: Int, t: Timer)?,
-    fs: (q: Int, i: Int, want: Bool)?, fp: (q: Int, i: Int, d: Double)?,
-    mp: (q: Int, i: Int, want: Bool, d: Double)?
+    fs: (q: Int, i: Int, want: Bool)?
+  // Focus and minimize/restore ack sequence q once done() holds, or fail after deadline d.
+  var settling: (q: Int, d: Double, done: @MainActor () -> Bool, failure: String)?
   var mo: (q: Int, i: Int, o: NSRect, t: Timer, n: Int, s: Double)?, mx: [String: Any] = [:]
   var up: Double { ProcessInfo.processInfo.systemUptime - t0 }
 
@@ -117,27 +118,14 @@ func int(_ v: Any?) -> Int? {
 
   func check() {
     if up > secs { return finish("timeout", 2) }
-    if let p = fp {
-      if NSApp.isActive && ws[p.i].isKeyWindow {
-        fp = nil
-        acked = p.q
-        publish()
-      } else if up > p.d {
-        return fail("focus not granted")
-      } else {
+    if let p = settling {
+      guard p.done() else {
+        if up > p.d { fail(p.failure) }
         return
       }
-    }
-    if let m = mp {
-      if ws[m.i].isMiniaturized == m.want {
-        mp = nil
-        acked = m.q
-        publish()
-      } else if up > m.d {
-        return fail("minimize/restore did not settle")
-      } else {
-        return
-      }
+      settling = nil
+      acked = p.q
+      publish()
     }
     if an != nil || fs != nil || mo != nil { return }
     do { if let c = try command() { try handle(c) } } catch {
@@ -231,7 +219,7 @@ func int(_ v: Any?) -> Int? {
       w.makeKeyAndOrderFront(nil)
       // Deliberate VM-only focus; see applicationDidFinishLaunching. Acked by check().
       NSApp.activate(ignoringOtherApps: true)
-      fp = (q, i, up + 3)
+      settling = (q, up + 3, { NSApp.isActive && w.isKeyWindow }, "focus not granted")
       return
     case "move":
       moved[i].toggle()
@@ -240,11 +228,11 @@ func int(_ v: Any?) -> Int? {
       small[i].toggle()
       w.setFrame(target(i), display: true)
     case "minimize":
-      mp = (q, i, true, up + 3)
+      settling = (q, up + 3, { w.isMiniaturized }, "minimize/restore did not settle")
       w.miniaturize(nil)
       return
     case "restore":
-      mp = (q, i, false, up + 3)
+      settling = (q, up + 3, { !w.isMiniaturized }, "minimize/restore did not settle")
       w.deminiaturize(nil)
       return
     case "close":

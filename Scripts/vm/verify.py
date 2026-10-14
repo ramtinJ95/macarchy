@@ -362,7 +362,7 @@ def run_journey(client, record, name, session_directory, evidence, report):
     if name == "borders":
         import verify_borders
 
-        return verify_borders.run_journey(client, record, evidence, report, record['run'], border_count=report.get("border_count"))
+        return verify_borders.run_journey(client, record, evidence, report)
     packages = theme_packages(session_directory / "source.tar.gz")
     before = watched_snapshot(client, evidence, "before")
     time.sleep(1.1)  # Times are whole seconds: any later write differs from the recorded ones.

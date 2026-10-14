@@ -65,9 +65,14 @@ def detect_row(row):
         out['reason'] = 'green_tie' if best else 'no_green'
         return out
     left, right = best[0]
-    accents = _runs(row, _purple, MIN_ACCENT)
-    before = [b for a, b in accents if b < left and left - b - 1 <= MAX_ACCENT_GAP]
-    after = [a for a, b in accents if a > right and a - right - 1 <= MAX_ACCENT_GAP]
+    # Accents only count within MAX_ACCENT_GAP of the green edges; green pixels are never
+    # purple, so scanning just those bands finds the same nearest runs as the full row.
+    reach = MAX_ACCENT_GAP + MIN_ACCENT + 1
+    lo, hi = max(0, left - reach), min(len(row) // 3, right + 1 + reach)
+    before = [lo + b for a, b in _runs(row[3 * lo:3 * left], _purple, MIN_ACCENT)
+              if left - (lo + b) - 1 <= MAX_ACCENT_GAP]
+    after = [right + 1 + a for a, b in _runs(row[3 * (right + 1):3 * hi], _purple, MIN_ACCENT)
+             if a <= MAX_ACCENT_GAP]
     out.update(valid=True, left=left, right=right,
                left_gap=left - max(before) - 1 if before else None,
                right_gap=min(after) - right - 1 if after else None)

@@ -10,6 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import guest
 import lab
 import verify_borders as b
 
@@ -96,10 +97,11 @@ class OwnedTart:
 
 
 class Session:
-    def __init__(self, client, evidence, report, context, run_id):
+    def __init__(self, client, evidence, report, context, run_id, controller=None):
         self.c, self.ev, self.report, self.ctx, self.run_id = client, Path(evidence), report, context, run_id
         self.t0, self.timeline, self.procs, self.fixtures = time.monotonic(), [], [], {}
-        self.linked = self.rec = self.controller = self.tart = self.inputs = None
+        self.controller = controller
+        self.linked = self.rec = self.tart = self.inputs = None
 
     def __enter__(self):
         return self
@@ -126,8 +128,7 @@ class Session:
     def read(self, command):
         # Unlogged poll; transport loss blocks the lab run.
         try:
-            r = subprocess.run(self.c.argv + [command], env=self.c.env, stdin=subprocess.DEVNULL,
-                               capture_output=True, text=True, timeout=10)
+            r = self.c.command(command, check=False, timeout=10)
         except subprocess.TimeoutExpired:
             raise v.Blocked(f'poll timed out: {command}')
         if r.returncode:
@@ -151,7 +152,7 @@ class Session:
         if code:
             raise v.Failed(f'{name}: exit {code}')
 
-    def theme(self, theme='catppuccin-mocha'):
+    def theme(self, theme):
         b.set_theme(self.c, self.ev, self.report, self.ctx, theme=theme)
         self.mark('theme', theme=theme)
 
@@ -163,14 +164,7 @@ class Session:
         fx['proc'] = self.spawn(f'fixture-{label}', f'mkdir -p "$(dirname {d})" && mkdir -m 0700 {d} && exec '
                                 f'{q(self.ctx["fixture"])} --directory {d} --count {count} '
                                 f'--seconds 600 --label {q(label)}')
-        deadline = time.monotonic() + 8
-        while not (st := self.status(label) or {}).get('ready'):
-            if st.get('error'):
-                raise v.Failed(f'fixture {label}: {st["error"]}: {st.get("reason")}')
-            if fx['proc'].poll() is not None or time.monotonic() > deadline:
-                raise v.Failed(f'fixture {label}: not ready within 8s')
-            time.sleep(0.25)
-        fx['last'] = st
+        st = self.wait(label, lambda st: st.get('ready'), 8, f'fixture {label}', 'not ready')
         self.save(f'fixture-{label}-ready', st)
         self.mark('ready', label=label, pid=st.get('pid'))
         if label == 'A' and not any(x['name'] == 'keep-awake' for x in self.procs):
@@ -179,6 +173,17 @@ class Session:
                 raise v.Failed(f'fixture A: bad pid {pid!r} for keep-awake lease')
             # Lease ends when fixture A exits or after 120 s; close() reaps this owned handle.
             self.spawn('keep-awake', f'/usr/bin/caffeinate -di -w {pid} -t 120', until=130)
+        return st
+
+    def wait(self, label, done, timeout, what, missing):
+        '''Poll the fixture's status until done(status); fail on its error, exit or the deadline.'''
+        proc, deadline = self.fixtures[label]['proc'], time.monotonic() + timeout
+        while not done(st := self.status(label) or {}):
+            if st.get('error'):
+                raise v.Failed(f'{what}: {st["error"]}: {st.get("reason")}')
+            if proc.poll() is not None or time.monotonic() > deadline:
+                raise v.Failed(f'{what}: {missing} within {timeout}s')
+            time.sleep(0.25)
         return st
 
     def status(self, label):
@@ -201,18 +206,12 @@ class Session:
         self.sh(f'{label}-command-{seq:03d}', '/bin/bash -o pipefail -c ' + q(
                 f'printf %s {blob} | base64 -D > {d}/command.next && mv {d}/command.next {d}/command.json'))
         self.mark('action', label=label, sequence=seq, action=action, index=index)
-        deadline = time.monotonic() + timeout
-        while (st := self.status(label) or {}).get('actionSequence') != seq:
-            if st.get('error'):
-                raise v.Failed(f'{label} {action}#{seq}: {st["error"]}: {st.get("reason")}')
-            if fx['proc'].poll() is not None or time.monotonic() > deadline:
-                raise v.Failed(f'{label} {action}#{seq}: no ack within {timeout}s')
-            time.sleep(0.25)
+        st = self.wait(label, lambda st: st.get('actionSequence') == seq, timeout,
+                       f'{label} {action}#{seq}', 'no ack')
         self.mark('ack', label=label, sequence=seq)
         self.save(f'{label}-status-{seq:03d}-{action}', st)
         if st.get('error') or not satisfied(action, index, seq, before, st):
             raise v.Failed(f'{label} {action}#{seq}: status does not satisfy the action predicate')
-        fx['last'] = st
         return st
 
     def stop(self, label):
@@ -226,7 +225,7 @@ class Session:
         argv = shlex.join([cli, 'desktop', 'borders', 'preview', '--renderer', renderer, '--state-root',
                            self.ctx['state'], '--seconds', str(seconds), '--json'])
         # Same env as b.cli, exec'd directly so the recorded pid is the CLI itself.
-        p = self.spawn(name, f'cd /Users/omarchy && set -C && echo $$ > {pf} && '
+        p = self.spawn(name, f'cd {v.GUEST_HOME} && set -C && echo $$ > {pf} && '
                              f'exec /usr/bin/env -i {shlex.join(v.STEP_ENV)} {argv}', until=seconds + 15)
         end, deadline = time.monotonic() + seconds, time.monotonic() + 8
         # pgrep exit 1 means no children yet; transient preflight children are ignored.
@@ -290,11 +289,10 @@ class Session:
         self.mark('sample', name=name, pids=pids)
 
     def host_setup(self):
-        record = json.loads((lab.STATE / 'runs' / self.run_id / 'verify-tart.json').read_text())
+        record = json.loads((guest.run_directory(self.run_id) / 'verify-tart.json').read_text())
         if not v.owned_tart(record):
             raise v.Blocked(f'Tart pid {record.get("pid")} does not match its run record')
         self.inputs, self.tart = v.read_pins(), OwnedTart(record)
-        self.controller = lab.build_controller()
         pre = lab.control(self.controller, 'preflight')
         self.save('host-preflight', pre)
         if missing := [k for k in ('accessibility', 'screen_recording') if pre.get(k) is not True]:
@@ -304,18 +302,16 @@ class Session:
         self.save(f'{name}-capture', lab.capture(self.controller, self.tart, self.inputs, self.run_id, self.ev / f'{name}.png'))
         self.mark('capture', name=name)
 
-    def record_start(self, name, seconds=20, fps=30):
-        if fps not in (30, 60):
-            raise ValueError(f'{name}: unsupported recording fps {fps!r}; expected 30 or 60')
+    def record_start(self, name, seconds):
         mp4 = (self.ev / f'{name}.mp4').resolve()
         if self.rec or mp4.exists():
             raise v.Failed(f'{name}: recording already active or {mp4} exists')
         out, err = open(self.ev / f'{name}-record.stdout', 'wb'), open(self.ev / f'{name}-record.log', 'wb')
-        argv = [str(self.controller), 'record60' if fps == 60 else 'record', str(self.tart.pid), str(lab.binary(self.inputs)),
+        argv = [str(self.controller), 'record', str(self.tart.pid), str(lab.binary(self.inputs)),
                 self.run_id, str(seconds), str(mp4)]
         self.rec = {'name': name, 'mp4': mp4, 'files': (out, err), 'end': time.monotonic() + seconds + 15,
                     'proc': subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=err)}
-        self.mark('record-start', name=name, fps=fps)
+        self.mark('record-start', name=name)
 
     def record_finish(self):
         r, self.rec = self.rec, None
