@@ -19,6 +19,7 @@ Missing prerequisites block; failures remain failures.
 | Feature | Coverage |
 | --- | --- |
 | [Themes](theme.md) | Journey `theme`: built-ins, backgrounds, inactive status; E2E passed |
+| [Focus borders](borders.md) | Journey `borders`: accepted VM motion/1/8/24 preview; hardware/Retina/real-app gaps explicit |
 | [Keybindings](keybindings.md) | Mapped, not covered |
 | [Setup](setup.md) | Mapped, not covered; no onboarding claim |
 | [Action menu](menu.md) | Mapped, not covered; GUI needs separate qualification |

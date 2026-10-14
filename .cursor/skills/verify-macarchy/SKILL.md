@@ -15,8 +15,13 @@ command or proof of a Homebrew installation.
   From the work Mac use `ssh home-macmini`, the configured home-tailnet proxy alias;
   do not use the work Tailscale connection. The client does no repository work.
 - Read `features/README.md` and the matching feature page before driving.
-- Only `theme` is implemented: listing, backgrounds and inactive status.
-  Activation/dry-run, setup, keybindings and GUI acceptance are **not covered**.
+- `theme` is qualified: listing, backgrounds and inactive status.
+- `borders` passes bounded VM fixture qualification; hardware/Retina/managed replacement remain unqualified. See `features/borders.md`.
+  Release builds, guest-only zsh environment apply and real theme activation passed.
+  The event-driven own-outline-transaction candidate passed motion and 1/8/24
+  checks: measured p95 tracking matches JankyBorders with lower helper memory.
+  User accepted the bounded preview; managed replacement and host cutover remain pending.
+  Aggregate setup, keybindings and GUI acceptance remain **not covered**.
 - Qualified on 2026-10-13: clone, start, guest source build, doctor, theme drive,
   cleanup and evidence survival passed in `setup-ffe804179e62/verify-4f7e526e2357`.
   See its retained evidence under `artifacts/vm/runs/`.
@@ -41,7 +46,8 @@ uv run --project Scripts/vm --locked python -B Scripts/vm/verify.py launch --run
 ```
 
 1. Clone must report `prepared_stopped_clone` and a `setup-<12 hex>` run ID.
-   Never target a master, reused guest, or a guest another driver controls.
+   Never target a master or a guest another driver controls. Reuse requires the
+   explicit audited restart path below, not adoption of an arbitrary running guest.
 2. Start reports `running` after the existing no-TCP-listener audit. It runs the
    documented native Tart command with no clipboard/audio, records PID/start
    time/full command line, and stops its exact child if startup fails.
@@ -53,6 +59,14 @@ uv run --project Scripts/vm --locked python -B Scripts/vm/verify.py launch --run
    `verify-<12 hex>` session ID, and a recorded development `version --json`
    ending in `-dev`. Snapshot and binary SHA-256 bind the evidence to that build.
    Build failure retains `build.log`; clean up failed attempts too.
+
+### Explicitly approved reuse
+
+`verify.py restart --run setup-<run-id>` reboots a stopped clone previously owned
+by this verifier. It requires the old exact process to be gone, archives previous
+boot/shutdown evidence, and records a fresh owner/log. Default `start` still refuses
+reuse. This does not reset guest state or make fresh-install claims valid. Use only
+for a reviewed same-guest continuation; never delete ownership reports to restart.
 
 ## Doctor
 
