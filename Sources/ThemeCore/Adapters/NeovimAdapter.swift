@@ -68,19 +68,11 @@ package struct NeovimAdapter: Sendable {
     configurationDirectoryURL.appending(path: "lua/config/macarchy-theme.lua")
   }
 
-  private var activeThemeURL: URL {
-    root.appending(path: "current/\(Self.outputPath)")
-  }
-
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "lua/macarchy/current.lua"),
       destination: root.appending(path: "current/\(Self.outputPath)")
     )
-  }
-
-  private var themeLoaderURL: URL {
-    configurationDirectoryURL.appending(path: "lua/macarchy/current.lua")
   }
 
   private var runtime: OrdinaryAdapterRuntime {
@@ -97,20 +89,18 @@ package struct NeovimAdapter: Sendable {
       throw NeovimAdapterError.controlUnavailable(executableURL)
     }
     let usesManagedThemeLoader = try validateThemeLoader()
-    guard Self.containsIntegrationDirective(in: try readConfiguration()) else {
+    guard Self.containsIntegrationDirective(in: try readConfiguration(at: configurationURL)) else {
       throw NeovimAdapterError.missingIntegration(Self.integrationDirective)
     }
     guard
-      Self.contains(
-        directive: Self.backgroundAwareWatcherDirective,
-        in: try readConfiguration(at: watcherURL)
-      )
+      containsExactLine(
+        Self.backgroundAwareWatcherDirective, in: try readConfiguration(at: watcherURL))
     else {
       throw NeovimAdapterError.missingIntegration(Self.backgroundAwareWatcherDirective)
     }
     if usesManagedThemeLoader {
       let watcherRoot = Self.managedWatcherRootDirective(root: root)
-      guard Self.contains(directive: watcherRoot, in: try readConfiguration(at: watcherURL))
+      guard containsExactLine(watcherRoot, in: try readConfiguration(at: watcherURL))
       else {
         throw NeovimAdapterError.missingIntegration(watcherRoot)
       }
@@ -119,9 +109,9 @@ package struct NeovimAdapter: Sendable {
 
   private func validateThemeLoader() throws -> Bool {
     var metadata = stat()
-    if lstat(themeLoaderURL.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFLNK {
+    if lstat(themeLink.url.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFLNK {
       let destination = try FileManager.default.destinationOfSymbolicLink(
-        atPath: themeLoaderURL.path)
+        atPath: themeLink.url.path)
       let managedLoader = root.appending(
         path: "environment/current/neovim/lua/macarchy/current.lua")
       if destination != managedLoader.path {
@@ -132,12 +122,7 @@ package struct NeovimAdapter: Sendable {
       // Its bytes and watcher root must pass the same checks as the inline loader.
     }
     let directive = Self.managedThemeLoaderDirective(root: root)
-    guard
-      Self.contains(
-        directive: directive,
-        in: try readConfiguration(at: themeLoaderURL)
-      )
-    else {
+    guard containsExactLine(directive, in: try readConfiguration(at: themeLink.url)) else {
       throw NeovimAdapterError.missingIntegration(directive)
     }
     return true
@@ -155,11 +140,11 @@ package struct NeovimAdapter: Sendable {
       Self.aetherRepositoryDirective,
       Self.aetherBranchDirective,
       Self.aetherCommitDirective,
-    ] where !Self.contains(directive: directive, in: configuration) {
+    ] where !containsExactLine(directive, in: configuration) {
       throw NeovimAdapterError.missingIntegration(directive)
     }
     let colorscheme = try readConfiguration(at: importedColorschemeURL)
-    guard Self.contains(directive: Self.importedColorschemeDirective, in: colorscheme) else {
+    guard containsExactLine(Self.importedColorschemeDirective, in: colorscheme) else {
       throw NeovimAdapterError.missingIntegration(Self.importedColorschemeDirective)
     }
   }
@@ -227,10 +212,8 @@ package struct NeovimAdapter: Sendable {
   }
 
   private func preflightActiveSupport() throws {
-    let generated = try readConfiguration(at: activeThemeURL)
-    guard
-      Self.contains(
-        directive: "colorscheme = \"\(Self.importedColorscheme)\",", in: generated)
+    let generated = try readConfiguration(at: themeLink.destination)
+    guard containsExactLine("colorscheme = \"\(Self.importedColorscheme)\",", in: generated)
     else { return }
     try preflightImportedSupport()
   }
@@ -311,10 +294,6 @@ package struct NeovimAdapter: Sendable {
       """
   }
 
-  private func readConfiguration() throws -> String {
-    try readConfiguration(at: configurationURL)
-  }
-
   private func readConfiguration(at url: URL) throws -> String {
     if let path = Self.managedThemePaths.first(where: {
       configurationDirectoryURL.appending(path: $0) == url
@@ -334,7 +313,7 @@ package struct NeovimAdapter: Sendable {
   }
 
   package static func containsIntegrationDirective(in text: String) -> Bool {
-    contains(directive: integrationDirective, in: text)
+    containsExactLine(integrationDirective, in: text)
   }
 
   package static func managedThemeLoaderDirective(root: URL) -> String {
@@ -368,10 +347,6 @@ package struct NeovimAdapter: Sendable {
     }
     escaped += "\""
     return escaped
-  }
-
-  private static func contains(directive: String, in text: String) -> Bool {
-    containsExactLine(directive, in: text)
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

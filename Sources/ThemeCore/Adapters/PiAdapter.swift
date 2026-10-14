@@ -102,28 +102,23 @@ package struct PiAdapter: Sendable {
     try themeLink.validate()
   }
 
-  private var runtime: OrdinaryAdapterRuntime {
-    OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
-      preflight: preflight,
-      isIntegrationDrift: Self.isIntegrationDrift
-    )
-  }
-
-  func inspection(includeRuntimeChecks: Bool = false) -> AdapterInspection {
+  private func runtime(includeRuntimeChecks: Bool = true) -> OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
       adapterID: Self.id,
       requirement: .required,
       preflight: includeRuntimeChecks ? preflight : integrationPreflight,
       isIntegrationDrift: Self.isIntegrationDrift
-    ).inspection(
+    )
+  }
+
+  func inspection(includeRuntimeChecks: Bool = false) -> AdapterInspection {
+    runtime(includeRuntimeChecks: includeRuntimeChecks).inspection(
       readyMessage: "Pi watches the generated theme and repaints running sessions"
     )
   }
 
   func reconciliation() -> AdapterReconciliation {
-    runtime.reconciliation {
+    runtime().reconciliation {
       try ActivationLock(root: root).withLock {
         guard try selectionIsApplied() else { throw PiAdapterError.noLongerSelected }
         try preflight()
@@ -146,11 +141,11 @@ package struct PiAdapter: Sendable {
   static func render(package: ThemePackage) throws -> String {
     let semantic = package.semantic
     let ansi = package.terminal.ansi
-    let userMessageBackground = mix(semantic.background, with: semantic.accent, amount: 0.18)
-    let customMessageBackground = mix(semantic.background, with: semantic.info, amount: 0.14)
-    let toolPendingBackground = mix(semantic.background, with: semantic.warning, amount: 0.10)
-    let toolSuccessBackground = mix(semantic.background, with: semantic.success, amount: 0.12)
-    let toolErrorBackground = mix(semantic.background, with: semantic.error, amount: 0.14)
+    let userMessageBackground = semantic.background.mixed(with: semantic.accent, amount: 0.18)
+    let customMessageBackground = semantic.background.mixed(with: semantic.info, amount: 0.14)
+    let toolPendingBackground = semantic.background.mixed(with: semantic.warning, amount: 0.10)
+    let toolSuccessBackground = semantic.background.mixed(with: semantic.success, amount: 0.12)
+    let toolErrorBackground = semantic.background.mixed(with: semantic.error, amount: 0.14)
     let conversationBackgrounds = [
       semantic.background.rawValue,
       userMessageBackground,
@@ -261,22 +256,13 @@ package struct PiAdapter: Sendable {
     return String(decoding: data, as: UTF8.self) + "\n"
   }
 
-  private static func mix(_ start: SRGBColor, with end: SRGBColor, amount: Double) -> String {
-    let startComponents = components(start.rawValue)
-    let endComponents = components(end.rawValue)
-    let mixed = zip(startComponents, endComponents).map { start, end in
-      Int((Double(start) * (1 - amount) + Double(end) * amount).rounded())
-    }
-    return String(format: "#%02x%02x%02x", mixed[0], mixed[1], mixed[2])
-  }
-
   private static func readableForeground(
     _ foreground: SRGBColor,
     toward text: SRGBColor,
     against backgrounds: [String]
   ) -> String {
     for percentage in 0...100 {
-      let candidate = mix(foreground, with: text, amount: Double(percentage) / 100)
+      let candidate = foreground.mixed(with: text, amount: Double(percentage) / 100)
       if backgrounds.allSatisfy({ contrast(candidate, $0) >= 4.5 }) {
         return candidate
       }
@@ -291,19 +277,15 @@ package struct PiAdapter: Sendable {
       / (min(firstLuminance, secondLuminance) + 0.05)
   }
 
+  /// Inputs are palette raw values or `mixed` results, so always `#rrggbb`.
   private static func relativeLuminance(_ color: String) -> Double {
-    let linear = components(color).map { component in
-      let value = Double(component) / 255
-      return value <= 0.04045
+    let (red, green, blue) = SRGBColor(rawValue: color)!.components
+    let linear = [red, green, blue].map { value in
+      value <= 0.04045
         ? value / 12.92
         : pow((value + 0.055) / 1.055, 2.4)
     }
     return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-  }
-
-  private static func components(_ color: String) -> [Int] {
-    let value = Int(color.dropFirst(), radix: 16)!
-    return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff]
   }
 
   private func selectedTheme() throws -> String? {

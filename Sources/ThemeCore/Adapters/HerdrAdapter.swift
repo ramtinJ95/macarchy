@@ -151,7 +151,7 @@ package struct HerdrAdapter: Sendable {
   let controlIsAvailable: @Sendable () -> Bool
   let processRunner: ProcessRunner
   let managedMode: HerdrManagedMode?
-  var faultInjector: @Sendable (HerdrMutationCheckpoint) throws -> Void = { _ in }
+  let faultInjector: @Sendable (HerdrMutationCheckpoint) throws -> Void
 
   package init(
     root: URL,
@@ -358,10 +358,7 @@ package struct HerdrAdapter: Sendable {
         "legacy adapter evidence does not authenticate the current theme surface"
       )
     }
-    let originalData = try BoundedRegularFile.read(at: backupURL).data
-    guard let original = String(data: originalData, encoding: .utf8) else {
-      throw HerdrAdapterError.backupUnavailable(backupURL)
-    }
+    let original = try readBackupText()
     return HerdrLegacyOwnershipEvidence(
       originalConfiguration: original,
       currentConfiguration: current.text
@@ -384,10 +381,7 @@ package struct HerdrAdapter: Sendable {
         "legacy adapter evidence does not match the active generation"
       )
     }
-    let originalData = try BoundedRegularFile.read(at: backupURL).data
-    guard let original = String(data: originalData, encoding: .utf8) else {
-      throw HerdrAdapterError.backupUnavailable(backupURL)
-    }
+    let original = try readBackupText()
     let originalParsed = try Self.parseConfiguration(original)
     guard originalParsed.selection == Self.importedBaseTheme, originalParsed.custom.isEmpty else {
       throw HerdrAdapterError.ownershipConflict(
@@ -418,17 +412,14 @@ package struct HerdrAdapter: Sendable {
   }
 
   package func supportedVersion() throws -> String {
-    let result = try processRunner.run(
-      ProcessRequest(executableURL: executableURL, arguments: ["--version"], timeout: 2)
+    try AdapterVersionParser.supportedVersion(
+      executableURL: executableURL,
+      executableLabel: "herdr",
+      minimumVersion: Self.minimumVersion,
+      processRunner: processRunner,
+      invalid: HerdrAdapterError.invalidVersion,
+      unsupported: HerdrAdapterError.unsupportedVersion
     )
-    guard result.terminationStatus == 0, let version = Self.parseVersion(result.output) else {
-      throw HerdrAdapterError.invalidVersion(result.output)
-    }
-    let minimum = Self.parseVersion("herdr \(Self.minimumVersion)")!
-    guard !version.lexicographicallyPrecedes(minimum) else {
-      throw HerdrAdapterError.unsupportedVersion(result.output)
-    }
-    return version.map(String.init).joined(separator: ".")
   }
 
   package static func serverStatusIsConfirmedStopped(
@@ -672,12 +663,8 @@ package struct HerdrAdapter: Sendable {
     var state = try readOwnership()
 
     if let existing = state {
-      if existing.before != nil {
-        try ensureBackup(existing.backupDigest, currentData: configuration.data)
-      } else {
-        try verifyBackup(existing.backupDigest)
-      }
       if let before = existing.before {
+        try ensureBackup(existing.backupDigest, currentData: configuration.data)
         if parsed.surface == existing.desired {
           let committed = existing.committed()
           try writeOwnership(committed)
@@ -688,6 +675,7 @@ package struct HerdrAdapter: Sendable {
           )
         }
       } else {
+        try verifyBackup(existing.backupDigest)
         guard parsed.surface == existing.desired else {
           throw HerdrAdapterError.ownershipConflict("managed selector or custom colors drifted")
         }
@@ -725,12 +713,7 @@ package struct HerdrAdapter: Sendable {
     )
     if state?.before == nil, parsed.surface == target { return }
 
-    let backupDigest: String
-    if let state {
-      backupDigest = state.backupDigest
-    } else {
-      backupDigest = sha256Digest(configuration.data)
-    }
+    let backupDigest = state?.backupDigest ?? sha256Digest(configuration.data)
     let pending = HerdrOwnershipState(
       before: parsed.surface,
       desired: target,
@@ -775,6 +758,14 @@ package struct HerdrAdapter: Sendable {
       withIntermediateDirectories: true
     )
     try currentData.write(to: backupURL, options: .atomic)
+  }
+
+  private func readBackupText() throws -> String {
+    let data = try BoundedRegularFile.read(at: backupURL).data
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw HerdrAdapterError.backupUnavailable(backupURL)
+    }
+    return text
   }
 
   private func verifyBackup(_ digest: String) throws {
@@ -828,20 +819,19 @@ package struct HerdrAdapter: Sendable {
         backupDigest.hasPrefix("sha256:"),
         backupDigest.dropFirst(7).allSatisfy({ $0.isHexDigit && $0.isASCII }),
         desired.name.map(HerdrAdapter.supportedThemes.contains) == true,
-        desired.custom.isEmpty
-          || [HerdrAdapter.legacyCustomKeySet, HerdrAdapter.customKeySet].contains(
-            Set(desired.custom.keys)),
-        desired.custom.values.allSatisfy({ SRGBColor(rawValue: $0) != nil }),
-        before.map({
-          $0.custom.isEmpty
-            || [HerdrAdapter.legacyCustomKeySet, HerdrAdapter.customKeySet].contains(
-              Set($0.custom.keys))
-        }) != false,
-        before?.custom.values.allSatisfy({ SRGBColor(rawValue: $0) != nil }) != false
+        Self.isValidCustom(desired.custom),
+        before.map({ Self.isValidCustom($0.custom) }) != false
       else {
         throw HerdrAdapterError.invalidOwnership
       }
       return self
+    }
+
+    private static func isValidCustom(_ custom: [String: String]) -> Bool {
+      (custom.isEmpty
+        || [HerdrAdapter.legacyCustomKeySet, HerdrAdapter.customKeySet].contains(
+          Set(custom.keys)))
+        && custom.values.allSatisfy({ SRGBColor(rawValue: $0) != nil })
     }
 
     func committed() -> Self {
@@ -1047,10 +1037,7 @@ package struct HerdrAdapter: Sendable {
     let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
     guard parts.count == 2 else { return nil }
     let key = parts[0].trimmingCharacters(in: .whitespaces)
-    guard !key.isEmpty,
-      key.allSatisfy({
-        $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-")
-      }),
+    guard TOMLSourceIndex.isBareKey(key),
       expectedKey == nil || key == expectedKey
     else { return nil }
 

@@ -90,28 +90,23 @@ package struct CodexAdapter: Sendable {
     }
   }
 
-  private var runtime: OrdinaryAdapterRuntime {
-    OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
-      preflight: preflight,
-      isIntegrationDrift: Self.isIntegrationDrift
-    )
-  }
-
-  func inspection(includeRuntimeChecks: Bool = false) -> AdapterInspection {
+  private func runtime(includeRuntimeChecks: Bool = true) -> OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
       adapterID: Self.id,
       requirement: .required,
       preflight: includeRuntimeChecks ? preflight : integrationPreflight,
       isIntegrationDrift: Self.isIntegrationDrift
-    ).inspection(
+    )
+  }
+
+  func inspection(includeRuntimeChecks: Bool = false) -> AdapterInspection {
+    runtime(includeRuntimeChecks: includeRuntimeChecks).inspection(
       readyMessage: "Fresh Codex TUI sessions use the generated syntax palette"
     )
   }
 
   func reconciliation() -> AdapterReconciliation {
-    runtime.reconciliation {
+    runtime().reconciliation {
       AdapterOutcome(
         status: .restartRequired,
         message: "Restart Codex TUI sessions to use the active syntax palette"
@@ -124,29 +119,21 @@ package struct CodexAdapter: Sendable {
   }
 
   package func supportedVersion() throws -> String {
-    let result = try processRunner.run(
-      ProcessRequest(executableURL: executableURL, arguments: ["--version"], timeout: 2)
+    try AdapterVersionParser.supportedVersion(
+      executableURL: executableURL,
+      executableLabel: "codex-cli",
+      minimumVersion: Self.minimumVersion,
+      processRunner: processRunner,
+      invalid: CodexAdapterError.invalidVersion,
+      unsupported: CodexAdapterError.unsupportedVersion
     )
-    guard result.terminationStatus == 0, let version = Self.parseVersion(result.output) else {
-      throw CodexAdapterError.invalidVersion(result.output)
-    }
-    let minimum = Self.parseVersion("codex-cli \(Self.minimumVersion)")!
-    guard !version.lexicographicallyPrecedes(minimum) else {
-      throw CodexAdapterError.unsupportedVersion(result.output)
-    }
-    return version.map(String.init).joined(separator: ".")
   }
 
   private func selectedTheme() throws -> String? {
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(at: configurationURL.resolvingSymlinksInPath()).data
-    } catch {
-      throw CodexAdapterError.cannotReadConfiguration(configurationURL)
-    }
-    guard let configuration = String(data: data, encoding: .utf8) else {
-      throw CodexAdapterError.cannotReadConfiguration(configurationURL)
-    }
+    let configuration = try AdapterConfigurationFile.readUTF8(
+      at: configurationURL.resolvingSymlinksInPath(),
+      tooLarge: CodexAdapterError.cannotReadConfiguration(configurationURL),
+      unreadable: CodexAdapterError.cannotReadConfiguration(configurationURL))
     do {
       return try TOMLDecoder().decode(Configuration.self, from: configuration).tui?.theme
     } catch {
