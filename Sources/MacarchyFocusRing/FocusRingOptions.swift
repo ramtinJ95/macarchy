@@ -1,4 +1,5 @@
 import ArgumentParser
+import ThemeCore
 
 struct FocusRingOptions: ParsableArguments {
   @Option(help: "Canonical Macarchy state directory.")
@@ -11,16 +12,8 @@ struct FocusRingOptions: ParsableArguments {
   var json = false
 
   func validate() throws {
-    guard FocusRingDuration.isValid(seconds) else {
+    guard seconds.isFinite, BordersPalette.previewSeconds.contains(seconds) else {
       throw ValidationError("--seconds must be between 1 and 300.")
     }
-  }
-}
-
-enum FocusRingDuration {
-  static let bounds: ClosedRange<Double> = 1...300
-
-  static func isValid(_ seconds: Double) -> Bool {
-    seconds.isFinite && bounds.contains(seconds)
   }
 }

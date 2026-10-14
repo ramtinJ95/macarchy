@@ -88,6 +88,7 @@ let package = Package(
       name: "MacarchyFocusRingTests",
       dependencies: [
         "MacarchyFocusRing",
+        "ThemeCore",
         .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: [.swiftLanguageMode(.v6)]

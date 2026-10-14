@@ -33,8 +33,7 @@ enum LeanBordersPreview {
       // Stops the owned child on every exit path before the signal handlers are restored.
       defer { process.stop() }
       let deadline = ProcessInfo.processInfo.systemUptime + limit
-      while process.isRunning() {
-        if let signal = received() { return signal }
+      while process.isRunning(), received() == nil {
         guard ProcessInfo.processInfo.systemUptime < deadline else {
           throw LeanBordersPreviewError.didNotExit(limit)
         }

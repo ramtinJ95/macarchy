@@ -13,6 +13,8 @@ package struct BordersPalette: Equatable, Sendable {
   }
 
   package static let width = 6.0
+  /// Shared by the JankyBorders preview and the lean helper it launches.
+  package static let previewSeconds: ClosedRange<Double> = 1...300
 
   package static let appearanceArguments = [
     "inactive_color=0x00000000", "background_color=0x00000000", "width=\(width)",

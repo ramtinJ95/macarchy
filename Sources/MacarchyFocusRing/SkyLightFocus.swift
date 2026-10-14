@@ -62,11 +62,10 @@ final class SkyLightLibrary {
 
   /// Only instantiated with the `@convention(c)` aliases above.
   func symbol<T>(_ name: String) throws -> T {
-    precondition(MemoryLayout<T>.size == MemoryLayout<UnsafeRawPointer>.size)
-    guard let address = dlsym(handle, name) else {
+    guard let function: T = optionalSymbol(name) else {
       throw FocusRingError("SkyLight does not export \(name)")
     }
-    return unsafeBitCast(address, to: T.self)
+    return function
   }
 
   /// Only for symbols whose absence has a documented fallback.
@@ -134,7 +133,9 @@ final class SkyLightFocus {
 
   @MainActor
   func newOutlineMover(windowID: UInt32) throws -> SkyLightOutlineMover {
-    try SkyLightOutlineMover(library: library, connection: mainConnection(), windowID: windowID)
+    try SkyLightOutlineMover(
+      library: library, connection: mainConnection(), windowID: windowID,
+      bounds: { try self.bounds(of: $0) })
   }
 
   func frontContext() throws -> FrontContext {
@@ -226,9 +227,9 @@ final class SkyLightFocus {
     return OutlineGeometry.resolvedCornerRadius(first.map { CGFloat($0.intValue) })
   }
 
-  func bounds(of windowID: UInt32, connection: Int32) throws -> CGRect {
+  func bounds(of windowID: UInt32) throws -> CGRect {
     var rect = CGRect.zero
-    let status = windowBounds(connection, windowID, &rect)
+    let status = windowBounds(mainConnection(), windowID, &rect)
     guard status == 0 else {
       throw FocusRingError("SLSGetWindowBounds failed for window \(windowID) (\(status))")
     }

@@ -22,9 +22,8 @@ final class FocusRingSession {
   private var deadlineTimer: Timer?
   private var notifications: SkyLightNotifications?
   private var cachedTarget: WindowCandidate?
-  private var cachedConnection: Int32?
   private var sources: [DispatchSourceSignal] = []
-  private var start = 0.0, deadline = 0.0, nextPointerCheck = 0.0, nextWatchdog = 0.0
+  private var start = 0.0, nextWatchdog = 0.0
   private var eventCount = 0, fullRefreshCount = 0, geometryRefreshCount = 0
   private var watchdogRefreshCount = 0
   private var running = false
@@ -64,13 +63,11 @@ final class FocusRingSession {
     panel.backgroundColor = .clear
     panel.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
     panel.contentView = outline
-    outline.color = palette.color.cgColor
+    outline.color = palette.color
   }
 
   private func execute() -> Int32 {
     start = ProcessInfo.processInfo.systemUptime
-    deadline = start + options.seconds
-    nextPointerCheck = start + 0.25
     nextWatchdog = start + 2
     for number in [SIGINT, SIGTERM, SIGHUP] {
       Darwin.signal(number, SIG_IGN)
@@ -94,7 +91,8 @@ final class FocusRingSession {
         MainActor.assumeIsolated { self?.maintenance() }
       }
       let cutoff = Timer(
-        timeInterval: max(0, deadline - ProcessInfo.processInfo.systemUptime), repeats: false
+        timeInterval: max(0, start + options.seconds - ProcessInfo.processInfo.systemUptime),
+        repeats: false
       ) { [weak self] _ in
         MainActor.assumeIsolated { self?.stop("duration", code: 0) }
       }
@@ -119,27 +117,26 @@ final class FocusRingSession {
 
   /// Full refresh: topology, selection and subscription are re-read from the window server.
   private func step() throws {
-    guard ProcessInfo.processInfo.systemUptime < deadline else {
-      return stop("duration", code: 0)
-    }
-    fullRefreshCount = Self.adding(fullRefreshCount, 1)
+    fullRefreshCount += 1
     let ownID = panel.windowNumber > 0 ? UInt32(panel.windowNumber) : nil
     // Query authoritative Space state rather than infer fullscreen from geometry.
     let context = try focus.frontContext()
-    switch try focus.spaceKind(in: context) {
-    case .user: break
-    case .fullscreen:
+    let kind = try focus.spaceKind(in: context)
+    let hiddenReason: String? =
+      switch kind {
+      case .user: nil
+      case .fullscreen: "native-fullscreen"
+      case .other(let type): "unknown-space-type-\(type)"
+      }
+    if let hiddenReason {
       try subscribe([], excluding: ownID)
-      return hide("native-fullscreen")
-    case .other(let type):
-      try subscribe([], excluding: ownID)
-      return hide("unknown-space-type-\(type)")
+      return hide(hiddenReason)
     }
     let target = try focus.firstSuitableWindow(in: context, excluding: ownID)
     try subscribe(focus.observedWindowIDs, excluding: ownID)
     guard let target else { return hide("no-eligible-window") }
-    (cachedTarget, cachedConnection) = (target, context.ownConnection)
-    try updateGeometry(target, connection: context.ownConnection)
+    cachedTarget = target
+    try updateGeometry(target)
   }
 
   private func subscribe(_ ids: [UInt32], excluding ownID: UInt32?) throws {
@@ -149,15 +146,15 @@ final class FocusRingSession {
 
   private func handle(_ batch: FocusEventBatch) {
     guard stopReason == nil else { return }
-    eventCount = Self.adding(eventCount, batch.count)
-    if !batch.requiresFullRefresh, let target = cachedTarget, let connection = cachedConnection {
+    eventCount += batch.count
+    if !batch.requiresFullRefresh, let target = cachedTarget {
       // Background motion is ignored; only the cached target's geometry is refreshed.
       if batch.geometryIDs.contains(target.windowID) {
-        geometryRefreshCount = Self.adding(geometryRefreshCount, 1)
+        geometryRefreshCount += 1
         // A stale target gets one full refresh; a failing full query stops the helper.
         let updated = autoreleasepool { () -> Bool in
           do {
-            try updateGeometry(target, connection: connection)
+            try updateGeometry(target)
             return true
           } catch { return false }
         }
@@ -181,36 +178,27 @@ final class FocusRingSession {
   /// hidden fast poll. Watchdog refreshes are reported so absent events stay visible.
   private func maintenance() {
     guard stopReason == nil else { return }
+    do {
+      // A stable pointer stays authoritative; decode the palette only when it moves.
+      let moved = try autoreleasepool { () throws -> Bool in
+        guard try PaletteState.pointerStamp(root: root) != palette.stamp else { return false }
+        palette = try PaletteState.load(root: root)
+        outline.color = palette.color
+        return true
+      }
+      if moved { tick() }
+    } catch { return stop("failure", code: 1, error: "\(error)") }
     let now = ProcessInfo.processInfo.systemUptime
-    guard now < deadline else { return stop("duration", code: 0) }
-    if now >= nextPointerCheck {
-      nextPointerCheck = now + 0.25
-      do {
-        // A stable pointer stays authoritative; decode the palette only when it moves.
-        let moved = try autoreleasepool { () throws -> Bool in
-          guard try PaletteState.pointerStamp(root: root) != palette.stamp else { return false }
-          palette = try PaletteState.load(root: root)
-          outline.color = palette.color.cgColor
-          return true
-        }
-        if moved { tick() }
-      } catch { return stop("failure", code: 1, error: "\(error)") }
-    }
     if now >= nextWatchdog, stopReason == nil {
       nextWatchdog = now + 2
-      watchdogRefreshCount = Self.adding(watchdogRefreshCount, 1)
+      watchdogRefreshCount += 1
       tick()
     }
   }
 
-  private static func adding(_ value: Int, _ amount: Int) -> Int {
-    let (sum, overflow) = value.addingReportingOverflow(max(0, amount))
-    return overflow ? .max : sum
-  }
-
   /// Bounds, frame, level, ordering and record for an already selected target.
-  private func updateGeometry(_ target: WindowCandidate, connection: Int32) throws {
-    let bounds = try focus.bounds(of: target.windowID, connection: connection)
+  private func updateGeometry(_ target: WindowCandidate) throws {
+    let bounds = try focus.bounds(of: target.windowID)
     if outline.cornerRadius != target.cornerRadius {
       outline.cornerRadius = target.cornerRadius
     }
@@ -269,7 +257,7 @@ final class FocusRingSession {
   private func hide(_ reason: String) {
     if panel.isVisible { panel.orderOut(nil) }
     previousOrderedTarget = nil
-    (cachedTarget, cachedConnection) = (nil, nil)
+    cachedTarget = nil
     record(visible: false, reason: reason)
   }
 
@@ -359,28 +347,22 @@ final class FocusRingSession {
 
   /// Point-in-time refusal only: a racing start is not prevented and this is not a lock.
   private static func refuseCompetingOutlines() throws {
-    let runner = ProcessRunner.live
-    let borders = try processIDs(command: "borders", runner: runner)
-    guard borders.isEmpty else {
-      throw FocusRingError("JankyBorders is running for this user (pids \(borders))")
+    // Any running or registered JankyBorders refuses, loaded or not, matching the preview policy.
+    let borders = try BordersService(homeDirectory: URL(filePath: NSHomeDirectory())).inspect()
+    guard borders == .stopped else {
+      throw FocusRingError(
+        "JankyBorders is running or registered for this user (\(borders)); remove it first")
     }
     let command = try ownCommand()
-    let helpers = try processIDs(command: command, runner: runner).filter { $0 != getpid() }
+    let helpers = try processIDs(command: command).filter { $0 != getpid() }
     guard helpers.isEmpty else {
       throw FocusRingError("another \(command) is running (pids \(helpers))")
-    }
-    let registration = try HomebrewUserServiceRegistration.inspect(
-      provider: .borders, home: URL(filePath: NSHomeDirectory()), runner: runner)
-    // Any registration refuses, loaded or not, matching the preview policy.
-    guard registration == nil else {
-      throw FocusRingError(
-        "a Homebrew borders service is registered for this user; remove it first")
     }
   }
 
   /// Exact `p_comm` matches for this user; pgrep exits 1 for a clean absence.
-  private static func processIDs(command: String, runner: ProcessRunner) throws -> [pid_t] {
-    let result = try runner.run(
+  private static func processIDs(command: String) throws -> [pid_t] {
+    let result = try ProcessRunner.live.run(
       ProcessRequest(
         executableURL: URL(filePath: "/usr/bin/pgrep"),
         arguments: ["-x", "-U", "\(getuid())", command], timeout: 2))
@@ -425,7 +407,7 @@ private struct PaletteState {
   let stamp: String
   let generationID: String
   let accent: String
-  let color: OutlineColor
+  let color: CGColor
 
   static func pointerStamp(root: URL) throws -> String {
     let path = root.appending(path: "current").path
@@ -441,11 +423,13 @@ private struct PaletteState {
   static func load(root: URL) throws -> Self {
     let stamp = try pointerStamp(root: root)
     let palette = try BordersPalette.read(root: root)
-    guard let color = OutlineColor(accent: palette.accent) else {
+    guard let accent = SRGBColor(rawValue: palette.accent) else {
       throw FocusRingError("theme accent \(palette.accent) is not #RRGGBB")
     }
+    let (red, green, blue) = accent.components
     return Self(
-      stamp: stamp, generationID: palette.generationID, accent: palette.accent, color: color)
+      stamp: stamp, generationID: palette.generationID, accent: palette.accent,
+      color: CGColor(srgbRed: red, green: green, blue: blue, alpha: 1))
   }
 }
 
