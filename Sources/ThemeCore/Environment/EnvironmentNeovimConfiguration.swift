@@ -202,23 +202,22 @@ struct EnvironmentNeovimConfiguration {
   }
 
   private func readJSONDictionary(_ data: Data, source: URL) throws -> [String: Any] {
+    let object: Any
     do {
-      guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-      else {
-        throw EnvironmentConfigurationError.invalid(
-          source,
-          "Neovim lazy-lock.json must contain an object"
-        )
-      }
-      return value
-    } catch let error as EnvironmentConfigurationError {
-      throw error
+      object = try JSONSerialization.jsonObject(with: data)
     } catch {
       throw EnvironmentConfigurationError.invalid(
         source,
         "Neovim lazy-lock.json is invalid JSON"
       )
     }
+    guard let value = object as? [String: Any] else {
+      throw EnvironmentConfigurationError.invalid(
+        source,
+        "Neovim lazy-lock.json must contain an object"
+      )
+    }
+    return value
   }
 
   private func recognizedLegacyNeovimThemeArtifact(

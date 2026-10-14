@@ -6,13 +6,13 @@ package enum BordersConfiguration {
   /// Native Borders invokes this at startup. It reads the authoritative pointer;
   /// the environment generation intentionally contains no copied palette.
   package static func contents(stateRoot: URL) -> String {
-    let themePath = stateRoot.appending(path: "current/theme.json").path
-      .replacingOccurrences(of: "'", with: "'\"'\"'")
+    let themePath = DesktopShellSyntax.literal(
+      stateRoot.appending(path: "current/theme.json").path)
     return """
       #!/bin/sh
       # Macarchy-owned; generated from the applied focus-ring role.
       set -eu
-      accent=$(/usr/bin/plutil -extract semantic.accent raw -o - '\(themePath)')
+      accent=$(/usr/bin/plutil -extract semantic.accent raw -o - \(themePath))
       case "$accent" in
         \\#??????) ;;
         *) echo 'Borders: canonical accent is not a six-digit color' >&2; exit 1 ;;

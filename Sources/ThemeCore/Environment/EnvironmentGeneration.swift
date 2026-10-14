@@ -55,7 +55,7 @@ package enum EnvironmentGenerationError: Error, CustomStringConvertible, Sendabl
     case .invalid(let reason):
       "invalid environment generation: \(reason)"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(String(cString: strerror(code))) (errno \(code))"
+      "cannot \(operation) \(url.path): \(errnoDescription(code))"
     }
   }
 }
@@ -82,43 +82,33 @@ package struct EnvironmentGenerationStore: Sendable {
   package func inspect(expected composition: EnvironmentComposition? = nil)
     -> EnvironmentGenerationInspection
   {
+    func inspection(
+      _ status: EnvironmentGenerationInspection.Status,
+      _ manifest: EnvironmentGenerationManifest?,
+      _ message: String
+    ) -> EnvironmentGenerationInspection {
+      EnvironmentGenerationInspection(
+        status: status,
+        generationID: manifest?.generationID,
+        inputDigest: manifest?.inputDigest,
+        renderedDigest: manifest?.renderedDigest,
+        message: message
+      )
+    }
     do {
       guard let manifest = try currentManifest() else {
-        return EnvironmentGenerationInspection(
-          status: .absent,
-          generationID: nil,
-          inputDigest: nil,
-          renderedDigest: nil,
-          message: "No environment generation is selected."
-        )
+        return inspection(.absent, nil, "No environment generation is selected.")
       }
       if let composition,
         manifest.inputDigest != composition.inputDigest
           || manifest.renderedDigest != composition.renderedDigest
       {
-        return EnvironmentGenerationInspection(
-          status: .drifted,
-          generationID: manifest.generationID,
-          inputDigest: manifest.inputDigest,
-          renderedDigest: manifest.renderedDigest,
-          message: "The selected environment generation does not match the profile."
-        )
+        return inspection(
+          .drifted, manifest, "The selected environment generation does not match the profile.")
       }
-      return EnvironmentGenerationInspection(
-        status: .current,
-        generationID: manifest.generationID,
-        inputDigest: manifest.inputDigest,
-        renderedDigest: manifest.renderedDigest,
-        message: "The selected environment generation is valid."
-      )
+      return inspection(.current, manifest, "The selected environment generation is valid.")
     } catch {
-      return EnvironmentGenerationInspection(
-        status: .drifted,
-        generationID: nil,
-        inputDigest: nil,
-        renderedDigest: nil,
-        message: String(describing: error)
-      )
+      return inspection(.drifted, nil, String(describing: error))
     }
   }
 
@@ -137,8 +127,7 @@ package struct EnvironmentGenerationStore: Sendable {
     let data = try BoundedRegularFile.read(at: manifestURL, maximumSize: 65_536).data
     let manifest = try JSONDecoder().decode(EnvironmentGenerationManifest.self, from: data)
     guard manifest.schemaVersion == EnvironmentGenerationManifest.currentSchemaVersion,
-      manifest.generationID == generationID,
-      Self.isGenerationID(generationID)
+      manifest.generationID == generationID
     else {
       throw EnvironmentGenerationError.invalid("manifest identity is invalid")
     }
@@ -265,7 +254,7 @@ package struct EnvironmentGenerationStore: Sendable {
     let manifestURL = staging.appending(path: "manifest.json")
     try encoder.encode(manifest).write(to: manifestURL, options: .withoutOverwriting)
     try sealRegularFile(manifestURL, operation: "seal manifest")
-    try sealDirectories(below: staging, includeRoot: false)
+    try sealDirectories(below: staging)
     let generationsDescriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)
     defer { Darwin.close(generationsDescriptor) }
     let stagingDescriptor = try PinnedFilesystem.openDirectory(
@@ -302,7 +291,7 @@ package struct EnvironmentGenerationStore: Sendable {
     let temporaryName = ".current-\(UUID().uuidString.lowercased())"
     let temporary = environmentRoot.appending(path: temporaryName)
     let current = environmentRoot.appending(path: "current")
-    let (stateDescriptor, environmentDescriptor) = try openEnvironment(create: false)
+    let (stateDescriptor, environmentDescriptor) = try openEnvironment()
     defer {
       Darwin.close(environmentDescriptor)
       Darwin.close(stateDescriptor)
@@ -331,7 +320,7 @@ package struct EnvironmentGenerationStore: Sendable {
     guard let destination else {
       let descriptors: (Int32, Int32)
       do {
-        descriptors = try openEnvironment(create: false)
+        descriptors = try openEnvironment()
       } catch let error as PinnedFilesystemError where error.code == ENOENT {
         return
       }
@@ -355,7 +344,7 @@ package struct EnvironmentGenerationStore: Sendable {
     try ensureRoots()
     let temporary = environmentRoot.appending(
       path: ".current-restore-\(UUID().uuidString.lowercased())")
-    let (stateDescriptor, environmentDescriptor) = try openEnvironment(create: false)
+    let (stateDescriptor, environmentDescriptor) = try openEnvironment()
     defer {
       Darwin.close(environmentDescriptor)
       Darwin.close(stateDescriptor)
@@ -387,7 +376,7 @@ package struct EnvironmentGenerationStore: Sendable {
     let current = environmentRoot.appending(path: "current")
     let descriptors: (Int32, Int32)
     do {
-      descriptors = try openEnvironment(create: false)
+      descriptors = try openEnvironment()
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
       return nil
     }
@@ -443,22 +432,14 @@ package struct EnvironmentGenerationStore: Sendable {
     Darwin.close(generationsDescriptor)
   }
 
-  private func openEnvironment(create: Bool) throws -> (Int32, Int32) {
+  private func openEnvironment() throws -> (Int32, Int32) {
     let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
     do {
-      let environmentDescriptor =
-        try create
-        ? PinnedFilesystem.openOrCreateChildDirectory(
-          parentDescriptor: stateDescriptor,
-          name: "environment",
-          url: environmentRoot,
-          mode: 0o700
-        )
-        : PinnedFilesystem.openDirectory(
-          parentDescriptor: stateDescriptor,
-          name: "environment",
-          url: environmentRoot
-        )
+      let environmentDescriptor = try PinnedFilesystem.openDirectory(
+        parentDescriptor: stateDescriptor,
+        name: "environment",
+        url: environmentRoot
+      )
       return (stateDescriptor, environmentDescriptor)
     } catch {
       Darwin.close(stateDescriptor)
@@ -548,7 +529,7 @@ package struct EnvironmentGenerationStore: Sendable {
     }
   }
 
-  private func sealDirectories(below root: URL, includeRoot: Bool) throws {
+  private func sealDirectories(below root: URL) throws {
     guard
       let enumerator = FileManager.default.enumerator(
         at: root,
@@ -556,7 +537,7 @@ package struct EnvironmentGenerationStore: Sendable {
         options: []
       )
     else { return }
-    var directories = includeRoot ? [root] : []
+    var directories: [URL] = []
     for case let item as URL in enumerator {
       if try item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
         directories.append(item)

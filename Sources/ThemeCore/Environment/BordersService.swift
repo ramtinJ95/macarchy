@@ -34,8 +34,7 @@ package struct BordersServiceInspection: Codable, Equatable, Sendable {
         && executablePath.hasSuffix("/bin/borders"))
     return knownExecutable
       && URL(filePath: executablePath).standardizedFileURL.path == executablePath
-      && propertyListDigest.hasPrefix("sha256:") && propertyListDigest.count == 71
-      && propertyListDigest.dropFirst(7).allSatisfy { "0123456789abcdef".contains($0) }
+      && isSHA256Digest(propertyListDigest)
   }
 }
 
