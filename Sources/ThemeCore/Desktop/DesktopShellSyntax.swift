@@ -8,6 +8,11 @@ package struct DesktopShellSyntaxError: Error, CustomStringConvertible {
 
 /// Parse only: never source personal code during planning or editing feedback.
 package enum DesktopShellSyntax {
+  /// Single-quoted POSIX shell word for `value`.
+  package static func literal(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+  }
+
   package static func validate(_ text: String, source: URL) throws {
     guard !text.contains("\0"), !text.hasPrefix("\u{FEFF}") else {
       throw DesktopShellSyntaxError(

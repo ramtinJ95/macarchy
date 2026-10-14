@@ -105,6 +105,20 @@ struct TOMLSourceIndex {
       }
   }
 
+  /// Describes the first table `allowsTable` rejects, else the first field outside
+  /// `allowedFields`; nil when every entry is allowed.
+  func firstUnknownEntry(
+    allowsTable: (TOMLTableLocation) -> Bool, allowedFields: Set<String>
+  ) -> String? {
+    if let table = tables.first(where: { !allowsTable($0) }) {
+      return "line \(table.line), column \(table.column): unknown table '\(table.path)'"
+    }
+    if let field = fields.first(where: { !allowedFields.contains($0.path) }) {
+      return "line \(field.line), column \(field.column): unknown key '\(field.path)'"
+    }
+    return nil
+  }
+
   /// The line number TOMLDecoder embeds as "(Line N)" in its error description.
   static func decoderErrorLine(in description: String) -> Int? {
     guard let marker = description.range(of: "(Line ") else { return nil }

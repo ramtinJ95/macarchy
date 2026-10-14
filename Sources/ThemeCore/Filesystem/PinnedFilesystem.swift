@@ -13,8 +13,13 @@ package struct PinnedFilesystemError: Error, CustomStringConvertible, Sendable {
   }
 
   package var description: String {
-    "cannot \(operation) \(url.path): \(String(cString: strerror(code))) (errno \(code))"
+    "cannot \(operation) \(url.path): \(errnoDescription(code))"
   }
+}
+
+/// `"<strerror text> (errno N)"`.
+func errnoDescription(_ code: Int32) -> String {
+  "\(String(cString: strerror(code))) (errno \(code))"
 }
 
 package enum PinnedFilesystem {
@@ -81,6 +86,26 @@ package enum PinnedFilesystem {
       throw PinnedFilesystemError(operation: "sync pinned directory parent", url: url, code: errno)
     }
     return try openDirectory(parentDescriptor: parentDescriptor, name: name, url: url)
+  }
+
+  /// `openDirectory(at:)`, or nil when the directory does not exist.
+  package static func openDirectoryIfPresent(at url: URL) throws -> Int32? {
+    do {
+      return try openDirectory(at: url)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
+  }
+
+  /// `openDirectory(parentDescriptor:name:url:)`, or nil when the directory does not exist.
+  package static func openDirectoryIfPresent(
+    parentDescriptor: Int32, name: String, url: URL
+  ) throws -> Int32? {
+    do {
+      return try openDirectory(parentDescriptor: parentDescriptor, name: name, url: url)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
   }
 
   package static func openOrCreateChildDirectory(
