@@ -153,8 +153,7 @@ package struct ScreenSaverImageStore: Sendable {
     }
     guard let background = manifest.background else { return nil }
     let data = try BoundedRegularFile.read(
-      at: root.appending(
-        path: "generations/\(manifest.generationID)/\(WallpaperAdapter.outputPath)"),
+      at: manifest.artifactURL(root: root, path: WallpaperAdapter.outputPath),
       maximumSize: ThemeImageAsset.maximumSize
     ).data
     return Source(

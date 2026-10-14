@@ -51,14 +51,10 @@ public struct ThemeRenderer: Sendable {
     wallpaperData: Data?
   ) throws -> RenderedTheme {
     let normalized = NormalizedTheme(package: package, generationID: generationID)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var json = try encoder.encode(normalized)
-    json.append(0x0a)
-    var capabilities = try encoder.encode(
+    let json = try prettyJSONDocument(normalized)
+    let capabilities = try prettyJSONDocument(
       GeneratedThemeCapabilities(unsupportedAdapters: [])
     )
-    capabilities.append(0x0a)
     let metadata = try Self.validatedArtifactMetadata(catalog: catalog)
     var artifacts = [
       try artifact(metadata, Self.capabilitiesOutputPath, capabilities),

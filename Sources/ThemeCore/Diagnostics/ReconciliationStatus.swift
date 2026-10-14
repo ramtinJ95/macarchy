@@ -157,10 +157,7 @@ public struct ReconciliationStatusStore: Sendable {
       path: ".reconciliation-\(UUID().uuidString.lowercased()).json")
     defer { try? FileManager.default.removeItem(at: temporaryURL) }
 
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var data = try encoder.encode(record)
-    data.append(0x0a)
+    let data = try prettyJSONDocument(record)
     guard data.count <= BoundedRegularFile.maximumSize else {
       throw ReconciliationStatusError.invalidStatus("exceeds the 1 MiB file limit")
     }

@@ -538,10 +538,7 @@ package struct SpicetifyAdapter: Sendable {
   private func writeRuntimeEvidence(_ evidence: SpicetifyRuntimeEvidence) throws {
     let directory = runtimeEvidenceURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    var data = try encoder.encode(evidence)
-    data.append(0x0a)
+    let data = try prettyJSONDocument(evidence)
     try data.write(to: runtimeEvidenceURL, options: .atomic)
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o600], ofItemAtPath: runtimeEvidenceURL.path)

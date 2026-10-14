@@ -326,24 +326,7 @@ struct SketchyBarAdapter: Sendable {
 
   private func activeBarColor() throws -> String {
     let manifest = try ReconciliationStatusStore(root: root).activeManifest()
-    let theme = try JSONDecoder().decode(
-      NormalizedTheme.self,
-      from: BoundedRegularFile.read(
-        at: root.appending(
-          path: "generations/\(manifest.generationID)/\(ThemeRenderer.themeOutputPath)"
-        )
-      ).data
-    )
-    guard
-      theme.generationID == manifest.generationID,
-      theme.themeID == manifest.themeID,
-      theme.schemaVersion == manifest.themeSchemaVersion
-    else {
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "theme.json does not match the active manifest"
-      )
-    }
-    return Self.barColor(theme.semantic.background)
+    return Self.barColor(try manifest.normalizedTheme(root: root).semantic.background)
   }
 
   private static func isIntegrationDrift(_ error: any Error) -> Bool {

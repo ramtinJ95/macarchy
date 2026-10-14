@@ -161,9 +161,7 @@ package struct KittyAdapter: Sendable {
   private static func activeConfiguration(root: URL) throws -> Data {
     let manifest = try ReconciliationStatusStore(root: root).activeManifest()
     return try BoundedRegularFile.read(
-      at: root.appending(
-        path: "generations/\(manifest.generationID)/\(Self.outputPath)"
-      )
+      at: manifest.artifactURL(root: root, path: Self.outputPath)
     ).data
   }
 
