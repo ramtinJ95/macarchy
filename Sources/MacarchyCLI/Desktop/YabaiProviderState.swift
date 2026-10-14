@@ -59,12 +59,15 @@ struct YabaiAdoptionEvidence: Codable, Equatable, Sendable {
   }
 
   var digest: String {
-    let values =
-      [
-        kind.rawValue, publicPath, linkTarget ?? "", contentDigest ?? "",
-        permissions.map(String.init) ?? "", device.map(String.init) ?? "",
-        inode.map(String.init) ?? "",
-      ] + inventory + (volumeUUID.map { [$0] } ?? [])
+    var values: [String] = [
+      kind.rawValue, publicPath, linkTarget ?? "", contentDigest ?? "",
+      permissions.map(String.init) ?? "", device.map(String.init) ?? "",
+      inode.map(String.init) ?? "",
+    ]
+    values += inventory
+    if let volumeUUID {
+      values.append(volumeUUID)
+    }
     var data = Data()
     for value in values {
       let bytes = Data(value.utf8)
