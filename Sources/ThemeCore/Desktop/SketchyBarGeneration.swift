@@ -65,7 +65,7 @@ package enum SketchyBarGenerationError: Error, CustomStringConvertible, Sendable
     case .invalid(let reason):
       "invalid SketchyBar generation: \(reason)"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(String(cString: strerror(code))) (errno \(code))"
+      "cannot \(operation) \(url.path): \(errnoDescription(code))"
     }
   }
 }
@@ -95,23 +95,16 @@ package struct SketchyBarGenerationInspector: Sendable {
       path: "desktop/sketchybar",
       directoryHint: .isDirectory
     )
-    let current = providerRoot.appending(path: "current")
-    var metadata = stat()
-    guard lstat(current.path, &metadata) == 0 else {
-      return errno == ENOENT
-        ? .missing
-        : invalid("cannot inspect current pointer: \(systemMessage())")
-    }
-    guard metadata.st_mode & S_IFMT == S_IFLNK, let target = readLink(current) else {
-      return invalid("current is not a readable symbolic link")
-    }
-    let prefix = "generations/"
-    guard target.hasPrefix(prefix) else {
-      return invalid("current target is outside the SketchyBar generation inventory")
-    }
-    let generationID = String(target.dropFirst(prefix.count))
-    guard Self.isGenerationID(generationID), !generationID.contains("/") else {
-      return invalid("current target has an invalid generation identity")
+    let generationID: String
+    switch DesktopCurrentPointer.read(
+      providerRoot: providerRoot, label: "SketchyBar", isGenerationID: Self.isGenerationID)
+    {
+    case .missing:
+      return .missing
+    case .invalid(let message):
+      return invalid(message)
+    case .generation(let id):
+      generationID = id
     }
     do {
       let manifest = try validatedManifest(generationID)
@@ -134,9 +127,7 @@ package struct SketchyBarGenerationInspector: Sendable {
   }
 
   package static func isGenerationID(_ value: String) -> Bool {
-    guard value.hasPrefix("s-") else { return false }
-    let nonce = String(value.dropFirst(2))
-    return nonce == nonce.lowercased() && UUID(uuidString: nonce) != nil
+    isPrefixedLowercaseUUID(value, prefix: "s-")
   }
 
   private func validatedManifest(
@@ -264,17 +255,6 @@ package struct SketchyBarGenerationInspector: Sendable {
       manifest: nil,
       message: message
     )
-  }
-
-  private func readLink(_ url: URL) -> String? {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(url.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { return nil }
-    return String(decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)), as: UTF8.self)
-  }
-
-  private func systemMessage() -> String {
-    "\(String(cString: strerror(errno))) (errno \(errno))"
   }
 }
 
@@ -405,12 +385,9 @@ package struct SketchyBarGenerationActivator: Sendable {
     guard SketchyBarGenerationInspector.isGenerationID(generationID) else {
       throw SketchyBarGenerationError.invalid("cannot recover an invalid generation identity")
     }
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    guard
+      let descriptor = try PinnedFilesystem.openDirectoryIfPresent(at: providerRoot)
+    else { return }
     defer { Darwin.close(descriptor) }
     let name = Self.currentSelectionName(generationID)
     let residue = providerRoot.appending(path: name)
@@ -448,16 +425,13 @@ package struct SketchyBarGenerationActivator: Sendable {
     let providerDescriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
     defer { Darwin.close(providerDescriptor) }
     let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
-    let generationsDescriptor: Int32
-    do {
-      generationsDescriptor = try PinnedFilesystem.openDirectory(
+    guard
+      let generationsDescriptor = try PinnedFilesystem.openDirectoryIfPresent(
         parentDescriptor: providerDescriptor,
         name: "generations",
         url: generations
       )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return []
-    }
+    else { return [] }
     defer { Darwin.close(generationsDescriptor) }
     let inventory = try PinnedFilesystem.directoryEntries(
       descriptor: generationsDescriptor,
@@ -490,16 +464,13 @@ package struct SketchyBarGenerationActivator: Sendable {
     let providerDescriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
     defer { Darwin.close(providerDescriptor) }
     let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
-    let generationsDescriptor: Int32
-    do {
-      generationsDescriptor = try PinnedFilesystem.openDirectory(
+    guard
+      let generationsDescriptor = try PinnedFilesystem.openDirectoryIfPresent(
         parentDescriptor: providerDescriptor,
         name: "generations",
         url: generations
       )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    else { return }
     defer { Darwin.close(generationsDescriptor) }
     let inventory = try PinnedFilesystem.directoryEntries(
       descriptor: generationsDescriptor,
@@ -599,12 +570,9 @@ package struct SketchyBarGenerationActivator: Sendable {
 
   private func removeNamedGeneration(_ name: String) throws {
     let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
-    let generationsDescriptor: Int32
-    do {
-      generationsDescriptor = try PinnedFilesystem.openDirectory(at: generations)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    guard
+      let generationsDescriptor = try PinnedFilesystem.openDirectoryIfPresent(at: generations)
+    else { return }
     defer { Darwin.close(generationsDescriptor) }
     try removeNamedGeneration(
       name,
@@ -619,16 +587,13 @@ package struct SketchyBarGenerationActivator: Sendable {
     generations: URL
   ) throws {
     let generation = generations.appending(path: name, directoryHint: .isDirectory)
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(
+    guard
+      let descriptor = try PinnedFilesystem.openDirectoryIfPresent(
         parentDescriptor: generationsDescriptor,
         name: name,
         url: generation
       )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    else { return }
     defer { Darwin.close(descriptor) }
 
     let inventory = try PinnedFilesystem.directoryEntries(

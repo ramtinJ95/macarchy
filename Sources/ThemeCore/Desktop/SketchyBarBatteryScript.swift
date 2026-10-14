@@ -11,7 +11,7 @@ enum SketchyBarBatteryScript {
       mouse.clicked) "$SKETCHYBAR" --set "$NAME" popup.drawing=toggle; exit ;;
       mouse.exited.global) "$SKETCHYBAR" --set "$NAME" popup.drawing=off; exit ;;
     esac
-    PALETTE=\(SketchyBarConfigurationComposer.shellLiteral(palettePath))
+    PALETTE=\(DesktopShellSyntax.literal(palettePath))
     . "$PALETTE"
     fail() {
       "$SKETCHYBAR" --set "$NAME" label=ERR icon='!' icon.color="$MACARCHY_BATTERY_RED" \\

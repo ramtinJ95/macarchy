@@ -8,7 +8,7 @@ enum SketchyBarMetricScript {
     let cpu = module == .cpu
     let query =
       cpu
-      ? "\(SketchyBarConfigurationComposer.shellLiteral(macarchyExecutablePath)) desktop _cpu-load"
+      ? "\(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _cpu-load"
       : "/usr/bin/memory_pressure"
     let parser =
       cpu
@@ -20,7 +20,7 @@ enum SketchyBarMetricScript {
       export LC_ALL=C
       : "${NAME:?SketchyBar did not provide an item name}"
       SKETCHYBAR=/opt/homebrew/bin/sketchybar
-      PALETTE=\(SketchyBarConfigurationComposer.shellLiteral(palettePath))
+      PALETTE=\(DesktopShellSyntax.literal(palettePath))
       . "$PALETTE"
       fail() {
         "$SKETCHYBAR" --set "$NAME" label='\(cpu ? "cpu" : "mem") ERR' label.color="$MACARCHY_BATTERY_RED"
