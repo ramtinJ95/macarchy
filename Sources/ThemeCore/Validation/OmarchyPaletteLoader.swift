@@ -206,7 +206,7 @@ public struct OmarchyPaletteLoader: Sendable {
       if Self.isMissing(colors[bright]) {
         let base = try color(
           field, colors: colors, origins: origins, index: index, file: colorsFile)
-        colors[bright] = Self.mix(base, with: SRGBColor(rawValue: "#ffffff")!, amount: 0.2)
+        colors[bright] = base.mixed(with: SRGBColor(rawValue: "#ffffff")!, amount: 0.2)
         origins[bright] = origins[field]
         derivedFields.insert(bright)
       }
@@ -326,17 +326,10 @@ public struct OmarchyPaletteLoader: Sendable {
     } catch {
       let description = String(describing: error)
       throw ThemeDiagnostic(
-        location: .init(file: file, line: parseLine(from: description)),
+        location: .init(file: file, line: TOMLSourceIndex.decoderErrorLine(in: description)),
         message: "Invalid Omarchy colors TOML: \(description)"
       )
     }
-  }
-
-  private func parseLine(from description: String) -> Int? {
-    guard let marker = description.range(of: "(Line ") else { return nil }
-    let suffix = description[marker.upperBound...]
-    guard let closing = suffix.firstIndex(of: ")") else { return nil }
-    return Int(suffix[..<closing])
   }
 
   private func resolveAppearance(
@@ -363,8 +356,8 @@ public struct OmarchyPaletteLoader: Sendable {
 
     let background = try color(
       "background", colors: colors, origins: origins, index: index, file: colorsFile)
-    let bytes = Self.components(background)
-    return bytes.reduce(0, +) > 382 ? .light : .dark
+    let bytes = background.bytes
+    return bytes.red + bytes.green + bytes.blue > 382 ? .light : .dark
   }
 
   private func hasLightModeMarker(beside colorsFile: URL) throws -> Bool {
@@ -401,20 +394,6 @@ public struct OmarchyPaletteLoader: Sendable {
       )
     }
     return color
-  }
-
-  private static func mix(_ start: SRGBColor, with end: SRGBColor, amount: Double) -> String {
-    let startBytes = components(start)
-    let endBytes = components(end)
-    let mixed = zip(startBytes, endBytes).map { start, end in
-      Int((Double(start) * (1 - amount) + Double(end) * amount).rounded())
-    }
-    return String(format: "#%02x%02x%02x", mixed[0], mixed[1], mixed[2])
-  }
-
-  private static func components(_ color: SRGBColor) -> [Int] {
-    let rgb = Int(color.rawValue.dropFirst(), radix: 16)!
-    return [(rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff]
   }
 
   private static func derive(
