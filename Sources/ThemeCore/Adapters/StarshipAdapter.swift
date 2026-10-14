@@ -221,20 +221,13 @@ package struct StarshipAdapter: Sendable {
   }
 
   private func readBehavior() throws -> String {
-    let data: Data
+    let behavior = try AdapterConfigurationFile.readUTF8(
+      at: behaviorURL,
+      tooLarge: StarshipAdapterError.configurationTooLarge(behaviorURL),
+      unreadable: StarshipAdapterError.cannotReadBehavior(behaviorURL))
+    let ownership: StarshipPaletteOwnership
     do {
-      data = try BoundedRegularFile.read(at: behaviorURL).data
-    } catch BoundedRegularFileError.tooLarge {
-      throw StarshipAdapterError.configurationTooLarge(behaviorURL)
-    } catch {
-      throw StarshipAdapterError.cannotReadBehavior(behaviorURL)
-    }
-    guard let behavior = String(data: data, encoding: .utf8) else {
-      throw StarshipAdapterError.cannotReadBehavior(behaviorURL)
-    }
-    let ownership: StarshipThemeOwnership
-    do {
-      ownership = try TOMLDecoder().decode(StarshipThemeOwnership.self, from: behavior)
+      ownership = try TOMLDecoder().decode(StarshipPaletteOwnership.self, from: behavior)
     } catch {
       throw StarshipAdapterError.invalidBehavior(behaviorURL)
     }
@@ -293,9 +286,4 @@ package struct StarshipAdapter: Sendable {
       false
     }
   }
-}
-
-private struct StarshipThemeOwnership: Decodable {
-  let palette: String?
-  let palettes: [String: [String: String]]?
 }

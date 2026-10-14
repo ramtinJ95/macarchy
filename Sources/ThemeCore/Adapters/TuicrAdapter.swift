@@ -142,15 +142,10 @@ package struct TuicrAdapter: Sendable {
   }
 
   private func selectedTheme() throws -> String? {
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(at: configurationURL.resolvingSymlinksInPath()).data
-    } catch {
-      throw TuicrAdapterError.cannotReadConfiguration(configurationURL)
-    }
-    guard let configuration = String(data: data, encoding: .utf8) else {
-      throw TuicrAdapterError.cannotReadConfiguration(configurationURL)
-    }
+    let configuration = try AdapterConfigurationFile.readUTF8(
+      at: configurationURL.resolvingSymlinksInPath(),
+      tooLarge: TuicrAdapterError.cannotReadConfiguration(configurationURL),
+      unreadable: TuicrAdapterError.cannotReadConfiguration(configurationURL))
     do {
       return try TOMLDecoder().decode(Configuration.self, from: configuration).theme
     } catch {

@@ -20,10 +20,7 @@ package struct StarshipNativeConfiguration {
   }
 
   package func read() throws -> Data {
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let file = try PinnedFilesystem.readRegularFile(
-      parentDescriptor: parent, name: url.lastPathComponent, url: url)
+    let file = try PinnedFilesystem.readRegularFile(at: url)
     var metadata = stat()
     guard lstat(url.path, &metadata) == 0, metadata.st_nlink == 1,
       metadata.st_mode & 0o200 != 0
@@ -35,8 +32,8 @@ package struct StarshipNativeConfiguration {
     guard let source = String(data: data, encoding: .utf8) else {
       throw StarshipAdapterError.invalidBehavior(url)
     }
-    let current = try TOMLDecoder().decode(Ownership.self, from: source)
-    let desired = try TOMLDecoder().decode(Ownership.self, from: palette)
+    let current = try TOMLDecoder().decode(StarshipPaletteOwnership.self, from: source)
+    let desired = try TOMLDecoder().decode(StarshipPaletteOwnership.self, from: palette)
     let name = StarshipAdapter.paletteName
     let selection = CanonicalTOMLSelector(configuration: source, key: "palette")
     guard current.palette == name, selection.assignments.count == 1,
@@ -63,7 +60,7 @@ package struct StarshipNativeConfiguration {
     for (range, replacement) in changes.sorted(by: { $0.0.lowerBound > $1.0.lowerBound }) {
       result.replaceSubrange(range, with: replacement)
     }
-    _ = try TOMLDecoder().decode(Ownership.self, from: result)
+    _ = try TOMLDecoder().decode(StarshipPaletteOwnership.self, from: result)
     return Data(result.utf8)
   }
 
@@ -129,7 +126,7 @@ package struct StarshipNativeConfiguration {
   }
 }
 
-private struct Ownership: Decodable {
+struct StarshipPaletteOwnership: Decodable {
   let palette: String?
   let palettes: [String: [String: String]]?
 }

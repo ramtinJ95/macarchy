@@ -288,22 +288,11 @@ struct SketchyBarAdapter: Sendable {
     return "local colors = dofile(\(luaStringLiteral(path)))"
   }
 
-  private func readConfiguration(_ url: URL) throws -> Data {
-    do {
-      return try BoundedRegularFile.read(at: url.resolvingSymlinksInPath()).data
-    } catch BoundedRegularFileError.tooLarge {
-      throw SketchyBarAdapterError.configurationTooLarge(url)
-    } catch {
-      throw SketchyBarAdapterError.cannotReadConfiguration(url)
-    }
-  }
-
   private func readConfigurationText(_ url: URL) throws -> String {
-    let data = try readConfiguration(url)
-    guard let text = String(data: data, encoding: .utf8) else {
-      throw SketchyBarAdapterError.cannotReadConfiguration(url)
-    }
-    return text
+    try AdapterConfigurationFile.readUTF8(
+      at: url.resolvingSymlinksInPath(),
+      tooLarge: SketchyBarAdapterError.configurationTooLarge(url),
+      unreadable: SketchyBarAdapterError.cannotReadConfiguration(url))
   }
 
   private func queryState(timeout: TimeInterval) throws -> SketchyBarState {
@@ -377,19 +366,14 @@ struct SketchyBarAdapter: Sendable {
   }
 
   private static func blendedARGB(_ first: SRGBColor, _ second: SRGBColor) -> String {
-    let firstRGB = rgb(first)
-    let secondRGB = rgb(second)
+    let firstRGB = first.bytes
+    let secondRGB = second.bytes
     return String(
       format: "0xff%02x%02x%02x",
       (firstRGB.red + secondRGB.red) / 2,
       (firstRGB.green + secondRGB.green) / 2,
       (firstRGB.blue + secondRGB.blue) / 2
     )
-  }
-
-  private static func rgb(_ color: SRGBColor) -> (red: Int, green: Int, blue: Int) {
-    let value = Int(color.rawValue.dropFirst(), radix: 16)!
-    return ((value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff)
   }
 
   private static func luaStringLiteral(_ value: String) -> String {

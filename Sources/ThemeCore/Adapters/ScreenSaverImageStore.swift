@@ -41,7 +41,7 @@ package struct ScreenSaverImageStore: Sendable {
   // by the ordinary wallpaper limit. Decoded inputs already have a 64 MP ceiling.
   private static let maximumPNGSize = ThemeImageAsset.maximumPixels * 4 + 1_048_576
   let root: URL
-  var beforeCompletion: @Sendable () throws -> Void = {}
+  let beforeCompletion: @Sendable () throws -> Void
 
   package init(root: URL, beforeCompletion: @escaping @Sendable () throws -> Void = {}) {
     self.root = root.standardizedFileURL

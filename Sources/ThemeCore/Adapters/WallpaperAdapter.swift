@@ -161,11 +161,9 @@ struct WallpaperAdapter: Sendable {
     desiredWallpaperURL: @escaping @Sendable () throws -> URL?
   ) -> AdapterReconciliation {
     AdapterReconciliation(id: Self.id, requirement: .required) {
-      let preparation: (URL?, [WallpaperDisplay], AdapterOutcome?) = try activationLock.withLock {
+      let preparation: Preparation = try activationLock.withLock {
         guard let desiredWallpaperURL = try desiredWallpaperURL() else {
-          return (
-            nil,
-            [],
+          return .finished(
             AdapterOutcome(
               status: .disabled,
               message: "This theme has no backgrounds; macOS wallpaper is intentionally unmanaged"
@@ -178,9 +176,7 @@ struct WallpaperAdapter: Sendable {
           do {
             try control.set(desiredWallpaperURL, display.id)
           } catch {
-            return (
-              desiredWallpaperURL,
-              before,
+            return .finished(
               AdapterOutcome(
                 status: .failed,
                 message: "Cannot set wallpaper for display '\(display.name)': \(error)"
@@ -188,12 +184,16 @@ struct WallpaperAdapter: Sendable {
             )
           }
         }
-        return (desiredWallpaperURL, before, nil)
+        return .applied(desiredWallpaperURL, before)
       }
-      let (desiredWallpaperURL, before, failure) = preparation
-      if let failure { return failure }
-      guard let desiredWallpaperURL else {
-        preconditionFailure("Managed wallpaper preparation must return a desired URL")
+      let desiredWallpaperURL: URL
+      let before: [WallpaperDisplay]
+      switch preparation {
+      case .finished(let outcome):
+        return outcome
+      case .applied(let url, let displays):
+        desiredWallpaperURL = url
+        before = displays
       }
 
       // Settling only observes state; release the lock so it cannot delay other live adapters.
@@ -219,6 +219,11 @@ struct WallpaperAdapter: Sendable {
           + drifted.map(\.name).joined(separator: ", ")
       )
     }
+  }
+
+  private enum Preparation {
+    case finished(AdapterOutcome)
+    case applied(URL, [WallpaperDisplay])
   }
 
   private static func sameFile(_ first: URL, _ second: URL) -> Bool {

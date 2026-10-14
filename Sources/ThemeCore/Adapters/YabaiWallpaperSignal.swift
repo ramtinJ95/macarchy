@@ -74,17 +74,10 @@ struct YabaiWallpaperSignal: Sendable {
     guard FileManager.default.isExecutableFile(atPath: yabaiExecutableURL.path) else {
       throw YabaiWallpaperSignalError.executableUnavailable(yabaiExecutableURL)
     }
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(
-        at: configurationURL.resolvingSymlinksInPath()
-      ).data
-    } catch {
-      throw YabaiWallpaperSignalError.cannotReadConfiguration(configurationURL)
-    }
-    guard let configuration = String(data: data, encoding: .utf8) else {
-      throw YabaiWallpaperSignalError.cannotReadConfiguration(configurationURL)
-    }
+    let configuration = try AdapterConfigurationFile.readUTF8(
+      at: configurationURL.resolvingSymlinksInPath(),
+      tooLarge: YabaiWallpaperSignalError.cannotReadConfiguration(configurationURL),
+      unreadable: YabaiWallpaperSignalError.cannotReadConfiguration(configurationURL))
     guard
       let executable = executableURLs.first(where: {
         containsExactLine(directive(for: $0), in: configuration)

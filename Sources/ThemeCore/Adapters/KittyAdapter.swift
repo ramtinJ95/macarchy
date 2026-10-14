@@ -66,12 +66,8 @@ package struct KittyAdapter: Sendable {
   let includeDirective: String
   let processRunner: ProcessRunner
 
-  private var bridgeURL: URL {
-    root.appending(path: Self.bridgePath)
-  }
-
   private var bridge: AdapterBridgeFile<KittyAdapterError> {
-    AdapterBridgeFile(url: bridgeURL)
+    AdapterBridgeFile(url: root.appending(path: Self.bridgePath))
   }
 
   func preflight() throws {
@@ -91,10 +87,7 @@ package struct KittyAdapter: Sendable {
       try preflight()
       do {
         try ActivationLock(root: root).withLock {
-          let desired = try Self.activeConfiguration(root: root)
-          guard try bridge.read() == desired else {
-            throw KittyAdapterError.bridgeDoesNotMatch(bridgeURL)
-          }
+          try Self.validatePreparedBridge(root: root)
         }
       } catch ReconciliationStatusError.noActiveGeneration {
         // The include seam can be healthy before the first activation creates a bridge.

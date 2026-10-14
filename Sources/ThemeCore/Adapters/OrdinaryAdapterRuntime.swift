@@ -4,7 +4,7 @@ struct OrdinaryAdapterRuntime: Sendable {
   let preflight: @Sendable () throws -> Void
   let isIntegrationDrift: @Sendable (any Error) -> Bool
 
-  func inspection(readyMessage: String? = nil) -> AdapterInspection {
+  func inspection(readyMessage: String) -> AdapterInspection {
     do {
       try preflight()
       return AdapterInspection(
@@ -37,5 +37,4 @@ struct OrdinaryAdapterRuntime: Sendable {
       return try await reconcile()
     }
   }
-
 }

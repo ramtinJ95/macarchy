@@ -165,20 +165,9 @@ package struct SpicetifyAdapter: Sendable {
 
     let spicetifyVersion = try supportedVersion()
     let spotifyVersion = try supportedSpotifyVersion()
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
-    guard let colorDigest = manifest.artifacts[Self.outputPath] else {
-      throw SpicetifyAdapterError.invalidRuntimeEvidence(
-        "the active generation has no \(Self.outputPath) digest"
-      )
-    }
+    let desired = try desiredRuntimeEvidence(
+      spicetifyVersion: spicetifyVersion, spotifyVersion: spotifyVersion)
     let runningPIDs = try spotifyPIDs()
-    let desired = SpicetifyRuntimeEvidence(
-      generationID: manifest.generationID,
-      colorDigest: colorDigest,
-      spicetifyVersion: spicetifyVersion,
-      spotifyVersion: spotifyVersion,
-      result: .applied
-    )
     if try readRuntimeEvidence() == desired {
       return AdapterOutcome(
         status: desired.result.adapterStatus,
@@ -194,6 +183,25 @@ package struct SpicetifyAdapter: Sendable {
       message: runningPIDs == nil
         ? "Spicetify refreshed the palette; closed Spotify will use it on next launch"
         : "Spicetify refreshed the palette and restarted Spotify")
+  }
+
+  /// `.applied` evidence for the active generation's color artifact.
+  private func desiredRuntimeEvidence(
+    spicetifyVersion: String, spotifyVersion: String
+  ) throws -> SpicetifyRuntimeEvidence {
+    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    guard let colorDigest = manifest.artifacts[Self.outputPath] else {
+      throw SpicetifyAdapterError.invalidRuntimeEvidence(
+        "the active generation has no \(Self.outputPath) digest"
+      )
+    }
+    return SpicetifyRuntimeEvidence(
+      generationID: manifest.generationID,
+      colorDigest: colorDigest,
+      spicetifyVersion: spicetifyVersion,
+      spotifyVersion: spotifyVersion,
+      result: .applied
+    )
   }
 
   package func refreshRestoredConfiguration(
@@ -213,20 +221,9 @@ package struct SpicetifyAdapter: Sendable {
       if clearRuntimeEvidence {
         try removeRuntimeEvidence()
       } else {
-        let manifest = try ReconciliationStatusStore(root: root).activeManifest()
-        guard let colorDigest = manifest.artifacts[Self.outputPath] else {
-          throw SpicetifyAdapterError.invalidRuntimeEvidence(
-            "the active generation has no \(Self.outputPath) digest"
-          )
-        }
         try writeRuntimeEvidence(
-          SpicetifyRuntimeEvidence(
-            generationID: manifest.generationID,
-            colorDigest: colorDigest,
-            spicetifyVersion: spicetifyVersion,
-            spotifyVersion: spotifyVersion,
-            result: result
-          )
+          desiredRuntimeEvidence(
+            spicetifyVersion: spicetifyVersion, spotifyVersion: spotifyVersion)
         )
       }
       return result
@@ -268,15 +265,10 @@ package struct SpicetifyAdapter: Sendable {
   }
 
   private func selectedTheme() throws -> (theme: String, colorScheme: String) {
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(at: configurationURL.resolvingSymlinksInPath()).data
-    } catch {
-      throw SpicetifyAdapterError.cannotReadConfiguration(configurationURL)
-    }
-    guard let configuration = String(data: data, encoding: .utf8) else {
-      throw SpicetifyAdapterError.cannotReadConfiguration(configurationURL)
-    }
+    let configuration = try AdapterConfigurationFile.readUTF8(
+      at: configurationURL.resolvingSymlinksInPath(),
+      tooLarge: SpicetifyAdapterError.cannotReadConfiguration(configurationURL),
+      unreadable: SpicetifyAdapterError.cannotReadConfiguration(configurationURL))
 
     let selection = try Self.configurationSelection(
       in: configuration,
