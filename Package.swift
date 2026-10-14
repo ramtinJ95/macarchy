@@ -9,6 +9,7 @@ let package = Package(
     .library(name: "ThemeCore", targets: ["ThemeCore"]),
     .executable(name: "macarchy", targets: ["MacarchyCLI"]),
     .executable(name: "macarchy-menu", targets: ["MacarchyMenu"]),
+    .executable(name: "macarchy-focus-ring", targets: ["MacarchyFocusRing"]),
     .executable(
       name: "theme-activation-crash-probe",
       targets: ["ThemeActivationCrashProbe"]
@@ -51,6 +52,14 @@ let package = Package(
     ),
     .executableTarget(name: "MacarchyMenu", swiftSettings: [.swiftLanguageMode(.v6)]),
     .executableTarget(
+      name: "MacarchyFocusRing",
+      dependencies: [
+        "ThemeCore",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+      ],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .executableTarget(
       name: "ThemeActivationCrashProbe",
       dependencies: ["ThemeCore"],
       path: "Tests/Fixtures/ThemeActivationCrashProbe",
@@ -75,6 +84,14 @@ let package = Package(
       name: "MacarchyMenuTests",
       dependencies: ["MacarchyMenu", .product(name: "Testing", package: "swift-testing")],
       swiftSettings: [.swiftLanguageMode(.v6)]),
+    .testTarget(
+      name: "MacarchyFocusRingTests",
+      dependencies: [
+        "MacarchyFocusRing",
+        .product(name: "Testing", package: "swift-testing"),
+      ],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
     .testTarget(
       name: "ThemeCoreTests",
       dependencies: [
