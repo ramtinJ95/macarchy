@@ -506,7 +506,7 @@ private struct EnvironmentPlanReport: Encodable {
 
   func render(json: Bool) throws -> String {
     if json { return try renderJSON(self) }
-    var lines = [
+    var lines: [String] = [
       "Macarchy environment plan [\(outcome)]:",
       "- profile [\(profileStatus)]: \(profile)",
       "- terminal provider: " + (terminalProvider ?? "unavailable"),
@@ -549,17 +549,18 @@ private struct EnvironmentPlanReport: Encodable {
     for entry in entries {
       lines.append("- \(entry.id) [\(entry.status.rawValue)]: \(entry.path) — \(entry.message)")
       if let evidence = entry.evidence {
-        lines.append(
-          "  evidence: kind=\(evidence.kind.rawValue)"
-            + " device=\(evidence.device.map(String.init) ?? "none")"
-            + " inode=\(evidence.inode.map(String.init) ?? "none")"
-            + " mode=\(evidence.mode.map(String.init) ?? "none")"
-            + " size=\(evidence.size.map(String.init) ?? "none")"
-            + " link=\(evidence.linkDestination ?? "none")"
-            + " content=\(evidence.contentDigest ?? "none")"
-            + " metadata=\(evidence.metadataDigest ?? "none")"
-            + " inventory=\(evidence.inventory)"
-        )
+        let evidenceParts: [String] = [
+          "  evidence: kind=\(evidence.kind.rawValue)",
+          " device=\(evidence.device.map(String.init) ?? "none")",
+          " inode=\(evidence.inode.map(String.init) ?? "none")",
+          " mode=\(evidence.mode.map(String.init) ?? "none")",
+          " size=\(evidence.size.map(String.init) ?? "none")",
+          " link=\(evidence.linkDestination ?? "none")",
+          " content=\(evidence.contentDigest ?? "none")",
+          " metadata=\(evidence.metadataDigest ?? "none")",
+          " inventory=\(evidence.inventory)",
+        ]
+        lines.append(evidenceParts.joined())
       }
     }
     lines.append(actions.isEmpty ? "Actions: none" : "Actions:")

@@ -84,14 +84,17 @@ enum MenuTerminal {
     // Kitty documents LaunchServices, not --detach, on macOS. A direct child
     // can die with the invoking terminal after this short-lived menu exits.
     process.executableURL = launcherURL
-    process.arguments =
-      ["-n", "-a", kittyApplicationURL.path, "--args"]
-      + (kind == .maintenance ? ["--title", "Macarchy Maintenance"] : [])
-      + [
-        "--override", "startup_session=none",
-        "--override", "macos_quit_when_last_window_closed=yes",
-      ] + colors.flatMap { ["--override", $0] }
-      + [executableURL.path] + arguments
+    var launchArguments: [String] = ["-n", "-a", kittyApplicationURL.path, "--args"]
+    if kind == .maintenance {
+      launchArguments += ["--title", "Macarchy Maintenance"]
+    }
+    launchArguments += [
+      "--override", "startup_session=none",
+      "--override", "macos_quit_when_last_window_closed=yes",
+    ]
+    launchArguments += colors.flatMap { ["--override", $0] }
+    launchArguments += [executableURL.path] + arguments
+    process.arguments = launchArguments
     let launchOutput = Pipe()
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = launchOutput
