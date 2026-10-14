@@ -196,7 +196,7 @@ class JourneyTests(unittest.TestCase):
                     "theme status did not exit 1 with exactly the inactive report"])
 
     def test_only_grounded_journeys_are_exposed(self):
-        self.assertEqual(set(verify.JOURNEYS), {"theme"})
+        self.assertEqual(set(verify.JOURNEYS), {"theme", "borders"})
         self.assertFalse(hasattr(verify, "assess_inspection"))
         steps = [arguments for _, arguments, _ in verify.theme_steps({"alpha": {}})]
         self.assertFalse(any("set" in arguments for arguments in steps))
@@ -397,7 +397,8 @@ class BoundaryTests(unittest.TestCase):
         parser = verify.build_parser()
         drive = parser._subparsers._group_actions[0].choices["drive"]
         self.assertEqual({action.dest for action in drive._actions},
-                         {"help", "run", "session", "journey"})
+                         {"help", "run", "session", "journey", "border_count",
+                          "candidate_session", "border_motion"})
         with patch("sys.stderr", io.StringIO()), self.assertRaises(SystemExit):
             parser.parse_args(["drive", "--run", "setup-0123456789ab", "--session", SESSION,
                                "--journey", "/bin/sh"])

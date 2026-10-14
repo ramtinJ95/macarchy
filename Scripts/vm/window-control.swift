@@ -1,8 +1,12 @@
 // Developer-only helper. Never request TCC permission or capture the desktop.
+import AVFoundation
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import CoreMedia
 import Foundation
+@preconcurrency import ScreenCaptureKit
+import Synchronization
 import Vision
 
 enum ControlError: Error {
@@ -13,6 +17,8 @@ enum ControlError: Error {
   case foregroundChanged
   case eventCreationFailed
   case windowMoved
+  case invalidOutput
+  case recordingFailed(String)
 }
 
 func emit(_ value: [String: Any]) throws {
@@ -82,10 +88,186 @@ func sendModifiedKey(_ code: CGKeyCode, modifier: CGKeyCode, flags: CGEventFlags
   try sendKey(code, pid: pid, flags: flags)
 }
 
+struct RecordState: Sendable {
+  var started = false
+  var finished = false
+  var failure: String?
+}
+
+// Delegate callbacks arrive on ScreenCaptureKit queues; the async caller only polls.
+final class Recorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegate, @unchecked Sendable {
+  let state = Mutex(RecordState())
+
+  func fail(_ message: String) { state.withLock { $0.failure = $0.failure ?? message } }
+  func stream(_ stream: SCStream, didStopWithError error: any Error) {
+    fail("stream stopped: \(error)")
+  }
+  func recordingOutputDidStartRecording(_ recordingOutput: SCRecordingOutput) {
+    state.withLock { $0.started = true }
+  }
+  func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
+    state.withLock { $0.finished = true }
+  }
+  func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: any Error) {
+    fail("recording failed: \(error)")
+  }
+
+  // Bounded: never waits indefinitely for a callback that may not arrive.
+  func wait(seconds: Double, failing: Bool = true, until done: (RecordState) -> Bool)
+    async throws
+  {
+    let deadline = Date().addingTimeInterval(seconds)
+    while true {
+      let current = state.withLock { $0 }
+      if failing, let failure = current.failure { throw ControlError.recordingFailed(failure) }
+      if done(current) { return }
+      guard Date() < deadline else { throw ControlError.recordingFailed("callback timeout") }
+      try await Task.sleep(nanoseconds: 100_000_000)
+    }
+  }
+}
+
+// Absent .mp4 in an existing caller-owned, non-symlinked directory; never overwrite.
+func validatedOutput(_ path: String) throws -> URL {
+  let url = URL(fileURLWithPath: path)
+  var info = stat()
+  guard path.hasPrefix("/"), url.standardizedFileURL.path == path, url.pathExtension == "mp4",
+    !url.lastPathComponent.hasPrefix("."), lstat(path, &info) == -1, errno == ENOENT
+  else { throw ControlError.invalidOutput }
+  let parent = url.deletingLastPathComponent().path
+  guard lstat(parent, &info) == 0, info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid(),
+    let real = realpath(parent, nil)
+  else { throw ControlError.invalidOutput }
+  defer { free(real) }
+  guard String(cString: real) == parent else { throw ControlError.invalidOutput }
+  return url
+}
+
+func evenPixels(_ value: CGFloat) -> Int { max(2, Int((value / 2).rounded()) * 2) }
+
+@MainActor
+func record(_ args: [String]) async throws {
+  guard args.count == 6, let pid = Int32(args[1]), pid > 0,
+    let seconds = Int(args[4]), (2...180).contains(seconds)
+  else { throw ControlError.invalidArguments }
+  let url = try validatedOutput(args[5])
+  // Non-prompting preflight plus exact PID/executable/title match happen here.
+  let (_, window, bounds) = try targetWindow(pid: pid, executable: args[2], name: args[3])
+  let content = try await SCShareableContent.excludingDesktopWindows(
+    true, onScreenWindowsOnly: false)
+  let matches = content.windows.filter {
+    $0.windowID == window && $0.owningApplication?.processID == pid && $0.title == args[3]
+  }
+  guard matches.count == 1 else { throw ControlError.windowNotReady }
+  // The only permitted filter: this one window, never a display, rect, or desktop.
+  let filter = SCContentFilter(desktopIndependentWindow: matches[0])
+  let scale = CGFloat(filter.pointPixelScale)
+  let width = filter.contentRect.width * scale
+  let height = filter.contentRect.height * scale
+  let shrink = min(1, 4096 / max(width, height, 1))
+  let config = SCStreamConfiguration()
+  config.capturesAudio = false
+  config.captureMicrophone = false
+  config.showsCursor = false
+  config.minimumFrameInterval = CMTime(value: 1, timescale: args[0] == "record60" ? 60 : 30)
+  config.width = evenPixels(width * shrink)
+  config.height = evenPixels(height * shrink)
+  let recording = SCRecordingOutputConfiguration()
+  recording.outputURL = url
+  recording.videoCodecType = .h264
+  recording.outputFileType = .mp4
+  let recorder = Recorder()
+  let stream = SCStream(filter: filter, configuration: config, delegate: recorder)
+  let output = SCRecordingOutput(configuration: recording, delegate: recorder)
+  try stream.addRecordingOutput(output)
+  do {
+    try await stream.startCapture()
+    try await recorder.wait(seconds: 10) { $0.started }
+    let end = Date().addingTimeInterval(Double(seconds))
+    var tick = 0
+    while Date() < end {
+      try await Task.sleep(nanoseconds: 100_000_000)
+      if let failure = recorder.state.withLock({ $0.failure }) {
+        throw ControlError.recordingFailed(failure)
+      }
+      tick += 1
+      // The user may keep working; only the target's identity and geometry must hold.
+      if tick % 10 == 0 {
+        let (_, current, currentBounds) = try targetWindow(
+          pid: pid, executable: args[2], name: args[3])
+        guard current == window, currentBounds == bounds else { throw ControlError.windowMoved }
+      }
+    }
+    try await stream.stopCapture()
+    try await recorder.wait(seconds: 10) { $0.finished }
+  } catch {
+    // Best-effort finalize; any partial movie stays as failure evidence.
+    try? await stream.stopCapture()
+    try? await recorder.wait(seconds: 10, failing: false) { $0.finished }
+    throw error
+  }
+  var info = stat()
+  guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+    throw ControlError.recordingFailed("output is not a regular file")
+  }
+  let asset = AVURLAsset(url: url)
+  let duration = try await asset.load(.duration).seconds
+  let tracks = try await asset.loadTracks(withMediaType: .video)
+  guard tracks.count == 1 else { throw ControlError.recordingFailed("expected one video track") }
+  let (size, fps) = try await tracks[0].load(.naturalSize, .nominalFrameRate)
+  let reader = try AVAssetReader(asset: asset)
+  // Compressed samples only: counts frames without decoding images.
+  let samples = AVAssetReaderTrackOutput(track: tracks[0], outputSettings: nil)
+  samples.alwaysCopiesSampleData = false
+  guard reader.canAdd(samples) else { throw ControlError.recordingFailed("reader output") }
+  reader.add(samples)
+  guard reader.startReading() else {
+    throw ControlError.recordingFailed("reader: \(String(describing: reader.error))")
+  }
+  var frames = 0
+  while let sample = samples.copyNextSampleBuffer() {
+    frames += CMSampleBufferGetNumSamples(sample)
+    guard frames <= 12000 else {
+      reader.cancelReading()
+      throw ControlError.recordingFailed("frame count exceeds 12000")
+    }
+  }
+  guard reader.status == .completed else {
+    throw ControlError.recordingFailed("reader: \(String(describing: reader.error))")
+  }
+  guard duration >= Double(seconds) * 0.8, frames >= seconds * 10 else {
+    throw ControlError.recordingFailed("short or sparse clip: \(duration)s, \(frames) frames")
+  }
+  try emit([
+    "pid": pid, "window_id": window,
+    "bounds": [bounds.minX, bounds.minY, bounds.width, bounds.height],
+    "output": url.path, "duration": duration, "frame_count": frames, "nominal_fps": fps,
+    "requested_fps": args[0] == "record60" ? 60 : 30,
+    "width": Int(size.width), "height": Int(size.height), "capture_scope": "owned-window-only",
+  ])
+}
+
 do {
   let args = Array(CommandLine.arguments.dropFirst())
   if args == ["preflight"] {
     try emit(permissions())
+  } else if args.first == "record" || args.first == "record60" {
+    // Only record runs async. ScreenCaptureKit's status item creates an NSWindow,
+    // which AppKit requires on the physical main thread; dispatchMain() terminates
+    // that thread, so the window landed on a background thread and crashed. Run
+    // NSApplication instead, with .prohibited so record owns no activation or windows.
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    Task { @MainActor in
+      do {
+        try await record(args)
+        exit(0)
+      } catch {
+        try? emit(["error": String(describing: error)])
+        if case ControlError.windowNotReady = error { exit(75) }
+        exit(1)
+      }
+    }
+    NSApplication.shared.run()
   } else if args.count == 2 && args[0] == "text" {
     // Only a caller-supplied guest-window PNG; no new capture or clipboard access.
     let request = VNRecognizeTextRequest()
