@@ -77,17 +77,10 @@ public struct ThemePackageLoader: Sendable {
     } catch {
       let description = String(describing: error)
       throw ThemeDiagnostic(
-        location: .init(file: file, line: parseLine(from: description)),
+        location: .init(file: file, line: TOMLSourceIndex.decoderErrorLine(in: description)),
         message: "Invalid TOML: \(description)"
       )
     }
-  }
-
-  private func parseLine(from description: String) -> Int? {
-    guard let marker = description.range(of: "(Line ") else { return nil }
-    let suffix = description[marker.upperBound...]
-    guard let closing = suffix.firstIndex(of: ")") else { return nil }
-    return Int(suffix[..<closing])
   }
 
   private func validate(

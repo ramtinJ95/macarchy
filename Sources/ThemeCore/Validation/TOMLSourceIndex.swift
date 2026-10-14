@@ -87,8 +87,7 @@ struct TOMLSourceIndex {
           message: "Multiline TOML strings are not supported in \(syntaxRole.lowercased())"
         )
       }
-      let key = rawKey
-      let path = currentTable.isEmpty ? key : "\(currentTable).\(key)"
+      let path = currentTable.isEmpty ? rawKey : "\(currentTable).\(rawKey)"
       let column =
         (line.range(of: rawKey).map { line.distance(from: line.startIndex, to: $0.lowerBound) } ?? 0)
         + 1
@@ -99,11 +98,19 @@ struct TOMLSourceIndex {
     self.tables = tables
   }
 
-  private static func isBareKey<S: StringProtocol>(_ value: S) -> Bool {
+  static func isBareKey<S: StringProtocol>(_ value: S) -> Bool {
     !value.isEmpty
       && value.allSatisfy {
         $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-")
       }
+  }
+
+  /// The line number TOMLDecoder embeds as "(Line N)" in its error description.
+  static func decoderErrorLine(in description: String) -> Int? {
+    guard let marker = description.range(of: "(Line ") else { return nil }
+    let suffix = description[marker.upperBound...]
+    guard let closing = suffix.firstIndex(of: ")") else { return nil }
+    return Int(suffix[..<closing])
   }
 
   func location(for path: String, file: URL) -> ThemeSourceLocation {

@@ -15,13 +15,27 @@ public struct SRGBColor: RawRepresentable, Codable, Sendable {
     self.rawValue = rawValue.lowercased()
   }
 
+  /// 8-bit sRGB channels.
+  package var bytes: (red: Int, green: Int, blue: Int) {
+    let value = Int(rawValue.dropFirst(), radix: 16)!
+    return ((value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff)
+  }
+
   /// sRGB channels in 0...1.
   public var components: (red: Double, green: Double, blue: Double) {
-    let value = Int(rawValue.dropFirst(), radix: 16)!
-    return (
-      Double((value >> 16) & 0xff) / 255, Double((value >> 8) & 0xff) / 255,
-      Double(value & 0xff) / 255
-    )
+    let (red, green, blue) = bytes
+    return (Double(red) / 255, Double(green) / 255, Double(blue) / 255)
+  }
+
+  /// Per-channel linear blend toward `other`, rounded and formatted as `#rrggbb`.
+  package func mixed(with other: SRGBColor, amount: Double) -> String {
+    let (start, end) = (bytes, other.bytes)
+    func blend(_ from: Int, _ to: Int) -> Int {
+      Int((Double(from) * (1 - amount) + Double(to) * amount).rounded())
+    }
+    return String(
+      format: "#%02x%02x%02x", blend(start.red, end.red), blend(start.green, end.green),
+      blend(start.blue, end.blue))
   }
 
   public init(from decoder: any Decoder) throws {
@@ -177,13 +191,7 @@ public struct ThemePackage: Sendable {
 
   func addingPersonalBackgrounds(_ additions: [ThemeBackgroundAddition]) throws -> ThemePackage {
     guard !additions.isEmpty else { return self }
-    let collisions = Set(backgrounds.map(\.id)).intersection(additions.map(\.background.id))
-    guard collisions.isEmpty else {
-      throw MacarchyConfigurationError.invalid(
-        "personal background identifiers collide with package backgrounds: "
-          + collisions.sorted().joined(separator: ", ")
-      )
-    }
+    let merged = try metadata.addingPersonalBackgrounds(additions.map(\.background))
     var data = backgroundData
     for addition in additions {
       data[addition.background.id] = addition.data
@@ -196,7 +204,7 @@ public struct ThemePackage: Sendable {
       appearance: appearance,
       semantic: semantic,
       terminal: terminal,
-      backgrounds: backgrounds + additions.map(\.background),
+      backgrounds: merged.backgrounds,
       backgroundData: data,
       mappings: mappings
     )

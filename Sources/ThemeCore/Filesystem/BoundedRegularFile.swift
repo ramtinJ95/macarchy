@@ -42,7 +42,7 @@ package struct BoundedRegularFile {
       throw BoundedRegularFileError.tooLarge(maximumSize)
     }
 
-    var data = Data()
+    var data = Data(capacity: Int(metadata.st_size))
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while data.count <= maximumSize {
       let remaining = min(buffer.count, maximumSize + 1 - data.count)
