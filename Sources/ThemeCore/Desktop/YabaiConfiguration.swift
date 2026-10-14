@@ -139,9 +139,7 @@ package struct YabaiConfigurationComposer: Sendable {
       hookDigest: nativeDigest.map { "native:" + $0 } ?? hook?.digest,
       macarchyExecutablePath: macarchyExecutableURL.standardizedFileURL.path
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    let inputDigest = sha256Digest(try encoder.encode(input))
+    let inputDigest = try canonicalJSONDigest(input)
     input.hookDigest = nil
     return YabaiComposition(
       settings: settings,
@@ -151,7 +149,7 @@ package struct YabaiConfigurationComposer: Sendable {
       renderedConfiguration: rendered,
       renderedDigest: renderedDigest,
       inputDigest: inputDigest,
-      baselineInputDigest: sha256Digest(try encoder.encode(input)),
+      baselineInputDigest: try canonicalJSONDigest(input),
       nativeConfigurationDigest: nativeDigest
     )
   }
@@ -164,12 +162,6 @@ package struct YabaiConfigurationComposer: Sendable {
     } catch {
       throw YabaiConfigurationError.invalid(source, String(describing: error))
     }
-    if let table = index.tables.first(where: { $0.path != "rules" || !$0.isArray }) {
-      throw YabaiConfigurationError.invalid(
-        source,
-        "line \(table.line), column \(table.column): unknown table '\(table.path)'"
-      )
-    }
     let rootFields = [
       "schema_version", "layout", "window_placement", "window_insertion_point",
       "auto_balance", "split_ratio", "top_padding", "bottom_padding", "left_padding",
@@ -177,12 +169,11 @@ package struct YabaiConfigurationComposer: Sendable {
       "mouse_action1", "mouse_action2", "external_bar_height",
     ]
     let ruleFields = ["rules.label", "rules.app", "rules.title", "rules.role", "rules.subrole"]
-    let allowedFields = Set(rootFields + ruleFields)
-    if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
-      throw YabaiConfigurationError.invalid(
-        source,
-        "line \(field.line), column \(field.column): unknown key '\(field.path)'"
-      )
+    if let reason = index.firstUnknownEntry(
+      allowsTable: { $0.path == "rules" && $0.isArray },
+      allowedFields: Set(rootFields + ruleFields))
+    {
+      throw YabaiConfigurationError.invalid(source, reason)
     }
 
     let decoder = TOMLDecoder()
@@ -332,7 +323,7 @@ package struct YabaiConfigurationComposer: Sendable {
       "",
       "# Reconcile canonical wallpaper when an inactive Space becomes active.",
       #""$YABAI" -m signal --remove macarchy-wallpaper >/dev/null 2>&1 || true"#,
-      "\"$YABAI\" -m signal --add event=space_changed label=macarchy-wallpaper action=\(Self.shellLiteral("\(macarchyExecutablePath) reconcile wallpaper"))",
+      "\"$YABAI\" -m signal --add event=space_changed label=macarchy-wallpaper action=\(DesktopShellSyntax.literal("\(macarchyExecutablePath) reconcile wallpaper"))",
     ]
     if nativeDigest == nil, let hook {
       lines += ["", "# Begin trusted user hook."]
@@ -347,10 +338,6 @@ package struct YabaiConfigurationComposer: Sendable {
     while rendered.last == "0" { rendered.removeLast() }
     if rendered.last == "." { rendered.append("0") }
     return rendered
-  }
-
-  private static func shellLiteral(_ value: String) -> String {
-    "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
   }
 }
 

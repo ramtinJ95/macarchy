@@ -5,8 +5,8 @@ enum SketchyBarMediaScript {
     """
     #!/bin/sh
     set -eu
-    . \(SketchyBarConfigurationComposer.shellLiteral(palettePath))
-    if \(SketchyBarConfigurationComposer.shellLiteral(macarchyExecutablePath)) desktop _media --name "${NAME-}" --sender "${SENDER-forced}"; then
+    . \(DesktopShellSyntax.literal(palettePath))
+    if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _media --name "${NAME-}" --sender "${SENDER-forced}"; then
       /opt/homebrew/bin/sketchybar --set macarchy.media icon.color="$MACARCHY_TEXT_COLOR"
     else
       echo 'Macarchy: nowplaying-cli metadata or playback control failed' >&2

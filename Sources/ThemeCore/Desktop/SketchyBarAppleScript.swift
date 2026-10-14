@@ -6,9 +6,9 @@ enum SketchyBarAppleScript {
     #!/bin/sh
     set -eu
     [ "${NAME-}" = macarchy.apple ] || exit 1
-    . \(SketchyBarConfigurationComposer.shellLiteral(palettePath))
+    . \(DesktopShellSyntax.literal(palettePath))
     if [ "${SENDER-}" = mouse.clicked ]; then ACTION=--open-apple-menu; else ACTION=--check; fi
-    if \(SketchyBarConfigurationComposer.shellLiteral(helperPath)) "$ACTION"; then
+    if \(DesktopShellSyntax.literal(helperPath)) "$ACTION"; then
       /opt/homebrew/bin/sketchybar --set macarchy.apple label= label.drawing=off icon.color="$MACARCHY_TEXT_COLOR"
     else
       echo 'Macarchy: Apple-menu helper failed; check desktop doctor and manual Accessibility setup' >&2

@@ -68,7 +68,7 @@ package enum YabaiGenerationError: Error, CustomStringConvertible, Sendable {
     case .invalid(let reason):
       "invalid yabai generation: \(reason)"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(String(cString: strerror(code))) (errno \(code))"
+      "cannot \(operation) \(url.path): \(errnoDescription(code))"
     }
   }
 }
@@ -82,25 +82,19 @@ package struct YabaiGenerationInspector: Sendable {
 
   package func inspect() -> YabaiGenerationInspection {
     let providerRoot = stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
-    let current = providerRoot.appending(path: "current")
-    var metadata = stat()
-    guard lstat(current.path, &metadata) == 0 else {
-      return errno == ENOENT
-        ? .missing
-        : invalid("cannot inspect current pointer: \(systemMessage())")
+    let generationID: String
+    switch DesktopCurrentPointer.read(
+      providerRoot: providerRoot, label: "yabai", isGenerationID: Self.isGenerationID)
+    {
+    case .missing:
+      return .missing
+    case .invalid(let message):
+      return invalid(message)
+    case .generation(let id):
+      generationID = id
     }
-    guard metadata.st_mode & S_IFMT == S_IFLNK, let target = readLink(current) else {
-      return invalid("current is not a readable symbolic link")
-    }
-    let prefix = "generations/"
-    guard target.hasPrefix(prefix) else {
-      return invalid("current target is outside the yabai generation inventory")
-    }
-    let generationID = String(target.dropFirst(prefix.count))
-    guard Self.isGenerationID(generationID), !generationID.contains("/") else {
-      return invalid("current target has an invalid generation identity")
-    }
-    let generation = providerRoot.appending(path: target, directoryHint: .isDirectory)
+    let generation = providerRoot.appending(
+      path: "generations/\(generationID)", directoryHint: .isDirectory)
     do {
       var generationMetadata = stat()
       guard
@@ -156,9 +150,7 @@ package struct YabaiGenerationInspector: Sendable {
   }
 
   package static func isGenerationID(_ value: String) -> Bool {
-    guard value.hasPrefix("y-") else { return false }
-    let nonce = String(value.dropFirst(2))
-    return nonce == nonce.lowercased() && UUID(uuidString: nonce) != nil
+    isPrefixedLowercaseUUID(value, prefix: "y-")
   }
 
   private func invalid(
@@ -171,17 +163,6 @@ package struct YabaiGenerationInspector: Sendable {
       manifest: nil,
       message: message
     )
-  }
-
-  private func readLink(_ url: URL) -> String? {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(url.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { return nil }
-    return String(decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)), as: UTF8.self)
-  }
-
-  private func systemMessage() -> String {
-    "\(String(cString: strerror(errno))) (errno \(errno))"
   }
 }
 

@@ -213,85 +213,64 @@ package struct SketchyBarConfigurationComposer: Sendable {
         contents: renderSpaceIndexes()
       ),
     ]
-    if layout.position(of: .toggle) != nil {
+    /// Adds `plugins/<name>.sh`, rendered only when `module` is placed in the layout.
+    func addPlugin(
+      _ module: SketchyBarModule, _ name: String, _ contents: @autoclosure () -> String
+    ) {
+      guard layout.position(of: module) != nil else { return }
       artifacts.append(
-        SketchyBarConfigurationArtifact(
-          path: "plugins/toggle.sh",
-          contents: """
-            #!/bin/sh
-            set -eu
-            [ "$#" = 1 ] || exit 1
-            \(Self.shellLiteral(macarchyExecutablePath)) desktop _bar-toggle --state-root \(Self.shellLiteral(stateRoot.standardizedFileURL.path)) --token "$1" </dev/null >/dev/null &
+        SketchyBarConfigurationArtifact(path: "plugins/\(name).sh", contents: contents()))
+    }
+    addPlugin(
+      .toggle, "toggle",
+      """
+      #!/bin/sh
+      set -eu
+      [ "$#" = 1 ] || exit 1
+      \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _bar-toggle --state-root \(DesktopShellSyntax.literal(stateRoot.standardizedFileURL.path)) --token "$1" </dev/null >/dev/null &
 
-            """))
+      """)
+    addPlugin(
+      .clock, "update",
+      [
+        "#!/bin/sh",
+        "set -eu",
+        "[ \"${NAME-}\" = macarchy.update ] || exit 1",
+        ". \(DesktopShellSyntax.literal(palettePath))",
+        "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _update-indicator --sender \"${SENDER-forced}\" --state-root \(DesktopShellSyntax.literal(stateRoot.path)) --accent \"$MACARCHY_ACCENT_COLOR\" --warning \"$MACARCHY_BATTERY_RED\"; then",
+        "  exit 0",
+        "else",
+        "  /opt/homebrew/bin/sketchybar --set macarchy.update drawing=on icon='!' icon.color=\"$MACARCHY_BATTERY_RED\" --set macarchy.update.detail label='Update indicator failed; see SketchyBar stderr for details.'",
+        "  exit 1",
+        "fi",
+      ].joined(separator: "\n") + "\n")
+    addPlugin(
+      .volume, "volume",
+      SketchyBarVolumeScript.render(
+        palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
+    addPlugin(.battery, "battery", SketchyBarBatteryScript.render(palettePath: palettePath))
+    for module in [SketchyBarModule.cpu, .memory] {
+      addPlugin(
+        module, module.rawValue,
+        SketchyBarMetricScript.render(
+          module: module, palettePath: palettePath,
+          macarchyExecutablePath: macarchyExecutablePath))
     }
-    if layout.position(of: .clock) != nil {
-      artifacts.append(
-        SketchyBarConfigurationArtifact(
-          path: "plugins/update.sh",
-          contents: [
-            "#!/bin/sh",
-            "set -eu",
-            "[ \"${NAME-}\" = macarchy.update ] || exit 1",
-            ". \(Self.shellLiteral(palettePath))",
-            "if \(Self.shellLiteral(macarchyExecutablePath)) desktop _update-indicator --sender \"${SENDER-forced}\" --state-root \(Self.shellLiteral(stateRoot.path)) --accent \"$MACARCHY_ACCENT_COLOR\" --warning \"$MACARCHY_BATTERY_RED\"; then",
-            "  exit 0",
-            "else",
-            "  /opt/homebrew/bin/sketchybar --set macarchy.update drawing=on icon='!' icon.color=\"$MACARCHY_BATTERY_RED\" --set macarchy.update.detail label='Update indicator failed; see SketchyBar stderr for details.'",
-            "  exit 1",
-            "fi",
-          ].joined(separator: "\n") + "\n"))
-    }
-    if layout.position(of: .volume) != nil {
-      artifacts.append(
-        SketchyBarConfigurationArtifact(
-          path: "plugins/volume.sh",
-          contents: SketchyBarVolumeScript.render(
-            palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath)
-        )
-      )
-    }
-    if layout.position(of: .battery) != nil {
-      artifacts.append(
-        SketchyBarConfigurationArtifact(
-          path: "plugins/battery.sh",
-          contents: SketchyBarBatteryScript.render(palettePath: palettePath)
-        )
-      )
-    }
-    for module in [SketchyBarModule.cpu, .memory] where layout.position(of: module) != nil {
-      artifacts.append(
-        SketchyBarConfigurationArtifact(
-          path: "plugins/\(module.rawValue).sh",
-          contents: SketchyBarMetricScript.render(
-            module: module, palettePath: palettePath,
-            macarchyExecutablePath: macarchyExecutablePath)))
-    }
-    if layout.position(of: .wifi) != nil {
-      artifacts.append(
-        SketchyBarConfigurationArtifact(
-          path: "plugins/wifi.sh",
-          contents: SketchyBarWiFiScript.render(
-            palettePath: palettePath,
-            macarchyExecutablePath: macarchyExecutablePath)))
-    }
-    if layout.position(of: .apple) != nil {
-      artifacts.append(
-        .init(
-          path: "plugins/apple.sh",
-          contents: SketchyBarAppleScript.render(
-            palettePath: palettePath,
-            helperPath: macarchyExecutableURL.deletingLastPathComponent().appending(
-              path: "macarchy-menu"
-            ).standardizedFileURL.path)))
-    }
-    if layout.position(of: .media) != nil {
-      artifacts.append(
-        .init(
-          path: "plugins/media.sh",
-          contents: SketchyBarMediaScript.render(
-            palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath)))
-    }
+    addPlugin(
+      .wifi, "wifi",
+      SketchyBarWiFiScript.render(
+        palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
+    addPlugin(
+      .apple, "apple",
+      SketchyBarAppleScript.render(
+        palettePath: palettePath,
+        helperPath: macarchyExecutableURL.deletingLastPathComponent().appending(
+          path: "macarchy-menu"
+        ).standardizedFileURL.path))
+    addPlugin(
+      .media, "media",
+      SketchyBarMediaScript.render(
+        palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
     if let hook {
       artifacts.append(
         SketchyBarConfigurationArtifact(
@@ -316,9 +295,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       palettePath: palettePath,
       pluginPath: pluginPath
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    let inputDigest = sha256Digest(try encoder.encode(identity))
+    let inputDigest = try canonicalJSONDigest(identity)
     identity.hookDigest = nil
     return SketchyBarComposition(
       settings: settings,
@@ -330,12 +307,12 @@ package struct SketchyBarConfigurationComposer: Sendable {
       artifacts: artifacts,
       renderedDigest: renderedDigest,
       inputDigest: inputDigest,
-      baselineInputDigest: sha256Digest(try encoder.encode(identity)),
+      baselineInputDigest: try canonicalJSONDigest(identity),
       nativeConfiguration: native
     )
   }
 
-  private func loadDefaults(at source: URL) throws -> SketchyBarDefaults {
+  private func loadDefaults(at source: URL) throws -> SketchyBarDefaultsDocument {
     let text: String
     do {
       text = try BoundedRegularFile.readUTF8(at: source, maximumSize: 65_536)
@@ -352,21 +329,14 @@ package struct SketchyBarConfigurationComposer: Sendable {
     } catch {
       throw SketchyBarConfigurationError.invalid(source, String(describing: error))
     }
-    if let table = index.tables.first {
-      throw SketchyBarConfigurationError.invalid(
-        source,
-        "line \(table.line), column \(table.column): unknown table '\(table.path)'"
-      )
-    }
     let allowedFields = Set([
       "schema_version", "position", "height", "margin", "corner_radius",
       "item_padding", "font", "font_size", "clock_format", "left", "center", "right",
     ])
-    if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
-      throw SketchyBarConfigurationError.invalid(
-        source,
-        "line \(field.line), column \(field.column): unknown key '\(field.path)'"
-      )
+    if let reason = index.firstUnknownEntry(
+      allowsTable: { _ in false }, allowedFields: allowedFields)
+    {
+      throw SketchyBarConfigurationError.invalid(source, reason)
     }
 
     let document: SketchyBarDefaultsDocument
@@ -383,7 +353,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     }
     try validate(document.settings, source: source)
     try validate(document.layout, source: source)
-    return SketchyBarDefaults(settings: document.settings, layout: document.layout)
+    return document
   }
 
   private func validate(_ settings: SketchyBarSettings, source: URL) throws {
@@ -441,9 +411,9 @@ package struct SketchyBarConfigurationComposer: Sendable {
     nativeConfiguration: Bool,
     macarchyExecutablePath: String
   ) -> String {
-    let font = Self.shellLiteral("\(settings.font):Semibold:\(settings.fontSize).0")
-    let iconFont = Self.shellLiteral("\(settings.font):Bold:\(settings.fontSize).0")
-    let labelFont = Self.shellLiteral(
+    let font = DesktopShellSyntax.literal("\(settings.font):Semibold:\(settings.fontSize).0")
+    let iconFont = DesktopShellSyntax.literal("\(settings.font):Bold:\(settings.fontSize).0")
+    let labelFont = DesktopShellSyntax.literal(
       "\(settings.font):Semibold:\(max(8, settings.fontSize - 1)).0")
     var lines = [
       "#!/bin/sh",
@@ -451,7 +421,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "",
       "SKETCHYBAR=/opt/homebrew/bin/sketchybar",
       "YABAI=/opt/homebrew/bin/yabai",
-      "PLUGIN_DIR=\(Self.shellLiteral(pluginPath))",
+      "PLUGIN_DIR=\(DesktopShellSyntax.literal(pluginPath))",
       Self.paletteAssignment(path: palettePath),
       Self.paletteSource,
       "",
@@ -507,7 +477,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "TOGGLE_TOKEN=$(/usr/bin/uuidgen | /usr/bin/tr '[:upper:]' '[:lower:]')",
             "\"$SKETCHYBAR\" --add item macarchy.toggle \(position.rawValue) --set macarchy.toggle drawing=on icon='Toggle starting' label.drawing=off label=\"$TOGGLE_TOKEN|starting\"",
           ]
-          let scriptPrefix = Self.shellLiteral(
+          let scriptPrefix = DesktopShellSyntax.literal(
             Self.toggleScript(pluginPath: pluginPath + "/toggle.sh", token: ""))
           helperCommands.append(
             "\"$SKETCHYBAR\" --set macarchy.toggle updates=on update_freq=1 script=\(scriptPrefix)\"$TOGGLE_TOKEN\" --subscribe macarchy.toggle display_change system_woke"
@@ -534,7 +504,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
           }
           for (part, icon) in [("previous", "􀊊"), ("playpause", "􀊈"), ("next", "􀊌")] {
             lines += [
-              "\"$SKETCHYBAR\" --add item macarchy.media.\(part) popup.macarchy.media --set macarchy.media.\(part) label.drawing=off icon='\(icon)' click_script=\(Self.shellLiteral(Self.pluginClickScript(sender: "macarchy.media.\(part)", pluginPath: "\(pluginPath)/media.sh")))"
+              "\"$SKETCHYBAR\" --add item macarchy.media.\(part) popup.macarchy.media --set macarchy.media.\(part) label.drawing=off icon='\(icon)' click_script=\(DesktopShellSyntax.literal(Self.pluginClickScript(sender: "macarchy.media.\(part)", pluginPath: "\(pluginPath)/media.sh")))"
             ]
           }
         case .wifi:
@@ -576,7 +546,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.volume.icon \(position.rawValue) --set macarchy.volume.icon padding_right=-1 icon='􀊩' icon.width=0 icon.align=left icon.color=\"$MACARCHY_MUTED_COLOR\" icon.font='SF Pro:Regular:13.0' label='􀊣' label.width=25 label.align=left label.font='SF Pro:Regular:13.0' script=\"$PLUGIN_DIR/volume.sh\"",
             "\"$SKETCHYBAR\" --add bracket macarchy.volume.bracket macarchy.volume.icon macarchy.volume --set macarchy.volume.bracket position=\(position.rawValue) icon.drawing=off label.drawing=off background.color=0x00000000 background.border_width=0 popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.volume.padding \(position.rawValue) --set macarchy.volume.padding width=8 icon.drawing=off label.drawing=off",
-            "\"$SKETCHYBAR\" --add slider macarchy.volume.slider popup.macarchy.volume.bracket 250 --set macarchy.volume.slider slider.highlight_color=\"$MACARCHY_ACCENT_COLOR\" slider.background.height=6 slider.background.corner_radius=3 slider.background.color=\"$MACARCHY_MUTED_COLOR\" slider.knob='􀀁' background.height=2 background.y_offset=-20 icon.drawing=off label.drawing=off click_script=\(Self.shellLiteral(Self.pluginClickScript(sender: "macarchy.slider", pluginPath: "\(pluginPath)/volume.sh")))",
+            "\"$SKETCHYBAR\" --add slider macarchy.volume.slider popup.macarchy.volume.bracket 250 --set macarchy.volume.slider slider.highlight_color=\"$MACARCHY_ACCENT_COLOR\" slider.background.height=6 slider.background.corner_radius=3 slider.background.color=\"$MACARCHY_MUTED_COLOR\" slider.knob='􀀁' background.height=2 background.y_offset=-20 icon.drawing=off label.drawing=off click_script=\(DesktopShellSyntax.literal(Self.pluginClickScript(sender: "macarchy.slider", pluginPath: "\(pluginPath)/volume.sh")))",
             "\"$SKETCHYBAR\" --subscribe macarchy.volume volume_change system_woke mouse.clicked mouse.scrolled mouse.exited.global",
             "\"$SKETCHYBAR\" --subscribe macarchy.volume.icon mouse.clicked mouse.scrolled",
           ]
@@ -593,7 +563,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     if hasHook {
       lines += [
         "export SKETCHYBAR YABAI PLUGIN_DIR PALETTE MACARCHY_BAR_COLOR MACARCHY_TEXT_COLOR MACARCHY_MUTED_COLOR MACARCHY_ACCENT_COLOR",
-        "\(Self.shellLiteral(macarchyExecutablePath)) desktop _run-sketchybar-hook \"$PLUGIN_DIR/user-hook.sh\"",
+        "\(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _run-sketchybar-hook \"$PLUGIN_DIR/user-hook.sh\"",
       ]
     }
     lines += [Self.managedReadyMarkerDeclaration, "\"$SKETCHYBAR\" --update"]
@@ -609,8 +579,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "#!/bin/sh",
       "set -eu",
       "[ \"${NAME-}\" = macarchy.clock ] || exit 1",
-      ". \(Self.shellLiteral(palettePath))",
-      "if \(Self.shellLiteral(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(Self.shellLiteral(position)) --format \(Self.shellLiteral(settings.clockFormat)) --update-indicator; then",
+      ". \(DesktopShellSyntax.literal(palettePath))",
+      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator; then",
       "  /opt/homebrew/bin/sketchybar --set macarchy.clock label.color=\"$MACARCHY_TEXT_COLOR\"",
       "else",
       "  echo 'Macarchy: calendar query failed' >&2",
@@ -730,19 +700,15 @@ package struct SketchyBarConfigurationComposer: Sendable {
   }
 
   private static func paletteAssignment(path: String) -> String {
-    "PALETTE=\(shellLiteral(path))"
+    "PALETTE=\(DesktopShellSyntax.literal(path))"
   }
 
   package static func pluginClickScript(sender: String, pluginPath: String) -> String {
-    "SENDER=\(shellLiteral(sender)) \(shellLiteral(pluginPath))"
+    "SENDER=\(DesktopShellSyntax.literal(sender)) \(DesktopShellSyntax.literal(pluginPath))"
   }
 
   package static func toggleScript(pluginPath: String, token: String) -> String {
-    "\(shellLiteral(pluginPath)) \(token)"
-  }
-
-  static func shellLiteral(_ value: String) -> String {
-    "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
+    "\(DesktopShellSyntax.literal(pluginPath)) \(token)"
   }
 }
 
@@ -826,9 +792,4 @@ private struct SketchyBarDefaultsDocument: Decodable {
     case clockFormat = "clock_format"
     case left, center, right
   }
-}
-
-private struct SketchyBarDefaults {
-  let settings: SketchyBarSettings
-  let layout: SketchyBarLayout
 }
