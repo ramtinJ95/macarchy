@@ -42,6 +42,12 @@ package struct KeybindingCompositionDiagnostic: Equatable, Codable, Sendable {
     self.identity = identity
     self.message = message
   }
+
+  /// Severity, then source, line, code and identity.
+  package static func canonicalOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+    (lhs.severity.rawValue, lhs.source, lhs.line ?? 0, lhs.code, lhs.identity ?? "")
+      < (rhs.severity.rawValue, rhs.source, rhs.line ?? 0, rhs.code, rhs.identity ?? "")
+  }
 }
 
 package struct EffectiveKeybinding: Equatable, Sendable {
@@ -196,37 +202,31 @@ package struct KeybindingComposer: Sendable {
 
     let bindings = effective.keys.sorted().compactMap { identity -> EffectiveKeybinding? in
       guard let (binding, commandSource) = effective[identity] else { return nil }
-      if let metadata = userMetadataByIdentity[identity] {
-        return EffectiveKeybinding(
-          binding: binding,
-          commandSource: commandSource,
-          metadata: metadata,
-          metadataSource: .userOverlay
+      let metadata: (entry: SkhdCatalogEntry, source: KeybindingMetadataSource)? =
+        if let entry = userMetadataByIdentity[identity] {
+          (entry, .userOverlay)
+        } else if let entry = defaultMetadataByIdentity[identity] {
+          (entry, .packagedDefault)
+        } else {
+          nil
+        }
+      if metadata == nil {
+        diagnostics.append(
+          KeybindingCompositionDiagnostic(
+            code: "user_metadata_missing",
+            severity: .warning,
+            source: profile.overrideURL ?? profileSource,
+            line: binding.line,
+            identity: identity,
+            message: "user binding '\(identity)' has no metadata"
+          )
         )
       }
-      if let metadata = defaultMetadataByIdentity[identity] {
-        return EffectiveKeybinding(
-          binding: binding,
-          commandSource: commandSource,
-          metadata: metadata,
-          metadataSource: .packagedDefault
-        )
-      }
-      diagnostics.append(
-        KeybindingCompositionDiagnostic(
-          code: "user_metadata_missing",
-          severity: .warning,
-          source: profile.overrideURL ?? profileSource,
-          line: binding.line,
-          identity: identity,
-          message: "user binding '\(identity)' has no metadata"
-        )
-      )
       return EffectiveKeybinding(
         binding: binding,
         commandSource: commandSource,
-        metadata: nil,
-        metadataSource: nil
+        metadata: metadata?.entry,
+        metadataSource: metadata?.source
       )
     }
     let disabledDefaults: [DisabledPackagedKeybinding] =
@@ -259,7 +259,7 @@ package struct KeybindingComposer: Sendable {
     return KeybindingComposition(
       bindings: bindings,
       disabledDefaults: disabledDefaults,
-      diagnostics: diagnostics.sorted(by: diagnosticOrder),
+      diagnostics: diagnostics.sorted(by: KeybindingCompositionDiagnostic.canonicalOrder),
       renderedConfiguration: rendered,
       renderedDigest: sha256Digest(Data(rendered.utf8)),
       inputDigest: inputDigest
@@ -288,7 +288,7 @@ package struct KeybindingComposer: Sendable {
     KeybindingComposition(
       bindings: [],
       disabledDefaults: [],
-      diagnostics: diagnostics.sorted(by: diagnosticOrder),
+      diagnostics: diagnostics.sorted(by: KeybindingCompositionDiagnostic.canonicalOrder),
       renderedConfiguration: nil,
       renderedDigest: nil,
       inputDigest: nil
@@ -305,20 +305,10 @@ package struct KeybindingComposer: Sendable {
       bindings: bindings.map(CanonicalKeybinding.init),
       disabledIdentities: disabledDefaults.map(\.binding.identity).sorted()
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    guard let data = try? encoder.encode(document) else {
+    guard let digest = try? canonicalJSONDigest(document) else {
       preconditionFailure("Canonical keybinding input encoding must not fail")
     }
-    return sha256Digest(data)
-  }
-
-  private func diagnosticOrder(
-    _ lhs: KeybindingCompositionDiagnostic,
-    _ rhs: KeybindingCompositionDiagnostic
-  ) -> Bool {
-    (lhs.severity.rawValue, lhs.source, lhs.line ?? 0, lhs.code, lhs.identity ?? "")
-      < (rhs.severity.rawValue, rhs.source, rhs.line ?? 0, rhs.code, rhs.identity ?? "")
+    return digest
   }
 }
 

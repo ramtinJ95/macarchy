@@ -65,7 +65,7 @@ package struct SkhdKeybindingCatalogLoader: Sendable {
     var metadata = stat()
     guard lstat(file.path, &metadata) == 0 else {
       if errno == ENOENT { return .missing }
-      throw SkhdCatalogError.cannotRead(file, Self.systemError(errno))
+      throw SkhdCatalogError.cannotRead(file, errnoDescription(errno))
     }
 
     let resolved = file.resolvingSymlinksInPath().standardizedFileURL
@@ -104,12 +104,6 @@ package struct SkhdKeybindingCatalogLoader: Sendable {
       throw SkhdCatalogError.invalid(source, String(describing: error))
     }
 
-    if let table = index.tables.first(where: { $0.path != "bindings" }) {
-      throw SkhdCatalogError.invalid(
-        source,
-        "line \(table.line), column \(table.column): unknown table '\(table.path)'"
-      )
-    }
     let allowedFields = Set([
       "schema_version",
       "bindings.identity",
@@ -118,11 +112,10 @@ package struct SkhdKeybindingCatalogLoader: Sendable {
       "bindings.order",
       "bindings.aliases",
     ])
-    if let field = index.fields.first(where: { !allowedFields.contains($0.path) }) {
-      throw SkhdCatalogError.invalid(
-        source,
-        "line \(field.line), column \(field.column): unknown key '\(field.path)'"
-      )
+    if let reason = index.firstUnknownEntry(
+      allowsTable: { $0.path == "bindings" }, allowedFields: allowedFields)
+    {
+      throw SkhdCatalogError.invalid(source, reason)
     }
 
     let document: CatalogDocument
@@ -268,10 +261,6 @@ package struct SkhdKeybindingCatalogLoader: Sendable {
         "identity '\(identity)' \(field) contains a control character"
       )
     }
-  }
-
-  private static func systemError(_ code: Int32) -> String {
-    "\(String(cString: strerror(code))) (errno \(code))"
   }
 }
 
