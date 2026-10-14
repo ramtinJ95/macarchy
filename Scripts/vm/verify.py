@@ -27,6 +27,9 @@ import time
 import tomllib
 import uuid
 
+# Script and import share one module identity, so verify_borders raises this module's Failed.
+sys.modules.setdefault("verify", sys.modules[__name__])
+
 import guest
 import lab
 
@@ -278,6 +281,13 @@ def assess_theme(results, packages):
 # Only journeys whose fresh-guest output is grounded in source. A journey whose path needs
 # a prerequisite a fresh guest lacks must report blocked with the reason, never pass.
 JOURNEYS = {
+    "borders": {
+        "claim": (
+            "lean border helper vs pinned JankyBorders 1.9 on guest fixture windows: lifecycle, "
+            "focus/geometry/cross-app/native-fullscreen/theme tracking and a >=50% 24-window "
+            "footprint saving; visual parity pending manual review"
+        ),
+    },
     "theme": {
         "steps": theme_steps, "assess": assess_theme,
         "claim": "The guest-built source CLI lists exactly the snapshot built-in themes and their "
@@ -349,6 +359,10 @@ def run_journey(client, record, name, session_directory, evidence, report):
     if not digest or digest[0] != record["guest"]["binary_sha256"]:
         raise Blocked("Guest binary differs from the one launch built; launch a new session.")
     require_fresh_state(client)
+    if name == "borders":
+        import verify_borders
+
+        return verify_borders.run_journey(client, record, evidence, report, record['run'], border_count=report.get("border_count"))
     packages = theme_packages(session_directory / "source.tar.gz")
     before = watched_snapshot(client, evidence, "before")
     time.sleep(1.1)  # Times are whole seconds: any later write differs from the recorded ones.
@@ -426,21 +440,36 @@ def stop_owned(record):
     return "owned_process_still_running" if owned_tart(record) else "force_stopped_owned_process"
 
 
-def start(inputs, run):
+def start(inputs, run, restart=False):
     """Thin detached form of the documented native Tart launch; records ownership."""
     directory = test_clone(inputs, run)
     with RunLock(directory):
         path = directory / "verify-tart.json"
-        if path.exists():
+        if path.exists() and not restart:
             raise Blocked("verify.py already started this clone once; clone a fresh run instead.")
         lab.require_stopped(inputs, run)  # Never adopt a VM someone else is running.
         argv = [str(lab.binary(inputs)), "run", run, "--no-clipboard", "--no-audio"]
-        with (directory / "verify-tart.log").open("x") as log:
-            process = subprocess.Popen(argv, env=lab.lab_environment(), stdin=subprocess.DEVNULL,
-                                       stdout=log, stderr=log, start_new_session=True)
+        log_name, history = "verify-tart.log", None
+        if restart:  # Every check precedes the first mutation.
+            previous = previous_boot(directory, run, argv)
+            if owned_tart(previous["record"]):
+                raise Blocked("The previously recorded Tart process is still running.")
+            history = archive_boot(directory, run, previous)
+            log_name = f"verify-tart-{uuid.uuid4().hex}.log"
+        try:
+            with (directory / log_name).open("x") as log:
+                process = subprocess.Popen(argv, env=lab.lab_environment(), stdin=subprocess.DEVNULL,
+                                           stdout=log, stderr=log, start_new_session=True)
+        except BaseException as error:
+            if history:
+                lab.write_json(directory / history / "restart-failure.json",
+                               {"failed": now(), "log": log_name, "reason": describe(error)})
+            raise
         record = {"tool": "verify.py", "run": run, "pid": process.pid, "argv": argv,
-                  "identity": None, "log": "verify-tart.log", "started": now(),
+                  "identity": None, "log": log_name, "started": now(),
                   "status": "starting"}
+        if history:
+            record["previous_boot"] = history
         try:
             lab.write_json(path, record)
             record["identity"] = process_identity(process.pid)
@@ -451,7 +480,7 @@ def start(inputs, run):
             while vm_state(inputs, run) != "running":
                 if process.poll() is not None:
                     record["exit_code"] = process.returncode
-                    raise Blocked("Tart exited during startup; inspect verify-tart.log.")
+                    raise Blocked(f"Tart exited during startup; inspect {log_name}.")
                 if time.monotonic() >= deadline:
                     raise Blocked("Tart did not report running within 90s.")
                 time.sleep(2)
@@ -467,6 +496,58 @@ def start(inputs, run):
                 record["status"] = "stop_failed: " + describe(stop_error)
             lab.write_json(path, record)
             raise
+
+
+def regular_bytes(path):
+    """Read restart evidence: regular files only, never links."""
+    if path.is_symlink() or not path.is_file():
+        raise Blocked(f"{path.name} must be a regular non-symlink file before restart.")
+    return path.read_bytes()
+
+
+def previous_boot(directory, run, argv):
+    """Validate the previous verify.py boot, without mutation."""
+    path = directory / "verify-tart.json"
+    if not os.path.lexists(path):
+        raise Blocked("restart needs an existing verify-tart.json; use start for a first boot.")
+    data = regular_bytes(path)
+    try:
+        record = json.loads(data)
+    except ValueError as error:
+        raise Blocked("verify-tart.json is not valid JSON.") from error
+    if not isinstance(record, dict) or record.get("tool") != "verify.py" \
+            or record.get("run") != run or record.get("argv") != argv:
+        raise Blocked("verify-tart.json does not record verify.py's pinned Tart run.")
+    pid, identity, log = record.get("pid"), record.get("identity"), record.get("log")
+    if type(pid) is not int or pid <= 0:
+        raise Blocked("verify-tart.json has no valid pid.")
+    if not isinstance(identity, str) or not identity.strip() \
+            or not identity.endswith(" ".join(argv)):
+        raise Blocked("verify-tart.json has no matching Tart identity.")
+    if not isinstance(log, str) or not log.endswith(".log") or log.startswith(".") \
+            or Path(log).name != log:
+        raise Blocked("verify-tart.json has no simple log filename.")
+    files = {"verify-tart.json": data, log: regular_bytes(directory / log)}
+    shutdown = directory / "ssh-shutdown.json"
+    if os.path.lexists(shutdown):
+        files["ssh-shutdown.json"] = regular_bytes(shutdown)
+    return {"record": record, "files": files}
+
+
+def archive_boot(directory, run, previous):
+    """Preserve prior evidence before clearing the current shutdown report."""
+    name = f"boot-history-{uuid.uuid4().hex}"
+    (directory / name).mkdir(mode=0o700)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    for filename, data in previous["files"].items():
+        with os.fdopen(os.open(directory / name / filename, flags, 0o600), "wb") as copy:
+            copy.write(data)
+    lab.write_json(directory / name / "manifest.json",
+                   {"tool": "verify.py", "run": run, "archived": now(), "complete": True,
+                    "files": sorted(previous["files"])})
+    if "ssh-shutdown.json" in previous["files"]:
+        (directory / "ssh-shutdown.json").unlink()
+    return name
 
 
 def launch(inputs, run, wait):
@@ -498,7 +579,7 @@ def launch(inputs, run, wait):
         return record
 
 
-def drive(inputs, run, session, journey):
+def drive(inputs, run, session, journey, border_count=None, candidate_session=None, border_motion=False):
     directory = test_clone(inputs, run)
     with RunLock(directory):
         record = session_ready(directory, session)
@@ -506,7 +587,8 @@ def drive(inputs, run, session, journey):
         report = {"tool": "verify.py", "run": run, "session": session, "journey": journey,
                   "status": "in_progress", "started": now(), "claim": JOURNEYS[journey]["claim"],
                   "not_covered": NOT_COVERED, "binary_sha256": record["guest"]["binary_sha256"],
-                  "snapshot_sha256": record["host_source"]["snapshot_sha256"], "steps": []}
+                  "snapshot_sha256": record["host_source"]["snapshot_sha256"], "steps": [], "border_count": border_count,
+                  "candidate_session": candidate_session, "border_motion": border_motion}
         lab.write_json(evidence / "report.json", report)
         try:
             with tempfile.TemporaryDirectory(prefix="verify-", dir=lab.STATE) as temporary:
@@ -515,7 +597,7 @@ def drive(inputs, run, session, journey):
                 report["status"] = run_journey(client, record, journey, directory / session,
                                                evidence, report)
         except Exception as error:
-            report["status"] = "blocked"
+            report["status"] = "failed" if isinstance(error, Failed) else "blocked"
             report["reason"] = describe(error)
         finally:
             report["finished"] = now()
@@ -783,6 +865,7 @@ def build_parser():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="operation", required=True)
     for name, text in (("start", "Boot a recorded stopped test-base clone, detached and owned"),
+                       ("restart", "Restart a stopped owned clone, preserving prior boot evidence"),
                        ("launch", "Snapshot current source and build macarchy in the guest"),
                        ("doctor", "Read-only readiness and identity checks"),
                        ("drive", "Run one closed journey against the launched build"),
@@ -798,6 +881,11 @@ def build_parser():
                                  metavar="SECONDS", help="Guest SSH readiness bound, 30-900")
         if name == "drive":
             command.add_argument("--journey", required=True, choices=sorted(JOURNEYS))
+            command.add_argument("--border-count", type=int, choices=(1, 8, 24), help="Run only one borders workload size; omitted runs all sizes")
+            command.add_argument("--border-motion", action="store_true",
+                                 help="borders --border-count 1 only: fixed 14 s 60 Hz motion, 60 fps requested capture")
+            command.add_argument("--candidate-session", metavar="SESSION",
+                                 help="borders only: verify-<12 hex> ready in this run; build products from its source")
         if name == "doctor":
             command.add_argument("--record", action="store_true",
                                  help="Also retain this report in the session evidence")
@@ -809,6 +897,17 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if args.operation == "drive" and args.border_count is not None and args.journey != "borders":
+        raise Blocked("--border-count requires --journey borders")
+    if getattr(args, "border_motion", False) and (args.journey != "borders" or args.border_count != 1):
+        raise Blocked("--border-motion requires --journey borders --border-count 1")
+    candidate = getattr(args, "candidate_session", None)
+    if candidate is not None:
+        if args.journey != "borders":
+            raise Blocked("--candidate-session requires --journey borders")
+        session_name(candidate)
+        if candidate == args.session:
+            raise Blocked("--candidate-session must differ from --session")
     if args.operation == "cleanup" and not (args.session or args.shutdown):
         raise Blocked("cleanup needs --session, --shutdown, or both.")
     if args.operation == "doctor":
@@ -817,14 +916,15 @@ def main(argv=None):
         return EXIT[evidence_summary(args.run, args.session)["status"]]
     inputs = lab.initialize()
     lab.check_version(inputs)
-    if args.operation == "start":
-        record = start(inputs, args.run)
+    if args.operation in ("start", "restart"):
+        record = start(inputs, args.run, restart=args.operation == "restart")
         print(json.dumps(record, indent=2))
         return EXIT[record["status"]]
     if args.operation == "launch":
         return EXIT[launch(inputs, args.run, args.wait)["status"]]
     if args.operation == "drive":
-        return EXIT[drive(inputs, args.run, args.session, args.journey)["status"]]
+        return EXIT[drive(inputs, args.run, args.session, args.journey, args.border_count,
+                          args.candidate_session, args.border_motion)["status"]]
     return EXIT[cleanup(inputs, args.run, args.session, args.shutdown)["status"]]
 
 
