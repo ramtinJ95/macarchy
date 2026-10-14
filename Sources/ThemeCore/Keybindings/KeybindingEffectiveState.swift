@@ -187,7 +187,7 @@ package struct KeybindingEffectiveStateInspector: Sendable {
         userMetadataURL: profile?.metadataURL
       ),
       composition: composition,
-      diagnostics: diagnostics.sorted(by: diagnosticOrder)
+      diagnostics: diagnostics.sorted(by: KeybindingCompositionDiagnostic.canonicalOrder)
     )
   }
 
@@ -264,14 +264,6 @@ package struct KeybindingEffectiveStateInspector: Sendable {
       source: source,
       message: message
     )
-  }
-
-  private func diagnosticOrder(
-    _ lhs: KeybindingCompositionDiagnostic,
-    _ rhs: KeybindingCompositionDiagnostic
-  ) -> Bool {
-    (lhs.severity.rawValue, lhs.source, lhs.line ?? 0, lhs.code, lhs.identity ?? "")
-      < (rhs.severity.rawValue, rhs.source, rhs.line ?? 0, rhs.code, rhs.identity ?? "")
   }
 }
 

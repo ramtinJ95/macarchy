@@ -224,12 +224,9 @@ package struct KeybindingGenerationActivator: Sendable {
       path: "keybindings/generations",
       directoryHint: .isDirectory
     )
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    guard
+      let descriptor = try PinnedFilesystem.openDirectoryIfPresent(at: generationsRoot)
+    else { return }
     defer { Darwin.close(descriptor) }
     do {
       try removeDirectory(
@@ -251,12 +248,9 @@ package struct KeybindingGenerationActivator: Sendable {
 
   package func recoverResidue() throws {
     let keybindingsRoot = stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
-    let keybindingsDescriptor: Int32
-    do {
-      keybindingsDescriptor = try PinnedFilesystem.openDirectory(at: keybindingsRoot)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    guard
+      let keybindingsDescriptor = try PinnedFilesystem.openDirectoryIfPresent(at: keybindingsRoot)
+    else { return }
     defer { Darwin.close(keybindingsDescriptor) }
     let keybindingItems = try PinnedFilesystem.directoryEntries(
       descriptor: keybindingsDescriptor,
@@ -289,16 +283,13 @@ package struct KeybindingGenerationActivator: Sendable {
       path: "generations",
       directoryHint: .isDirectory
     )
-    let generationsDescriptor: Int32
-    do {
-      generationsDescriptor = try PinnedFilesystem.openDirectory(
+    guard
+      let generationsDescriptor = try PinnedFilesystem.openDirectoryIfPresent(
         parentDescriptor: keybindingsDescriptor,
         name: "generations",
         url: generationsRoot
       )
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    else { return }
     defer { Darwin.close(generationsDescriptor) }
     let generations = try PinnedFilesystem.directoryEntries(
       descriptor: generationsDescriptor,
@@ -341,7 +332,7 @@ package struct KeybindingGenerationActivator: Sendable {
       throw KeybindingGenerationActivationError.invalidGenerationInventory
     }
     for name in inventory.entries
-    where Self.isGenerationID(name) && !retained.contains(name) {
+    where KeybindingGenerationInspector.isGenerationID(name) && !retained.contains(name) {
       try removeDirectory(
         parentDescriptor: descriptor,
         name: name,
@@ -395,29 +386,17 @@ package struct KeybindingGenerationActivator: Sendable {
     }
   }
 
-  private static func isGenerationID(_ value: String) -> Bool {
-    KeybindingGenerationInspector.isGenerationID(value)
-  }
-
   private static func isStagingName(_ value: String) -> Bool {
-    value.hasPrefix(".staging-") && isGenerationID(String(value.dropFirst(9)))
+    value.hasPrefix(".staging-")
+      && KeybindingGenerationInspector.isGenerationID(String(value.dropFirst(9)))
   }
 
   private static func isTemporaryPointer(_ value: String) -> Bool {
     if value.hasPrefix(".current-restore-") {
-      let nonce = String(value.dropFirst(17))
-      return nonce == nonce.lowercased() && UUID(uuidString: nonce) != nil
+      return isPrefixedLowercaseUUID(value, prefix: ".current-restore-")
     }
-    guard value.hasPrefix(".current-") else { return false }
-    let suffix = value.dropFirst(9)
-    guard suffix.count == 75 else { return false }
-    let separator = suffix.index(suffix.startIndex, offsetBy: 38)
-    guard suffix[separator] == "-" else { return false }
-    let generationID = String(suffix[..<separator])
-    let nonce = String(suffix[suffix.index(after: separator)...])
-    return isGenerationID(generationID)
-      && nonce == nonce.lowercased()
-      && UUID(uuidString: nonce) != nil
+    return isGenerationScopedTemporaryName(
+      value, prefix: ".current-", isGenerationID: KeybindingGenerationInspector.isGenerationID)
   }
 }
 
@@ -436,7 +415,7 @@ package enum KeybindingGenerationActivationError: Error, CustomStringConvertible
     case .invalidComposition:
       "cannot activate a blocked or incomplete keybinding composition"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(String(cString: strerror(code))) (errno \(code))"
+      "cannot \(operation) \(url.path): \(errnoDescription(code))"
     }
   }
 }

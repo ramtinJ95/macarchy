@@ -126,7 +126,7 @@ package struct KeybindingGenerationInspector: Sendable {
     defer { Darwin.close(generationDescriptor) }
     var generationMetadata = stat()
     guard fstat(generationDescriptor, &generationMetadata) == 0 else {
-      return invalid("cannot inspect current generation directory: \(Self.systemError(errno))")
+      return invalid("cannot inspect current generation directory: \(errnoDescription(errno))")
     }
     guard generationMetadata.st_mode & 0o222 == 0 else {
       return invalid("current generation directory is writable")
@@ -248,13 +248,7 @@ package struct KeybindingGenerationInspector: Sendable {
   }
 
   package static func isGenerationID(_ value: String) -> Bool {
-    value.hasPrefix("k-")
-      && value == value.lowercased()
-      && UUID(uuidString: String(value.dropFirst(2))) != nil
-  }
-
-  private static func systemError(_ code: Int32) -> String {
-    "\(String(cString: strerror(code))) (errno \(code))"
+    isPrefixedLowercaseUUID(value, prefix: "k-")
   }
 }
 
