@@ -28,6 +28,9 @@ struct Borders: ParsableCommand {
     @Flag(help: "Emit a JSON plan, then JSON lifecycle events after preview cleanup.")
     var json = false
 
+    @Option(help: "Renderer: borders (JankyBorders) or lean (sibling macarchy-focus-ring).")
+    var renderer: BordersPreviewRenderer = .borders
+
     func validate() throws {
       guard seconds.isFinite, (1...300).contains(seconds) else {
         throw ValidationError("--seconds must be between 1 and 300.")
@@ -35,6 +38,11 @@ struct Borders: ParsableCommand {
     }
 
     func run() throws {
+      if renderer == .lean {
+        try runLean(
+          helper: LeanBordersPreview.helperURL(beside: RuntimeEnvironment.live.executableURL))
+        return
+      }
       try run(runner: .live(root: URL(filePath: stateRoot)))
     }
 
@@ -142,14 +150,18 @@ struct BordersPreviewProcess {
   let terminationStatus: () -> Int32
   let stop: () -> Void
 
-  static func start(executableURL: URL, arguments: [String]) throws -> Self {
+  static func start(
+    executableURL: URL, arguments: [String],
+    standardOutput: FileHandle = .standardError
+  ) throws -> Self {
     let process = Process()
     process.executableURL = executableURL
     process.arguments = arguments
     process.standardInput = FileHandle.nullDevice
     // Keep native diagnostics visible without mixing them into JSON events or
-    // buffering a long-lived child's output in an undrained pipe.
-    process.standardOutput = FileHandle.standardError
+    // buffering a long-lived child's output in an undrained pipe. Only a child
+    // that reports after its own cleanup may share the caller's stdout.
+    process.standardOutput = standardOutput
     process.standardError = FileHandle.standardError
     try process.run()
     return Self(
