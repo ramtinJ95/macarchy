@@ -15,6 +15,7 @@ script_directory=${0:A:h}
 repository_root=${script_directory:h}
 version_file="$repository_root/VERSION.txt"
 destination_parent=${destination:h}
+source "$script_directory/release-common.zsh"
 
 if [[ ! -x "$binary" ]]; then
   print -u2 "macarchy binary is not executable: $binary"
@@ -24,22 +25,8 @@ if [[ ! -x "$menu_binary" || "$(/usr/bin/lipo -archs "$menu_binary")" != "arm64"
   print -u2 "matching arm64 macarchy-menu helper is missing beside the release binary"
   exit 66
 fi
-if ! IFS= read -r version < "$version_file"; then
-  print -u2 "VERSION.txt must contain one newline-terminated semantic version"
-  exit 65
-fi
-version_bytes=$(wc -c < "$version_file" | tr -d ' ')
-expected_version_bytes=$((${#version} + 1))
-if [[ "$version_bytes" -ne "$expected_version_bytes" ]] \
-  || ! print -r -- "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
-then
-  print -u2 "VERSION.txt must contain a stable semantic version"
-  exit 65
-fi
-if ! print -r -- "$revision" | grep -Eq '^[0-9a-f]{40}$'; then
-  print -u2 "git revision must be a 40-character lowercase object ID"
-  exit 65
-fi
+read_release_version "$version_file"
+require_release_revision "$revision"
 if [[ "$(/usr/bin/lipo -archs "$binary")" != "arm64" ]]; then
   print -u2 "release binary must contain only the arm64 architecture"
   exit 65
@@ -58,20 +45,16 @@ trap 'rm -rf "$destination"' EXIT HUP INT TERM
 mkdir -p "$destination/bin" "$destination/share/macarchy" \
   "$destination/share/doc/macarchy"
 install -m 0755 "$binary" "$destination/bin/macarchy"
-/usr/bin/codesign --force --sign - --timestamp=none "$destination/bin/macarchy"
 install -m 0755 "$menu_binary" "$destination/bin/macarchy-menu"
-/usr/bin/codesign --force --sign - --timestamp=none "$destination/bin/macarchy-menu"
-/usr/bin/ditto "$repository_root/Themes" "$destination/share/macarchy/themes"
-/usr/bin/ditto "$repository_root/Keybindings" "$destination/share/macarchy/keybindings"
-/usr/bin/ditto "$repository_root/Desktop" "$destination/share/macarchy/desktop"
-/usr/bin/ditto "$repository_root/Environment" "$destination/share/macarchy/environment"
-install -m 0644 \
-  "$repository_root/Documentation/theme-json.md" \
-  "$destination/share/doc/macarchy/theme-json.md"
-install -m 0644 \
-  "$repository_root/CHANGELOG.md" \
-  "$destination/share/doc/macarchy/CHANGELOG.md"
-install -m 0644 "$repository_root/LICENSE" "$destination/share/doc/macarchy/LICENSE"
+for executable in macarchy macarchy-menu; do
+  /usr/bin/codesign --force --sign - --timestamp=none "$destination/bin/$executable"
+done
+for resource in Themes Keybindings Desktop Environment; do
+  /usr/bin/ditto "$repository_root/$resource" "$destination/share/macarchy/${resource:l}"
+done
+for document in Documentation/theme-json.md CHANGELOG.md LICENSE; do
+  install -m 0644 "$repository_root/$document" "$destination/share/doc/macarchy/${document:t}"
+done
 printf '{"schema_version":1,"version":"%s","revision":"%s"}\n' \
   "$version" "$revision" > "$destination/share/macarchy/build-info.json"
 chmod 0644 "$destination/share/macarchy/build-info.json"
