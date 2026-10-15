@@ -73,16 +73,10 @@ extension Macarchy {
 
       func context(stateRoot: URL) -> UnifiedSetupPlanContext {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return UnifiedSetupPlanContext(
-          themesRoot: RuntimeEnvironment.live.builtInThemesURL,
-          keybindingsResourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
-          desktopResourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
-          environmentResourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
+        return .live(
           profileURL: portable.url(homeDirectory: home),
           profileRequired: portable.isRequired,
-          machineProfileURL: machineProfile.map { URL(filePath: $0).standardizedFileURL }
-            ?? home.appending(path: ".config/macarchy/machine.toml").standardizedFileURL,
-          machineProfileRequired: machineProfile != nil,
+          machineProfile: machineProfile,
           stateRoot: stateRoot,
           homeDirectory: home
         )
@@ -154,19 +148,11 @@ extension Macarchy {
         let profileURL =
           outputProfile.map { URL(filePath: $0).standardizedFileURL }
           ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
-        let machineProfileURL =
-          machineProfile.map { URL(filePath: $0).standardizedFileURL }
-          ?? home.appending(path: ".config/macarchy/machine.toml").standardizedFileURL
         let execution = try await GuidedSetupCommandRunner.live().execute(
-          context: UnifiedSetupPlanContext(
-            themesRoot: RuntimeEnvironment.live.builtInThemesURL,
-            keybindingsResourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
-            desktopResourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
-            environmentResourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
+          context: .live(
             profileURL: profileURL,
             profileRequired: true,
-            machineProfileURL: machineProfileURL,
-            machineProfileRequired: machineProfile != nil,
+            machineProfile: machineProfile,
             stateRoot: state.stateRootURL,
             homeDirectory: home
           ),
@@ -469,5 +455,30 @@ extension Macarchy {
       )
       try emitExecution(execution)
     }
+  }
+}
+
+extension UnifiedSetupPlanContext {
+  /// A context over the bundled resources; `machineProfile` overrides the default overlay path.
+  static func live(
+    profileURL: URL,
+    profileRequired: Bool,
+    machineProfile: String?,
+    stateRoot: URL,
+    homeDirectory home: URL
+  ) -> Self {
+    UnifiedSetupPlanContext(
+      themesRoot: RuntimeEnvironment.live.builtInThemesURL,
+      keybindingsResourcesRoot: RuntimeEnvironment.live.builtInKeybindingsURL,
+      desktopResourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
+      environmentResourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      machineProfileURL: machineProfile.map { URL(filePath: $0).standardizedFileURL }
+        ?? home.appending(path: ".config/macarchy/machine.toml").standardizedFileURL,
+      machineProfileRequired: machineProfile != nil,
+      stateRoot: stateRoot,
+      homeDirectory: home
+    )
   }
 }
