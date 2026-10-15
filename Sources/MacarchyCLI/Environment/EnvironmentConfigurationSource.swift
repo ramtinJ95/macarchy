@@ -22,9 +22,7 @@ struct EnvironmentConfigurationSource: Encodable, Sendable {
 
   func render(json: Bool) throws -> String {
     if json {
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-      return String(decoding: try encoder.encode(self), as: UTF8.self)
+      return try environmentJSON(self)
     }
     return "\(provider) configuration [\(status.rawValue), \(authority)]: "
       + (source ?? "no editable target") + "\n" + message

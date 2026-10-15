@@ -44,6 +44,15 @@ struct EnvironmentNativeFileMigration: Sendable {
     return URL(filePath: record.managedTarget)
   }
 
+  /// Starship's behavior source: the owned native file, else the published generation's copy.
+  static func starshipBehaviorURL(
+    homeDirectory: URL, stateRoot: URL, ownership: EnvironmentOwnership?
+  ) -> URL {
+    Self(provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot)
+      .nativeTarget(in: ownership)
+      ?? stateRoot.appending(path: "environment/current/starship/behavior.toml")
+  }
+
   private func nativeTargetIsAllowed(_ path: String) -> Bool {
     EnvironmentNativeSource.targetIsAllowed(
       path, homeDirectory: homeDirectory, stateRoot: stateRoot)

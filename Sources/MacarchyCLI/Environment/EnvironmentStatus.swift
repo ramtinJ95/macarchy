@@ -35,131 +35,93 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             remediation: remediation($0.remediation)
           )
         }
-      if profile.presets.pi,
-        let index = results.firstIndex(where: { $0.id == PiAdapter.id }),
-        results[index].status == "present"
-      {
-        let executable = PiAdapter.liveExecutableURL
-        do {
-          let version = try PiAdapter(
-            root: homeDirectory.appending(path: ".config/macarchy"),
-            configurationDirectoryURL: homeDirectory.appending(path: ".pi/agent"),
-            executableURL: executable,
-            controlIsAvailable: { true },
-            processRunner: .live
-          ).supportedVersion()
-          results[index] = EnvironmentPrerequisiteStatus(
-            id: PiAdapter.id,
-            status: "present",
-            requirement:
-              "Pi \(version) satisfies the required version >= \(PiAdapter.minimumVersion)",
-            remediation: results[index].remediation
-          )
-        } catch {
-          results[index] = EnvironmentPrerequisiteStatus(
-            id: PiAdapter.id,
-            status: "missing",
-            requirement:
-              "Pi must report a parseable version >= \(PiAdapter.minimumVersion): \(error)",
-            remediation: results[index].remediation
-          )
-        }
-      }
-      if profile.presets.codex,
-        let index = results.firstIndex(where: { $0.id == CodexAdapter.id }),
-        results[index].status == "present"
-      {
-        let executable = CodexAdapter.liveExecutableURL
-        do {
-          let version = try CodexAdapter(
-            root: homeDirectory.appending(path: ".config/macarchy"),
-            configurationDirectoryURL: homeDirectory.appending(path: ".codex"),
-            executableURL: executable,
-            controlIsAvailable: { true },
-            processRunner: .live
-          ).supportedVersion()
-          results[index] = EnvironmentPrerequisiteStatus(
-            id: CodexAdapter.id,
-            status: "present",
-            requirement:
-              "Codex \(version) satisfies the required version >= \(CodexAdapter.minimumVersion)",
-            remediation: results[index].remediation
-          )
-        } catch {
-          results[index] = EnvironmentPrerequisiteStatus(
-            id: CodexAdapter.id,
-            status: "missing",
-            requirement:
-              "Codex must report 'codex-cli X.Y.Z' >= \(CodexAdapter.minimumVersion): \(error)",
-            remediation: results[index].remediation
-          )
-        }
-      }
-      if profile.presets.herdr,
-        let index = results.firstIndex(where: { $0.id == HerdrAdapter.id }),
-        results[index].status == "present"
-      {
-        if ProcessInfo.processInfo.environment["HERDR_CONFIG_PATH"] != nil {
-          results[index] = EnvironmentPrerequisiteStatus(
-            id: HerdrAdapter.id,
-            status: "missing",
-            requirement:
-              "Herdr must use canonical ~/.config/herdr/config.toml; HERDR_CONFIG_PATH is unsupported and uninspectable",
-            remediation: "Unset HERDR_CONFIG_PATH and run the command again."
-          )
-        } else {
-          do {
-            let version = try HerdrAdapter(
+      if profile.presets.pi {
+        refine(
+          &results, id: PiAdapter.id,
+          present: { "Pi \($0) satisfies the required version >= \(PiAdapter.minimumVersion)" },
+          missing: {
+            "Pi must report a parseable version >= \(PiAdapter.minimumVersion): \($0)"
+          },
+          version: {
+            try PiAdapter(
               root: homeDirectory.appending(path: ".config/macarchy"),
-              configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
-              executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+              configurationDirectoryURL: homeDirectory.appending(path: ".pi/agent"),
+              executableURL: PiAdapter.liveExecutableURL,
               controlIsAvailable: { true },
               processRunner: .live
             ).supportedVersion()
-            results[index] = EnvironmentPrerequisiteStatus(
-              id: HerdrAdapter.id,
-              status: "present",
-              requirement:
-                "Herdr \(version) satisfies the required version >= \(HerdrAdapter.minimumVersion)",
-              remediation: results[index].remediation
-            )
-          } catch {
+          }
+        )
+      }
+      if profile.presets.codex {
+        refine(
+          &results, id: CodexAdapter.id,
+          present: {
+            "Codex \($0) satisfies the required version >= \(CodexAdapter.minimumVersion)"
+          },
+          missing: {
+            "Codex must report 'codex-cli X.Y.Z' >= \(CodexAdapter.minimumVersion): \($0)"
+          },
+          version: {
+            try CodexAdapter(
+              root: homeDirectory.appending(path: ".config/macarchy"),
+              configurationDirectoryURL: homeDirectory.appending(path: ".codex"),
+              executableURL: CodexAdapter.liveExecutableURL,
+              controlIsAvailable: { true },
+              processRunner: .live
+            ).supportedVersion()
+          }
+        )
+      }
+      if profile.presets.herdr {
+        if ProcessInfo.processInfo.environment["HERDR_CONFIG_PATH"] != nil {
+          if let index = results.firstIndex(where: { $0.id == HerdrAdapter.id }),
+            results[index].status == "present"
+          {
             results[index] = EnvironmentPrerequisiteStatus(
               id: HerdrAdapter.id,
               status: "missing",
               requirement:
-                "Herdr must report 'herdr X.Y.Z' >= \(HerdrAdapter.minimumVersion): \(error)",
-              remediation: results[index].remediation
+                "Herdr must use canonical ~/.config/herdr/config.toml; HERDR_CONFIG_PATH is unsupported and uninspectable",
+              remediation: "Unset HERDR_CONFIG_PATH and run the command again."
             )
           }
+        } else {
+          refine(
+            &results, id: HerdrAdapter.id,
+            present: {
+              "Herdr \($0) satisfies the required version >= \(HerdrAdapter.minimumVersion)"
+            },
+            missing: {
+              "Herdr must report 'herdr X.Y.Z' >= \(HerdrAdapter.minimumVersion): \($0)"
+            },
+            version: {
+              try HerdrAdapter(
+                root: homeDirectory.appending(path: ".config/macarchy"),
+                configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+                executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
+                controlIsAvailable: { true },
+                processRunner: .live
+              ).supportedVersion()
+            }
+          )
         }
       }
       if profile.presets.spicetify {
         results = validateSpicetifyRuntime(results)
         results += spicetifyPreparation(homeDirectory: homeDirectory)
       }
-      if profile.presets.slack,
-        let index = results.firstIndex(where: { $0.id == SlackAdapter.id }),
-        results[index].status == "present"
-      {
-        do {
-          let version = try EnvironmentSlackPreset().supportedVersion()
-          results[index] = EnvironmentPrerequisiteStatus(
-            id: SlackAdapter.id,
-            status: "present",
-            requirement:
-              "Slack \(version) satisfies the required version >= \(SlackAdapter.minimumVersion)",
-            remediation: results[index].remediation
-          )
-        } catch {
-          results[index] = EnvironmentPrerequisiteStatus(
-            id: SlackAdapter.id,
-            status: "missing",
-            requirement:
-              "Slack must have bundle version >= \(SlackAdapter.minimumVersion): \(error)",
-            remediation: results[index].remediation
-          )
-        }
+      if profile.presets.slack {
+        refine(
+          &results, id: SlackAdapter.id,
+          present: {
+            "Slack \($0) satisfies the required version >= \(SlackAdapter.minimumVersion)"
+          },
+          missing: {
+            "Slack must have bundle version >= \(SlackAdapter.minimumVersion): \($0)"
+          },
+          version: { try EnvironmentSlackPreset().supportedVersion() }
+        )
       }
       if profile.shell == .zsh {
         let zsh = URL(filePath: "/bin/zsh")
@@ -206,49 +168,47 @@ struct EnvironmentPrerequisiteInspector: Sendable {
     _ statuses: [EnvironmentPrerequisiteStatus]
   ) -> [EnvironmentPrerequisiteStatus] {
     var results = statuses
-    if let index = results.firstIndex(where: { $0.id == SpicetifyAdapter.id }),
-      results[index].status == "present"
-    {
-      do {
-        let version = try SpicetifyAdapter.supportedCommandVersion()
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: SpicetifyAdapter.id,
-          status: "present",
-          requirement:
-            "Spicetify \(version) satisfies the required version >= \(SpicetifyAdapter.minimumVersion)",
-          remediation: results[index].remediation
-        )
-      } catch {
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: SpicetifyAdapter.id,
-          status: "missing",
-          requirement:
-            "Spicetify must report a parseable X.Y.Z >= \(SpicetifyAdapter.minimumVersion): \(error)",
-          remediation: results[index].remediation
-        )
-      }
-    }
-    if let index = results.firstIndex(where: { $0.id == "spotify" }),
-      results[index].status == "present"
-    {
-      do {
-        let version = try SpicetifyAdapter.spotifyBundleVersion()
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: "spotify",
-          status: "present",
-          requirement: "Spotify has parseable bundle version \(version)",
-          remediation: results[index].remediation
-        )
-      } catch {
-        results[index] = EnvironmentPrerequisiteStatus(
-          id: "spotify",
-          status: "missing",
-          requirement: "Spotify must have a parseable bundle version: \(error)",
-          remediation: results[index].remediation
-        )
-      }
-    }
+    refine(
+      &results, id: SpicetifyAdapter.id,
+      present: {
+        "Spicetify \($0) satisfies the required version >= \(SpicetifyAdapter.minimumVersion)"
+      },
+      missing: {
+        "Spicetify must report a parseable X.Y.Z >= \(SpicetifyAdapter.minimumVersion): \($0)"
+      },
+      version: { try SpicetifyAdapter.supportedCommandVersion() }
+    )
+    refine(
+      &results, id: "spotify",
+      present: { "Spotify has parseable bundle version \($0)" },
+      missing: { "Spotify must have a parseable bundle version: \($0)" },
+      version: { try SpicetifyAdapter.spotifyBundleVersion() }
+    )
     return results
+  }
+
+  /// Replaces a present prerequisite's status with the outcome of its version probe.
+  private static func refine<Version>(
+    _ results: inout [EnvironmentPrerequisiteStatus],
+    id: String,
+    present: (Version) -> String,
+    missing: (any Error) -> String,
+    version: () throws -> Version
+  ) {
+    guard let index = results.firstIndex(where: { $0.id == id }),
+      results[index].status == "present"
+    else { return }
+    let requirement: String
+    let status: String
+    do {
+      requirement = present(try version())
+      status = "present"
+    } catch {
+      requirement = missing(error)
+      status = "missing"
+    }
+    results[index] = EnvironmentPrerequisiteStatus(
+      id: id, status: status, requirement: requirement, remediation: results[index].remediation)
   }
 
   static func spicetifyPreparation(homeDirectory: URL) -> [EnvironmentPrerequisiteStatus] {
@@ -332,12 +292,8 @@ extension ThemeConsumerPaths {
       ),
       neovimConfigurationDirectoryURL: homeDirectory.appending(path: ".config/nvim"),
       starshipConfigurationURL: homeDirectory.appending(path: ".config/starship.toml"),
-      starshipBehaviorURL: EnvironmentNativeFileMigration(
-        provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot
-      ).nativeTarget(in: ownership)
-        ?? stateRoot.appending(
-          path: "environment/current/starship/behavior.toml"
-        ),
+      starshipBehaviorURL: EnvironmentNativeFileMigration.starshipBehaviorURL(
+        homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership),
       piConfigurationDirectoryURL: piConfigurationDirectoryURL,
       herdrConfigurationURL: herdrConfigurationURL,
       tuicrConfigurationDirectoryURL: tuicrConfigurationDirectoryURL,

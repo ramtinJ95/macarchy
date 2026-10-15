@@ -52,7 +52,7 @@ struct EnvironmentThemeBridgeState: Sendable {
 
   static func paths(ids: Set<EnvironmentEntryID>, stateRoot: URL) -> [String] {
     (ids.contains(.kitty)
-      ? [stateRoot.appending(path: "state/adapters/kitty.conf").path] : [])
+      ? [stateRoot.appending(path: KittyAdapter.bridgePath).path] : [])
       + (ids.contains(.starship)
         ? [stateRoot.appending(path: StarshipAdapter.bridgePath).path] : [])
   }
