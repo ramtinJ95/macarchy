@@ -101,13 +101,13 @@ struct EnvironmentCodexDocument {
       updated.replaceSubrange(assignment.contentRange, with: managedSelector)
       result = updated
     } else if selector.tableHeaderCount == 1, let header = selector.selectionTableHeader {
-      let newline = preferredNewline(in: text)
+      let newline = tomlPreferredNewline(in: text)
       result =
         String(text[..<header.fullRange.upperBound])
         + (header.terminator.isEmpty ? newline : "")
         + managedSelector + newline + String(text[header.fullRange.upperBound...])
     } else {
-      let newline = preferredNewline(in: text)
+      let newline = tomlPreferredNewline(in: text)
       let separator =
         text.isEmpty || tomlPhysicalLines(text).last?.terminator.isEmpty == false
         ? "" : newline
@@ -136,7 +136,7 @@ struct EnvironmentCodexDocument {
       let separator =
         managed.fullRange.upperBound < result.endIndex
           && tomlPhysicalLines(original.contents).last?.terminator.isEmpty == true
-        ? preferredNewline(in: result) : ""
+        ? tomlPreferredNewline(in: result) : ""
       result.replaceSubrange(managed.fullRange, with: original.contents + separator)
       _ = try validatedDocument(result, source: source)
       return result
@@ -187,7 +187,7 @@ struct EnvironmentCodexDocument {
     let separator =
       assignment.fullRange.upperBound < text.endIndex
         && tomlPhysicalLines(original.contents).last?.terminator.isEmpty == true
-      ? preferredNewline(in: text) : ""
+      ? tomlPreferredNewline(in: text) : ""
     return text[assignment.fullRange] == original.contents + separator
   }
 
@@ -242,10 +242,6 @@ struct EnvironmentCodexDocument {
         "invalid Codex TOML configuration at \(source.path): \(error)"
       )
     }
-  }
-
-  private static func preferredNewline(in text: String) -> String {
-    tomlPhysicalLines(text).first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
   }
 }
 

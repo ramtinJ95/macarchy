@@ -99,14 +99,14 @@ struct EnvironmentTuicrDocument {
       updated.replaceSubrange(assignment.contentRange, with: managedSelector)
       result = updated
     } else if let insertion = selector.firstTopLevelTableIndex {
-      let newline = preferredNewline(in: text)
+      let newline = tomlPreferredNewline(in: text)
       result = String(text[..<insertion]) + managedSelector + newline + text[insertion...]
     } else if text.isEmpty {
       result = managedSelector + "\n"
     } else if tomlPhysicalLines(text).last?.terminator.isEmpty == false {
-      result = text + managedSelector + preferredNewline(in: text)
+      result = text + managedSelector + tomlPreferredNewline(in: text)
     } else {
-      result = text + preferredNewline(in: text) + managedSelector
+      result = text + tomlPreferredNewline(in: text) + managedSelector
     }
     _ = try validatedDocument(result, source: source)
     return result
@@ -142,7 +142,7 @@ struct EnvironmentTuicrDocument {
       let separator =
         insertion < result.endIndex
           && tomlPhysicalLines(original.contents).last?.terminator.isEmpty == true
-        ? preferredNewline(in: result) : ""
+        ? tomlPreferredNewline(in: result) : ""
       result.insert(contentsOf: original.contents + separator, at: insertion)
     }
     if !result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -178,10 +178,6 @@ struct EnvironmentTuicrDocument {
         "invalid tuicr TOML configuration at \(source.path): \(error)"
       )
     }
-  }
-
-  private static func preferredNewline(in text: String) -> String {
-    tomlPhysicalLines(text).first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
   }
 }
 
