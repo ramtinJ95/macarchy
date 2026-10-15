@@ -42,10 +42,7 @@ struct Desktop: ParsableCommand {
         json: json,
         scope: yabaiOnly ? .yabaiOnly : .allProviders
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -123,8 +120,7 @@ struct Desktop: ParsableCommand {
             json: json
           )
         }
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 
@@ -152,8 +148,7 @@ struct Desktop: ParsableCommand {
         json: json,
         consumerPaths: state.consumerPaths
       )
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 
@@ -179,8 +174,7 @@ struct Desktop: ParsableCommand {
         dryRun: dryRun,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 
@@ -208,8 +202,7 @@ struct Desktop: ParsableCommand {
         consumerPaths: state.consumerPaths,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 

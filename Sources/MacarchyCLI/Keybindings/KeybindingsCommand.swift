@@ -36,10 +36,7 @@ struct Keybindings: ParsableCommand {
         homeDirectory: home,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -118,10 +115,7 @@ struct Keybindings: ParsableCommand {
             json: json
           )
         }
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -204,10 +198,7 @@ struct Keybindings: ParsableCommand {
         homeDirectory: home
       )
       let execution = try KeybindingsStatusCommandRunner().execute(behavior: behavior, json: json)
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -240,10 +231,7 @@ struct Keybindings: ParsableCommand {
             json: json
           )
         }
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -277,10 +265,7 @@ struct Keybindings: ParsableCommand {
             json: json
           )
         }
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
