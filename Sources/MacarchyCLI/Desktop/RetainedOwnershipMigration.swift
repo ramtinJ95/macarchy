@@ -88,8 +88,7 @@ struct RetainedOwnershipMigration {
   }
 
   private func candidate(_ provider: Provider) throws -> Candidate {
-    guard !DesktopAggregateTransactionStore(stateRoot: stateRoot).exists,
-      try UnifiedSetupTransactionStore(stateRoot: stateRoot).read() == nil
+    guard try !DesktopAggregateTransactionStore.parentTransactionPending(stateRoot: stateRoot)
     else { throw failure("pending desktop/setup transaction blocks ownership migration") }
     switch provider {
     case .sketchybar:

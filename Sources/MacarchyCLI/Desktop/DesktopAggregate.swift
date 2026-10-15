@@ -31,18 +31,22 @@ struct DesktopAggregateTransaction: Codable, Equatable, Sendable {
 struct DesktopAggregateTransactionStore: Sendable {
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "desktop", directoryHint: .isDirectory)
+  private var file: DesktopStateFile {
+    DesktopStateFile(
+      stateRoot: stateRoot, directory: "desktop", name: "aggregate-transaction.json",
+      maximumSize: 4_096)
   }
 
-  private var file: URL { directory.appending(path: "aggregate-transaction.json") }
+  var exists: Bool { file.exists }
 
-  var exists: Bool { FileManager.default.fileExists(atPath: file.path) }
+  /// Whether a desktop aggregate or unified setup transaction must be completed first.
+  static func parentTransactionPending(stateRoot: URL) throws -> Bool {
+    try Self(stateRoot: stateRoot).exists
+      || UnifiedSetupTransactionStore(stateRoot: stateRoot).read() != nil
+  }
 
   func read() throws -> DesktopAggregateTransaction? {
-    guard exists else { return nil }
-    let data = try BoundedRegularFile.read(at: file, maximumSize: 4_096).data
-    let transaction = try JSONDecoder().decode(DesktopAggregateTransaction.self, from: data)
+    guard let transaction = try file.read(DesktopAggregateTransaction.self) else { return nil }
     guard transaction.schemaVersion == 1 else {
       throw DesktopAggregateError.invalidState("desktop aggregate transaction is invalid")
     }
@@ -50,19 +54,10 @@ struct DesktopAggregateTransactionStore: Sendable {
   }
 
   func write(_ transaction: DesktopAggregateTransaction) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(transaction).write(to: file, options: .atomic)
+    try file.write(transaction)
   }
 
-  func remove() throws {
-    do {
-      try FileManager.default.removeItem(at: file)
-    } catch let error as CocoaError where error.code == .fileNoSuchFile {
-      return
-    }
-  }
+  func remove() throws { try file.remove() }
 }
 
 enum DesktopAggregateError: Error, CustomStringConvertible, Sendable {

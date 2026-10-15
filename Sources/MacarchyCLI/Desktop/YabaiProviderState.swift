@@ -2,43 +2,8 @@ import Darwin
 import Foundation
 import ThemeCore
 
-enum YabaiProviderPlanStatus: String, Codable, Sendable {
-  case disabled
-  case externallyManaged = "externally_managed"
-  case managed
-  case installRequired = "install_required"
-  case adoptionRequired = "adoption_required"
-  case recoveryRequired = "recovery_required"
-  case blocked
-}
-
-struct YabaiProviderPlanInspection: Encodable, Sendable {
-  let status: YabaiProviderPlanStatus
-  let ownership: String
-  let entryPoint: String
-  let originalTarget: String?
-  let source: String?
-  let message: String
-  let adoptionEvidenceDigest: String?
-
-  enum CodingKeys: String, CodingKey {
-    case status, ownership
-    case entryPoint = "entry_point"
-    case originalTarget = "original_target"
-    case source, message
-    case adoptionEvidenceDigest = "adoption_evidence_digest"
-  }
-}
-
-enum YabaiOriginalKind: String, Codable, Sendable {
-  case absent
-  case regularFile = "regular_file"
-  case entrySymlink = "entry_symlink"
-  case directorySymlink = "directory_symlink"
-}
-
-struct YabaiAdoptionEvidence: Codable, Equatable, Sendable {
-  let kind: YabaiOriginalKind
+struct YabaiAdoptionEvidence: DesktopAdoptionEvidence, Codable, Equatable {
+  let kind: DesktopOriginalKind
   let publicPath: String
   let linkTarget: String?
   let contentDigest: String?
@@ -47,35 +12,6 @@ struct YabaiAdoptionEvidence: Codable, Equatable, Sendable {
   let inode: UInt64?
   let inventory: [String]
   var volumeUUID: String? = nil
-
-  /// Compare persisted identity after a reboot, not a same-operation approval snapshot.
-  func matchesObserved(_ observed: Self?) -> Bool {
-    guard let observed else { return false }
-    return kind == observed.kind && publicPath == observed.publicPath
-      && linkTarget == observed.linkTarget && contentDigest == observed.contentDigest
-      && permissions == observed.permissions && inode == observed.inode
-      && inventory == observed.inventory
-      && (volumeUUID.map { $0 == observed.volumeUUID } ?? (device == observed.device))
-  }
-
-  var digest: String {
-    var values: [String] = [
-      kind.rawValue, publicPath, linkTarget ?? "", contentDigest ?? "",
-      permissions.map(String.init) ?? "", device.map(String.init) ?? "",
-      inode.map(String.init) ?? "",
-    ]
-    values += inventory
-    if let volumeUUID {
-      values.append(volumeUUID)
-    }
-    var data = Data()
-    for value in values {
-      let bytes = Data(value.utf8)
-      data.append(Data("\(bytes.count):".utf8))
-      data.append(bytes)
-    }
-    return sha256Digest(data)
-  }
 }
 
 struct YabaiOwnershipRecord: Codable, Equatable, Sendable {
@@ -118,16 +54,13 @@ struct YabaiOwnershipRecord: Codable, Equatable, Sendable {
 struct YabaiOwnershipStore: Sendable {
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
+  private var file: DesktopStateFile {
+    DesktopStateFile(
+      stateRoot: stateRoot, directory: "desktop/yabai", name: "ownership.json", maximumSize: 32_768)
   }
 
-  private var file: URL { directory.appending(path: "ownership.json") }
-
   func read() throws -> YabaiOwnershipRecord? {
-    guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-    let data = try BoundedRegularFile.read(at: file, maximumSize: 32_768).data
-    let record = try JSONDecoder().decode(YabaiOwnershipRecord.self, from: data)
+    guard let record = try file.read(YabaiOwnershipRecord.self) else { return nil }
     guard
       record.schemaVersion == 1,
       record.original.volumeUUID.map({ UUID(uuidString: $0)?.uuidString == $0 }) ?? true,
@@ -142,19 +75,10 @@ struct YabaiOwnershipStore: Sendable {
   }
 
   func write(_ record: YabaiOwnershipRecord) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(record).write(to: file, options: .atomic)
+    try file.write(record)
   }
 
-  func remove() throws {
-    do {
-      try FileManager.default.removeItem(at: file)
-    } catch let error as CocoaError where error.code == .fileNoSuchFile {
-      return
-    }
-  }
+  func remove() throws { try file.remove() }
 }
 
 struct YabaiProviderPlanInspector: Sendable {
@@ -163,11 +87,11 @@ struct YabaiProviderPlanInspector: Sendable {
     stateRoot: URL,
     enabled: Bool,
     transactionPending: Bool = false
-  ) -> YabaiProviderPlanInspection {
+  ) -> DesktopProviderPlanInspection {
     let directory = homeDirectory.appending(path: ".config/yabai", directoryHint: .isDirectory)
     let entry = directory.appending(path: "yabairc")
     if transactionPending {
-      return result(
+      return .result(
         .recoveryRequired,
         ownership: "transaction_pending",
         entry: entry,
@@ -186,25 +110,26 @@ struct YabaiProviderPlanInspector: Sendable {
       let evidence = try captureUnowned(directory: directory, entry: entry)
       switch evidence.kind {
       case .absent:
-        return result(
+        return .result(
           .installRequired,
           ownership: "absent",
           entry: entry,
           message: "no yabai configuration entry exists"
         )
       case .regularFile, .entrySymlink, .directorySymlink:
-        return result(
+        return .result(
           .adoptionRequired,
           ownership: evidence.kind.rawValue,
           entry: entry,
           originalTarget: evidence.linkTarget,
-          source: sourceURL(for: evidence, directory: directory, entry: entry)?.path,
+          source: evidence.sourceURL(directory: directory, entry: entry, entryName: "yabairc")?
+            .path,
           message: "existing \(evidence.kind.rawValue) requires explicit adoption",
           adoptionEvidenceDigest: evidence.digest
         )
       }
     } catch {
-      return result(
+      return .result(
         .blocked,
         ownership: "uninspectable",
         entry: entry,
@@ -217,17 +142,17 @@ struct YabaiProviderPlanInspector: Sendable {
     var directoryMetadata = stat()
     guard lstat(directory.path, &directoryMetadata) == 0 else {
       if errno == ENOENT {
-        return try evidence(kind: .absent, publicPath: entry, metadata: nil)
+        return try YabaiAdoptionEvidence.capture(kind: .absent, publicPath: entry, metadata: nil)
       }
       throw YabaiDesktopError.system("inspect yabai configuration directory", directory, errno)
     }
     switch directoryMetadata.st_mode & S_IFMT {
     case S_IFLNK:
-      guard directoryMetadata.st_nlink == 1, let target = readLink(directory) else {
+      guard directoryMetadata.st_nlink == 1, let target = SymbolicLink.target(of: directory) else {
         throw YabaiDesktopError.invalidState(
           "yabai directory symlink is not singly linked and readable")
       }
-      let resolved = resolveLink(target, at: directory)
+      let resolved = SymbolicLink.resolve(target, at: directory)
       let inventory = try FileManager.default.contentsOfDirectory(atPath: resolved.path).sorted()
       guard inventory == ["yabairc"] else {
         throw YabaiDesktopError.invalidState(
@@ -236,7 +161,7 @@ struct YabaiProviderPlanInspector: Sendable {
       }
       let source = resolved.appending(path: "yabairc")
       let data = try BoundedRegularFile.read(at: source).data
-      return try evidence(
+      return try YabaiAdoptionEvidence.capture(
         kind: .directorySymlink,
         publicPath: directory,
         metadata: directoryMetadata,
@@ -254,7 +179,7 @@ struct YabaiProviderPlanInspector: Sendable {
     var entryMetadata = stat()
     guard lstat(entry.path, &entryMetadata) == 0 else {
       if errno == ENOENT {
-        return try evidence(kind: .absent, publicPath: entry, metadata: nil)
+        return try YabaiAdoptionEvidence.capture(kind: .absent, publicPath: entry, metadata: nil)
       }
       throw YabaiDesktopError.system("inspect yabairc", entry, errno)
     }
@@ -264,19 +189,19 @@ struct YabaiProviderPlanInspector: Sendable {
     switch entryMetadata.st_mode & S_IFMT {
     case S_IFREG:
       let data = try BoundedRegularFile.read(at: entry).data
-      return try evidence(
+      return try YabaiAdoptionEvidence.capture(
         kind: .regularFile,
         publicPath: entry,
         metadata: entryMetadata,
         contentDigest: sha256Digest(data)
       )
     case S_IFLNK:
-      guard let target = readLink(entry) else {
+      guard let target = SymbolicLink.target(of: entry) else {
         throw YabaiDesktopError.invalidState("cannot read yabairc symlink")
       }
-      let source = resolveLink(target, at: entry)
+      let source = SymbolicLink.resolve(target, at: entry)
       let data = try BoundedRegularFile.read(at: source).data
-      return try evidence(
+      return try YabaiAdoptionEvidence.capture(
         kind: .entrySymlink,
         publicPath: entry,
         metadata: entryMetadata,
@@ -299,9 +224,9 @@ struct YabaiProviderPlanInspector: Sendable {
   func inspectManaged(
     _ ownership: YabaiOwnershipRecord,
     entry: URL
-  ) -> YabaiProviderPlanInspection {
+  ) -> DesktopProviderPlanInspection {
     guard isManagedEntry(entry, target: ownership.managedTarget) else {
-      return result(
+      return .result(
         .blocked,
         ownership: "ownership_drift",
         entry: entry,
@@ -312,7 +237,7 @@ struct YabaiProviderPlanInspector: Sendable {
       do {
         try YabaiProviderTransaction.authenticateRetained(ownership)
       } catch {
-        return result(
+        return .result(
           .blocked,
           ownership: "retained_original_drift",
           entry: entry,
@@ -320,7 +245,7 @@ struct YabaiProviderPlanInspector: Sendable {
         )
       }
     }
-    return result(
+    return .result(
       .managed,
       ownership: "managed",
       entry: entry,
@@ -328,10 +253,10 @@ struct YabaiProviderPlanInspector: Sendable {
     )
   }
 
-  private func inspectDisabled(directory: URL, entry: URL) -> YabaiProviderPlanInspection {
+  private func inspectDisabled(directory: URL, entry: URL) -> DesktopProviderPlanInspection {
     var metadata = stat()
     guard lstat(directory.path, &metadata) == 0 else {
-      return result(
+      return .result(
         errno == ENOENT ? .disabled : .externallyManaged,
         ownership: errno == ENOENT ? "absent" : "uninspectable",
         entry: entry,
@@ -340,7 +265,7 @@ struct YabaiProviderPlanInspector: Sendable {
           : "desktop role is disabled; uninspectable yabai state remains externally managed"
       )
     }
-    return result(
+    return .result(
       .externallyManaged,
       ownership: "external",
       entry: entry,
@@ -348,80 +273,11 @@ struct YabaiProviderPlanInspector: Sendable {
     )
   }
 
-  private func evidence(
-    kind: YabaiOriginalKind,
-    publicPath: URL,
-    metadata: stat?,
-    linkTarget: String? = nil,
-    contentDigest: String? = nil,
-    inventory: [String] = []
-  ) throws -> YabaiAdoptionEvidence {
-    YabaiAdoptionEvidence(
-      kind: kind,
-      publicPath: publicPath.path,
-      linkTarget: linkTarget,
-      contentDigest: contentDigest,
-      permissions: metadata.map { Int($0.st_mode & 0o777) },
-      device: metadata.map { UInt64($0.st_dev) },
-      inode: metadata.map { UInt64($0.st_ino) },
-      inventory: inventory,
-      volumeUUID: try metadata.map {
-        try RetainedOriginalIdentity.volumeUUID(at: publicPath, matching: $0)
-      }
-    )
-  }
-
-  private func sourceURL(
-    for evidence: YabaiAdoptionEvidence,
-    directory: URL,
-    entry: URL
-  ) -> URL? {
-    switch evidence.kind {
-    case .regularFile: entry
-    case .entrySymlink: evidence.linkTarget.map { resolveLink($0, at: entry) }
-    case .directorySymlink:
-      evidence.linkTarget.map { resolveLink($0, at: directory).appending(path: "yabairc") }
-    case .absent: nil
-    }
-  }
-
   private func isManagedEntry(_ entry: URL, target: String) -> Bool {
     var metadata = stat()
     return lstat(entry.path, &metadata) == 0
       && metadata.st_mode & S_IFMT == S_IFLNK
-      && readLink(entry) == target
-  }
-
-  private func readLink(_ url: URL) -> String? {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(url.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { return nil }
-    return String(decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)), as: UTF8.self)
-  }
-
-  private func resolveLink(_ target: String, at link: URL) -> URL {
-    if target.hasPrefix("/") { return URL(filePath: target).standardizedFileURL }
-    return link.deletingLastPathComponent().appending(path: target).standardizedFileURL
-  }
-
-  private func result(
-    _ status: YabaiProviderPlanStatus,
-    ownership: String,
-    entry: URL,
-    originalTarget: String? = nil,
-    source: String? = nil,
-    message: String,
-    adoptionEvidenceDigest: String? = nil
-  ) -> YabaiProviderPlanInspection {
-    YabaiProviderPlanInspection(
-      status: status,
-      ownership: ownership,
-      entryPoint: entry.path,
-      originalTarget: originalTarget,
-      source: source,
-      message: message,
-      adoptionEvidenceDigest: adoptionEvidenceDigest
-    )
+      && SymbolicLink.target(of: entry) == target
   }
 }
 

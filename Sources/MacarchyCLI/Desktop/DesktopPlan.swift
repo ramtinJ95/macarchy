@@ -51,9 +51,7 @@ struct DesktopPlanCommandRunner: Sendable {
 
     if scope == .yabaiOnly {
       do {
-        if try DesktopAggregateTransactionStore(stateRoot: stateRoot).exists
-          || UnifiedSetupTransactionStore(stateRoot: stateRoot).read() != nil
-        {
+        if try DesktopAggregateTransactionStore.parentTransactionPending(stateRoot: stateRoot) {
           throw DesktopApplyBlockedError(
             reason: "complete the pending desktop/setup transaction before a yabai-only apply"
           )
@@ -197,7 +195,7 @@ struct DesktopPlanCommandRunner: Sendable {
       )
     }
     let sketchyBarGeneration: SketchyBarGenerationInspection
-    let sketchyBarProvider: SketchyBarProviderPlanInspection
+    let sketchyBarProvider: DesktopProviderPlanInspection
     let sketchyBarPalette: SketchyBarPalettePlanInspection
     if scope == .allProviders {
       sketchyBarGeneration = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
@@ -243,7 +241,7 @@ struct DesktopPlanCommandRunner: Sendable {
       }
     } else {
       sketchyBarGeneration = .missing
-      sketchyBarProvider = SketchyBarProviderPlanInspection(
+      sketchyBarProvider = DesktopProviderPlanInspection(
         status: .disabled,
         ownership: "not_inspected",
         entryPoint: homeDirectory.appending(path: ".config/sketchybar/sketchybarrc").path,
@@ -335,7 +333,7 @@ struct DesktopPlanCommandRunner: Sendable {
 
   private func yabaiActions(
     enabled: Bool,
-    provider: YabaiProviderPlanInspection,
+    provider: DesktopProviderPlanInspection,
     composition: YabaiComposition?,
     generation: YabaiGenerationInspection,
     blocked: Bool,
@@ -352,10 +350,8 @@ struct DesktopPlanCommandRunner: Sendable {
         ] : []
     }
     guard let composition else { return [] }
-    let generationAgrees =
-      generation.status == .current
-      && generation.manifest?.inputDigest == composition.inputDigest
-      && generation.manifest?.renderedDigest == composition.renderedDigest
+    let generationAgrees = generation.isCurrent(
+      inputDigest: composition.inputDigest, renderedDigest: composition.renderedDigest)
     if provider.status == .managed, generationAgrees, serviceChange?.previous.running != false {
       return []
     }
@@ -368,28 +364,7 @@ struct DesktopPlanCommandRunner: Sendable {
         )
       )
     }
-    switch provider.status {
-    case .installRequired:
-      actions.append(
-        DesktopPlanAction(
-          id: "install_yabai_entry",
-          message: "Install the managed yabairc provider entry."
-        )
-      )
-    case .adoptionRequired:
-      actions.append(
-        DesktopPlanAction(
-          id: provider.ownership == "directory_symlink"
-            ? "adopt_yabai_directory_symlink"
-            : "adopt_yabairc_entry",
-          message: "Adopt the existing \(provider.ownership) after explicit approval."
-        )
-      )
-    case .managed:
-      break
-    case .disabled, .externallyManaged, .recoveryRequired, .blocked:
-      break
-    }
+    actions += Self.entryActions(provider: provider, name: "yabai", entryName: "yabairc")
     actions.append(
       DesktopPlanAction(
         id: serviceChange?.previous.running == false
@@ -404,7 +379,7 @@ struct DesktopPlanCommandRunner: Sendable {
 
   private func sketchyBarActions(
     enabled: Bool,
-    provider: SketchyBarProviderPlanInspection,
+    provider: DesktopProviderPlanInspection,
     composition: SketchyBarComposition?,
     generation: SketchyBarGenerationInspection,
     palette: SketchyBarPalettePlanInspection,
@@ -421,10 +396,8 @@ struct DesktopPlanCommandRunner: Sendable {
         ] : []
     }
     guard let composition else { return [] }
-    let generationAgrees =
-      generation.status == .current
-      && generation.manifest?.inputDigest == composition.inputDigest
-      && generation.manifest?.renderedDigest == composition.renderedDigest
+    let generationAgrees = generation.isCurrent(
+      inputDigest: composition.inputDigest, renderedDigest: composition.renderedDigest)
     if provider.status == .managed, generationAgrees, palette.status == .current { return [] }
     var actions: [DesktopPlanAction] = []
     if palette.status == .unavailable || palette.status == .refreshRequired {
@@ -445,28 +418,7 @@ struct DesktopPlanCommandRunner: Sendable {
         )
       )
     }
-    switch provider.status {
-    case .installRequired:
-      actions.append(
-        DesktopPlanAction(
-          id: "install_sketchybar_entry",
-          message: "Install the managed sketchybarrc provider entry."
-        )
-      )
-    case .adoptionRequired:
-      actions.append(
-        DesktopPlanAction(
-          id: provider.ownership == "directory_symlink"
-            ? "adopt_sketchybar_directory_symlink"
-            : "adopt_sketchybarrc_entry",
-          message: "Adopt the existing \(provider.ownership) after explicit approval."
-        )
-      )
-    case .managed:
-      break
-    case .disabled, .externallyManaged, .recoveryRequired, .blocked:
-      break
-    }
+    actions += Self.entryActions(provider: provider, name: "sketchybar", entryName: "sketchybarrc")
     actions.append(
       DesktopPlanAction(
         id: "reload_sketchybar_service",
@@ -474,6 +426,32 @@ struct DesktopPlanCommandRunner: Sendable {
       )
     )
     return actions
+  }
+
+  /// The install or adopt step for a provider entry such as `yabairc`.
+  private static func entryActions(
+    provider: DesktopProviderPlanInspection, name: String, entryName: String
+  ) -> [DesktopPlanAction] {
+    switch provider.status {
+    case .installRequired:
+      [
+        DesktopPlanAction(
+          id: "install_\(name)_entry",
+          message: "Install the managed \(entryName) provider entry."
+        )
+      ]
+    case .adoptionRequired:
+      [
+        DesktopPlanAction(
+          id: provider.ownership == "directory_symlink"
+            ? "adopt_\(name)_directory_symlink"
+            : "adopt_\(entryName)_entry",
+          message: "Adopt the existing \(provider.ownership) after explicit approval."
+        )
+      ]
+    case .managed, .disabled, .externallyManaged, .recoveryRequired, .blocked:
+      []
+    }
   }
 
   private static func moduleCapabilities(
@@ -539,7 +517,7 @@ private struct DesktopPlanReport: Encodable {
   let proposedInputDigest: String?
   let currentGenerationID: String?
   let currentGenerationStatus: String
-  let provider: YabaiProviderPlanInspection
+  let provider: DesktopProviderPlanInspection
   let sketchyBar: DesktopSketchyBarPlanReport?
   let prerequisites: [DesktopPrerequisiteStatus]
   let keybindings: DesktopKeybindingPlan?
@@ -650,7 +628,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
   let proposedInputDigest: String?
   let currentGenerationID: String?
   let currentGenerationStatus: String
-  let provider: SketchyBarProviderPlanInspection
+  let provider: DesktopProviderPlanInspection
   let themePalette: SketchyBarPalettePlanInspection
 
   var humanLines: [String] {
