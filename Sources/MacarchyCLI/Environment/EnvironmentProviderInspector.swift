@@ -178,81 +178,35 @@ struct EnvironmentProviderInspector: Sendable {
       }
       let atuin = EnvironmentNativeFileMigration(
         provider: .atuin, homeDirectory: homeDirectory, stateRoot: stateRoot)
-      let ownedAtuinSource = atuin.nativeTarget(in: ownership)
-      let atuinSource = composition.profile.atuin.nativeConfigurationURL ?? ownedAtuinSource
-      let nativeAtuin = atuinSource != nil
-      let standardAtuin = atuinSource?.path == atuin.publicURL.path
-      if ownership?.standardNativeEntries?.contains(.atuinConfiguration) == true, !standardAtuin {
-        throw EnvironmentLifecycleError.blocked(
-          "Atuin is user-owned at its standard path; changing that connection requires a reviewed migration"
-        )
-      }
-      if composition.profile.history == .atuin, let atuinSource {
-        if !proposedNativeSources.contains(atuinSource.path) {
-          try atuin.validateNativeFile(at: atuinSource, userOwnedPublicEntry: standardAtuin)
-        }
-        if let record = ownership?.records.first(where: { $0.id == .atuinConfiguration }),
-          record.managedTarget != atuinSource.path
-        {
-          throw EnvironmentLifecycleError.blocked(
-            "Atuin source changed; review environment migrate-atuin --source before applying this profile"
-          )
-        }
-      }
+      let (atuinSource, standardAtuin) = try nativeFileConnection(
+        atuin, configured: composition.profile.atuin.nativeConfigurationURL,
+        selected: composition.profile.history == .atuin, ownership: ownership)
       let starship = EnvironmentNativeFileMigration(
         provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot)
-      let starshipSource =
-        composition.profile.starship.nativeConfigurationURL
-        ?? starship.nativeTarget(in: ownership)
-      let nativeStarship = starshipSource != nil
-      let standardStarship = starshipSource?.path == starship.publicURL.path
-      if ownership?.standardNativeEntries?.contains(.starship) == true, !standardStarship {
-        throw EnvironmentLifecycleError.blocked(
-          "Starship is user-owned at its standard path; changing that connection requires a reviewed migration"
-        )
-      }
-      if composition.profile.prompt == .starship, let starshipSource {
-        if !proposedNativeSources.contains(starshipSource.path) {
-          try starship.validateNativeFile(
-            at: starshipSource, userOwnedPublicEntry: standardStarship)
-        }
-        if let record = ownership?.records.first(where: { $0.id == .starship }),
-          record.managedTarget != starshipSource.path
-        {
-          throw EnvironmentLifecycleError.blocked(
-            "Starship source changed; review environment migrate-starship --source before applying this profile"
-          )
-        }
-      }
+      let (starshipSource, standardStarship) = try nativeFileConnection(
+        starship, configured: composition.profile.starship.nativeConfigurationURL,
+        selected: composition.profile.prompt == .starship, ownership: ownership)
+      let nativeSources = [
+        EnvironmentEntryID.neovim: neovimSource, .atuinConfiguration: atuinSource,
+        .starship: starshipSource,
+      ].compactMapValues { $0 }
       let entries = desiredEntries(
         profile: composition.profile,
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       ).map { entry in
-        if entry.id == .starship, let starshipSource {
-          return EnvironmentManagedEntry(
-            id: entry.id, url: entry.url, kind: entry.kind, target: starshipSource.path)
-        }
-        if entry.id == .atuinConfiguration, let atuinSource {
-          return EnvironmentManagedEntry(
-            id: entry.id, url: entry.url, kind: entry.kind, target: atuinSource.path)
-        }
-        guard entry.id == .neovim, let neovimSource else { return entry }
+        guard let source = nativeSources[entry.id] else { return entry }
         return EnvironmentManagedEntry(
-          id: entry.id, url: entry.url, kind: entry.kind, target: neovimSource.path)
+          id: entry.id, url: entry.url, kind: entry.kind, target: source.path)
       }
       let setupContext = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
-      var legacyIDs = Set<String>()
-      if entries.contains(where: { $0.id == .kitty }) { legacyIDs.insert("kitty.include") }
-      if entries.contains(where: { $0.id == .atuinConfiguration }) {
-        legacyIDs.formUnion(["atuin.selector", "atuin.theme-link"])
-      }
-      if entries.contains(where: { $0.id == .starship }) {
-        legacyIDs.insert("starship.configuration-link")
-      }
-      if entries.contains(where: { $0.id == .neovim }) {
-        legacyIDs.insert("neovim.theme-link")
-      }
+      let legacyEntryIDs: [EnvironmentEntryID: [String]] = [
+        .kitty: ["kitty.include"],
+        .atuinConfiguration: ["atuin.selector", "atuin.theme-link"],
+        .starship: ["starship.configuration-link"],
+        .neovim: ["neovim.theme-link"],
+      ]
+      var legacyIDs = Set(entries.flatMap { legacyEntryIDs[$0.id] ?? [] })
       if composition.profile.tools.bat {
         legacyIDs.formUnion(["bat.selector", "bat.theme-link"])
       }
@@ -276,28 +230,27 @@ struct EnvironmentProviderInspector: Sendable {
         setupIDs: setupIDs)
       let legacyCodexOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
         named: "Codex", requiredIDs: EnvironmentLegacyIntegration.codexIDs, setupIDs: setupIDs)
-      let externallyAuthoritativeCodex =
-        ownership?.codexEnabled == true
-        && ownership?.codex == nil
-        && ownership?.records.contains(where: { $0.id == .codexTheme }) != true
-        && !legacyCodexOwned
-      let externallyAuthoritativePi =
-        ownership?.piEnabled == true
-        && ownership?.pi == nil
-        && ownership?.records.contains(where: { $0.id == .piTheme }) != true
-        && !legacyPiOwned
-      let externallyAuthoritativeSpicetify =
-        ownership?.spicetifyEnabled == true
-        && ownership?.spicetify == nil
-        && ownership?.records.contains(where: { $0.id == .spicetifyColor }) != true
-        && !legacySpicetifyOwned
-      let externallyAuthoritativeTuicr =
-        ownership?.tuicrEnabled == true
-        && ownership?.tuicr == nil
-        && ownership?.records.contains(where: {
-          $0.id == .tuicrTheme || $0.id == .tuicrSyntax
-        }) != true
-        && !legacyTuicrOwned
+      /// An enabled preset with neither key ownership, owned theme links nor legacy setup
+      /// ownership left its exact external tuple authoritative.
+      func externallyAuthoritative(
+        _ enabled: Bool?, hasOwnership: Bool, links: Set<EnvironmentEntryID>, legacyOwned: Bool
+      ) -> Bool {
+        enabled == true && !hasOwnership
+          && ownership?.records.contains(where: { links.contains($0.id) }) != true
+          && !legacyOwned
+      }
+      let externallyAuthoritativeCodex = externallyAuthoritative(
+        ownership?.codexEnabled, hasOwnership: ownership?.codex != nil, links: [.codexTheme],
+        legacyOwned: legacyCodexOwned)
+      let externallyAuthoritativePi = externallyAuthoritative(
+        ownership?.piEnabled, hasOwnership: ownership?.pi != nil, links: [.piTheme],
+        legacyOwned: legacyPiOwned)
+      let externallyAuthoritativeSpicetify = externallyAuthoritative(
+        ownership?.spicetifyEnabled, hasOwnership: ownership?.spicetify != nil,
+        links: [.spicetifyColor], legacyOwned: legacySpicetifyOwned)
+      let externallyAuthoritativeTuicr = externallyAuthoritative(
+        ownership?.tuicrEnabled, hasOwnership: ownership?.tuicr != nil,
+        links: [.tuicrTheme, .tuicrSyntax], legacyOwned: legacyTuicrOwned)
       let conflicts =
         setupRecords
         .map(\.id).filter { legacyIDs.contains($0) }
@@ -324,6 +277,11 @@ struct EnvironmentProviderInspector: Sendable {
       var inspections = [EnvironmentEntryInspection]()
       var evidence = [EnvironmentEntryID: EnvironmentEntryEvidence]()
       var createdDirectories = Set<String>()
+      func recordMissingParents(of url: URL) throws {
+        for directory in try missingParentDirectories(of: url, homeDirectory: homeDirectory) {
+          createdDirectories.insert(directory.path)
+        }
+      }
       var standardNativeEntries = [EnvironmentEntryID]()
 
       for entry in entries {
@@ -431,9 +389,9 @@ struct EnvironmentProviderInspector: Sendable {
                   ? (nativeNeovim
                     ? "Neovim behavior and Lazy lock are user-owned; only the entry and theme bridges are managed."
                     : "Neovim configuration is immutable; interactive Lazy writes require environment migrate-neovim.")
-                  : (entry.id == .atuinConfiguration && nativeAtuin
+                  : (entry.id == .atuinConfiguration && atuinSource != nil
                     ? "Atuin behavior is user-owned; only the entry and theme link are managed. Profile behavior options are seed-only in this mode."
-                    : (entry.id == .starship && nativeStarship
+                    : (entry.id == .starship && starshipSource != nil
                       ? "Starship behavior is user-owned; only the entry, selector and reserved palette are managed. Profile behavior is seed-only in this mode."
                       : "The provider entry is managed.")))
                 : "The managed provider entry drifted.",
@@ -468,9 +426,7 @@ struct EnvironmentProviderInspector: Sendable {
           continue
         }
         evidence[entry.id] = captured
-        for directory in try missingParentDirectories(of: entry.url, homeDirectory: homeDirectory) {
-          createdDirectories.insert(directory.path)
-        }
+        try recordMissingParents(of: entry.url)
         let absent = captured.kind == .absent
         inspections.append(
           EnvironmentEntryInspection(
@@ -504,12 +460,7 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = btop.entry { inspections.append(entry) }
       if btop.proposedOwnership != nil {
-        for directory in try missingParentDirectories(
-          of: homeDirectory.appending(path: ".config/btop/btop.conf"),
-          homeDirectory: homeDirectory
-        ) {
-          createdDirectories.insert(directory.path)
-        }
+        try recordMissingParents(of: homeDirectory.appending(path: ".config/btop/btop.conf"))
       }
 
       let codex = try inspectCodex(
@@ -521,46 +472,13 @@ struct EnvironmentProviderInspector: Sendable {
         externallyAuthoritative: externallyAuthoritativeCodex
       )
       if let entry = codex.entry { inspections.append(entry) }
-      if legacyCodexOwned {
-        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .first { $0.id == .codexTheme }!
-        guard try managedEntryIsExact(entry) else {
-          throw EnvironmentLifecycleError.drift("legacy setup-owned codex_theme")
-        }
-        inspections.append(
-          EnvironmentEntryInspection(
-            id: entry.id.rawValue,
-            path: entry.url.path,
-            status: .external,
-            ownership: "legacy_setup",
-            message: "The working legacy setup-owned Codex theme link is preserved.",
-            evidence: nil
-          )
-        )
-      }
-      if externallyAuthoritativeCodex, !composition.profile.presets.codex {
-        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .first { $0.id == .codexTheme }!
-        let captured = try capture(entry.url, directoryLink: nil)
-        guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
-          throw EnvironmentLifecycleError.drift("externally owned codex_theme")
-        }
-        inspections.append(
-          EnvironmentEntryInspection(
-            id: entry.id.rawValue,
-            path: entry.url.path,
-            status: .external,
-            ownership: "external_exact",
-            message: "The exact Codex tuple remains externally owned until disablement.",
-            evidence: captured
-          )
-        )
-      }
+      inspections += try preservedPresetLinks(
+        [.codexTheme], in: allowed, label: "Codex", legacyLink: "Codex theme link",
+        legacyOwned: legacyCodexOwned,
+        externallyAuthoritative: externallyAuthoritativeCodex && !composition.profile.presets.codex,
+        composition: composition)
       if codex.proposedOwnership != nil {
-        for directory in try missingParentDirectories(
-          of: homeDirectory.appending(path: ".codex/config.toml"),
-          homeDirectory: homeDirectory
-        ) { createdDirectories.insert(directory.path) }
+        try recordMissingParents(of: homeDirectory.appending(path: ".codex/config.toml"))
       }
 
       let herdr = try inspectHerdr(
@@ -572,10 +490,7 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = herdr.entry { inspections.append(entry) }
       if herdr.proposedOwnership != nil, herdr.proposedOwnership?.directoryLink == nil {
-        for directory in try missingParentDirectories(
-          of: homeDirectory.appending(path: ".config/herdr/config.toml"),
-          homeDirectory: homeDirectory
-        ) { createdDirectories.insert(directory.path) }
+        try recordMissingParents(of: homeDirectory.appending(path: ".config/herdr/config.toml"))
       }
 
       let pi = try inspectPi(
@@ -587,46 +502,12 @@ struct EnvironmentProviderInspector: Sendable {
         externallyAuthoritative: externallyAuthoritativePi
       )
       if let entry = pi.entry { inspections.append(entry) }
-      if legacyPiOwned {
-        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .first { $0.id == .piTheme }!
-        guard try managedEntryIsExact(entry) else {
-          throw EnvironmentLifecycleError.drift("legacy setup-owned pi_theme")
-        }
-        inspections.append(
-          EnvironmentEntryInspection(
-            id: entry.id.rawValue,
-            path: entry.url.path,
-            status: .external,
-            ownership: "legacy_setup",
-            message: "The working legacy setup-owned Pi link is preserved.",
-            evidence: nil
-          )
-        )
-      }
-      if externallyAuthoritativePi, !composition.profile.presets.pi {
-        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .first { $0.id == .piTheme }!
-        let captured = try capture(entry.url, directoryLink: nil)
-        guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
-          throw EnvironmentLifecycleError.drift("externally owned pi_theme")
-        }
-        inspections.append(
-          EnvironmentEntryInspection(
-            id: entry.id.rawValue,
-            path: entry.url.path,
-            status: .external,
-            ownership: "external_exact",
-            message: "The exact Pi tuple remains externally owned until disablement.",
-            evidence: captured
-          )
-        )
-      }
+      inspections += try preservedPresetLinks(
+        [.piTheme], in: allowed, label: "Pi", legacyLink: "Pi link", legacyOwned: legacyPiOwned,
+        externallyAuthoritative: externallyAuthoritativePi && !composition.profile.presets.pi,
+        composition: composition)
       if pi.proposedOwnership != nil {
-        for directory in try missingParentDirectories(
-          of: homeDirectory.appending(path: ".pi/agent/settings.json"),
-          homeDirectory: homeDirectory
-        ) { createdDirectories.insert(directory.path) }
+        try recordMissingParents(of: homeDirectory.appending(path: ".pi/agent/settings.json"))
       }
 
       let spicetify = try inspectSpicetify(
@@ -638,41 +519,12 @@ struct EnvironmentProviderInspector: Sendable {
         externallyAuthoritative: externallyAuthoritativeSpicetify
       )
       if let entry = spicetify.entry { inspections.append(entry) }
-      if legacySpicetifyOwned {
-        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .first { $0.id == .spicetifyColor }!
-        guard try managedEntryIsExact(entry) else {
-          throw EnvironmentLifecycleError.drift("legacy setup-owned spicetify_color")
-        }
-        inspections.append(
-          EnvironmentEntryInspection(
-            id: entry.id.rawValue,
-            path: entry.url.path,
-            status: .external,
-            ownership: "legacy_setup",
-            message: "The working legacy setup-owned Spicetify color link is preserved.",
-            evidence: nil
-          )
-        )
-      }
-      if externallyAuthoritativeSpicetify, !composition.profile.presets.spicetify {
-        let entry = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .first { $0.id == .spicetifyColor }!
-        let captured = try capture(entry.url, directoryLink: nil)
-        guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
-          throw EnvironmentLifecycleError.drift("externally owned spicetify_color")
-        }
-        inspections.append(
-          EnvironmentEntryInspection(
-            id: entry.id.rawValue,
-            path: entry.url.path,
-            status: .external,
-            ownership: "external_exact",
-            message: "The exact Spicetify tuple remains externally owned until disablement.",
-            evidence: captured
-          )
-        )
-      }
+      inspections += try preservedPresetLinks(
+        [.spicetifyColor], in: allowed, label: "Spicetify",
+        legacyLink: "Spicetify color link", legacyOwned: legacySpicetifyOwned,
+        externallyAuthoritative: externallyAuthoritativeSpicetify
+          && !composition.profile.presets.spicetify,
+        composition: composition)
 
       if composition.profile.presets.slack {
         inspections.append(
@@ -704,52 +556,13 @@ struct EnvironmentProviderInspector: Sendable {
         externallyAuthoritative: externallyAuthoritativeTuicr
       )
       if let entry = tuicr.entry { inspections.append(entry) }
-      if legacyTuicrOwned {
-        for entry in allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-        where entry.id == .tuicrTheme || entry.id == .tuicrSyntax {
-          guard try managedEntryIsExact(entry) else {
-            throw EnvironmentLifecycleError.drift(
-              "legacy setup-owned \(entry.id.rawValue)"
-            )
-          }
-          inspections.append(
-            EnvironmentEntryInspection(
-              id: entry.id.rawValue,
-              path: entry.url.path,
-              status: .external,
-              ownership: "legacy_setup",
-              message: "The working legacy setup-owned tuicr link is preserved.",
-              evidence: nil
-            )
-          )
-        }
-      }
-      if externallyAuthoritativeTuicr, !composition.profile.presets.tuicr {
-        for entry in allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-        where entry.id == .tuicrTheme || entry.id == .tuicrSyntax {
-          let captured = try capture(entry.url, directoryLink: nil)
-          guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
-            throw EnvironmentLifecycleError.drift(
-              "externally owned \(entry.id.rawValue)"
-            )
-          }
-          inspections.append(
-            EnvironmentEntryInspection(
-              id: entry.id.rawValue,
-              path: entry.url.path,
-              status: .external,
-              ownership: "external_exact",
-              message: "The exact tuicr tuple remains externally owned until disablement.",
-              evidence: captured
-            )
-          )
-        }
-      }
+      inspections += try preservedPresetLinks(
+        [.tuicrTheme, .tuicrSyntax], in: allowed, label: "tuicr", legacyLink: "tuicr link",
+        legacyOwned: legacyTuicrOwned,
+        externallyAuthoritative: externallyAuthoritativeTuicr && !composition.profile.presets.tuicr,
+        composition: composition)
       if tuicr.proposedOwnership != nil {
-        for directory in try missingParentDirectories(
-          of: homeDirectory.appending(path: ".config/tuicr/config.toml"),
-          homeDirectory: homeDirectory
-        ) { createdDirectories.insert(directory.path) }
+        try recordMissingParents(of: homeDirectory.appending(path: ".config/tuicr/config.toml"))
       }
 
       for record in ownership?.records ?? [] where !entries.contains(where: { $0.id == record.id })
@@ -1297,6 +1110,86 @@ struct EnvironmentProviderInspector: Sendable {
     default:
       return false
     }
+  }
+
+  /// Resolves a native file provider's behavior source and enforces its connection rules.
+  private func nativeFileConnection(
+    _ migration: EnvironmentNativeFileMigration,
+    configured: URL?,
+    selected: Bool,
+    ownership: EnvironmentOwnership?
+  ) throws -> (source: URL?, isStandard: Bool) {
+    let provider = migration.provider
+    let source = configured ?? migration.nativeTarget(in: ownership)
+    let isStandard = source?.path == migration.publicURL.path
+    if ownership?.standardNativeEntries?.contains(provider.entryID) == true, !isStandard {
+      throw EnvironmentLifecycleError.blocked(
+        "\(provider.label) is user-owned at its standard path; changing that connection requires a reviewed migration"
+      )
+    }
+    if selected, let source {
+      if !proposedNativeSources.contains(source.path) {
+        try migration.validateNativeFile(at: source, userOwnedPublicEntry: isStandard)
+      }
+      if let record = ownership?.records.first(where: { $0.id == provider.entryID }),
+        record.managedTarget != source.path
+      {
+        throw EnvironmentLifecycleError.blocked(
+          "\(provider.label) source changed; review environment migrate-\(provider.rawValue) --source before applying this profile"
+        )
+      }
+    }
+    return (source, isStandard)
+  }
+
+  /// Inspects the theme links a preset keeps outside environment ownership: its working legacy
+  /// setup-owned links, or its exact external tuple while the preset is disabled.
+  private func preservedPresetLinks(
+    _ ids: [EnvironmentEntryID],
+    in allowed: [EnvironmentEntryID: EnvironmentManagedEntry],
+    label: String,
+    legacyLink: String,
+    legacyOwned: Bool,
+    externallyAuthoritative: Bool,
+    composition: EnvironmentComposition
+  ) throws -> [EnvironmentEntryInspection] {
+    var inspections = [EnvironmentEntryInspection]()
+    if legacyOwned {
+      for entry in ids.map({ allowed[$0]! }) {
+        guard try managedEntryIsExact(entry) else {
+          throw EnvironmentLifecycleError.drift("legacy setup-owned \(entry.id.rawValue)")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: .external,
+            ownership: "legacy_setup",
+            message: "The working legacy setup-owned \(legacyLink) is preserved.",
+            evidence: nil
+          )
+        )
+      }
+    }
+    if externallyAuthoritative {
+      for entry in ids.map({ allowed[$0]! }) {
+        let captured = try capture(entry.url, directoryLink: nil)
+        guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
+          throw EnvironmentLifecycleError.drift("externally owned \(entry.id.rawValue)")
+        }
+        inspections.append(
+          EnvironmentEntryInspection(
+            id: entry.id.rawValue,
+            path: entry.url.path,
+            status: .external,
+            ownership: "external_exact",
+            message: "The exact \(label) tuple remains externally owned until disablement.",
+            evidence: captured
+          )
+        )
+      }
+    }
+    return inspections
   }
 
   private static func isDailyToolEntry(_ id: EnvironmentEntryID) -> Bool {
