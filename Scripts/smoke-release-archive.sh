@@ -16,21 +16,9 @@ version_file="$repository_root/VERSION.txt"
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/macarchy-archive-smoke.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
 
-if ! IFS= read -r version < "$version_file"; then
-  print -u2 "VERSION.txt must contain one newline-terminated semantic version"
-  exit 65
-fi
-version_bytes=$(wc -c < "$version_file" | tr -d ' ')
-if [[ "$version_bytes" -ne $((${#version} + 1)) ]] \
-  || ! print -r -- "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
-then
-  print -u2 "VERSION.txt must contain a stable semantic version"
-  exit 65
-fi
-if ! print -r -- "$revision" | grep -Eq '^[0-9a-f]{40}$'; then
-  print -u2 "git revision must be a 40-character lowercase object ID"
-  exit 65
-fi
+source "$script_directory/release-common.zsh"
+read_release_version "$version_file"
+require_release_revision "$revision"
 
 package_name="macarchy-${version}-arm64-apple-darwin"
 archive_name="${package_name}.tar.gz"
