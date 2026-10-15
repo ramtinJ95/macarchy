@@ -69,18 +69,16 @@ struct YabaiTransaction: Codable, Equatable, Sendable {
 struct YabaiTransactionStore: Sendable {
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
+  private var file: DesktopStateFile {
+    DesktopStateFile(
+      stateRoot: stateRoot, directory: "desktop/yabai", name: "transaction.json",
+      maximumSize: 65_536)
   }
 
-  private var file: URL { directory.appending(path: "transaction.json") }
-
-  var exists: Bool { FileManager.default.fileExists(atPath: file.path) }
+  var exists: Bool { file.exists }
 
   func read() throws -> YabaiTransaction? {
-    guard exists else { return nil }
-    let data = try BoundedRegularFile.read(at: file, maximumSize: 65_536).data
-    let transaction = try JSONDecoder().decode(YabaiTransaction.self, from: data)
+    guard let transaction = try file.read(YabaiTransaction.self) else { return nil }
     guard
       transaction.schemaVersion == (transaction.service == nil ? 1 : 2),
       transaction.service?.isValid ?? true,
@@ -94,19 +92,10 @@ struct YabaiTransactionStore: Sendable {
   }
 
   func write(_ transaction: YabaiTransaction) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(transaction).write(to: file, options: .atomic)
+    try file.write(transaction)
   }
 
-  func remove() throws {
-    do {
-      try FileManager.default.removeItem(at: file)
-    } catch let error as CocoaError where error.code == .fileNoSuchFile {
-      return
-    }
-  }
+  func remove() throws { try file.remove() }
 }
 
 enum YabaiTransactionCheckpoint: Sendable {
@@ -477,17 +466,9 @@ struct YabaiProviderTransaction: Sendable {
 
   private func isManagedEntry(target: String) -> Bool {
     var metadata = stat()
-    guard lstat(entry.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFLNK else {
-      return false
-    }
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(entry.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { return false }
-    let observed = String(
-      decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)),
-      as: UTF8.self
-    )
-    return observed == target
+    return lstat(entry.path, &metadata) == 0
+      && metadata.st_mode & S_IFMT == S_IFLNK
+      && SymbolicLink.target(of: entry) == target
   }
 
   private func originalIsPublic(_ original: YabaiAdoptionEvidence) -> Bool {
@@ -525,13 +506,13 @@ struct YabaiProviderTransaction: Sendable {
     case .entrySymlink, .directorySymlink:
       guard
         metadata.st_mode & S_IFMT == S_IFLNK,
-        readLink(retained) == original.linkTarget,
+        SymbolicLink.target(of: retained) == original.linkTarget,
         let target = original.linkTarget
       else {
         throw YabaiDesktopError.invalidState("retained yabai symlink has drifted")
       }
       let publicPath = URL(filePath: original.publicPath)
-      let source = resolveLink(target, at: publicPath)
+      let source = SymbolicLink.resolve(target, at: publicPath)
       if original.kind == .directorySymlink {
         let inventory = try FileManager.default.contentsOfDirectory(atPath: source.path).sorted()
         guard inventory == original.inventory else {
@@ -552,18 +533,6 @@ struct YabaiProviderTransaction: Sendable {
     case .absent:
       throw YabaiDesktopError.invalidState("absent yabai state cannot have a retained original")
     }
-  }
-
-  private static func readLink(_ url: URL) -> String? {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(url.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { return nil }
-    return String(decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)), as: UTF8.self)
-  }
-
-  private static func resolveLink(_ target: String, at link: URL) -> URL {
-    if target.hasPrefix("/") { return URL(filePath: target).standardizedFileURL }
-    return link.deletingLastPathComponent().appending(path: target).standardizedFileURL
   }
 
   private func pathExistsNoFollow(_ path: String) -> Bool {

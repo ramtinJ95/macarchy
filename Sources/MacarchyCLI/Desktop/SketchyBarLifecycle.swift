@@ -382,16 +382,14 @@ struct SketchyBarLifecycleEvidenceStore: Sendable {
 
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "desktop/sketchybar", directoryHint: .isDirectory)
+  private var file: DesktopStateFile {
+    DesktopStateFile(
+      stateRoot: stateRoot, directory: "desktop/sketchybar", name: "lifecycle.json",
+      maximumSize: Self.maximumSize)
   }
 
-  private var file: URL { directory.appending(path: "lifecycle.json") }
-
   func read() throws -> SketchyBarLifecycleEvidence? {
-    guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-    let data = try BoundedRegularFile.read(at: file, maximumSize: Self.maximumSize).data
-    let evidence = try JSONDecoder().decode(SketchyBarLifecycleEvidence.self, from: data)
+    guard let evidence = try file.read(SketchyBarLifecycleEvidence.self) else { return nil }
     guard evidence.isValid else {
       throw SketchyBarDesktopError.invalidState("SketchyBar lifecycle evidence is invalid")
     }
@@ -402,21 +400,12 @@ struct SketchyBarLifecycleEvidenceStore: Sendable {
     guard evidence.isValid else {
       throw SketchyBarDesktopError.invalidState("SketchyBar lifecycle evidence is invalid")
     }
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    let data = try encoder.encode(evidence)
-    guard data.count <= Self.maximumSize else {
-      throw SketchyBarDesktopError.invalidState("SketchyBar lifecycle evidence is too large")
+    try file.write(evidence) { data in
+      guard data.count <= Self.maximumSize else {
+        throw SketchyBarDesktopError.invalidState("SketchyBar lifecycle evidence is too large")
+      }
     }
-    try data.write(to: file, options: .atomic)
   }
 
-  func remove() throws {
-    do {
-      try FileManager.default.removeItem(at: file)
-    } catch let error as CocoaError where error.code == .fileNoSuchFile {
-      return
-    }
-  }
+  func remove() throws { try file.remove() }
 }
