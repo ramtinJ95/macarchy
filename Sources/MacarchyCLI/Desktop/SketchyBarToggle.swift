@@ -135,13 +135,8 @@ struct SketchyBarToggle {
     struct Bar: Decodable { let items: [String] }
     let inventory = try JSONDecoder().decode(Bar.self, from: Data(bar(["--query", "bar"]).utf8))
     guard inventory.items.contains("macarchy.toggle") else { return false }
-    struct Item: Decodable {
-      struct Label: Decodable { let value: String }
-      let label: Label
-    }
-    let item = try JSONDecoder().decode(
-      Item.self, from: Data(bar(["--query", "macarchy.toggle"]).utf8))
-    return item.label.value.hasPrefix(token + "|")
+    let label = try SketchyBarLabelQuery.value(from: bar(["--query", "macarchy.toggle"]))
+    return label.hasPrefix(token + "|")
   }
 
   @discardableResult private func bar(_ arguments: [String]) throws -> String {
