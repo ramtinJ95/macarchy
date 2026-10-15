@@ -83,8 +83,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           mutated: false,
           outcome: "blocked",
           message:
-            "macOS appearance changed after setup; refusing to overwrite the external change.",
-          details: nil
+            "macOS appearance changed after setup; refusing to overwrite the external change."
         )
       }
       if dryRun {
@@ -92,8 +91,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           succeeded: true,
           mutated: false,
           outcome: "planned",
-          message: "Would restore macOS appearance and remove the setup-owned canonical theme.",
-          details: nil
+          message: "Would restore macOS appearance and remove the setup-owned canonical theme."
         )
       }
 
@@ -106,8 +104,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           succeeded: false,
           mutated: appearanceChanged,
           outcome: "failed",
-          message: "macOS appearance restoration failed: \(error)",
-          details: nil
+          message: "macOS appearance restoration failed: \(error)"
         )
       }
       guard appearanceResult.status == .applied else {
@@ -115,8 +112,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           succeeded: false,
           mutated: appearanceChanged,
           outcome: "failed",
-          message: appearanceResult.message ?? "macOS appearance restoration failed.",
-          details: nil
+          message: appearanceResult.message ?? "macOS appearance restoration failed."
         )
       }
       let cleanupError: String?
@@ -130,8 +126,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           succeeded: false,
           mutated: appearanceChanged,
           outcome: "failed",
-          message: "Canonical theme removal failed: \(error)",
-          details: nil
+          message: "Canonical theme removal failed: \(error)"
         )
       }
       if let cleanupError {
@@ -139,8 +134,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           succeeded: false,
           mutated: true,
           outcome: "recovery_required",
-          message: "Canonical theme was removed, but cleanup remains: \(cleanupError).",
-          details: nil
+          message: "Canonical theme was removed, but cleanup remains: \(cleanupError)."
         )
       }
       do {
@@ -150,16 +144,14 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           succeeded: false,
           mutated: true,
           outcome: "recovery_required",
-          message: "Canonical theme was removed, but setup ownership cleanup failed: \(error)",
-          details: nil
+          message: "Canonical theme was removed, but setup ownership cleanup failed: \(error)"
         )
       }
       return UnifiedSetupTeardownStage(
         succeeded: true,
         mutated: true,
         outcome: "restored",
-        message: "Restored macOS appearance and removed the setup-owned canonical theme.",
-        details: nil
+        message: "Restored macOS appearance and removed the setup-owned canonical theme."
       )
     },
     environmentApplyFinalization: { context, commit in
@@ -184,8 +176,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         outcome: changed ? (commit ? "committed" : "restored") : "no_change",
         message: changed
           ? "The deferred environment apply was \(commit ? "committed" : "rolled back")."
-          : "No deferred environment apply exists.",
-        details: nil
+          : "No deferred environment apply exists."
       )
     },
     desktopApplyFinalization: { context, commit in
@@ -200,8 +191,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         outcome: changed ? (commit ? "committed" : "restored") : "no_change",
         message: changed
           ? "The deferred desktop apply was \(commit ? "committed" : "rolled back")."
-          : "No deferred desktop apply exists.",
-        details: nil
+          : "No deferred desktop apply exists."
       )
     }
   )
@@ -240,23 +230,10 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         )
       }
       do {
-        let recovered = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
-          guard
-            let current = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read()
-          else {
-            throw UnifiedSetupTransactionError.recoveryRequired(
-              "the interrupted transaction disappeared before recovery"
-            )
-          }
-          return (
-            transaction: current,
-            result: try await recover(
-              transaction: current,
-              context: context,
-              consumerPaths: consumerPaths
-            )
-          )
-        }
+        let recovered = try await recoverPendingLocked(
+          context: context,
+          consumerPaths: consumerPaths
+        )
         if recovered.transaction.operation == .teardown {
           return try result(
             outcome: "restored",
@@ -399,44 +376,25 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     }
 
-    if dryRun {
-      let planned = [preferencesPreview, environmentPreview, desktopPreview, themePreview].contains
-      {
-        $0.outcome == "planned"
-      }
-      return try result(
-        outcome: planned ? "planned" : "no_change",
-        mutated: false,
-        dryRun: true,
-        plan: plan,
-        preferences: preferencesPreview,
-        environment: environmentPreview,
-        desktop: desktopPreview,
-        theme: themePreview,
-        message: planned
-          ? "Reverse-order teardown is ready; Homebrew packages remain externally owned."
-          : "No Macarchy-owned core lifecycle state exists.",
-        json: json
-      )
-    }
-
     let stages: [UnifiedSetupTransactionStage] = [
       preferencesPreview.outcome == "planned" ? .preferences : nil,
       environmentPreview.outcome == "planned" ? .environment : nil,
       desktopPreview.outcome == "planned" ? .desktop : nil,
       themePreview.outcome == "planned" ? .theme : nil,
     ].compactMap { $0 }
-    guard !stages.isEmpty else {
+    if dryRun || stages.isEmpty {
       return try result(
-        outcome: "no_change",
+        outcome: stages.isEmpty ? "no_change" : "planned",
         mutated: false,
-        dryRun: false,
+        dryRun: dryRun,
         plan: plan,
         preferences: preferencesPreview,
         environment: environmentPreview,
         desktop: desktopPreview,
         theme: themePreview,
-        message: "No Macarchy-owned core lifecycle state exists.",
+        message: stages.isEmpty
+          ? "No Macarchy-owned core lifecycle state exists."
+          : "Reverse-order teardown is ready; Homebrew packages remain externally owned.",
         json: json
       )
     }
@@ -485,6 +443,30 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         plan: plan,
         message: String(describing: error),
         json: json
+      )
+    }
+  }
+
+  /// Re-reads the interrupted transaction under the lifecycle lock and recovers it.
+  func recoverPendingLocked(
+    context: UnifiedSetupPlanContext,
+    consumerPaths: ThemeConsumerPaths
+  ) async throws -> (transaction: UnifiedSetupTransaction, result: UnifiedSetupRecoveryResult) {
+    try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
+      guard
+        let transaction = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read()
+      else {
+        throw UnifiedSetupTransactionError.recoveryRequired(
+          "the interrupted transaction disappeared before recovery"
+        )
+      }
+      return (
+        transaction: transaction,
+        result: try await recover(
+          transaction: transaction,
+          context: context,
+          consumerPaths: consumerPaths
+        )
       )
     }
   }
@@ -578,8 +560,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       return UnifiedSetupTeardownStage(
         succeeded: true, mutated: changed,
         outcome: changed ? (commit ? "committed" : "restored") : "no_change",
-        message: "Deferred native preferences apply \(commit ? "committed" : "rolled back").",
-        details: nil)
+        message: "Deferred native preferences apply \(commit ? "committed" : "rolled back").")
     case .environment:
       return try await environmentApplyFinalization(context, commit)
     case .desktop:
@@ -690,10 +671,10 @@ struct UnifiedSetupTeardownStage: Encodable, Sendable {
   let mutated: Bool
   let outcome: String
   let message: String
-  let details: JSONValue?
+  var details: JSONValue? = nil
 
   static func noChange(_ message: String) -> Self {
-    Self(succeeded: true, mutated: false, outcome: "no_change", message: message, details: nil)
+    Self(succeeded: true, mutated: false, outcome: "no_change", message: message)
   }
 }
 

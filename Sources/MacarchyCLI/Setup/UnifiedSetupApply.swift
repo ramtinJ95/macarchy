@@ -178,6 +178,23 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     reviewedPlan: String? = nil,
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
+    @Sendable func blocked(
+      _ plan: UnifiedSetupPlanReport?,
+      _ message: String
+    ) throws -> (output: String, succeeded: Bool) {
+      try result(outcome: "blocked", mutated: false, plan: plan, message: message, json: json)
+    }
+    /// Why the core-owned theme blocks setup, or nil when it may proceed.
+    @Sendable func themeGateFailure(_ model: UnifiedSetupDesiredModel) -> String? {
+      let ownership: SetupCoreOwnership?
+      do {
+        ownership = try SetupCoreOwnershipStore(stateRoot: context.stateRoot).read()
+      } catch {
+        return String(describing: error)
+      }
+      let theme = themeInspection(model, ownership, context.stateRoot)
+      return theme.succeeded ? nil : theme.message
+    }
     let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
     do {
       try SetupPackageInstallationStore(context: context).requireResolved()
@@ -206,13 +223,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     do {
       preparation = try planner.prepare(context: context)
     } catch {
-      return try result(
-        outcome: "blocked",
-        mutated: false,
-        plan: nil,
-        message: "Setup preflight failed: \(error)",
-        json: json
-      )
+      return try blocked(nil, "Setup preflight failed: \(error)")
     }
     guard case .ready(let model, let plan) = preparation else {
       return try result(
@@ -243,55 +254,23 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         )
       }
     } catch {
-      return try result(
-        outcome: "blocked",
-        mutated: false,
-        plan: plan,
-        message: String(describing: error),
-        json: json
-      )
+      return try blocked(plan, String(describing: error))
     }
     guard model.packages.external.isEmpty else {
-      return try result(
-        outcome: "blocked",
-        mutated: false,
-        plan: plan,
-        message: "Complete every external prerequisite from the reviewed setup plan first.",
-        json: json
+      return try blocked(
+        plan,
+        "Complete every external prerequisite from the reviewed setup plan first."
       )
     }
-    let ownership: SetupCoreOwnership?
-    do {
-      ownership = try SetupCoreOwnershipStore(stateRoot: context.stateRoot).read()
-    } catch {
-      return try result(
-        outcome: "blocked",
-        mutated: false,
-        plan: plan,
-        message: String(describing: error),
-        json: json
-      )
-    }
-    let themeLifecycle = themeInspection(model, ownership, context.stateRoot)
-    guard themeLifecycle.succeeded else {
-      return try result(
-        outcome: "blocked",
-        mutated: false,
-        plan: plan,
-        message: themeLifecycle.message,
-        json: json
-      )
+    if let failure = themeGateFailure(model) {
+      return try blocked(plan, failure)
     }
     guard
       plan.packageInstallation == nil || packageApproval == plan.packageInstallation?.approvalDigest
     else {
-      return try result(
-        outcome: "blocked",
-        mutated: false,
-        plan: plan,
-        message:
-          "Review the missing-package Brewfile and repeat with its exact --approve-packages digest. The legacy --install-dependencies flag does not authorize this scope.",
-        json: json
+      return try blocked(
+        plan,
+        "Review the missing-package Brewfile and repeat with its exact --approve-packages digest. The legacy --install-dependencies flag does not authorize this scope."
       )
     }
 
@@ -310,13 +289,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         do {
           currentPreparation = try planner.prepare(context: context)
         } catch {
-          return try result(
-            outcome: "blocked",
-            mutated: false,
-            plan: nil,
-            message: "Setup revalidation failed: \(error)",
-            json: json
-          )
+          return try blocked(nil, "Setup revalidation failed: \(error)")
         }
         guard case .ready(let currentModel, let currentPlan) = currentPreparation else {
           return try result(
@@ -328,35 +301,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           )
         }
         guard try currentPlan.approvalText() == plan.approvalText() else {
-          return try result(
-            outcome: "blocked",
-            mutated: false,
-            plan: currentPlan,
-            message: "The unified setup plan changed before mutation; review it and retry.",
-            json: json
+          return try blocked(
+            currentPlan,
+            "The unified setup plan changed before mutation; review it and retry."
           )
         }
-        let currentOwnership: SetupCoreOwnership?
-        do {
-          currentOwnership = try SetupCoreOwnershipStore(stateRoot: context.stateRoot).read()
-        } catch {
-          return try result(
-            outcome: "blocked",
-            mutated: false,
-            plan: currentPlan,
-            message: String(describing: error),
-            json: json
-          )
-        }
-        let currentTheme = themeInspection(currentModel, currentOwnership, context.stateRoot)
-        guard currentTheme.succeeded else {
-          return try result(
-            outcome: "blocked",
-            mutated: false,
-            plan: currentPlan,
-            message: currentTheme.message,
-            json: json
-          )
+        if let failure = themeGateFailure(currentModel) {
+          return try blocked(currentPlan, failure)
         }
 
         let packages = install(currentPlan.packageInstallation, context: context)
@@ -407,15 +358,14 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           currentPlan.actions.compactMap { UnifiedSetupTransactionStage(rawValue: $0.stage) }
         )
         var transaction: UnifiedSetupTransaction?
+        let contextDigest = unifiedSetupContextDigest(
+          context: context, consumerPaths: consumerPaths)
         func start(_ stage: UnifiedSetupTransactionStage) throws {
           let next = UnifiedSetupTransaction(
             operation: .apply,
             stages: (transaction?.stages ?? []) + [stage],
             desiredAppearance: currentModel.themePackage.appearance,
-            contextDigest: unifiedSetupContextDigest(
-              context: context,
-              consumerPaths: consumerPaths
-            )
+            contextDigest: contextDigest
           )
           try store.write(next)
           transaction = next
@@ -740,23 +690,10 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     json: Bool
   ) async throws -> (output: String, succeeded: Bool) {
     do {
-      let recovered = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
-        guard
-          let transaction = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read()
-        else {
-          throw UnifiedSetupTransactionError.recoveryRequired(
-            "the interrupted transaction disappeared before recovery"
-          )
-        }
-        return (
-          transaction: transaction,
-          result: try await transactionTeardown.recover(
-            transaction: transaction,
-            context: context,
-            consumerPaths: consumerPaths
-          )
-        )
-      }
+      let recovered = try await transactionTeardown.recoverPendingLocked(
+        context: context,
+        consumerPaths: consumerPaths
+      )
       let warning =
         try EnvironmentStateStore(stateRoot: context.stateRoot)
         .hasUnverifiedSpicetifyRecovery()
