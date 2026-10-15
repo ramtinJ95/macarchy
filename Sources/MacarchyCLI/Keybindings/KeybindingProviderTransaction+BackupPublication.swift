@@ -50,10 +50,12 @@ extension KeybindingProviderTransaction {
         0o600
       )
     }
-    guard temporary >= 0 else { throw posixError("create keybinding backup", temporaryURL) }
+    guard temporary >= 0 else {
+      throw SetupOwnershipError.posix("create keybinding backup", temporaryURL)
+    }
     defer { Darwin.close(temporary) }
     guard fcopyfile(source, temporary, nil, copyfile_flags_t(COPYFILE_METADATA)) == 0 else {
-      throw posixError("copy keybinding backup metadata", temporaryURL)
+      throw SetupOwnershipError.posix("copy keybinding backup metadata", temporaryURL)
     }
     let copiedSnapshot = try manager.regularFileSnapshot(
       descriptor: temporary,
@@ -65,7 +67,7 @@ extension KeybindingProviderTransaction {
       throw SetupOwnershipError.ownershipDrift(entry)
     }
     guard fchmod(temporary, mode_t(0o600)) == 0 else {
-      throw posixError("secure keybinding backup", temporaryURL)
+      throw SetupOwnershipError.posix("secure keybinding backup", temporaryURL)
     }
     try markClaim(
       descriptor: temporary,
@@ -89,9 +91,11 @@ extension KeybindingProviderTransaction {
       ),
     ]
     guard futimens(temporary, &timestamps) == 0 else {
-      throw posixError("restore keybinding backup modification time", temporaryURL)
+      throw SetupOwnershipError.posix("restore keybinding backup modification time", temporaryURL)
     }
-    guard fsync(temporary) == 0 else { throw posixError("sync keybinding backup", temporaryURL) }
+    guard fsync(temporary) == 0 else {
+      throw SetupOwnershipError.posix("sync keybinding backup", temporaryURL)
+    }
     let snapshot = try manager.regularFileSnapshot(
       descriptor: temporary,
       url: temporaryURL,
@@ -118,18 +122,14 @@ extension KeybindingProviderTransaction {
       pathIdentity.st_nlink == 1,
       try claimMarkerMatches(descriptor: temporary, record: record, url: temporaryURL)
     else { throw SetupOwnershipError.ownershipDrift(temporaryURL) }
-    let publication = temporaryName.withCString { sourceName in
-      backup.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(
-          backupParent,
-          sourceName,
-          backupParent,
-          destination,
-          UInt32(RENAME_EXCL)
-        )
-      }
+    let publication = renameExclusive(
+      descriptor: backupParent,
+      from: temporaryName,
+      to: backup.lastPathComponent
+    )
+    guard publication == 0 else {
+      throw SetupOwnershipError.posix("publish keybinding backup", backup)
     }
-    guard publication == 0 else { throw posixError("publish keybinding backup", backup) }
     try sync(backupParent, url: backup.deletingLastPathComponent())
     _ = try readOriginalBackup(record, manager: manager)
   }
@@ -175,12 +175,7 @@ extension KeybindingProviderTransaction {
     _ record: SetupOwnershipRecord,
     manager: SetupOwnershipManager
   ) throws -> Bool? {
-    let parent: Int32
-    do {
-      parent = try openBackupDirectory(create: false)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return nil
-    }
+    guard let parent = try openBackupDirectoryIfPresent() else { return nil }
     defer { Darwin.close(parent) }
     let name = try publishingName(backup.lastPathComponent, record: record)
     let url = backup.deletingLastPathComponent().appending(path: name)
@@ -195,12 +190,7 @@ extension KeybindingProviderTransaction {
     guard
       try claimMarkerMatches(descriptor: descriptor, record: record, url: url)
     else { throw SetupOwnershipError.ownershipDrift(url) }
-    let file = try manager.readPinnedRegularFile(
-      descriptor: descriptor,
-      url: url,
-      label: "keybinding backup publication"
-    )
-    let snapshot = try manager.regularFileSnapshot(
+    let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
       descriptor: descriptor,
       url: url,
       label: "keybinding backup publication",
@@ -227,12 +217,7 @@ extension KeybindingProviderTransaction {
       label: "keybinding backup"
     )
     defer { Darwin.close(descriptor) }
-    let file = try manager.readPinnedRegularFile(
-      descriptor: descriptor,
-      url: backup,
-      label: "keybinding backup"
-    )
-    let snapshot = try manager.regularFileSnapshot(
+    let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
       descriptor: descriptor,
       url: backup,
       label: "keybinding backup",
