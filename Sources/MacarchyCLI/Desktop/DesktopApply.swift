@@ -109,8 +109,7 @@ struct DesktopApplyCommandRunner: Sendable {
     do {
       let results = try ActivationLock(root: stateRoot).withLock {
         if scope == .yabaiOnly,
-          try DesktopAggregateTransactionStore(stateRoot: stateRoot).exists
-            || UnifiedSetupTransactionStore(stateRoot: stateRoot).read() != nil
+          try DesktopAggregateTransactionStore.parentTransactionPending(stateRoot: stateRoot)
         {
           throw DesktopApplyBlockedError(
             reason: "complete the pending desktop/setup transaction before a yabai-only apply"
@@ -238,7 +237,7 @@ struct DesktopApplyCommandRunner: Sendable {
       return (try report.render(json: json), false)
     }
 
-    let adapterIDs = themeAdapterIDs(desired.profile)
+    let adapterIDs = desired.profile.desktopThemeAdapterIDs
     let themeNeedsReconciliation: Bool
     do {
       if !adapterIDs.isEmpty {
@@ -627,13 +626,6 @@ struct DesktopApplyCommandRunner: Sendable {
         homeDirectory: homeDirectory
       ).teardownLocked(dryRun: true)
     }
-  }
-
-  private func themeAdapterIDs(_ profile: PortableProfile) -> [String] {
-    var ids = [String]()
-    if profile.desktop.provider == .yabaiSkhd { ids.append("wallpaper") }
-    if profile.topBar == .sketchybar { ids.append("sketchybar") }
-    return ids.sorted()
   }
 
   private func applySketchyBarLocked(

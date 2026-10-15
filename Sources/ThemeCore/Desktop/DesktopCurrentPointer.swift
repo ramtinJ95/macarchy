@@ -18,7 +18,7 @@ enum DesktopCurrentPointer {
         ? .missing
         : .invalid("cannot inspect current pointer: \(errnoDescription(errno))")
     }
-    guard metadata.st_mode & S_IFMT == S_IFLNK, let target = readLink(current) else {
+    guard metadata.st_mode & S_IFMT == S_IFLNK, let target = SymbolicLink.target(of: current) else {
       return .invalid("current is not a readable symbolic link")
     }
     let prefix = "generations/"
@@ -30,12 +30,5 @@ enum DesktopCurrentPointer {
       return .invalid("current target has an invalid generation identity")
     }
     return .generation(generationID)
-  }
-
-  private static func readLink(_ url: URL) -> String? {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(url.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { return nil }
-    return String(decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)), as: UTF8.self)
   }
 }

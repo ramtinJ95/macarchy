@@ -40,10 +40,18 @@ struct DesktopStatusCommandRunner: Sendable {
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
-    let desired: DesktopDesiredState?
     var diagnostics: [String] = []
-    do {
-      desired = try DesktopDesiredState.load(
+    // Runs `body`, recording its error as a diagnostic and substituting `fallback`.
+    func attempt<Value>(_ fallback: Value, _ body: () throws -> Value) -> Value {
+      do {
+        return try body()
+      } catch {
+        diagnostics.append(String(describing: error))
+        return fallback
+      }
+    }
+    let desired: DesktopDesiredState? = attempt(nil) {
+      try DesktopDesiredState.load(
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,
@@ -51,16 +59,9 @@ struct DesktopStatusCommandRunner: Sendable {
         macarchyExecutableURL: macarchyExecutableURL,
         profile: suppliedProfile
       )
-    } catch {
-      desired = nil
-      diagnostics.append(String(describing: error))
     }
-    let aggregatePending: Bool
-    do {
-      aggregatePending = try DesktopAggregateTransactionStore(stateRoot: stateRoot).read() != nil
-    } catch {
-      aggregatePending = true
-      diagnostics.append(String(describing: error))
+    let aggregatePending = attempt(true) {
+      try DesktopAggregateTransactionStore(stateRoot: stateRoot).read() != nil
     }
     let yabaiEnabled = desired?.yabaiComposition != nil
     let transactionPending = YabaiTransactionStore(stateRoot: stateRoot).exists
@@ -71,19 +72,11 @@ struct DesktopStatusCommandRunner: Sendable {
       enabled: yabaiEnabled,
       transactionPending: transactionPending
     )
-    let lifecycleEvidence: YabaiLifecycleEvidence?
-    do {
-      lifecycleEvidence = try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).read()
-    } catch {
-      lifecycleEvidence = nil
-      diagnostics.append(String(describing: error))
+    let lifecycleEvidence: YabaiLifecycleEvidence? = attempt(nil) {
+      try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).read()
     }
-    let ownership: YabaiOwnershipRecord?
-    do {
-      ownership = try YabaiOwnershipStore(stateRoot: stateRoot).read()
-    } catch {
-      ownership = nil
-      diagnostics.append(String(describing: error))
+    let ownership: YabaiOwnershipRecord? = attempt(nil) {
+      try YabaiOwnershipStore(stateRoot: stateRoot).read()
     }
     let runtime =
       // Service receipt drift is independent of configuration and AX evidence.
@@ -100,10 +93,9 @@ struct DesktopStatusCommandRunner: Sendable {
       diagnostics.append(String(describing: error))
     }
 
-    let generationAgrees =
-      generation.status == .current
-      && generation.manifest?.inputDigest == desired?.yabaiComposition?.inputDigest
-      && generation.manifest?.renderedDigest == desired?.yabaiComposition?.renderedDigest
+    let generationAgrees = generation.isCurrent(
+      inputDigest: desired?.yabaiComposition?.inputDigest,
+      renderedDigest: desired?.yabaiComposition?.renderedDigest)
     let ownershipAgrees = ownership?.generationID == generation.generationID
     let lifecycleAgrees =
       lifecycleEvidence?.generationID == generation.generationID
@@ -118,12 +110,8 @@ struct DesktopStatusCommandRunner: Sendable {
       && !transactionPending && diagnostics.isEmpty
     let sketchyBarEnabled = desired?.sketchyBarComposition != nil
     let sketchyBarTransactionStore = SketchyBarTransactionStore(stateRoot: stateRoot)
-    let sketchyBarTransactionPending: Bool
-    do {
-      sketchyBarTransactionPending = try sketchyBarTransactionStore.read() != nil
-    } catch {
-      sketchyBarTransactionPending = false
-      diagnostics.append(String(describing: error))
+    let sketchyBarTransactionPending = attempt(false) {
+      try sketchyBarTransactionStore.read() != nil
     }
     let sketchyBarGeneration = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
     let sketchyBarProvider = SketchyBarProviderPlanInspector().inspect(
@@ -137,19 +125,11 @@ struct DesktopStatusCommandRunner: Sendable {
       stateRoot: stateRoot,
       enabled: sketchyBarEnabled
     )
-    let sketchyBarOwnership: SketchyBarOwnershipRecord?
-    let sketchyBarEvidence: SketchyBarLifecycleEvidence?
-    do {
-      sketchyBarOwnership = try SketchyBarOwnershipStore(stateRoot: stateRoot).read()
-    } catch {
-      sketchyBarOwnership = nil
-      diagnostics.append(String(describing: error))
+    let sketchyBarOwnership: SketchyBarOwnershipRecord? = attempt(nil) {
+      try SketchyBarOwnershipStore(stateRoot: stateRoot).read()
     }
-    do {
-      sketchyBarEvidence = try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).read()
-    } catch {
-      sketchyBarEvidence = nil
-      diagnostics.append(String(describing: error))
+    let sketchyBarEvidence: SketchyBarLifecycleEvidence? = attempt(nil) {
+      try SketchyBarLifecycleEvidenceStore(stateRoot: stateRoot).read()
     }
     var sketchyBarRuntime: SketchyBarRuntimeInspection?
     var sketchyBarCore: SketchyBarCoreRuntimeInspection?
@@ -170,12 +150,9 @@ struct DesktopStatusCommandRunner: Sendable {
         diagnostics.append(String(describing: error))
       }
     }
-    let sketchyBarGenerationAgrees =
-      sketchyBarGeneration.status == .current
-      && sketchyBarGeneration.manifest?.inputDigest
-        == desired?.sketchyBarComposition?.inputDigest
-      && sketchyBarGeneration.manifest?.renderedDigest
-        == desired?.sketchyBarComposition?.renderedDigest
+    let sketchyBarGenerationAgrees = sketchyBarGeneration.isCurrent(
+      inputDigest: desired?.sketchyBarComposition?.inputDigest,
+      renderedDigest: desired?.sketchyBarComposition?.renderedDigest)
     let sketchyBarOwnershipAgrees =
       sketchyBarOwnership?.generationID == sketchyBarGeneration.generationID
     let sketchyBarLifecycleAgrees =
@@ -231,18 +208,11 @@ struct DesktopStatusCommandRunner: Sendable {
       }
     let themeState: [DesktopThemeAdapterStatus]
     if let theme, let consumerPaths, let profile = desired?.profile {
-      var adapterIDs = [String]()
-      if profile.desktop.provider == .yabaiSkhd { adapterIDs.append("wallpaper") }
-      if profile.topBar == .sketchybar { adapterIDs.append("sketchybar") }
+      let adapterIDs = profile.desktopThemeAdapterIDs
       if adapterIDs.isEmpty {
         themeState = []
       } else {
-        do {
-          themeState = try theme.inspect(adapterIDs.sorted(), stateRoot, consumerPaths)
-        } catch {
-          themeState = []
-          diagnostics.append(String(describing: error))
-        }
+        themeState = attempt([]) { try theme.inspect(adapterIDs, stateRoot, consumerPaths) }
       }
     } else {
       themeState = []
@@ -309,7 +279,7 @@ private struct DesktopStatusReport: Encodable {
   let generationID: String?
   let generationAgrees: Bool
   let ownershipAgrees: Bool
-  let provider: YabaiProviderPlanInspection
+  let provider: DesktopProviderPlanInspection
   let runtime: YabaiRuntimeInspection
   let lifecycleGenerationID: String?
   let transactionPending: Bool
@@ -380,7 +350,7 @@ private struct DesktopSketchyBarStatusReport: Encodable {
   let generationID: String?
   let generationAgrees: Bool
   let ownershipAgrees: Bool
-  let provider: SketchyBarProviderPlanInspection
+  let provider: DesktopProviderPlanInspection
   let palette: SketchyBarPalettePlanInspection
   let runtime: SketchyBarRuntimeInspection?
   let coreRuntime: SketchyBarCoreRuntimeInspection?

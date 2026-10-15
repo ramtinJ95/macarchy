@@ -73,8 +73,8 @@ enum DesktopPersonalProvider: String, Sendable {
   func managedGeneration(profile: PortableProfile, context: UnifiedSetupPlanContext) throws
     -> String
   {
-    guard try !DesktopAggregateTransactionStore(stateRoot: context.stateRoot).exists,
-      try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil
+    guard
+      try !DesktopAggregateTransactionStore.parentTransactionPending(stateRoot: context.stateRoot)
     else {
       throw EnvironmentLifecycleError.blocked("recover the pending desktop/setup transaction first")
     }
