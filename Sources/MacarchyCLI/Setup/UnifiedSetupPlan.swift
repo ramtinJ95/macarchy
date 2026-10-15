@@ -215,6 +215,13 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     }
 
     let profile = layered.profile
+    let layers = layered.layers.map(SetupProfileLayerReport.init)
+    let fieldOrigins = layered.fieldOrigins.mapValues(\.rawValue)
+    func inputBlocked(_ error: any Error) -> UnifiedSetupPreparation {
+      .blocked(
+        UnifiedSetupPlanReport.blocked(
+          layers: layers, fieldOrigins: fieldOrigins, error: String(describing: error)))
+    }
     let capabilities = try setupCapabilities(
       profile: profile, homeDirectory: context.homeDirectory,
       desktopResourcesRoot: context.desktopResourcesRoot)
@@ -223,16 +230,11 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       declarations = try packageDeclarations(
         context: context, profile: profile, capabilities: capabilities)
     } catch {
-      return .blocked(
-        UnifiedSetupPlanReport.blocked(
-          layers: layered.layers.map(SetupProfileLayerReport.init),
-          fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue),
-          error: String(describing: error)))
+      return inputBlocked(error)
     }
 
     let inventory = SetupPackageInventory(
-      capabilities: capabilities, fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue),
-      layers: layered.layers.map(SetupProfileLayerReport.init),
+      capabilities: capabilities, fieldOrigins: fieldOrigins, layers: layers,
       observation: packageInventoryReader(),
       adoptionState: SetupPackageAdoptionStore(
         stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
@@ -243,8 +245,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       packages = try HomebrewInstallPlan(inventory: inventory)
     } catch {
       var report = UnifiedSetupPlanReport.blocked(
-        layers: layered.layers.map(SetupProfileLayerReport.init),
-        fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue), error: String(describing: error))
+        layers: layers, fieldOrigins: fieldOrigins, error: String(describing: error))
       report.packageDeclarations = declarations
       report.packageInventory = inventory
       return .blocked(report)
@@ -254,15 +255,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     do {
       themeSelection = try themePlan(context: context)
     } catch {
-      return .blocked(
-        UnifiedSetupPlanReport.blocked(
-          layers: layered.layers.map(SetupProfileLayerReport.init),
-          fieldOrigins: Dictionary(
-            uniqueKeysWithValues: layered.fieldOrigins.map { ($0.key, $0.value.rawValue) }
-          ),
-          error: String(describing: error)
-        )
-      )
+      return inputBlocked(error)
     }
 
     let nativeStarters: [EnvironmentNativeSeed]
@@ -272,18 +265,12 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         context: context, profile: profile, theme: themeSelection.package)
       starterPlans = try nativeStarters.map { try $0.plan() }
     } catch {
-      return .blocked(
-        UnifiedSetupPlanReport.blocked(
-          layers: layered.layers.map(SetupProfileLayerReport.init),
-          fieldOrigins: layered.fieldOrigins.mapValues(\.rawValue), error: String(describing: error)
-        ))
+      return inputBlocked(error)
     }
     let model = UnifiedSetupDesiredModel(
       profile: profile,
-      layers: layered.layers.map(SetupProfileLayerReport.init),
-      fieldOrigins: Dictionary(
-        uniqueKeysWithValues: layered.fieldOrigins.map { ($0.key, $0.value.rawValue) }
-      ),
+      layers: layers,
+      fieldOrigins: fieldOrigins,
       themePackage: themeSelection.package,
       theme: themeSelection.plan,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs(profile),
