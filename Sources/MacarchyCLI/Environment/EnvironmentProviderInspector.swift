@@ -1002,52 +1002,16 @@ struct EnvironmentProviderInspector: Sendable {
       }
       throw EnvironmentLifecycleError.system("inspect provider entry", url, errno)
     }
-    let common = (
-      device: UInt64(metadata.st_dev),
-      inode: UInt64(metadata.st_ino),
-      mode: UInt32(metadata.st_mode),
-      size: Int64(metadata.st_size)
+    return try entryEvidence(
+      of: url,
+      metadata: metadata,
+      directoryLink: directoryLink,
+      linkDestination: { try FileManager.default.destinationOfSymbolicLink(atPath: url.path) },
+      contents: {
+        try BoundedRegularFile.read(at: url, maximumSize: Self.maximumExternalFileSize).data
+      },
+      digestMetadata: { try metadataDigest(at: url, symbolicLink: $0) }
     )
-    switch metadata.st_mode & S_IFMT {
-    case S_IFLNK:
-      let destination = try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
-      return EnvironmentEntryEvidence(
-        kind: .symbolicLink,
-        device: common.device,
-        inode: common.inode,
-        mode: common.mode,
-        size: common.size,
-        linkDestination: destination,
-        contentDigest: nil,
-        metadataDigest: try metadataDigest(at: url, symbolicLink: true),
-        inventory: try directoryLink.map {
-          try nativeDirectoryInventory(link: url, destination: destination, kind: $0)
-        } ?? []
-      )
-    case S_IFREG where directoryLink == nil:
-      guard metadata.st_nlink == 1 else {
-        throw EnvironmentLifecycleError.blocked("\(url.path) is hard-linked")
-      }
-      let data = try BoundedRegularFile.read(
-        at: url,
-        maximumSize: Self.maximumExternalFileSize
-      ).data
-      return EnvironmentEntryEvidence(
-        kind: .regularFile,
-        device: common.device,
-        inode: common.inode,
-        mode: common.mode,
-        size: common.size,
-        linkDestination: nil,
-        contentDigest: sha256Digest(data),
-        metadataDigest: try metadataDigest(at: url, symbolicLink: false),
-        inventory: []
-      )
-    default:
-      throw EnvironmentLifecycleError.blocked(
-        "\(url.path) has an unsupported provider entry type"
-      )
-    }
   }
 
   func managedEntryIsExact(_ entry: EnvironmentManagedEntry) throws -> Bool {
@@ -1120,6 +1084,39 @@ struct EnvironmentProviderInspector: Sendable {
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
       return EnvironmentEntryEvidence.absent
     }
+    return try entryEvidence(
+      of: url,
+      metadata: metadata,
+      directoryLink: directoryLink,
+      linkDestination: {
+        try PinnedFilesystem.symlinkDestination(
+          parentDescriptor: parentDescriptor, name: name, url: url)
+      },
+      contents: {
+        try PinnedFilesystem.readRegularFile(
+          parentDescriptor: parentDescriptor,
+          name: name,
+          url: url,
+          maximumSize: Self.maximumExternalFileSize
+        ).data
+      },
+      digestMetadata: {
+        try metadataDigest(
+          parentDescriptor: parentDescriptor, name: name, url: url, symbolicLink: $0)
+      }
+    )
+  }
+
+  /// Builds an entry's evidence from its metadata; the closures read the link, contents and
+  /// metadata digest through the caller's path or pinned parent descriptor.
+  private func entryEvidence(
+    of url: URL,
+    metadata: stat,
+    directoryLink: EnvironmentDirectoryLinkKind?,
+    linkDestination: () throws -> String,
+    contents: () throws -> Data,
+    digestMetadata: (_ symbolicLink: Bool) throws -> String
+  ) throws -> EnvironmentEntryEvidence {
     let common = (
       device: UInt64(metadata.st_dev),
       inode: UInt64(metadata.st_ino),
@@ -1128,11 +1125,7 @@ struct EnvironmentProviderInspector: Sendable {
     )
     switch metadata.st_mode & S_IFMT {
     case S_IFLNK:
-      let destination = try PinnedFilesystem.symlinkDestination(
-        parentDescriptor: parentDescriptor,
-        name: name,
-        url: url
-      )
+      let destination = try linkDestination()
       return EnvironmentEntryEvidence(
         kind: .symbolicLink,
         device: common.device,
@@ -1141,12 +1134,7 @@ struct EnvironmentProviderInspector: Sendable {
         size: common.size,
         linkDestination: destination,
         contentDigest: nil,
-        metadataDigest: try metadataDigest(
-          parentDescriptor: parentDescriptor,
-          name: name,
-          url: url,
-          symbolicLink: true
-        ),
+        metadataDigest: try digestMetadata(true),
         inventory: try directoryLink.map {
           try nativeDirectoryInventory(link: url, destination: destination, kind: $0)
         } ?? []
@@ -1155,12 +1143,7 @@ struct EnvironmentProviderInspector: Sendable {
       guard metadata.st_nlink == 1 else {
         throw EnvironmentLifecycleError.blocked("\(url.path) is hard-linked")
       }
-      let data = try PinnedFilesystem.readRegularFile(
-        parentDescriptor: parentDescriptor,
-        name: name,
-        url: url,
-        maximumSize: Self.maximumExternalFileSize
-      ).data
+      let data = try contents()
       return EnvironmentEntryEvidence(
         kind: .regularFile,
         device: common.device,
@@ -1169,12 +1152,7 @@ struct EnvironmentProviderInspector: Sendable {
         size: common.size,
         linkDestination: nil,
         contentDigest: sha256Digest(data),
-        metadataDigest: try metadataDigest(
-          parentDescriptor: parentDescriptor,
-          name: name,
-          url: url,
-          symbolicLink: false
-        ),
+        metadataDigest: try digestMetadata(false),
         inventory: []
       )
     default:
@@ -1543,21 +1521,24 @@ struct EnvironmentProviderInspector: Sendable {
     configurationEvidence: EnvironmentEntryEvidence? = nil
   ) throws -> Bool {
     let configuration = homeDirectory.appending(path: ".codex/config.toml")
-    let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
-    let externalAncestor = try hasSymlinkAncestor(configuration, stoppingAt: homeDirectory)
-    guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
-    let text =
-      evidence.kind == .symbolicLink || externalAncestor
-      ? try externalConfigurationText(
-        at: configuration,
-        evidence: evidence,
-        hasExternalAncestor: externalAncestor,
-        label: "Codex configuration"
-      )
-      : try configurationText(at: configuration, evidence: evidence)
-    return try EnvironmentCodexDocument.matchesManaged(text, source: configuration)
-      && externalLinksAreExact(
-        [.codexTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
+    return try externalTupleIsExact(
+      configuration: configuration,
+      links: [.codexTheme],
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      configurationEvidence: configurationEvidence
+    ) { evidence, externalAncestor in
+      let text =
+        evidence.kind == .symbolicLink || externalAncestor
+        ? try externalConfigurationText(
+          at: configuration,
+          evidence: evidence,
+          hasExternalAncestor: externalAncestor,
+          label: "Codex configuration"
+        )
+        : try configurationText(at: configuration, evidence: evidence)
+      return try EnvironmentCodexDocument.matchesManaged(text, source: configuration)
+    }
   }
 
   func configurationText(
@@ -1997,21 +1978,23 @@ struct EnvironmentProviderInspector: Sendable {
     configurationEvidence: EnvironmentEntryEvidence? = nil
   ) throws -> Bool {
     let configuration = homeDirectory.appending(path: ".pi/agent/settings.json")
-    let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
-    let externalAncestor = try hasSymlinkAncestor(configuration, stoppingAt: homeDirectory)
-    guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
-    let data =
-      evidence.kind == .symbolicLink || externalAncestor
-      ? try externalConfigurationData(
-        at: configuration,
-        evidence: evidence,
-        hasExternalAncestor: externalAncestor,
-        label: "Pi settings"
+    return try externalTupleIsExact(
+      configuration: configuration,
+      links: [.piTheme],
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      configurationEvidence: configurationEvidence
+    ) { evidence, externalAncestor in
+      try EnvironmentPiDocument.matchesManaged(
+        externalConfigurationData(
+          at: configuration,
+          evidence: evidence,
+          hasExternalAncestor: externalAncestor,
+          label: "Pi settings"
+        ),
+        source: configuration
       )
-      : try configurationData(at: configuration, evidence: evidence)
-    return try EnvironmentPiDocument.matchesManaged(data, source: configuration)
-      && externalLinksAreExact(
-        [.piTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
+    }
   }
 
   private func inspectTuicr(
@@ -2247,26 +2230,44 @@ struct EnvironmentProviderInspector: Sendable {
     configurationEvidence: EnvironmentEntryEvidence? = nil
   ) throws -> Bool {
     let configuration = homeDirectory.appending(path: ".config/tuicr/config.toml")
+    return try externalTupleIsExact(
+      configuration: configuration,
+      links: [.tuicrTheme, .tuicrSyntax],
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      configurationEvidence: configurationEvidence
+    ) { evidence, externalAncestor in
+      let text =
+        evidence.kind == .symbolicLink || externalAncestor
+        ? try externalConfigurationText(
+          at: configuration,
+          evidence: evidence,
+          hasExternalAncestor: externalAncestor,
+          label: "tuicr configuration"
+        )
+        : try configurationText(at: configuration, evidence: evidence)
+      return try EnvironmentTuicrDocument.matchesManaged(text, source: configuration)
+    }
+  }
+
+  /// Whether a key-owned preset's configuration and theme links still form its exact external
+  /// tuple; `matches` reads the configuration through any external symlink chain.
+  private func externalTupleIsExact(
+    configuration: URL,
+    links: Set<EnvironmentEntryID>,
+    homeDirectory: URL,
+    stateRoot: URL,
+    configurationEvidence: EnvironmentEntryEvidence?,
+    matches: (_ evidence: EnvironmentEntryEvidence, _ hasExternalAncestor: Bool) throws -> Bool
+  ) throws -> Bool {
     let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
     let externalAncestor = try hasSymlinkAncestor(configuration, stoppingAt: homeDirectory)
     guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
-    let text =
-      evidence.kind == .symbolicLink || externalAncestor
-      ? try externalConfigurationText(
-        at: configuration,
-        evidence: evidence,
-        hasExternalAncestor: externalAncestor,
-        label: "tuicr configuration"
-      )
-      : try configurationText(at: configuration, evidence: evidence)
-    return try EnvironmentTuicrDocument.matchesManaged(text, source: configuration)
-      && externalLinksAreExact(
-        [.tuicrTheme, .tuicrSyntax],
-        homeDirectory: homeDirectory,
-        stateRoot: stateRoot)
+    return try matches(evidence, externalAncestor)
+      && externalLinksAreExact(links, homeDirectory: homeDirectory, stateRoot: stateRoot)
   }
 
-  private func externalLinksAreExact(
+  func externalLinksAreExact(
     _ ids: Set<EnvironmentEntryID>,
     homeDirectory: URL,
     stateRoot: URL
