@@ -309,14 +309,9 @@ struct YabaiLifecycleController: Sendable {
         "expected one UID-scoped yabai process; found \(processIDs.count)"
       )
     }
-    var pathBuffer = [CChar](repeating: 0, count: 4_096)
-    guard proc_pidpath(processID, &pathBuffer, UInt32(pathBuffer.count)) > 0 else {
+    guard let path = processExecutablePath(processID) else {
       throw YabaiDesktopError.lifecycle("cannot resolve yabai PID \(processID)")
     }
-    let path = String(
-      decoding: pathBuffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)),
-      as: UTF8.self
-    )
     let supportedPath = URL(filePath: "/opt/homebrew/bin/yabai")
       .resolvingSymlinksInPath().path
     guard path == supportedPath else {
