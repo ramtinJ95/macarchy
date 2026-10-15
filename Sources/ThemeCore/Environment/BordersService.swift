@@ -229,11 +229,10 @@ package struct BordersService: Sendable {
   }
 
   package static func nativeProcessPath(_ pid: Int32) throws -> String {
-    var buffer = [CChar](repeating: 0, count: 4_096)
-    guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else {
+    guard let path = processExecutablePath(pid) else {
       throw BordersServiceError.blocked("cannot resolve PID \(pid)")
     }
-    return String(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
+    return path
   }
 
   package static func loadedServiceMatches(

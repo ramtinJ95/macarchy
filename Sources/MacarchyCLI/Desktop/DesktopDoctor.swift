@@ -63,51 +63,36 @@ struct DesktopDoctorCommandRunner: Sendable {
           ? $0.requirement : "\($0.requirement); \($0.remediation)"
       )
     }
-    if desired.profile.desktop.provider == .yabaiSkhd {
+    // A finding from `body`, or a failure carrying the error it threw.
+    func probe(
+      _ id: String, _ body: () throws -> (status: DoctorFinding.Status, message: String)
+    ) -> DoctorFinding {
       do {
-        _ = try lifecycle.preflight()
-        findings.append(
-          DoctorFinding(
-            id: "desktop.yabai.manual-prerequisite",
-            status: .ok,
-            message: "yabai can query Spaces through the supported Accessibility boundary"
-          )
-        )
+        let (status, message) = try body()
+        return DoctorFinding(id: id, status: status, message: message)
       } catch {
-        findings.append(
-          DoctorFinding(
-            id: "desktop.yabai.manual-prerequisite",
-            status: .failure,
-            message: String(describing: error)
-          )
-        )
+        return DoctorFinding(id: id, status: .failure, message: String(describing: error))
       }
+    }
+    if desired.profile.desktop.provider == .yabaiSkhd {
+      findings.append(
+        probe("desktop.yabai.manual-prerequisite") {
+          _ = try lifecycle.preflight()
+          return (.ok, "yabai can query Spaces through the supported Accessibility boundary")
+        })
       if let keybindings {
-        do {
-          let plan = try keybindings.plan(
-            resourcesRoot: keybindingsResourcesRoot,
-            profileURL: profileURL,
-            profileRequired: profileRequired,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            profile: desired.profile
-          )
-          findings.append(
-            DoctorFinding(
-              id: "desktop.skhd",
-              status: plan.effectiveStatus == "converged" ? .ok : .failure,
-              message: plan.message
+        findings.append(
+          probe("desktop.skhd") {
+            let plan = try keybindings.plan(
+              resourcesRoot: keybindingsResourcesRoot,
+              profileURL: profileURL,
+              profileRequired: profileRequired,
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              profile: desired.profile
             )
-          )
-        } catch {
-          findings.append(
-            DoctorFinding(
-              id: "desktop.skhd",
-              status: .failure,
-              message: String(describing: error)
-            )
-          )
-        }
+            return (plan.effectiveStatus == "converged" ? .ok : .failure, plan.message)
+          })
       }
     } else {
       findings.append(
@@ -120,24 +105,11 @@ struct DesktopDoctorCommandRunner: Sendable {
     }
 
     if desired.profile.topBar == .sketchybar {
-      do {
-        _ = try sketchyBarLifecycle.preflight()
-        findings.append(
-          DoctorFinding(
-            id: "desktop.sketchybar.service",
-            status: .ok,
-            message: "supported Homebrew SketchyBar service boundary is available"
-          )
-        )
-      } catch {
-        findings.append(
-          DoctorFinding(
-            id: "desktop.sketchybar.service",
-            status: .failure,
-            message: String(describing: error)
-          )
-        )
-      }
+      findings.append(
+        probe("desktop.sketchybar.service") {
+          _ = try sketchyBarLifecycle.preflight()
+          return (.ok, "supported Homebrew SketchyBar service boundary is available")
+        })
     } else {
       findings.append(
         DoctorFinding(

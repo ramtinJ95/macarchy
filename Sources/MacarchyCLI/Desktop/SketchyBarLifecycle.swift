@@ -280,12 +280,10 @@ struct SketchyBarHomebrewService: Sendable {
   }
 
   private static func nativeProcessPath(_ processID: Int32) throws -> String {
-    var pathBuffer = [CChar](repeating: 0, count: 4_096)
-    guard proc_pidpath(processID, &pathBuffer, UInt32(pathBuffer.count)) > 0 else {
+    guard let path = processExecutablePath(processID) else {
       throw SketchyBarDesktopError.lifecycle("cannot resolve SketchyBar PID \(processID)")
     }
-    return String(
-      decoding: pathBuffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
+    return path
   }
 
   private static func validateServicePropertyList(_ url: URL, label: String) throws {

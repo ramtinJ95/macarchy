@@ -188,10 +188,7 @@ struct SketchyBarToggle {
 
   static func matchesProcess(_ heartbeat: ToggleHeartbeat) -> Bool {
     guard processStart(heartbeat.pid) == heartbeat.started else { return false }
-    var path = [CChar](repeating: 0, count: 4_096)
-    guard proc_pidpath(heartbeat.pid, &path, UInt32(path.count)) > 0 else { return false }
-    let value = path.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
-    return String(decoding: value, as: UTF8.self) == RuntimeEnvironment.live.executableURL.path
+    return processExecutablePath(heartbeat.pid) == RuntimeEnvironment.live.executableURL.path
   }
 }
 
