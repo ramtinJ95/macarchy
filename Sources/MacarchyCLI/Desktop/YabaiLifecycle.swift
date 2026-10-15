@@ -468,16 +468,13 @@ struct YabaiLifecycleEvidence: Codable, Equatable, Sendable {
 struct YabaiLifecycleEvidenceStore: Sendable {
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "desktop/yabai", directoryHint: .isDirectory)
+  private var file: DesktopStateFile {
+    DesktopStateFile(
+      stateRoot: stateRoot, directory: "desktop/yabai", name: "lifecycle.json", maximumSize: 32_768)
   }
 
-  private var file: URL { directory.appending(path: "lifecycle.json") }
-
   func read() throws -> YabaiLifecycleEvidence? {
-    guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-    let data = try BoundedRegularFile.read(at: file, maximumSize: 32_768).data
-    let evidence = try JSONDecoder().decode(YabaiLifecycleEvidence.self, from: data)
+    guard let evidence = try file.read(YabaiLifecycleEvidence.self) else { return nil }
     guard
       evidence.schemaVersion == 1,
       YabaiGenerationInspector.isGenerationID(evidence.generationID)
@@ -488,17 +485,8 @@ struct YabaiLifecycleEvidenceStore: Sendable {
   }
 
   func write(_ evidence: YabaiLifecycleEvidence) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(evidence).write(to: file, options: .atomic)
+    try file.write(evidence)
   }
 
-  func remove() throws {
-    do {
-      try FileManager.default.removeItem(at: file)
-    } catch let error as CocoaError where error.code == .fileNoSuchFile {
-      return
-    }
-  }
+  func remove() throws { try file.remove() }
 }

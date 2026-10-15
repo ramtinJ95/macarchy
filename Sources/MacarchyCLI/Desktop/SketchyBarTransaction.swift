@@ -72,37 +72,26 @@ struct SketchyBarTransaction: Codable, Equatable, Sendable {
 struct SketchyBarTransactionStore: Sendable {
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "desktop/sketchybar", directoryHint: .isDirectory)
+  private var file: DesktopStateFile {
+    DesktopStateFile(
+      stateRoot: stateRoot, directory: "desktop/sketchybar", name: "transaction.json",
+      maximumSize: 65_536)
   }
 
-  private var file: URL { directory.appending(path: "transaction.json") }
-
-  var exists: Bool { FileManager.default.fileExists(atPath: file.path) }
+  var exists: Bool { file.exists }
 
   func read() throws -> SketchyBarTransaction? {
-    guard exists else { return nil }
-    let data = try BoundedRegularFile.read(at: file, maximumSize: 65_536).data
-    let transaction = try JSONDecoder().decode(SketchyBarTransaction.self, from: data)
+    guard let transaction = try file.read(SketchyBarTransaction.self) else { return nil }
     try validate(transaction)
     return transaction
   }
 
   func write(_ transaction: SketchyBarTransaction) throws {
     try validate(transaction)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try encoder.encode(transaction).write(to: file, options: .atomic)
+    try file.write(transaction)
   }
 
-  func remove() throws {
-    do {
-      try FileManager.default.removeItem(at: file)
-    } catch let error as CocoaError where error.code == .fileNoSuchFile {
-      return
-    }
-  }
+  func remove() throws { try file.remove() }
 
   private func validate(_ transaction: SketchyBarTransaction) throws {
     let generationRelationshipIsValid =
@@ -247,10 +236,8 @@ struct SketchyBarProviderTransaction: Sendable {
         original.kind == .absent && lstat(configurationDirectory.path, &metadata) != 0
     }
 
-    let generationAgrees =
-      previousGeneration.status == .current
-      && previousGeneration.manifest?.inputDigest == composition.inputDigest
-      && previousGeneration.manifest?.renderedDigest == composition.renderedDigest
+    let generationAgrees = previousGeneration.isCurrent(
+      inputDigest: composition.inputDigest, renderedDigest: composition.renderedDigest)
     let generationID =
       generationAgrees
       ? previousGeneration.generationID!
@@ -837,7 +824,7 @@ struct SketchyBarProviderTransaction: Sendable {
     case .entrySymlink, .directorySymlink:
       guard
         metadata.st_mode & S_IFMT == S_IFLNK,
-        readLink(retained) == original.linkTarget,
+        SymbolicLink.target(of: retained) == original.linkTarget,
         let target = original.linkTarget
       else {
         throw SketchyBarDesktopError.invalidState(
@@ -845,7 +832,7 @@ struct SketchyBarProviderTransaction: Sendable {
         )
       }
       let publicPath = URL(filePath: original.publicPath)
-      let source = resolveLink(target, at: publicPath)
+      let source = SymbolicLink.resolve(target, at: publicPath)
       if original.kind == .directorySymlink {
         let descriptor = try PinnedFilesystem.openDirectory(at: source)
         defer { Darwin.close(descriptor) }
@@ -893,24 +880,12 @@ struct SketchyBarProviderTransaction: Sendable {
   private var entry: URL { configurationDirectory.appending(path: "sketchybarrc") }
 
   private func isManagedEntry(target: String) -> Bool {
-    guard let observed = Self.readLink(entry) else { return false }
+    guard let observed = SymbolicLink.target(of: entry) else { return false }
     var metadata = stat()
     return lstat(entry.path, &metadata) == 0
       && metadata.st_mode & S_IFMT == S_IFLNK
       && metadata.st_nlink == 1
       && observed == target
-  }
-
-  private static func readLink(_ url: URL) -> String? {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(url.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { return nil }
-    return String(decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)), as: UTF8.self)
-  }
-
-  private static func resolveLink(_ target: String, at link: URL) -> URL {
-    if target.hasPrefix("/") { return URL(filePath: target).standardizedFileURL }
-    return link.deletingLastPathComponent().appending(path: target).standardizedFileURL
   }
 
   private func originalInodeIsPublic(_ original: SketchyBarAdoptionEvidence) -> Bool {
@@ -930,7 +905,7 @@ struct SketchyBarProviderTransaction: Sendable {
       return metadata.st_mode & S_IFMT == S_IFREG
     case .entrySymlink, .directorySymlink:
       return metadata.st_mode & S_IFMT == S_IFLNK
-        && Self.readLink(URL(filePath: original.publicPath)) == original.linkTarget
+        && SymbolicLink.target(of: URL(filePath: original.publicPath)) == original.linkTarget
     case .absent:
       return false
     }
