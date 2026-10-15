@@ -60,11 +60,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
   var hasValidShape: Bool {
     guard
       schemaVersion == Self.schemaVersion,
-      contextDigest.hasPrefix("sha256:"),
-      contextDigest.count == 71,
-      contextDigest.dropFirst(7).allSatisfy({
-        $0.isASCII && $0.isHexDigit && !$0.isUppercase
-      }),
+      isSHA256Digest(contextDigest),
       Set(stages).count == stages.count
     else { return false }
     let order: [UnifiedSetupTransactionStage] =

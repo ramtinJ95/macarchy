@@ -161,16 +161,13 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
       let candidates: [Candidate]
       let ledger: SetupPackageAdoptionLedger?
     }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    let digest = try sha256Digest(
-      encoder.encode(
-        Binding(
-          contextDigest: store.contextDigest,
-          profilePaths: [context.profileURL, context.machineProfileURL].map(
-            \.standardizedFileURL.path),
-          candidates: candidates, ledger: ledger
-        )))
+    let digest = try SetupPackageInstallationStore.digest(
+      Binding(
+        contextDigest: store.contextDigest,
+        profilePaths: [context.profileURL, context.machineProfileURL].map(
+          \.standardizedFileURL.path),
+        candidates: candidates, ledger: ledger
+      ))
     return Prepared(candidates: candidates, ledger: ledger, digest: digest)
   }
 

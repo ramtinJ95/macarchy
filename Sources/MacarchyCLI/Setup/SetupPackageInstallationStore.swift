@@ -46,9 +46,7 @@ struct SetupPackageInstallationStore: Sendable {
   }
 
   static func digest<T: Encodable>(_ value: T) throws -> String {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    return try sha256Digest(encoder.encode(value))
+    try canonicalJSONDigest(value)
   }
 
   func read() throws -> SetupPackageInstallationAttempt? {
@@ -104,15 +102,11 @@ struct SetupPackageInstallationStore: Sendable {
   }
 
   private func validate(_ attempt: SetupPackageInstallationAttempt) throws {
-    func digest(_ value: String) -> Bool {
-      value.hasPrefix("sha256:") && value.count == 71
-        && value.dropFirst(7).allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
-    }
     let names = attempt.targets.map(\.identity.key)
     let targetNames = Set(names)
     let verified = Set(attempt.verifiedTargets)
     guard attempt.schemaVersion == 3, attempt.contextDigest == contextDigest,
-      digest(attempt.approvalDigest), digest(attempt.priorLedgerDigest),
+      isSHA256Digest(attempt.approvalDigest), isSHA256Digest(attempt.priorLedgerDigest),
       attempt.processSession == nil || attempt.processSession! > 1,
       try SetupPackageAdoptionCommandRunner.parseTargets(names) == attempt.targets.map(\.identity),
       attempt.targets.allSatisfy({

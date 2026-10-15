@@ -133,16 +133,11 @@ struct SetupPackageAdoptionStore: Sendable {
       && Set(entry.receipts.map(\.path)).count == entry.receipts.count
       && entry.receipts.allSatisfy {
         $0.path.hasPrefix("/") && URL(filePath: $0.path).lastPathComponent == "INSTALL_RECEIPT.json"
-          && validDigest($0.digest) && $0.inode > 0
+          && isSHA256Digest($0.digest) && $0.inode > 0
       }
       && !entry.declarations.isEmpty && entry.declarations.count <= 64
       && entry.declarations.allSatisfy { !$0.source.isEmpty && !$0.layer.isEmpty }
-      && validDigest(entry.approvalDigest)
-  }
-
-  private func validDigest(_ value: String) -> Bool {
-    value.hasPrefix("sha256:") && value.count == 71
-      && value.dropFirst(7).allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
+      && isSHA256Digest(entry.approvalDigest)
   }
 }
 
