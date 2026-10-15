@@ -94,6 +94,13 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
 
 }
 
+extension SetupOwnershipError {
+  /// Reports a failed system call; `code` defaults to the current `errno`.
+  static func posix(_ operation: String, _ url: URL, code: Int32 = errno) -> Self {
+    .system(operation, url, String(cString: strerror(code)))
+  }
+}
+
 struct SetupOwnershipTransactionError: Error, CustomStringConvertible, Sendable {
   let cause: String
   let integrationID: String
