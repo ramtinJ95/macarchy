@@ -261,20 +261,22 @@ struct SketchyBarProviderTransaction: Sendable {
       priorServiceRunning: previousOwnership?.priorServiceRunning ?? serviceWasRunning
     )
     let currentRuntime = serviceWasRunning ? try lifecycle.inspect() : nil
-    let currentCoreRuntime = serviceWasRunning ? coreRuntime.inspect(composition) : nil
+    // The core runtime probe runs dozens of SketchyBar queries; run it only for a candidate no-op.
     if generationAgrees,
       previousOwnership == ownership,
       previousLifecycle?.generationID == generationID,
       previousLifecycle?.runtime == currentRuntime,
-      previousLifecycle?.coreRuntime == currentCoreRuntime,
-      let currentCoreRuntime,
-      Self.isSuccessfulCoreRuntime(currentCoreRuntime, composition: composition),
       serviceWasRunning
     {
-      return SketchyBarFilesystemConvergenceResult(
-        generationID: generationID,
-        changed: false
-      )
+      let currentCoreRuntime = coreRuntime.inspect(composition)
+      if previousLifecycle?.coreRuntime == currentCoreRuntime,
+        Self.isSuccessfulCoreRuntime(currentCoreRuntime, composition: composition)
+      {
+        return SketchyBarFilesystemConvergenceResult(
+          generationID: generationID,
+          changed: false
+        )
+      }
     }
 
     var transaction = SketchyBarTransaction(
