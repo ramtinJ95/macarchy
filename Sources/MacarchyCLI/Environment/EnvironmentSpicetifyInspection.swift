@@ -156,10 +156,8 @@ extension EnvironmentProviderInspector {
     let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
     guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
     guard try selectionIsManaged(at: configuration, evidence: evidence) else { return false }
-    let color = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-      .first { $0.id == .spicetifyColor }!
-    let colorEvidence = try capture(color.url, directoryLink: nil)
-    return colorEvidence.kind == .symbolicLink && colorEvidence.linkDestination == color.target
+    return try externalLinksAreExact(
+      [.spicetifyColor], homeDirectory: homeDirectory, stateRoot: stateRoot)
   }
 
   private func selectionIsManaged(
