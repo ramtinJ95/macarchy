@@ -86,33 +86,10 @@ struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
 struct KeybindingApplyTransactionStore: Sendable {
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
-  }
-
-  private var file: URL {
-    directory.appending(path: "transaction.json")
-  }
+  private var files: KeybindingStateFiles { KeybindingStateFiles(stateRoot: stateRoot) }
 
   func read() throws -> KeybindingApplyTransaction? {
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return nil
-    }
-    defer { Darwin.close(descriptor) }
-    let data: Data
-    do {
-      data = try PinnedFilesystem.readRegularFile(
-        parentDescriptor: descriptor,
-        name: "transaction.json",
-        url: file,
-        maximumSize: 16_384
-      ).data
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return nil
-    }
+    guard let data = try files.read("transaction.json") else { return nil }
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw KeybindingApplyTransactionError.invalid("transaction root must be an object")
     }
@@ -183,13 +160,6 @@ struct KeybindingApplyTransactionStore: Sendable {
         "only teardown can contain an entry-restored phase"
       )
     }
-    if transaction.operation == .installEntry || transaction.operation == .adoptEntry {
-      guard transaction.phase != .entryRestored else {
-        throw KeybindingApplyTransactionError.invalid(
-          "entry installation cannot contain a teardown restoration phase"
-        )
-      }
-    }
     if transaction.operation == .teardownEntry {
       guard
         transaction.previousGenerationID == transaction.generationID,
@@ -205,6 +175,44 @@ struct KeybindingApplyTransactionStore: Sendable {
   }
 
   func write(_ transaction: KeybindingApplyTransaction) throws {
+    try files.write(transaction, to: "transaction.json")
+  }
+
+  func remove() throws {
+    try files.remove("transaction.json", label: "transaction", ignoringMissingDirectory: false)
+  }
+}
+
+/// The JSON state files under `keybindings/` in the state root.
+private struct KeybindingStateFiles {
+  let stateRoot: URL
+
+  private var directory: URL {
+    stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+  }
+
+  /// Returns nil when the directory or the file is absent.
+  func read(_ name: String) throws -> Data? {
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
+    defer { Darwin.close(descriptor) }
+    do {
+      return try PinnedFilesystem.readRegularFile(
+        parentDescriptor: descriptor,
+        name: name,
+        url: directory.appending(path: name),
+        maximumSize: 16_384
+      ).data
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
+  }
+
+  func write(_ value: some Encodable, to name: String) throws {
     let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
     defer { Darwin.close(stateDescriptor) }
     let descriptor = try PinnedFilesystem.openOrCreateChildDirectory(
@@ -217,24 +225,33 @@ struct KeybindingApplyTransactionStore: Sendable {
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try PinnedFilesystem.replaceRegularFileAtomically(
       parentDescriptor: descriptor,
-      name: "transaction.json",
-      url: file,
-      data: try encoder.encode(transaction),
+      name: name,
+      url: directory.appending(path: name),
+      data: try encoder.encode(value),
       mode: 0o600
     )
   }
 
-  func remove() throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    defer { Darwin.close(descriptor) }
-    let removed = "transaction.json".withCString {
-      Darwin.unlinkat(descriptor, $0, 0)
+  func remove(_ name: String, label: String, ignoringMissingDirectory: Bool) throws {
+    let descriptor: Int32
+    do {
+      descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    } catch let error as PinnedFilesystemError
+      where error.code == ENOENT && ignoringMissingDirectory
+    {
+      return
     }
+    defer { Darwin.close(descriptor) }
+    let removed = name.withCString { Darwin.unlinkat(descriptor, $0, 0) }
     guard removed == 0 || errno == ENOENT else {
-      throw KeybindingApplyTransactionError.system("remove transaction", file, errno)
+      throw KeybindingApplyTransactionError.system(
+        "remove \(label)",
+        directory.appending(path: name),
+        errno
+      )
     }
     guard fsync(descriptor) == 0 else {
-      throw KeybindingApplyTransactionError.system("sync transaction removal", directory, errno)
+      throw KeybindingApplyTransactionError.system("sync \(label) removal", directory, errno)
     }
   }
 }
@@ -291,6 +308,17 @@ struct KeybindingLifecycleEvidence: Codable, Equatable, Sendable {
     arguments = process.arguments
   }
 
+  var isValid: Bool {
+    schemaVersion == Self.currentSchemaVersion
+      && KeybindingGenerationInspector.isGenerationID(generationID)
+      && [.start, .restart, .reload].contains(action)
+      && !providerEntryPoint.isEmpty
+      && !providerTarget.isEmpty
+      && processID > 0
+      && executablePath == KeybindingProcessInspector.supportedExecutablePath
+      && !arguments.isEmpty
+  }
+
   enum CodingKeys: String, CodingKey, CaseIterable {
     case schemaVersion = "schema_version"
     case generationID = "generation_id"
@@ -319,11 +347,7 @@ struct KeybindingLifecycleEvidenceInspection: Encodable, Equatable, Sendable {
 struct KeybindingLifecycleEvidenceStore: Sendable {
   let stateRoot: URL
 
-  private var directory: URL {
-    stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
-  }
-
-  private var file: URL { directory.appending(path: "lifecycle.json") }
+  private var files: KeybindingStateFiles { KeybindingStateFiles(stateRoot: stateRoot) }
 
   func inspect(
     generation: KeybindingGenerationInspection,
@@ -371,77 +395,18 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
   }
 
   func write(_ evidence: KeybindingLifecycleEvidence) throws {
-    guard
-      evidence.schemaVersion == KeybindingLifecycleEvidence.currentSchemaVersion,
-      KeybindingGenerationInspector.isGenerationID(evidence.generationID),
-      [.start, .restart, .reload].contains(evidence.action),
-      !evidence.providerEntryPoint.isEmpty,
-      !evidence.providerTarget.isEmpty,
-      evidence.processID > 0,
-      evidence.executablePath == KeybindingProcessInspector.supportedExecutablePath,
-      !evidence.arguments.isEmpty
-    else {
+    guard evidence.isValid else {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence is incomplete")
     }
-    let stateDescriptor = try PinnedFilesystem.openDirectory(at: stateRoot)
-    defer { Darwin.close(stateDescriptor) }
-    let descriptor = try PinnedFilesystem.openOrCreateChildDirectory(
-      parentDescriptor: stateDescriptor,
-      name: "keybindings",
-      url: directory
-    )
-    defer { Darwin.close(descriptor) }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try PinnedFilesystem.replaceRegularFileAtomically(
-      parentDescriptor: descriptor,
-      name: "lifecycle.json",
-      url: file,
-      data: try encoder.encode(evidence),
-      mode: 0o600
-    )
+    try files.write(evidence, to: "lifecycle.json")
   }
 
   func remove() throws {
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
-    defer { Darwin.close(descriptor) }
-    let removed = "lifecycle.json".withCString { Darwin.unlinkat(descriptor, $0, 0) }
-    guard removed == 0 || errno == ENOENT else {
-      throw KeybindingApplyTransactionError.system("remove lifecycle evidence", file, errno)
-    }
-    guard fsync(descriptor) == 0 else {
-      throw KeybindingApplyTransactionError.system(
-        "sync lifecycle evidence removal",
-        directory,
-        errno
-      )
-    }
+    try files.remove("lifecycle.json", label: "lifecycle evidence", ignoringMissingDirectory: true)
   }
 
   private func read() throws -> KeybindingLifecycleEvidence? {
-    let descriptor: Int32
-    do {
-      descriptor = try PinnedFilesystem.openDirectory(at: directory)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return nil
-    }
-    defer { Darwin.close(descriptor) }
-    let data: Data
-    do {
-      data = try PinnedFilesystem.readRegularFile(
-        parentDescriptor: descriptor,
-        name: "lifecycle.json",
-        url: file,
-        maximumSize: 16_384
-      ).data
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return nil
-    }
+    guard let data = try files.read("lifecycle.json") else { return nil }
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence root must be an object")
     }
@@ -452,16 +417,7 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
       )
     }
     let evidence = try JSONDecoder().decode(KeybindingLifecycleEvidence.self, from: data)
-    guard
-      evidence.schemaVersion == KeybindingLifecycleEvidence.currentSchemaVersion,
-      KeybindingGenerationInspector.isGenerationID(evidence.generationID),
-      [.start, .restart, .reload].contains(evidence.action),
-      !evidence.providerEntryPoint.isEmpty,
-      !evidence.providerTarget.isEmpty,
-      evidence.processID > 0,
-      evidence.executablePath == KeybindingProcessInspector.supportedExecutablePath,
-      !evidence.arguments.isEmpty
-    else {
+    guard evidence.isValid else {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence values are invalid")
     }
     return evidence
