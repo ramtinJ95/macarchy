@@ -7,6 +7,14 @@ enum KeybindingApplyOperation: String, Codable, Sendable {
   case installEntry = "install_entry"
   case teardownEntry = "teardown_entry"
   case updateGeneration = "update_generation"
+
+  /// Install and adopt are the operations that change the skhd entry point itself.
+  var mutatesEntry: Bool { self == .installEntry || self == .adoptEntry }
+
+  /// The lifecycle action that reactivates skhd after this operation's entry state changes.
+  var reactivationLifecycle: KeybindingLifecycleAction {
+    self == .updateGeneration ? .reload : .restart
+  }
 }
 
 enum KeybindingApplyPhase: String, Codable, Sendable {
@@ -18,6 +26,10 @@ enum KeybindingApplyPhase: String, Codable, Sendable {
   case activating
   case restorationFinalizing = "restoration_finalizing"
   case restorationFinalized = "restoration_finalized"
+
+  var isRestorationFinalizing: Bool {
+    self == .restorationFinalizing || self == .restorationFinalized
+  }
 }
 
 struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
@@ -44,6 +56,10 @@ struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
     self.previousGenerationID = previousGenerationID
     self.generationCreated = generationCreated
     self.service = service
+  }
+
+  var isFinalizingTeardown: Bool {
+    operation == .teardownEntry && phase.isRestorationFinalizing
   }
 
   func withPhase(_ phase: KeybindingApplyPhase) -> Self {
