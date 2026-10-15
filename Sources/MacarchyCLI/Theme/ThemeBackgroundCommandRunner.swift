@@ -29,25 +29,8 @@ struct ThemeBackgroundCommandRunner: Sendable {
     activeManifest: { root in
       try ReconciliationStatusStore(root: root).activeManifest()
     },
-    preflight: { package, backgroundID, root, consumerPaths in
-      try ThemeRuntimeSelection.activationCoordinator(
-        stateRoot: root,
-        consumerPaths: consumerPaths
-      ).preflight(
-        package: package,
-        requestedBackgroundID: backgroundID
-      )
-    },
-    activate: { package, backgroundID, root, consumerPaths, expectedGenerationID in
-      try await ThemeRuntimeSelection.activationCoordinator(
-        stateRoot: root,
-        consumerPaths: consumerPaths
-      ).activate(
-        package: package,
-        expectedActiveGenerationID: expectedGenerationID,
-        requestedBackgroundID: backgroundID
-      )
-    }
+    preflight: { try ThemeSetCommandRunner.live.preflight($0, $1, $2, $3) },
+    activate: { try await ThemeSetCommandRunner.live.activate($0, $1, $2, $3, $4) }
   )
 
   func current(stateRoot: URL) throws -> String {
@@ -66,26 +49,19 @@ struct ThemeBackgroundCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool
   ) async throws -> (output: String, succeeded: Bool) {
-    let operation: @Sendable () async throws -> (output: String, succeeded: Bool) = {
-      while true {
+    try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: dryRun) {
+      try await retryingActiveGenerationChanges {
         let active = try currentManifest(stateRoot: stateRoot)
-        let package = try repository.package(id: active.themeID)
-        do {
-          return try await apply(
-            package: package,
-            backgroundID: backgroundID,
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths,
-            dryRun: dryRun,
-            expectedGenerationID: active.generationID
-          )
-        } catch ThemeActivationError.activeGenerationChanged {
-          continue
-        }
+        return try await apply(
+          package: try repository.package(id: active.themeID),
+          backgroundID: backgroundID,
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths,
+          dryRun: dryRun,
+          expectedGenerationID: active.generationID
+        )
       }
     }
-    if dryRun { return try await operation() }
-    return try await ThemePackageLock(root: stateRoot).withLock(operation)
   }
 
   func next(
@@ -94,8 +70,8 @@ struct ThemeBackgroundCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool
   ) async throws -> (output: String, succeeded: Bool) {
-    let operation: @Sendable () async throws -> (output: String, succeeded: Bool) = {
-      while true {
+    try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: dryRun) {
+      try await retryingActiveGenerationChanges {
         let active = try currentManifest(stateRoot: stateRoot)
         let package = try repository.package(id: active.themeID)
         let effectivePackage = try configuredPackage(
@@ -122,23 +98,16 @@ struct ThemeBackgroundCommandRunner: Sendable {
         } else {
           backgroundID = effectivePackage.backgrounds[0].id
         }
-
-        do {
-          return try await apply(
-            package: package,
-            backgroundID: backgroundID,
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths,
-            dryRun: dryRun,
-            expectedGenerationID: active.generationID
-          )
-        } catch ThemeActivationError.activeGenerationChanged {
-          continue
-        }
+        return try await apply(
+          package: package,
+          backgroundID: backgroundID,
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths,
+          dryRun: dryRun,
+          expectedGenerationID: active.generationID
+        )
       }
     }
-    if dryRun { return try await operation() }
-    return try await ThemePackageLock(root: stateRoot).withLock(operation)
   }
 
   private func apply(

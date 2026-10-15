@@ -15,18 +15,8 @@ struct DoctorFinding: Encodable {
 
 struct DoctorReport {
   let findings: [DoctorFinding]
-  let operation: String
-  let title: String
-
-  init(
-    findings: [DoctorFinding],
-    operation: String = "doctor",
-    title: String = "Macarchy doctor"
-  ) {
-    self.findings = findings
-    self.operation = operation
-    self.title = title
-  }
+  var operation = "doctor"
+  var title = "Macarchy doctor"
 
   var succeeded: Bool {
     !findings.contains { $0.status == .failure }
