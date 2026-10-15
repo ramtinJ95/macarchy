@@ -52,7 +52,7 @@ struct SetupCoreOwnershipStore: Sendable {
           "unsupported schema version \(ownership.schemaVersion)"
         )
       }
-      guard validGenerationID(ownership.themeGenerationID) else {
+      guard isGenerationID(ownership.themeGenerationID) else {
         throw SetupCoreOwnershipError.invalid("theme generation identifier is invalid")
       }
       return ownership
@@ -82,11 +82,6 @@ struct SetupCoreOwnershipStore: Sendable {
     } catch {
       throw SetupCoreOwnershipError.invalid(String(describing: error))
     }
-  }
-
-  private func validGenerationID(_ value: String) -> Bool {
-    guard value.hasPrefix("g-"), value == value.lowercased() else { return false }
-    return UUID(uuidString: String(value.dropFirst(2))) != nil
   }
 }
 

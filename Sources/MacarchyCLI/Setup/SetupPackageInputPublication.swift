@@ -136,10 +136,7 @@ struct SetupPackageInputPublicationStore: Sendable {
   private func validate(_ record: SetupPackageInputPublication) throws {
     let paths = record.entries.map(\.edit.path)
     guard record.schemaVersion == 1, record.contextDigest == contextDigest,
-      record.approvalDigest.hasPrefix("sha256:"), record.approvalDigest.count == 71,
-      record.approvalDigest.dropFirst(7).allSatisfy({
-        $0.isASCII && $0.isHexDigit && !$0.isUppercase
-      }),
+      isSHA256Digest(record.approvalDigest),
       record.entries.count == 2, Set(paths).count == paths.count,
       record.sourceBindings.count == 2,
       record.complete

@@ -240,7 +240,7 @@ package func sha256Digest(_ data: Data) -> String {
 }
 
 /// Digest of the compact, key-sorted JSON encoding used for composition input identities.
-func canonicalJSONDigest<Value: Encodable>(_ value: Value) throws -> String {
+package func canonicalJSONDigest<Value: Encodable>(_ value: Value) throws -> String {
   let encoder = JSONEncoder()
   encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
   return sha256Digest(try encoder.encode(value))
@@ -255,14 +255,14 @@ func prettyJSONDocument<Value: Encodable>(_ value: Value) throws -> Data {
   return data
 }
 
-func isSHA256Digest(_ value: String) -> Bool {
+package func isSHA256Digest(_ value: String) -> Bool {
   let digest = value.dropFirst("sha256:".count)
   return value.hasPrefix("sha256:")
     && digest.count == 64
     && digest.allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
 }
 
-func isGenerationID(_ value: String) -> Bool {
+package func isGenerationID(_ value: String) -> Bool {
   isPrefixedLowercaseUUID(value, prefix: "g-")
 }
 
