@@ -137,7 +137,6 @@ struct HomebrewUpdateRunner: Sendable {
       return failure(.releaseCheckFailed, build: build, message: detail)
     }
 
-    let tap = tapVersion()
     if let approval, approval.release != release {
       return failure(
         .refused, build: build,
@@ -145,6 +144,7 @@ struct HomebrewUpdateRunner: Sendable {
           "The stable release changed after review. Metadata was refreshed, but no upgrade ran; review again."
       )
     }
+    let tap = tapVersion()
     guard let tapValue = tap.version, let tapVersion = StableVersion(tapValue) else {
       return failure(
         .tapInspectionFailed,
@@ -153,13 +153,13 @@ struct HomebrewUpdateRunner: Sendable {
         message: tap.error ?? "The refreshed Homebrew tap version is unavailable."
       )
     }
+    func fail(_ outcome: HomebrewUpdateOutcome, _ message: String) -> HomebrewUpdateExecution {
+      failure(outcome, build: build, upstream: release.version, tap: tapValue, message: message)
+    }
     guard installed <= upstream else {
-      return failure(
+      return fail(
         .versionMismatch,
-        build: build,
-        upstream: release.version,
-        tap: tapValue,
-        message: "The installed version is ahead of GitHub's latest stable release; no upgrade ran."
+        "The installed version is ahead of GitHub's latest stable release; no upgrade ran."
       )
     }
     if upstream > tapVersion {
@@ -174,12 +174,9 @@ struct HomebrewUpdateRunner: Sendable {
       )
     }
     guard upstream == tapVersion else {
-      return failure(
+      return fail(
         .versionMismatch,
-        build: build,
-        upstream: release.version,
-        tap: tapValue,
-        message: "The refreshed tap is ahead of GitHub's latest stable release; no upgrade ran."
+        "The refreshed tap is ahead of GitHub's latest stable release; no upgrade ran."
       )
     }
     if installed == tapVersion {
@@ -214,53 +211,30 @@ struct HomebrewUpdateRunner: Sendable {
         )
       )
     } catch {
-      return failure(
+      return fail(
         .evidenceWriteFailed,
-        build: build,
-        upstream: release.version,
-        tap: tapValue,
-        message: "Cannot preserve pre-upgrade evidence; no upgrade ran: \(error)"
+        "Cannot preserve pre-upgrade evidence; no upgrade ran: \(error)"
       )
     }
 
-    let upgradeStatus: Int32
+    let upgradeFailure: String?
     do {
-      upgradeStatus = try streamProcess(Self.upgradeRequest)
+      let upgradeStatus = try streamProcess(Self.upgradeRequest)
+      upgradeFailure =
+        upgradeStatus == 0 ? nil : "Homebrew upgrade exited with status \(upgradeStatus)."
     } catch {
-      var message = "Could not launch the scoped Homebrew upgrade: \(error)"
-      message += failureEvidenceError(
-        stateRoot: stateRoot,
-        attemptedAt: attemptedAt,
-        build: build,
-        targetVersion: tapValue,
-        outcome: .upgradeFailed,
-        error: message
-      )
-      return failure(
-        .upgradeFailed,
-        build: build,
-        upstream: release.version,
-        tap: tapValue,
-        message: message
-      )
+      upgradeFailure = "Could not launch the scoped Homebrew upgrade: \(error)"
     }
-    guard upgradeStatus == 0 else {
-      var message = "Homebrew upgrade exited with status \(upgradeStatus)."
-      message += failureEvidenceError(
+    if let upgradeFailure {
+      let evidenceError = failureEvidenceError(
         stateRoot: stateRoot,
         attemptedAt: attemptedAt,
         build: build,
         targetVersion: tapValue,
         outcome: .upgradeFailed,
-        error: message
+        error: upgradeFailure
       )
-      return failure(
-        .upgradeFailed,
-        build: build,
-        upstream: release.version,
-        tap: tapValue,
-        message: message
-      )
+      return fail(.upgradeFailed, upgradeFailure + evidenceError)
     }
 
     do {
@@ -295,13 +269,9 @@ struct HomebrewUpdateRunner: Sendable {
         )
       )
     } catch {
-      return failure(
+      return fail(
         .evidenceWriteFailed,
-        build: build,
-        upstream: release.version,
-        tap: tapValue,
-        message:
-          "Macarchy \(tapValue) was installed and verified, but success evidence could not be "
+        "Macarchy \(tapValue) was installed and verified, but success evidence could not be "
           + "persisted: \(error)"
       )
     }

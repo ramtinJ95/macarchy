@@ -130,8 +130,11 @@ struct PreferencesLifecycle: Sendable {
     let store = PreferencesStore(context: context)
     var state = plan.state
     var transaction = PreferencesTransaction(after: plan.after, changes: plan.changes)
-    state.pending = transaction
-    try store.write(state)
+    func persist() throws {
+      state.pending = transaction
+      try store.write(state)
+    }
+    try persist()
     do {
       for (index, change) in transaction.writes.enumerated() {
         guard try native.read(change.key) == change.before else {
@@ -141,12 +144,10 @@ struct PreferencesLifecycle: Sendable {
         transaction.attemptedWrites = index + 1
         // A crash while waiting for the OS is indistinguishable from a late setter.
         transaction.uncertainWrite = true
-        state.pending = transaction
-        try store.write(state)
+        try persist()
         try native.write(change.key, change.after)
         transaction.uncertainWrite = false
-        state.pending = transaction
-        try store.write(state)
+        try persist()
         try checkpoint(index + 1)
         guard try native.read(change.key) == change.after else {
           throw PreferencesError.drift("\(change.key.rawValue) did not retain its requested value.")
@@ -154,8 +155,7 @@ struct PreferencesLifecycle: Sendable {
       }
       try verify(plan.changes, owned: plan.after)
       transaction.phase = .ready
-      state.pending = transaction
-      try store.write(state)
+      try persist()
     } catch let error as PreferencesInterruption {
       throw error
     } catch {
@@ -168,8 +168,7 @@ struct PreferencesLifecycle: Sendable {
       // however, leaves its persisted uncertain marker for explicit recovery.
       if case PreferencesError.unavailable = error {
         transaction.uncertainWrite = false
-        state.pending = transaction
-        try store.write(state)
+        try persist()
       }
       do { try rollbackLocked(context: context, acknowledgeUncertainWrite: false) } catch let
         rollbackError
@@ -207,10 +206,13 @@ struct PreferencesLifecycle: Sendable {
         "A setter may still be running. Inspect the OS, wait for it to settle, then use preferences recover --acknowledge-uncertain-write."
       )
     }
+    func persist() throws {
+      state.pending = transaction
+      try store.write(state)
+    }
     transaction.uncertainWrite = false
     transaction.phase = .rollingBack
-    state.pending = transaction
-    try store.write(state)
+    try persist()
     while transaction.attemptedWrites > 0 {
       let change = transaction.writes[transaction.attemptedWrites - 1]
       let current = try native.read(change.key)
@@ -218,18 +220,15 @@ struct PreferencesLifecycle: Sendable {
         // Boolean settings have no CAS or writer identity. A matching transaction
         // value cannot distinguish a concurrent external edit; do not claim it can.
         transaction.uncertainWrite = true
-        state.pending = transaction
-        try store.write(state)
+        try persist()
         do {
           try native.write(change.key, change.before)
           transaction.uncertainWrite = false
-          state.pending = transaction
-          try store.write(state)
+          try persist()
         } catch {
           if case PreferencesError.unavailable = error {
             transaction.uncertainWrite = false
-            state.pending = transaction
-            try store.write(state)
+            try persist()
           }
           throw error
         }
@@ -239,8 +238,7 @@ struct PreferencesLifecycle: Sendable {
           "Cannot verify restoration of \(change.key.rawValue).")
       }
       transaction.attemptedWrites -= 1
-      state.pending = transaction
-      try store.write(state)
+      try persist()
     }
     state.pending = nil
     try store.write(state)

@@ -173,13 +173,8 @@ struct UpdateChecker: Sendable {
       guard !document.draft, !document.prerelease else {
         throw UpdateCheckError.invalidRelease("GitHub latest release was not stable")
       }
-      guard document.tagName.first == "v" else {
-        throw UpdateCheckError.invalidRelease(
-          "GitHub release tag '\(document.tagName)' is not vMAJOR.MINOR.PATCH"
-        )
-      }
       let version = String(document.tagName.dropFirst())
-      guard StableVersion(version) != nil, document.tagName == "v\(version)" else {
+      guard document.tagName.first == "v", StableVersion(version) != nil else {
         throw UpdateCheckError.invalidRelease(
           "GitHub release tag '\(document.tagName)' is not vMAJOR.MINOR.PATCH"
         )
