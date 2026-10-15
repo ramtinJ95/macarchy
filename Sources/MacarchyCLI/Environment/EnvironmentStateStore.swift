@@ -202,9 +202,7 @@ struct EnvironmentStateStore: Sendable {
         && transaction.previousCurrentDestination
           == transaction.previousOwnership.map({ "generations/\($0.generationID)" })
         && transaction.previousThemeGenerationID == nil && transaction.rollbackThemeBridges.isEmpty
-        && transaction.btopReplacementName == nil && transaction.codexReplacementName == nil
-        && transaction.herdrReplacementName == nil && transaction.piReplacementName == nil
-        && transaction.spicetifyReplacementName == nil && transaction.tuicrReplacementName == nil
+        && transaction.replacementNames.isEmpty
         && transaction.herdrRuntimeTarget == nil && transaction.herdrRuntimeVerified == nil
         && transaction.herdrLegacyMigration == nil
     }
@@ -230,9 +228,7 @@ struct EnvironmentStateStore: Sendable {
         && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
         && transaction.previousThemeGenerationID == nil
         && transaction.rollbackThemeBridges.isEmpty
-        && transaction.btopReplacementName == nil && transaction.codexReplacementName == nil
-        && transaction.herdrReplacementName == nil && transaction.piReplacementName == nil
-        && transaction.spicetifyReplacementName == nil && transaction.tuicrReplacementName == nil
+        && transaction.replacementNames.isEmpty
         && transaction.herdrRuntimeVerified == nil && transaction.herdrLegacyMigration == nil
         && transaction.spicetifyRuntimeVerified == nil
         && transaction.spicetifyRuntimeDeferred == nil
@@ -248,58 +244,14 @@ struct EnvironmentStateStore: Sendable {
         && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
         && transaction.previousThemeGenerationID == nil
         && transaction.rollbackThemeBridges.isEmpty
-        && transaction.btopReplacementName == nil && transaction.codexReplacementName == nil
-        && transaction.piReplacementName == nil && transaction.spicetifyReplacementName == nil
-        && transaction.tuicrReplacementName == nil
-        && herdrReplacementIsValid(transaction)
+        // A theme transaction reserves only Herdr's replacement.
+        && transaction.replacementNames
+          == EnvironmentReplacementNames(herdr: transaction.herdrReplacementName)
+        && EnvironmentReplacementNames.isValid(
+          transaction.herdrReplacementName, preset: "herdr", required: true)
     }
-    return btopReplacementIsValid(transaction) && codexReplacementIsValid(transaction)
-      && herdrReplacementIsValid(transaction) && piReplacementIsValid(transaction)
-      && spicetifyReplacementIsValid(transaction) && tuicrReplacementIsValid(transaction)
-  }
-
-  private static func btopReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    let required =
-      transaction.previousOwnership?.btop != nil
-      || transaction.proposedOwnership?.btop != nil
-    return replacementIsValid(
-      transaction.btopReplacementName,
-      required: required,
-      prefix: ".macarchy-environment-btop-"
-    )
-  }
-
-  private static func codexReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    let required =
-      transaction.previousOwnership?.codex != nil
-      || transaction.proposedOwnership?.codex != nil
-    return replacementIsValid(
-      transaction.codexReplacementName,
-      required: required,
-      prefix: ".macarchy-environment-codex-"
-    )
-  }
-
-  private static func tuicrReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    let required =
-      transaction.previousOwnership?.tuicr != nil
-      || transaction.proposedOwnership?.tuicr != nil
-    return replacementIsValid(
-      transaction.tuicrReplacementName,
-      required: required,
-      prefix: ".macarchy-environment-tuicr-"
-    )
-  }
-
-  private static func herdrReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    let required =
-      transaction.previousOwnership?.herdr != nil
-      || transaction.proposedOwnership?.herdr != nil
-    return replacementIsValid(
-      transaction.herdrReplacementName,
-      required: required,
-      prefix: ".macarchy-environment-herdr-"
-    )
+    return transaction.replacementNames.areValid(
+      from: transaction.previousOwnership, to: transaction.proposedOwnership)
   }
 
   private static func herdrRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
@@ -331,28 +283,6 @@ struct EnvironmentStateStore: Sendable {
       && transaction.proposedOwnership?.herdr?.migratedLegacy == true
   }
 
-  private static func piReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    let required =
-      transaction.previousOwnership?.pi != nil
-      || transaction.proposedOwnership?.pi != nil
-    return replacementIsValid(
-      transaction.piReplacementName,
-      required: required,
-      prefix: ".macarchy-environment-pi-"
-    )
-  }
-
-  private static func spicetifyReplacementIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    let required =
-      transaction.previousOwnership?.spicetify != nil
-      || transaction.proposedOwnership?.spicetify != nil
-    return replacementIsValid(
-      transaction.spicetifyReplacementName,
-      required: required,
-      prefix: ".macarchy-environment-spicetify-"
-    )
-  }
-
   private static func spicetifyRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
     if transaction.operation.isScopedConnection {
       return transaction.spicetifyRuntimeTarget == nil
@@ -376,18 +306,5 @@ struct EnvironmentStateStore: Sendable {
         || (transaction.spicetifyRuntimeDeferred == true
           && transaction.operation == .apply && transaction.direction == .rollback
           && expected == .original && transaction.spicetifyRuntimeVerified == nil))
-  }
-
-  private static func replacementIsValid(
-    _ name: String?,
-    required: Bool,
-    prefix: String
-  ) -> Bool {
-    guard required else { return name == nil }
-    guard let name else { return false }
-    return name.hasPrefix(prefix)
-      && name.hasSuffix(".replacement")
-      && !name.contains("/")
-      && name.utf8.count <= 128
   }
 }

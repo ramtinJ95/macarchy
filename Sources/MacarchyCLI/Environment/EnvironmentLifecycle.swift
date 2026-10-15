@@ -96,12 +96,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: transaction.previousOwnership,
           to: proposed,
-          btopReplacementName: transaction.btopReplacementName,
-          codexReplacementName: transaction.codexReplacementName,
-          herdrReplacementName: transaction.herdrReplacementName,
-          piReplacementName: transaction.piReplacementName,
-          spicetifyReplacementName: transaction.spicetifyReplacementName,
-          tuicrReplacementName: transaction.tuicrReplacementName,
+          replacementNames: transaction.replacementNames,
           herdrThemeOnly: transaction.operation == .herdrTheme,
           neovimOnly: transaction.operation == .neovimMigration,
           nativeFileOnly: transaction.operation.nativeFileProvider
@@ -115,12 +110,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: transaction.previousOwnership,
           to: nil,
-          btopReplacementName: transaction.btopReplacementName,
-          codexReplacementName: transaction.codexReplacementName,
-          herdrReplacementName: transaction.herdrReplacementName,
-          piReplacementName: transaction.piReplacementName,
-          spicetifyReplacementName: transaction.spicetifyReplacementName,
-          tuicrReplacementName: transaction.tuicrReplacementName
+          replacementNames: transaction.replacementNames
         )
       }
     case .rollback:
@@ -128,12 +118,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try transition(
         from: transaction.proposedOwnership,
         to: transaction.previousOwnership,
-        btopReplacementName: transaction.btopReplacementName,
-        codexReplacementName: transaction.codexReplacementName,
-        herdrReplacementName: transaction.herdrReplacementName,
-        piReplacementName: transaction.piReplacementName,
-        spicetifyReplacementName: transaction.spicetifyReplacementName,
-        tuicrReplacementName: transaction.tuicrReplacementName,
+        replacementNames: transaction.replacementNames,
         preserveLegacyHerdrOnRemoval: preserveLegacyHerdr,
         herdrThemeOnly: transaction.operation == .herdrTheme,
         neovimOnly: transaction.operation == .neovimMigration,
@@ -348,69 +333,34 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
-    if let expected = inspection.btopExternalEvidence {
-      let url = homeDirectory.appending(path: ".config/btop/btop.conf")
-      guard try inspector.capture(url, directoryLink: nil) == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "btop configuration changed after planning; run environment plan again"
-        )
-      }
-    }
-    if let expected = inspection.codexExternalEvidence {
-      let url = homeDirectory.appending(path: ".codex/config.toml")
-      let tupleIsExact =
-        try inspection.proposedCodexOwnership != nil
+    try revalidate(
+      inspection.btopExternalEvidence, at: ".config/btop/btop.conf", "btop configuration")
+    try revalidate(
+      inspection.codexExternalEvidence, at: ".codex/config.toml", "Codex external tuple"
+    ) {
+      try inspection.proposedCodexOwnership != nil
         || inspector.codexExternalTupleIsExact(
           homeDirectory: homeDirectory,
           stateRoot: stateRoot,
-          configurationEvidence: expected
+          configurationEvidence: $0
         )
-      guard try inspector.capture(url, directoryLink: nil) == expected, tupleIsExact
-      else {
-        throw EnvironmentLifecycleError.blocked(
-          "Codex external tuple changed after planning; run environment plan again"
-        )
-      }
     }
-    if let expected = inspection.herdrExternalEvidence {
-      let url = homeDirectory.appending(path: ".config/herdr/config.toml")
-      guard try inspector.capture(url, directoryLink: nil) == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "Herdr configuration changed after planning; run environment plan again"
-        )
-      }
-    }
-    if let expected = inspection.piExternalEvidence {
-      let url = homeDirectory.appending(path: ".pi/agent/settings.json")
-      guard try inspector.capture(url, directoryLink: nil) == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "Pi settings changed after planning; run environment plan again"
-        )
-      }
-    }
-    if let expected = inspection.spicetifyExternalEvidence {
-      let url = homeDirectory.appending(path: ".config/spicetify/config-xpui.ini")
-      let tupleIsExact =
-        try inspection.proposedSpicetifyOwnership != nil
+    try revalidate(
+      inspection.herdrExternalEvidence, at: ".config/herdr/config.toml", "Herdr configuration")
+    try revalidate(inspection.piExternalEvidence, at: ".pi/agent/settings.json", "Pi settings")
+    try revalidate(
+      inspection.spicetifyExternalEvidence, at: ".config/spicetify/config-xpui.ini",
+      "Spicetify external tuple"
+    ) {
+      try inspection.proposedSpicetifyOwnership != nil
         || inspector.spicetifyExternalTupleIsExact(
           homeDirectory: homeDirectory,
           stateRoot: stateRoot,
-          configurationEvidence: expected
+          configurationEvidence: $0
         )
-      guard try inspector.capture(url, directoryLink: nil) == expected, tupleIsExact else {
-        throw EnvironmentLifecycleError.blocked(
-          "Spicetify external tuple changed after planning; run environment plan again"
-        )
-      }
     }
-    if let expected = inspection.tuicrExternalEvidence {
-      let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
-      guard try inspector.capture(url, directoryLink: nil) == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "tuicr configuration changed after planning; run environment plan again"
-        )
-      }
-    }
+    try revalidate(
+      inspection.tuicrExternalEvidence, at: ".config/tuicr/config.toml", "tuicr configuration")
 
     let generationStore = EnvironmentGenerationStore(stateRoot: stateRoot)
     let previousCurrent = try generationStore.currentDestination()
@@ -510,24 +460,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       || previous?.standardNativeEntries != proposed.standardNativeEntries
     let changed = generationChanged || ownershipChanged
 
-    let btopReplacementName =
-      previous?.btop != nil || proposed.btop != nil
-      ? ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement" : nil
-    let codexReplacementName =
-      previous?.codex != nil || proposed.codex != nil
-      ? ".macarchy-environment-codex-\(UUID().uuidString.lowercased()).replacement" : nil
-    let herdrReplacementName =
-      previous?.herdr != nil || proposed.herdr != nil
-      ? ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement" : nil
-    let piReplacementName =
-      previous?.pi != nil || proposed.pi != nil
-      ? ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement" : nil
-    let spicetifyReplacementName =
-      previous?.spicetify != nil || proposed.spicetify != nil
-      ? ".macarchy-environment-spicetify-\(UUID().uuidString.lowercased()).replacement" : nil
-    let tuicrReplacementName =
-      previous?.tuicr != nil || proposed.tuicr != nil
-      ? ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement" : nil
+    let replacementNames = EnvironmentReplacementNames(from: previous, to: proposed)
     let transaction = EnvironmentTransaction(
       operation: .apply,
       previousOwnership: previous,
@@ -535,17 +468,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
       previousCurrentDestination: previousCurrent,
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: themeBridges.entries,
-      btopReplacementName: btopReplacementName,
-      codexReplacementName: codexReplacementName,
-      herdrReplacementName: herdrReplacementName,
+      btopReplacementName: replacementNames.btop,
+      codexReplacementName: replacementNames.codex,
+      herdrReplacementName: replacementNames.herdr,
       herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget.required(from: previous, to: proposed),
       herdrLegacyMigration:
         previous?.herdr == nil && proposed.herdr?.migratedLegacy == true ? true : nil,
-      piReplacementName: piReplacementName,
-      spicetifyReplacementName: spicetifyReplacementName,
+      piReplacementName: replacementNames.pi,
+      spicetifyReplacementName: replacementNames.spicetify,
       spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(
         from: previous, to: proposed),
-      tuicrReplacementName: tuicrReplacementName,
+      tuicrReplacementName: replacementNames.tuicr,
       bordersPreviousRuntime: inspection.bordersServiceInspection,
       bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: previous, to: proposed)
     )
@@ -557,12 +490,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: previous,
           to: proposed,
-          btopReplacementName: btopReplacementName,
-          codexReplacementName: codexReplacementName,
-          herdrReplacementName: herdrReplacementName,
-          piReplacementName: piReplacementName,
-          spicetifyReplacementName: spicetifyReplacementName,
-          tuicrReplacementName: tuicrReplacementName
+          replacementNames: replacementNames
         )
         try restoreReleasedThemeBridges(from: previous, to: proposed)
         try store.writeOwnership(proposed)
@@ -582,12 +510,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: proposed,
           to: previous,
-          btopReplacementName: btopReplacementName,
-          codexReplacementName: codexReplacementName,
-          herdrReplacementName: herdrReplacementName,
-          piReplacementName: piReplacementName,
-          spicetifyReplacementName: spicetifyReplacementName,
-          tuicrReplacementName: tuicrReplacementName,
+          replacementNames: replacementNames,
           preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
         )
         try generationStore.restoreCurrent(previousCurrent)
@@ -600,6 +523,24 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
       throw applyError
+    }
+  }
+
+  /// Requires a planned preset file's evidence, and its external tuple when one applies, to be
+  /// unchanged since planning.
+  private func revalidate(
+    _ expected: EnvironmentEntryEvidence?,
+    at relativePath: String,
+    _ label: String,
+    tupleIsExact: (EnvironmentEntryEvidence) throws -> Bool = { _ in true }
+  ) throws {
+    guard let expected else { return }
+    let url = homeDirectory.appending(path: relativePath)
+    let tupleMatches = try tupleIsExact(expected)
+    guard try inspector.capture(url, directoryLink: nil) == expected, tupleMatches else {
+      throw EnvironmentLifecycleError.blocked(
+        "\(label) changed after planning; run environment plan again"
+      )
     }
   }
 
@@ -649,12 +590,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     try transition(
       from: rollback.proposedOwnership,
       to: rollback.previousOwnership,
-      btopReplacementName: rollback.btopReplacementName,
-      codexReplacementName: rollback.codexReplacementName,
-      herdrReplacementName: rollback.herdrReplacementName,
-      piReplacementName: rollback.piReplacementName,
-      spicetifyReplacementName: rollback.spicetifyReplacementName,
-      tuicrReplacementName: rollback.tuicrReplacementName,
+      replacementNames: rollback.replacementNames,
       preserveLegacyHerdrOnRemoval: preserveLegacyHerdr
     )
     try EnvironmentGenerationStore(stateRoot: stateRoot).restoreCurrent(
@@ -711,6 +647,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     if ownership.borders != nil, bordersService == nil {
       throw EnvironmentLifecycleError.blocked("Borders teardown requires observed service evidence")
     }
+    let replacementNames = EnvironmentReplacementNames(from: ownership, to: nil)
     let transaction = EnvironmentTransaction(
       operation: .teardown,
       previousOwnership: ownership,
@@ -721,26 +658,14 @@ struct EnvironmentTransactionCoordinator: Sendable {
         ids: Set(ownership.records.map(\.id)),
         stateRoot: stateRoot
       ).entries,
-      btopReplacementName: ownership.btop.map { _ in
-        ".macarchy-environment-btop-\(UUID().uuidString.lowercased()).replacement"
-      },
-      codexReplacementName: ownership.codex.map { _ in
-        ".macarchy-environment-codex-\(UUID().uuidString.lowercased()).replacement"
-      },
-      herdrReplacementName: ownership.herdr.map { _ in
-        ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement"
-      },
+      btopReplacementName: replacementNames.btop,
+      codexReplacementName: replacementNames.codex,
+      herdrReplacementName: replacementNames.herdr,
       herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget.required(from: ownership, to: nil),
-      piReplacementName: ownership.pi.map { _ in
-        ".macarchy-environment-pi-\(UUID().uuidString.lowercased()).replacement"
-      },
-      spicetifyReplacementName: ownership.spicetify.map { _ in
-        ".macarchy-environment-spicetify-\(UUID().uuidString.lowercased()).replacement"
-      },
+      piReplacementName: replacementNames.pi,
+      spicetifyReplacementName: replacementNames.spicetify,
       spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(from: ownership, to: nil),
-      tuicrReplacementName: ownership.tuicr.map { _ in
-        ".macarchy-environment-tuicr-\(UUID().uuidString.lowercased()).replacement"
-      },
+      tuicrReplacementName: replacementNames.tuicr,
       bordersPreviousRuntime: bordersService,
       bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: ownership, to: nil)
     )
@@ -748,12 +673,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     try transition(
       from: ownership,
       to: nil,
-      btopReplacementName: transaction.btopReplacementName,
-      codexReplacementName: transaction.codexReplacementName,
-      herdrReplacementName: transaction.herdrReplacementName,
-      piReplacementName: transaction.piReplacementName,
-      spicetifyReplacementName: transaction.spicetifyReplacementName,
-      tuicrReplacementName: transaction.tuicrReplacementName
+      replacementNames: transaction.replacementNames
     )
     if transaction.herdrRuntimeTarget == nil, transaction.spicetifyRuntimeTarget == nil,
       transaction.bordersRuntimeTarget == nil
@@ -788,8 +708,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       proposedOwnership: proposed,
       previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: stateRoot)
         .currentDestination(),
-      herdrReplacementName:
-        ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement",
+      herdrReplacementName: EnvironmentReplacementNames.reserve("herdr"),
       herdrRuntimeTarget: .managed
     )
     try store.writeTransaction(transaction)
@@ -797,12 +716,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try transition(
         from: previous,
         to: proposed,
-        btopReplacementName: nil,
-        codexReplacementName: nil,
-        herdrReplacementName: transaction.herdrReplacementName,
-        piReplacementName: nil,
-        spicetifyReplacementName: nil,
-        tuicrReplacementName: nil,
+        replacementNames: transaction.replacementNames,
         herdrThemeOnly: true
       )
       try store.writeOwnership(proposed)
@@ -814,12 +728,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try transition(
           from: proposed,
           to: previous,
-          btopReplacementName: nil,
-          codexReplacementName: nil,
-          herdrReplacementName: transaction.herdrReplacementName,
-          piReplacementName: nil,
-          spicetifyReplacementName: nil,
-          tuicrReplacementName: nil,
+          replacementNames: transaction.replacementNames,
           herdrThemeOnly: true
         )
         try store.writeOwnership(previous)
@@ -836,12 +745,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private func transition(
     from old: EnvironmentOwnership?,
     to new: EnvironmentOwnership?,
-    btopReplacementName: String?,
-    codexReplacementName: String?,
-    herdrReplacementName: String?,
-    piReplacementName: String?,
-    spicetifyReplacementName: String?,
-    tuicrReplacementName: String?,
+    replacementNames: EnvironmentReplacementNames,
     preserveLegacyHerdrOnRemoval: Bool = false,
     herdrThemeOnly: Bool = false,
     neovimOnly: Bool = false,
@@ -873,7 +777,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       guard let old, let new, old.herdrEnabled, new.herdrEnabled,
         let previous = old.herdr, let proposed = new.herdr,
         old.replacingHerdr(previous.replacingManagedTheme(proposed.managedTheme)) == new,
-        let herdrReplacementName
+        let herdrReplacementName = replacementNames.herdr
       else {
         throw EnvironmentLifecycleError.blocked(
           "Herdr theme transaction changes unrelated ownership")
@@ -898,15 +802,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let transitionedCodexBeforeLinks = old?.codex != nil
     let transitionedHerdrBeforeLinks = old?.herdr != nil
     if transitionedCodexBeforeLinks {
-      guard let codexReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Codex transaction has no replacement identity")
-      }
+      let codexReplacementName = try requiredReplacementName(replacementNames.codex, "Codex")
       try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
     }
     if transitionedHerdrBeforeLinks {
-      guard let herdrReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Herdr transaction has no replacement identity")
-      }
+      let herdrReplacementName = try requiredReplacementName(replacementNames.herdr, "Herdr")
       try herdrTransaction.transition(
         from: old,
         to: new,
@@ -915,23 +815,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
       )
     }
     if transitionedPiBeforeLinks {
-      guard let piReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
-      }
+      let piReplacementName = try requiredReplacementName(replacementNames.pi, "Pi")
       try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
     }
     if transitionedSpicetifyBeforeLinks {
-      guard let spicetifyReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Spicetify transaction has no replacement identity")
-      }
+      let spicetifyReplacementName = try requiredReplacementName(
+        replacementNames.spicetify, "Spicetify")
       try spicetifyTransaction.transition(
         from: old, to: new, replacementName: spicetifyReplacementName)
     }
     let transitionedTuicrBeforeLinks = old?.tuicr != nil
     if transitionedTuicrBeforeLinks {
-      guard let tuicrReplacementName else {
-        throw EnvironmentLifecycleError.blocked("tuicr transaction has no replacement identity")
-      }
+      let tuicrReplacementName = try requiredReplacementName(replacementNames.tuicr, "tuicr")
       try tuicrTransaction.transition(
         from: old,
         to: new,
@@ -969,24 +864,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
       }
     }
     if old?.btop != nil || new?.btop != nil {
-      guard let btopReplacementName else {
-        throw EnvironmentLifecycleError.blocked("btop transaction has no replacement identity")
-      }
+      let btopReplacementName = try requiredReplacementName(replacementNames.btop, "btop")
       try EnvironmentBtopFileTransaction(
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       ).transition(from: old, to: new, replacementName: btopReplacementName)
     }
     if !transitionedCodexBeforeLinks, new?.codex != nil {
-      guard let codexReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Codex transaction has no replacement identity")
-      }
+      let codexReplacementName = try requiredReplacementName(replacementNames.codex, "Codex")
       try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
     }
     if !transitionedHerdrBeforeLinks, new?.herdr != nil {
-      guard let herdrReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Herdr transaction has no replacement identity")
-      }
+      let herdrReplacementName = try requiredReplacementName(replacementNames.herdr, "Herdr")
       try herdrTransaction.transition(
         from: old,
         to: new,
@@ -994,22 +883,17 @@ struct EnvironmentTransactionCoordinator: Sendable {
       )
     }
     if !transitionedPiBeforeLinks, new?.pi != nil {
-      guard let piReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Pi transaction has no replacement identity")
-      }
+      let piReplacementName = try requiredReplacementName(replacementNames.pi, "Pi")
       try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
     }
     if !transitionedSpicetifyBeforeLinks, new?.spicetify != nil {
-      guard let spicetifyReplacementName else {
-        throw EnvironmentLifecycleError.blocked("Spicetify transaction has no replacement identity")
-      }
+      let spicetifyReplacementName = try requiredReplacementName(
+        replacementNames.spicetify, "Spicetify")
       try spicetifyTransaction.transition(
         from: old, to: new, replacementName: spicetifyReplacementName)
     }
     if !transitionedTuicrBeforeLinks, new?.tuicr != nil {
-      guard let tuicrReplacementName else {
-        throw EnvironmentLifecycleError.blocked("tuicr transaction has no replacement identity")
-      }
+      let tuicrReplacementName = try requiredReplacementName(replacementNames.tuicr, "tuicr")
       try tuicrTransaction.transition(
         from: old,
         to: new,
@@ -1019,6 +903,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let obsoleteDirectories = Set(old?.createdDirectories ?? [])
       .subtracting(new?.createdDirectories ?? [])
     try removeCreatedDirectories(Array(obsoleteDirectories))
+  }
+
+  private func requiredReplacementName(_ name: String?, _ label: String) throws -> String {
+    guard let name else {
+      throw EnvironmentLifecycleError.blocked("\(label) transaction has no replacement identity")
+    }
+    return name
   }
 
   private func shouldPreserveLegacyHerdr(_ transaction: EnvironmentTransaction) throws -> Bool {
@@ -1104,41 +995,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
       }
     }
-    if let btop = ownership.btop {
-      let expected = homeDirectory.appending(path: ".config/btop/btop.conf").path
-      guard btop.path == expected else {
-        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected btop path")
-      }
-    }
-    if let codex = ownership.codex {
-      let expected = homeDirectory.appending(path: ".codex/config.toml").path
-      guard codex.path == expected else {
-        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Codex path")
-      }
-    }
-    if let herdr = ownership.herdr {
-      let expected = homeDirectory.appending(path: ".config/herdr/config.toml").path
-      guard herdr.path == expected else {
-        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Herdr path")
-      }
-    }
-    if let pi = ownership.pi {
-      let expected = homeDirectory.appending(path: ".pi/agent/settings.json").path
-      guard pi.path == expected else {
-        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected Pi path")
-      }
-    }
-    if let spicetify = ownership.spicetify {
-      let expected = homeDirectory.appending(path: ".config/spicetify/config-xpui.ini").path
-      guard spicetify.path == expected else {
-        throw EnvironmentLifecycleError.blocked(
-          "ownership contains an unexpected Spicetify path")
-      }
-    }
-    if let tuicr = ownership.tuicr {
-      let expected = homeDirectory.appending(path: ".config/tuicr/config.toml").path
-      guard tuicr.path == expected else {
-        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected tuicr path")
+    for (path, relativePath, label) in [
+      (ownership.btop?.path, ".config/btop/btop.conf", "btop"),
+      (ownership.codex?.path, ".codex/config.toml", "Codex"),
+      (ownership.herdr?.path, ".config/herdr/config.toml", "Herdr"),
+      (ownership.pi?.path, ".pi/agent/settings.json", "Pi"),
+      (ownership.spicetify?.path, ".config/spicetify/config-xpui.ini", "Spicetify"),
+      (ownership.tuicr?.path, ".config/tuicr/config.toml", "tuicr"),
+    ] {
+      if let path, path != homeDirectory.appending(path: relativePath).path {
+        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected \(label) path")
       }
     }
     let allowedDirectories = Set(
