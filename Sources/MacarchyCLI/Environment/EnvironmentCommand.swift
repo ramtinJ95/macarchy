@@ -48,9 +48,7 @@ struct EnvironmentCommand: ParsableCommand {
           provider: provider, homeDirectory: home, stateRoot: root, sourceURL: source
         ).plan()
         if json {
-          let encoder = JSONEncoder()
-          encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-          print(String(decoding: try encoder.encode(plan), as: UTF8.self))
+          print(try environmentJSON(plan))
         } else {
           print("Source: \(plan.source)\nDestination: \(plan.destination)\n\(plan.message)")
           print("Retained backup: \(plan.retainedBackup ?? "none")")
@@ -117,9 +115,7 @@ struct EnvironmentCommand: ParsableCommand {
         stateRoot: URL(filePath: stateRoot).standardizedFileURL)
       let plan = try approve.map { try seed.seed(approval: $0) } ?? seed.plan()
       if json {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        print(String(decoding: try encoder.encode(plan), as: UTF8.self))
+        print(try environmentJSON(plan))
       } else {
         print("Destination: \(plan.destination)\n\(plan.contents)\n\(plan.message)")
         if approve == nil {
@@ -172,9 +168,7 @@ struct EnvironmentCommand: ParsableCommand {
       } else {
         let (plan, _) = try migration.plan()
         if json {
-          let encoder = JSONEncoder()
-          encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-          print(String(decoding: try encoder.encode(plan), as: UTF8.self))
+          print(try environmentJSON(plan))
         } else {
           print("Source: \(plan.source)\nDestination: \(plan.destination)\n\(plan.message)")
           print("Review this migration, then repeat with --approve '\(plan.approval)'.")
@@ -231,9 +225,7 @@ struct EnvironmentCommand: ParsableCommand {
       } else {
         let (plan, _) = try migration.plan()
         if json {
-          let encoder = JSONEncoder()
-          encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-          print(String(decoding: try encoder.encode(plan), as: UTF8.self))
+          print(try environmentJSON(plan))
         } else {
           print("Source: \(plan.source)\nDestination: \(plan.destination)\n\(plan.message)")
           print("Review this migration, then repeat with --approve '\(plan.approval)'.")
@@ -401,4 +393,11 @@ struct EnvironmentCommand: ParsableCommand {
       if !execution.succeeded { throw ExitCode.failure }
     }
   }
+}
+
+/// Pretty-printed, key-sorted JSON that keeps Swift property names as keys.
+func environmentJSON<Value: Encodable>(_ value: Value) throws -> String {
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+  return String(decoding: try encoder.encode(value), as: UTF8.self)
 }

@@ -803,10 +803,11 @@ struct EnvironmentApplyCommandRunner: Sendable {
       // Only the first connection of an unchanged standard curated starter may
       // prepare plugins. Existing native owners and edited sources retain Lazy
       // ownership; ordinary reapply must never restore their plugin graph.
+      let appliedOwnership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
       let nativeNeovim = EnvironmentNeovimMigration(
         homeDirectory: homeDirectory, stateRoot: stateRoot
       )
-      .isNative(try EnvironmentStateStore(stateRoot: stateRoot).readOwnership())
+      .isNative(appliedOwnership)
       let neovimVerification: EnvironmentVerification? =
         nativeNeovim && !prepareFreshNativeNeovim && profile.environment.editor == .neovim
         ? EnvironmentVerification(
@@ -830,7 +831,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           consumerPaths.managedEnvironmentPaths(
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
-            ownership: try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+            ownership: appliedOwnership
           )
         )
         guard reconciliation.succeeded else {

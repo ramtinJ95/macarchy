@@ -10,10 +10,6 @@ struct EnvironmentEntryInspection: Encodable, Equatable, Sendable {
   let ownership: String
   let message: String
   let evidence: EnvironmentEntryEvidence?
-
-  enum CodingKeys: String, CodingKey {
-    case id, path, status, ownership, message, evidence
-  }
 }
 
 struct EnvironmentProviderInspection: Sendable {
@@ -1002,17 +998,7 @@ struct EnvironmentProviderInspector: Sendable {
     var metadata = stat()
     guard lstat(url.path, &metadata) == 0 else {
       if errno == ENOENT {
-        return EnvironmentEntryEvidence(
-          kind: .absent,
-          device: nil,
-          inode: nil,
-          mode: nil,
-          size: nil,
-          linkDestination: nil,
-          contentDigest: nil,
-          metadataDigest: nil,
-          inventory: []
-        )
+        return EnvironmentEntryEvidence.absent
       }
       throw EnvironmentLifecycleError.system("inspect provider entry", url, errno)
     }
@@ -1132,17 +1118,7 @@ struct EnvironmentProviderInspector: Sendable {
         url: url
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return EnvironmentEntryEvidence(
-        kind: .absent,
-        device: nil,
-        inode: nil,
-        mode: nil,
-        size: nil,
-        linkDestination: nil,
-        contentDigest: nil,
-        metadataDigest: nil,
-        inventory: []
-      )
+      return EnvironmentEntryEvidence.absent
     }
     let common = (
       device: UInt64(metadata.st_dev),
@@ -1299,9 +1275,7 @@ struct EnvironmentProviderInspector: Sendable {
       borders: borders,
       bordersService: bordersService
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    return sha256Digest(try encoder.encode(payload))
+    return try canonicalJSONDigest(payload)
   }
 
   private func externalEntryIsExact(

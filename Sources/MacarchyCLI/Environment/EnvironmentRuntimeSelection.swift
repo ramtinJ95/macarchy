@@ -3,7 +3,18 @@ import ThemeCore
 
 enum ThemeRuntimeSelection {
   static func enabledAdapterIDs(stateRoot: URL, homeDirectory: URL) throws -> Set<String> {
-    let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+    try enabledAdapterIDs(
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      ownership: EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+    )
+  }
+
+  private static func enabledAdapterIDs(
+    stateRoot: URL,
+    homeDirectory: URL,
+    ownership: EnvironmentOwnership?
+  ) throws -> Set<String> {
     let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     let setupIDs = Set(try SetupOwnershipManager().readRecords(context: context).map(\.id))
     let legacyCodex = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
@@ -84,13 +95,15 @@ enum ThemeRuntimeSelection {
       try enabledAdapterIDs
       ?? Self.enabledAdapterIDs(
         stateRoot: stateRoot,
-        consumerPaths: consumerPaths
+        homeDirectory: homeDirectory,
+        ownership: ownership
       )
     return try ThemeActivationCoordinator(
       root: stateRoot,
       consumerPaths: Self.consumerPaths(
         stateRoot: stateRoot,
-        consumerPaths: consumerPaths
+        consumerPaths: consumerPaths,
+        ownership: ownership
       ),
       enabledAdapterIDs: enabledAdapterIDs,
       herdrManagedMode: herdrManagedMode,
@@ -229,9 +242,19 @@ enum ThemeRuntimeSelection {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths
   ) throws -> ThemeConsumerPaths {
-    guard let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership() else {
-      return consumerPaths
-    }
+    try Self.consumerPaths(
+      stateRoot: stateRoot,
+      consumerPaths: consumerPaths,
+      ownership: EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+    )
+  }
+
+  private static func consumerPaths(
+    stateRoot: URL,
+    consumerPaths: ThemeConsumerPaths,
+    ownership: EnvironmentOwnership?
+  ) throws -> ThemeConsumerPaths {
+    guard let ownership else { return consumerPaths }
     let homeDirectory = consumerPaths.starshipConfigurationURL.deletingLastPathComponent()
       .deletingLastPathComponent()
     for provider in EnvironmentNativeSeed.Provider.allCases
@@ -251,12 +274,8 @@ enum ThemeRuntimeSelection {
       atuinConfigurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
       neovimConfigurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
       starshipConfigurationURL: consumerPaths.starshipConfigurationURL,
-      starshipBehaviorURL: EnvironmentNativeFileMigration(
-        provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot
-      ).nativeTarget(in: ownership)
-        ?? stateRoot.appending(
-          path: "environment/current/starship/behavior.toml"
-        ),
+      starshipBehaviorURL: EnvironmentNativeFileMigration.starshipBehaviorURL(
+        homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership),
       piConfigurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
       herdrConfigurationURL: consumerPaths.herdrConfigurationURL,
       tuicrConfigurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
