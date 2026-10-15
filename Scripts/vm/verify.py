@@ -9,7 +9,6 @@ artifacts/vm/runs/<run>/verify-<session>/ and survives cleanup.
 """
 
 import argparse
-import base64
 import datetime
 import fcntl
 import importlib.util
@@ -98,8 +97,7 @@ def test_clone(inputs, run):
 
 
 def vm_state(inputs, run):
-    return json.loads(lab.run_tart(inputs, "get", run, "--format", "json",
-                                   capture_output=True, text=True, timeout=10).stdout)["State"]
+    return lab.vm_info(inputs, run)["State"]
 
 
 class RunLock:
@@ -144,12 +142,7 @@ def load_session(directory, session):
     return record
 
 
-def write_askpass(temporary):
-    askpass = Path(temporary) / "askpass"
-    askpass.write_text("#!/bin/sh\nexec " + shlex.join(
-        [sys.executable, str(lab.HERE / "guest.py"), "--askpass"]) + "\n")
-    askpass.chmod(0o700)
-    return askpass
+write_askpass = guest.write_askpass
 
 
 def require_vm(client):
@@ -205,8 +198,7 @@ def build_in_guest(client, session, archive, evidence):
     remote = guest_directory(session)
     quoted = shlex.quote(remote)
     client.command(f"umask 077; /bin/mkdir {quoted} && /bin/echo {session} > {quoted}/.verify-owner")
-    client.command(f"/usr/bin/base64 -D | /usr/bin/tar -xzf - -C {quoted}",
-                   data=base64.b64encode(archive.read_bytes()).decode(), timeout=300)
+    guest.upload_archive(client, archive, remote, timeout=300)
     build = (f"cd {quoted} && /usr/bin/env {DEVELOPER_DIR} HOMEBREW_NO_ANALYTICS=1 "
              "/usr/bin/swift build --product macarchy")
     started = time.monotonic()
@@ -354,9 +346,7 @@ def run_journey(client, record, name, session_directory, evidence, report):
     journey = JOURNEYS[name]
     binary = record["guest"]["binary"]
     require_session_directory(client, record["session"])
-    digest = client.command("/usr/bin/shasum -a 256 " + shlex.quote(binary),
-                            check=False).stdout.split()
-    if not digest or digest[0] != record["guest"]["binary_sha256"]:
+    if not recorded_binary(client, record):
         raise Blocked("Guest binary differs from the one launch built; launch a new session.")
     require_fresh_state(client)
     if name == "borders":
@@ -606,8 +596,7 @@ def drive(inputs, run, session, journey, border_count=None, candidate_session=No
         return report
 
 
-def describe(error):
-    return str(error) if isinstance(error, lab.LabError) else type(error).__name__
+describe = lab.describe
 
 
 class Checks:
@@ -677,18 +666,22 @@ def require_fresh_state(client):
     return "~/.config/macarchy absent"
 
 
+def recorded_binary(client, record):
+    digest = client.command("/usr/bin/shasum -a 256 " + shlex.quote(record["guest"]["binary"]),
+                            check=False).stdout.split()
+    return bool(digest) and digest[0] == record["guest"]["binary_sha256"]
+
+
 def guest_identity(client, record):
     require_session_directory(client, record["session"])
     binary = record["guest"]["binary"]
-    digest = client.command("/usr/bin/shasum -a 256 " + shlex.quote(binary),
-                            check=False).stdout.split()
-    if not digest or digest[0] != record["guest"]["binary_sha256"]:
+    if not recorded_binary(client, record):
         raise Blocked("Guest binary differs from the identity recorded at launch.")
     version = parse_json(client.command(step_command(binary, ["version", "--json"]),
                                         check=False).stdout)
     if version != record["guest"]["version"]:
         raise Blocked("version --json differs from the identity recorded at launch.")
-    return {"binary": binary, "sha256": digest[0], "version": version}
+    return {"binary": binary, "sha256": record["guest"]["binary_sha256"], "version": version}
 
 
 def doctor(run, session=None, record_report=False):

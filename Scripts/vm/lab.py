@@ -123,9 +123,17 @@ def check_version(inputs):
         raise LabError("Tart version differs from inputs.json; run prepare.")
 
 
-def require_stopped(inputs, name):
-    info = json.loads(run_tart(inputs, "get", name, "--format", "json",
+def vm_info(inputs, name):
+    return json.loads(run_tart(inputs, "get", name, "--format", "json",
                                capture_output=True, text=True, timeout=10).stdout)
+
+
+def describe(error):
+    return str(error) if isinstance(error, LabError) else type(error).__name__
+
+
+def require_stopped(inputs, name):
+    info = vm_info(inputs, name)
     if info["State"] != "stopped":
         raise LabError(f"VM {name} must be stopped before baseline use; never clone live state.")
     return info
@@ -539,7 +547,7 @@ def probe(inputs, interactive=False, baseline="installer"):
     except (LabError, OSError, subprocess.SubprocessError, TimeoutError) as error:
         report["status"] = "blocked"
         # Unknown subprocess failures remain explicit; raw diagnostics stay local.
-        report["reason"] = str(error) if isinstance(error, LabError) else type(error).__name__
+        report["reason"] = describe(error)
     finally:
         if process is not None:
             report["shutdown"] = stop_owned_process(process)
