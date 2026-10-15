@@ -165,9 +165,7 @@ struct EnvironmentNativeFileConnection {
         managedKind: id == .kitty
           ? EnvironmentManagedEntry.ManagedKind.kittyDirectory.rawValue : "symbolic_link",
         managedTarget: target,
-        original: EnvironmentEntryEvidence(
-          kind: .absent, device: nil, inode: nil, mode: nil, size: nil,
-          linkDestination: nil, contentDigest: nil, metadataDigest: nil, inventory: []),
+        original: .absent,
         retainedPath: nil)
     }
   }
@@ -176,17 +174,10 @@ struct EnvironmentNativeFileConnection {
     previous: EnvironmentOwnership?, generationID: String, standard: Bool
   ) -> EnvironmentOwnership {
     EnvironmentOwnership(
+      copying: previous,
       generationID: generationID,
       records: (previous?.records ?? []) + newRecords(standard: standard),
-      createdDirectories: previous?.createdDirectories ?? [],
-      originalThemeBridges: previous?.originalThemeBridges ?? [],
-      btop: previous?.btop, borders: previous?.borders, codex: previous?.codex,
-      herdr: previous?.herdr, pi: previous?.pi, spicetify: previous?.spicetify,
-      tuicr: previous?.tuicr,
-      codexEnabled: previous?.codexEnabled ?? false, herdrEnabled: previous?.herdrEnabled ?? false,
-      piEnabled: previous?.piEnabled ?? false, slackEnabled: previous?.slackEnabled ?? false,
-      spicetifyEnabled: previous?.spicetifyEnabled ?? false,
-      tuicrEnabled: previous?.tuicrEnabled ?? false,
+      herdr: previous?.herdr,
       enabledThemeAdapterIDs: Array(
         Set(
           (previous?.enabledThemeAdapterIDs ?? []) + (provider == .zsh ? [] : [provider.rawValue]))),

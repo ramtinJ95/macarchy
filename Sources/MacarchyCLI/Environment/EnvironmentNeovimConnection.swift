@@ -136,22 +136,11 @@ struct EnvironmentNeovimConnection {
         EnvironmentOwnershipRecord(
           id: .neovim, publicPath: publicURL.path, managedKind: "symbolic_link",
           managedTarget: source.path,
-          original: EnvironmentEntryEvidence(
-            kind: .absent, device: nil, inode: nil, mode: nil,
-            size: nil, linkDestination: nil, contentDigest: nil, metadataDigest: nil, inventory: []),
+          original: .absent,
           retainedPath: nil))
     }
     return EnvironmentOwnership(
-      generationID: generationID, records: records,
-      createdDirectories: previous?.createdDirectories ?? [],
-      originalThemeBridges: previous?.originalThemeBridges ?? [],
-      btop: previous?.btop, borders: previous?.borders, codex: previous?.codex,
-      herdr: previous?.herdr, pi: previous?.pi, spicetify: previous?.spicetify,
-      tuicr: previous?.tuicr,
-      codexEnabled: previous?.codexEnabled ?? false, herdrEnabled: previous?.herdrEnabled ?? false,
-      piEnabled: previous?.piEnabled ?? false, slackEnabled: previous?.slackEnabled ?? false,
-      spicetifyEnabled: previous?.spicetifyEnabled ?? false,
-      tuicrEnabled: previous?.tuicrEnabled ?? false,
+      copying: previous, generationID: generationID, records: records, herdr: previous?.herdr,
       enabledThemeAdapterIDs: Array(Set((previous?.enabledThemeAdapterIDs ?? []) + ["neovim"])),
       standardNativeEntries: native)
   }

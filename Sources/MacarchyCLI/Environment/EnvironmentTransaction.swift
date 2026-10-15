@@ -95,7 +95,7 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
 
   let schemaVersion: Int
   let operation: EnvironmentTransactionOperation
-  let direction: EnvironmentTransactionDirection
+  var direction: EnvironmentTransactionDirection
   let standardMigration: EnvironmentStandardMigration.Intent?
   let previousOwnership: EnvironmentOwnership?
   let proposedOwnership: EnvironmentOwnership?
@@ -105,17 +105,17 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let btopReplacementName: String?
   let codexReplacementName: String?
   let herdrReplacementName: String?
-  let herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget?
-  let herdrRuntimeVerified: Bool?
+  var herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget?
+  var herdrRuntimeVerified: Bool?
   let herdrLegacyMigration: Bool?
   let piReplacementName: String?
   let spicetifyReplacementName: String?
-  let spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
-  let spicetifyRuntimeVerified: Bool?
+  var spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
+  var spicetifyRuntimeVerified: Bool?
   var spicetifyRuntimeDeferred: Bool?
   let tuicrReplacementName: String?
   let bordersPreviousRuntime: BordersServiceInspection?
-  let bordersRuntimeTarget: EnvironmentBordersRuntimeTarget?
+  var bordersRuntimeTarget: EnvironmentBordersRuntimeTarget?
   var bordersRuntimeAttempted: Bool?
   var bordersRuntimeVerified: Bool?
 
@@ -175,100 +175,39 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   var rollingBack: Self {
     // Retrying rollback must preserve completed runtime work and explicit deferral.
     if direction == .rollback { return self }
-    return Self(
-      operation: operation,
-      direction: .rollback,
-      standardMigration: standardMigration,
-      previousOwnership: previousOwnership,
-      proposedOwnership: proposedOwnership,
-      previousCurrentDestination: previousCurrentDestination,
-      previousThemeGenerationID: previousThemeGenerationID,
-      rollbackThemeBridges: rollbackThemeBridges,
-      btopReplacementName: btopReplacementName,
-      codexReplacementName: codexReplacementName,
-      herdrReplacementName: herdrReplacementName,
-      herdrRuntimeTarget: herdrLegacyMigration == true
-        ? .managed
-        : EnvironmentHerdrRuntimeTarget.required(
-          from: proposedOwnership,
-          to: previousOwnership
-        ),
-      herdrRuntimeVerified: nil,
-      herdrLegacyMigration: herdrLegacyMigration,
-      piReplacementName: piReplacementName,
-      spicetifyReplacementName: spicetifyReplacementName,
-      spicetifyRuntimeTarget: operation.isScopedConnection
-        ? nil
-        : EnvironmentSpicetifyRuntimeTarget.required(
-          from: proposedOwnership,
-          to: previousOwnership
-        ),
-      spicetifyRuntimeVerified: nil,
-      tuicrReplacementName: tuicrReplacementName,
-      bordersPreviousRuntime: bordersPreviousRuntime,
-      bordersRuntimeTarget: operation == .herdrTheme || operation.isNativeMigration
-        || operation.isScopedConnection
-        ? nil
-        : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership),
-      bordersRuntimeAttempted: bordersRuntimeAttempted
-    )
+    var transaction = self
+    transaction.direction = .rollback
+    transaction.herdrRuntimeTarget =
+      herdrLegacyMigration == true
+      ? .managed
+      : EnvironmentHerdrRuntimeTarget.required(from: proposedOwnership, to: previousOwnership)
+    transaction.herdrRuntimeVerified = nil
+    transaction.spicetifyRuntimeTarget =
+      operation.isScopedConnection
+      ? nil
+      : EnvironmentSpicetifyRuntimeTarget.required(from: proposedOwnership, to: previousOwnership)
+    transaction.spicetifyRuntimeVerified = nil
+    transaction.spicetifyRuntimeDeferred = nil
+    transaction.bordersRuntimeTarget =
+      operation == .herdrTheme || operation.isNativeMigration || operation.isScopedConnection
+      ? nil
+      : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership)
+    transaction.bordersRuntimeVerified = nil
+    return transaction
   }
 
   var withHerdrRuntimeVerified: Self {
-    Self(
-      operation: operation,
-      direction: direction,
-      standardMigration: standardMigration,
-      previousOwnership: previousOwnership,
-      proposedOwnership: proposedOwnership,
-      previousCurrentDestination: previousCurrentDestination,
-      previousThemeGenerationID: previousThemeGenerationID,
-      rollbackThemeBridges: rollbackThemeBridges,
-      btopReplacementName: btopReplacementName,
-      codexReplacementName: codexReplacementName,
-      herdrReplacementName: herdrReplacementName,
-      herdrRuntimeTarget: herdrRuntimeTarget,
-      herdrRuntimeVerified: true,
-      herdrLegacyMigration: herdrLegacyMigration,
-      piReplacementName: piReplacementName,
-      spicetifyReplacementName: spicetifyReplacementName,
-      spicetifyRuntimeTarget: spicetifyRuntimeTarget,
-      spicetifyRuntimeVerified: spicetifyRuntimeVerified,
-      spicetifyRuntimeDeferred: spicetifyRuntimeDeferred,
-      tuicrReplacementName: tuicrReplacementName,
-      bordersPreviousRuntime: bordersPreviousRuntime,
-      bordersRuntimeTarget: bordersRuntimeTarget,
-      bordersRuntimeAttempted: bordersRuntimeAttempted,
-      bordersRuntimeVerified: bordersRuntimeVerified
-    )
+    var transaction = self
+    transaction.herdrRuntimeVerified = true
+    return transaction
   }
 
   var withSpicetifyRuntimeVerified: Self {
-    Self(
-      operation: operation,
-      direction: direction,
-      standardMigration: standardMigration,
-      previousOwnership: previousOwnership,
-      proposedOwnership: proposedOwnership,
-      previousCurrentDestination: previousCurrentDestination,
-      previousThemeGenerationID: previousThemeGenerationID,
-      rollbackThemeBridges: rollbackThemeBridges,
-      btopReplacementName: btopReplacementName,
-      codexReplacementName: codexReplacementName,
-      herdrReplacementName: herdrReplacementName,
-      herdrRuntimeTarget: herdrRuntimeTarget,
-      herdrRuntimeVerified: herdrRuntimeVerified,
-      herdrLegacyMigration: herdrLegacyMigration,
-      piReplacementName: piReplacementName,
-      spicetifyReplacementName: spicetifyReplacementName,
-      spicetifyRuntimeTarget: spicetifyRuntimeTarget,
-      spicetifyRuntimeVerified: true,
-      tuicrReplacementName: tuicrReplacementName,
-      bordersPreviousRuntime: bordersPreviousRuntime,
-      bordersRuntimeTarget: bordersRuntimeTarget,
-      bordersRuntimeAttempted: bordersRuntimeAttempted,
-      bordersRuntimeVerified: bordersRuntimeVerified
-    )
+    var transaction = self
+    transaction.spicetifyRuntimeVerified = true
+    // Verification is only recorded for a runtime that was not deferred.
+    transaction.spicetifyRuntimeDeferred = nil
+    return transaction
   }
 
   enum CodingKeys: String, CodingKey {

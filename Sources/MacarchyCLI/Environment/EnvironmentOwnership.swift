@@ -77,6 +77,10 @@ struct EnvironmentEntryEvidence: Codable, Equatable, Sendable {
   let metadataDigest: String?
   let inventory: [String]
 
+  static let absent = Self(
+    kind: .absent, device: nil, inode: nil, mode: nil, size: nil,
+    linkDestination: nil, contentDigest: nil, metadataDigest: nil, inventory: [])
+
   enum CodingKeys: String, CodingKey {
     case kind, device, inode, mode, size, inventory
     case linkDestination = "link_destination"
@@ -170,6 +174,30 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     self.standardNativeEntries =
       standardNativeEntries.isEmpty
       ? nil : standardNativeEntries.sorted { $0.rawValue < $1.rawValue }
+  }
+
+  /// Carries every preset field over from `base` and rebuilds through the primary
+  /// initializer, so record order and the schema version stay derived.
+  init(
+    copying base: Self?,
+    generationID: String,
+    records: [EnvironmentOwnershipRecord],
+    herdr: EnvironmentHerdrOwnership?,
+    enabledThemeAdapterIDs: [String]?,
+    standardNativeEntries: [EnvironmentEntryID]
+  ) {
+    self.init(
+      generationID: generationID, records: records,
+      createdDirectories: base?.createdDirectories ?? [],
+      originalThemeBridges: base?.originalThemeBridges ?? [],
+      btop: base?.btop, borders: base?.borders, codex: base?.codex, herdr: herdr, pi: base?.pi,
+      spicetify: base?.spicetify, tuicr: base?.tuicr,
+      codexEnabled: base?.codexEnabled ?? false, herdrEnabled: base?.herdrEnabled ?? false,
+      piEnabled: base?.piEnabled ?? false, slackEnabled: base?.slackEnabled ?? false,
+      spicetifyEnabled: base?.spicetifyEnabled ?? false,
+      tuicrEnabled: base?.tuicrEnabled ?? false,
+      enabledThemeAdapterIDs: enabledThemeAdapterIDs,
+      standardNativeEntries: standardNativeEntries)
   }
 
   enum CodingKeys: String, CodingKey {
@@ -290,37 +318,15 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
 
   func releasingStandardEntry(_ id: EnvironmentEntryID) -> Self {
     Self(
-      generationID: generationID, records: records.filter { $0.id != id },
-      createdDirectories: createdDirectories, originalThemeBridges: originalThemeBridges,
-      btop: btop, borders: borders, codex: codex, herdr: herdr, pi: pi,
-      spicetify: spicetify, tuicr: tuicr, codexEnabled: codexEnabled,
-      herdrEnabled: herdrEnabled, piEnabled: piEnabled, slackEnabled: slackEnabled,
-      spicetifyEnabled: spicetifyEnabled, tuicrEnabled: tuicrEnabled,
-      enabledThemeAdapterIDs: enabledThemeAdapterIDs,
+      copying: self, generationID: generationID, records: records.filter { $0.id != id },
+      herdr: herdr, enabledThemeAdapterIDs: enabledThemeAdapterIDs,
       standardNativeEntries: (standardNativeEntries ?? []) + [id])
   }
 
   func replacingHerdr(_ herdr: EnvironmentHerdrOwnership?) -> Self {
     Self(
-      generationID: generationID,
-      records: records,
-      createdDirectories: createdDirectories,
-      originalThemeBridges: originalThemeBridges,
-      btop: btop,
-      borders: borders,
-      codex: codex,
-      herdr: herdr,
-      pi: pi,
-      spicetify: spicetify,
-      tuicr: tuicr,
-      codexEnabled: codexEnabled,
-      herdrEnabled: herdrEnabled,
-      piEnabled: piEnabled,
-      slackEnabled: slackEnabled,
-      spicetifyEnabled: spicetifyEnabled,
-      tuicrEnabled: tuicrEnabled,
+      copying: self, generationID: generationID, records: records, herdr: herdr,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs,
-      standardNativeEntries: standardNativeEntries ?? []
-    )
+      standardNativeEntries: standardNativeEntries ?? [])
   }
 }
