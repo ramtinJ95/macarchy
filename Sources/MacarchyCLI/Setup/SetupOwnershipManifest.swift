@@ -103,12 +103,10 @@ extension SetupOwnershipManager {
       } else {
         consumerSetupPlans(context: context).flatMap(\.steps).first { $0.id == record.id }
       }
-    guard
-      let validate = step?.validateOwnershipRecord
-    else {
+    guard let step else {
       throw SetupOwnershipError.invalidManifest("unknown integration \(record.id)")
     }
-    try validate(record)
+    try validateRecord(record, for: step, context: context)
   }
 
   func validateManifestKeys(_ data: Data) throws {
