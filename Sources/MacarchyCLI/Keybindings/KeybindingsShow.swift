@@ -246,33 +246,13 @@ struct KeybindingsShowCommandLoader: Sendable {
   }
 }
 
-private func loadActiveTheme(stateRoot: URL) throws -> NormalizedTheme {
-  let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
-  let themeURL = stateRoot.appending(
-    path: "generations/\(manifest.generationID)/theme.json"
-  )
-  let theme = try JSONDecoder().decode(
-    NormalizedTheme.self,
-    from: BoundedRegularFile.read(at: themeURL).data
-  )
-  guard
-    theme.generationID == manifest.generationID,
-    theme.themeID == manifest.themeID,
-    theme.schemaVersion == manifest.themeSchemaVersion
-  else {
-    throw ReconciliationStatusError.invalidActiveGeneration(
-      "theme.json does not match the active manifest"
-    )
-  }
-  return theme
-}
-
 func loadPopupTheme(
   stateRoot: URL,
   bundledThemesRoot: URL
 ) throws -> NormalizedTheme {
   do {
-    return try loadActiveTheme(stateRoot: stateRoot)
+    return try ReconciliationStatusStore(root: stateRoot).activeManifest()
+      .normalizedTheme(root: stateRoot)
   } catch ReconciliationStatusError.noActiveGeneration {
     let package = try ThemePackageLoader().load(
       packageURL: bundledThemesRoot.appending(

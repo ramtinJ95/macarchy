@@ -9,8 +9,7 @@ struct SkhdServiceRegistration: Codable, Equatable, Sendable {
   let permissions: UInt16
 
   var isValid: Bool {
-    digest.hasPrefix("sha256:") && digest.count == 71
-      && digest.dropFirst(7).allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
+    isSHA256Digest(digest)
       && inode > 0 && UUID(uuidString: volumeUUID)?.uuidString == volumeUUID
       && permissions <= 0o7777
   }

@@ -193,7 +193,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
         userMetadata: sources.userMetadataURL?.path
       ),
       summary: KeybindingsPlanSummary(composition),
-      bindings: composition?.bindings.map(KeybindingsPlanBinding.init) ?? [],
+      bindings: composition?.bindings.map(EffectiveKeybindingRow.init) ?? [],
       disabledDefaults: composition?.disabledDefaults.map(KeybindingsPlanDisabled.init) ?? [],
       renderedSkhdrc: rendered,
       renderedDigest: renderedDigest,
@@ -356,7 +356,7 @@ private struct KeybindingsPlanReport: Encodable {
   let mutated = false
   let sources: KeybindingsPlanSources
   let summary: KeybindingsPlanSummary
-  let bindings: [KeybindingsPlanBinding]
+  let bindings: [EffectiveKeybindingRow]
   let disabledDefaults: [KeybindingsPlanDisabled]
   let renderedSkhdrc: String?
   let renderedDigest: String?
@@ -477,38 +477,6 @@ private struct KeybindingsPlanSummary: Encodable {
     userReplacements = bindings.count { $0.commandSource == .userReplacement }
     userAdditions = bindings.count { $0.commandSource == .userAddition }
     disabledDefaults = composition?.disabledDefaults.count ?? 0
-  }
-}
-
-private struct KeybindingsPlanBinding: Encodable {
-  let identity: String
-  let chord: String
-  let command: String
-  let commandSource: String
-  let metadataSource: String?
-  let metadata: KeybindingsPlanMetadata?
-
-  init(_ effective: EffectiveKeybinding) {
-    identity = effective.binding.identity
-    chord = effective.binding.chord
-    command = effective.binding.command
-    commandSource = effective.commandSource.rawValue
-    metadataSource = effective.metadataSource?.rawValue
-    metadata = effective.metadata.map(KeybindingsPlanMetadata.init)
-  }
-}
-
-private struct KeybindingsPlanMetadata: Encodable {
-  let label: String
-  let category: String
-  let order: Int
-  let aliases: [String]
-
-  init(_ entry: SkhdCatalogEntry) {
-    label = entry.label
-    category = entry.category
-    order = entry.order
-    aliases = entry.aliases
   }
 }
 

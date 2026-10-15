@@ -94,7 +94,7 @@ private struct EffectiveKeybindingsListReport: Encodable {
   let provider: KeybindingProviderInspection
   let transaction: KeybindingTransactionInspection
   let process: KeybindingProcessInspection
-  let bindings: [EffectiveKeybindingListRow]
+  let bindings: [EffectiveKeybindingRow]
   let disabledDefaults: [DisabledKeybindingListRow]
   let diagnostics: [KeybindingCompositionDiagnostic]
 
@@ -108,7 +108,7 @@ private struct EffectiveKeybindingsListReport: Encodable {
     provider = state.provider
     transaction = state.transaction
     process = state.process
-    bindings = state.presentedBindings.map(EffectiveKeybindingListRow.init)
+    bindings = state.presentedBindings.map(EffectiveKeybindingRow.init)
     disabledDefaults = state.presentedDisabledDefaults.map(DisabledKeybindingListRow.init)
     diagnostics = state.configuration.diagnostics
   }
@@ -169,7 +169,8 @@ private struct EffectiveKeybindingsListReport: Encodable {
   }
 }
 
-private struct EffectiveKeybindingListRow: Encodable {
+/// An effective binding row shared by the list and plan reports.
+struct EffectiveKeybindingRow: Encodable {
   let identity: String
   let chord: String
   let command: String
@@ -302,7 +303,7 @@ private struct KeybindingListRow: Encodable {
   }
 }
 
-private struct KeybindingMetadataReport: Encodable {
+struct KeybindingMetadataReport: Encodable {
   let label: String
   let category: String
   let order: Int
