@@ -59,12 +59,7 @@ extension KeybindingProviderTransaction {
     }
     if state == .managed {
       if claimState == .original {
-        if retainsOriginalSymlink(record) {
-          try preflightRetainedOriginalClaim(record)
-        } else {
-          try removeOriginalItem(
-            parentDescriptor: descriptor, name: claim, record: record, url: entry)
-        }
+        try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: entry)
       }
       guard claimState == .missing || claimState == .original else {
         throw SetupOwnershipError.ownershipDrift(entry)
@@ -72,27 +67,9 @@ extension KeybindingProviderTransaction {
       return
     }
     if state == .original, claimState == .managed {
-      try faultInjector(.providerClaimReady)
-      if originalKind(record) == .regularFile {
-        try displacePinnedRegularOriginal(record, descriptor: descriptor, claim: claim)
-      } else {
-        try withAuthenticatedOriginalSource(
-          record,
-          parentDescriptor: descriptor,
-          sourceName: "skhdrc",
-          claimName: claim,
-          url: entry
-        ) {
-          try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
-        }
-        try faultInjector(.providerClaimSwapped)
-      }
-      if retainsOriginalSymlink(record) {
-        try preflightRetainedOriginalClaim(record)
-      } else {
-        try removeOriginalItem(
-          parentDescriptor: descriptor, name: claim, record: record, url: entry)
-      }
+      try displaceOriginal(
+        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
+      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: entry)
       return
     }
     guard state == .original || (state == .missing && originalKind(record) == .absent),
@@ -108,21 +85,8 @@ extension KeybindingProviderTransaction {
     if state == .missing {
       try rename(descriptor: descriptor, from: claim, to: "skhdrc", url: entry)
     } else {
-      try faultInjector(.providerClaimReady)
-      if originalKind(record) == .regularFile {
-        try displacePinnedRegularOriginal(record, descriptor: descriptor, claim: claim)
-      } else {
-        try withAuthenticatedOriginalSource(
-          record,
-          parentDescriptor: descriptor,
-          sourceName: "skhdrc",
-          claimName: claim,
-          url: entry
-        ) {
-          try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
-        }
-        try faultInjector(.providerClaimSwapped)
-      }
+      try displaceOriginal(
+        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
       guard
         try leafState(
           descriptor: descriptor,
@@ -130,12 +94,7 @@ extension KeybindingProviderTransaction {
           record: record
         ) == .original
       else { throw SetupOwnershipError.ownershipDrift(entry) }
-      if retainsOriginalSymlink(record) {
-        try preflightRetainedOriginalClaim(record)
-      } else {
-        try removeOriginalItem(
-          parentDescriptor: descriptor, name: claim, record: record, url: entry)
-      }
+      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: entry)
     }
   }
 
@@ -195,9 +154,8 @@ extension KeybindingProviderTransaction {
       return
     }
     if state == .managed, claimState == .original {
-      try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
-      try faultInjector(.restoredOriginalPublished)
-      try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: "skhdrc", url: entry)
+      try publishRestoredOriginal(
+        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
       try removeMarkedItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
       return
@@ -213,9 +171,8 @@ extension KeybindingProviderTransaction {
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .regularFile:
       try restoreRegularFileClaim(record, descriptor: descriptor, name: claim)
-      try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
-      try faultInjector(.restoredOriginalPublished)
-      try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: "skhdrc", url: entry)
+      try publishRestoredOriginal(
+        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
       try removeMarkedItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .symbolicLink:
@@ -226,9 +183,8 @@ extension KeybindingProviderTransaction {
         url: entry,
         record: record
       )
-      try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
-      try faultInjector(.restoredOriginalPublished)
-      try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: "skhdrc", url: entry)
+      try publishRestoredOriginal(
+        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
       try removeMarkedItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .directorySymbolicLink:
@@ -265,12 +221,7 @@ extension KeybindingProviderTransaction {
     }
     if state == .managed {
       if claimState == .original {
-        if retainsOriginalSymlink(record) {
-          try preflightRetainedOriginalClaim(record)
-        } else {
-          try removeOriginalItem(
-            parentDescriptor: descriptor, name: claim, record: record, url: directory)
-        }
+        try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: directory)
       }
       guard claimState == .missing || claimState == .original else {
         throw SetupOwnershipError.ownershipDrift(directory)
@@ -278,40 +229,17 @@ extension KeybindingProviderTransaction {
       return
     }
     if state == .original, claimState == .managed {
-      try faultInjector(.providerClaimReady)
-      try withAuthenticatedOriginalSource(
-        record,
-        parentDescriptor: descriptor,
-        sourceName: "skhd",
-        claimName: claim,
-        url: directory
-      ) {
-        try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
-      }
-      try faultInjector(.providerClaimSwapped)
-      if retainsOriginalSymlink(record) {
-        try preflightRetainedOriginalClaim(record)
-      } else {
-        try removeOriginalItem(
-          parentDescriptor: descriptor, name: claim, record: record, url: directory)
-      }
+      try displaceOriginal(
+        record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
+      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: directory)
       return
     }
     guard state == .original, claimState == .missing else {
       throw SetupOwnershipError.ownershipDrift(directory)
     }
     try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
-    try faultInjector(.providerClaimReady)
-    try withAuthenticatedOriginalSource(
-      record,
-      parentDescriptor: descriptor,
-      sourceName: "skhd",
-      claimName: claim,
-      url: directory
-    ) {
-      try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
-    }
-    try faultInjector(.providerClaimSwapped)
+    try displaceOriginal(
+      record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
     guard
       try directoryState(
         descriptor: descriptor,
@@ -319,12 +247,7 @@ extension KeybindingProviderTransaction {
         record: record
       ) == .original
     else { throw SetupOwnershipError.ownershipDrift(directory) }
-    if retainsOriginalSymlink(record) {
-      try preflightRetainedOriginalClaim(record)
-    } else {
-      try removeOriginalItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: directory)
-    }
+    try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: directory)
   }
 
   func restoreOriginalDirectory(_ record: SetupOwnershipRecord) throws {
@@ -376,10 +299,8 @@ extension KeybindingProviderTransaction {
       return
     }
     if state == .managed, claimState == .original {
-      try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
-      try faultInjector(.restoredOriginalPublished)
-      try finalizeRestoredOriginal(
-        record, parentDescriptor: descriptor, name: "skhd", url: directory)
+      try publishRestoredOriginal(
+        record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
       try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
       return
     }
@@ -393,9 +314,8 @@ extension KeybindingProviderTransaction {
       url: directory,
       record: record
     )
-    try swap(descriptor: descriptor, first: "skhd", second: claim, url: directory)
-    try faultInjector(.restoredOriginalPublished)
-    try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: "skhd", url: directory)
+    try publishRestoredOriginal(
+      record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
     try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
   }
 
@@ -443,69 +363,41 @@ extension KeybindingProviderTransaction {
     let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
     let claim = claimName(record, directory: directoryLevel)
-    let liveState: ProviderItemState
-    if directoryLevel {
-      liveState = try directoryState(
-        descriptor: parent,
-        name: liveName,
-        record: record
-      )
-    } else {
-      liveState = try leafState(
-        descriptor: parent,
-        name: liveName,
-        record: record
-      )
-    }
-    var claimState: ProviderItemState
-    if directoryLevel {
-      claimState = try directoryState(
-        descriptor: parent,
-        name: claim,
-        record: record,
-        recognizeIncompleteClaim: true
-      )
-    } else {
-      claimState = try leafState(
-        descriptor: parent,
-        name: claim,
-        record: record,
-        recognizeIncompleteClaim: true
-      )
-    }
-    if liveState == .original, claimState == .incomplete {
-      if directoryLevel {
-        try removeManagedDirectory(
-          parentDescriptor: parent,
-          name: claim,
-          record: record
+    func state(_ name: String, recognizeIncompleteClaim: Bool = false) throws -> ProviderItemState {
+      try directoryLevel
+        ? directoryState(
+          descriptor: parent,
+          name: name,
+          record: record,
+          recognizeIncompleteClaim: recognizeIncompleteClaim
         )
+        : leafState(
+          descriptor: parent,
+          name: name,
+          record: record,
+          recognizeIncompleteClaim: recognizeIncompleteClaim
+        )
+    }
+    func removeClaimItem(_ name: String) throws {
+      if directoryLevel {
+        try removeManagedDirectory(parentDescriptor: parent, name: name, record: record)
       } else {
         try removeMarkedItem(
           parentDescriptor: parent,
-          name: claim,
+          name: name,
           record: record,
-          url: parentURL.appending(path: claim)
+          url: parentURL.appending(path: name)
         )
       }
+    }
+    let liveState = try state(liveName)
+    var claimState = try state(claim, recognizeIncompleteClaim: true)
+    if liveState == .original, claimState == .incomplete {
+      try removeClaimItem(claim)
       claimState = .missing
     }
     if liveState == .original, claimState == .missing {
-      let publication = try publishingName(claim, record: record)
-      if directoryLevel {
-        try removeManagedDirectory(
-          parentDescriptor: parent,
-          name: publication,
-          record: record
-        )
-      } else {
-        try removeMarkedItem(
-          parentDescriptor: parent,
-          name: publication,
-          record: record,
-          url: parentURL.appending(path: publication)
-        )
-      }
+      try removeClaimItem(publishingName(claim, record: record))
       try authenticateOriginalSymlinkAtPath(
         record,
         parentDescriptor: parent,
@@ -529,17 +421,7 @@ extension KeybindingProviderTransaction {
       name: liveName,
       url: liveURL
     )
-    let managedState: ProviderItemState
-    if directoryLevel {
-      managedState = try directoryState(
-        descriptor: parent,
-        name: claim,
-        record: record
-      )
-    } else {
-      managedState = try leafState(descriptor: parent, name: claim, record: record)
-    }
-    guard managedState == .managed else { throw SetupOwnershipError.ownershipDrift(liveURL) }
+    guard try state(claim) == .managed else { throw SetupOwnershipError.ownershipDrift(liveURL) }
   }
 
   func leafState(
@@ -742,6 +624,58 @@ extension KeybindingProviderTransaction {
       try publish(parentDescriptor: parentDescriptor, from: publicationName, to: name, url: url)
       try faultInjector(.directoryClaimCreated)
     }
+  }
+
+  /// Moves the authenticated original to `claim` so the managed claim takes the live name.
+  private func displaceOriginal(
+    _ record: SetupOwnershipRecord,
+    descriptor: Int32,
+    liveName: String,
+    claim: String,
+    url: URL
+  ) throws {
+    try faultInjector(.providerClaimReady)
+    if originalKind(record) == .regularFile {
+      try displacePinnedRegularOriginal(record, descriptor: descriptor, claim: claim)
+      return
+    }
+    try withAuthenticatedOriginalSource(
+      record,
+      parentDescriptor: descriptor,
+      sourceName: liveName,
+      claimName: claim,
+      url: url
+    ) {
+      try swap(descriptor: descriptor, first: liveName, second: claim, url: url)
+    }
+    try faultInjector(.providerClaimSwapped)
+  }
+
+  /// Keeps a retained original symlink's claim, or removes the displaced original.
+  private func settleDisplacedOriginal(
+    _ record: SetupOwnershipRecord,
+    descriptor: Int32,
+    claim: String,
+    url: URL
+  ) throws {
+    if retainsOriginalSymlink(record) {
+      try preflightRetainedOriginalClaim(record)
+    } else {
+      try removeOriginalItem(parentDescriptor: descriptor, name: claim, record: record, url: url)
+    }
+  }
+
+  /// Swaps the restored original back to the live name and records its restored identity.
+  private func publishRestoredOriginal(
+    _ record: SetupOwnershipRecord,
+    descriptor: Int32,
+    liveName: String,
+    claim: String,
+    url: URL
+  ) throws {
+    try swap(descriptor: descriptor, first: liveName, second: claim, url: url)
+    try faultInjector(.restoredOriginalPublished)
+    try finalizeRestoredOriginal(record, parentDescriptor: descriptor, name: liveName, url: url)
   }
 
   private func displacePinnedRegularOriginal(
