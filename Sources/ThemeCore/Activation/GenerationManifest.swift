@@ -109,7 +109,7 @@ extension GenerationManifest {
   }
 
   /// This generation's normalized `theme.json`, which must agree with the manifest.
-  func normalizedTheme(root: URL) throws -> NormalizedTheme {
+  package func normalizedTheme(root: URL) throws -> NormalizedTheme {
     let theme = try JSONDecoder().decode(
       NormalizedTheme.self,
       from: BoundedRegularFile.read(

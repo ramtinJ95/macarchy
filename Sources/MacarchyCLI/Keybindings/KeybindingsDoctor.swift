@@ -120,9 +120,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
             message: "No current generated keybinding configuration exists."
           )
         )
-      case .invalid:
-        break
-      case .unavailable:
+      case .invalid, .unavailable:
         break
       }
     }
@@ -152,9 +150,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
         .ok
       case .notRunning:
         .warning
-      case .unsupported:
-        .failure
-      case .unavailable:
+      case .unsupported, .unavailable:
         .failure
       }
     findings.append(
@@ -195,20 +191,17 @@ struct KeybindingsDoctorCommandRunner: Sendable {
     do {
       parsed = SkhdConfigurationParser().parse(try read(configurationURL))
     } catch {
-      let report = KeybindingsDoctorReport(
-        schemaVersion: 1,
-        operation: "keybindings_doctor",
-        heading: "Macarchy keybindings doctor:",
-        findings: [
+      return try renderSourceReport(
+        [
           KeybindingsDoctorFinding(
             id: "skhd.read",
             status: .failure,
             message: String(describing: error),
             source: configurationURL.path
           )
-        ]
+        ],
+        json: json
       )
-      return (try report.render(json: json), report.succeeded)
     }
 
     var findings: [KeybindingsDoctorFinding] = []
@@ -252,13 +245,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
           source: catalogURL.path
         )
       )
-      let report = KeybindingsDoctorReport(
-        schemaVersion: 1,
-        operation: "keybindings_doctor",
-        heading: "Macarchy keybindings doctor:",
-        findings: findings
-      )
-      return (try report.render(json: json), report.succeeded)
+      return try renderSourceReport(findings, json: json)
     }
 
     findings.append(
@@ -292,6 +279,13 @@ struct KeybindingsDoctorCommandRunner: Sendable {
       )
     )
 
+    return try renderSourceReport(findings, json: json)
+  }
+
+  private func renderSourceReport(
+    _ findings: [KeybindingsDoctorFinding],
+    json: Bool
+  ) throws -> (output: String, succeeded: Bool) {
     let report = KeybindingsDoctorReport(
       schemaVersion: 1,
       operation: "keybindings_doctor",

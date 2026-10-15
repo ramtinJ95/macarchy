@@ -54,13 +54,28 @@ struct KeybindingProcessInspection: Encodable, Equatable, Sendable {
   let executablePath: String?
   let arguments: [String]
 
-  static let notRunning = KeybindingProcessInspection(
-    status: .notRunning,
-    message: "No skhd process is running for the current user.",
-    processID: nil,
-    executablePath: nil,
-    arguments: []
+  static let notRunning = unobserved(
+    .notRunning,
+    "No skhd process is running for the current user."
   )
+
+  static func unobserved(_ status: KeybindingProcessStatus, _ message: String) -> Self {
+    Self(status: status, message: message, processID: nil, executablePath: nil, arguments: [])
+  }
+
+  static func observed(
+    _ status: KeybindingProcessStatus,
+    _ message: String,
+    _ process: KeybindingProcessSnapshot
+  ) -> Self {
+    Self(
+      status: status,
+      message: message,
+      processID: process.processID,
+      executablePath: process.executablePath,
+      arguments: process.arguments
+    )
+  }
 }
 
 struct KeybindingProcessSnapshot: Equatable, Sendable {
@@ -103,22 +118,16 @@ struct KeybindingProcessInspector: Sendable {
       case 1:
         return .notRunning
       default:
-        return KeybindingProcessInspection(
-          status: .unavailable,
-          message: "skhd process evidence is unavailable (pgrep status "
-            + "\(result.terminationStatus)).",
-          processID: nil,
-          executablePath: nil,
-          arguments: []
+        return KeybindingProcessInspection.unobserved(
+          .unavailable,
+          "skhd process evidence is unavailable (pgrep status "
+            + "\(result.terminationStatus))."
         )
       }
     } catch {
-      return KeybindingProcessInspection(
-        status: .unavailable,
-        message: "skhd process evidence is unavailable: \(error)",
-        processID: nil,
-        executablePath: nil,
-        arguments: []
+      return KeybindingProcessInspection.unobserved(
+        .unavailable,
+        "skhd process evidence is unavailable: \(error)"
       )
     }
   }
@@ -130,95 +139,69 @@ struct KeybindingProcessInspector: Sendable {
   ) -> KeybindingProcessInspection {
     guard !processIDs.isEmpty else { return .notRunning }
     guard processIDs.allSatisfy({ $0 > 0 }) else {
-      return KeybindingProcessInspection(
-        status: .unavailable,
-        message: "skhd process evidence contains an invalid process identity.",
-        processID: nil,
-        executablePath: nil,
-        arguments: []
+      return KeybindingProcessInspection.unobserved(
+        .unavailable,
+        "skhd process evidence contains an invalid process identity."
       )
     }
     do {
       let snapshots = try processIDs.sorted().map(snapshot)
       guard snapshots.count == 1, let observed = snapshots.first else {
-        return KeybindingProcessInspection(
-          status: .unsupported,
-          message: "Expected exactly one UID-scoped skhd process; found \(snapshots.count).",
-          processID: nil,
-          executablePath: nil,
-          arguments: []
+        return KeybindingProcessInspection.unobserved(
+          .unsupported,
+          "Expected exactly one UID-scoped skhd process; found \(snapshots.count)."
         )
       }
       guard observed.processID == processIDs[0] else {
-        return KeybindingProcessInspection(
-          status: .unavailable,
-          message: "UID-scoped skhd process identity changed during inspection.",
-          processID: nil,
-          executablePath: nil,
-          arguments: []
+        return KeybindingProcessInspection.unobserved(
+          .unavailable,
+          "UID-scoped skhd process identity changed during inspection."
         )
       }
       guard observed.executablePath == expectedExecutable else {
-        return KeybindingProcessInspection(
-          status: .unsupported,
-          message: "UID-scoped skhd PID \(observed.processID) uses unsupported executable "
+        return KeybindingProcessInspection.observed(
+          .unsupported,
+          "UID-scoped skhd PID \(observed.processID) uses unsupported executable "
             + "\(observed.executablePath).",
-          processID: observed.processID,
-          executablePath: observed.executablePath,
-          arguments: observed.arguments
+          observed
         )
       }
       guard !observed.arguments.isEmpty else {
-        return KeybindingProcessInspection(
-          status: .unavailable,
-          message: "UID-scoped skhd PID \(observed.processID) has no inspectable arguments.",
-          processID: observed.processID,
-          executablePath: observed.executablePath,
-          arguments: []
+        return KeybindingProcessInspection.observed(
+          .unavailable,
+          "UID-scoped skhd PID \(observed.processID) has no inspectable arguments.",
+          observed
         )
       }
       let explicitConfiguration = observed.arguments.dropFirst().contains {
         $0 == "-c" || $0.hasPrefix("-c") || $0 == "--config" || $0.hasPrefix("--config=")
       }
       guard !explicitConfiguration else {
-        return KeybindingProcessInspection(
-          status: .unsupported,
-          message: "UID-scoped skhd PID \(observed.processID) selects an explicit config with -c; "
+        return KeybindingProcessInspection.observed(
+          .unsupported,
+          "UID-scoped skhd PID \(observed.processID) selects an explicit config with -c; "
             + "Macarchy cannot prove the managed provider entry is authoritative.",
-          processID: observed.processID,
-          executablePath: observed.executablePath,
-          arguments: observed.arguments
+          observed
         )
       }
-      return KeybindingProcessInspection(
-        status: .running,
-        message: "UID-scoped skhd PID \(observed.processID) uses the supported executable "
+      return KeybindingProcessInspection.observed(
+        .running,
+        "UID-scoped skhd PID \(observed.processID) uses the supported executable "
           + "without an explicit config argument.",
-        processID: observed.processID,
-        executablePath: observed.executablePath,
-        arguments: observed.arguments
+        observed
       )
     } catch {
-      return KeybindingProcessInspection(
-        status: .unavailable,
-        message: "Cannot inspect UID-scoped skhd process identity and arguments: \(error)",
-        processID: nil,
-        executablePath: nil,
-        arguments: []
+      return KeybindingProcessInspection.unobserved(
+        .unavailable,
+        "Cannot inspect UID-scoped skhd process identity and arguments: \(error)"
       )
     }
   }
 
   private static func processSnapshot(_ processID: Int32) throws -> KeybindingProcessSnapshot {
-    var pathBuffer = [CChar](repeating: 0, count: 4_096)
-    let pathLength = proc_pidpath(processID, &pathBuffer, UInt32(pathBuffer.count))
-    guard pathLength > 0 else {
+    guard let executablePath = processExecutablePath(processID) else {
       throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .ESRCH)
     }
-    let executablePath = String(
-      decoding: pathBuffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)),
-      as: UTF8.self
-    )
 
     var argumentsSize = 0
     var mib = [CTL_KERN, KERN_PROCARGS2, processID]
