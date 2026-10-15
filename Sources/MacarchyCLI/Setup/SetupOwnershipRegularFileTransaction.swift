@@ -798,9 +798,24 @@ extension SetupOwnershipManager {
       label: label
     )
     defer { Darwin.close(descriptor) }
-    return (
+    return try readPinnedRegularFileSnapshot(descriptor: descriptor, url: url, label: label)
+  }
+
+  /// Reads a pinned file, then its metadata snapshot, through an open descriptor.
+  func readPinnedRegularFileSnapshot(
+    descriptor: Int32,
+    url: URL,
+    label: String,
+    excludingExtendedAttribute excludedAttribute: String? = nil
+  ) throws -> (file: BoundedRegularFile, snapshot: RegularFileSnapshot) {
+    (
       try readPinnedRegularFile(descriptor: descriptor, url: url, label: label),
-      try regularFileSnapshot(descriptor: descriptor, url: url, label: label)
+      try regularFileSnapshot(
+        descriptor: descriptor,
+        url: url,
+        label: label,
+        excludingExtendedAttribute: excludedAttribute
+      )
     )
   }
 

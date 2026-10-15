@@ -73,7 +73,7 @@ extension KeybindingProviderTransaction {
           publicationName.withCString { Darwin.symlinkat(destination, descriptor, $0) }
         }
         guard created == 0 else {
-          throw posixError("create legacy keybinding provider link", publicationURL)
+          throw SetupOwnershipError.posix("create legacy keybinding provider link", publicationURL)
         }
         try faultInjector(.legacyRestorationPublicationCreated)
         try verifyLegacyManagedLink(
@@ -165,7 +165,7 @@ extension KeybindingProviderTransaction {
         throw SetupOwnershipError.ownershipDrift(url)
       }
     } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw posixError(
+      throw SetupOwnershipError.posix(
         "inspect legacy keybinding ownership marker",
         url,
         code: failure.code

@@ -340,7 +340,7 @@ struct KeybindingProviderTransaction: Sendable {
       let backupPublicationExists =
         try validateBackupPublicationResidue(record, manager: manager) != nil
       if try backupExists() || backupDeletionResidueExists(record) || backupPublicationExists {
-        record = record.withPhase(.teardownPrepared)
+        record.phase = .teardownPrepared
         try manager.save(record: record, records: &records, context: context)
         if try backupExists() || backupDeletionResidueExists(record) {
           try removeAuthenticatedBackup(record, manager: manager)
@@ -538,12 +538,7 @@ struct KeybindingProviderTransaction: Sendable {
       defer {
         if !descriptorTransferred { Darwin.close(descriptor) }
       }
-      let data = try manager.readPinnedRegularFile(
-        descriptor: descriptor,
-        url: entry,
-        label: "skhd entry"
-      ).data
-      let snapshot = try manager.regularFileSnapshot(
+      let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
         descriptor: descriptor,
         url: entry,
         label: "skhd entry"
@@ -574,13 +569,13 @@ struct KeybindingProviderTransaction: Sendable {
       descriptorTransferred = true
       return OriginalEntry(
         kind: .regularFile,
-        data: data,
+        data: file.data,
         linkDestination: nil,
         fileMode: UInt16(snapshot.mode & 0o7777),
         metadataDigest: snapshot.restorableMetadataDigest(),
         fileDevice: snapshot.device,
         fileInode: snapshot.inode,
-        sourceDigest: sha256Digest(data),
+        sourceDigest: sha256Digest(file.data),
         inventory: [],
         pinnedRegularDescriptor: descriptor
       )
@@ -699,14 +694,9 @@ struct KeybindingProviderTransaction: Sendable {
       let descriptor = original.pinnedRegularDescriptor
     else { return }
     guard lseek(descriptor, 0, SEEK_SET) == 0 else {
-      throw posixError("rewind pinned skhd entry", entry)
+      throw SetupOwnershipError.posix("rewind pinned skhd entry", entry)
     }
-    let data = try manager.readPinnedRegularFile(
-      descriptor: descriptor,
-      url: entry,
-      label: "skhd entry"
-    ).data
-    let snapshot = try manager.regularFileSnapshot(
+    let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
       descriptor: descriptor,
       url: entry,
       label: "skhd entry"
@@ -726,7 +716,7 @@ struct KeybindingProviderTransaction: Sendable {
       snapshot.mode & 0o7777 == UInt32(original.fileMode ?? 0),
       snapshot.flags & Self.unsupportedRestorationFlags == 0,
       snapshot.restorableMetadataDigest() == original.metadataDigest,
-      sha256Digest(data) == original.sourceDigest,
+      sha256Digest(file.data) == original.sourceDigest,
       UInt64(path.st_dev) == snapshot.device,
       UInt64(path.st_ino) == snapshot.inode,
       path.st_mode & S_IFMT == S_IFREG,
@@ -783,33 +773,6 @@ struct KeybindingProviderTransaction: Sendable {
 
   var legacyRestorationName: String {
     ".skhdrc.macarchy-legacy-restoration"
-  }
-}
-
-extension SetupOwnershipRecord {
-  fileprivate func withPhase(_ phase: Phase) -> Self {
-    Self(
-      id: id,
-      phase: phase,
-      kind: kind,
-      targetPath: targetPath,
-      backupPath: backupPath,
-      originalDigest: originalDigest,
-      installedDigest: installedDigest,
-      linkDestination: linkDestination,
-      replacementDigest: replacementDigest,
-      originalKind: originalKind,
-      originalLinkDestination: originalLinkDestination,
-      originalFileMode: originalFileMode,
-      originalMetadataDigest: originalMetadataDigest,
-      originalVolumeUUID: originalVolumeUUID,
-      originalDevice: originalDevice,
-      originalInode: originalInode,
-      originalSourceDigest: originalSourceDigest,
-      originalInventory: originalInventory,
-      retainedOriginalPath: retainedOriginalPath,
-      claimNonce: claimNonce
-    )
   }
 }
 

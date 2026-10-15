@@ -282,8 +282,8 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let originalFileMode: UInt16?
   let originalMetadataDigest: String?
   var originalVolumeUUID: String?
-  let originalDevice: UInt64?
-  let originalInode: UInt64?
+  var originalDevice: UInt64?
+  var originalInode: UInt64?
   let originalSourceDigest: String?
   let originalInventory: [String]?
   let retainedOriginalPath: String?

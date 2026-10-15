@@ -44,18 +44,13 @@ extension KeybindingProviderTransaction {
       label: "skhd entry"
     )
     defer { Darwin.close(descriptor) }
-    let data = try manager.readPinnedRegularFile(
-      descriptor: descriptor,
-      url: entry,
-      label: "skhd entry"
-    ).data
-    let snapshot = try manager.regularFileSnapshot(
+    let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
       descriptor: descriptor,
       url: entry,
       label: "skhd entry"
     )
     guard
-      sha256Digest(data) == record.originalDigest,
+      sha256Digest(file.data) == record.originalDigest,
       snapshot.device == record.originalDevice,
       snapshot.inode == record.originalInode,
       snapshot.linkCount == 1,
@@ -65,32 +60,13 @@ extension KeybindingProviderTransaction {
   }
 
   func backupExists() throws -> Bool {
-    let parent: Int32
-    do {
-      parent = try openBackupDirectory(create: false)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return false
-    }
+    guard let parent = try openBackupDirectoryIfPresent() else { return false }
     defer { Darwin.close(parent) }
-    do {
-      _ = try PinnedFilesystem.metadata(
-        parentDescriptor: parent,
-        name: backup.lastPathComponent,
-        url: backup
-      )
-      return true
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return false
-    }
+    return try itemExists(parentDescriptor: parent, name: backup.lastPathComponent, url: backup)
   }
 
   func backupDeletionResidueExists(_ record: SetupOwnershipRecord) throws -> Bool {
-    let parent: Int32
-    do {
-      parent = try openBackupDirectory(create: false)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return false
-    }
+    guard let parent = try openBackupDirectoryIfPresent() else { return false }
     defer { Darwin.close(parent) }
     let name = try deletionName(backup.lastPathComponent, record: record)
     return try itemExists(
@@ -159,12 +135,7 @@ extension KeybindingProviderTransaction {
         label: "keybinding backup"
       )
       defer { Darwin.close(descriptor) }
-      let file = try manager.readPinnedRegularFile(
-        descriptor: descriptor,
-        url: deletionURL,
-        label: "keybinding backup"
-      )
-      let snapshot = try manager.regularFileSnapshot(
+      let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
         descriptor: descriptor,
         url: deletionURL,
         label: "keybinding backup",
@@ -182,12 +153,7 @@ extension KeybindingProviderTransaction {
   }
 
   func removeBackupPublicationResidue(_ record: SetupOwnershipRecord) throws {
-    let parent: Int32
-    do {
-      parent = try openBackupDirectory(create: false)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
-      return
-    }
+    guard let parent = try openBackupDirectoryIfPresent() else { return }
     defer { Darwin.close(parent) }
     let name = try publishingName(backup.lastPathComponent, record: record)
     try removeMarkedItem(
@@ -196,6 +162,15 @@ extension KeybindingProviderTransaction {
       record: record,
       url: backup.deletingLastPathComponent().appending(path: name)
     )
+  }
+
+  /// Opens the backup directory, or returns nil when any part of its path is absent.
+  func openBackupDirectoryIfPresent() throws -> Int32? {
+    do {
+      return try openBackupDirectory(create: false)
+    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+      return nil
+    }
   }
 
   func openBackupDirectory(create: Bool) throws -> Int32 {
@@ -252,7 +227,9 @@ extension KeybindingProviderTransaction {
     let result = destination.withCString { target in
       publicationName.withCString { Darwin.symlinkat(target, descriptor, $0) }
     }
-    guard result == 0 else { throw posixError("create keybinding provider link", publicationURL) }
+    guard result == 0 else {
+      throw SetupOwnershipError.posix("create keybinding provider link", publicationURL)
+    }
     try markClaim(
       parentDescriptor: descriptor,
       name: publicationName,
@@ -273,9 +250,7 @@ extension KeybindingProviderTransaction {
     record: SetupOwnershipRecord,
     url: URL
   ) throws -> Bool {
-    do {
-      _ = try PinnedFilesystem.metadata(parentDescriptor: parentDescriptor, name: name, url: url)
-    } catch let error as PinnedFilesystemError where error.code == ENOENT {
+    guard try itemExists(parentDescriptor: parentDescriptor, name: name, url: url) else {
       return false
     }
     guard
@@ -295,18 +270,8 @@ extension KeybindingProviderTransaction {
     to destination: String,
     url: URL
   ) throws {
-    let result = source.withCString { sourceName in
-      destination.withCString {
-        Darwin.renameatx_np(
-          parentDescriptor,
-          sourceName,
-          parentDescriptor,
-          $0,
-          UInt32(RENAME_EXCL)
-        )
-      }
-    }
-    guard result == 0 else { throw posixError("publish keybinding claim", url) }
+    let result = renameExclusive(descriptor: parentDescriptor, from: source, to: destination)
+    guard result == 0 else { throw SetupOwnershipError.posix("publish keybinding claim", url) }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
 
@@ -339,19 +304,14 @@ extension KeybindingProviderTransaction {
       label: "skhd original"
     )
     defer { Darwin.close(descriptor) }
-    let data = try manager.readPinnedRegularFile(
-      descriptor: descriptor,
-      url: url,
-      label: "skhd original"
-    ).data
-    let snapshot = try manager.regularFileSnapshot(
+    let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
       descriptor: descriptor,
       url: url,
       label: "skhd original",
       excludingExtendedAttribute: allowMarker ? Self.claimMarkerAttribute : nil
     )
     let metadataDigest = snapshot.restorableMetadataDigest()
-    return sha256Digest(data) == record.originalDigest
+    return sha256Digest(file.data) == record.originalDigest
       && (allowMarker
         || (snapshot.device == record.originalDevice && snapshot.inode == record.originalInode))
       && snapshot.linkCount == 1
@@ -396,7 +356,9 @@ extension KeybindingProviderTransaction {
       )
       defer { Darwin.close(source) }
       var identity = stat()
-      guard fstat(source, &identity) == 0 else { throw posixError("pin skhd source", target) }
+      guard fstat(source, &identity) == 0 else {
+        throw SetupOwnershipError.posix("pin skhd source", target)
+      }
       try performPinnedOriginalSwap(
         record,
         parentDescriptor: parentDescriptor,
@@ -412,14 +374,9 @@ extension KeybindingProviderTransaction {
           url: target
         )
         guard lseek(source, 0, SEEK_SET) == 0 else {
-          throw posixError("rewind adopted skhd source", target)
+          throw SetupOwnershipError.posix("rewind adopted skhd source", target)
         }
-        let file = try manager.readPinnedRegularFile(
-          descriptor: source,
-          url: target,
-          label: "adopted skhd source"
-        )
-        let snapshot = try manager.regularFileSnapshot(
+        let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
           descriptor: source,
           url: target,
           label: "adopted skhd source"
@@ -440,7 +397,7 @@ extension KeybindingProviderTransaction {
       defer { Darwin.close(descriptor) }
       var directoryIdentity = stat()
       guard fstat(descriptor, &directoryIdentity) == 0 else {
-        throw posixError("pin skhd source directory", target)
+        throw SetupOwnershipError.posix("pin skhd source directory", target)
       }
       let sourceURL = target.appending(path: "skhdrc")
       let manager = SetupOwnershipManager()
@@ -453,7 +410,7 @@ extension KeybindingProviderTransaction {
       defer { Darwin.close(source) }
       var sourceIdentity = stat()
       guard fstat(source, &sourceIdentity) == 0 else {
-        throw posixError("pin directory skhd source", sourceURL)
+        throw SetupOwnershipError.posix("pin directory skhd source", sourceURL)
       }
       try performPinnedOriginalSwap(
         record,
@@ -472,7 +429,7 @@ extension KeybindingProviderTransaction {
           targetPathIdentity.st_ino == directoryIdentity.st_ino
         else { throw SetupOwnershipError.ownershipDrift(target) }
         guard lseek(descriptor, 0, SEEK_SET) == 0 else {
-          throw posixError("rewind adopted skhd source directory", target)
+          throw SetupOwnershipError.posix("rewind adopted skhd source directory", target)
         }
         let inventory = try PinnedFilesystem.directoryEntries(
           descriptor: descriptor,
@@ -485,14 +442,9 @@ extension KeybindingProviderTransaction {
           url: sourceURL
         )
         guard lseek(source, 0, SEEK_SET) == 0 else {
-          throw posixError("rewind directory skhd source", sourceURL)
+          throw SetupOwnershipError.posix("rewind directory skhd source", sourceURL)
         }
-        let file = try manager.readPinnedRegularFile(
-          descriptor: source,
-          url: sourceURL,
-          label: "adopted directory skhd source"
-        )
-        let snapshot = try manager.regularFileSnapshot(
+        let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
           descriptor: source,
           url: sourceURL,
           label: "adopted directory skhd source"
@@ -528,7 +480,9 @@ extension KeybindingProviderTransaction {
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: sourceName, url: url)
     defer { Darwin.close(pinned) }
     var identity = stat()
-    guard fstat(pinned, &identity) == 0 else { throw posixError("pin provider source", url) }
+    guard fstat(pinned, &identity) == 0 else {
+      throw SetupOwnershipError.posix("pin provider source", url)
+    }
     func verifyPath(_ name: String) throws {
       let path = try PinnedFilesystem.metadata(
         parentDescriptor: parentDescriptor,
@@ -651,19 +605,14 @@ extension KeybindingProviderTransaction {
     }
     if originalKind(record) == .regularFile {
       let manager = SetupOwnershipManager()
-      let data = try manager.readPinnedRegularFile(
-        descriptor: descriptor,
-        url: url,
-        label: "restored skhd entry"
-      ).data
-      let snapshot = try manager.regularFileSnapshot(
+      let (file, snapshot) = try manager.readPinnedRegularFileSnapshot(
         descriptor: descriptor,
         url: url,
         label: "restored skhd entry",
         excludingExtendedAttribute: Self.claimMarkerAttribute
       )
       guard
-        sha256Digest(data) == record.originalDigest,
+        sha256Digest(file.data) == record.originalDigest,
         snapshot.linkCount == 1,
         snapshot.restorableMetadataDigest() == record.originalMetadataDigest
       else { throw SetupOwnershipError.ownershipDrift(url) }
@@ -681,28 +630,9 @@ extension KeybindingProviderTransaction {
     let manager = SetupOwnershipManager()
     let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     var records = try manager.readRecords(context: context)
-    let updated = SetupOwnershipRecord(
-      id: record.id,
-      phase: record.phase,
-      kind: record.kind,
-      targetPath: record.targetPath,
-      backupPath: record.backupPath,
-      originalDigest: record.originalDigest,
-      installedDigest: record.installedDigest,
-      linkDestination: record.linkDestination,
-      replacementDigest: record.replacementDigest,
-      originalKind: record.originalKind,
-      originalLinkDestination: record.originalLinkDestination,
-      originalFileMode: record.originalFileMode,
-      originalMetadataDigest: record.originalMetadataDigest,
-      originalVolumeUUID: record.originalVolumeUUID,
-      originalDevice: UInt64(metadata.st_dev),
-      originalInode: UInt64(metadata.st_ino),
-      originalSourceDigest: record.originalSourceDigest,
-      originalInventory: record.originalInventory,
-      retainedOriginalPath: record.retainedOriginalPath,
-      claimNonce: record.claimNonce
-    )
+    var updated = record
+    updated.originalDevice = UInt64(metadata.st_dev)
+    updated.originalInode = UInt64(metadata.st_ino)
     try manager.save(record: updated, records: &records, context: context)
     try faultInjector(.restoredIdentityRecorded)
     try removeClaimMarker(
@@ -743,7 +673,7 @@ extension KeybindingProviderTransaction {
         nonce: nonce
       )
     } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw posixError("read keybinding claim marker", url, code: failure.code)
+      throw SetupOwnershipError.posix("read keybinding claim marker", url, code: failure.code)
     }
   }
 
@@ -784,31 +714,12 @@ extension KeybindingProviderTransaction {
         nonce: nonce
       )
     } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw posixError("authenticate keybinding claim", url, code: failure.code)
+      throw SetupOwnershipError.posix("authenticate keybinding claim", url, code: failure.code)
     }
-    guard fsync(descriptor) == 0 else { throw posixError("sync keybinding claim", url) }
+    guard fsync(descriptor) == 0 else {
+      throw SetupOwnershipError.posix("sync keybinding claim", url)
+    }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
-  }
-
-  private func removeClaimMarker(
-    parentDescriptor: Int32,
-    name: String,
-    record: SetupOwnershipRecord,
-    url: URL
-  ) throws {
-    let descriptor = try openClaim(
-      parentDescriptor: parentDescriptor,
-      name: name,
-      url: url
-    )
-    defer { Darwin.close(descriptor) }
-    try removeClaimMarker(
-      descriptor: descriptor,
-      parentDescriptor: parentDescriptor,
-      name: name,
-      record: record,
-      url: url
-    )
   }
 
   private func removeClaimMarker(
@@ -824,9 +735,11 @@ extension KeybindingProviderTransaction {
     do {
       try KeybindingProviderPrimitives.removeClaimMarker(descriptor: descriptor)
     } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw posixError("remove keybinding claim marker", url, code: failure.code)
+      throw SetupOwnershipError.posix("remove keybinding claim marker", url, code: failure.code)
     }
-    guard fsync(descriptor) == 0 else { throw posixError("sync keybinding claim", url) }
+    guard fsync(descriptor) == 0 else {
+      throw SetupOwnershipError.posix("sync keybinding claim", url)
+    }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
 
@@ -846,7 +759,9 @@ extension KeybindingProviderTransaction {
       flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW
     }
     let descriptor = name.withCString { Darwin.openat(parentDescriptor, $0, flags) }
-    guard descriptor >= 0 else { throw posixError("open pinned keybinding claim", url) }
+    guard descriptor >= 0 else {
+      throw SetupOwnershipError.posix("open pinned keybinding claim", url)
+    }
     var pinned = stat()
     guard
       fstat(descriptor, &pinned) == 0,
@@ -861,18 +776,8 @@ extension KeybindingProviderTransaction {
   }
 
   func sync(_ descriptor: Int32, url: URL) throws {
-    guard fsync(descriptor) == 0 else { throw posixError("sync keybinding provider", url) }
-  }
-
-  func posixError(_ operation: String, _ url: URL) -> SetupOwnershipError {
-    .system(operation, url, String(cString: strerror(errno)))
-  }
-
-  func posixError(
-    _ operation: String,
-    _ url: URL,
-    code: Int32
-  ) -> SetupOwnershipError {
-    .system(operation, url, String(cString: strerror(code)))
+    guard fsync(descriptor) == 0 else {
+      throw SetupOwnershipError.posix("sync keybinding provider", url)
+    }
   }
 }

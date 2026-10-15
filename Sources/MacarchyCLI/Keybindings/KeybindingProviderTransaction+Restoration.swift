@@ -758,18 +758,13 @@ extension KeybindingProviderTransaction {
     )
     defer { Darwin.close(current) }
     let stored = try readOriginalBackup(record, manager: manager)
-    let data = try manager.readPinnedRegularFile(
-      descriptor: current,
-      url: entry,
-      label: "skhd entry"
-    ).data
-    let before = try manager.regularFileSnapshot(
+    let (file, before) = try manager.readPinnedRegularFileSnapshot(
       descriptor: current,
       url: entry,
       label: "skhd entry"
     )
     guard
-      data == stored.data,
+      file.data == stored.data,
       before.device == record.originalDevice,
       before.inode == record.originalInode,
       before.linkCount == 1,
@@ -854,7 +849,9 @@ extension KeybindingProviderTransaction {
         0o600
       )
     }
-    guard claim >= 0 else { throw posixError("create restored skhd entry", publicationURL) }
+    guard claim >= 0 else {
+      throw SetupOwnershipError.posix("create restored skhd entry", publicationURL)
+    }
     defer { Darwin.close(claim) }
     try markClaim(
       descriptor: claim,
@@ -895,10 +892,10 @@ extension KeybindingProviderTransaction {
     )
     defer { Darwin.close(backupDescriptor) }
     guard fcopyfile(backupDescriptor, claim, nil, copyfile_flags_t(COPYFILE_METADATA)) == 0 else {
-      throw posixError("restore skhd entry metadata", publicationURL)
+      throw SetupOwnershipError.posix("restore skhd entry metadata", publicationURL)
     }
     guard fchmod(claim, mode_t(try originalMode(record))) == 0 else {
-      throw posixError("restore skhd entry permissions", publicationURL)
+      throw SetupOwnershipError.posix("restore skhd entry permissions", publicationURL)
     }
     if try !claimMarkerMatches(descriptor: claim, record: record, url: publicationURL) {
       try markClaim(
@@ -915,7 +912,9 @@ extension KeybindingProviderTransaction {
       cleanup = false
       throw error
     }
-    guard fsync(claim) == 0 else { throw posixError("sync restored skhd entry", publicationURL) }
+    guard fsync(claim) == 0 else {
+      throw SetupOwnershipError.posix("sync restored skhd entry", publicationURL)
+    }
     let restoredSnapshot = try manager.regularFileSnapshot(
       descriptor: claim,
       url: publicationURL,

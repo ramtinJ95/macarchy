@@ -172,21 +172,15 @@ extension KeybindingProviderTransaction {
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
     defer { Darwin.close(pinned) }
     var identity = stat()
-    guard fstat(pinned, &identity) == 0 else { throw posixError("pin deletion source", url) }
+    guard fstat(pinned, &identity) == 0 else {
+      throw SetupOwnershipError.posix("pin deletion source", url)
+    }
     try faultInjector(.deletionSourcePinned)
 
-    let moved = name.withCString { source in
-      deletionName.withCString { destination in
-        Darwin.renameatx_np(
-          parentDescriptor,
-          source,
-          parentDescriptor,
-          destination,
-          UInt32(RENAME_EXCL)
-        )
-      }
+    let moved = renameExclusive(descriptor: parentDescriptor, from: name, to: deletionName)
+    guard moved == 0 else {
+      throw SetupOwnershipError.posix("claim keybinding item for deletion", url)
     }
-    guard moved == 0 else { throw posixError("claim keybinding item for deletion", url) }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
     try faultInjector(.deletionCandidatePublished)
     do {
@@ -210,17 +204,7 @@ extension KeybindingProviderTransaction {
         authenticate: authenticate
       )
     } catch {
-      let restored = deletionName.withCString { source in
-        name.withCString { destination in
-          Darwin.renameatx_np(
-            parentDescriptor,
-            source,
-            parentDescriptor,
-            destination,
-            UInt32(RENAME_EXCL)
-          )
-        }
-      }
+      let restored = renameExclusive(descriptor: parentDescriptor, from: deletionName, to: name)
       if restored == 0 {
         try sync(parentDescriptor, url: url.deletingLastPathComponent())
         throw error
@@ -270,7 +254,9 @@ extension KeybindingProviderTransaction {
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
     defer { Darwin.close(pinned) }
     var identity = stat()
-    guard fstat(pinned, &identity) == 0 else { throw posixError("pin deletion candidate", url) }
+    guard fstat(pinned, &identity) == 0 else {
+      throw SetupOwnershipError.posix("pin deletion candidate", url)
+    }
     if let expectedIdentity {
       guard
         identity.st_dev == expectedIdentity.st_dev,
@@ -292,7 +278,7 @@ extension KeybindingProviderTransaction {
     else { throw SetupOwnershipError.ownershipDrift(url) }
     let flags = directory ? AT_REMOVEDIR : 0
     guard name.withCString({ Darwin.unlinkat(parentDescriptor, $0, flags) }) == 0 else {
-      throw posixError("remove authenticated keybinding item", url)
+      throw SetupOwnershipError.posix("remove authenticated keybinding item", url)
     }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
@@ -318,11 +304,23 @@ extension KeybindingProviderTransaction {
     }
   }
 
+  /// Renames within one directory without replacing an existing entry. Returns the system
+  /// call result so the caller reads `errno` itself.
+  func renameExclusive(descriptor: Int32, from source: String, to destination: String) -> Int32 {
+    source.withCString { sourceName in
+      destination.withCString {
+        Darwin.renameatx_np(descriptor, sourceName, descriptor, $0, UInt32(RENAME_EXCL))
+      }
+    }
+  }
+
   func rename(descriptor: Int32, from: String, to: String, url: URL) throws {
     let result = from.withCString { source in
       to.withCString { destination in Darwin.renameat(descriptor, source, descriptor, destination) }
     }
-    guard result == 0 else { throw posixError("rename keybinding provider item", url) }
+    guard result == 0 else {
+      throw SetupOwnershipError.posix("rename keybinding provider item", url)
+    }
     try sync(descriptor, url: url.deletingLastPathComponent())
   }
 
@@ -348,7 +346,7 @@ extension KeybindingProviderTransaction {
         )
       }
     }
-    guard result == 0 else { throw posixError("swap keybinding provider item", url) }
+    guard result == 0 else { throw SetupOwnershipError.posix("swap keybinding provider item", url) }
     try sync(descriptor, url: url.deletingLastPathComponent())
     for name in [first, second] {
       let metadata = try PinnedFilesystem.metadata(
