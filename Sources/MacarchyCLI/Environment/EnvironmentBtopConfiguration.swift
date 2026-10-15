@@ -287,6 +287,12 @@ struct EnvironmentBtopDocument: Sendable {
 }
 
 struct EnvironmentBtopFileTransaction: Sendable {
+  private static let filesystem = EnvironmentPresetFilesystem(
+    configurationLabel: "btop configuration",
+    residueLabel: "btop transaction residue",
+    nonRegularMessage: "btop configuration is not an ordinary file"
+  )
+
   private enum ExpectedState {
     case original(EnvironmentBtopOwnership)
     case managed(values: [String: String], artifact: Data)
@@ -330,18 +336,18 @@ struct EnvironmentBtopFileTransaction: Sendable {
       } ?? .original(ownership)
     let url = URL(filePath: ownership.path)
     let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    var current = try read(url)
-    if let residueData = try read(residue) {
+    var current = try Self.filesystem.read(url)
+    if let residueData = try Self.filesystem.read(residue) {
       if try matches(current, target, at: url), try matches(residueData, source, at: residue) {
-        try remove(residue)
+        try Self.filesystem.remove(residue)
         return
       }
       if try matches(current, source, at: url), try matches(residueData, target, at: residue) {
-        try remove(residue)
+        try Self.filesystem.remove(residue)
       } else {
         throw EnvironmentLifecycleError.drift("btop replacement residue")
       }
-      current = try read(url)
+      current = try Self.filesystem.read(url)
     }
     if try matches(current, target, at: url) { return }
     guard try matches(current, source, at: url) else {
@@ -353,7 +359,7 @@ struct EnvironmentBtopFileTransaction: Sendable {
       if current == nil {
         try create(artifact, at: url, replacementName: replacementName)
       } else {
-        let text = try utf8(current!, at: url)
+        let text = try Self.filesystem.utf8(current!, at: url)
         let updated = try EnvironmentBtopDocument.applyingManaged(
           to: text,
           values: values,
@@ -369,7 +375,7 @@ struct EnvironmentBtopFileTransaction: Sendable {
           try claimAndRemove(at: url, replacementName: replacementName, expected: current)
         } else {
           let updated = try EnvironmentBtopDocument.restoringOriginal(
-            in: try utf8(current, at: url),
+            in: try Self.filesystem.utf8(current, at: url),
             ownership: original,
             source: url
           )
@@ -378,14 +384,14 @@ struct EnvironmentBtopFileTransaction: Sendable {
         }
       } else {
         let updated = try EnvironmentBtopDocument.restoringOriginal(
-          in: try utf8(current, at: url),
+          in: try Self.filesystem.utf8(current, at: url),
           ownership: original,
           source: url
         )
         try replace(Data(updated.utf8), current: current, at: url, replacementName: replacementName)
       }
     }
-    guard try matches(try read(url), target, at: url) else {
+    guard try matches(try Self.filesystem.read(url), target, at: url) else {
       throw EnvironmentLifecycleError.drift(url.path)
     }
   }
@@ -395,59 +401,25 @@ struct EnvironmentBtopFileTransaction: Sendable {
     case .original(let ownership):
       guard let data else { return !ownership.originalFileExisted }
       return try EnvironmentBtopDocument.matchesOriginal(
-        try utf8(data, at: url),
+        try Self.filesystem.utf8(data, at: url),
         ownership: ownership,
         source: url
       )
     case .managed(let values, _):
       guard let data else { return false }
       return try EnvironmentBtopDocument.matchesManaged(
-        try utf8(data, at: url),
+        try Self.filesystem.utf8(data, at: url),
         values: values,
         source: url
       )
     }
   }
 
-  private func read(_ url: URL) throws -> Data? {
-    var metadata = stat()
-    guard lstat(url.path, &metadata) == 0 else {
-      if errno == ENOENT { return nil }
-      throw EnvironmentLifecycleError.system("inspect btop configuration", url, errno)
-    }
-    guard metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1 else {
-      throw EnvironmentLifecycleError.blocked(
-        "btop configuration is not an ordinary file: \(url.path)")
-    }
-    return try BoundedRegularFile.read(at: url).data
-  }
-
-  private func utf8(_ data: Data, at url: URL) throws -> String {
-    guard let text = String(data: data, encoding: .utf8) else {
-      throw EnvironmentLifecycleError.blocked("btop configuration is not UTF-8: \(url.path)")
-    }
-    return text
-  }
-
-  private func replace(
-    _ data: Data,
-    current: Data,
-    at url: URL,
-    replacementName: String
-  ) throws {
-    guard data != current else { return }
-    do {
-      try SetupOwnershipManager().replaceRegularFile(
-        target: url,
-        replacementName: replacementName,
-        homeDirectory: homeDirectory,
-        expectedDigest: sha256Digest(current),
-        data: data,
-        label: "btop owned keys"
-      )
-    } catch {
-      throw EnvironmentLifecycleError.blocked("cannot replace btop owned keys: \(error)")
-    }
+  private func replace(_ data: Data, current: Data, at url: URL, replacementName: String) throws {
+    try Self.filesystem.replace(
+      data, current: current, at: url, replacementName: replacementName,
+      homeDirectory: homeDirectory, label: "btop owned keys"
+    )
   }
 
   private func create(_ data: Data, at url: URL, replacementName: String) throws {
@@ -483,21 +455,9 @@ struct EnvironmentBtopFileTransaction: Sendable {
       throw EnvironmentLifecycleError.system("claim btop configuration", url, errno)
     }
     let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    guard try read(residue) == expected else {
+    guard try Self.filesystem.read(residue) == expected else {
       throw EnvironmentLifecycleError.drift("claimed btop configuration")
     }
-    try remove(residue)
-  }
-
-  private func remove(_ url: URL) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let removed = url.lastPathComponent.withCString { Darwin.unlinkat(parent, $0, 0) }
-    guard removed == 0 || errno == ENOENT else {
-      throw EnvironmentLifecycleError.system("remove btop transaction residue", url, errno)
-    }
-    if removed == 0, fsync(parent) != 0 {
-      throw EnvironmentLifecycleError.system("sync btop transaction residue", url, errno)
-    }
+    try Self.filesystem.remove(residue)
   }
 }

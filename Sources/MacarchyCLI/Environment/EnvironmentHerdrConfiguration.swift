@@ -180,7 +180,7 @@ struct EnvironmentHerdrDocument {
     let themePrefix = selector.tableHeaderCount == 0 ? themeInsertionPrefix(in: original) : ""
     var named = original
     if selector.tableHeaderCount == 0 {
-      named += themePrefix + "[theme]" + preferredNewline(in: original)
+      named += themePrefix + "[theme]" + tomlPreferredNewline(in: original)
     }
     let namedParsed = try HerdrAdapter.parseConfiguration(named)
     named = try HerdrAdapter.replacingManagedSurface(
@@ -234,7 +234,7 @@ struct EnvironmentHerdrDocument {
       )
     }
     if selector.tableHeaderCount == 0 {
-      let newline = preferredNewline(in: base)
+      let newline = tomlPreferredNewline(in: base)
       if !base.isEmpty, !base.hasSuffix("\n"), !base.hasSuffix("\r") { base += newline }
       if !base.isEmpty { base += newline }
       base += "[theme]" + newline
@@ -378,7 +378,7 @@ struct EnvironmentHerdrDocument {
   }
 
   private static func insertionPrefix(in text: String) -> String {
-    let newline = preferredNewline(in: text)
+    let newline = tomlPreferredNewline(in: text)
     var candidate = text
     var prefix = ""
     if !candidate.isEmpty, !candidate.hasSuffix("\n"), !candidate.hasSuffix("\r") {
@@ -393,16 +393,18 @@ struct EnvironmentHerdrDocument {
 
   private static func themeInsertionPrefix(in text: String) -> String {
     guard !text.isEmpty else { return "" }
-    let newline = preferredNewline(in: text)
+    let newline = tomlPreferredNewline(in: text)
     return text.hasSuffix("\n") || text.hasSuffix("\r") ? newline : newline + newline
-  }
-
-  private static func preferredNewline(in text: String) -> String {
-    tomlPhysicalLines(text).first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
   }
 }
 
 struct EnvironmentHerdrFileTransaction: Sendable {
+  private static let filesystem = EnvironmentPresetFilesystem(
+    configurationLabel: "Herdr configuration",
+    residueLabel: "Herdr transaction residue",
+    nonRegularMessage: "Herdr configuration is not an ordinary single-link file"
+  )
+
   private enum ExpectedState: Equatable {
     case original
     case managed(GeneratedHerdrTheme)
@@ -424,11 +426,11 @@ struct EnvironmentHerdrFileTransaction: Sendable {
   func preflightOriginal(_ ownership: EnvironmentHerdrOwnership) throws {
     let url = URL(filePath: ownership.path)
     try validateTopology(ownership, at: url)
-    let data = try readData(URL(filePath: ownership.resolvedPath))
+    let data = try Self.filesystem.read(URL(filePath: ownership.resolvedPath))
     if data == nil, !ownership.originalFileExisted { return }
     guard let data,
       try EnvironmentHerdrDocument.matchesOriginal(
-        try utf8(data, at: url), ownership: ownership, source: url)
+        try Self.filesystem.utf8(data, at: url), ownership: ownership, source: url)
     else { throw EnvironmentLifecycleError.drift(url.path) }
   }
 
@@ -460,22 +462,22 @@ struct EnvironmentHerdrFileTransaction: Sendable {
     guard source != target else { return }
     let targetURL = URL(filePath: ownership.resolvedPath)
     let residueURL = targetURL.deletingLastPathComponent().appending(path: replacementName)
-    var current = try readData(targetURL)
-    if let residue = try readData(residueURL) {
+    var current = try Self.filesystem.read(targetURL)
+    if let residue = try Self.filesystem.read(residueURL) {
       if try matches(current, target, ownership: ownership, source: url),
         try matches(residue, source, ownership: ownership, source: residueURL)
       {
-        try removeResidue(residueURL)
+        try Self.filesystem.remove(residueURL)
         return
       }
       if try matches(current, source, ownership: ownership, source: url),
         try matches(residue, target, ownership: ownership, source: residueURL)
       {
-        try removeResidue(residueURL)
+        try Self.filesystem.remove(residueURL)
       } else {
         throw EnvironmentLifecycleError.drift("Herdr replacement residue")
       }
-      current = try readData(targetURL)
+      current = try Self.filesystem.read(targetURL)
     }
     if try matches(current, target, ownership: ownership, source: url) { return }
     guard try matches(current, source, ownership: ownership, source: url) else {
@@ -484,7 +486,7 @@ struct EnvironmentHerdrFileTransaction: Sendable {
 
     switch target {
     case .managed(let desired):
-      let currentText = try current.map { try utf8($0, at: url) } ?? ""
+      let currentText = try current.map { try Self.filesystem.utf8($0, at: url) } ?? ""
       let updated = try EnvironmentHerdrDocument.applyingManaged(
         currentText,
         desired: desired,
@@ -504,19 +506,23 @@ struct EnvironmentHerdrFileTransaction: Sendable {
     case .original:
       guard let current else { return }
       let restored = try EnvironmentHerdrDocument.restoringOriginal(
-        in: try utf8(current, at: url), ownership: ownership, source: url
+        in: try Self.filesystem.utf8(current, at: url), ownership: ownership, source: url
       )
       if !ownership.originalFileExisted,
         restored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       {
-        try claimAndRemove(at: targetURL, replacementName: replacementName, expected: current)
+        try Self.filesystem.claimAndRemove(
+          at: targetURL, replacementName: replacementName, expected: current)
       } else {
         try replace(
           Data(restored.utf8), current: current, at: targetURL, replacementName: replacementName
         )
       }
     }
-    guard try matches(try readData(targetURL), target, ownership: ownership, source: url) else {
+    guard
+      try matches(
+        try Self.filesystem.read(targetURL), target, ownership: ownership, source: url)
+    else {
       throw EnvironmentLifecycleError.drift(url.path)
     }
   }
@@ -531,14 +537,14 @@ struct EnvironmentHerdrFileTransaction: Sendable {
     case .managed(let desired):
       guard let data else { return false }
       return try EnvironmentHerdrDocument.matchesManaged(
-        try utf8(data, at: source),
+        try Self.filesystem.utf8(data, at: source),
         desired: desired,
         source: source
       )
     case .original:
       guard let data else { return !ownership.originalFileExisted }
       return try EnvironmentHerdrDocument.matchesOriginal(
-        try utf8(data, at: source), ownership: ownership, source: source
+        try Self.filesystem.utf8(data, at: source), ownership: ownership, source: source
       )
     }
   }
@@ -565,146 +571,24 @@ struct EnvironmentHerdrFileTransaction: Sendable {
 
   private func read(_ ownership: EnvironmentHerdrOwnership) throws -> String {
     let url = URL(filePath: ownership.resolvedPath)
-    guard let data = try readData(url) else {
+    guard let data = try Self.filesystem.read(url) else {
       throw EnvironmentLifecycleError.drift(url.path)
     }
-    return try utf8(data, at: url)
-  }
-
-  private func readData(_ url: URL) throws -> Data? {
-    var metadata = stat()
-    guard lstat(url.path, &metadata) == 0 else {
-      if errno == ENOENT { return nil }
-      throw EnvironmentLifecycleError.system("inspect Herdr configuration", url, errno)
-    }
-    guard metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1 else {
-      throw EnvironmentLifecycleError.blocked(
-        "Herdr configuration is not an ordinary single-link file: \(url.path)"
-      )
-    }
-    return try BoundedRegularFile.read(at: url, maximumSize: 1_048_576).data
-  }
-
-  private func utf8(_ data: Data, at url: URL) throws -> String {
-    guard let text = String(data: data, encoding: .utf8) else {
-      throw EnvironmentLifecycleError.blocked("Herdr configuration is not UTF-8: \(url.path)")
-    }
-    return text
+    return try Self.filesystem.utf8(data, at: url)
   }
 
   private func replace(_ data: Data, current: Data, at url: URL, replacementName: String) throws {
-    guard data != current else { return }
-    do {
-      try SetupOwnershipManager().replaceRegularFile(
-        target: url,
-        replacementName: replacementName,
-        homeDirectory: homeDirectory,
-        expectedDigest: sha256Digest(current),
-        data: data,
-        label: "Herdr theme surface"
-      )
-    } catch {
-      throw EnvironmentLifecycleError.blocked("cannot replace Herdr theme surface: \(error)")
-    }
+    try Self.filesystem.replace(
+      data, current: current, at: url, replacementName: replacementName,
+      homeDirectory: homeDirectory, label: "Herdr theme surface"
+    )
   }
 
   private func create(_ data: Data, at url: URL, replacementName: String) throws {
-    try ensureSafeParent(of: url)
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let temporary = url.deletingLastPathComponent().appending(path: replacementName)
-    try PinnedFilesystem.writeNewRegularFile(
-      parentDescriptor: parent,
-      name: replacementName,
-      url: temporary,
-      data: data,
-      mode: 0o600
-    )
-    var removeTemporary = true
-    defer {
-      if removeTemporary {
-        _ = replacementName.withCString { Darwin.unlinkat(parent, $0, 0) }
-      }
-    }
-    let published = replacementName.withCString { source in
-      url.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard published == 0 else {
-      throw EnvironmentLifecycleError.system("publish Herdr configuration", url, errno)
-    }
-    removeTemporary = false
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync Herdr configuration parent", url, errno)
-    }
-  }
-
-  private func claimAndRemove(at url: URL, replacementName: String, expected: Data) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let claimed = url.lastPathComponent.withCString { source in
-      replacementName.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard claimed == 0 else {
-      throw EnvironmentLifecycleError.system("claim Herdr configuration", url, errno)
-    }
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync claimed Herdr configuration", url, errno)
-    }
-    let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    guard try readData(residue) == expected else {
-      throw EnvironmentLifecycleError.drift("claimed Herdr configuration")
-    }
-    try removeResidue(residue)
-  }
-
-  private func removeResidue(_ url: URL) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let removed = url.lastPathComponent.withCString { Darwin.unlinkat(parent, $0, 0) }
-    guard removed == 0 || errno == ENOENT else {
-      throw EnvironmentLifecycleError.system("remove Herdr transaction residue", url, errno)
-    }
-    if removed == 0, fsync(parent) != 0 {
-      throw EnvironmentLifecycleError.system("sync Herdr transaction residue", url, errno)
-    }
-  }
-
-  private func ensureSafeParent(of url: URL) throws {
-    let home = homeDirectory.standardizedFileURL
-    let parent = url.deletingLastPathComponent().standardizedFileURL
-    guard parent.path == home.path || parent.path.hasPrefix(home.path + "/") else {
-      throw EnvironmentLifecycleError.blocked(
-        "Herdr configuration target is outside the selected home"
-      )
-    }
-    var descriptor = try PinnedFilesystem.openDirectory(at: home)
-    defer { Darwin.close(descriptor) }
-    var current = home
-    if parent.path != home.path {
-      for component in parent.path.dropFirst(home.path.count + 1).split(separator: "/") {
-        current.append(path: String(component), directoryHint: .isDirectory)
-        let next: Int32
-        do {
-          next = try PinnedFilesystem.openDirectory(
-            parentDescriptor: descriptor,
-            name: String(component),
-            url: current
-          )
-        } catch let error as PinnedFilesystemError where error.code == ENOENT {
-          next = try PinnedFilesystem.createDirectory(
-            parentDescriptor: descriptor,
-            name: String(component),
-            url: current
-          )
-        }
-        Darwin.close(descriptor)
-        descriptor = next
-      }
-    }
+    try ensureSafeEnvironmentParent(
+      of: url, homeDirectory: homeDirectory,
+      outsideHomeMessage: "Herdr configuration target is outside the selected home")
+    try Self.filesystem.create(data, at: url, replacementName: replacementName)
   }
 }
 

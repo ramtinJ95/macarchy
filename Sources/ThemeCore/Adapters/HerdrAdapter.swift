@@ -1053,9 +1053,7 @@ package struct HerdrAdapter: Sendable {
     with desired: ManagedSurface
   ) throws -> String {
     guard let name = desired.name else { throw HerdrAdapterError.invalidOwnership }
-    let newline =
-      tomlPhysicalLines(configuration).first(where: { !$0.terminator.isEmpty })?.terminator
-      ?? "\n"
+    let newline = tomlPreferredNewline(in: configuration)
     let replacement = "name = \"\(name)\""
     var updated = configuration
     if let nameIndex = parsed.nameIndex {

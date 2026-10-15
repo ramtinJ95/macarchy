@@ -93,6 +93,11 @@ package struct TOMLPhysicalLine {
   package let terminator: String
 }
 
+/// The first line terminator in `text`, or LF when it has none.
+package func tomlPreferredNewline(in text: String) -> String {
+  tomlPhysicalLines(text).first(where: { !$0.terminator.isEmpty })?.terminator ?? "\n"
+}
+
 package func tomlPhysicalLines(_ text: String) -> [TOMLPhysicalLine] {
   guard !text.isEmpty else { return [] }
   var lines = [TOMLPhysicalLine]()

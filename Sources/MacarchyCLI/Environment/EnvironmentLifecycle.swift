@@ -202,11 +202,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
       ? nil : transaction.spicetifyRuntimeTarget
   }
 
+  private func pendingHerdrRuntimeTarget(
+    _ transaction: EnvironmentTransaction
+  ) -> EnvironmentHerdrRuntimeTarget? {
+    transaction.herdrRuntimeVerified == true ? nil : transaction.herdrRuntimeTarget
+  }
+
   func pendingHerdrRuntimeTargetLocked() throws -> EnvironmentHerdrRuntimeTarget? {
-    guard let transaction = try EnvironmentStateStore(stateRoot: stateRoot).readTransaction(),
-      transaction.herdrRuntimeVerified != true
+    guard let transaction = try EnvironmentStateStore(stateRoot: stateRoot).readTransaction()
     else { return nil }
-    return transaction.herdrRuntimeTarget
+    return pendingHerdrRuntimeTarget(transaction)
   }
 
   func markHerdrRuntimeVerifiedLocked(_ target: EnvironmentHerdrRuntimeTarget) throws {
@@ -599,18 +604,16 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   func finishApplyLocked(composition: EnvironmentComposition) throws {
-    if try pendingBordersRuntimeTargetLocked() != nil {
-      throw EnvironmentLifecycleError.blocked("Borders runtime transition is not verified")
-    }
-    if try pendingHerdrRuntimeTargetLocked() != nil {
-      throw EnvironmentLifecycleError.blocked(
-        "Herdr runtime activation is not verified"
-      )
-    }
-    if try pendingSpicetifyRuntimeTargetLocked() != nil {
-      throw EnvironmentLifecycleError.blocked(
-        "Spicetify runtime refresh is not verified"
-      )
+    if let transaction = try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() {
+      if transaction.pendingBordersRuntimeTarget != nil {
+        throw EnvironmentLifecycleError.blocked("Borders runtime transition is not verified")
+      }
+      if pendingHerdrRuntimeTarget(transaction) != nil {
+        throw EnvironmentLifecycleError.blocked("Herdr runtime activation is not verified")
+      }
+      if pendingSpicetifyRuntimeTarget(transaction) != nil {
+        throw EnvironmentLifecycleError.blocked("Spicetify runtime refresh is not verified")
+      }
     }
     let inspection = inspector.inspect(
       composition: composition,
@@ -1477,7 +1480,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   private func publishManaged(_ entry: EnvironmentManagedEntry) throws {
-    try ensureSafeParent(of: entry.url)
+    try ensureSafeEnvironmentParent(
+      of: entry.url, homeDirectory: homeDirectory,
+      outsideHomeMessage: "provider entry is outside the selected home")
     let parent = entry.url.deletingLastPathComponent()
     let parentDescriptor = try PinnedFilesystem.openDirectory(at: parent)
     defer { Darwin.close(parentDescriptor) }
@@ -1561,39 +1566,6 @@ struct EnvironmentTransactionCoordinator: Sendable {
     ) == expected
   }
 
-  private func ensureSafeParent(of url: URL) throws {
-    let home = homeDirectory.standardizedFileURL
-    let parent = url.deletingLastPathComponent().standardizedFileURL
-    guard parent.path == home.path || parent.path.hasPrefix(home.path + "/") else {
-      throw EnvironmentLifecycleError.blocked("provider entry is outside the selected home")
-    }
-    var descriptor = try PinnedFilesystem.openDirectory(at: home)
-    defer { Darwin.close(descriptor) }
-    var current = home
-    if parent.path != home.path {
-      let relative = parent.path.dropFirst(home.path.count + 1).split(separator: "/")
-      for component in relative {
-        current.append(path: String(component), directoryHint: .isDirectory)
-        let next: Int32
-        do {
-          next = try PinnedFilesystem.openDirectory(
-            parentDescriptor: descriptor,
-            name: String(component),
-            url: current
-          )
-        } catch let error as PinnedFilesystemError where error.code == ENOENT {
-          next = try PinnedFilesystem.createDirectory(
-            parentDescriptor: descriptor,
-            name: String(component),
-            url: current
-          )
-        }
-        Darwin.close(descriptor)
-        descriptor = next
-      }
-    }
-  }
-
   private func retainedURL(for entry: EnvironmentManagedEntry) -> URL {
     entry.url.deletingLastPathComponent().appending(
       path: ".macarchy-environment-\(entry.id.rawValue)-\(UUID().uuidString.lowercased()).retained"
@@ -1631,6 +1603,42 @@ struct EnvironmentTransactionCoordinator: Sendable {
       if removed == 0, fsync(parent) != 0 {
         throw EnvironmentLifecycleError.system("sync removed provider directory", url, errno)
       }
+    }
+  }
+}
+
+/// Opens each directory from `homeDirectory` down to `url`'s parent without following symbolic
+/// links, creating the missing ones.
+func ensureSafeEnvironmentParent(
+  of url: URL, homeDirectory: URL, outsideHomeMessage: String
+) throws {
+  let home = homeDirectory.standardizedFileURL
+  let parent = url.deletingLastPathComponent().standardizedFileURL
+  guard parent.path == home.path || parent.path.hasPrefix(home.path + "/") else {
+    throw EnvironmentLifecycleError.blocked(outsideHomeMessage)
+  }
+  var descriptor = try PinnedFilesystem.openDirectory(at: home)
+  defer { Darwin.close(descriptor) }
+  var current = home
+  if parent.path != home.path {
+    for component in parent.path.dropFirst(home.path.count + 1).split(separator: "/") {
+      current.append(path: String(component), directoryHint: .isDirectory)
+      let next: Int32
+      do {
+        next = try PinnedFilesystem.openDirectory(
+          parentDescriptor: descriptor,
+          name: String(component),
+          url: current
+        )
+      } catch let error as PinnedFilesystemError where error.code == ENOENT {
+        next = try PinnedFilesystem.createDirectory(
+          parentDescriptor: descriptor,
+          name: String(component),
+          url: current
+        )
+      }
+      Darwin.close(descriptor)
+      descriptor = next
     }
   }
 }
