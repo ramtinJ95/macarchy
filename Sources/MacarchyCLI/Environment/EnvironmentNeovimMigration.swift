@@ -329,6 +329,7 @@ struct EnvironmentNeovimMigration: Sendable {
 extension EnvironmentOwnership {
   func replacingTarget(for id: EnvironmentEntryID, with target: String) -> Self {
     Self(
+      copying: self,
       generationID: generationID,
       records: records.map { record in
         guard record.id == id else { return record }
@@ -336,12 +337,7 @@ extension EnvironmentOwnership {
           id: record.id, publicPath: record.publicPath, managedKind: record.managedKind,
           managedTarget: target, original: record.original, retainedPath: record.retainedPath)
       },
-      createdDirectories: createdDirectories, originalThemeBridges: originalThemeBridges,
-      btop: btop, borders: borders, codex: codex, herdr: herdr, pi: pi,
-      spicetify: spicetify, tuicr: tuicr, codexEnabled: codexEnabled,
-      herdrEnabled: herdrEnabled, piEnabled: piEnabled, slackEnabled: slackEnabled,
-      spicetifyEnabled: spicetifyEnabled, tuicrEnabled: tuicrEnabled,
-      enabledThemeAdapterIDs: enabledThemeAdapterIDs,
+      herdr: herdr, enabledThemeAdapterIDs: enabledThemeAdapterIDs,
       standardNativeEntries: standardNativeEntries ?? [])
   }
 }
