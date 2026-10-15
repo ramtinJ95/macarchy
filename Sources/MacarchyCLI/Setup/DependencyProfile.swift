@@ -97,6 +97,14 @@ enum DependencyRemediation: Encodable, Sendable {
     )
   }
 
+  var instruction: String {
+    switch self {
+    case .cask(let package): "Install Homebrew cask \(package)."
+    case .formula(let package): "Install Homebrew formula \(package)."
+    case .external(let instruction, _): instruction
+    }
+  }
+
   var homebrewPackage: HomebrewPackageIdentity? {
     switch self {
     case .formula(let name): HomebrewPackageIdentity(kind: .formula, name: name)

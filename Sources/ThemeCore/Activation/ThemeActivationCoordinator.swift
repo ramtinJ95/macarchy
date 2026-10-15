@@ -669,7 +669,7 @@ package struct ThemeActivationCoordinator: Sendable {
     )
     var preferences = try backgroundPreferences.load()
     if recoverActivePreference,
-      let active = try activeManifestIfPresent(),
+      let active = try statusStore.activeManifestIfPresent(),
       active.manifestSchemaVersion == GenerationManifest.currentSchemaVersion
     {
       try rememberBackground(of: active, in: &preferences)
@@ -746,14 +746,6 @@ package struct ThemeActivationCoordinator: Sendable {
     }
   }
 
-  private func activeManifestIfPresent() throws -> GenerationManifest? {
-    do {
-      return try statusStore.activeManifest()
-    } catch ReconciliationStatusError.noActiveGeneration {
-      return nil
-    }
-  }
-
   /// Records the manifest's background choice, persisting only when it changed.
   private func rememberBackground(
     of manifest: GenerationManifest,
@@ -767,7 +759,7 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   private func previousReconciliationEvidence() throws -> PreviousReconciliationEvidence? {
-    guard let manifest = try activeManifestIfPresent() else { return nil }
+    guard let manifest = try statusStore.activeManifestIfPresent() else { return nil }
     let record: ReconciliationRecord? =
       if case .current(let record)? = try? statusStore.reconciliationState(for: manifest) {
         record

@@ -103,7 +103,7 @@ struct DesktopPrerequisiteInspector: Sendable {
             id: $0.id,
             status: $0.isAvailable() ? .present : .missing,
             requirement: $0.requirement,
-            remediation: remediation($0.remediation)
+            remediation: $0.remediation.instruction
           )
         }
         .sorted { $0.id < $1.id }
@@ -114,17 +114,6 @@ struct DesktopPrerequisiteInspector: Sendable {
           requirement: "Cannot resolve selected module prerequisites: \(error)",
           remediation: "Repair the reported SketchyBar configuration before applying.")
       ]
-    }
-  }
-
-  private static func remediation(_ remediation: DependencyRemediation) -> String {
-    switch remediation {
-    case .cask(let package):
-      "Install Homebrew cask \(package)."
-    case .formula(let package):
-      "Install Homebrew formula \(package)."
-    case .external(let instruction, _):
-      instruction
     }
   }
 }
