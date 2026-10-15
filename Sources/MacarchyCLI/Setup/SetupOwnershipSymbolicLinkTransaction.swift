@@ -296,7 +296,7 @@ extension SetupOwnershipManager {
     var metadata = stat()
     if lstat(url.path, &metadata) != 0 {
       if errno == ENOENT { return .missing }
-      throw posixError("inspect theme link", url)
+      throw SetupOwnershipError.posix("inspect theme link", url)
     }
     guard metadata.st_mode & S_IFMT == S_IFLNK else { return .other }
     do {
@@ -360,14 +360,16 @@ extension SetupOwnershipManager {
         Darwin.symlinkat(destinationPath, parentDescriptor, namePath)
       }
     }
-    guard created == 0 else { throw posixError("create \(label) link", target) }
+    guard created == 0 else { throw SetupOwnershipError.posix("create \(label) link", target) }
     guard
       try readPinnedSymbolicLink(parentDescriptor: parentDescriptor, name: name, url: target)
         == destinationPath
     else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
-    guard fsync(parentDescriptor) == 0 else { throw posixError("sync \(label) link", target) }
+    guard fsync(parentDescriptor) == 0 else {
+      throw SetupOwnershipError.posix("sync \(label) link", target)
+    }
   }
 
   func removePinnedSymbolicLink(
@@ -430,10 +432,10 @@ extension SetupOwnershipManager {
       throw error
     }
     guard removalName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
-      throw posixError("remove claimed \(label) link", removalURL)
+      throw SetupOwnershipError.posix("remove claimed \(label) link", removalURL)
     }
     guard fsync(parentDescriptor) == 0 else {
-      throw posixError("sync removed \(label) link", target)
+      throw SetupOwnershipError.posix("sync removed \(label) link", target)
     }
   }
 
@@ -493,10 +495,10 @@ extension SetupOwnershipManager {
       }
     }
     guard restored == 0 else {
-      throw posixError("restore concurrently replaced \(label) link", removalURL)
+      throw SetupOwnershipError.posix("restore concurrently replaced \(label) link", removalURL)
     }
     guard fsync(parentDescriptor) == 0 else {
-      throw posixError("sync restored \(label) link", target)
+      throw SetupOwnershipError.posix("sync restored \(label) link", target)
     }
   }
 
@@ -510,7 +512,9 @@ extension SetupOwnershipManager {
     let inspection = name.withCString {
       Darwin.fstatat(parentDescriptor, $0, &metadata, AT_SYMLINK_NOFOLLOW)
     }
-    guard inspection == 0 else { throw posixError("inspect claimed theme link", url) }
+    guard inspection == 0 else {
+      throw SetupOwnershipError.posix("inspect claimed theme link", url)
+    }
     guard metadata.st_mode & S_IFMT == S_IFLNK else { return false }
     return try readPinnedSymbolicLink(
       parentDescriptor: parentDescriptor,
@@ -538,7 +542,7 @@ extension SetupOwnershipManager {
           "destination is not UTF-8"
         )
       }
-      throw posixError("read pinned theme link", url, code: error.code)
+      throw SetupOwnershipError.posix("read pinned theme link", url, code: error.code)
     }
   }
 }

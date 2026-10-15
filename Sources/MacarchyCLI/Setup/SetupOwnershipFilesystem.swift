@@ -16,8 +16,7 @@ extension SetupOwnershipManager {
       candidate.append(path: String(component))
       var metadata = stat()
       guard lstat(candidate.path, &metadata) == 0 else {
-        let cause = String(cString: strerror(errno))
-        throw SetupOwnershipError.system("inspect", candidate, cause)
+        throw SetupOwnershipError.posix("inspect", candidate)
       }
       if metadata.st_mode & S_IFMT == S_IFLNK { return true }
     }
@@ -60,7 +59,7 @@ extension SetupOwnershipManager {
       candidate.append(path: String(component))
       var metadata = stat()
       guard lstat(candidate.path, &metadata) == 0 else {
-        throw posixError("inspect integration parent", candidate)
+        throw SetupOwnershipError.posix("inspect integration parent", candidate)
       }
       if metadata.st_mode & S_IFMT == S_IFLNK { return true }
       guard metadata.st_mode & S_IFMT == S_IFDIR else {

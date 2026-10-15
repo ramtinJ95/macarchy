@@ -239,6 +239,17 @@ package func sha256Digest(_ data: Data) -> String {
   "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
 
+/// Digest of each value's UTF-8 bytes framed as `<byte count>:<bytes>`, in order.
+package func lengthPrefixedSHA256Digest(_ values: some Sequence<String>) -> String {
+  var data = Data()
+  for value in values {
+    let bytes = Data(value.utf8)
+    data.append(Data("\(bytes.count):".utf8))
+    data.append(bytes)
+  }
+  return sha256Digest(data)
+}
+
 /// Digest of the compact, key-sorted JSON encoding used for composition input identities.
 package func canonicalJSONDigest<Value: Encodable>(_ value: Value) throws -> String {
   let encoder = JSONEncoder()

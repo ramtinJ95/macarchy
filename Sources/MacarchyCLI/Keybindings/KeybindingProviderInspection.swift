@@ -24,14 +24,9 @@ struct KeybindingAdoptionEvidence: Equatable, Sendable {
   let inventory: [String]
 
   var digest: String {
-    let values = [kind.rawValue, linkDestination ?? "", contentDigest ?? ""] + inventory
-    var data = Data()
-    for value in values {
-      let bytes = Data(value.utf8)
-      data.append(Data("\(bytes.count):".utf8))
-      data.append(bytes)
-    }
-    return sha256Digest(data)
+    lengthPrefixedSHA256Digest(
+      [kind.rawValue, linkDestination ?? "", contentDigest ?? ""] + inventory
+    )
   }
 }
 

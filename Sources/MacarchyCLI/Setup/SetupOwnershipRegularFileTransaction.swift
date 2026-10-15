@@ -475,7 +475,9 @@ extension SetupOwnershipManager {
     let descriptor = temporary.path.withCString {
       Darwin.open($0, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0o600)
     }
-    guard descriptor >= 0 else { throw posixError("create temporary backup", temporary) }
+    guard descriptor >= 0 else {
+      throw SetupOwnershipError.posix("create temporary backup", temporary)
+    }
     defer { Darwin.close(descriptor) }
     var published = false
     defer {
@@ -487,13 +489,15 @@ extension SetupOwnershipManager {
       url: temporary,
       operation: "write temporary \(record.id) backup"
     )
-    guard fsync(descriptor) == 0 else { throw posixError("sync temporary backup", temporary) }
+    guard fsync(descriptor) == 0 else {
+      throw SetupOwnershipError.posix("sync temporary backup", temporary)
+    }
     let publication = temporary.path.withCString { source in
       backupURL.path.withCString { destination in
         Darwin.renamex_np(source, destination, UInt32(RENAME_EXCL))
       }
     }
-    guard publication == 0 else { throw posixError("publish backup", backupURL) }
+    guard publication == 0 else { throw SetupOwnershipError.posix("publish backup", backupURL) }
     published = true
     _ = try readRegularBackup(record: record, backupURL: backupURL)
   }
@@ -550,7 +554,7 @@ extension SetupOwnershipManager {
     }
     if residueDescriptor < 0, errno == ENOENT { return nil }
     guard residueDescriptor >= 0 else {
-      throw posixError("open \(residueDescription)", replacementURL)
+      throw SetupOwnershipError.posix("open \(residueDescription)", replacementURL)
     }
     defer { Darwin.close(residueDescriptor) }
 
@@ -568,7 +572,7 @@ extension SetupOwnershipManager {
     let result = try classify(residue.data, current.data)
     if remove {
       guard replacementName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
-        throw posixError("remove \(residueDescription)", replacementURL)
+        throw SetupOwnershipError.posix("remove \(residueDescription)", replacementURL)
       }
     }
     return result
@@ -618,7 +622,9 @@ extension SetupOwnershipManager {
         0o600
       )
     }
-    guard temporaryDescriptor >= 0 else { throw posixError("create temporary \(label)", target) }
+    guard temporaryDescriptor >= 0 else {
+      throw SetupOwnershipError.posix("create temporary \(label)", target)
+    }
     defer { Darwin.close(temporaryDescriptor) }
     var cleanupTemporary = true
     defer {
@@ -633,7 +639,9 @@ extension SetupOwnershipManager {
       url: target,
       operation: "write temporary \(label) configuration"
     )
-    guard fsync(temporaryDescriptor) == 0 else { throw posixError("sync \(label)", target) }
+    guard fsync(temporaryDescriptor) == 0 else {
+      throw SetupOwnershipError.posix("sync \(label)", target)
+    }
     guard
       fcopyfile(
         currentDescriptor,
@@ -642,10 +650,10 @@ extension SetupOwnershipManager {
         copyfile_flags_t(COPYFILE_METADATA)
       ) == 0
     else {
-      throw posixError("copy \(label) metadata", target)
+      throw SetupOwnershipError.posix("copy \(label) metadata", target)
     }
     guard fsync(temporaryDescriptor) == 0 else {
-      throw posixError("sync \(label) metadata", target)
+      throw SetupOwnershipError.posix("sync \(label) metadata", target)
     }
     try faultInjector(.replacementReady)
     let rechecked = try readPinnedRegularFileSnapshot(
@@ -662,7 +670,7 @@ extension SetupOwnershipManager {
     }
     guard swap(parentDescriptor: parentDescriptor, first: replacementName, second: targetName) == 0
     else {
-      throw posixError("replace \(label)", target)
+      throw SetupOwnershipError.posix("replace \(label)", target)
     }
     // After publication this name holds displaced user data, not disposable
     // staging. Retain it on every unclassified verification failure.
@@ -674,7 +682,7 @@ extension SetupOwnershipManager {
       guard
         swap(parentDescriptor: parentDescriptor, first: replacementName, second: targetName) == 0
       else {
-        throw posixError("restore concurrently changed \(label)", target)
+        throw SetupOwnershipError.posix("restore concurrently changed \(label)", target)
       }
       cleanupTemporary = true
       throw error
@@ -709,10 +717,10 @@ extension SetupOwnershipManager {
       try restoreOriginal(andThrow: SetupOwnershipError.ownershipDrift(target))
     }
     guard replacementName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
-      throw posixError("remove displaced \(label)", target)
+      throw SetupOwnershipError.posix("remove displaced \(label)", target)
     }
     guard fsync(parentDescriptor) == 0 else {
-      throw posixError("sync replaced \(label) parent", target)
+      throw SetupOwnershipError.posix("sync replaced \(label) parent", target)
     }
   }
 
@@ -738,7 +746,7 @@ extension SetupOwnershipManager {
     var descriptor = home.path.withCString {
       Darwin.open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
     }
-    guard descriptor >= 0 else { throw posixError("open home directory", home) }
+    guard descriptor >= 0 else { throw SetupOwnershipError.posix("open home directory", home) }
     var candidate = home
     for component in relativeParent.split(separator: "/") {
       candidate.append(path: String(component))
@@ -748,7 +756,7 @@ extension SetupOwnershipManager {
       let code = errno
       Darwin.close(descriptor)
       guard next >= 0 else {
-        throw posixError("open pinned \(label) directory", candidate, code: code)
+        throw SetupOwnershipError.posix("open pinned \(label) directory", candidate, code: code)
       }
       descriptor = next
     }
@@ -764,7 +772,7 @@ extension SetupOwnershipManager {
     let descriptor = name.withCString {
       Darwin.openat(parentDescriptor, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
     }
-    guard descriptor >= 0 else { throw posixError("open pinned \(label)", url) }
+    guard descriptor >= 0 else { throw SetupOwnershipError.posix("open pinned \(label)", url) }
     return descriptor
   }
 
@@ -842,7 +850,7 @@ extension SetupOwnershipManager {
   ) throws -> RegularFileSnapshot {
     var metadata = stat()
     guard fstat(descriptor, &metadata) == 0 else {
-      throw posixError("inspect pinned \(label) metadata", url)
+      throw SetupOwnershipError.posix("inspect pinned \(label) metadata", url)
     }
     return try RegularFileSnapshot(
       metadata: metadata,
@@ -868,12 +876,12 @@ extension SetupOwnershipManager {
     errno = 0
     guard let acl = acl_get_fd_np(descriptor, ACL_TYPE_EXTENDED) else {
       if errno == ENOENT { return Data() }
-      throw posixError("inspect pinned \(label) access control list", url)
+      throw SetupOwnershipError.posix("inspect pinned \(label) access control list", url)
     }
     defer { acl_free(UnsafeMutableRawPointer(acl)) }
     var length: ssize_t = 0
     guard let text = acl_to_text(acl, &length) else {
-      throw posixError("read pinned \(label) access control list", url)
+      throw SetupOwnershipError.posix("read pinned \(label) access control list", url)
     }
     defer { acl_free(UnsafeMutableRawPointer(text)) }
     return Data(bytes: text, count: length)
@@ -886,7 +894,7 @@ extension SetupOwnershipManager {
     excluding excludedAttribute: String? = nil
   ) throws -> [String: Data] {
     let size = Darwin.flistxattr(descriptor, nil, 0, 0)
-    guard size >= 0 else { throw posixError("list pinned \(label) attributes", url) }
+    guard size >= 0 else { throw SetupOwnershipError.posix("list pinned \(label) attributes", url) }
     guard size > 0 else { return [:] }
     let excludedNameBytes = excludedAttribute.map { $0.utf8.count + 1 } ?? 0
     guard size <= Self.maximumExtendedAttributeNameBytes + excludedNameBytes else {
@@ -898,7 +906,9 @@ extension SetupOwnershipManager {
     }
     var names = [CChar](repeating: 0, count: size)
     let count = Darwin.flistxattr(descriptor, &names, names.count, 0)
-    guard count == size else { throw posixError("read pinned \(label) attribute names", url) }
+    guard count == size else {
+      throw SetupOwnershipError.posix("read pinned \(label) attribute names", url)
+    }
 
     var attributes = [String: Data]()
     let bytes = names.prefix(count).map { UInt8(bitPattern: $0) }
@@ -939,7 +949,9 @@ extension SetupOwnershipManager {
       let valueSize = name.withCString {
         Darwin.fgetxattr(descriptor, $0, nil, 0, 0, 0)
       }
-      guard valueSize >= 0 else { throw posixError("inspect pinned \(label) attribute", url) }
+      guard valueSize >= 0 else {
+        throw SetupOwnershipError.posix("inspect pinned \(label) attribute", url)
+      }
       guard valueSize <= Self.maximumExtendedAttributeValueSize else {
         throw extendedAttributeLimitError(
           url: url,
@@ -966,7 +978,7 @@ extension SetupOwnershipManager {
         }
       }
       guard valueCount == valueSize else {
-        throw posixError("read pinned \(label) attribute", url)
+        throw SetupOwnershipError.posix("read pinned \(label) attribute", url)
       }
       attributes[name] = value
     }
@@ -1033,7 +1045,7 @@ extension SetupOwnershipManager {
         )
         if count < 0 {
           if errno == EINTR { continue }
-          throw posixError(operation, url)
+          throw SetupOwnershipError.posix(operation, url)
         }
         guard count > 0 else {
           throw SetupOwnershipError.system(
@@ -1045,21 +1057,13 @@ extension SetupOwnershipManager {
     }
   }
 
-  func posixError(
-    _ operation: String,
-    _ url: URL,
-    code: Int32 = errno
-  ) -> SetupOwnershipError {
-    .system(operation, url, String(cString: strerror(code)))
-  }
-
   func removeRegularFileIfPresent(
     _ url: URL,
     unsafe error: SetupOwnershipError
   ) throws {
     guard try validateRegularFileIfPresent(url, unsafe: error) else { return }
     guard Darwin.unlink(url.path) == 0 else {
-      throw posixError("remove setup state", url)
+      throw SetupOwnershipError.posix("remove setup state", url)
     }
   }
 
@@ -1070,7 +1074,7 @@ extension SetupOwnershipManager {
     var metadata = stat()
     if lstat(url.path, &metadata) != 0 {
       if errno == ENOENT { return false }
-      throw posixError("inspect setup state for removal", url)
+      throw SetupOwnershipError.posix("inspect setup state for removal", url)
     }
     guard metadata.st_mode & S_IFMT == S_IFREG else { throw error }
     return true
@@ -1080,9 +1084,7 @@ extension SetupOwnershipManager {
     var metadata = stat()
     if lstat(url.path, &metadata) == 0 { return true }
     if errno == ENOENT { return false }
-    throw SetupOwnershipError.system(
-      "inspect", url, String(cString: strerror(errno))
-    )
+    throw SetupOwnershipError.posix("inspect", url)
   }
 
   struct RegularFileSnapshot: Equatable, Codable, Sendable {
@@ -1148,24 +1150,15 @@ extension SetupOwnershipManager {
       overridingMode: UInt16? = nil,
       excludingExtendedAttribute excludedAttribute: String? = nil
     ) -> String {
-      var data = Data()
-      func append(_ value: String) {
-        let bytes = Data(value.utf8)
-        data.append(Data("\(bytes.count):".utf8))
-        data.append(bytes)
-      }
-      append(String(overridingMode.map(UInt32.init) ?? (mode & 0o7777)))
-      append(String(owner))
-      append(String(group))
-      append(String(flags))
-      append(String(modifiedSeconds))
-      append(String(modifiedNanoseconds))
+      var values: [String] = [
+        String(overridingMode.map(UInt32.init) ?? (mode & 0o7777)), String(owner), String(group),
+        String(flags), String(modifiedSeconds), String(modifiedNanoseconds),
+      ]
       for name in extendedAttributes.keys.sorted() where name != excludedAttribute {
-        append(name)
-        append(extendedAttributes[name, default: Data()].base64EncodedString())
+        values += [name, extendedAttributes[name, default: Data()].base64EncodedString()]
       }
-      append(accessControlList.base64EncodedString())
-      return sha256Digest(data)
+      values.append(accessControlList.base64EncodedString())
+      return lengthPrefixedSHA256Digest(values)
     }
   }
 }
