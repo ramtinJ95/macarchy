@@ -4,19 +4,8 @@ import ThemeCore
 struct DoctorCommandRunner: Sendable {
   let read: @Sendable (URL) throws -> ThemeStatusSnapshot
   let inspect: @Sendable (URL, ThemeConsumerPaths) throws -> [AdapterInspection]
-  let enabledAdapterIDs: @Sendable (URL, ThemeConsumerPaths) throws -> Set<String>
-
-  init(
-    read: @escaping @Sendable (URL) throws -> ThemeStatusSnapshot,
-    inspect: @escaping @Sendable (URL, ThemeConsumerPaths) throws -> [AdapterInspection],
-    enabledAdapterIDs: @escaping @Sendable (URL, ThemeConsumerPaths) throws -> Set<String> = {
-      _, _ in
-      Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([BordersAdapter.id])
-    }
-  ) {
-    self.read = read
-    self.inspect = inspect
-    self.enabledAdapterIDs = enabledAdapterIDs
+  var enabledAdapterIDs: @Sendable (URL, ThemeConsumerPaths) throws -> Set<String> = { _, _ in
+    Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([BordersAdapter.id])
   }
 
   static let live = DoctorCommandRunner(

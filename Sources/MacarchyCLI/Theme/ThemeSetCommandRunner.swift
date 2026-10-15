@@ -6,7 +6,7 @@ struct ThemeSetCommandRunner: Sendable {
   let activate:
     @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths, String?) async throws
       -> ThemeActivationResult
-  let slackIsEnabled: @Sendable (URL) throws -> Bool
+  var slackIsEnabled: @Sendable (URL) throws -> Bool = { _ in true }
 
   static let live = ThemeSetCommandRunner(
     preflight: { package, backgroundID, stateRoot, consumerPaths in
@@ -30,19 +30,6 @@ struct ThemeSetCommandRunner: Sendable {
     }
   )
 
-  init(
-    preflight: @escaping @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths) throws -> Void,
-    activate:
-      @escaping @Sendable (
-        ThemePackage, String?, URL, ThemeConsumerPaths, String?
-      ) async throws -> ThemeActivationResult,
-    slackIsEnabled: @escaping @Sendable (URL) throws -> Bool = { _ in true }
-  ) {
-    self.preflight = preflight
-    self.activate = activate
-    self.slackIsEnabled = slackIsEnabled
-  }
-
   func execute(
     repository: ThemeRepository,
     themeID: String,
@@ -65,8 +52,7 @@ struct ThemeSetCommandRunner: Sendable {
       )
     }
     do {
-      if dryRun { return try await run() }
-      return try await ThemePackageLock(root: stateRoot).withLock(run)
+      return try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: dryRun, run)
     } catch {
       let report = ThemeSetReport.precommitFailure(themeID: themeID, error: error)
       return (try report.render(json: json), report.succeeded)
@@ -142,5 +128,28 @@ struct ThemeSetCommandRunner: Sendable {
       }
     }
     return report
+  }
+}
+
+/// Runs `operation` under the theme package lock; dry runs never mutate, so they skip it.
+func withThemePackageLock<Output: Sendable>(
+  stateRoot: URL,
+  unlessDryRun dryRun: Bool,
+  _ operation: @escaping @Sendable () async throws -> Output
+) async throws -> Output {
+  if dryRun { return try await operation() }
+  return try await ThemePackageLock(root: stateRoot).withLock(operation)
+}
+
+/// Repeats `attempt` while activation reports that the active generation changed under it.
+func retryingActiveGenerationChanges<Output>(
+  _ attempt: () async throws -> Output
+) async throws -> Output {
+  while true {
+    do {
+      return try await attempt()
+    } catch ThemeActivationError.activeGenerationChanged {
+      continue
+    }
   }
 }

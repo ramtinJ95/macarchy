@@ -155,20 +155,15 @@ struct ThemeInstallCommandRunner: Sendable {
           expectedActiveGenerationID: nil
         )
         let transactionError: String?
-        if activationReport.jsonReport.committed {
-          do {
+        do {
+          if activationReport.jsonReport.committed {
             try installation.finish()
-            transactionError = nil
-          } catch {
-            transactionError = String(describing: error)
-          }
-        } else {
-          do {
+          } else {
             try installation.rollback()
-            transactionError = nil
-          } catch {
-            transactionError = String(describing: error)
           }
+          transactionError = nil
+        } catch {
+          transactionError = String(describing: error)
         }
         let report = ThemeInstallReport.activation(
           conversion: converted.report,

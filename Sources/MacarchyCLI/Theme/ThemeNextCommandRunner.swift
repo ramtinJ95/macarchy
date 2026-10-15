@@ -34,7 +34,7 @@ struct ThemeNextCommandRunner: Sendable {
   ) async throws -> (output: String, succeeded: Bool) {
     let run: @Sendable () async throws -> (output: String, succeeded: Bool) = {
       let packages = try repository.packages()
-      while true {
+      return try await retryingActiveGenerationChanges {
         let active: GenerationManifest
         do {
           active = try activeManifest(stateRoot)
@@ -44,22 +44,16 @@ struct ThemeNextCommandRunner: Sendable {
         guard let activeIndex = packages.firstIndex(where: { $0.id == active.themeID }) else {
           throw ThemeNextError.activeThemeUnavailable(active.themeID)
         }
-        let package = packages[(activeIndex + 1) % packages.count]
-        do {
-          return try await activation.execute(
-            package: package,
-            stateRoot: stateRoot,
-            consumerPaths: consumerPaths,
-            dryRun: dryRun,
-            expectedActiveGenerationID: dryRun ? nil : active.generationID,
-            json: false
-          )
-        } catch ThemeActivationError.activeGenerationChanged {
-          continue
-        }
+        return try await activation.execute(
+          package: packages[(activeIndex + 1) % packages.count],
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths,
+          dryRun: dryRun,
+          expectedActiveGenerationID: dryRun ? nil : active.generationID,
+          json: false
+        )
       }
     }
-    if dryRun { return try await run() }
-    return try await ThemePackageLock(root: stateRoot).withLock(run)
+    return try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: dryRun, run)
   }
 }
