@@ -41,6 +41,17 @@ struct DesktopApplyCommandRunner: Sendable {
     self.sketchyBarFaultInjector = sketchyBarFaultInjector
   }
 
+  private var coordinator: DesktopAggregateCoordinator {
+    DesktopAggregateCoordinator(
+      lifecycle: lifecycle,
+      sketchyBarLifecycle: sketchyBarLifecycle,
+      sketchyBarCoreRuntime: sketchyBarCoreRuntime,
+      keybindings: keybindings,
+      faultInjector: faultInjector,
+      sketchyBarFaultInjector: sketchyBarFaultInjector
+    )
+  }
+
   /// Caller holds ActivationLock and has checked the frozen editor session.
   /// Deliberately bypasses aggregate apply, adoption and unrelated recovery.
   func applyPersonalConfigurationLocked(
@@ -261,14 +272,6 @@ struct DesktopApplyCommandRunner: Sendable {
 
     let mutations: DesktopAggregateMutations
     let mutationStarted = Mutex(false)
-    let coordinator = DesktopAggregateCoordinator(
-      lifecycle: lifecycle,
-      sketchyBarLifecycle: sketchyBarLifecycle,
-      sketchyBarCoreRuntime: sketchyBarCoreRuntime,
-      keybindings: keybindings,
-      faultInjector: faultInjector,
-      sketchyBarFaultInjector: sketchyBarFaultInjector
-    )
     do {
       mutations = try ActivationLock(root: stateRoot).withLock {
         do {
@@ -286,8 +289,7 @@ struct DesktopApplyCommandRunner: Sendable {
           adopt: adopt,
           keybindingsAdopt: keybindingsAdopt,
           sketchyBarAdopt: sketchyBarAdopt,
-          profile: desired.profile,
-          coordinator: coordinator
+          profile: desired.profile
         )
         let store = DesktopAggregateTransactionStore(stateRoot: stateRoot)
         try store.write(
@@ -483,14 +485,6 @@ struct DesktopApplyCommandRunner: Sendable {
           "the pending desktop aggregate operation is not apply"
         )
       }
-      let coordinator = DesktopAggregateCoordinator(
-        lifecycle: lifecycle,
-        sketchyBarLifecycle: sketchyBarLifecycle,
-        sketchyBarCoreRuntime: sketchyBarCoreRuntime,
-        keybindings: keybindings,
-        faultInjector: faultInjector,
-        sketchyBarFaultInjector: sketchyBarFaultInjector
-      )
       if commit {
         if transaction.phase == .mutating {
           try store.write(
@@ -524,8 +518,7 @@ struct DesktopApplyCommandRunner: Sendable {
     adopt: String?,
     keybindingsAdopt: String?,
     sketchyBarAdopt: String?,
-    profile: PortableProfile,
-    coordinator: DesktopAggregateCoordinator
+    profile: PortableProfile
   ) throws {
     let missing = prerequisites.inspect(desired.profile, homeDirectory).filter {
       $0.status == .missing
@@ -635,13 +628,8 @@ struct DesktopApplyCommandRunner: Sendable {
     adopt: String?,
     deferFinalization: Bool = false
   ) throws -> ApplyResult {
-    let transaction = SketchyBarProviderTransaction(
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot,
-      lifecycle: sketchyBarLifecycle,
-      coreRuntime: sketchyBarCoreRuntime ?? .live(stateRoot: stateRoot),
-      faultInjector: sketchyBarFaultInjector
-    )
+    let transaction = coordinator.sketchyBarTransaction(
+      stateRoot: stateRoot, homeDirectory: homeDirectory)
     if let recovered = try transaction.recoverPendingLocked() {
       return ApplyResult(
         changed: true,
@@ -652,18 +640,9 @@ struct DesktopApplyCommandRunner: Sendable {
       )
     }
     guard let composition else {
-      let outcome = try transaction.teardownLocked(
-        dryRun: false,
-        deferFinalization: deferFinalization
-      )
-      return ApplyResult(
-        changed: outcome.changed,
-        generationID: outcome.generationID,
-        lifecycle: outcome.changed ? "restore" : "none",
-        message: outcome.changed
-          ? "restored the prior SketchyBar provider and service state"
-          : "no Macarchy-owned SketchyBar provider exists"
-      )
+      return try .sketchyBarRestore(
+        transaction.teardownLocked(dryRun: false, deferFinalization: deferFinalization),
+        restoredMessage: "restored the prior SketchyBar provider and service state")
     }
     let outcome = try transaction.convergeLocked(
       composition: composition,
@@ -693,12 +672,7 @@ struct DesktopApplyCommandRunner: Sendable {
       stateRoot: stateRoot
     )
     if let pending = try transactionStore.read() {
-      switch pending.operation {
-      case .apply:
-        try providerTransaction.recoverApply(pending, lifecycle: lifecycle)
-      case .teardown:
-        try providerTransaction.completeTeardown(pending, lifecycle: lifecycle)
-      }
+      try providerTransaction.recoverPending(pending, lifecycle: lifecycle)
     }
 
     let generationInspector = YabaiGenerationInspector(stateRoot: stateRoot)
@@ -709,6 +683,8 @@ struct DesktopApplyCommandRunner: Sendable {
     let ownershipStore = YabaiOwnershipStore(stateRoot: stateRoot)
     let previousOwnership = try ownershipStore.read()
     let providerInspector = YabaiProviderPlanInspector()
+    let directory = homeDirectory.appending(path: ".config/yabai", directoryHint: .isDirectory)
+    let entry = directory.appending(path: "yabairc")
     let provider = providerInspector.inspect(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
@@ -726,11 +702,6 @@ struct DesktopApplyCommandRunner: Sendable {
       retainedOriginalPath = previousOwnership.retainedOriginalPath
       createdDirectory = previousOwnership.createdConfigurationDirectory
     } else {
-      let directory = homeDirectory.appending(
-        path: ".config/yabai",
-        directoryHint: .isDirectory
-      )
-      let entry = directory.appending(path: "yabairc")
       original = try providerInspector.captureUnowned(directory: directory, entry: entry)
       if provider.status == .adoptionRequired {
         guard let adopt, adopt == original.digest else {
@@ -801,11 +772,6 @@ struct DesktopApplyCommandRunner: Sendable {
       if previousOwnership == nil {
         transaction.phase = .providerChanging
         try transactionStore.write(transaction)
-        let directory = homeDirectory.appending(
-          path: ".config/yabai",
-          directoryHint: .isDirectory
-        )
-        let entry = directory.appending(path: "yabairc")
         let recaptured = try providerInspector.captureUnowned(directory: directory, entry: entry)
         guard recaptured == original else {
           throw YabaiDesktopError.invalidState(
@@ -932,13 +898,8 @@ struct DesktopTeardownCommandRunner: Sendable {
     self.sketchyBarFaultInjector = sketchyBarFaultInjector
   }
 
-  func executeAggregate(
-    stateRoot: URL,
-    homeDirectory: URL,
-    dryRun: Bool,
-    json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
-    let coordinator = DesktopAggregateCoordinator(
+  private var coordinator: DesktopAggregateCoordinator {
+    DesktopAggregateCoordinator(
       lifecycle: lifecycle,
       sketchyBarLifecycle: sketchyBarLifecycle,
       sketchyBarCoreRuntime: sketchyBarCoreRuntime,
@@ -946,6 +907,14 @@ struct DesktopTeardownCommandRunner: Sendable {
       faultInjector: faultInjector,
       sketchyBarFaultInjector: sketchyBarFaultInjector
     )
+  }
+
+  func executeAggregate(
+    stateRoot: URL,
+    homeDirectory: URL,
+    dryRun: Bool,
+    json: Bool
+  ) throws -> (output: String, succeeded: Bool) {
     if dryRun {
       do {
         let sketchyBar = try coordinator.sketchyBarTransaction(
@@ -968,14 +937,8 @@ struct DesktopTeardownCommandRunner: Sendable {
           mutated: false,
           yabai: yabai,
           keybindings: keybinding,
-          sketchyBar: ApplyResult(
-            changed: sketchyBar.changed,
-            generationID: sketchyBar.generationID,
-            lifecycle: sketchyBar.changed ? "restore" : "none",
-            message: sketchyBar.changed
-              ? "would restore the prior SketchyBar provider"
-              : "no Macarchy-owned SketchyBar provider exists"
-          ),
+          sketchyBar: .sketchyBarRestore(
+            sketchyBar, restoredMessage: "would restore the prior SketchyBar provider"),
           message: "aggregate teardown preview completed without mutation"
         )
         return (try report.render(json: json), true)
@@ -1006,18 +969,12 @@ struct DesktopTeardownCommandRunner: Sendable {
         )
         mutationStarted.withLock { $0 = true }
         do {
-          let sketchyOutcome = try coordinator.sketchyBarTransaction(
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory
-          ).teardownLocked(dryRun: false, deferFinalization: true)
-          let sketchyBar = ApplyResult(
-            changed: sketchyOutcome.changed,
-            generationID: sketchyOutcome.generationID,
-            lifecycle: sketchyOutcome.changed ? "restore" : "none",
-            message: sketchyOutcome.changed
-              ? "restored the prior SketchyBar provider pending aggregate commit"
-              : "no Macarchy-owned SketchyBar provider exists"
-          )
+          let sketchyBar = try ApplyResult.sketchyBarRestore(
+            coordinator.sketchyBarTransaction(
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory
+            ).teardownLocked(dryRun: false, deferFinalization: true),
+            restoredMessage: "restored the prior SketchyBar provider pending aggregate commit")
           let keybinding = try keybindings?.teardownLocked(
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
@@ -1116,13 +1073,8 @@ struct DesktopTeardownCommandRunner: Sendable {
     var sketchyBarBeforeFailure: ApplyResult?
     do {
       let outcomes = try ActivationLock(root: stateRoot).withLock {
-        let transaction = SketchyBarProviderTransaction(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot,
-          lifecycle: sketchyBarLifecycle,
-          coreRuntime: sketchyBarCoreRuntime ?? .live(stateRoot: stateRoot),
-          faultInjector: sketchyBarFaultInjector
-        )
+        let transaction = coordinator.sketchyBarTransaction(
+          stateRoot: stateRoot, homeDirectory: homeDirectory)
         let sketchyBar: ApplyResult
         if !dryRun, let recovered = try transaction.recoverPendingLocked() {
           sketchyBar = ApplyResult(
@@ -1132,15 +1084,9 @@ struct DesktopTeardownCommandRunner: Sendable {
             message: "recovered interrupted SketchyBar \(recovered.operation.rawValue)"
           )
         } else {
-          let outcome = try transaction.teardownLocked(dryRun: dryRun)
-          sketchyBar = ApplyResult(
-            changed: outcome.changed,
-            generationID: outcome.generationID,
-            lifecycle: outcome.changed ? "restore" : "none",
-            message: outcome.changed
-              ? "restore the prior SketchyBar provider and service state"
-              : "no Macarchy-owned SketchyBar provider exists"
-          )
+          sketchyBar = try .sketchyBarRestore(
+            transaction.teardownLocked(dryRun: dryRun),
+            restoredMessage: "restore the prior SketchyBar provider and service state")
         }
         sketchyBarBeforeFailure = sketchyBar
         let yabai = try YabaiProviderTransaction(
@@ -1245,6 +1191,18 @@ struct ApplyResult: Encodable {
   let generationID: String?
   let lifecycle: String
   let message: String
+
+  /// A SketchyBar teardown outcome; `restoredMessage` describes the restore when one happened.
+  static func sketchyBarRestore(
+    _ outcome: SketchyBarFilesystemConvergenceResult, restoredMessage: String
+  ) -> Self {
+    Self(
+      changed: outcome.changed,
+      generationID: outcome.generationID,
+      lifecycle: outcome.changed ? "restore" : "none",
+      message: outcome.changed ? restoredMessage : "no Macarchy-owned SketchyBar provider exists"
+    )
+  }
 
   enum CodingKeys: String, CodingKey {
     case changed

@@ -121,6 +121,16 @@ struct YabaiProviderTransaction: Sendable {
     stateRoot.appending(path: "desktop/yabai/retained-\(nonce.uuidString.lowercased())")
   }
 
+  /// Settles an interrupted transaction: rolls back an apply or completes a teardown.
+  func recoverPending(_ pending: YabaiTransaction, lifecycle: YabaiLifecycleController) throws {
+    switch pending.operation {
+    case .apply:
+      try recoverApply(pending, lifecycle: lifecycle)
+    case .teardown:
+      try completeTeardown(pending, lifecycle: lifecycle)
+    }
+  }
+
   func teardownLocked(
     lifecycle: YabaiLifecycleController,
     faultInjector: @Sendable (YabaiTransactionCheckpoint) throws -> Void,
@@ -138,12 +148,7 @@ struct YabaiProviderTransaction: Sendable {
           message: "would recover the interrupted \(pending.operation.rawValue) transaction first"
         )
       }
-      switch pending.operation {
-      case .apply:
-        try recoverApply(pending, lifecycle: lifecycle)
-      case .teardown:
-        try completeTeardown(pending, lifecycle: lifecycle)
-      }
+      try recoverPending(pending, lifecycle: lifecycle)
       recovered = pending
     }
     guard let ownership = try YabaiOwnershipStore(stateRoot: stateRoot).read() else {

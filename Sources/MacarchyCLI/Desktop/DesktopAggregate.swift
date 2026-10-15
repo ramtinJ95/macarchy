@@ -130,9 +130,9 @@ struct DesktopPrerequisiteInspector: Sendable {
 }
 
 struct DesktopKeybindingPlan: Encodable, Equatable, Sendable {
-  let outcome: String
+  var outcome: String
   let effectiveStatus: String
-  let message: String
+  var message: String
   let generationID: String?
   let providerStatus: String
   let ownership: String
@@ -199,16 +199,8 @@ struct DesktopKeybindingOrchestrator: Sendable {
       profile: profile
     )
     if !execution.succeeded {
-      result = DesktopKeybindingPlan(
-        outcome: "blocked",
-        effectiveStatus: result.effectiveStatus,
-        message: execution.output,
-        generationID: result.generationID,
-        providerStatus: result.providerStatus,
-        ownership: result.ownership,
-        adoptionEvidenceDigest: result.adoptionEvidenceDigest,
-        transactionStatus: result.transactionStatus
-      )
+      result.outcome = "blocked"
+      result.message = execution.output
     }
     return result
   }
@@ -307,13 +299,8 @@ struct DesktopAggregateCoordinator: Sendable {
     try keybindings?.recoverLocked(stateRoot: stateRoot, homeDirectory: homeDirectory)
     let yabaiStore = YabaiTransactionStore(stateRoot: stateRoot)
     if let pending = try yabaiStore.read() {
-      let transaction = yabaiTransaction(stateRoot: stateRoot, homeDirectory: homeDirectory)
-      switch pending.operation {
-      case .apply:
-        try transaction.recoverApply(pending, lifecycle: lifecycle)
-      case .teardown:
-        try transaction.completeTeardown(pending, lifecycle: lifecycle)
-      }
+      try yabaiTransaction(stateRoot: stateRoot, homeDirectory: homeDirectory)
+        .recoverPending(pending, lifecycle: lifecycle)
     }
   }
 
