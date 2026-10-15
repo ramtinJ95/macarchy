@@ -40,7 +40,7 @@ struct UpdateCommandRunner: Sendable {
       tap: tapVersion(),
       now: now()
     )
-    return (try report.render(json: json), !refresh || checkSucceeded)
+    return (try report.render(json: json), checkSucceeded)
   }
 }
 

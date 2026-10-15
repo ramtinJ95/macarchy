@@ -23,7 +23,7 @@ struct HomebrewTapVersion: Equatable, Encodable, Sendable {
 struct HomebrewTapVersionReader: Sendable {
   static let formula = "ramtinj95/tap/macarchy"
   static let request = ProcessRequest(
-    executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
+    executableURL: HomebrewUpdateRunner.brewURL,
     arguments: ["info", "--json=v2", "--formula", formula],
     timeout: 10,
     environmentOverrides: [

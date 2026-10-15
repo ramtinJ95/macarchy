@@ -80,8 +80,7 @@ struct PreferencesCommand: AsyncParsableCommand {
           }
         }
       } catch { report = .failure(error, context: context) }
-      print(try report.render(json: json))
-      if !report.succeeded { throw ExitCode.failure }
+      try emitExecution((try report.render(json: json), report.succeeded))
     }
   }
 
