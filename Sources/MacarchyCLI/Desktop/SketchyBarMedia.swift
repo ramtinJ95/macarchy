@@ -120,7 +120,8 @@ struct SketchyBarMedia {
       ])
       return
     }
-    let changed = try label("macarchy.media") != media.identity
+    let identity = media.identity
+    let changed = try label("macarchy.media") != identity
     let preview = try label("macarchy.media.preview")
     guard preview == "hover" || UInt64(preview).map({ String($0) == preview }) == true else {
       throw MediaError.invalidPreview
@@ -129,7 +130,7 @@ struct SketchyBarMedia {
     let expanded =
       changed || preview == "hover" || Double(preview).map { $0 > uptime() * 1000 } == true
     var args = [
-      "--set", "macarchy.media", "drawing=on", "label.drawing=off", "label=\(media.identity)",
+      "--set", "macarchy.media", "drawing=on", "label.drawing=off", "label=\(identity)",
       "icon.drawing=\(media.artwork == nil ? "on" : "off")", "icon=􀑪",
       "--set", "macarchy.media.artist", "drawing=on", "label=\(media.artist)",
       "--set", "macarchy.media.title", "drawing=on", "label=\(media.title)",
@@ -159,11 +160,7 @@ struct SketchyBarMedia {
   }
 
   private func label(_ name: String) throws -> String {
-    struct Item: Decodable {
-      struct Label: Decodable { let value: String }
-      let label: Label
-    }
-    return try JSONDecoder().decode(Item.self, from: Data(bar(["--query", name]).utf8)).label.value
+    try SketchyBarLabelQuery.value(from: bar(["--query", name]))
   }
 
   private func detail(_ expanded: Bool) throws {

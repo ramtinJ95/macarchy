@@ -64,13 +64,8 @@ struct SketchyBarCalendar {
   }
 
   private func previewDeadline() throws -> UInt64 {
-    struct Item: Decodable {
-      struct Label: Decodable { let value: String }
-      let label: Label
-    }
-    let item = try JSONDecoder().decode(
-      Item.self, from: Data(bar(["--query", Self.previewItem]).utf8))
-    guard let value = UInt64(item.label.value), String(value) == item.label.value else {
+    let label = try SketchyBarLabelQuery.value(from: bar(["--query", Self.previewItem]))
+    guard let value = UInt64(label), String(value) == label else {
       throw CalendarError.invalidPreview
     }
     return value

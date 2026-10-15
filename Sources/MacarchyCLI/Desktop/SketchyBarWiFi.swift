@@ -32,12 +32,7 @@ struct SketchyBarWiFi {
       return
     }
     if sender == "mouse.clicked", detailItems.contains(name) {
-      let result = try bar(["--query", name])
-      struct Item: Decodable {
-        struct Label: Decodable { let value: String }
-        let label: Label
-      }
-      let value = try JSONDecoder().decode(Item.self, from: Data(result.utf8)).label.value
+      let value = try SketchyBarLabelQuery.value(from: bar(["--query", name]))
       guard value.utf8.count <= 1024, !value.isEmpty else { throw WiFiError.invalidInvocation }
       try copy(value)
       try bar(["--set", name, "label=􀉄"])
