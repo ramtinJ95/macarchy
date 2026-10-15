@@ -336,23 +336,11 @@ struct EnvironmentBtopFileTransaction: Sendable {
       } ?? .original(ownership)
     let url = URL(filePath: ownership.path)
     let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    var current = try Self.filesystem.read(url)
-    if let residueData = try Self.filesystem.read(residue) {
-      if try matches(current, target, at: url), try matches(residueData, source, at: residue) {
-        try Self.filesystem.remove(residue)
-        return
-      }
-      if try matches(current, source, at: url), try matches(residueData, target, at: residue) {
-        try Self.filesystem.remove(residue)
-      } else {
-        throw EnvironmentLifecycleError.drift("btop replacement residue")
-      }
-      current = try Self.filesystem.read(url)
-    }
-    if try matches(current, target, at: url) { return }
-    guard try matches(current, source, at: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
+    guard
+      case .pending(let current) = try Self.filesystem.pendingTransition(
+        at: url, residue: residue, from: source, to: target, driftLabel: "btop",
+        matches: { try matches($0, $1, at: $2) })
+    else { return }
 
     switch target {
     case .managed(let values, let artifact):
