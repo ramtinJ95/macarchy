@@ -2,6 +2,7 @@
 """Opt-in SSH qualification of an already-running, recorded disposable guest."""
 
 import argparse
+import base64
 import hashlib
 import ipaddress
 import json
@@ -25,6 +26,19 @@ def run_directory(name):
     if directory.is_symlink() or not directory.is_dir():
         raise lab.LabError("Missing private run directory.")
     return directory
+
+
+def write_askpass(temporary):
+    askpass = Path(temporary) / "askpass"
+    askpass.write_text("#!/bin/sh\nexec " + shlex.join(
+        [sys.executable, str(Path(__file__).resolve()), "--askpass"]) + "\n")
+    askpass.chmod(0o700)
+    return askpass
+
+
+def upload_archive(client, archive, remote, timeout):
+    client.command("/usr/bin/base64 -D | /usr/bin/tar -xzf - -C " + shlex.quote(remote),
+                   data=base64.b64encode(archive.read_bytes()).decode(), timeout=timeout)
 
 
 def ssh_arguments(ip, name, directory):
@@ -51,9 +65,7 @@ class Guest:
         report = json.loads((self.directory / "report.json").read_text())
         if report["inputs"] != inputs:
             raise lab.LabError("Run input pins do not match.")
-        info = json.loads(lab.run_tart(inputs, "get", name, "--format", "json",
-                                      capture_output=True, text=True, timeout=10).stdout)
-        if info["State"] != "running":
+        if lab.vm_info(inputs, name)["State"] != "running":
             raise lab.LabError("SSH qualification requires an already-running disposable guest.")
         ip = lab.run_tart(inputs, "ip", name, capture_output=True, text=True,
                           timeout=10).stdout.strip()
@@ -205,11 +217,7 @@ def main():
     lab.write_json(destination, report)
     try:
         with tempfile.TemporaryDirectory(prefix="ssh-", dir=lab.STATE) as temporary:
-            askpass = Path(temporary) / "askpass"
-            askpass.write_text("#!/bin/sh\nexec " + shlex.join(
-                [sys.executable, str(Path(__file__).resolve()), "--askpass"]) + "\n")
-            askpass.chmod(0o700)
-            guest = Guest(inputs, args.run, askpass)
+            guest = Guest(inputs, args.run, write_askpass(temporary))
             if args.operation == "inspect":
                 report["evidence"] = guest.inspect(inputs, homebrew=args.expect_homebrew)
             elif args.operation == "install-macarchy":
@@ -258,7 +266,7 @@ def main():
             report["status"] = "passed"
     except Exception as error:
         report["status"] = "blocked"
-        report["reason"] = str(error) if isinstance(error, lab.LabError) else type(error).__name__
+        report["reason"] = lab.describe(error)
         raise
     finally:
         lab.write_json(destination, report)

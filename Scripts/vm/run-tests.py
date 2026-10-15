@@ -6,14 +6,11 @@ the host. Use lab.py clone --baseline test and the existing native Tart launch
 procedure first. Results/source snapshot remain in the private run directory.
 """
 import argparse
-import base64
 import hashlib
 import json
-from pathlib import Path
 import shlex
 import stat
 import subprocess
-import sys
 import tarfile
 import tempfile
 import uuid
@@ -57,8 +54,7 @@ def run_tests(client, archive, evidence, pattern=None, portability=False):
     client.command('test "$(/usr/sbin/sysctl -n kern.hv_vmm_present)" = 1')
     remote = "/Users/omarchy/macarchy-tests-" + uuid.uuid4().hex
     client.command("umask 077; /bin/mkdir " + shlex.quote(remote))
-    client.command("/usr/bin/base64 -D | /usr/bin/tar -xzf - -C " + shlex.quote(remote),
-                   data=base64.b64encode(archive.read_bytes()).decode(), timeout=120)
+    guest.upload_archive(client, archive, remote, timeout=120)
     result = client.command(test_command(remote, pattern, portability),
                             check=False, timeout=1800)
     (evidence / "tests.log").write_text(result.stdout + result.stderr)
@@ -85,17 +81,13 @@ def main():
         archive = evidence / "source.tar.gz"
         report["source_sha256"] = snapshot(lab.ROOT, archive)
         with tempfile.TemporaryDirectory(prefix="ssh-tests-", dir=lab.STATE) as temporary:
-            askpass = Path(temporary) / "askpass"
-            askpass.write_text("#!/bin/sh\nexec " + shlex.join(
-                [sys.executable, str(lab.HERE / "guest.py"), "--askpass"]) + "\n")
-            askpass.chmod(0o700)
-            client = guest.Guest(inputs, args.run, askpass)
+            client = guest.Guest(inputs, args.run, guest.write_askpass(temporary))
             report["evidence"] = run_tests(
                 client, archive, evidence, args.filter, args.portability)
         report["status"] = "passed"
     except Exception as error:
         report["status"] = "blocked"
-        report["reason"] = str(error) if isinstance(error, lab.LabError) else type(error).__name__
+        report["reason"] = lab.describe(error)
         raise
     finally:
         lab.write_json(evidence / "report.json", report)
