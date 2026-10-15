@@ -17,7 +17,7 @@ struct EnvironmentPresetFilesystem: Sendable {
     guard metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1 else {
       throw EnvironmentLifecycleError.blocked("\(nonRegularMessage): \(url.path)")
     }
-    return try BoundedRegularFile.read(at: url, maximumSize: 1_048_576).data
+    return try BoundedRegularFile.read(at: url).data
   }
 
   /// Settles the replacement residue an interrupted transition may have left, then reports whether

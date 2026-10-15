@@ -214,9 +214,6 @@ struct MenuNativeConfigurationSetup {
   }
 
   private func withMutationLock<T>(_ body: () throws -> T) throws -> T {
-    let lock = EnvironmentLifecycleLock(stateRoot: context.stateRoot)
-    let descriptor = try lock.acquire()
-    defer { lock.release(descriptor) }
-    return try ActivationLock(root: context.stateRoot).withLock(body)
+    try EnvironmentLifecycleLock(stateRoot: context.stateRoot).withActivationLock(body)
   }
 }

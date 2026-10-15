@@ -65,10 +65,7 @@ struct UnifiedSetupRecoveryCommandRunner: Sendable {
   private func acknowledgeSpicetify(
     context: UnifiedSetupPlanContext, environmentStageRecorded: Bool
   ) throws {
-    let lock = EnvironmentLifecycleLock(stateRoot: context.stateRoot)
-    let descriptor = try lock.acquire()
-    defer { lock.release(descriptor) }
-    try ActivationLock(root: context.stateRoot).withLock {
+    try EnvironmentLifecycleLock(stateRoot: context.stateRoot).withActivationLock {
       let store = EnvironmentStateStore(stateRoot: context.stateRoot)
       let pending = try store.readTransaction()
       // After interruption between domain stages, the durable warning survives its journal.

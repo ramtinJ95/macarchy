@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import ThemeCore
 
 struct EnvironmentLifecycleLock: Sendable {
   private static let processSemaphore = DispatchSemaphore(value: 1)
@@ -35,5 +36,12 @@ struct EnvironmentLifecycleLock: Sendable {
   func release(_ descriptor: Int32) {
     Darwin.close(descriptor)
     Self.processSemaphore.signal()
+  }
+
+  /// Runs `body` under this lock and then the activation lock, the order theme reconciliation uses.
+  func withActivationLock<Value>(_ body: () throws -> Value) throws -> Value {
+    let descriptor = try acquire()
+    defer { release(descriptor) }
+    return try ActivationLock(root: stateRoot).withLock(body)
   }
 }

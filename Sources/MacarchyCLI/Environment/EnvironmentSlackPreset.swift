@@ -13,7 +13,7 @@ struct EnvironmentSlackPreset: Sendable {
 
   func supportedVersion() throws -> String {
     let plistURL = bundleURL.appending(path: "Contents/Info.plist")
-    let data = try BoundedRegularFile.read(at: plistURL, maximumSize: 1_048_576).data
+    let data = try BoundedRegularFile.read(at: plistURL).data
     let plist = try PropertyListSerialization.propertyList(from: data, format: nil)
     guard let dictionary = plist as? [String: Any],
       let value = dictionary["CFBundleShortVersionString"] as? String,

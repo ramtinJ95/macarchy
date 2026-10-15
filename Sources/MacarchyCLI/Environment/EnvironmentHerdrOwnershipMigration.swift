@@ -62,10 +62,7 @@ struct EnvironmentHerdrOwnershipMigration {
   func execute(approval: String? = nil) throws -> Report {
     guard let approval else { return try candidate().report }
     // Match the environment -> activation lock order used by theme reconciliation.
-    let lock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-    let descriptor = try lock.acquire()
-    defer { lock.release(descriptor) }
-    return try ActivationLock(root: stateRoot).withLock {
+    return try EnvironmentLifecycleLock(stateRoot: stateRoot).withActivationLock {
       let reviewed = try candidate()
       guard reviewed.report.evidenceDigest == approval else {
         throw ValidationError("stale or incorrect approval; review a fresh Herdr ownership preview")

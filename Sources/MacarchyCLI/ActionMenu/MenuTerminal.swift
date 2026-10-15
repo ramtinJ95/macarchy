@@ -58,17 +58,7 @@ enum MenuTerminal {
         "-m", "rule", "--add", "label=macarchy-maintenance",
         "app=^kitty$", "title=^Macarchy Maintenance$", "manage=off", "grid=20:20:7:7:6:6",
       ]
-      let output = Pipe()
-      rule.standardOutput = output
-      rule.standardError = output
-      try rule.run()
-      let diagnostics = output.fileHandleForReading.readDataToEndOfFile()
-      rule.waitUntilExit()
-      guard rule.terminationReason == .exit, rule.terminationStatus == 0 else {
-        throw ValidationError(
-          "Could not float the menu terminal (yabai \(rule.terminationStatus)): "
-            + String(decoding: diagnostics, as: UTF8.self))
-      }
+      try runToSuccess(rule, tool: "yabai", failure: "Could not float the menu terminal")
     }
     let terminal = theme.terminal
     var colors = [
@@ -95,19 +85,24 @@ enum MenuTerminal {
     launchArguments += colors.flatMap { ["--override", $0] }
     launchArguments += [executableURL.path] + arguments
     process.arguments = launchArguments
-    let launchOutput = Pipe()
     process.standardInput = FileHandle.nullDevice
-    process.standardOutput = launchOutput
-    process.standardError = launchOutput
+    try runToSuccess(process, tool: "open", failure: "Could not open the menu terminal")
+    return process
+  }
+
+  /// Runs `process` to exit, folding its combined output into the failure on a nonzero status.
+  private static func runToSuccess(_ process: Process, tool: String, failure: String) throws {
+    let output = Pipe()
+    process.standardOutput = output
+    process.standardError = output
     try process.run()
-    let launchDiagnostics = launchOutput.fileHandleForReading.readDataToEndOfFile()
+    let diagnostics = output.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationReason == .exit, process.terminationStatus == 0 else {
       throw ValidationError(
-        "Could not open the menu terminal (open \(process.terminationStatus)): "
-          + String(decoding: launchDiagnostics, as: UTF8.self))
+        "\(failure) (\(tool) \(process.terminationStatus)): "
+          + String(decoding: diagnostics, as: UTF8.self))
     }
-    return process
   }
 
 }
