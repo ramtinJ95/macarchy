@@ -27,10 +27,7 @@ extension Macarchy {
         dryRun: dryRun,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -50,10 +47,7 @@ extension Macarchy {
         consumerPaths: state.consumerPaths,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -179,8 +173,7 @@ extension Macarchy {
           consumerPaths: state.consumerPaths,
           resume: resume
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -208,8 +201,7 @@ extension Macarchy {
           ),
           json: json
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -239,8 +231,7 @@ extension Macarchy {
           context: profile.context(stateRoot: URL(filePath: stateRoot).standardizedFileURL),
           targets: targets, approval: approve, json: json
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -275,8 +266,7 @@ extension Macarchy {
         )
         .execute(
           context: context, targets: targets, approval: approve, recover: recover, json: json)
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -315,8 +305,7 @@ extension Macarchy {
         .execute(
           context: context, targets: targets, machineOnly: machineOnly, approval: approve,
           recover: recover, json: json)
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -361,8 +350,7 @@ extension Macarchy {
             json: json
           )
         }
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -388,8 +376,7 @@ extension Macarchy {
           consumerPaths: state.consumerPaths,
           acknowledgeUnverifiedSpicetify: acknowledgeUnverifiedSpicetify,
           json: json)
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -411,8 +398,7 @@ extension Macarchy {
           consumerPaths: state.consumerPaths,
           json: json
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -434,8 +420,7 @@ extension Macarchy {
           consumerPaths: state.consumerPaths,
           json: json
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -460,8 +445,7 @@ extension Macarchy {
           dryRun: dryRun,
           json: json
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
   }
@@ -483,10 +467,7 @@ extension Macarchy {
         dryRun: dryRun,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 }

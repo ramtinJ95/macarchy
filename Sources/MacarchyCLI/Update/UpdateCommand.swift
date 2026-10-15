@@ -31,10 +31,7 @@ struct Update: ParsableCommand {
     let execution = try StateFileLock(root: root, identity: .homebrewUpdate).withLock {
       try HomebrewUpdateRunner.live.execute(stateRoot: root, approval: approval)
     }
-    print(execution.output)
-    if !execution.succeeded {
-      throw ExitCode.failure
-    }
+    try emitExecution((execution.output, execution.succeeded))
   }
 
   struct Options: ParsableArguments {
@@ -80,10 +77,7 @@ struct Update: ParsableCommand {
         refresh: true,
         json: options.json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 }

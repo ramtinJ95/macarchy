@@ -259,8 +259,7 @@ struct EnvironmentCommand: ParsableCommand {
         homeDirectory: home,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 
@@ -307,8 +306,7 @@ struct EnvironmentCommand: ParsableCommand {
             json: json
           )
         }
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 
@@ -335,8 +333,7 @@ struct EnvironmentCommand: ParsableCommand {
         consumerPaths: state.consumerPaths,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 
@@ -363,8 +360,7 @@ struct EnvironmentCommand: ParsableCommand {
         consumerPaths: state.consumerPaths,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 
@@ -389,8 +385,7 @@ struct EnvironmentCommand: ParsableCommand {
         dryRun: dryRun,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded { throw ExitCode.failure }
+      try emitExecution(execution)
     }
   }
 }

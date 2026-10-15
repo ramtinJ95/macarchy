@@ -133,10 +133,7 @@ extension Theme {
         dryRun: options.dryRun,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -154,10 +151,7 @@ extension Theme {
         consumerPaths: options.consumerPaths,
         dryRun: options.dryRun
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -178,10 +172,7 @@ extension Theme {
         stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 
@@ -228,8 +219,7 @@ extension Theme {
           stateRoot: stateRoot,
           consumerPaths: state.consumerPaths
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
         return
       }
       let content = try await ThemePackageLock(root: stateRoot).withLock {
@@ -332,8 +322,7 @@ extension Theme {
           consumerPaths: options.consumerPaths,
           dryRun: options.dryRun
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
 
@@ -351,8 +340,7 @@ extension Theme {
           consumerPaths: options.consumerPaths,
           dryRun: options.dryRun
         )
-        print(execution.output)
-        if !execution.succeeded { throw ExitCode.failure }
+        try emitExecution(execution)
       }
     }
   }

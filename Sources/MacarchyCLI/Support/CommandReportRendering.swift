@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 import ThemeCore
 
@@ -54,6 +55,13 @@ func isAcceptedReconciliationResult(_ result: AdapterResult) -> Bool {
     || result.status == .restartRequired
     || (result.adapterID == "wallpaper" && result.status == .disabled)
     || (result.status == .unsupported && namedThemeOnlyAdapterIDs.contains(result.adapterID))
+}
+
+func emitExecution(_ execution: (output: String, succeeded: Bool)) throws {
+  print(execution.output)
+  if !execution.succeeded {
+    throw ExitCode.failure
+  }
 }
 
 func renderJSON<Value: Encodable>(_ value: Value) throws -> String {

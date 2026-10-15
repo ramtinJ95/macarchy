@@ -29,10 +29,7 @@ extension Theme {
         dryRun: options.dryRun,
         json: json
       )
-      print(execution.output)
-      if !execution.succeeded {
-        throw ExitCode.failure
-      }
+      try emitExecution(execution)
     }
   }
 }
