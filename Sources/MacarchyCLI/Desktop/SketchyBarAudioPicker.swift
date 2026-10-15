@@ -46,6 +46,8 @@ struct SketchyBarAudioPicker {
         case clickScript = "click_script"
         case updateFrequency = "update_freq"
       }
+
+      var hasNoScript: Bool { script.isEmpty || script == "(null)" }
     }
     let name: String
     let type: String
@@ -57,7 +59,7 @@ struct SketchyBarAudioPicker {
       name == expected && SketchyBarAudioPicker.selector(name) != nil && type == "item"
         && geometry.drawing == "on" && geometry.position == "popup"
         && label.drawing == "on" && !label.value.isEmpty
-        && (scripting.script.isEmpty || scripting.script == "(null)")
+        && scripting.hasNoScript
         && scripting.updateFrequency == 0
         && scripting.clickScript
           == SketchyBarAudioPicker.clickScript(name: name, pluginPath: pluginPath)
