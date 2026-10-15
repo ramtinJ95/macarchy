@@ -170,7 +170,7 @@ struct MenuKeybindingSaveSession: Codable {
 
   private static func digest(_ path: URL) throws -> String {
     sha256Digest(
-      try BoundedRegularFile.read(at: path.resolvingSymlinksInPath(), maximumSize: 1_048_576).data)
+      try BoundedRegularFile.read(at: path.resolvingSymlinksInPath()).data)
   }
 
   private static func sameExceptDisabled(_ lhs: PortableProfile, _ rhs: PortableProfile) -> Bool {

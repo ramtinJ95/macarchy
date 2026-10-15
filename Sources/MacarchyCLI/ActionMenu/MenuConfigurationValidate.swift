@@ -31,7 +31,7 @@ struct MenuConfigurationValidate: ParsableCommand {
       else {
         throw ValidationError("Personal source changed; reopen Configure.")
       }
-      let text = try BoundedRegularFile.readUTF8(at: target, maximumSize: 1_048_576)
+      let text = try BoundedRegularFile.readUTF8(at: target)
       try DesktopShellSyntax.validate(text, source: target)
       return "Shell syntax is valid; no code executed. " + action.saveNotice
     }

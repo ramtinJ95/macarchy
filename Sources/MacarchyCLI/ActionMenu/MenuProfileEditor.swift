@@ -43,7 +43,7 @@ struct MenuProfileEditor: ParsableCommand {
   }
 
   private func edit() throws {
-    let neovim = URL(filePath: "/opt/homebrew/bin/nvim")
+    let neovim = NeovimAdapter.liveExecutableURL
     guard FileManager.default.isExecutableFile(atPath: neovim.path) else {
       throw ValidationError("Profile editor is not executable: \(neovim.path)")
     }
@@ -167,7 +167,7 @@ struct MenuProfileSave: ParsableCommand {
     let url = URL(filePath: sessionPath)
     var session = try JSONDecoder().decode(
       MenuKeybindingSaveSession.self,
-      from: BoundedRegularFile.read(at: url, maximumSize: 1_048_576).data)
+      from: BoundedRegularFile.read(at: url).data)
     let message = try session.apply()
     try JSONEncoder().encode(session).write(to: url, options: .atomic)
     print(message)

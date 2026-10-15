@@ -157,10 +157,7 @@ struct EnvironmentCommand: ParsableCommand {
         guard !json else {
           throw ValidationError("--json is a preview option; omit it when approving")
         }
-        let lock = EnvironmentLifecycleLock(stateRoot: root)
-        let descriptor = try lock.acquire()
-        defer { lock.release(descriptor) }
-        let message = try ActivationLock(root: root).withLock {
+        let message = try EnvironmentLifecycleLock(stateRoot: root).withActivationLock {
           try EnvironmentTransactionCoordinator(homeDirectory: home, stateRoot: root)
             .migrateNeovimLocked(approval: approve, sourceURL: sourceURL)
         }
@@ -214,10 +211,7 @@ struct EnvironmentCommand: ParsableCommand {
         guard !json else {
           throw ValidationError("--json is a preview option; omit it when approving")
         }
-        let lock = EnvironmentLifecycleLock(stateRoot: root)
-        let descriptor = try lock.acquire()
-        defer { lock.release(descriptor) }
-        let message = try ActivationLock(root: root).withLock {
+        let message = try EnvironmentLifecycleLock(stateRoot: root).withActivationLock {
           try EnvironmentTransactionCoordinator(homeDirectory: home, stateRoot: root)
             .migrateNativeFileLocked(provider: provider, approval: approve, sourceURL: sourceURL)
         }

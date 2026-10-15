@@ -41,12 +41,12 @@ struct MenuDesktopConfiguration {
     let legacySource = provider.legacyHook(in: layered.profile)
     let legacyPhysical = legacySource?.resolvingSymlinksInPath()
     let legacy = try legacyPhysical.map {
-      try BoundedRegularFile.readUTF8(at: $0, maximumSize: 1_048_576)
+      try BoundedRegularFile.readUTF8(at: $0)
     }
     func legacyUnchanged() throws -> Bool {
       try legacySource?.resolvingSymlinksInPath() == legacyPhysical
         && legacyPhysical.map {
-          try BoundedRegularFile.readUTF8(at: $0, maximumSize: 1_048_576)
+          try BoundedRegularFile.readUTF8(at: $0)
         } == legacy
     }
     let starter =
@@ -71,7 +71,7 @@ struct MenuDesktopConfiguration {
       }
     }
     let physical = source.resolvingSymlinksInPath()
-    let reviewed = try BoundedRegularFile.readUTF8(at: physical, maximumSize: 1_048_576)
+    let reviewed = try BoundedRegularFile.readUTF8(at: physical)
     io.write("Personal \(provider.rawValue) input:\n\(reviewed)\n")
     for file in edit.files where file.changed {
       io.write(
@@ -87,7 +87,7 @@ struct MenuDesktopConfiguration {
     return try ActivationLock(root: context.stateRoot).withLock {
       try edit.validateBefore()
       guard source.resolvingSymlinksInPath() == physical,
-        try BoundedRegularFile.readUTF8(at: physical, maximumSize: 1_048_576) == reviewed,
+        try BoundedRegularFile.readUTF8(at: physical) == reviewed,
         try legacyUnchanged(),
         try provider.inputsMatchGeneration(
           profile: layered.profile, context: context,
@@ -154,7 +154,7 @@ struct MenuDesktopEditSession {
       path: "\(provider.rawValue)/defaults.toml")
     return Self(
       provider: provider, context: context, source: source, target: target,
-      before: try BoundedRegularFile.readUTF8(at: target, maximumSize: 1_048_576),
+      before: try BoundedRegularFile.readUTF8(at: target),
       profileEdit: edit,
       generation: try provider.managedGeneration(profile: edit.profile, context: context),
       defaults: defaults, defaultsPhysical: defaults.resolvingSymlinksInPath(),
@@ -166,7 +166,7 @@ struct MenuDesktopEditSession {
 
   func finish(runner: DesktopApplyCommandRunner = .live) throws -> ApplyResult? {
     try ActivationLock(root: context.stateRoot).withLock {
-      let current = try BoundedRegularFile.readUTF8(at: target, maximumSize: 1_048_576)
+      let current = try BoundedRegularFile.readUTF8(at: target)
       guard newConnection || current != before else { return nil }
       try validateFrozenInputs()
       if !newConnection,
@@ -180,7 +180,7 @@ struct MenuDesktopEditSession {
       }
       let composition = try provider.compose(profile: profileEdit.profile, context: context)
       try validateFrozenInputs()
-      guard try BoundedRegularFile.readUTF8(at: target, maximumSize: 1_048_576) == current else {
+      guard try BoundedRegularFile.readUTF8(at: target) == current else {
         throw EnvironmentLifecycleError.blocked(
           "personal input changed during validation; reopen Configure")
       }

@@ -59,7 +59,7 @@ struct MenuConfigurationEditor: ParsableCommand {
 
   mutating func run() throws {
     do {
-      let neovim = URL(filePath: "/opt/homebrew/bin/nvim")
+      let neovim = NeovimAdapter.liveExecutableURL
       guard FileManager.default.isExecutableFile(atPath: neovim.path) else {
         throw ValidationError("Neovim editor is not executable: \(neovim.path)")
       }
