@@ -101,27 +101,13 @@ struct EnvironmentSpicetifyFileTransaction: Sendable {
     let residue = url.deletingLastPathComponent().appending(path: replacementName)
     let source: ExpectedState = old?.spicetify == nil ? .original(ownership) : .managed
     let target: ExpectedState = new?.spicetify == nil ? .original(ownership) : .managed
-    var current = try Self.filesystem.read(url)
-    if let residueData = try Self.filesystem.read(residue) {
-      if try matches(current, target, ownership: ownership, at: url),
-        try matches(residueData, source, ownership: ownership, at: residue)
-      {
-        try Self.filesystem.remove(residue)
-        return
-      }
-      if try matches(current, source, ownership: ownership, at: url),
-        try matches(residueData, target, ownership: ownership, at: residue)
-      {
-        try Self.filesystem.remove(residue)
-      } else {
-        throw EnvironmentLifecycleError.drift("Spicetify replacement residue")
-      }
-      current = try Self.filesystem.read(url)
-    }
-    if try matches(current, target, ownership: ownership, at: url) { return }
-    guard let current,
-      try matches(current, source, ownership: ownership, at: url)
-    else { throw EnvironmentLifecycleError.drift(url.path) }
+    guard
+      case .pending(let current) = try Self.filesystem.pendingTransition(
+        at: url, residue: residue, from: source, to: target, driftLabel: "Spicetify",
+        matches: { try matches($0, $1, ownership: ownership, at: $2) })
+    else { return }
+    // matches() rejects missing data, so a pending configuration exists.
+    guard let current else { throw EnvironmentLifecycleError.drift(url.path) }
 
     let manager = SetupOwnershipManager()
     let updated: Data

@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import ThemeCore
 
-/// Ordinary-file inspection and authenticated mutation shared by Pi, tuicr, and Codex.
+/// Ordinary-file inspection and authenticated mutation shared by the presets' configuration files.
 struct EnvironmentPresetFilesystem: Sendable {
   let configurationLabel: String
   let residueLabel: String
@@ -18,6 +18,40 @@ struct EnvironmentPresetFilesystem: Sendable {
       throw EnvironmentLifecycleError.blocked("\(nonRegularMessage): \(url.path)")
     }
     return try BoundedRegularFile.read(at: url, maximumSize: 1_048_576).data
+  }
+
+  /// Settles the replacement residue an interrupted transition may have left, then reports whether
+  /// the file at `fileURL` (default `url`) still has to move from `source` to `target`.
+  /// `matches` checks contents against a state, reporting them under the given URL: `url` for the
+  /// file and the residue's own URL.
+  func pendingTransition<State>(
+    at url: URL,
+    readingFrom fileURL: URL? = nil,
+    residue: URL,
+    from source: State,
+    to target: State,
+    driftLabel: String,
+    matches: (Data?, State, URL) throws -> Bool
+  ) throws -> EnvironmentPresetTransition {
+    let fileURL = fileURL ?? url
+    var current = try read(fileURL)
+    if let residueData = try read(residue) {
+      if try matches(current, target, url), try matches(residueData, source, residue) {
+        try remove(residue)
+        return .reached
+      }
+      if try matches(current, source, url), try matches(residueData, target, residue) {
+        try remove(residue)
+      } else {
+        throw EnvironmentLifecycleError.drift("\(driftLabel) replacement residue")
+      }
+      current = try read(fileURL)
+    }
+    if try matches(current, target, url) { return .reached }
+    guard try matches(current, source, url) else {
+      throw EnvironmentLifecycleError.drift(url.path)
+    }
+    return .pending(current: current)
   }
 
   func utf8(_ data: Data, at url: URL) throws -> String {
@@ -119,4 +153,11 @@ struct EnvironmentPresetFilesystem: Sendable {
       throw EnvironmentLifecycleError.system("sync \(residueLabel)", url, errno)
     }
   }
+}
+
+enum EnvironmentPresetTransition {
+  /// The file already holds the target state.
+  case reached
+  /// The file holds the source state and must be transitioned from `current`.
+  case pending(current: Data?)
 }

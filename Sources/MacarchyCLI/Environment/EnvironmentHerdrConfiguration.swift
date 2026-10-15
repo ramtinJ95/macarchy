@@ -462,27 +462,12 @@ struct EnvironmentHerdrFileTransaction: Sendable {
     guard source != target else { return }
     let targetURL = URL(filePath: ownership.resolvedPath)
     let residueURL = targetURL.deletingLastPathComponent().appending(path: replacementName)
-    var current = try Self.filesystem.read(targetURL)
-    if let residue = try Self.filesystem.read(residueURL) {
-      if try matches(current, target, ownership: ownership, source: url),
-        try matches(residue, source, ownership: ownership, source: residueURL)
-      {
-        try Self.filesystem.remove(residueURL)
-        return
-      }
-      if try matches(current, source, ownership: ownership, source: url),
-        try matches(residue, target, ownership: ownership, source: residueURL)
-      {
-        try Self.filesystem.remove(residueURL)
-      } else {
-        throw EnvironmentLifecycleError.drift("Herdr replacement residue")
-      }
-      current = try Self.filesystem.read(targetURL)
-    }
-    if try matches(current, target, ownership: ownership, source: url) { return }
-    guard try matches(current, source, ownership: ownership, source: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
+    guard
+      case .pending(let current) = try Self.filesystem.pendingTransition(
+        at: url, readingFrom: targetURL, residue: residueURL, from: source, to: target,
+        driftLabel: "Herdr",
+        matches: { try matches($0, $1, ownership: ownership, source: $2) })
+    else { return }
 
     switch target {
     case .managed(let desired):
