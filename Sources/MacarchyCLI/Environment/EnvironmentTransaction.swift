@@ -1,3 +1,4 @@
+import Foundation
 import ThemeCore
 
 enum EnvironmentTransactionOperation: String, Codable, Sendable {
@@ -196,6 +197,17 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     return transaction
   }
 
+  var replacementNames: EnvironmentReplacementNames {
+    EnvironmentReplacementNames(
+      btop: btopReplacementName,
+      codex: codexReplacementName,
+      herdr: herdrReplacementName,
+      pi: piReplacementName,
+      spicetify: spicetifyReplacementName,
+      tuicr: tuicrReplacementName
+    )
+  }
+
   var withHerdrRuntimeVerified: Self {
     var transaction = self
     transaction.herdrRuntimeVerified = true
@@ -235,5 +247,58 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     case bordersRuntimeTarget = "borders_runtime_target"
     case bordersRuntimeAttempted = "borders_runtime_attempted"
     case bordersRuntimeVerified = "borders_runtime_verified"
+  }
+}
+
+/// The replacement file names a transaction reserves for the presets' key-owned files.
+struct EnvironmentReplacementNames: Equatable, Sendable {
+  var btop: String? = nil
+  var codex: String? = nil
+  var herdr: String? = nil
+  var pi: String? = nil
+  var spicetify: String? = nil
+  var tuicr: String? = nil
+}
+
+extension EnvironmentReplacementNames {
+  /// Reserves a fresh name for each preset file that either ownership snapshot owns.
+  init(from old: EnvironmentOwnership?, to new: EnvironmentOwnership?) {
+    func reserve(_ preset: String, _ owned: Bool) -> String? {
+      owned ? Self.reserve(preset) : nil
+    }
+    self.init(
+      btop: reserve("btop", old?.btop != nil || new?.btop != nil),
+      codex: reserve("codex", old?.codex != nil || new?.codex != nil),
+      herdr: reserve("herdr", old?.herdr != nil || new?.herdr != nil),
+      pi: reserve("pi", old?.pi != nil || new?.pi != nil),
+      spicetify: reserve("spicetify", old?.spicetify != nil || new?.spicetify != nil),
+      tuicr: reserve("tuicr", old?.tuicr != nil || new?.tuicr != nil)
+    )
+  }
+
+  var isEmpty: Bool { self == Self() }
+
+  static func reserve(_ preset: String) -> String {
+    ".macarchy-environment-\(preset)-\(UUID().uuidString.lowercased()).replacement"
+  }
+
+  /// Whether each preset has a well-formed name exactly when either snapshot owns its file.
+  func areValid(from old: EnvironmentOwnership?, to new: EnvironmentOwnership?) -> Bool {
+    Self.isValid(btop, preset: "btop", required: old?.btop != nil || new?.btop != nil)
+      && Self.isValid(codex, preset: "codex", required: old?.codex != nil || new?.codex != nil)
+      && Self.isValid(herdr, preset: "herdr", required: old?.herdr != nil || new?.herdr != nil)
+      && Self.isValid(pi, preset: "pi", required: old?.pi != nil || new?.pi != nil)
+      && Self.isValid(
+        spicetify, preset: "spicetify", required: old?.spicetify != nil || new?.spicetify != nil)
+      && Self.isValid(tuicr, preset: "tuicr", required: old?.tuicr != nil || new?.tuicr != nil)
+  }
+
+  static func isValid(_ name: String?, preset: String, required: Bool) -> Bool {
+    guard required else { return name == nil }
+    guard let name else { return false }
+    return name.hasPrefix(".macarchy-environment-\(preset)-")
+      && name.hasSuffix(".replacement")
+      && !name.contains("/")
+      && name.utf8.count <= 128
   }
 }
