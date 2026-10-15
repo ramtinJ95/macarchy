@@ -75,16 +75,11 @@ extension SetupOwnershipManager {
       at: context.starshipBehavior,
       id: Self.starshipBehaviorID
     )
-    let document: TOMLTable
-    do {
-      document = try TOMLTable(source: configuration)
-    } catch {
-      throw SetupOwnershipError.invalidConfiguration(
-        Self.starshipBehaviorID,
-        context.starshipBehavior,
-        String(describing: error)
-      )
-    }
+    let document = try parseTOML(
+      configuration,
+      id: Self.starshipBehaviorID,
+      target: context.starshipBehavior
+    )
     guard !document.contains(key: "palette"), !document.contains(key: "palettes") else {
       throw SetupOwnershipError.invalidConfiguration(
         Self.starshipBehaviorID,

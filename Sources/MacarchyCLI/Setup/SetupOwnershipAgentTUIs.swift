@@ -45,20 +45,7 @@ extension SetupOwnershipManager {
       )
     }
 
-    let installed = try installedConfiguration(
-      id: Self.piSelectorID,
-      target: context.piConfiguration,
-      original: original,
-      transform: {
-        try addingJSONSelection(
-          to: $0,
-          key: PiAdapter.selectionKey,
-          value: PiAdapter.themeName,
-          id: Self.piSelectorID,
-          target: context.piConfiguration
-        )
-      }
-    )
+    let installed = try piSelectorInstallation(from: original, context: context)
     if dryRun {
       return integrationResult(
         id: Self.piSelectorID,
@@ -78,7 +65,7 @@ extension SetupOwnershipManager {
       installedDigest: piSelectorContractDigest(),
       linkDestination: nil
     )
-    do {
+    try attributingFailure(to: Self.piSelectorID, target: context.piConfiguration) {
       try save(record: record, records: &records, context: context)
       try faultInjector(.manifestPrepared)
       try replaceRegularFile(
@@ -91,12 +78,6 @@ extension SetupOwnershipManager {
       )
       try faultInjector(.targetWritten)
       try save(record: record.applied, records: &records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: Self.piSelectorID,
-        target: context.piConfiguration
-      )
     }
     return integrationResult(
       id: Self.piSelectorID,
@@ -292,7 +273,7 @@ extension SetupOwnershipManager {
       )
     }
 
-    do {
+    try attributingFailure(to: Self.piSelectorID, target: context.piConfiguration) {
       if residueExists {
         _ = try validatePiSelectorReplacementResidue(context: context, remove: true)
       }
@@ -316,12 +297,6 @@ extension SetupOwnershipManager {
       }
       records.removeAll { $0.id == Self.piSelectorID }
       try persist(records: records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: Self.piSelectorID,
-        target: context.piConfiguration
-      )
     }
     return integrationResult(
       id: Self.piSelectorID,
@@ -474,7 +449,7 @@ extension SetupOwnershipManager {
         )
       }
       var mutated = false
-      do {
+      try attributingFailure(to: Self.piSelectorID, target: context.piConfiguration) {
         if residueExists {
           _ = try validatePiSelectorReplacementResidue(context: context, remove: true)
           mutated = true
@@ -483,12 +458,6 @@ extension SetupOwnershipManager {
           try save(record: record.applied, records: &records, context: context)
           mutated = true
         }
-      } catch {
-        throw SetupOwnershipTransactionError(
-          error,
-          integrationID: Self.piSelectorID,
-          target: context.piConfiguration
-        )
       }
       return integrationResult(
         id: Self.piSelectorID,
@@ -502,20 +471,7 @@ extension SetupOwnershipManager {
       )
     }
 
-    let installed = try installedConfiguration(
-      id: Self.piSelectorID,
-      target: context.piConfiguration,
-      original: current,
-      transform: {
-        try addingJSONSelection(
-          to: $0,
-          key: PiAdapter.selectionKey,
-          value: PiAdapter.themeName,
-          id: Self.piSelectorID,
-          target: context.piConfiguration
-        )
-      }
-    )
+    let installed = try piSelectorInstallation(from: current, context: context)
     if dryRun {
       return integrationResult(
         id: Self.piSelectorID,
@@ -524,7 +480,7 @@ extension SetupOwnershipManager {
         message: "Would restore the recorded Pi theme selector"
       )
     }
-    do {
+    try attributingFailure(to: Self.piSelectorID, target: context.piConfiguration) {
       if residueExists {
         _ = try validatePiSelectorReplacementResidue(context: context, remove: true)
       }
@@ -538,12 +494,6 @@ extension SetupOwnershipManager {
       )
       try faultInjector(.targetWritten)
       try save(record: record.applied, records: &records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: Self.piSelectorID,
-        target: context.piConfiguration
-      )
     }
     return integrationResult(
       id: Self.piSelectorID,
@@ -576,44 +526,20 @@ extension SetupOwnershipManager {
     context: Context,
     remove: Bool
   ) throws -> Bool {
-    let parent = try openPinnedParent(
+    try withReplacementResidue(
       target: context.piConfiguration,
+      replacementName: context.piSelectorReplacementName,
       homeDirectory: context.homeDirectory,
-      label: "Pi theme selector"
-    )
-    defer { Darwin.close(parent) }
-    let replacementURL = piSelectorReplacementURL(context: context)
-    let descriptor = context.piSelectorReplacementName.withCString {
-      Darwin.openat(parent, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
-    }
-    if descriptor < 0, errno == ENOENT { return false }
-    guard descriptor >= 0 else { throw posixError("open Pi selector residue", replacementURL) }
-    defer { Darwin.close(descriptor) }
-
-    let residue = try readPinnedRegularFile(
-      descriptor: descriptor,
-      url: replacementURL,
-      label: "Pi theme selector"
-    )
-    let current = try readPinnedRegularFile(
-      parentDescriptor: parent,
-      name: context.piConfiguration.lastPathComponent,
-      url: context.piConfiguration,
-      label: "Pi theme selector"
-    )
-    let residueState = try ownedPiSelectionState(residue.data, context: context)
-    let currentState = try ownedPiSelectionState(current.data, context: context)
-    guard residueState != currentState else {
-      throw SetupOwnershipError.ownershipDrift(context.piConfiguration)
-    }
-    if remove {
-      guard
-        context.piSelectorReplacementName.withCString({ Darwin.unlinkat(parent, $0, 0) }) == 0
-      else {
-        throw posixError("remove Pi selector residue", replacementURL)
+      label: "Pi theme selector",
+      residueDescription: "Pi selector residue",
+      remove: remove
+    ) { (residue: Data, current: Data) throws -> Void in
+      let residueState = try ownedPiSelectionState(residue, context: context)
+      let currentState = try ownedPiSelectionState(current, context: context)
+      guard residueState != currentState else {
+        throw SetupOwnershipError.ownershipDrift(context.piConfiguration)
       }
-    }
-    return true
+    } != nil
   }
 
   fileprivate func ownedPiSelectionState(
@@ -635,6 +561,24 @@ extension SetupOwnershipManager {
 
   func piSelectorContractDigest() -> String {
     sha256Digest(Data("\"\(PiAdapter.selectionKey)\": \"\(PiAdapter.themeName)\"".utf8))
+  }
+
+  /// The Pi configuration with Macarchy's theme selection added to `original`.
+  private func piSelectorInstallation(from original: Data, context: Context) throws -> Data {
+    try installedConfiguration(
+      id: Self.piSelectorID,
+      target: context.piConfiguration,
+      original: original,
+      transform: {
+        try addingJSONSelection(
+          to: $0,
+          key: PiAdapter.selectionKey,
+          value: PiAdapter.themeName,
+          id: Self.piSelectorID,
+          target: context.piConfiguration
+        )
+      }
+    )
   }
 
   func piSelectorReplacementURL(context: Context) -> URL {
@@ -659,7 +603,18 @@ extension SetupOwnershipManager {
     id: String,
     target: URL
   ) throws -> PiSelectionState {
-    let document = try StrictJSONObjectDocument(data: data, id: id, target: target)
+    try piSelectionState(
+      StrictJSONObjectDocument(data: data, id: id, target: target),
+      key: key, value: value, id: id, target: target)
+  }
+
+  fileprivate func piSelectionState(
+    _ document: StrictJSONObjectDocument,
+    key: String,
+    value: String,
+    id: String,
+    target: URL
+  ) throws -> PiSelectionState {
     guard let member = document.members.first(where: { $0.key == key }) else {
       return .absent
     }
@@ -679,11 +634,11 @@ extension SetupOwnershipManager {
     id: String,
     target: URL
   ) throws -> Data {
-    if try jsonSelectionIsExternal(original, key: key, value: value, id: id, target: target) {
+    let document = try StrictJSONObjectDocument(data: original, id: id, target: target)
+    if try piSelectionState(document, key: key, value: value, id: id, target: target) == .exact {
       return original
     }
 
-    let document = try StrictJSONObjectDocument(data: original, id: id, target: target)
     let insertionIndex: Int
     var insertion = Array("\"\(key)\": \"\(value)\"".utf8)
     if let first = document.members.first {
@@ -718,7 +673,7 @@ extension SetupOwnershipManager {
     let document = try StrictJSONObjectDocument(data: original, id: id, target: target)
     guard
       let memberIndex = document.members.firstIndex(where: { $0.key == key }),
-      try piSelectionState(original, key: key, value: value, id: id, target: target) == .exact
+      try piSelectionState(document, key: key, value: value, id: id, target: target) == .exact
     else {
       throw SetupOwnershipError.conflictingDirective(id, target)
     }
@@ -755,12 +710,7 @@ extension SetupOwnershipManager {
     target: URL
   ) throws -> Bool {
     let configuration = String(decoding: data, as: UTF8.self)
-    let document: TOMLTable
-    do {
-      document = try TOMLTable(source: configuration)
-    } catch {
-      throw SetupOwnershipError.invalidConfiguration(id, target, String(describing: error))
-    }
+    let document = try parseTOML(configuration, id: id, target: target)
     let selection = CanonicalTOMLSelector(configuration: configuration, key: key)
     guard document.contains(key: key) else {
       guard selection.values.isEmpty else {
@@ -768,13 +718,7 @@ extension SetupOwnershipManager {
       }
       return false
     }
-    do {
-      guard try document.string(forKey: key) == value else {
-        throw SetupOwnershipError.conflictingDirective(id, target)
-      }
-    } catch let error as SetupOwnershipError {
-      throw error
-    } catch {
+    guard (try? document.string(forKey: key)) == value else {
       throw SetupOwnershipError.conflictingDirective(id, target)
     }
     guard selection.values == ["\"\(value)\""] else {

@@ -271,14 +271,14 @@ struct SetupOwnershipRecord: Codable, Equatable {
   }
 
   let id: String
-  let phase: Phase
+  var phase: Phase
   let kind: Kind
   let targetPath: String
   let backupPath: String?
   let originalDigest: String?
   let installedDigest: String
   let linkDestination: String?
-  let replacementDigest: String?
+  var replacementDigest: String?
   let originalKind: OriginalKind?
   let originalLinkDestination: String?
   let originalFileMode: UInt16?
@@ -292,28 +292,10 @@ struct SetupOwnershipRecord: Codable, Equatable {
   let claimNonce: String?
 
   var applied: SetupOwnershipRecord {
-    SetupOwnershipRecord(
-      id: id,
-      phase: .applied,
-      kind: kind,
-      targetPath: targetPath,
-      backupPath: backupPath,
-      originalDigest: originalDigest,
-      installedDigest: installedDigest,
-      linkDestination: linkDestination,
-      replacementDigest: nil,
-      originalKind: originalKind,
-      originalLinkDestination: originalLinkDestination,
-      originalFileMode: originalFileMode,
-      originalMetadataDigest: originalMetadataDigest,
-      originalVolumeUUID: originalVolumeUUID,
-      originalDevice: originalDevice,
-      originalInode: originalInode,
-      originalSourceDigest: originalSourceDigest,
-      originalInventory: originalInventory,
-      retainedOriginalPath: retainedOriginalPath,
-      claimNonce: claimNonce
-    )
+    var record = self
+    record.phase = .applied
+    record.replacementDigest = nil
+    return record
   }
 
   enum CodingKeys: String, CodingKey, CaseIterable {

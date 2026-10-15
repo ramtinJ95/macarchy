@@ -76,45 +76,38 @@ struct ConsumerSetupPlan {
     _ dryRun: Bool,
     _ records: inout [SetupOwnershipRecord]
   ) throws -> [SetupIntegrationResult] {
-    let operation: Execution = {
-      try execute(.setup, dryRun: dryRun, records: &$0)
-    }
-    switch executionGroup {
-    case .independent:
-      return try operation(&records)
-    case .spicetify:
-      do {
-        let results = try manager.withSpicetifySetupGroup(
-          context: context,
-          dryRun: dryRun,
-          records: &records,
-          execute: operation
-        )
-        return resultsInStepOrder(results)
-      } catch let error as ConsumerSetupPlanPartialFailure {
-        throw error.cause
-      }
-    }
+    try run(.setup, dryRun: dryRun, records: &records)
   }
 
   func teardown(
     _ dryRun: Bool,
     _ records: inout [SetupOwnershipRecord]
   ) throws -> [SetupIntegrationResult] {
+    try run(.teardown, dryRun: dryRun, records: &records)
+  }
+
+  private func run(
+    _ phase: Phase,
+    dryRun: Bool,
+    records: inout [SetupOwnershipRecord]
+  ) throws -> [SetupIntegrationResult] {
     let operation: Execution = {
-      try execute(.teardown, dryRun: dryRun, records: &$0)
+      try execute(phase, dryRun: dryRun, records: &$0)
     }
     switch executionGroup {
     case .independent:
       return try operation(&records)
     case .spicetify:
       do {
-        let results = try manager.withSpicetifyTeardownGroup(
-          context: context,
-          dryRun: dryRun,
-          records: &records,
-          execute: operation
-        )
+        let results =
+          switch phase {
+          case .setup:
+            try manager.withSpicetifySetupGroup(
+              context: context, dryRun: dryRun, records: &records, execute: operation)
+          case .teardown:
+            try manager.withSpicetifyTeardownGroup(
+              context: context, dryRun: dryRun, records: &records, execute: operation)
+          }
         return resultsInStepOrder(results)
       } catch let error as ConsumerSetupPlanPartialFailure {
         throw error.cause
@@ -157,16 +150,10 @@ struct ConsumerSetupPlan {
       guard completed.contains(where: \.mutationAttempted) else {
         throw ConsumerSetupPlanPartialFailure(cause: error, completedResults: completed)
       }
-      let failure = SetupOwnershipManager.failureResult(
+      throw SetupOwnershipManager.afterCompletedMutations(
         error,
+        completed: completed,
         homeDirectory: context.homeDirectory
-      )
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: completed,
-        failureMutationAttempted: false
       )
     }
   }
