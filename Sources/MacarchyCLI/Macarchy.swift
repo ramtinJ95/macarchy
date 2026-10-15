@@ -40,76 +40,58 @@ struct Macarchy: AsyncParsableCommand {
 
   struct StateOptions: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = homePath(".config/macarchy", directory: true)
 
     @Option(help: "Kitty configuration file.")
-    var kittyConfig = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/kitty/kitty.conf").path
+    var kittyConfig = homePath(".config/kitty/kitty.conf")
 
     @Option(help: "SketchyBar entry configuration file.")
-    var sketchyBarConfig = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/sketchybar/sketchybarrc").path
+    var sketchyBarConfig = homePath(".config/sketchybar/sketchybarrc")
 
     @Option(help: "Shell configuration file.")
-    var shellConfig = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".zshrc").path
+    var shellConfig = homePath(".zshrc")
 
     @Option(help: "eza configuration directory.")
-    var ezaConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/eza", directoryHint: .isDirectory).path
+    var ezaConfigDir = homePath(".config/eza", directory: true)
 
     @Option(help: "bat configuration directory.")
-    var batConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/bat", directoryHint: .isDirectory).path
+    var batConfigDir = homePath(".config/bat", directory: true)
 
     @Option(help: "bat cache directory.")
-    var batCacheDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".cache/bat", directoryHint: .isDirectory).path
+    var batCacheDir = homePath(".cache/bat", directory: true)
 
     @Option(help: "btop configuration directory.")
-    var btopConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/btop", directoryHint: .isDirectory).path
+    var btopConfigDir = homePath(".config/btop", directory: true)
 
     @Option(help: "Yazi configuration directory.")
-    var yaziConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/yazi", directoryHint: .isDirectory).path
+    var yaziConfigDir = homePath(".config/yazi", directory: true)
 
     @Option(help: "Atuin configuration directory.")
-    var atuinConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/atuin", directoryHint: .isDirectory).path
+    var atuinConfigDir = homePath(".config/atuin", directory: true)
 
     @Option(help: "Neovim configuration directory.")
-    var neovimConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/nvim", directoryHint: .isDirectory).path
+    var neovimConfigDir = homePath(".config/nvim", directory: true)
 
     @Option(help: "Starship configuration file.")
-    var starshipConfig = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/starship.toml").path
+    var starshipConfig = homePath(".config/starship.toml")
 
     @Option(help: "Starship behavior source file.")
-    var starshipBehavior = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/starship/behavior.toml").path
+    var starshipBehavior = homePath(".config/starship/behavior.toml")
 
     @Option(help: "Pi configuration directory.")
-    var piConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".pi/agent", directoryHint: .isDirectory).path
+    var piConfigDir = homePath(".pi/agent", directory: true)
 
     @Option(help: "Herdr configuration file.")
-    var herdrConfig = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/herdr/config.toml").path
+    var herdrConfig = homePath(".config/herdr/config.toml")
 
     @Option(help: "tuicr configuration directory.")
-    var tuicrConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/tuicr", directoryHint: .isDirectory).path
+    var tuicrConfigDir = homePath(".config/tuicr", directory: true)
 
     @Option(help: "Codex configuration directory.")
-    var codexConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".codex", directoryHint: .isDirectory).path
+    var codexConfigDir = homePath(".codex", directory: true)
 
     @Option(help: "Spicetify configuration directory.")
-    var spicetifyConfigDir = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/spicetify", directoryHint: .isDirectory).path
+    var spicetifyConfigDir = homePath(".config/spicetify", directory: true)
 
     var stateRootURL: URL {
       URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
@@ -120,30 +102,32 @@ struct Macarchy: AsyncParsableCommand {
         kittyConfigurationURL: URL(filePath: kittyConfig),
         sketchyBarConfigurationURL: URL(filePath: sketchyBarConfig),
         shellConfigurationURL: URL(filePath: shellConfig),
-        ezaConfigurationDirectoryURL: URL(filePath: ezaConfigDir, directoryHint: .isDirectory),
-        batConfigurationDirectoryURL: URL(filePath: batConfigDir, directoryHint: .isDirectory),
-        batCacheDirectoryURL: URL(filePath: batCacheDir, directoryHint: .isDirectory),
-        btopConfigurationDirectoryURL: URL(
-          filePath: btopConfigDir, directoryHint: .isDirectory),
-        yaziConfigurationDirectoryURL: URL(
-          filePath: yaziConfigDir, directoryHint: .isDirectory),
-        atuinConfigurationDirectoryURL: URL(
-          filePath: atuinConfigDir, directoryHint: .isDirectory),
-        neovimConfigurationDirectoryURL: URL(
-          filePath: neovimConfigDir, directoryHint: .isDirectory),
+        ezaConfigurationDirectoryURL: directoryURL(ezaConfigDir),
+        batConfigurationDirectoryURL: directoryURL(batConfigDir),
+        batCacheDirectoryURL: directoryURL(batCacheDir),
+        btopConfigurationDirectoryURL: directoryURL(btopConfigDir),
+        yaziConfigurationDirectoryURL: directoryURL(yaziConfigDir),
+        atuinConfigurationDirectoryURL: directoryURL(atuinConfigDir),
+        neovimConfigurationDirectoryURL: directoryURL(neovimConfigDir),
         starshipConfigurationURL: URL(filePath: starshipConfig),
         starshipBehaviorURL: URL(filePath: starshipBehavior),
-        piConfigurationDirectoryURL: URL(
-          filePath: piConfigDir, directoryHint: .isDirectory),
+        piConfigurationDirectoryURL: directoryURL(piConfigDir),
         herdrConfigurationURL: URL(filePath: herdrConfig),
-        tuicrConfigurationDirectoryURL: URL(
-          filePath: tuicrConfigDir, directoryHint: .isDirectory),
-        codexConfigurationDirectoryURL: URL(
-          filePath: codexConfigDir, directoryHint: .isDirectory),
-        spicetifyConfigurationDirectoryURL: URL(
-          filePath: spicetifyConfigDir, directoryHint: .isDirectory)
+        tuicrConfigurationDirectoryURL: directoryURL(tuicrConfigDir),
+        codexConfigurationDirectoryURL: directoryURL(codexConfigDir),
+        spicetifyConfigurationDirectoryURL: directoryURL(spicetifyConfigDir)
       )
     }
   }
 
+}
+
+/// A path under the current user's home directory, as a command-line option default.
+private func homePath(_ relative: String, directory: Bool = false) -> String {
+  FileManager.default.homeDirectoryForCurrentUser
+    .appending(path: relative, directoryHint: directory ? .isDirectory : .inferFromPath).path
+}
+
+private func directoryURL(_ path: String) -> URL {
+  URL(filePath: path, directoryHint: .isDirectory)
 }

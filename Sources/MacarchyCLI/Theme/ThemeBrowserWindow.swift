@@ -518,9 +518,13 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       result.complete(
         ScreenSaverOutcome(message: message, succeeded: succeeded, refreshed: refreshed))
     }
-    screenSaverTimer = Timer.scheduledTimer(
-      timeInterval: 0.05, target: self, selector: #selector(checkScreenSaverResult(_:)),
-      userInfo: nil, repeats: true)
+    screenSaverTimer = poll(every: 0.05, #selector(checkScreenSaverResult(_:)))
+  }
+
+  /// Polls a background result on the main run loop until its handler invalidates the timer.
+  private func poll(every interval: TimeInterval, _ selector: Selector) -> Timer {
+    Timer.scheduledTimer(
+      timeInterval: interval, target: self, selector: selector, userInfo: nil, repeats: true)
   }
 
   @objc private func checkScreenSaverResult(_ timer: Timer) {
@@ -553,13 +557,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     statusLabel.toolTip = nil
     do {
       applyProcess = try launchSelection(browserState.selection)
-      applyTimer = Timer.scheduledTimer(
-        timeInterval: 0.1,
-        target: self,
-        selector: #selector(checkApplyProcess(_:)),
-        userInfo: nil,
-        repeats: true
-      )
+      applyTimer = poll(every: 0.1, #selector(checkApplyProcess(_:)))
     } catch {
       isApplying = false
       setControlsEnabled(true)
@@ -648,13 +646,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
       Task.detached(priority: .userInitiated) {
         result.complete(await delete(target))
       }
-      self.deletionTimer = Timer.scheduledTimer(
-        timeInterval: 0.05,
-        target: self,
-        selector: #selector(self.checkDeletionResult(_:)),
-        userInfo: nil,
-        repeats: true
-      )
+      self.deletionTimer = self.poll(every: 0.05, #selector(self.checkDeletionResult(_:)))
     }
   }
 
@@ -985,13 +977,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
         result.complete(.failed(String(describing: error)))
       }
     }
-    galleryTimer = Timer.scheduledTimer(
-      timeInterval: 0.05,
-      target: self,
-      selector: #selector(checkGalleryResult(_:)),
-      userInfo: nil,
-      repeats: true
-    )
+    galleryTimer = poll(every: 0.05, #selector(checkGalleryResult(_:)))
   }
 
   @objc private func checkGalleryResult(_ timer: Timer) {
@@ -1124,13 +1110,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
         result.complete(.failed(String(describing: error)))
       }
     }
-    backgroundImageTimer = Timer.scheduledTimer(
-      timeInterval: 0.03,
-      target: self,
-      selector: #selector(checkBackgroundImageResult(_:)),
-      userInfo: nil,
-      repeats: true
-    )
+    backgroundImageTimer = poll(every: 0.03, #selector(checkBackgroundImageResult(_:)))
   }
 
   @objc private func checkBackgroundImageResult(_ timer: Timer) {
