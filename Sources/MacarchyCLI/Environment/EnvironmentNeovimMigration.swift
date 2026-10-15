@@ -303,26 +303,9 @@ struct EnvironmentNeovimMigration: Sendable {
     if after.managedTarget != legacyTarget {
       try validateNativeTree(at: URL(filePath: after.managedTarget))
     }
-    let parent = try PinnedFilesystem.openDirectory(at: publicURL.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    let destination = try PinnedFilesystem.symlinkDestination(
-      parentDescriptor: parent, name: publicURL.lastPathComponent, url: publicURL)
-    if destination == after.managedTarget { return }
-    guard destination == before.managedTarget else {
-      throw EnvironmentLifecycleError.drift(publicURL.path)
-    }
-    let name = ".macarchy-neovim-\(UUID().uuidString.lowercased()).link"
-    let created = after.managedTarget.withCString { Darwin.symlinkat($0, parent, name) }
-    guard created == 0 else {
-      throw EnvironmentLifecycleError.system("stage native Neovim entry", publicURL, errno)
-    }
-    defer { name.withCString { _ = Darwin.unlinkat(parent, $0, 0) } }
-    let replaced = name.withCString { source in
-      publicURL.lastPathComponent.withCString { Darwin.renameat(parent, source, parent, $0) }
-    }
-    guard replaced == 0, fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("switch native Neovim entry", publicURL, errno)
-    }
+    try EnvironmentNativeSource.switchPublicLink(
+      at: publicURL, from: before.managedTarget, to: after.managedTarget,
+      stagingPrefix: ".macarchy-neovim", entryLabel: "native Neovim entry")
   }
 }
 
@@ -353,26 +336,10 @@ extension EnvironmentTransactionCoordinator {
     }
     let proposed = previous.replacingTarget(for: .neovim, with: migration.nativeRoot.path)
     if sourceURL == nil { try migration.seed(previous) }
-    let transaction = EnvironmentTransaction(
-      operation: .neovimMigration, previousOwnership: previous, proposedOwnership: proposed,
-      previousCurrentDestination: "generations/\(previous.generationID)")
-    let store = EnvironmentStateStore(stateRoot: stateRoot)
-    try store.writeTransaction(transaction)
-    do {
-      try migration.transition(from: previous, to: proposed)
-      try store.writeOwnership(proposed)
-      try faultInjector(.authorityPublished)
-      try store.removeTransaction()
-    } catch {
-      let failure = error
-      try store.writeTransaction(transaction.rollingBack)
-      try migration.transition(from: proposed, to: previous)
-      try store.writeOwnership(previous)
-      try store.removeTransaction()
-      throw EnvironmentLifecycleError.blocked(
-        "Neovim entry rolled back; the writable configuration is preserved at \(migration.nativeRoot.path). \(failure)"
-      )
-    }
+    try journaledNativeMigration(
+      .neovimMigration, from: previous, to: proposed, label: "Neovim",
+      preservedPath: migration.nativeRoot.path
+    ) { try migration.transition(from: $0, to: $1) }
     return
       "Neovim now uses writable configuration at \(migration.nativeRoot.path). Restart Neovim before using Lazy. No plugins were downloaded; old dotfiles are untouched."
   }

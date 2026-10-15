@@ -207,30 +207,43 @@ struct EnvironmentNativeFileMigration: Sendable {
     if after.managedTarget != legacyTarget {
       try validateNativeFile(at: URL(filePath: after.managedTarget))
     }
+    try EnvironmentNativeSource.switchPublicLink(
+      at: publicURL, from: before.managedTarget, to: after.managedTarget,
+      stagingPrefix: ".macarchy-\(provider.rawValue)", entryLabel: "native entry")
+  }
+}
+
+/// Shared exclusion boundary for explicit external native provider connections.
+enum EnvironmentNativeSource {
+  /// Atomically repoints a provider's public entry link from `before` to `after` through a staged
+  /// sibling link; a link that already points to `after` is left alone.
+  static func switchPublicLink(
+    at publicURL: URL, from before: String, to after: String, stagingPrefix: String,
+    entryLabel: String
+  ) throws {
     let parent = try PinnedFilesystem.openDirectory(at: publicURL.deletingLastPathComponent())
     defer { Darwin.close(parent) }
     let destination = try PinnedFilesystem.symlinkDestination(
       parentDescriptor: parent, name: publicURL.lastPathComponent, url: publicURL)
-    if destination == after.managedTarget { return }
-    guard destination == before.managedTarget else {
+    if destination == after { return }
+    guard destination == before else {
       throw EnvironmentLifecycleError.drift(publicURL.path)
     }
-    let name = ".macarchy-\(provider.rawValue)-\(UUID().uuidString.lowercased()).link"
-    guard after.managedTarget.withCString({ Darwin.symlinkat($0, parent, name) }) == 0 else {
-      throw EnvironmentLifecycleError.system("stage native entry", publicURL, errno)
+    let name = "\(stagingPrefix)-\(UUID().uuidString.lowercased()).link"
+    guard after.withCString({ Darwin.symlinkat($0, parent, name) }) == 0 else {
+      let code = errno
+      throw EnvironmentLifecycleError.system("stage \(entryLabel)", publicURL, code)
     }
     defer { name.withCString { _ = Darwin.unlinkat(parent, $0, 0) } }
     let result = name.withCString { source in
       publicURL.lastPathComponent.withCString { Darwin.renameat(parent, source, parent, $0) }
     }
     guard result == 0, fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("switch native entry", publicURL, errno)
+      let code = errno
+      throw EnvironmentLifecycleError.system("switch \(entryLabel)", publicURL, code)
     }
   }
-}
 
-/// Shared exclusion boundary for explicit external native provider connections.
-enum EnvironmentNativeSource {
   static func targetIsAllowed(
     _ path: String, homeDirectory: URL, stateRoot: URL,
     userOwnedPublicEntry: EnvironmentEntryID? = nil
@@ -286,27 +299,43 @@ extension EnvironmentTransactionCoordinator {
     let proposed = previous.replacingTarget(
       for: provider.entryID, with: migration.nativeURL.path)
     if sourceURL == nil { try migration.seed(previous) }
+    try journaledNativeMigration(
+      provider.operation, from: previous, to: proposed, label: provider.label,
+      preservedPath: migration.nativeURL.path
+    ) { try migration.transition(from: $0, to: $1) }
+    return
+      "\(provider.label) now uses writable configuration at \(migration.nativeURL.path). Edits affect fresh invocations; history and sync state are untouched."
+  }
+
+  /// Switches a native provider's entry under a recoverable transaction, restoring the previous
+  /// entry and ownership when the switch fails.
+  func journaledNativeMigration(
+    _ operation: EnvironmentTransactionOperation,
+    from previous: EnvironmentOwnership,
+    to proposed: EnvironmentOwnership,
+    label: String,
+    preservedPath: String,
+    transition: (EnvironmentOwnership, EnvironmentOwnership) throws -> Void
+  ) throws {
     let transaction = EnvironmentTransaction(
-      operation: provider.operation, previousOwnership: previous, proposedOwnership: proposed,
+      operation: operation, previousOwnership: previous, proposedOwnership: proposed,
       previousCurrentDestination: "generations/\(previous.generationID)")
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     try store.writeTransaction(transaction)
     do {
-      try migration.transition(from: previous, to: proposed)
+      try transition(previous, proposed)
       try store.writeOwnership(proposed)
       try faultInjector(.authorityPublished)
       try store.removeTransaction()
     } catch {
       let failure = error
       try store.writeTransaction(transaction.rollingBack)
-      try migration.transition(from: proposed, to: previous)
+      try transition(proposed, previous)
       try store.writeOwnership(previous)
       try store.removeTransaction()
       throw EnvironmentLifecycleError.blocked(
-        "\(provider.label) entry rolled back; the writable configuration is preserved at \(migration.nativeURL.path). \(failure)"
+        "\(label) entry rolled back; the writable configuration is preserved at \(preservedPath). \(failure)"
       )
     }
-    return
-      "\(provider.label) now uses writable configuration at \(migration.nativeURL.path). Edits affect fresh invocations; history and sync state are untouched."
   }
 }
