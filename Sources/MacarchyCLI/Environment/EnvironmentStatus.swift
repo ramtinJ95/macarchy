@@ -32,7 +32,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             id: $0.id,
             status: $0.isAvailable() ? "present" : "missing",
             requirement: $0.requirement,
-            remediation: remediation($0.remediation)
+            remediation: $0.remediation.instruction
           )
         }
       if profile.presets.pi {
@@ -156,7 +156,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             id: $0.id,
             status: $0.isAvailable() ? "present" : "missing",
             requirement: $0.requirement,
-            remediation: remediation($0.remediation)
+            remediation: $0.remediation.instruction
           )
         }
       return
@@ -230,17 +230,6 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             "Initialize or repair Spicetify manually, or set presets.spicetify = false. Macarchy never runs backup, apply, or restore."
         )
       ]
-    }
-  }
-
-  private static func remediation(_ remediation: DependencyRemediation) -> String {
-    switch remediation {
-    case .cask(let package):
-      "Install Homebrew cask \(package)."
-    case .formula(let package):
-      "Install Homebrew formula \(package)."
-    case .external(let instruction, _):
-      instruction
     }
   }
 }

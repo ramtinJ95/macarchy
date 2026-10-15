@@ -278,12 +278,8 @@ private func reconcileRestoredDefaultConsumers(
       succeeded: true
     )
   }
-  var hasActiveTheme = true
-  do {
-    _ = try ReconciliationStatusStore(root: stateRoot).activeManifest()
-  } catch ReconciliationStatusError.noActiveGeneration {
-    hasActiveTheme = false
-  }
+  let hasActiveTheme =
+    try ReconciliationStatusStore(root: stateRoot).activeManifestIfPresent() != nil
   let adapterIDs =
     hasActiveTheme
     ? try ThemeRuntimeSelection.enabledAdapterIDs(

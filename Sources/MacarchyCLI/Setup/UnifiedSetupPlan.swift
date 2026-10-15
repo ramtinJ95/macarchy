@@ -399,12 +399,13 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     let themeID: String
     let source: String
     let currentGenerationID: String?
-    do {
-      let manifest = try ReconciliationStatusStore(root: context.stateRoot).activeManifest()
+    if let manifest = try ReconciliationStatusStore(root: context.stateRoot)
+      .activeManifestIfPresent()
+    {
       themeID = manifest.themeID
       source = "active"
       currentGenerationID = manifest.generationID
-    } catch ReconciliationStatusError.noActiveGeneration {
+    } else {
       themeID = "catppuccin-mocha"
       source = "curated_default"
       currentGenerationID = nil

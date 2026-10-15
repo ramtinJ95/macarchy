@@ -27,12 +27,7 @@ struct ThemeScreenSaverCommandRunner: Sendable {
         backgroundID.map { "Saved screensaver image '\($0)' for '\(selectedThemeID)'." }
         ?? "Screensaver for '\(selectedThemeID)' now follows its wallpaper."
       do {
-        let active: GenerationManifest?
-        do {
-          active = try ReconciliationStatusStore(root: stateRoot).activeManifest()
-        } catch ReconciliationStatusError.noActiveGeneration {
-          active = nil
-        }
+        let active = try ReconciliationStatusStore(root: stateRoot).activeManifestIfPresent()
         guard active?.themeID == selectedThemeID else {
           return saved
             + " It will be used when this theme is active. Theme and wallpaper unchanged."

@@ -224,6 +224,15 @@ public struct ReconciliationStatusStore: Sendable {
     }
   }
 
+  /// The active manifest, or nil when no generation has been activated yet.
+  package func activeManifestIfPresent() throws -> GenerationManifest? {
+    do {
+      return try activeManifest()
+    } catch ReconciliationStatusError.noActiveGeneration {
+      return nil
+    }
+  }
+
   package func activeManifest() throws -> GenerationManifest {
     for _ in 0..<3 {
       let generationID = try activeGenerationID()
