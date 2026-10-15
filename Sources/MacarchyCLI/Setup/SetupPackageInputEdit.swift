@@ -33,7 +33,7 @@ struct SetupPackageInputEdit: Codable, Sendable {
     var metadata = stat()
     while lstat(ancestor.path, &metadata) != 0 {
       guard errno == ENOENT, ancestor.path != "/" else {
-        throw manager.posixError("inspect personal input parent", ancestor)
+        throw SetupOwnershipError.posix("inspect personal input parent", ancestor)
       }
       ancestor.deleteLastPathComponent()
     }
@@ -56,7 +56,7 @@ struct SetupPackageInputEdit: Codable, Sendable {
       if errno == ENOENT {
         return Self(path: url.path, before: nil, after: "", snapshot: nil)
       }
-      throw manager.posixError("open personal package input", url)
+      throw SetupOwnershipError.posix("open personal package input", url)
     }
     defer { Darwin.close(descriptor) }
     let snapshot = try manager.regularFileSnapshot(
@@ -91,7 +91,9 @@ struct SetupPackageInputEdit: Codable, Sendable {
       try GuidedSetupProfileWriter.write(after, to: url)
       let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
       defer { Darwin.close(parent) }
-      guard fsync(parent) == 0 else { throw manager.posixError("sync new personal input", url) }
+      guard fsync(parent) == 0 else {
+        throw SetupOwnershipError.posix("sync new personal input", url)
+      }
       return
     }
     try manager.replaceRegularFile(

@@ -119,13 +119,7 @@ extension DesktopAdoptionEvidence {
     if let volumeUUID {
       values.append(volumeUUID)
     }
-    var data = Data()
-    for value in values {
-      let bytes = Data(value.utf8)
-      data.append(Data("\(bytes.count):".utf8))
-      data.append(bytes)
-    }
-    return sha256Digest(data)
+    return lengthPrefixedSHA256Digest(values)
   }
 
   /// The file whose bytes `contentDigest` covers, for an entry named `entryName`.

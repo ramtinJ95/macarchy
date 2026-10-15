@@ -713,15 +713,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
 }
 
 package func sketchyBarArtifactDigest(_ artifacts: [String: String]) -> String {
-  var data = Data()
-  for path in artifacts.keys.sorted() {
-    for value in [path, artifacts[path]!] {
-      let bytes = Data(value.utf8)
-      data.append(Data("\(bytes.count):".utf8))
-      data.append(bytes)
-    }
-  }
-  return sha256Digest(data)
+  lengthPrefixedSHA256Digest(artifacts.keys.sorted().flatMap { [$0, artifacts[$0]!] })
 }
 
 private struct SketchyBarInputIdentity: Encodable {
