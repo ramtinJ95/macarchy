@@ -175,6 +175,81 @@ private func verifyPendingSpicetifyRuntime(
   )
 }
 
+/// Recovers any interrupted transaction unless previewing, tears environment ownership down, then
+/// verifies the provider runtimes the teardown changed, rolling it back if any of them fails.
+private func runEnvironmentTeardown(
+  coordinator: EnvironmentTransactionCoordinator,
+  dryRun: Bool,
+  stateRoot: URL,
+  homeDirectory: URL,
+  runtime: EnvironmentHerdrRuntimeReloader,
+  spicetifyRuntime: EnvironmentSpicetifyRuntimeRefresher,
+  bordersRuntime: EnvironmentBordersRuntime
+) throws -> (changed: Bool, message: String, restored: [DesktopThemeAdapterStatus]) {
+  if !dryRun {
+    _ = try recoverEnvironmentTransaction(
+      coordinator: coordinator,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      runtime: runtime, spicetifyRuntime: spicetifyRuntime,
+      bordersRuntime: bordersRuntime
+    )
+  }
+  let bordersService = try observedBordersService(
+    desiredEnabled: false, stateRoot: stateRoot, homeDirectory: homeDirectory,
+    runtime: bordersRuntime, preflight: !dryRun)
+  let result = try ActivationLock(root: stateRoot).withLock {
+    try coordinator.teardownLocked(dryRun: dryRun, bordersService: bordersService)
+  }
+  let restoredHerdr: DesktopThemeAdapterStatus?
+  let restoredSpicetify: DesktopThemeAdapterStatus?
+  let restoredBorders: DesktopThemeAdapterStatus?
+  do {
+    restoredBorders = try verifyPendingBordersRuntime(
+      coordinator: coordinator, runtime: bordersRuntime)
+    restoredHerdr = try verifyPendingHerdrRuntime(
+      coordinator: coordinator,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      runtime: runtime
+    )
+    restoredSpicetify = try verifyPendingSpicetifyRuntime(
+      coordinator: coordinator,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      runtime: spicetifyRuntime,
+      adapterWasReconciled: false
+    )
+    if restoredHerdr != nil || restoredSpicetify != nil || restoredBorders != nil {
+      try ActivationLock(root: stateRoot).withLock {
+        _ = try coordinator.prepareRecoveryLocked()
+      }
+    }
+  } catch {
+    let activationError = error
+    do {
+      try rollbackEnvironmentTransaction(
+        coordinator: coordinator,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        runtime: runtime, spicetifyRuntime: spicetifyRuntime,
+        bordersRuntime: bordersRuntime
+      )
+    } catch {
+      throw EnvironmentLifecycleError.blocked(
+        "teardown runtime activation failed and rollback requires recovery: \(error)"
+      )
+    }
+    throw EnvironmentLifecycleError.blocked(
+      "teardown runtime activation failed and was rolled back: \(activationError)"
+    )
+  }
+  return (
+    result.changed, result.message,
+    [restoredHerdr, restoredSpicetify, restoredBorders].compactMap { $0 }
+  )
+}
+
 /// Restored runtime evidence merged with the reconciliation evidence recorded for the consumer
 /// set that becomes default once the managed environment stops narrowing it.
 private struct EnvironmentRestoredThemeState {
@@ -511,62 +586,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
         let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
         let lifecycleLockDescriptor = try lifecycleLock.acquire()
         defer { lifecycleLock.release(lifecycleLockDescriptor) }
-        _ = try recoverEnvironmentTransaction(
+        let result = try runEnvironmentTeardown(
           coordinator: coordinator,
+          dryRun: false,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
           runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
           bordersRuntime: bordersRuntime
         )
-        let bordersService = try observedBordersService(
-          desiredEnabled: false, stateRoot: stateRoot, homeDirectory: homeDirectory,
-          runtime: bordersRuntime, preflight: true)
-        let result = try ActivationLock(root: stateRoot).withLock {
-          try coordinator.teardownLocked(dryRun: false, bordersService: bordersService)
-        }
-        let restoredHerdr: DesktopThemeAdapterStatus?
-        let restoredSpicetify: DesktopThemeAdapterStatus?
-        let restoredBorders: DesktopThemeAdapterStatus?
-        do {
-          restoredBorders = try verifyPendingBordersRuntime(
-            coordinator: coordinator, runtime: bordersRuntime)
-          restoredHerdr = try verifyPendingHerdrRuntime(
-            coordinator: coordinator,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            runtime: herdrRuntime
-          )
-          restoredSpicetify = try verifyPendingSpicetifyRuntime(
-            coordinator: coordinator,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            runtime: spicetifyRuntime,
-            adapterWasReconciled: false
-          )
-          if restoredHerdr != nil || restoredSpicetify != nil || restoredBorders != nil {
-            try ActivationLock(root: stateRoot).withLock {
-              _ = try coordinator.prepareRecoveryLocked()
-            }
-          }
-        } catch {
-          let activationError = error
-          do {
-            try rollbackEnvironmentTransaction(
-              coordinator: coordinator,
-              stateRoot: stateRoot,
-              homeDirectory: homeDirectory,
-              runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
-              bordersRuntime: bordersRuntime
-            )
-          } catch {
-            throw EnvironmentLifecycleError.blocked(
-              "teardown runtime activation failed and rollback requires recovery: \(error)"
-            )
-          }
-          throw EnvironmentLifecycleError.blocked(
-            "teardown runtime activation failed and was rolled back: \(activationError)"
-          )
-        }
         let restored: EnvironmentRestoredThemeState
         do {
           restored = try await reconcileRestoredDefaultConsumers(
@@ -574,7 +601,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
             consumerPaths: consumerPaths,
-            restored: [restoredHerdr, restoredSpicetify, restoredBorders].compactMap { $0 },
+            restored: result.restored,
             restorationMessage: result.message
           )
         } catch {
@@ -582,7 +609,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
             profileURL: profileURL,
             profile: profile.environment,
             prerequisites: prerequisiteState,
-            theme: [restoredHerdr, restoredSpicetify, restoredBorders].compactMap { $0 },
+            theme: result.restored,
             message: defaultConsumerReconciliationFailureMessage(result.message, error),
             mutated: result.changed,
             json: json
@@ -1088,22 +1115,12 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         || store.transactionExists
         || EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination() != nil
       if !hasManagedState {
-        let report = EnvironmentLifecycleReport(
-          operation: "environment_teardown",
+        let report = Self.report(
           outcome: "absent",
           mutated: false,
-          profile: nil,
-          providers: [:],
-          generation: EnvironmentGenerationReport(
-            status: "absent",
-            message: "No managed environment ownership exists."
-          ),
-          transactionStatus: "clear",
-          adoptionEvidenceDigest: nil,
+          generationStatus: "absent",
           prerequisites: [],
-          entries: [],
           theme: [],
-          verification: [],
           message: "No managed environment ownership exists."
         )
         return (try report.render(json: json), true)
@@ -1116,19 +1133,13 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         let missing = prerequisiteState.filter { $0.status == "missing" }
         guard missing.isEmpty else {
           let message = "Missing prerequisites: \(missing.map(\.id).joined(separator: ", "))."
-          let report = EnvironmentLifecycleReport(
-            operation: "environment_teardown",
+          let report = Self.report(
             outcome: "blocked",
             mutated: false,
-            profile: nil,
-            providers: [:],
-            generation: EnvironmentGenerationReport(status: "unknown", message: message),
+            generationStatus: "unknown",
             transactionStatus: store.transactionExists ? "recovery_required" : "clear",
-            adoptionEvidenceDigest: nil,
             prerequisites: prerequisiteState,
-            entries: [],
             theme: [],
-            verification: [],
             message: message
           )
           return (try report.render(json: json), false)
@@ -1141,65 +1152,15 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       )
-      if !dryRun {
-        _ = try recoverEnvironmentTransaction(
-          coordinator: coordinator,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
-          bordersRuntime: bordersRuntime
-        )
-      }
-      let bordersService = try observedBordersService(
-        desiredEnabled: false, stateRoot: stateRoot, homeDirectory: homeDirectory,
-        runtime: bordersRuntime, preflight: !dryRun)
-      let result = try ActivationLock(root: stateRoot).withLock {
-        try coordinator.teardownLocked(dryRun: dryRun, bordersService: bordersService)
-      }
-      let restoredHerdr: DesktopThemeAdapterStatus?
-      let restoredSpicetify: DesktopThemeAdapterStatus?
-      let restoredBorders: DesktopThemeAdapterStatus?
-      do {
-        restoredBorders = try verifyPendingBordersRuntime(
-          coordinator: coordinator, runtime: bordersRuntime)
-        restoredHerdr = try verifyPendingHerdrRuntime(
-          coordinator: coordinator,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          runtime: herdrRuntime
-        )
-        restoredSpicetify = try verifyPendingSpicetifyRuntime(
-          coordinator: coordinator,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          runtime: spicetifyRuntime,
-          adapterWasReconciled: false
-        )
-        if restoredHerdr != nil || restoredSpicetify != nil || restoredBorders != nil {
-          try ActivationLock(root: stateRoot).withLock {
-            _ = try coordinator.prepareRecoveryLocked()
-          }
-        }
-      } catch {
-        let activationError = error
-        do {
-          try rollbackEnvironmentTransaction(
-            coordinator: coordinator,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
-            bordersRuntime: bordersRuntime
-          )
-        } catch {
-          throw EnvironmentLifecycleError.blocked(
-            "teardown runtime activation failed and rollback requires recovery: \(error)"
-          )
-        }
-        throw EnvironmentLifecycleError.blocked(
-          "teardown runtime activation failed and was rolled back: \(activationError)"
-        )
-      }
-      var themeState = [restoredHerdr, restoredSpicetify, restoredBorders].compactMap { $0 }
+      let result = try runEnvironmentTeardown(
+        coordinator: coordinator,
+        dryRun: dryRun,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+        bordersRuntime: bordersRuntime
+      )
+      var themeState = result.restored
       var message = result.message
       if !dryRun {
         let restored: EnvironmentRestoredThemeState
@@ -1249,23 +1210,14 @@ struct EnvironmentTeardownCommandRunner: Sendable {
       )
       return (try report.render(json: json), true)
     } catch {
-      let report = EnvironmentLifecycleReport(
-        operation: "environment_teardown",
+      let report = Self.report(
         outcome: "blocked",
         mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
-        profile: nil,
-        providers: [:],
-        generation: EnvironmentGenerationReport(
-          status: "unknown",
-          message: String(describing: error)
-        ),
+        generationStatus: "unknown",
         transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
           ? "recovery_required" : "clear",
-        adoptionEvidenceDigest: nil,
         prerequisites: prerequisiteState,
-        entries: [],
         theme: [],
-        verification: [],
         message: String(describing: error)
       )
       return (try report.render(json: json), false)
@@ -1276,6 +1228,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
     outcome: String,
     mutated: Bool,
     generationStatus: String,
+    transactionStatus: String = "clear",
     prerequisites: [EnvironmentPrerequisiteStatus],
     theme: [DesktopThemeAdapterStatus],
     message: String
@@ -1287,7 +1240,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
       profile: nil,
       providers: [:],
       generation: EnvironmentGenerationReport(status: generationStatus, message: message),
-      transactionStatus: "clear",
+      transactionStatus: transactionStatus,
       adoptionEvidenceDigest: nil,
       prerequisites: prerequisites,
       entries: [],
