@@ -166,11 +166,24 @@ struct ConsumerSetupPlanTests {
       }
     )
     #expect(plannedOwnership == expectedOwnershipKinds())
-    #expect(
-      steps.allSatisfy {
-        ($0.ownershipKind == nil) == ($0.validateOwnershipRecord == nil)
+    for step in steps where step.ownershipKind == nil {
+      #expect(throws: SetupOwnershipError.invalidManifest("unknown integration \(step.id)")) {
+        try manager.validateRecord(
+          SetupOwnershipRecord(
+            id: step.id,
+            phase: .applied,
+            kind: .regularFile,
+            targetPath: step.target.path,
+            backupPath: nil,
+            originalDigest: nil,
+            installedDigest: String(repeating: "0", count: 64),
+            linkDestination: nil
+          ),
+          for: step,
+          context: context
+        )
       }
-    )
+    }
     #expect(
       plans.allSatisfy { plan in
         Set(plan.steps.map(\.setupRank)) == Set(0..<plan.steps.count)

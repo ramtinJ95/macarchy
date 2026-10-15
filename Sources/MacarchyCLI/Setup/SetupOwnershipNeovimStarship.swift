@@ -137,24 +137,6 @@ extension SetupOwnershipManager {
     )
   }
 
-  func teardownNeovimWatcher(context: Context) -> SetupIntegrationResult {
-    integrationResult(
-      id: Self.neovimWatcherID,
-      target: context.neovimWatcherConfiguration,
-      status: .none,
-      message: "The externally owned Neovim watcher is not a teardown target"
-    )
-  }
-
-  func teardownStarshipBehavior(context: Context) -> SetupIntegrationResult {
-    integrationResult(
-      id: Self.starshipBehaviorID,
-      target: context.starshipBehavior,
-      status: .none,
-      message: "The externally owned Starship behavior source is not a teardown target"
-    )
-  }
-
   private func exactTwoHopStarshipConfigurationLinkIsExternal(
     context: Context
   ) throws -> Bool {
