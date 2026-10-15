@@ -71,7 +71,7 @@ extension SetupOwnershipManager {
       originalDigest: sha256Digest(original),
       installedDigest: sha256Digest(installed)
     )
-    do {
+    try attributingFailure(to: Self.spicetifySelectorsID, target: context.spicetifyConfiguration) {
       try save(record: record, records: &records, context: context)
       try faultInjector(.manifestPrepared)
       try writeRegularBackup(
@@ -90,12 +90,6 @@ extension SetupOwnershipManager {
       )
       try faultInjector(.targetWritten)
       try save(record: record.applied, records: &records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: Self.spicetifySelectorsID,
-        target: context.spicetifyConfiguration
-      )
     }
     return integrationResult(
       id: Self.spicetifySelectorsID,
@@ -167,7 +161,7 @@ extension SetupOwnershipManager {
           message: "Would finalize the interrupted Spicetify theme selection"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
         _ = try validateSpicetifySelectorResidue(
           record: record,
           originalSelection: originalSelection,
@@ -175,12 +169,6 @@ extension SetupOwnershipManager {
           remove: true
         )
         try save(record: record.applied, records: &records, context: context)
-      } catch {
-        throw SetupOwnershipTransactionError(
-          error,
-          integrationID: record.id,
-          target: context.spicetifyConfiguration
-        )
       }
       return integrationResult(
         id: record.id,
@@ -204,18 +192,12 @@ extension SetupOwnershipManager {
           message: "Would restore ownership after the interrupted Spicetify teardown"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
         _ = try validateSpicetifySelectorResidue(
           record: record,
           originalSelection: originalSelection,
           context: context,
           remove: true
-        )
-      } catch {
-        throw SetupOwnershipTransactionError(
-          error,
-          integrationID: record.id,
-          target: context.spicetifyConfiguration
         )
       }
       currentForUpdate = try readConfiguration(
@@ -245,14 +227,8 @@ extension SetupOwnershipManager {
           message: "Would finalize the Spicetify theme selection ownership record"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
         try save(record: record.applied, records: &records, context: context)
-      } catch {
-        throw SetupOwnershipTransactionError(
-          error,
-          integrationID: record.id,
-          target: context.spicetifyConfiguration
-        )
       }
       return integrationResult(
         id: record.id,
@@ -284,7 +260,7 @@ extension SetupOwnershipManager {
       originalDigest: try requiredOriginalDigest(record),
       installedDigest: sha256Digest(installed)
     )
-    do {
+    try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
       try save(record: prepared, records: &records, context: context)
       if !backupExists {
         try writeRegularBackup(
@@ -303,12 +279,6 @@ extension SetupOwnershipManager {
       )
       try faultInjector(.targetWritten)
       try save(record: prepared.applied, records: &records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: record.id,
-        target: context.spicetifyConfiguration
-      )
     }
     return integrationResult(
       id: record.id,
@@ -370,7 +340,7 @@ extension SetupOwnershipManager {
           message: "Would finish the interrupted Spicetify theme selection removal"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
         _ = try validateSpicetifySelectorResidue(
           record: record,
           originalSelection: originalSelection,
@@ -381,12 +351,6 @@ extension SetupOwnershipManager {
           id: record.id,
           context: context,
           records: &records
-        )
-      } catch {
-        throw SetupOwnershipTransactionError(
-          error,
-          integrationID: record.id,
-          target: context.spicetifyConfiguration
         )
       }
       return integrationResult(
@@ -412,7 +376,7 @@ extension SetupOwnershipManager {
         throw SetupOwnershipError.ownershipDrift(context.spicetifyConfiguration)
       }
       if !dryRun {
-        do {
+        try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
           _ = try validateSpicetifySelectorResidue(
             record: record,
             originalSelection: originalSelection,
@@ -422,12 +386,6 @@ extension SetupOwnershipManager {
           current = try readConfiguration(
             context.spicetifyConfiguration,
             id: Self.spicetifySelectorsID
-          )
-        } catch {
-          throw SetupOwnershipTransactionError(
-            error,
-            integrationID: record.id,
-            target: context.spicetifyConfiguration
           )
         }
       }
@@ -450,17 +408,11 @@ extension SetupOwnershipManager {
           message: "Would clear the restored Spicetify theme selection ownership record"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
         try clearSpicetifySelectorOwnership(
           id: record.id,
           context: context,
           records: &records
-        )
-      } catch {
-        throw SetupOwnershipTransactionError(
-          error,
-          integrationID: record.id,
-          target: context.spicetifyConfiguration
         )
       }
       return integrationResult(
@@ -495,7 +447,7 @@ extension SetupOwnershipManager {
       installedDigest: sha256Digest(current),
       replacementDigest: sha256Digest(restored)
     )
-    do {
+    try attributingFailure(to: record.id, target: context.spicetifyConfiguration) {
       try save(record: teardownPrepared, records: &records, context: context)
       try faultInjector(.teardownReady)
       try replaceRegularFile(
@@ -511,12 +463,6 @@ extension SetupOwnershipManager {
         id: record.id,
         context: context,
         records: &records
-      )
-    } catch {
-      throw SetupOwnershipTransactionError(
-        error,
-        integrationID: record.id,
-        target: context.spicetifyConfiguration
       )
     }
     return integrationResult(
@@ -599,60 +545,37 @@ extension SetupOwnershipManager {
     remove: Bool
   ) throws -> SpicetifySelectorResidue? {
     let target = context.spicetifyConfiguration
-    let replacementName = context.spicetifySelectorsReplacementName
-    let parentDescriptor = try openPinnedParent(
+    return try withReplacementResidue(
       target: target,
+      replacementName: context.spicetifySelectorsReplacementName,
       homeDirectory: context.homeDirectory,
-      label: "Spicetify theme selection"
-    )
-    defer { Darwin.close(parentDescriptor) }
-    let replacementURL = target.deletingLastPathComponent().appending(path: replacementName)
-    let residueDescriptor = replacementName.withCString {
-      Darwin.openat(parentDescriptor, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
-    }
-    if residueDescriptor < 0, errno == ENOENT { return nil }
-    guard residueDescriptor >= 0 else {
-      throw posixError("open Spicetify replacement residue", replacementURL)
-    }
-    defer { Darwin.close(residueDescriptor) }
-    let displaced = try readPinnedRegularFile(
-      descriptor: residueDescriptor,
-      url: replacementURL,
-      label: "Spicetify theme selection"
-    ).data
-    let current = try readPinnedRegularFile(
-      parentDescriptor: parentDescriptor,
-      name: target.lastPathComponent,
-      url: target,
-      label: "Spicetify theme selection"
-    ).data
-    let currentSelection = try spicetifySelection(current, target: target)
-    let displacedSelection = try spicetifySelection(displaced, target: target)
-    switch record.phase {
-    case .prepared:
-      guard sha256Digest(current) == record.installedDigest,
-        sha256Digest(displaced) == (try requiredOriginalDigest(record)),
-        spicetifySelectionIsDesired(currentSelection),
-        spicetifySelectionsEqual(displacedSelection, originalSelection)
-      else {
+      label: "Spicetify theme selection",
+      residueDescription: "Spicetify replacement residue",
+      remove: remove
+    ) { displaced, current in
+      let currentSelection = try spicetifySelection(current, target: target)
+      let displacedSelection = try spicetifySelection(displaced, target: target)
+      switch record.phase {
+      case .prepared:
+        guard sha256Digest(current) == record.installedDigest,
+          sha256Digest(displaced) == (try requiredOriginalDigest(record)),
+          spicetifySelectionIsDesired(currentSelection),
+          spicetifySelectionsEqual(displacedSelection, originalSelection)
+        else {
+          throw SetupOwnershipError.ownershipDrift(target)
+        }
+      case .teardownPrepared:
+        guard sha256Digest(displaced) == record.installedDigest,
+          sha256Digest(current) == record.replacementDigest,
+          spicetifySelectionIsDesired(displacedSelection),
+          spicetifySelectionsEqual(currentSelection, originalSelection)
+        else {
+          throw SetupOwnershipError.ownershipDrift(target)
+        }
+      case .applied:
         throw SetupOwnershipError.ownershipDrift(target)
       }
-    case .teardownPrepared:
-      guard sha256Digest(displaced) == record.installedDigest,
-        sha256Digest(current) == record.replacementDigest,
-        spicetifySelectionIsDesired(displacedSelection),
-        spicetifySelectionsEqual(currentSelection, originalSelection)
-      else {
-        throw SetupOwnershipError.ownershipDrift(target)
-      }
-    case .applied:
-      throw SetupOwnershipError.ownershipDrift(target)
+      return SpicetifySelectorResidue(current: current)
     }
-    if remove {
-      guard replacementName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
-        throw posixError("remove Spicetify replacement residue", replacementURL)
-      }
-    }
-    return SpicetifySelectorResidue(current: current)
   }
 }

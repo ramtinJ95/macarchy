@@ -129,6 +129,20 @@ struct SetupOwnershipTransactionError: Error, CustomStringConvertible, Sendable 
   var description: String { cause }
 }
 
+/// Attributes any failure in `body` to the integration whose `target` it was mutating.
+@discardableResult
+func attributingFailure<T>(
+  to integrationID: String,
+  target: URL,
+  _ body: () throws -> T
+) throws -> T {
+  do {
+    return try body()
+  } catch {
+    throw SetupOwnershipTransactionError(error, integrationID: integrationID, target: target)
+  }
+}
+
 struct SetupIntegrationResult: Encodable, Sendable {
   enum Status: String, Encodable, Sendable {
     case disabled
@@ -230,9 +244,8 @@ struct SetupOwnershipManager: Sendable {
         .missingIntegrationParent(let id, let url),
         .unreadableConfiguration(let id, let url):
         identity = (id, url.path)
-      case .ownershipDrift(let url):
-        identity = integrationIdentity(for: url, context: context)
-      case .corruptBackup(let url), .orphanedBackup(let url), .orphanedReplacement(let url):
+      case .ownershipDrift(let url), .corruptBackup(let url), .orphanedBackup(let url),
+        .orphanedReplacement(let url), .system(_, let url, _):
         identity = integrationIdentity(for: url, context: context)
       case .environmentTuicrOwnershipActive:
         identity = (tuicrSelectorID, context.tuicrConfiguration.path)
@@ -240,8 +253,6 @@ struct SetupOwnershipManager: Sendable {
         identity = (codexSelectorID, context.codexConfiguration.path)
       case .environmentSpicetifyOwnershipActive:
         identity = (spicetifySelectorsID, context.spicetifyConfiguration.path)
-      case .system(_, let url, _):
-        identity = integrationIdentity(for: url, context: context)
       case .invalidManifest:
         identity = ("setup.ownership", context.manifestURL.path)
       default:
@@ -256,6 +267,22 @@ struct SetupOwnershipManager: Sendable {
       target: identity.target,
       message: String(describing: error),
       mutationAttempted: mutationAttempted
+    )
+  }
+
+  /// Attributes a failure that followed completed mutations, keeping their results.
+  static func afterCompletedMutations(
+    _ error: any Error,
+    completed: [SetupIntegrationResult],
+    homeDirectory: URL
+  ) -> SetupOwnershipTransactionError {
+    let failure = failureResult(error, homeDirectory: homeDirectory)
+    return SetupOwnershipTransactionError(
+      error,
+      integrationID: failure.id,
+      target: URL(filePath: failure.target),
+      completedResults: completed,
+      failureMutationAttempted: false
     )
   }
 
@@ -370,23 +397,17 @@ struct SetupOwnershipManager: Sendable {
     } catch let error as ConsumerSetupPlanPartialFailure {
       let completed = results + error.completedResults
       guard completed.contains(where: \.mutationAttempted) else { throw error.cause }
-      let failure = Self.failureResult(error.cause, homeDirectory: context.homeDirectory)
-      throw SetupOwnershipTransactionError(
+      throw Self.afterCompletedMutations(
         error.cause,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: completed,
-        failureMutationAttempted: false
+        completed: completed,
+        homeDirectory: context.homeDirectory
       )
     } catch {
       guard results.contains(where: \.mutationAttempted) else { throw error }
-      let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
-      throw SetupOwnershipTransactionError(
+      throw Self.afterCompletedMutations(
         error,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: results,
-        failureMutationAttempted: false
+        completed: results,
+        homeDirectory: context.homeDirectory
       )
     }
   }
@@ -473,13 +494,10 @@ struct SetupOwnershipManager: Sendable {
       )
     } catch {
       guard let keybinding else { throw error }
-      let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
-      throw SetupOwnershipTransactionError(
+      throw Self.afterCompletedMutations(
         error,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: [keybinding],
-        failureMutationAttempted: false
+        completed: [keybinding],
+        homeDirectory: context.homeDirectory
       )
     }
   }
@@ -506,24 +524,18 @@ struct SetupOwnershipManager: Sendable {
         context: context
       )
       guard completed.contains(where: \.mutationAttempted) else { throw error.cause }
-      let failure = Self.failureResult(error.cause, homeDirectory: context.homeDirectory)
-      throw SetupOwnershipTransactionError(
+      throw Self.afterCompletedMutations(
         error.cause,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: completed,
-        failureMutationAttempted: false
+        completed: completed,
+        homeDirectory: context.homeDirectory
       )
     } catch {
       let completed = Self.orderedResults(results, context: context)
       guard completed.contains(where: \.mutationAttempted) else { throw error }
-      let failure = Self.failureResult(error, homeDirectory: context.homeDirectory)
-      throw SetupOwnershipTransactionError(
+      throw Self.afterCompletedMutations(
         error,
-        integrationID: failure.id,
-        target: URL(filePath: failure.target),
-        completedResults: completed,
-        failureMutationAttempted: false
+        completed: completed,
+        homeDirectory: context.homeDirectory
       )
     }
   }

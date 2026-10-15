@@ -11,6 +11,16 @@ extension SetupOwnershipManager {
     if try spicetifyProviderStateIsAbsent(context: context, records: records) {
       return disabledSpicetifyIntegrationResults(context: context)
     }
+    return try withSpicetifyLock(
+      context: context, dryRun: dryRun, records: &records, execute: execute)
+  }
+
+  private func withSpicetifyLock(
+    context: Context,
+    dryRun: Bool,
+    records: inout [SetupOwnershipRecord],
+    execute: ConsumerSetupPlan.Execution
+  ) throws -> [SetupIntegrationResult] {
     if dryRun {
       return try execute(&records)
     }
@@ -76,12 +86,8 @@ extension SetupOwnershipManager {
     if !records.contains(where: { integrationIDs.contains($0.id) }) {
       return unownedSpicetifyTeardownResults(context: context)
     }
-    if dryRun {
-      return try execute(&records)
-    }
-    return try SpicetifyLock(root: context.stateRoot).withLock {
-      try execute(&records)
-    }
+    return try withSpicetifyLock(
+      context: context, dryRun: dryRun, records: &records, execute: execute)
   }
 
   private func unownedSpicetifyTeardownResults(

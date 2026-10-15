@@ -63,7 +63,7 @@ extension SetupOwnershipManager {
       installedDigest: sha256Digest(Data(destination.path.utf8)),
       linkDestination: destination.path
     )
-    do {
+    try attributingFailure(to: id, target: target) {
       try save(record: record, records: &records, context: context)
       try faultInjector(.manifestPrepared)
       try createPinnedSymbolicLink(
@@ -74,8 +74,6 @@ extension SetupOwnershipManager {
       )
       try faultInjector(.targetWritten)
       try save(record: record.applied, records: &records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(error, integrationID: id, target: target)
     }
     return integrationResult(
       id: id,
@@ -113,7 +111,7 @@ extension SetupOwnershipManager {
           message: "Would restore the interrupted \(label) link removal"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: target) {
         try restorePinnedThemeLinkRemoval(
           id: record.id,
           target: target,
@@ -122,8 +120,6 @@ extension SetupOwnershipManager {
           label: label
         )
         try save(record: record.applied, records: &records, context: context)
-      } catch {
-        throw SetupOwnershipTransactionError(error, integrationID: record.id, target: target)
       }
       return integrationResult(
         id: record.id,
@@ -152,10 +148,8 @@ extension SetupOwnershipManager {
           message: "Would finalize the interrupted \(label) link record"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: target) {
         try save(record: record.applied, records: &records, context: context)
-      } catch {
-        throw SetupOwnershipTransactionError(error, integrationID: record.id, target: target)
       }
       return integrationResult(
         id: record.id,
@@ -173,7 +167,7 @@ extension SetupOwnershipManager {
           message: "Would resume the recorded \(label) link creation"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: target) {
         try createPinnedSymbolicLink(
           target: target,
           destination: destination,
@@ -182,8 +176,6 @@ extension SetupOwnershipManager {
         )
         try faultInjector(.targetWritten)
         try save(record: record.applied, records: &records, context: context)
-      } catch {
-        throw SetupOwnershipTransactionError(error, integrationID: record.id, target: target)
       }
       return integrationResult(
         id: record.id,
@@ -246,7 +238,7 @@ extension SetupOwnershipManager {
       )
     }
 
-    do {
+    try attributingFailure(to: id, target: target) {
       if state != .missing || removalClaimed {
         try faultInjector(.teardownReady)
         try removePinnedSymbolicLink(
@@ -260,8 +252,6 @@ extension SetupOwnershipManager {
       }
       records.removeAll { $0.id == id }
       try persist(records: records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(error, integrationID: id, target: target)
     }
     return integrationResult(
       id: id,
@@ -317,11 +307,7 @@ extension SetupOwnershipManager {
   }
 
   func themeLinkState(id: String, url: URL, target: URL) throws -> SymbolicLinkState {
-    do {
-      return try symbolicLinkState(url)
-    } catch SetupOwnershipError.system(let operation, _, let cause) {
-      throw SetupOwnershipError.system("\(operation) for \(id)", target, cause)
-    }
+    try attributingSystemError(to: id, target: target) { try symbolicLinkState(url) }
   }
 
   func themeLinkRemovalURL(id: String, target: URL) -> URL {
@@ -343,10 +329,8 @@ extension SetupOwnershipManager {
     target: URL,
     context: Context
   ) throws -> Bool {
-    do {
-      return try parentPathContainsSymlink(target, below: context.homeDirectory)
-    } catch SetupOwnershipError.system(let operation, _, let cause) {
-      throw SetupOwnershipError.system("\(operation) for \(id)", target, cause)
+    try attributingSystemError(to: id, target: target) {
+      try parentPathContainsSymlink(target, below: context.homeDirectory)
     }
   }
 
@@ -421,14 +405,17 @@ extension SetupOwnershipManager {
       }
     }
 
-    let claimedLinkMatches: Bool
     do {
-      claimedLinkMatches = try pinnedSymbolicLinkMatches(
-        parentDescriptor: parentDescriptor,
-        name: removalName,
-        url: removalURL,
-        destination: destinationPath
-      )
+      guard
+        try pinnedSymbolicLinkMatches(
+          parentDescriptor: parentDescriptor,
+          name: removalName,
+          url: removalURL,
+          destination: destinationPath
+        )
+      else {
+        throw SetupOwnershipError.ownershipDrift(target)
+      }
     } catch {
       if !alreadyClaimed {
         try restorePinnedThemeLinkClaim(
@@ -441,19 +428,6 @@ extension SetupOwnershipManager {
         )
       }
       throw error
-    }
-    guard claimedLinkMatches else {
-      if !alreadyClaimed {
-        try restorePinnedThemeLinkClaim(
-          parentDescriptor: parentDescriptor,
-          removalName: removalName,
-          targetName: name,
-          removalURL: removalURL,
-          target: target,
-          label: label
-        )
-      }
-      throw SetupOwnershipError.ownershipDrift(target)
     }
     guard removalName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
       throw posixError("remove claimed \(label) link", removalURL)

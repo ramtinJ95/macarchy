@@ -29,8 +29,19 @@ extension SetupOwnershipManager {
     target: URL,
     context: Context
   ) throws -> Bool {
+    try attributingSystemError(to: id, target: target) {
+      try pathContainsSymlink(target, below: context.homeDirectory)
+    }
+  }
+
+  /// Names the integration and its target in filesystem errors raised by `body`.
+  func attributingSystemError<T>(
+    to id: String,
+    target: URL,
+    _ body: () throws -> T
+  ) throws -> T {
     do {
-      return try pathContainsSymlink(target, below: context.homeDirectory)
+      return try body()
     } catch SetupOwnershipError.system(let operation, _, let cause) {
       throw SetupOwnershipError.system("\(operation) for \(id)", target, cause)
     }

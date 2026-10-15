@@ -94,6 +94,15 @@ extension SetupOwnershipManager {
     return false
   }
 
+  /// Parses an integration's TOML, reporting syntax errors against that integration.
+  func parseTOML(_ configuration: String, id: String, target: URL) throws -> TOMLTable {
+    do {
+      return try TOMLTable(source: configuration)
+    } catch {
+      throw SetupOwnershipError.invalidConfiguration(id, target, String(describing: error))
+    }
+  }
+
   func tomlSelectionIsExternal(
     _ data: Data,
     table: String,
@@ -103,12 +112,7 @@ extension SetupOwnershipManager {
     target: URL
   ) throws -> Bool {
     let configuration = String(decoding: data, as: UTF8.self)
-    let document: TOMLTable
-    do {
-      document = try TOMLTable(source: configuration)
-    } catch {
-      throw SetupOwnershipError.invalidConfiguration(id, target, String(describing: error))
-    }
+    let document = try parseTOML(configuration, id: id, target: target)
     let selection = CanonicalTOMLSelector(
       configuration: configuration,
       table: table,
@@ -138,13 +142,7 @@ extension SetupOwnershipManager {
       }
       return false
     }
-    do {
-      guard try selectionTable.string(forKey: key) == value else {
-        throw SetupOwnershipError.conflictingDirective(id, target)
-      }
-    } catch let error as SetupOwnershipError {
-      throw error
-    } catch {
+    guard (try? selectionTable.string(forKey: key)) == value else {
       throw SetupOwnershipError.conflictingDirective(id, target)
     }
     guard selections == ["\"\(value)\""] else {
@@ -173,12 +171,7 @@ extension SetupOwnershipManager {
     }
 
     let configuration = String(decoding: original, as: UTF8.self)
-    let document: TOMLTable
-    do {
-      document = try TOMLTable(source: configuration)
-    } catch {
-      throw SetupOwnershipError.invalidConfiguration(id, target, String(describing: error))
-    }
+    let document = try parseTOML(configuration, id: id, target: target)
     var candidate: String
     let newline = tomlNewline(in: original)
     if document.contains(key: table) {

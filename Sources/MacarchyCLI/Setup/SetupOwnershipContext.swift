@@ -48,15 +48,6 @@ extension SetupOwnershipManager {
     let spicetifyColorDestination: URL
     let includeDirective: String
     let manifestURL: URL
-    let backupRelativePath = "state/setup/backups/kitty.conf"
-    let batSelectorBackupRelativePath = "state/setup/backups/bat-config"
-    let ezaEnvironmentBackupRelativePath = "state/setup/backups/zshrc"
-    let yaziSelectorBackupRelativePath = "state/setup/backups/yazi-theme.toml"
-    let atuinSelectorBackupRelativePath = "state/setup/backups/atuin-config.toml"
-    let tuicrSelectorBackupRelativePath = "state/setup/backups/tuicr-config.toml"
-    let codexSelectorBackupRelativePath = "state/setup/backups/codex-config.toml"
-    let spicetifySelectorsBackupRelativePath =
-      "state/setup/backups/spicetify-config-xpui.ini"
 
     init(homeDirectory: URL) {
       let homeDirectory = homeDirectory.standardizedFileURL
@@ -134,36 +125,17 @@ extension SetupOwnershipManager {
       manifestURL = stateRoot.appending(path: "state/setup/ownership.json")
     }
 
-    var backupURL: URL {
-      stateRoot.appending(path: backupRelativePath)
-    }
+    var backupURL: URL { setupBackup("kitty.conf") }
+    var batSelectorBackup: URL { setupBackup("bat-config") }
+    var ezaEnvironmentBackup: URL { setupBackup("zshrc") }
+    var yaziSelectorBackup: URL { setupBackup("yazi-theme.toml") }
+    var atuinSelectorBackup: URL { setupBackup("atuin-config.toml") }
+    var tuicrSelectorBackup: URL { setupBackup("tuicr-config.toml") }
+    var codexSelectorBackup: URL { setupBackup("codex-config.toml") }
+    var spicetifySelectorsBackup: URL { setupBackup("spicetify-config-xpui.ini") }
 
-    var batSelectorBackup: URL {
-      stateRoot.appending(path: batSelectorBackupRelativePath)
-    }
-
-    var ezaEnvironmentBackup: URL {
-      stateRoot.appending(path: ezaEnvironmentBackupRelativePath)
-    }
-
-    var yaziSelectorBackup: URL {
-      stateRoot.appending(path: yaziSelectorBackupRelativePath)
-    }
-
-    var atuinSelectorBackup: URL {
-      stateRoot.appending(path: atuinSelectorBackupRelativePath)
-    }
-
-    var tuicrSelectorBackup: URL {
-      stateRoot.appending(path: tuicrSelectorBackupRelativePath)
-    }
-
-    var codexSelectorBackup: URL {
-      stateRoot.appending(path: codexSelectorBackupRelativePath)
-    }
-
-    var spicetifySelectorsBackup: URL {
-      stateRoot.appending(path: spicetifySelectorsBackupRelativePath)
+    private func setupBackup(_ name: String) -> URL {
+      stateRoot.appending(path: "state/setup/backups/\(name)")
     }
 
     var bridgeURL: URL {

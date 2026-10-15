@@ -82,7 +82,7 @@ extension SetupOwnershipManager {
       installedDigest: sha256Digest(installed),
       linkDestination: nil
     )
-    do {
+    try attributingFailure(to: id, target: target) {
       try save(record: record, records: &records, context: context)
       try faultInjector(.manifestPrepared)
       try writeRegularBackup(original, record: record, backupURL: backupURL)
@@ -97,8 +97,6 @@ extension SetupOwnershipManager {
       )
       try faultInjector(.targetWritten)
       try save(record: record.applied, records: &records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(error, integrationID: id, target: target)
     }
     return integrationResult(
       id: id,
@@ -121,37 +119,21 @@ extension SetupOwnershipManager {
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> SetupIntegrationResult {
-    try validateRegularFileRecord(record, target: target, backupURL: backupURL, context: context)
-    let originalDigest = try requiredOriginalDigest(record)
-    guard
-      try regularFilePathContainsSymlink(id: record.id, target: target, context: context) == false
-    else {
-      throw SetupOwnershipError.ownershipDrift(target)
-    }
-    let replacementResidueExists = try validateRegularReplacementResidue(
+    let (originalDigest, replacementResidueExists, current) = try inspectOwnedRegularFile(
       record: record,
       target: target,
+      backupURL: backupURL,
       replacementName: replacementName,
-      context: context,
-      remove: false,
-      label: label
+      label: label,
+      read: read,
+      context: context
     )
-    let current = try read(target)
     let digest = sha256Digest(current)
 
     if digest == record.installedDigest {
       let original = try readRegularBackup(record: record, backupURL: backupURL)
-      let installed = try installedConfiguration(
-        id: record.id,
-        target: target,
-        original: original,
-        transform: installedData
-      )
-      guard sha256Digest(installed) == record.installedDigest else {
-        throw SetupOwnershipError.invalidManifest(
-          installedDigestError(recordID: record.id, label: label)
-        )
-      }
+      try requireReproducibleInstallation(
+        record: record, target: target, original: original, label: label, transform: installedData)
       if record.phase == .applied {
         if replacementResidueExists {
           if dryRun {
@@ -162,7 +144,7 @@ extension SetupOwnershipManager {
               message: "Would remove the validated interrupted \(label) replacement"
             )
           }
-          do {
+          try attributingFailure(to: record.id, target: target) {
             _ = try validateRegularReplacementResidue(
               record: record,
               target: target,
@@ -171,9 +153,6 @@ extension SetupOwnershipManager {
               remove: true,
               label: label
             )
-          } catch {
-            throw SetupOwnershipTransactionError(
-              error, integrationID: record.id, target: target)
           }
           return integrationResult(
             id: record.id,
@@ -198,10 +177,8 @@ extension SetupOwnershipManager {
           message: "Would finalize the interrupted \(label) ownership record"
         )
       }
-      do {
+      try attributingFailure(to: record.id, target: target) {
         try save(record: record.applied, records: &records, context: context)
-      } catch {
-        throw SetupOwnershipTransactionError(error, integrationID: record.id, target: target)
       }
       return integrationResult(
         id: record.id,
@@ -225,18 +202,9 @@ extension SetupOwnershipManager {
     let backupExists = try itemExists(backupURL)
     let original =
       backupExists ? try readRegularBackup(record: record, backupURL: backupURL) : current
-    let installed = try installedConfiguration(
-      id: record.id,
-      target: target,
-      original: original,
-      transform: installedData
-    )
-    guard sha256Digest(installed) == record.installedDigest else {
-      throw SetupOwnershipError.invalidManifest(
-        installedDigestError(recordID: record.id, label: label)
-      )
-    }
-    do {
+    let installed = try requireReproducibleInstallation(
+      record: record, target: target, original: original, label: label, transform: installedData)
+    try attributingFailure(to: record.id, target: target) {
       if replacementResidueExists {
         _ = try validateRegularReplacementResidue(
           record: record,
@@ -260,8 +228,6 @@ extension SetupOwnershipManager {
       )
       try faultInjector(.targetWritten)
       try save(record: record.applied, records: &records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(error, integrationID: record.id, target: target)
     }
     return integrationResult(
       id: record.id,
@@ -291,21 +257,15 @@ extension SetupOwnershipManager {
         message: "No Macarchy-owned \(label) exists"
       )
     }
-    try validateRegularFileRecord(record, target: target, backupURL: backupURL, context: context)
-    let originalDigest = try requiredOriginalDigest(record)
-    guard try regularFilePathContainsSymlink(id: id, target: target, context: context) == false
-    else {
-      throw SetupOwnershipError.ownershipDrift(target)
-    }
-    let replacementResidueExists = try validateRegularReplacementResidue(
+    let (originalDigest, replacementResidueExists, current) = try inspectOwnedRegularFile(
       record: record,
       target: target,
+      backupURL: backupURL,
       replacementName: replacementName,
-      context: context,
-      remove: false,
-      label: label
+      label: label,
+      read: read,
+      context: context
     )
-    let current = try read(target)
     let digest = sha256Digest(current)
     guard digest == record.installedDigest || digest == originalDigest else {
       throw SetupOwnershipError.ownershipDrift(target)
@@ -326,7 +286,7 @@ extension SetupOwnershipManager {
       )
     }
 
-    do {
+    try attributingFailure(to: id, target: target) {
       if replacementResidueExists {
         _ = try validateRegularReplacementResidue(
           record: record,
@@ -351,8 +311,6 @@ extension SetupOwnershipManager {
       try removeRegularFileIfPresent(backupURL, unsafe: .corruptBackup(backupURL))
       records.removeAll { $0.id == id }
       try persist(records: records, context: context)
-    } catch {
-      throw SetupOwnershipTransactionError(error, integrationID: id, target: target)
     }
     return integrationResult(
       id: id,
@@ -379,6 +337,58 @@ extension SetupOwnershipManager {
     let installed = try transform(original)
     guard installed.count <= Self.maximumConfigurationSize else {
       throw SetupOwnershipError.installedConfigurationTooLarge(id, target)
+    }
+    return installed
+  }
+
+  /// Validates a regular-file record and its path, then reads the target. Reports
+  /// whether an interrupted replacement's residue remains (validated, not removed).
+  private func inspectOwnedRegularFile(
+    record: SetupOwnershipRecord,
+    target: URL,
+    backupURL: URL,
+    replacementName: String,
+    label: String,
+    read: (URL) throws -> Data,
+    context: Context
+  ) throws -> (originalDigest: String, residueExists: Bool, current: Data) {
+    try validateRegularFileRecord(record, target: target, backupURL: backupURL, context: context)
+    let originalDigest = try requiredOriginalDigest(record)
+    guard
+      try regularFilePathContainsSymlink(id: record.id, target: target, context: context) == false
+    else {
+      throw SetupOwnershipError.ownershipDrift(target)
+    }
+    let residueExists = try validateRegularReplacementResidue(
+      record: record,
+      target: target,
+      replacementName: replacementName,
+      context: context,
+      remove: false,
+      label: label
+    )
+    return (originalDigest, residueExists, try read(target))
+  }
+
+  /// Rebuilds the installed bytes from `original` and requires the recorded digest.
+  @discardableResult
+  private func requireReproducibleInstallation(
+    record: SetupOwnershipRecord,
+    target: URL,
+    original: Data,
+    label: String,
+    transform: (Data) throws -> Data
+  ) throws -> Data {
+    let installed = try installedConfiguration(
+      id: record.id,
+      target: target,
+      original: original,
+      transform: transform
+    )
+    guard sha256Digest(installed) == record.installedDigest else {
+      throw SetupOwnershipError.invalidManifest(
+        installedDigestError(recordID: record.id, label: label)
+      )
     }
     return installed
   }
@@ -496,9 +506,41 @@ extension SetupOwnershipManager {
     remove: Bool,
     label: String
   ) throws -> Bool {
+    try withReplacementResidue(
+      target: target,
+      replacementName: replacementName,
+      homeDirectory: context.homeDirectory,
+      label: label,
+      residueDescription: "replacement residue",
+      remove: remove
+    ) { (residue: Data, current: Data) throws -> Void in
+      let currentDigest = sha256Digest(current)
+      let residueDigest = sha256Digest(residue)
+      let originalDigest = try requiredOriginalDigest(record)
+      guard
+        (currentDigest == record.installedDigest && residueDigest == originalDigest)
+          || (currentDigest == originalDigest && residueDigest == record.installedDigest)
+      else {
+        throw SetupOwnershipError.ownershipDrift(target)
+      }
+    } != nil
+  }
+
+  /// Reads an interrupted replacement's residue, then the current target, through one
+  /// pinned parent. `classify` vets the pair before the residue is optionally removed.
+  /// Returns nil when there is no residue.
+  func withReplacementResidue<T>(
+    target: URL,
+    replacementName: String,
+    homeDirectory: URL,
+    label: String,
+    residueDescription: String,
+    remove: Bool,
+    classify: (_ residue: Data, _ current: Data) throws -> T
+  ) throws -> T? {
     let parentDescriptor = try openPinnedParent(
       target: target,
-      homeDirectory: context.homeDirectory,
+      homeDirectory: homeDirectory,
       label: label
     )
     defer { Darwin.close(parentDescriptor) }
@@ -506,9 +548,9 @@ extension SetupOwnershipManager {
     let residueDescriptor = replacementName.withCString {
       Darwin.openat(parentDescriptor, $0, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
     }
-    if residueDescriptor < 0, errno == ENOENT { return false }
+    if residueDescriptor < 0, errno == ENOENT { return nil }
     guard residueDescriptor >= 0 else {
-      throw posixError("open replacement residue", replacementURL)
+      throw posixError("open \(residueDescription)", replacementURL)
     }
     defer { Darwin.close(residueDescriptor) }
 
@@ -523,21 +565,13 @@ extension SetupOwnershipManager {
       url: target,
       label: label
     )
-    let currentDigest = sha256Digest(current.data)
-    let residueDigest = sha256Digest(residue.data)
-    let originalDigest = try requiredOriginalDigest(record)
-    guard
-      (currentDigest == record.installedDigest && residueDigest == originalDigest)
-        || (currentDigest == originalDigest && residueDigest == record.installedDigest)
-    else {
-      throw SetupOwnershipError.ownershipDrift(target)
-    }
+    let result = try classify(residue.data, current.data)
     if remove {
       guard replacementName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
-        throw posixError("remove replacement residue", replacementURL)
+        throw posixError("remove \(residueDescription)", replacementURL)
       }
     }
-    return true
+    return result
   }
 
   func replaceRegularFile(
@@ -614,26 +648,15 @@ extension SetupOwnershipManager {
       throw posixError("sync \(label) metadata", target)
     }
     try faultInjector(.replacementReady)
-    let recheckedDescriptor = try openPinnedRegularFile(
+    let rechecked = try readPinnedRegularFileSnapshot(
       parentDescriptor: parentDescriptor,
       name: targetName,
       url: target,
       label: label
     )
-    defer { Darwin.close(recheckedDescriptor) }
-    let rechecked = try readPinnedRegularFile(
-      descriptor: recheckedDescriptor,
-      url: target,
-      label: label
-    )
-    let recheckedSnapshot = try regularFileSnapshot(
-      descriptor: recheckedDescriptor,
-      url: target,
-      label: label
-    )
     guard
-      sha256Digest(rechecked.data) == expectedDigest,
-      recheckedSnapshot == originalSnapshot
+      sha256Digest(rechecked.file.data) == expectedDigest,
+      rechecked.snapshot == originalSnapshot
     else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
@@ -646,83 +669,44 @@ extension SetupOwnershipManager {
     cleanupTemporary = false
     try faultInjector(.replacementSwapped)
 
-    let displaced: BoundedRegularFile
-    let displacedSnapshot: RegularFileSnapshot
-    do {
-      let displacedDescriptor = try openPinnedRegularFile(
-        parentDescriptor: parentDescriptor,
-        name: replacementName,
-        url: target.deletingLastPathComponent().appending(path: replacementName),
-        label: label
-      )
-      defer { Darwin.close(displacedDescriptor) }
-      displaced = try readPinnedRegularFile(
-        descriptor: displacedDescriptor,
-        url: target.deletingLastPathComponent().appending(path: replacementName),
-        label: label
-      )
-      displacedSnapshot = try regularFileSnapshot(
-        descriptor: displacedDescriptor,
-        url: target.deletingLastPathComponent().appending(path: replacementName),
-        label: label
-      )
-    } catch {
-      let restored = swap(
-        parentDescriptor: parentDescriptor,
-        first: replacementName,
-        second: targetName
-      )
-      guard restored == 0 else {
+    // Put the original back and let the deferred cleanup drop the replacement.
+    func restoreOriginal(andThrow error: any Error) throws -> Never {
+      guard
+        swap(parentDescriptor: parentDescriptor, first: replacementName, second: targetName) == 0
+      else {
         throw posixError("restore concurrently changed \(label)", target)
       }
       cleanupTemporary = true
       throw error
     }
-    guard
-      sha256Digest(displaced.data) == expectedDigest,
-      originalSnapshot.matchesDisplaced(displacedSnapshot)
-    else {
-      let restored = swap(
+
+    let displaced: (file: BoundedRegularFile, snapshot: RegularFileSnapshot)
+    do {
+      displaced = try readPinnedRegularFileSnapshot(
         parentDescriptor: parentDescriptor,
-        first: replacementName,
-        second: targetName
+        name: replacementName,
+        url: target.deletingLastPathComponent().appending(path: replacementName),
+        label: label
       )
-      guard restored == 0 else {
-        throw posixError("restore concurrently changed \(label)", target)
-      }
-      cleanupTemporary = true
-      throw SetupOwnershipError.ownershipDrift(target)
+    } catch {
+      try restoreOriginal(andThrow: error)
     }
-    let installedDescriptor = try openPinnedRegularFile(
+    guard
+      sha256Digest(displaced.file.data) == expectedDigest,
+      originalSnapshot.matchesDisplaced(displaced.snapshot)
+    else {
+      try restoreOriginal(andThrow: SetupOwnershipError.ownershipDrift(target))
+    }
+    let installed = try readPinnedRegularFileSnapshot(
       parentDescriptor: parentDescriptor,
       name: targetName,
       url: target,
       label: label
     )
-    defer { Darwin.close(installedDescriptor) }
-    let installed = try readPinnedRegularFile(
-      descriptor: installedDescriptor,
-      url: target,
-      label: label
-    )
-    let installedSnapshot = try regularFileSnapshot(
-      descriptor: installedDescriptor,
-      url: target,
-      label: label
-    )
-    if sha256Digest(installed.data) != sha256Digest(data)
-      || !installedSnapshot.hasCopiedMetadata(from: originalSnapshot)
+    if installed.file.data != data
+      || !installed.snapshot.hasCopiedMetadata(from: originalSnapshot)
     {
-      let restored = swap(
-        parentDescriptor: parentDescriptor,
-        first: replacementName,
-        second: targetName
-      )
-      guard restored == 0 else {
-        throw posixError("restore concurrently changed \(label)", target)
-      }
-      cleanupTemporary = true
-      throw SetupOwnershipError.ownershipDrift(target)
+      try restoreOriginal(andThrow: SetupOwnershipError.ownershipDrift(target))
     }
     guard replacementName.withCString({ Darwin.unlinkat(parentDescriptor, $0, 0) }) == 0 else {
       throw posixError("remove displaced \(label)", target)
@@ -798,6 +782,26 @@ extension SetupOwnershipManager {
     )
     defer { Darwin.close(descriptor) }
     return try readPinnedRegularFile(descriptor: descriptor, url: url, label: label)
+  }
+
+  /// Reads a pinned file and its metadata snapshot through one descriptor.
+  private func readPinnedRegularFileSnapshot(
+    parentDescriptor: Int32,
+    name: String,
+    url: URL,
+    label: String
+  ) throws -> (file: BoundedRegularFile, snapshot: RegularFileSnapshot) {
+    let descriptor = try openPinnedRegularFile(
+      parentDescriptor: parentDescriptor,
+      name: name,
+      url: url,
+      label: label
+    )
+    defer { Darwin.close(descriptor) }
+    return (
+      try readPinnedRegularFile(descriptor: descriptor, url: url, label: label),
+      try regularFileSnapshot(descriptor: descriptor, url: url, label: label)
+    )
   }
 
   func readPinnedRegularFile(
