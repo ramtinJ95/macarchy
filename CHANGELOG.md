@@ -7,6 +7,37 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-16
+
+### Added
+
+- Opt-in managed lean focus outlines through `[focus_ring] provider = "lean"`.
+  The separate, packaged helper follows the active theme without restarting and
+  supports setup, status/doctor, repair and teardown. Borders remains the default.
+- To switch, set `provider = "lean"` in your active profile, review `setup plan`
+  with that profile, then run `setup apply`. To roll back, set `provider = "borders"`
+  and review/apply again; `"disabled"` removes managed focus. Installation alone
+  does not switch providers, and unmanaged Borders is never stopped or adopted
+  implicitly.
+
+### Changed
+
+- Simplified internal CLI, theme-core and release-script paths without changing
+  their ownership or permission boundaries (#239–#261).
+
+### Known limitations
+
+- Lean uses narrow private SkyLight APIs only in its separate helper, with no new
+  TCC grants, scripting addition or SIP change. Retina/multiple displays, ordinary
+  Spaces, broad real-app compatibility and long-running stability remain
+  unqualified; guest evidence is not physical-machine or universal visual parity.
+- Lean runtime state is written only at startup or palette changes; idle guest
+  checks observed zero writes. Liveness uses process identity, not a heartbeat or
+  hung-runloop guarantee. Upgrading an owned helper requires repair/apply to restart
+  it through its stable launch path; startup refusals remain visible and stopped.
+- In minimal setups, missing default theme consumers can still block overall
+  teardown after successful removal of the owned lean service.
+
 ## [0.12.4] - 2026-10-14
 
 ### Added
