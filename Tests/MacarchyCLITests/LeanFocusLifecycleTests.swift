@@ -109,6 +109,65 @@ struct LeanFocusLifecycleTests {
     try expectRemovedLean(result.output)
   }
 
+  @Test(arguments: [false, true], [false, true])
+  func removalRollbackRespectsUnownedBorders(registered: Bool, attempted: Bool) async throws {
+    var (fixture, state) = try makeFixture()
+    defer { fixture.remove() }
+    #expect(try await fixture.apply().succeeded)
+    let store = EnvironmentStateStore(stateRoot: fixture.root)
+    let original = try #require(try store.readOwnership())
+    let coordinator = EnvironmentTransactionCoordinator(
+      homeDirectory: fixture.home, stateRoot: fixture.root)
+    let lock = ActivationLock(root: fixture.root)
+    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: fixture.root)
+    let descriptor = try lifecycleLock.acquire()
+    defer { lifecycleLock.release(descriptor) }
+    // Disabled apply and explicit teardown share this removal transaction.
+    _ = try lock.withLock {
+      try coordinator.teardownLocked(dryRun: false, bordersService: .stopped)
+    }
+    if attempted {
+      var journal = try #require(try store.readTransaction())
+      journal.bordersRuntimeAttempted = true
+      try lock.withLock { try store.writeTransaction(journal) }
+      try fixture.runtime.lean.stop(fixture.home, #require(original.borders?.leanService))
+    }
+    fixture.state.withLock { $0.running = true }
+    let nativeInspector = fixture.runtime.inspectIncumbent
+    if !registered {
+      fixture.runtime.inspectIncumbent = { _ in
+        if !attempted { Issue.record("pre-native rollback inspected unrelated Borders") }
+        throw BordersServiceError.blocked("process and Homebrew job disagree")
+      }
+    }
+    try lock.withLock { try coordinator.rollbackApplyLocked() }
+    if attempted {
+      do {
+        _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: fixture.runtime)
+        Issue.record("rollback started lean alongside unmanaged Borders")
+      } catch {
+        let message = String(describing: error)
+        #expect(message.contains("JankyBorders"))
+        #expect(message.contains("unregister"))
+        #expect(message.contains("retry environment apply"))
+      }
+      #expect(try store.readTransaction()?.direction == .rollback)
+      #expect(state.withLock { $0.configuration } == nil)
+      #expect(fixture.state.withLock { $0.actions.isEmpty && $0.running })
+      // The user removes the external renderer; the retained journal can finish.
+      fixture.state.withLock { $0.running = false }
+      fixture.runtime.inspectIncumbent = nativeInspector
+    }
+    _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: fixture.runtime)
+    _ = try lock.withLock { try coordinator.prepareRecoveryLocked() }
+    #expect(try store.readTransaction() == nil)
+    #expect(try store.readOwnership() == original)
+    #expect(fixture.state.withLock { $0.actions.isEmpty })
+    #expect(
+      state.withLock { $0.actions }
+        == (attempted ? ["start", "ack", "stop", "start", "ack"] : ["start", "ack"]))
+  }
+
   @Test func frozenPreSchemaThreeBordersOwnershipRetainsLegacySemantics() throws {
     let legacy = Data(
       """
@@ -232,7 +291,25 @@ struct LeanFocusLifecycleTests {
     #expect(try store.readOwnership()?.borders?.leanService == nil)
   }
 
-  @Test func failedStopKeepsRecoveryVisibleAndDoesNotStartBorders() async throws {
+  @Test func failedStopRollsBackVisiblyAndAcknowledgesLean() async throws {
+    let (fixture, state) = try makeFixture()
+    defer { fixture.remove() }
+    #expect(try await fixture.apply().succeeded)
+    let store = EnvironmentStateStore(stateRoot: fixture.root)
+    let original = try store.readOwnership()
+    state.withLock { $0.failStop = true }
+    try fixture.writeProfile(provider: .borders)
+    let applied = try await fixture.apply()
+    #expect(!applied.succeeded)
+    #expect(applied.output.contains("injected lean stop"))
+    #expect(applied.output.contains("rolled back"))
+    #expect(try store.readTransaction() == nil)
+    #expect(try store.readOwnership() == original)
+    #expect(state.withLock { $0.actions } == ["start", "ack", "ack"])
+    #expect(fixture.state.withLock { $0.actions.isEmpty && !$0.running })
+  }
+
+  @Test func failedStopAndFailedRollbackAcknowledgementKeepRecoveryVisible() async throws {
     let (fixture, state) = try makeFixture()
     defer { fixture.remove() }
     #expect(try await fixture.apply().succeeded)
@@ -300,6 +377,15 @@ struct LeanFocusLifecycleTests {
     _ = try mode.reconcile()
     #expect(!state.withLock { $0.outdatedExecutable })
     #expect(state.withLock { $0.actions.contains("restart") })
+    state.withLock { $0.running = false }
+    let repaired = try mode.reconcile()
+    #expect(repaired.hasPrefix("Started stopped owned lean service. "))
+    #expect(state.withLock { $0.running && $0.actions.suffix(2) == ["start", "ack"] })
+    state.withLock { $0.registered = false }
+    let actions = state.withLock { $0.actions }
+    #expect(throws: (any Error).self) { try mode.reconcile() }
+    #expect(state.withLock { $0.actions } == actions)
+    state.withLock { $0.registered = true }
     state.withLock { $0.failAcknowledgement = true }
     #expect(throws: (any Error).self) { try mode.inspect() }
     let result = try await coordinator.reconcile(adapterIDs: [BordersAdapter.leanID])
@@ -324,6 +410,7 @@ private func expectRemovedLean(_ output: String) throws {
 private struct LeanFixtureState {
   var configuration: LeanFocusServiceConfiguration?
   var registered = true
+  var running = true
   var outdatedExecutable = false
   var actions: [String] = []
   var foreign = false
@@ -360,7 +447,7 @@ private func makeFixture(
           $0.configuration == nil || !$0.registered
             ? .absent
             : LeanFocusServiceInspection(
-              registered: true, loaded: true, processID: 200,
+              registered: true, loaded: true, processID: $0.running ? 200 : nil,
               executableIsCurrent: !$0.outdatedExecutable),
           $0.configuration ?? known.first
         )
@@ -369,10 +456,11 @@ private func makeFixture(
     start: { _, configuration in
       #expect(!bordersState.withLock { $0.running })
       state.withLock {
-        if $0.configuration == nil { $0.actions.append("start") }
+        if $0.configuration == nil || !$0.running { $0.actions.append("start") }
         if $0.outdatedExecutable { $0.actions.append("restart") }
         $0.configuration = configuration
         $0.registered = true
+        $0.running = true
         $0.outdatedExecutable = false
       }
     },
@@ -387,7 +475,8 @@ private func makeFixture(
     acknowledge: { _, configuration, _ in
       let palette = try BordersPalette.read(root: URL(filePath: configuration.stateRoot))
       return try state.withLock {
-        guard $0.configuration == configuration, !$0.failAcknowledgement else {
+        guard $0.configuration == configuration, $0.registered, $0.running, !$0.failAcknowledgement
+        else {
           throw EnvironmentLifecycleError.drift("missing lean acknowledgement")
         }
         $0.actions.append("ack")

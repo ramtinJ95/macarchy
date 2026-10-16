@@ -6,6 +6,20 @@ import Testing
 @testable import ThemeCore
 
 struct LeanFocusServiceTests {
+  @Test func olderRuntimeRecordWithPublicationTimeStillDecodes() throws {
+    let bytes = Data(
+      """
+      {"label":"io.github.ramtinj95.macarchy.focus-ring","stateRoot":"/fixture",
+       "pid":123,"started":1000,"executablePath":"/fixture/macarchy-focus-ring",
+       "generationID":"g-old","accent":"#abcdef","updated":10}
+      """.utf8)
+    let record = try JSONDecoder().decode(LeanFocusRuntime.self, from: bytes)
+    #expect(record.generationID == "g-old" && record.started == 1000 && record.pid == 123)
+    let encoded = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+    #expect(encoded["updated"] == nil)
+  }
+
   @Test func absentInspectionDoesNotMutateOrAuthorizeAnUnownedPlist() throws {
     try withTemporaryRoot(named: "lean-service") { root in
       let calls = Mutex<[String]>([])
@@ -117,7 +131,7 @@ struct LeanFocusServiceTests {
       label: LeanFocusService.label, stateRoot: configuration.stateRoot,
       pid: getpid(), started: started,
       executablePath: try #require(LeanFocusServiceConfiguration.physicalPath(path)),
-      generationID: palette.generationID, accent: palette.accent, updated: 10)
+      generationID: palette.generationID, accent: palette.accent)
     #expect(
       record.matches(configuration: configuration, processID: getpid(), palette: palette))
     #expect(
@@ -130,7 +144,7 @@ struct LeanFocusServiceTests {
     let reused = LeanFocusRuntime(
       label: LeanFocusService.label, stateRoot: configuration.stateRoot,
       pid: getpid(), started: started + 1, executablePath: path,
-      generationID: palette.generationID, accent: palette.accent, updated: 10)
+      generationID: palette.generationID, accent: palette.accent)
     #expect(
       !reused.matches(configuration: configuration, processID: getpid(), palette: palette))
     let otherRoot = LeanFocusServiceConfiguration(
@@ -171,6 +185,7 @@ struct LeanFocusServiceTests {
           state.withLock { value in
             value.calls.append(request.arguments)
             if request.arguments.first == "kickstart" {
+              #expect(request.timeout == 35)
               #expect(
                 request.arguments == [
                   "kickstart", "-k", "gui/\(getuid())/\(LeanFocusService.label)",
@@ -219,7 +234,7 @@ struct LeanFocusServiceTests {
       let stale = LeanFocusRuntime(
         label: LeanFocusService.label, stateRoot: configuration.stateRoot,
         pid: 123, started: 1, executablePath: "/old/macarchy-focus-ring",
-        generationID: "old", accent: "#abcdef", updated: 0)
+        generationID: "old", accent: "#abcdef")
       try JSONEncoder().encode(stale).write(to: configuration.runtimeURL)
       try LeanFocusRuntime.validateIfPresent(configuration: configuration)
       try LeanFocusRuntime.publish(
@@ -230,8 +245,7 @@ struct LeanFocusServiceTests {
       ] {
         let foreign = LeanFocusRuntime(
           label: label, stateRoot: stateRoot, pid: 123, started: 1,
-          executablePath: "/old/macarchy-focus-ring", generationID: "old", accent: "#abcdef",
-          updated: 0)
+          executablePath: "/old/macarchy-focus-ring", generationID: "old", accent: "#abcdef")
         let bytes = try JSONEncoder().encode(foreign)
         try bytes.write(to: configuration.runtimeURL)
         #expect(throws: (any Error).self) {
@@ -255,7 +269,7 @@ struct LeanFocusServiceTests {
       let stale = LeanFocusRuntime(
         label: LeanFocusService.label, stateRoot: configuration.stateRoot,
         pid: 123, started: 1, executablePath: "/removed/macarchy-focus-ring",
-        generationID: "old", accent: "#abcdef", updated: 0)
+        generationID: "old", accent: "#abcdef")
       try JSONEncoder().encode(stale).write(to: configuration.runtimeURL)
       let service = LeanFocusService(
         homeDirectory: root,
