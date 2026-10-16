@@ -26,8 +26,8 @@ def profile(provider):
     )
 
 
-def assess_runtime(before, after, *, changed_theme=False, persisted=False):
-    """Identity + elapsed runloop proof, not pixels or a broad stability qualification."""
+def assess_runtime(before, after, *, changed_theme=False):
+    """PID/start/palette proof, not a heartbeat or hung-runloop qualification."""
     failures = []
     if any(before.get(key) != after.get(key) for key in ("pid", "started", "executablePath")):
         failures.append("the helper restarted or changed executable")
@@ -36,11 +36,49 @@ def assess_runtime(before, after, *, changed_theme=False, persisted=False):
             failures.append("canonical theme generation did not change")
         if (before.get("accent"), after.get("accent")) != ("#cba6f7", "#7aa2f7"):
             failures.append("the helper did not acknowledge the expected canonical accents")
-    if persisted:
-        elapsed = after.get("updated", 0) - before.get("updated", 0)
-        if elapsed <= 300:
-            failures.append("no same-process main-runloop acknowledgement beyond 300 seconds")
     return failures
+
+
+def assess_idle(before, after, record_before, record_after, stat_before, stat_after):
+    elapsed = after["sampled"] - before["sampled"]
+    if any(before[key] != after[key] for key in ("pid", "start")) or elapsed <= 300:
+        raise ValueError("no same-process observation beyond 300 seconds")
+    if record_before != record_after or stat_before != stat_after:
+        raise ValueError("idle runtime file was rewritten")
+    delta = {key: after[key] - before[key] for key in ("logical_writes", "disk_bytes_written")}
+    if any(delta.values()):
+        raise ValueError("idle helper wrote to the filesystem: " + str(delta))
+    return {"seconds": elapsed, **delta, "logical_write_bytes_per_second": 0,
+            "runtime_file_replacements": 0, "hung_runloop_detection": False}
+
+
+def assess_stopped(result):
+    return (
+        result.get("outcome") == "drifted" and result.get("transaction_status") == "clear"
+        and result.get("providers", {}).get("focus_ring") == "lean"
+        and any(row.get("adapter_id") == "lean-focus-ring" and row.get("status") == "failed"
+                and "the owned lean service is stopped" in row.get("message", "")
+                for row in result.get("theme", []))
+        and any(row.get("id") == "lean_focus_service" and row.get("status") == "install_required"
+                for row in result.get("entries", []))
+    )
+
+
+def failure_cleanup(cli, absent, report, flags):
+    try:
+        result = cli("failure-teardown", "environment", "teardown", *flags, expected=(0, 1))
+        if not assess_restoration(result) and not (
+            result.get("outcome") in ("absent", "restored")
+            and result.get("transaction_status") == "clear"
+        ):
+            raise ValueError("failure teardown did not establish a cleared environment")
+    except Exception as error:
+        report.setdefault("cleanup_errors", []).append(str(error))
+    finally:
+        try:
+            absent("failure-service-absent")
+        except Exception as error:
+            report.setdefault("cleanup_errors", []).append(str(error))
 
 
 def assess_restoration(result):
@@ -88,8 +126,10 @@ def run_journey(client, record, evidence, report):
 
     def cli(name, *arguments, expected=0):
         command = v.step_command(binary, list(arguments))
+        codes = expected if isinstance(expected, tuple) else (expected,)
         if expected:
-            command = "/bin/zsh -c " + q(command + "; rc=$?; test $rc -eq " + str(expected))
+            command = "/bin/zsh -c " + q(
+                command + "; rc=$?; " + " || ".join("test $rc -eq " + str(code) for code in codes))
         raw = sh(name, command, timeout=60)
         value = json.loads(raw)
         if not expected and borders._blockers(value):
@@ -111,7 +151,7 @@ def run_journey(client, record, evidence, report):
             if result.get("providers", {}).get("focus_ring") != "lean" \
                     or result.get("outcome") != "converged":
                 raise v.Failed(name + " did not report the selected lean provider converged")
-        elif result.get("outcome") not in ("drifted", "blocked"):
+        elif not assess_stopped(result):
             raise v.Failed(name + " did not expose the stopped service")
         return result
 
@@ -150,6 +190,9 @@ def run_journey(client, record, evidence, report):
        + " swift build --product macarchy-focus-ring", timeout=180)
     section["helper_sha256"] = sh("helper-sha256", "shasum -a 256 " + q(helper)).split()[0]
     sh("scratch-create", "umask 077; mkdir " + q(scratch))
+    meter = scratch + "/lean-io"
+    sh("io-meter-build", "env " + borders.DEV + " /usr/bin/clang -Wall -Wextra -Werror "
+       + q(source + "/Scripts/vm/lean-io.c") + " -o " + q(meter), timeout=30)
     write_profile("lean", first=True)
     may_own_service = False
     try:
@@ -174,13 +217,21 @@ def run_journey(client, record, evidence, report):
         cli("repair-apply", "environment", "apply", "--profile", path, *flags)
         doctor("repaired-doctor")
         repaired = runtime("before-duration")
+        pid = str(int(repaired["pid"]))
+        io_before = json.loads(sh("io-before", q(meter) + " " + pid))
+        stat_command = "/usr/bin/stat -f '%i:%m:%c:%z' " + q(root + "/environment/lean-focus-runtime.json")
+        stat_before = sh("runtime-stat-before", stat_command)
         sh("beyond-preview-duration", "/bin/sleep " + str(PERSIST_SECONDS),
            timeout=PERSIST_SECONDS + 10)
+        io_after = json.loads(sh("io-after", q(meter) + " " + pid))
+        stat_after = sh("runtime-stat-after", stat_command)
         doctor("persistent-doctor")
         persisted = runtime("after-duration")
-        section["duration_failures"] = assess_runtime(repaired, persisted, persisted=True)
+        section["duration_failures"] = assess_runtime(repaired, persisted)
         if section["duration_failures"]:
             raise v.Failed("; ".join(section["duration_failures"]))
+        section["idle_io"] = assess_idle(
+            io_before, io_after, repaired, persisted, stat_before, stat_after)
         section["runtime"] = {"before_theme": before, "after_theme": changed,
                               "before_duration": repaired, "after_duration": persisted}
         write_profile("disabled")
@@ -194,8 +245,4 @@ def run_journey(client, record, evidence, report):
         return "passed"
     finally:
         if may_own_service:
-            try:
-                cli("failure-teardown", "environment", "teardown", *flags)
-                absent("failure-service-absent")
-            except Exception as error:
-                report.setdefault("cleanup_errors", []).append(str(error))
+            failure_cleanup(cli, absent, report, flags)

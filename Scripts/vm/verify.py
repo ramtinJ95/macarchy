@@ -774,8 +774,16 @@ def remove_guest_directory(client, session):
         raise Blocked("Guest directory lacks this session ownership marker; not removing it.")
     if owner.stdout.strip() != session:
         raise Blocked("Guest directory belongs to another session; not removing it.")
-    client.command(f"/bin/test -d {remote} -a ! -L {remote} && /bin/rm -rf -- {remote}",
-                   timeout=300)
+    command = (f"/bin/test -d {remote} -a ! -L {remote} && "
+               # BSD chmod treats -- after the mode as a filename. This path is
+               # an absolute, validated session directory, never a caller option.
+               f"/bin/chmod -R -P u+w {remote} && /bin/rm -rf -- {remote}")
+    result = client.command(command, check=False, timeout=300)
+    if result.returncode:
+        # This command has no credentials. Keep the bounded filesystem diagnostic
+        # rather than guest.command's deliberately redacted credential-path error.
+        raise Blocked(f"Guest session cleanup failed (exit {result.returncode}): "
+                      + result.stderr[:2048].strip())
     return "removed"
 
 

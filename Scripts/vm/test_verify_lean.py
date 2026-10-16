@@ -1,6 +1,7 @@
 """Pure recipe/assessment checks: no VM, subprocess or filesystem fixtures."""
 import tomllib
 import unittest
+from unittest.mock import Mock
 
 import verify
 import verify_lean as lean
@@ -54,9 +55,42 @@ class LeanJourneyTests(unittest.TestCase):
         self.assertTrue(lean.assess_runtime(before, dict(changed, pid=3), changed_theme=True))
         self.assertTrue(lean.assess_runtime(before, dict(changed, started=3), changed_theme=True))
         self.assertTrue(lean.assess_runtime(before, dict(changed, executablePath="/other")))
-        self.assertEqual(lean.assess_runtime(before, dict(before, updated=315), persisted=True), [])
-        self.assertTrue(lean.assess_runtime(before, dict(before, updated=310), persisted=True))
-        self.assertTrue(lean.assess_runtime(before, dict(before, updated=9), persisted=True))
+        # The idle record is intentionally unchanged; liveness is checked by the
+        # real CLI's launchd PID/start inspection, not periodic publication.
+        io = {"pid": 1, "start": 2, "logical_writes": 10, "disk_bytes_written": 20, "sampled": 10}
+        later = dict(io, sampled=315)
+        self.assertEqual(lean.assess_idle(io, later, before, before, "same", "same")["logical_write_bytes_per_second"], 0)
+        for invalid in (dict(later, sampled=310), dict(later, pid=3), dict(later, start=3),
+                        dict(later, logical_writes=11), dict(later, disk_bytes_written=21)):
+            with self.assertRaises(ValueError):
+                lean.assess_idle(io, invalid, before, before, "same", "same")
+        with self.assertRaises(ValueError):
+            lean.assess_idle(io, later, before, changed, "same", "same")
+        with self.assertRaises(ValueError):
+            lean.assess_idle(io, later, before, before, "inode1", "inode2")
+
+    def test_stopped_doctor_must_find_the_owned_service_not_an_unrelated_failure(self):
+        report = {"outcome": "drifted", "transaction_status": "clear",
+                  "providers": {"focus_ring": "lean"},
+                  "theme": [{"adapter_id": "lean-focus-ring", "status": "failed",
+                             "message": "the owned lean service is stopped; run environment apply to repair"}],
+                  "entries": [{"id": "lean_focus_service", "status": "install_required"}]}
+        self.assertTrue(lean.assess_stopped(report))
+        self.assertFalse(lean.assess_stopped(dict(report, theme=[])))
+        self.assertFalse(lean.assess_stopped(dict(report, entries=[])))
+        self.assertFalse(lean.assess_stopped(dict(report, transaction_status="recovery_required")))
+
+    def test_failure_cleanup_always_checks_absence_even_if_teardown_fails(self):
+        for response in ({"outcome": "absent", "transaction_status": "clear"},
+                         {"outcome": "unexpected"}, RuntimeError("transport failed")):
+            cli = Mock(side_effect=response if isinstance(response, Exception) else None,
+                       return_value=response)
+            absent = Mock()
+            report = {}
+            lean.failure_cleanup(cli, absent, report, ["--json"])
+            cli.assert_called_once_with("failure-teardown", "environment", "teardown", "--json", expected=(0, 1))
+            absent.assert_called_once_with("failure-service-absent")
+            self.assertEqual("cleanup_errors" in report, response != {"outcome": "absent", "transaction_status": "clear"})
 
 
 if __name__ == "__main__":
