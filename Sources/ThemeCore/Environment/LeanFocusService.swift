@@ -9,8 +9,17 @@ package struct LeanFocusServiceConfiguration: Codable, Equatable, Sendable {
 
   package init(stateRoot: URL, executableURL: URL) {
     self.stateRoot = stateRoot.standardizedFileURL.path
-    executablePath = executableURL.resolvingSymlinksInPath().path
+    executablePath = MacarchyCommandPath.persistentURL(for: executableURL).path
   }
+
+  /// Both proc_pidpath and the stable entry point use realpath, including /private.
+  package static func physicalPath(_ path: String) -> String? {
+    guard let resolved = realpath(path, nil) else { return nil }
+    defer { free(resolved) }
+    return String(cString: resolved)
+  }
+
+  package var currentExecutablePath: String? { Self.physicalPath(executablePath) }
 
   package var isValid: Bool {
     [stateRoot, executablePath].allSatisfy {
@@ -34,7 +43,9 @@ package struct LeanFocusServiceConfiguration: Codable, Equatable, Sendable {
         "Label": LeanFocusService.label,
         "ProgramArguments": arguments,
         "RunAtLoad": true,
-        "KeepAlive": ["SuccessfulExit": false],
+        // Retry actual crashes, not deterministic preflight/configuration refusals.
+        // Stopped jobs retain their exit status and require explicit apply/repair.
+        "KeepAlive": ["Crashed": true],
         "ThrottleInterval": 30,
         "ProcessType": "Interactive",
         "LimitLoadToSessionType": "Aqua",
@@ -45,6 +56,25 @@ package struct LeanFocusServiceConfiguration: Codable, Equatable, Sendable {
           path: "environment/lean-focus.stderr.log"
         ).path,
       ], format: .xml, options: 0)
+  }
+
+  /// Called by the authenticated owned helper before preflight. Bound each log to
+  /// one invocation, including launchd crash retries; never truncate a redirected FD.
+  package func resetLogDescriptors(
+    stdout: Int32 = STDOUT_FILENO, stderr: Int32 = STDERR_FILENO
+  ) throws {
+    for (descriptor, name) in [
+      (stdout, "lean-focus.stdout.log"), (stderr, "lean-focus.stderr.log"),
+    ] {
+      let url = URL(filePath: stateRoot).appending(path: "environment/\(name)")
+      var opened = stat()
+      var named = stat()
+      guard fstat(descriptor, &opened) == 0, lstat(url.path, &named) == 0,
+        opened.st_mode & S_IFMT == S_IFREG, named.st_mode & S_IFMT == S_IFREG,
+        opened.st_uid == getuid(), opened.st_dev == named.st_dev, opened.st_ino == named.st_ino,
+        ftruncate(descriptor, 0) == 0
+      else { throw LeanFocusServiceError("managed log descriptor is not the owned regular log") }
+    }
   }
 }
 
@@ -57,6 +87,8 @@ package struct LeanFocusServiceInspection: Equatable, Sendable {
   package let registered: Bool
   package let loaded: Bool
   package let processID: Int32?
+  package var executableIsCurrent = true
+  package var lastExitStatus: Int32? = nil
   package var isRunning: Bool { processID != nil }
   package static let absent = Self(registered: false, loaded: false, processID: nil)
 }
@@ -69,17 +101,20 @@ package struct LeanFocusService: Sendable {
   let runner: ProcessRunner
   let processPath: @Sendable (Int32) throws -> String
   let wait: @Sendable () -> Void
+  let currentHomeDirectory: URL
 
   package init(
     homeDirectory: URL,
     runner: ProcessRunner = .live,
     processPath: @escaping @Sendable (Int32) throws -> String = BordersService.nativeProcessPath,
-    wait: @escaping @Sendable () -> Void = { Thread.sleep(forTimeInterval: 0.1) }
+    wait: @escaping @Sendable () -> Void = { Thread.sleep(forTimeInterval: 0.1) },
+    currentHomeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
   ) {
     self.homeDirectory = homeDirectory
     self.runner = runner
     self.processPath = processPath
     self.wait = wait
+    self.currentHomeDirectory = currentHomeDirectory
   }
 
   package var propertyListURL: URL {
@@ -139,16 +174,25 @@ package struct LeanFocusService: Sendable {
       }
     }
     let rows = processes.output.split(whereSeparator: \.isNewline)
+    var executableIsCurrent = true
     if let pid {
       guard processes.terminationStatus == 0, rows.count == 1,
-        Int32(rows[0].trimmingCharacters(in: .whitespaces)) == pid,
-        try processPath(pid) == configuration.executablePath
+        Int32(rows[0].trimmingCharacters(in: .whitespaces)) == pid
       else { throw LeanFocusServiceError("helper process and owned launchd job disagree") }
+      // The label, exact plist and arguments above establish ownership. A changed
+      // stable-path target makes this owned PID stale, not a foreign process.
+      let actual = LeanFocusServiceConfiguration.physicalPath(try processPath(pid))
+      executableIsCurrent = actual != nil && actual == configuration.currentExecutablePath
     } else if processes.terminationStatus != 1 {
       throw LeanFocusServiceError("a helper process exists outside the owned launchd job")
     }
+    let lastExit = lines.first { $0.hasPrefix("last exit code = ") }
+      .flatMap {
+        Int32($0.dropFirst("last exit code = ".count).prefix { $0 == "-" || $0.isNumber })
+      }
     return .init(
-      registered: true, loaded: loaded.terminationStatus == 0, processID: pid)
+      registered: true, loaded: loaded.terminationStatus == 0, processID: pid,
+      executableIsCurrent: executableIsCurrent, lastExitStatus: lastExit)
   }
 
   package func start(_ configuration: LeanFocusServiceConfiguration) throws {
@@ -159,7 +203,7 @@ package struct LeanFocusService: Sendable {
       throw LeanFocusServiceError("the matching packaged helper is missing or not executable")
     }
     let before = try inspect(configuration: configuration)
-    if before.isRunning { return }
+    if before.isRunning, before.executableIsCurrent { return }
     if !before.registered {
       let library = homeDirectory.appending(path: "Library")
       let parent = try PinnedFilesystem.openDirectory(at: library)
@@ -176,9 +220,13 @@ package struct LeanFocusService: Sendable {
         url: propertyListURL, data: configuration.propertyList(), mode: 0o600)
     }
     // A persisted attempt may resume an exact dormant registration, never an
-    // arbitrary plist. No enable/disable changes or broad process termination.
+    // arbitrary plist. After an upgrade, restart only the exact owned label.
+    let arguments =
+      before.isRunning
+      ? ["kickstart", "-k", job]
+      : before.loaded ? ["kickstart", job] : ["bootstrap", domain, propertyListURL.path]
     let result = try command(
-      before.loaded ? ["kickstart", job] : ["bootstrap", domain, propertyListURL.path])
+      arguments)
     guard result.terminationStatus == 0 else {
       throw LeanFocusServiceError("launch failed: \(result.output)")
     }
@@ -223,7 +271,11 @@ package struct LeanFocusService: Sendable {
     for attempt in 0..<30 {
       do {
         let state = try inspect(configuration: configuration)
-        if running ? state.isRunning : !state.isRunning && !state.loaded { return }
+        if running
+          ? state.isRunning && state.executableIsCurrent : !state.isRunning && !state.loaded
+        {
+          return
+        }
       } catch { last = String(describing: error) }
       if attempt < 29 { wait() }
     }
@@ -249,7 +301,7 @@ package struct LeanFocusService: Sendable {
   private func requireCurrentHome() throws {
     guard
       homeDirectory.standardizedFileURL
-        == FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        == currentHomeDirectory.standardizedFileURL
     else { throw LeanFocusServiceError("service mutation requires the current user's real HOME") }
   }
 

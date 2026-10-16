@@ -17,7 +17,8 @@ struct EnvironmentPlanCommandTests {
     start: { _ in throw BordersServiceError.blocked("plan must not mutate") },
     restart: { _ in throw BordersServiceError.blocked("plan must not mutate") },
     stop: { _ in throw BordersServiceError.blocked("plan must not mutate") },
-    request: { _, _ in throw BordersServiceError.blocked("plan must not mutate") })
+    request: { _, _ in throw BordersServiceError.blocked("plan must not mutate") },
+    lean: .unexpectedInTest, inspectIncumbent: { _ in .stopped })
 
   @Test(arguments: [false, true])
   func textPlanPreservesInspectionStatusWireSpelling(existing: Bool) throws {

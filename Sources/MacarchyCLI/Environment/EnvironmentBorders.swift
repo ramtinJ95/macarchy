@@ -240,10 +240,8 @@ struct EnvironmentBordersRuntime: Sendable {
   let restart: @Sendable (URL) throws -> Void
   let stop: @Sendable (URL) throws -> Void
   let request: @Sendable (URL, URL) throws -> String
-  var lean: EnvironmentLeanRuntime = .live
-  var inspectIncumbent: @Sendable (URL) throws -> BordersServiceInspection = {
-    try BordersService(homeDirectory: $0).inspect()
-  }
+  var lean: EnvironmentLeanRuntime
+  var inspectIncumbent: @Sendable (URL) throws -> BordersServiceInspection
 
   static let live = Self(
     inspect: { try BordersService(homeDirectory: $0).inspectForPlan() },
@@ -256,7 +254,9 @@ struct EnvironmentBordersRuntime: Sendable {
     stop: { try BordersService(homeDirectory: $0).stop() },
     request: { stateRoot, home in
       try BordersService(homeDirectory: home).request(BordersPalette.read(root: stateRoot))
-    }
+    },
+    lean: .live,
+    inspectIncumbent: { try BordersService(homeDirectory: $0).inspect() }
   )
 }
 
@@ -459,6 +459,13 @@ func observedBordersService(
       || transaction?.previousOwnership?.borders != nil
       || transaction?.proposedOwnership?.borders != nil
   else { return nil }
+  if !desiredEnabled, !leanEnabled,
+    let previous = ownership?.borders, previous.leanService != nil, !previous.retainsBorders
+  {
+    // Neutral journal baseline, not a claim that external Borders is stopped.
+    // Lean-only removal must neither inspect nor control an unrelated singleton.
+    return .stopped
+  }
   if !desiredEnabled,
     leanEnabled || ownership?.borders?.leanService != nil
   {

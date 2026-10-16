@@ -49,6 +49,101 @@ struct LeanFocusLifecycleTests {
     let teardown = try await fixture.teardown()
     #expect(teardown.succeeded, "\(teardown.output)")
     #expect(state.withLock { $0.configuration } == nil)
+    #expect(try store.readOwnership() == nil)
+    #expect(try store.readTransaction() == nil)
+    try expectRemovedLean(teardown.output)
+  }
+
+  @Test func rollbackBeforeNativeWorkPreservesNewlyStartedUserBorders() async throws {
+    let (fixture, state) = try makeFixture()
+    defer { fixture.remove() }
+    #expect(try await fixture.apply().succeeded)
+    let store = EnvironmentStateStore(stateRoot: fixture.root)
+    let original = try #require(try store.readOwnership())
+    // The user starts brew Borders after applying fresh lean (no retained Borders).
+    fixture.state.withLock { $0.running = true }
+    let before = try fixture.runtime.inspectIncumbent(fixture.home)
+    try fixture.writeProfile(provider: .borders)
+    try fixture.stageUnverifiedApply()
+    let journal = try #require(try store.readTransaction())
+    #expect(journal.previousOwnership == original)
+    #expect(journal.proposedOwnership?.borders?.originalServiceWasRunning == true)
+    #expect(journal.bordersRuntimeAttempted == nil)
+    #expect(journal.bordersPreviousRuntime == before)
+    // Failure in another adapter before the focus native phase.
+    #expect(
+      try EnvironmentApplyCommandRunner(
+        prerequisites: .assumed, theme: nil, verifier: .assumed, bordersRuntime: fixture.runtime
+      ).finishDeferredApply(stateRoot: fixture.root, homeDirectory: fixture.home, commit: false))
+    #expect(try fixture.runtime.inspectIncumbent(fixture.home) == before)
+    #expect(fixture.state.withLock { $0.actions.isEmpty && $0.running })
+    #expect(state.withLock { $0.actions } == ["start", "ack"])
+    #expect(try store.readOwnership() == original)
+    #expect(try store.readTransaction() == nil)
+  }
+
+  @Test(arguments: [false, true], [false, true])
+  func removalIgnoresUnownedBorders(teardown: Bool, registered: Bool) async throws {
+    var (fixture, state) = try makeFixture()
+    defer { fixture.remove() }
+    #expect(try await fixture.apply().succeeded)
+    fixture.state.withLock { $0.running = true }
+    if !registered {
+      fixture.runtime.inspectIncumbent = { _ in
+        // Matches the native inspector's unregistered-process refusal. Removal
+        // must not call it, rather than pretending such a process is stopped.
+        Issue.record("lean-only removal inspected an unrelated Borders process")
+        throw BordersServiceError.blocked("process and Homebrew job disagree")
+      }
+    }
+    let before = try fixture.runtime.recoveryPreflight(fixture.home)
+    try fixture.writeProfile(provider: .disabled)
+    let result = try await (teardown ? fixture.teardown() : fixture.apply())
+    #expect(result.succeeded, "\(result.output)")
+    #expect(try fixture.runtime.recoveryPreflight(fixture.home) == before)
+    #expect(fixture.state.withLock { $0.actions.isEmpty && $0.running })
+    #expect(state.withLock { $0.configuration } == nil)
+    let store = EnvironmentStateStore(stateRoot: fixture.root)
+    #expect(try store.readOwnership() == nil)
+    #expect(try store.readTransaction() == nil)
+    try expectRemovedLean(result.output)
+  }
+
+  @Test func frozenPreSchemaThreeBordersOwnershipRetainsLegacySemantics() throws {
+    let legacy = Data(
+      """
+      {
+        "schema_version": 1,
+        "generation_id": "e-00000000-0000-0000-0000-000000000001",
+        "records": [{
+          "id": "borders_configuration", "public_path": "/fixture/.config/borders/bordersrc",
+          "managed_kind": "symbolic_link", "managed_target": "/fixture/state/environment/current/borders/bordersrc",
+          "original": {"kind": "absent", "inventory": []}
+        }],
+        "created_directories": [], "original_theme_bridges": [],
+        "borders": {
+          "originalServiceWasRunning": false,
+          "fallbackConfiguration": {"kind": "absent", "inventory": []}
+        },
+        "enabled_theme_adapter_ids": ["borders"]
+      }
+      """.utf8)
+    let decoded = try JSONDecoder().decode(EnvironmentOwnership.self, from: legacy)
+    #expect(decoded.schemaVersion == 1)
+    #expect(decoded.hasValidShape)
+    #expect(
+      decoded.records.first?.managedKind
+        == EnvironmentManagedEntry.ManagedKind.symbolicLink.rawValue)
+    #expect(ThemeRuntimeSelection.appliedAdapterIDs(for: decoded) == [BordersAdapter.id])
+    let borders = try #require(decoded.borders)
+    #expect(borders.retainsBorders && borders.leanService == nil)
+    let (fixture, _) = try makeFixture()
+    defer { fixture.remove() }
+    let restored = try EnvironmentProviderInspector().inspectBorders(
+      enabled: false, previous: borders, homeDirectory: fixture.home, service: .stopped)
+    #expect(restored.ownership == nil)
+    #expect(restored.entries.first?.status == .restorationRequired)
+    #expect(restored.entries.first?.message.contains("Stop and unregister") == true)
   }
 
   @Test(arguments: ["file", "directory-link", "fallback"], [false, true])
@@ -102,6 +197,20 @@ struct LeanFocusLifecycleTests {
     #expect(state.withLock { $0.actions.isEmpty })
   }
 
+  @Test func teardownStillCleansRetainedLeanAfterExternalUnregistration() async throws {
+    let (fixture, state) = try makeFixture()
+    defer { fixture.remove() }
+    #expect(try await fixture.apply().succeeded)
+    state.withLock { $0.registered = false }
+    let result = try await fixture.teardown()
+    #expect(result.succeeded, "\(result.output)")
+    #expect(state.withLock { $0.actions } == ["start", "ack", "stop"])
+    #expect(state.withLock { $0.configuration } == nil)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.root).readOwnership() == nil)
+    #expect(try EnvironmentStateStore(stateRoot: fixture.root).readTransaction() == nil)
+    try expectRemovedLean(result.output)
+  }
+
   @Test(arguments: [false, true])
   func failedLeanAcknowledgementRollsBackToThePreviousProvider(previousBorders: Bool) async throws {
     let (fixture, state) = try makeFixture()
@@ -127,12 +236,18 @@ struct LeanFocusLifecycleTests {
     let (fixture, state) = try makeFixture()
     defer { fixture.remove() }
     #expect(try await fixture.apply().succeeded)
-    state.withLock { $0.failStop = true }
+    state.withLock {
+      $0.failStop = true
+      $0.failAcknowledgement = true
+    }
     try fixture.writeProfile(provider: .borders)
     let applied = try await fixture.apply()
     #expect(!applied.succeeded)
     #expect(fixture.state.withLock { $0.actions.isEmpty && !$0.running })
     #expect(state.withLock { $0.configuration } != nil)
+    #expect(applied.output.contains("injected lean stop"))
+    #expect(applied.output.contains("recovery_required"))
+    #expect(try EnvironmentStateStore(stateRoot: fixture.root).readTransaction() != nil)
   }
 
   @Test(arguments: [false, true])
@@ -143,6 +258,9 @@ struct LeanFocusLifecycleTests {
     let store = EnvironmentStateStore(stateRoot: fixture.root)
     var journal = try #require(try store.readTransaction())
     #expect(journal.bordersRuntimeTarget == .lean)
+    #expect(journal.bordersRuntimeAttempted == nil)
+    #expect(
+      journal.previousOwnership == nil && journal.proposedOwnership?.borders?.leanService != nil)
     if attempted {
       journal.bordersRuntimeAttempted = true
       try store.writeTransaction(journal)
@@ -157,6 +275,7 @@ struct LeanFocusLifecycleTests {
     #expect(try store.readOwnership() == nil)
     #expect(try store.readTransaction() == nil)
     #expect(fixture.state.withLock { $0.actions.isEmpty })
+    #expect(state.withLock { $0.actions } == (attempted ? ["start", "stop"] : []))
   }
 
   @Test func liveThemeUsesAppliedSelectionAndReportsMissingAcknowledgement() async throws {
@@ -177,6 +296,10 @@ struct LeanFocusLifecycleTests {
     let mode = ThemeRuntimeSelection.managedLeanMode(
       stateRoot: fixture.root, homeDirectory: fixture.home, runtime: fixture.runtime.lean)
     #expect(throws: Never.self) { try mode.inspect() }
+    state.withLock { $0.outdatedExecutable = true }
+    _ = try mode.reconcile()
+    #expect(!state.withLock { $0.outdatedExecutable })
+    #expect(state.withLock { $0.actions.contains("restart") })
     state.withLock { $0.failAcknowledgement = true }
     #expect(throws: (any Error).self) { try mode.inspect() }
     let result = try await coordinator.reconcile(adapterIDs: [BordersAdapter.leanID])
@@ -187,8 +310,21 @@ struct LeanFocusLifecycleTests {
   }
 }
 
+private func expectRemovedLean(_ output: String) throws {
+  let report = try #require(
+    JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+  let rows = try #require(report["theme"] as? [[String: Any]])
+  let lean = try #require(rows.first { $0["adapter_id"] as? String == BordersAdapter.leanID })
+  #expect(lean["status"] as? String == "applied")
+  #expect(
+    lean["message"] as? String
+      == "Stopped and unregistered owned lean; no Borders state was adopted or changed.")
+}
+
 private struct LeanFixtureState {
   var configuration: LeanFocusServiceConfiguration?
+  var registered = true
+  var outdatedExecutable = false
   var actions: [String] = []
   var foreign = false
   var failAcknowledgement = false
@@ -221,10 +357,12 @@ private func makeFixture(
           $0.configuration.map({ known.contains($0) }) ?? true
         else { throw EnvironmentLifecycleError.blocked("unowned lean") }
         return (
-          $0.configuration == nil
+          $0.configuration == nil || !$0.registered
             ? .absent
-            : LeanFocusServiceInspection(registered: true, loaded: true, processID: 200),
-          $0.configuration
+            : LeanFocusServiceInspection(
+              registered: true, loaded: true, processID: 200,
+              executableIsCurrent: !$0.outdatedExecutable),
+          $0.configuration ?? known.first
         )
       }
     },
@@ -232,7 +370,10 @@ private func makeFixture(
       #expect(!bordersState.withLock { $0.running })
       state.withLock {
         if $0.configuration == nil { $0.actions.append("start") }
+        if $0.outdatedExecutable { $0.actions.append("restart") }
         $0.configuration = configuration
+        $0.registered = true
+        $0.outdatedExecutable = false
       }
     },
     stop: { _, configuration in

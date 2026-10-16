@@ -8,11 +8,16 @@ package enum MacarchyCommandPath {
     let components = physical.pathComponents
     if components.count == 8,
       Array(components.prefix(5)) == ["/", "opt", "homebrew", "Cellar", "macarchy"],
-      components[6] == "bin", components[7] == "macarchy"
+      components[6] == "bin", ["macarchy", "macarchy-focus-ring"].contains(components[7])
     {
       // Keep a broken/missing Homebrew link visible to normal command preflight;
       // falling back to this Cellar version would recreate the upgrade defect.
-      return URL(filePath: "/opt/homebrew/bin/macarchy")
+      return URL(filePath: "/opt/homebrew/bin/\(components[7])")
+    }
+    // A managed helper may also be launched through an explicitly stable source
+    // build symlink. Keep that entry point; authenticate its current realpath.
+    if executableURL.lastPathComponent == "macarchy-focus-ring" {
+      return executableURL.standardizedFileURL
     }
     return physical
   }

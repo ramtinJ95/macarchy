@@ -565,7 +565,8 @@ struct UnifiedSetupPlanTests {
           start: noMutation, restart: noMutation, stop: noMutation,
           request: { _, _ in
             throw BordersServiceError.blocked("planning must not request appearance")
-          })
+          },
+          lean: .unexpectedInTest, inspectIncumbent: { _ in .stopped })
         return try SetupComponentExecution(
           EnvironmentPlanCommandRunner(
             prerequisites: .assumed, bordersRuntime: borders

@@ -1,9 +1,11 @@
 import Darwin
 import Foundation
 
-/// Main-runloop acknowledgement, not pixels or exact AX focus. Contains no window
-/// titles/application content. Process start identity prevents stale PID reuse.
+/// Startup/palette-change acknowledgement, not a heartbeat or hung-runloop proof.
+/// Process start identity prevents stale PID reuse; ownership is label + state root.
 package struct LeanFocusRuntime: Codable, Equatable, Sendable {
+  package let label: String
+  package let stateRoot: String
   package let pid: Int32
   package let started: UInt64
   package let executablePath: String
@@ -24,10 +26,13 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
     configuration: LeanFocusServiceConfiguration, generationID: String, accent: String
   ) throws {
     guard let started = processStart(getpid()),
-      processExecutablePath(getpid()) == configuration.executablePath
+      let processPath = processExecutablePath(getpid()),
+      let physical = LeanFocusServiceConfiguration.physicalPath(processPath),
+      physical == configuration.currentExecutablePath
     else { throw LeanFocusServiceError("cannot establish the running helper identity") }
     let value = Self(
-      pid: getpid(), started: started, executablePath: configuration.executablePath,
+      label: LeanFocusService.label, stateRoot: configuration.stateRoot,
+      pid: getpid(), started: started, executablePath: physical,
       generationID: generationID, accent: accent, updated: ProcessInfo.processInfo.systemUptime)
     let parent = try PinnedFilesystem.openDirectory(
       at: configuration.runtimeURL.deletingLastPathComponent())
@@ -47,6 +52,15 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
       url: configuration.runtimeURL, maximumSize: 8192
     ).data
     return try JSONDecoder().decode(Self.self, from: data)
+  }
+
+  package static func validateIfPresent(configuration: LeanFocusServiceConfiguration) throws {
+    guard
+      let parent = try PinnedFilesystem.openDirectoryIfPresent(
+        at: configuration.runtimeURL.deletingLastPathComponent())
+    else { return }
+    defer { Darwin.close(parent) }
+    _ = try ownedRecord(configuration: configuration, parent: parent)
   }
 
   /// Only after the owned job is stopped. Missing state is valid for an
@@ -74,20 +88,23 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
       ).data
     } catch let error as PinnedFilesystemError where error.code == ENOENT { return nil }
     let record = try JSONDecoder().decode(Self.self, from: data)
-    guard record.executablePath == configuration.executablePath else {
-      throw LeanFocusServiceError("runtime evidence belongs to another executable")
+    guard record.label == LeanFocusService.label, record.stateRoot == configuration.stateRoot else {
+      throw LeanFocusServiceError("runtime evidence belongs to another label or state root")
     }
     return record
   }
 
   package func matches(
     configuration: LeanFocusServiceConfiguration, processID: Int32,
-    palette: BordersPalette, now: Double = ProcessInfo.processInfo.systemUptime
+    palette: BordersPalette
   ) -> Bool {
-    pid == processID && started == Self.processStart(pid)
-      && executablePath == configuration.executablePath
-      && processExecutablePath(pid) == executablePath
+    label == LeanFocusService.label && stateRoot == configuration.stateRoot
+      && pid == processID && started == Self.processStart(pid)
+      && configuration.currentExecutablePath != nil
+      && executablePath == configuration.currentExecutablePath
+      && processExecutablePath(pid).flatMap(LeanFocusServiceConfiguration.physicalPath)
+        == executablePath
       && generationID == palette.generationID && accent == palette.accent
-      && updated.isFinite && now >= updated && now - updated <= 3
+      && updated.isFinite
   }
 }
