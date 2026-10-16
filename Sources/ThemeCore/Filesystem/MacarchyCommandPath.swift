@@ -14,8 +14,8 @@ package enum MacarchyCommandPath {
       // falling back to this Cellar version would recreate the upgrade defect.
       return URL(filePath: "/opt/homebrew/bin/\(components[7])")
     }
-    // A managed helper may also be launched through an explicitly stable source
-    // build symlink. Keep that entry point; authenticate its current realpath.
+    // Preserve a supplied non-Homebrew helper entry point. If the caller already
+    // resolved a source-build symlink, we cannot reconstruct its stable alias.
     if executableURL.lastPathComponent == "macarchy-focus-ring" {
       return executableURL.standardizedFileURL
     }

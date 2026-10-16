@@ -31,10 +31,12 @@ extension ThemeRuntimeSelection {
         // The helper observes the canonical pointer itself. This verifies the
         // startup/palette acknowledgement; it never writes a competing palette.
         let (service, _) = try runtime.inspect(homeDirectory, [configuration])
-        if service.isRunning, !service.executableIsCurrent {
+        let stoppedOwned = service.registered && !service.isRunning
+        if stoppedOwned || (service.isRunning && !service.executableIsCurrent) {
           try runtime.start(homeDirectory, configuration)
         }
-        return try runtime.acknowledge(homeDirectory, configuration, true)
+        let acknowledgement = try runtime.acknowledge(homeDirectory, configuration, true)
+        return (stoppedOwned ? "Started stopped owned lean service. " : "") + acknowledgement
       }
     )
   }
@@ -167,19 +169,26 @@ func verifyPendingLeanHandoff(
   let needsBorders = source?.retainsBorders == true || destination?.retainsBorders == true
   // Removing a lean-only claim has no authority over Borders, including an
   // unregistered process that the strict Homebrew inspector would refuse.
-  let ignoresBorders = !needsBorders && destinationLean == nil
-  let currentBorders =
-    try ignoresBorders
-    ? .stopped
-    : needsBorders
-      ? (attempted ? runtime.recoveryPreflight(home) : runtime.preflight(home))
-      : runtime.inspectIncumbent(home)
+  let ignoresBorders = !needsBorders && (destinationLean == nil || preserveRuntime)
+  let currentBorders: BordersServiceInspection
+  if ignoresBorders {
+    currentBorders = .stopped
+  } else if needsBorders {
+    currentBorders = try attempted ? runtime.recoveryPreflight(home) : runtime.preflight(home)
+  } else {
+    do { currentBorders = try runtime.inspectIncumbent(home) } catch {
+      throw EnvironmentLifecycleError.blocked(
+        "Cannot establish absence of unmanaged JankyBorders for this user: \(error). Stop your Borders process and unregister its service, then retry environment apply; the focus recovery journal is retained."
+      )
+    }
+  }
   if !attempted, currentBorders != transaction.bordersPreviousRuntime {
     throw EnvironmentLifecycleError.drift("Borders changed after reviewed focus inspection")
   }
   if !preserveRuntime, destinationLean != nil, !needsBorders, currentBorders != .stopped {
     throw EnvironmentLifecycleError.blocked(
-      "Unmanaged JankyBorders blocks lean; no process was stopped")
+      "Unmanaged JankyBorders for this user blocks restoring lean; stop and unregister your Borders service, then retry environment apply. No Borders process was stopped; the focus recovery journal is retained."
+    )
   }
   if let destinationLean {
     guard try coordinator.managedLeanConfiguration() == destinationLean else {

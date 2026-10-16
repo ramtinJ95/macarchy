@@ -8,6 +8,27 @@ import ThemeCore
 private typealias Bit = FocusTargetPolicy.Bit
 
 @Suite struct FocusRingPolicyTests {
+  @Test func transientPaletteFailuresAreBoundedAndSuccessResetsTheBudget() {
+    var policy = FocusRingRetryPolicy()
+    #expect(policy.paletteFailed() == .logAndRetry)
+    for _ in 2...7 { #expect(policy.paletteFailed() == .retry) }
+    policy.paletteSucceeded()
+    #expect(policy.paletteFailed() == .logAndRetry)
+    for _ in 2...7 { #expect(policy.paletteFailed() == .retry) }
+    #expect(policy.paletteFailed() == .refuse)
+    #expect(policy.paletteFailed() == .refuse)
+  }
+
+  @Test func managedSessionWaitIsBoundedAndPreviewDoesNotWait() {
+    #expect(FocusRingRetryPolicy.session(ready: false, elapsed: 0, managed: true) == .wait)
+    #expect(FocusRingRetryPolicy.session(ready: false, elapsed: 59.9, managed: true) == .wait)
+    #expect(FocusRingRetryPolicy.session(ready: false, elapsed: 60, managed: true) == .refuse)
+    #expect(FocusRingRetryPolicy.session(ready: false, elapsed: 61, managed: true) == .refuse)
+    #expect(FocusRingRetryPolicy.session(ready: true, elapsed: 59, managed: true) == .ready)
+    #expect(FocusRingRetryPolicy.session(ready: false, elapsed: 0, managed: false) == .refuse)
+    #expect(FocusRingRetryPolicy.session(ready: true, elapsed: 0, managed: false) == .ready)
+  }
+
   @Test func managedModeIsExplicitAndCannotOverridePreviewDuration() throws {
     let preview = try FocusRingOptions.parse(["--state-root", "/x"])
     #expect(!preview.managed && preview.previewDuration == 30)

@@ -11,7 +11,6 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
   package let executablePath: String
   package let generationID: String
   package let accent: String
-  package let updated: Double
 
   package static func processStart(_ pid: Int32) -> UInt64? {
     var info = proc_bsdinfo()
@@ -33,7 +32,7 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
     let value = Self(
       label: LeanFocusService.label, stateRoot: configuration.stateRoot,
       pid: getpid(), started: started, executablePath: physical,
-      generationID: generationID, accent: accent, updated: ProcessInfo.processInfo.systemUptime)
+      generationID: generationID, accent: accent)
     let parent = try PinnedFilesystem.openDirectory(
       at: configuration.runtimeURL.deletingLastPathComponent())
     defer { Darwin.close(parent) }
@@ -105,6 +104,5 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
       && processExecutablePath(pid).flatMap(LeanFocusServiceConfiguration.physicalPath)
         == executablePath
       && generationID == palette.generationID && accent == palette.accent
-      && updated.isFinite
   }
 }

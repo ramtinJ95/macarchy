@@ -225,8 +225,10 @@ package struct LeanFocusService: Sendable {
       before.isRunning
       ? ["kickstart", "-k", job]
       : before.loaded ? ["kickstart", job] : ["bootstrap", domain, propertyListURL.path]
-    let result = try command(
-      arguments)
+    // A kickstart can wait for launchd's 30-second throttle after a recent
+    // normal exit. Keep inspection bounded at 5 s, but allow this one owned
+    // launch request to complete without killing it while launchd is waiting.
+    let result = try command(arguments, timeout: before.loaded ? 35 : 5)
     guard result.terminationStatus == 0 else {
       throw LeanFocusServiceError("launch failed: \(result.output)")
     }
@@ -305,9 +307,9 @@ package struct LeanFocusService: Sendable {
     else { throw LeanFocusServiceError("service mutation requires the current user's real HOME") }
   }
 
-  private func command(_ arguments: [String]) throws -> ProcessResult {
+  private func command(_ arguments: [String], timeout: TimeInterval = 5) throws -> ProcessResult {
     try runner.run(
       ProcessRequest(
-        executableURL: URL(filePath: "/bin/launchctl"), arguments: arguments, timeout: 5))
+        executableURL: URL(filePath: "/bin/launchctl"), arguments: arguments, timeout: timeout))
   }
 }

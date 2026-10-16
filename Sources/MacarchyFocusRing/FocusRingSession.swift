@@ -13,6 +13,7 @@ final class FocusRingSession {
   private let root: URL
   private let focus: SkyLightFocus
   private var palette: PaletteState
+  private var retryPolicy = FocusRingRetryPolicy()
   private let panel = OutlinePanel(
     contentRect: CGRect(x: 0, y: 0, width: 1, height: 1),
     styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -54,7 +55,7 @@ final class FocusRingSession {
         try configuration.resetLogDescriptors()
         managed = configuration
       }
-      try requireConsoleSession()
+      try requireConsoleSession(managed: options.managed)
       let palette = try PaletteState.load(root: root)
       let focus = try SkyLightFocus()
       try refuseCompetingOutlines()
@@ -212,19 +213,36 @@ final class FocusRingSession {
   /// Read-only canonical-pointer poll. No periodic file publication or heartbeat.
   private func maintenance() {
     guard stopReason == nil else { return }
+    let moved: Bool
     do {
       // A stable pointer stays authoritative; decode the palette only when it moves.
-      let moved = try autoreleasepool { () throws -> Bool in
+      moved = try autoreleasepool { () throws -> Bool in
         guard try PaletteState.pointerStamp(root: root) != palette.stamp else { return false }
         palette = try PaletteState.load(root: root)
         outline.color = palette.color
         return true
       }
-      if moved {
-        tick()
-        if stopReason == nil { try publishPalette() }
+      retryPolicy.paletteSucceeded()
+    } catch {
+      // Retain the last complete palette; only read/decode errors are transient.
+      switch retryPolicy.paletteFailed() {
+      case .logAndRetry:
+        Self.writeError(
+          "palette temporarily unreadable; retaining current palette and retrying: \(error)")
+      case .retry: break
+      case .refuse:
+        stop(
+          "failure", code: options.managed ? 78 : 1,
+          error: "palette unreadable for 8 consecutive polls: \(error)")
       }
-    } catch { return stop("failure", code: 1, error: "\(error)") }
+      return
+    }
+    if moved {
+      tick()
+      if stopReason == nil {
+        do { try publishPalette() } catch { stop("failure", code: 1, error: "\(error)") }
+      }
+    }
   }
 
   private func publishPalette() throws {
@@ -374,12 +392,28 @@ final class FocusRingSession {
     try? FileHandle.standardError.write(contentsOf: Data((message + "\n").utf8))
   }
 
-  private static func requireConsoleSession() throws {
-    let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
-    guard (session[kCGSessionUserIDKey] as? NSNumber)?.uint32Value == getuid(),
-      session[kCGSessionOnConsoleKey] as? Bool == true,
-      session[kCGSessionLoginDoneKey] as? Bool == true
-    else { throw FocusRingError("not this user's completed on-console window-server session") }
+  private static func requireConsoleSession(managed: Bool) throws {
+    let start = ProcessInfo.processInfo.systemUptime
+    let wake = Timer(timeInterval: 0.5, repeats: true) { _ in }
+    wake.tolerance = 0.1
+    RunLoop.main.add(wake, forMode: .default)
+    defer { wake.invalidate() }
+    while true {
+      let session = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]
+      let ready =
+        (session[kCGSessionUserIDKey] as? NSNumber)?.uint32Value == getuid()
+        && session[kCGSessionOnConsoleKey] as? Bool == true
+        && session[kCGSessionLoginDoneKey] as? Bool == true
+      switch FocusRingRetryPolicy.session(
+        ready: ready, elapsed: ProcessInfo.processInfo.systemUptime - start, managed: managed)
+      {
+      case .ready: return
+      case .refuse:
+        throw FocusRingError("not this user's completed on-console window-server session")
+      case .wait:
+        _ = RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.6))
+      }
+    }
   }
 
   /// Point-in-time refusal only: a racing start is not prevented and this is not a lock.
