@@ -437,7 +437,13 @@ class BoundaryTests(unittest.TestCase):
         owned = FakeGuest([(".verify-owner", result(SESSION + "\n")), ("/bin/rm", result())])
         self.assertEqual(verify.remove_guest_directory(owned, SESSION), "removed")
         self.assertEqual(owned.commands[-1], f"/bin/test -d {REMOTE} -a ! -L {REMOTE} && "
+                                             f"/bin/chmod -R -P u+w {REMOTE} && "
                                              f"/bin/rm -rf -- {REMOTE}")
+        denied = FakeGuest([(".verify-owner", result(SESSION + "\n")),
+                            ("/bin/chmod", result(returncode=1, stderr="Permission denied\n" + "x" * 4000))])
+        with self.assertRaisesRegex(verify.Blocked, "Permission denied") as caught:
+            verify.remove_guest_directory(denied, SESSION)
+        self.assertLess(len(str(caught.exception)), 2120)
         absent = FakeGuest([(".verify-owner", result(returncode=1)), ("/bin/test", result())])
         self.assertEqual(verify.remove_guest_directory(absent, SESSION), "already_absent")
         source = Path(verify.__file__).read_text()
