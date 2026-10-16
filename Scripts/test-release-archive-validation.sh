@@ -45,4 +45,24 @@ COPYFILE_DISABLE=1 /usr/bin/tar -czf \
 )
 expect_rejected malformed "a missing release resource"
 
+# Independently corrupt the new helper, preserving valid archive checksums.
+for defect in missing mode signature; do
+  fixture="$temporary_directory/focus-$defect"
+  mkdir "$fixture" "$fixture/unpacked"
+  /usr/bin/tar -xzf "$archive" -C "$fixture/unpacked"
+  helper="$fixture/unpacked/$package_name/bin/macarchy-focus-ring"
+  case "$defect" in
+    missing) rm "$helper" ;;
+    mode) chmod 0744 "$helper" ;;
+    signature) /usr/bin/codesign --remove-signature "$helper" ;;
+  esac
+  COPYFILE_DISABLE=1 /usr/bin/tar -czf "$fixture/${archive:t}" \
+    -C "$fixture/unpacked" "$package_name"
+  (
+    cd "$fixture"
+    /usr/bin/shasum -a 256 "${archive:t}" > "${checksum:t}"
+  )
+  expect_rejected "focus-$defect" "a focus helper with invalid $defect"
+done
+
 print "release archive rejection tests passed"

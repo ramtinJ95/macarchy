@@ -9,6 +9,7 @@ fi
 
 binary=${1:A}
 menu_binary="${binary:h}/macarchy-menu"
+focus_binary="${binary:h}/macarchy-focus-ring"
 destination=${2:A}
 revision=$3
 script_directory=${0:A:h}
@@ -23,6 +24,10 @@ if [[ ! -x "$binary" ]]; then
 fi
 if [[ ! -x "$menu_binary" || "$(/usr/bin/lipo -archs "$menu_binary")" != "arm64" ]]; then
   print -u2 "matching arm64 macarchy-menu helper is missing beside the release binary"
+  exit 66
+fi
+if [[ ! -x "$focus_binary" || "$(/usr/bin/lipo -archs "$focus_binary")" != "arm64" ]]; then
+  print -u2 "matching arm64 macarchy-focus-ring helper is missing beside the release binary"
   exit 66
 fi
 read_release_version "$version_file"
@@ -46,7 +51,8 @@ mkdir -p "$destination/bin" "$destination/share/macarchy" \
   "$destination/share/doc/macarchy"
 install -m 0755 "$binary" "$destination/bin/macarchy"
 install -m 0755 "$menu_binary" "$destination/bin/macarchy-menu"
-for executable in macarchy macarchy-menu; do
+install -m 0755 "$focus_binary" "$destination/bin/macarchy-focus-ring"
+for executable in macarchy macarchy-menu macarchy-focus-ring; do
   /usr/bin/codesign --force --sign - --timestamp=none "$destination/bin/$executable"
 done
 for resource in Themes Keybindings Desktop Environment; do

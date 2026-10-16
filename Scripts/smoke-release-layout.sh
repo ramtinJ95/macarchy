@@ -24,6 +24,7 @@ mkdir -p "$work" "$runtime_tmp"
 
 [[ -x "$binary" ]]
 [[ -x "$layout/bin/macarchy-menu" ]]
+[[ -x "$layout/bin/macarchy-focus-ring" ]]
 [[ -f "$metadata" ]]
 [[ -d "$layout/share/macarchy/themes" ]]
 [[ -f "$layout/share/macarchy/keybindings/defaults.skhdrc" ]]
@@ -48,15 +49,19 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
 [[ -f "$snapshot_source" ]]
 [[ -z "$(find -P "$layout" ! -type f ! -type d -print)" ]]
-/usr/bin/codesign --verify --strict "$binary"
-/usr/bin/codesign --verify --strict "$layout/bin/macarchy-menu"
+for executable in macarchy macarchy-menu macarchy-focus-ring; do
+  [[ "$(/usr/bin/stat -f '%Lp' "$layout/bin/$executable")" == "755" ]]
+  [[ "$(/usr/bin/lipo -archs "$layout/bin/$executable")" == "arm64" ]]
+  /usr/bin/codesign --verify --strict "$layout/bin/$executable"
+  signature=$(/usr/bin/codesign -dv --verbose=2 "$layout/bin/$executable" 2>&1)
+  print -r -- "$signature" | grep -q '^Signature=adhoc$'
+done
 "$layout/bin/macarchy-menu" --help | grep -q 'Permission must be enabled manually'
-signature=$(/usr/bin/codesign -dv --verbose=2 "$binary" 2>&1)
-print -r -- "$signature" | grep -q '^Signature=adhoc$'
 
 {
   print "bin/macarchy"
   print "bin/macarchy-menu"
+  print "bin/macarchy-focus-ring"
   print "share/macarchy/build-info.json"
   print "share/doc/macarchy/CHANGELOG.md"
   print "share/doc/macarchy/theme-json.md"
