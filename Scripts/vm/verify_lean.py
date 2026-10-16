@@ -64,6 +64,19 @@ def assess_stopped(result):
     )
 
 
+def assess_restarted(result, before, after):
+    rows = result.get("reconciliation", [])
+    lean_rows = [row for row in rows if row.get("adapter_id") == "lean-focus-ring"]
+    return (
+        result.get("outcome") == "success" and len(rows) == 2 and len(lean_rows) == 1
+        and {row.get("adapter_id"): row.get("status") for row in rows}
+        == {"lean-focus-ring": "applied", "macos-appearance": "applied"}
+        and lean_rows[0].get("message", "").startswith("Started stopped owned lean service. ")
+        and (before["pid"], before["started"]) != (after["pid"], after["started"])
+        and all(before[key] == after[key] for key in ("generationID", "accent", "executablePath"))
+    )
+
+
 def failure_cleanup(cli, absent, report, flags):
     try:
         result = cli("failure-teardown", "environment", "teardown", *flags, expected=(0, 1))
@@ -210,6 +223,16 @@ def run_journey(client, record, evidence, report):
         section["theme_failures"] = assess_runtime(before, changed, changed_theme=True)
         if section["theme_failures"]:
             raise v.Failed("; ".join(section["theme_failures"]))
+
+        # SIGTERM is handled normally, not a crash: KeepAlive must leave it stopped.
+        sh("terminate-owned-job", "/bin/launchctl kill SIGTERM gui/$(id -u)/" + q(LABEL))
+        sh("settle-owned-stop", "/bin/sleep 1")
+        doctor("terminated-doctor", expected=1)
+        section["stopped_reconcile"] = cli("repair-reconcile", "reconcile", "lean-focus-ring", *flags)
+        doctor("reconciled-doctor")
+        restarted = runtime("after-reconcile")
+        if not assess_restarted(section["stopped_reconcile"], changed, restarted):
+            raise v.Failed("reconcile did not report and acknowledge restarting the stopped owned job")
 
         # A deliberate stopped-owned-job fault, not a fabricated status receipt.
         sh("stop-owned-job", "/bin/launchctl bootout gui/$(id -u)/" + q(LABEL))
