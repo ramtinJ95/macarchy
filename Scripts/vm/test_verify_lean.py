@@ -48,8 +48,8 @@ class LeanJourneyTests(unittest.TestCase):
 
     def test_same_process_live_theme_and_duration_are_independent(self):
         before = {"pid": 1, "started": 2, "executablePath": "/helper",
-                  "generationID": "first", "accent": "#cba6f7", "updated": 10}
-        changed = dict(before, generationID="second", accent="#7aa2f7", updated=12)
+                  "generationID": "first", "accent": "#cba6f7"}
+        changed = dict(before, generationID="second", accent="#7aa2f7")
         self.assertEqual(lean.assess_runtime(before, changed, changed_theme=True), [])
         self.assertTrue(lean.assess_runtime(before, before, changed_theme=True))
         self.assertTrue(lean.assess_runtime(before, dict(changed, pid=3), changed_theme=True))
@@ -79,6 +79,21 @@ class LeanJourneyTests(unittest.TestCase):
         self.assertFalse(lean.assess_stopped(dict(report, theme=[])))
         self.assertFalse(lean.assess_stopped(dict(report, entries=[])))
         self.assertFalse(lean.assess_stopped(dict(report, transaction_status="recovery_required")))
+
+    def test_reconcile_must_report_restart_and_acknowledge_new_identity(self):
+        before = {"pid": 1, "started": 2, "generationID": "g", "accent": "#abcdef", "executablePath": "/helper"}
+        after = dict(before, pid=3, started=4)
+        row = {"adapter_id": "lean-focus-ring", "status": "applied",
+               "message": "Started stopped owned lean service. Acknowledged"}
+        appearance = {"adapter_id": "macos-appearance", "status": "applied"}
+        result = {"outcome": "success", "reconciliation": [row, appearance]}
+        self.assertTrue(lean.assess_restarted(result, before, after))
+        self.assertFalse(lean.assess_restarted(result, before, before))
+        self.assertFalse(lean.assess_restarted(result, before, dict(after, accent="#123456")))
+        for invalid in (dict(result, outcome="failure"), dict(result, reconciliation=[]),
+                        dict(result, reconciliation=[dict(row, message="stale"), appearance]),
+                        dict(result, reconciliation=[row, appearance, appearance])):
+            self.assertFalse(lean.assess_restarted(invalid, before, after))
 
     def test_failure_cleanup_always_checks_absence_even_if_teardown_fails(self):
         for response in ({"outcome": "absent", "transaction_status": "clear"},
