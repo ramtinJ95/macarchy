@@ -14,6 +14,7 @@ package enum TopBarProviderSelection: String, Codable, Sendable {
 
 package enum FocusRingProviderSelection: String, Codable, Sendable {
   case borders
+  case lean
   case disabled
 }
 

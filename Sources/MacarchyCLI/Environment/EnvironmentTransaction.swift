@@ -83,9 +83,11 @@ enum EnvironmentSpicetifyRuntimeTarget: String, Codable, Equatable, Sendable {
 
 enum EnvironmentBordersRuntimeTarget: String, Codable, Equatable, Sendable {
   case managed
+  case lean
   case original
 
   static func required(from old: EnvironmentOwnership?, to new: EnvironmentOwnership?) -> Self? {
+    if new?.borders?.leanService != nil { return .lean }
     if new?.borders != nil { return .managed }
     return old?.borders == nil ? nil : .original
   }

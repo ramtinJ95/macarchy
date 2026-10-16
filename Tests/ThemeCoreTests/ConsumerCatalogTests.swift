@@ -17,6 +17,7 @@ struct ConsumerCatalogTests {
           "atuin:required",
           "bat:required",
           "borders:required",
+          "lean-focus-ring:required",
           "btop:required",
           "codex:required",
           "eza:required",

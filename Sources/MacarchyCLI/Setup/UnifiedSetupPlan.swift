@@ -460,6 +460,14 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
   private func services(_ profile: PortableProfile) -> [UnifiedSetupService] {
     var result = [UnifiedSetupService]()
+    if profile.environment.focusRing == .lean {
+      result.append(
+        UnifiedSetupService(
+          id: BordersAdapter.leanID, ownership: "macarchy_user_service",
+          lifecycle:
+            "own_absent_only; suspend_retained_borders; live_palette_acknowledgement; unregister_on_disable; borders_selection_is_rollback; known_platform_limits"
+        ))
+    }
     if profile.environment.focusRing == .borders {
       result.append(
         UnifiedSetupService(

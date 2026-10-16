@@ -312,9 +312,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
 
     // Revalidate every external seam before staging or publishing any state.
-    if composition.profile.focusRing == .borders || inspection.ownership?.borders != nil {
+    if composition.profile.focusRing != .disabled || inspection.ownership?.borders != nil {
       guard inspection.bordersServiceInspection != nil,
-        composition.profile.focusRing != .borders || inspection.proposedBordersOwnership != nil
+        composition.profile.focusRing == .disabled || inspection.proposedBordersOwnership != nil
       else {
         throw EnvironmentLifecycleError.blocked("Borders apply requires observed service evidence")
       }
@@ -322,7 +322,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
         enabled: composition.profile.focusRing == .borders,
         previous: inspection.proposedBordersOwnership ?? inspection.ownership?.borders,
         homeDirectory: homeDirectory,
-        service: inspection.bordersServiceInspection)
+        service: inspection.bordersServiceInspection,
+        lean: inspection.leanServiceInspection?.configuration,
+        leanInspection: inspection.leanServiceInspection?.current)
     }
     for (id, expected) in inspection.externalEvidence {
       guard let entry = inspection.desiredEntries.first(where: { $0.id == id }),
@@ -1037,7 +1039,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   private func preflight(_ ownership: EnvironmentOwnership) throws {
-    if let borders = ownership.borders {
+    if let borders = ownership.borders, borders.retainsBorders {
       _ = try inspector.inspectBorders(
         enabled: true, previous: borders, homeDirectory: homeDirectory, service: nil)
     }

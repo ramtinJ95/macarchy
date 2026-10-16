@@ -45,8 +45,8 @@ struct TuicrPresetLifecycleTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          BordersAdapter.id, CodexAdapter.id, HerdrAdapter.id, PiAdapter.id, SpicetifyAdapter.id,
-          TuicrAdapter.id,
+          BordersAdapter.id, BordersAdapter.leanID, CodexAdapter.id, HerdrAdapter.id, PiAdapter.id,
+          SpicetifyAdapter.id, TuicrAdapter.id,
         ])
     )
 
@@ -245,7 +245,7 @@ struct TuicrPresetLifecycleTests {
         homeDirectory: fixture.home
       )
         == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          BordersAdapter.id, SpicetifyAdapter.id,
+          BordersAdapter.id, BordersAdapter.leanID, SpicetifyAdapter.id,
         ])
     )
   }

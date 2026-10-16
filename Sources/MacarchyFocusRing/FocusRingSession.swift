@@ -3,8 +3,9 @@ import Darwin
 import Foundation
 import ThemeCore
 
-/// Bounded prototype: one accent outline around the front connection's first suitable
-/// window until the deadline, SIGINT/SIGTERM/SIGHUP or the first failure. The target is
+/// One accent outline around the front connection's first suitable window, until
+/// preview expiry, SIGINT/SIGTERM/SIGHUP or the first failure. Managed mode has no
+/// deadline and requires the exact owned launchd job. The target is
 /// not exact focus; window-server events drive refresh with a 2 s missed-event reconciliation.
 @MainActor
 final class FocusRingSession {
@@ -24,6 +25,8 @@ final class FocusRingSession {
   private var cachedTarget: WindowCandidate?
   private var sources: [DispatchSourceSignal] = []
   private var start = 0.0, nextWatchdog = 0.0
+  private var nextRuntimeReport = 0.0
+  private var managedConfiguration: LeanFocusServiceConfiguration?
   private var eventCount = 0, fullRefreshCount = 0, geometryRefreshCount = 0
   private var watchdogRefreshCount = 0
   private var running = false
@@ -43,6 +46,20 @@ final class FocusRingSession {
       try refuseCompetingOutlines()
       NSApplication.shared.setActivationPolicy(.accessory)
       session = FocusRingSession(options: options, root: root, focus: focus, palette: palette)
+      if options.managed {
+        guard let path = processExecutablePath(getpid()) else {
+          throw FocusRingError("cannot resolve managed helper executable")
+        }
+        let configuration = LeanFocusServiceConfiguration(
+          stateRoot: root, executableURL: URL(filePath: path))
+        let state = try LeanFocusService(
+          homeDirectory: URL(filePath: NSHomeDirectory())
+        ).inspect(configuration: configuration)
+        guard state.processID == getpid() else {
+          throw FocusRingError("--managed requires the exact Macarchy-owned launchd job")
+        }
+        session.managedConfiguration = configuration
+      }
     } catch {
       writeError("focus ring refused: \(error)")
       return 1
@@ -90,15 +107,19 @@ final class FocusRingSession {
       let checks = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
         MainActor.assumeIsolated { self?.maintenance() }
       }
-      let cutoff = Timer(
-        timeInterval: max(0, start + options.seconds - ProcessInfo.processInfo.systemUptime),
-        repeats: false
-      ) { [weak self] _ in
-        MainActor.assumeIsolated { self?.stop("duration", code: 0) }
+      if !options.managed {
+        let cutoff = Timer(
+          timeInterval: max(
+            0, start + options.previewDuration - ProcessInfo.processInfo.systemUptime),
+          repeats: false
+        ) { [weak self] _ in
+          MainActor.assumeIsolated { self?.stop("duration", code: 0) }
+        }
+        RunLoop.main.add(cutoff, forMode: .common)
+        deadlineTimer = cutoff
       }
       RunLoop.main.add(checks, forMode: .common)
-      RunLoop.main.add(cutoff, forMode: .common)
-      (timer, deadlineTimer) = (checks, cutoff)
+      timer = checks
       running = true
       NSApplication.shared.run()
       running = false
@@ -187,6 +208,17 @@ final class FocusRingSession {
         return true
       }
       if moved { tick() }
+      let now = ProcessInfo.processInfo.systemUptime
+      if stopReason == nil, let configuration = managedConfiguration,
+        moved || now >= nextRuntimeReport
+      {
+        // Only the AppKit runloop can acknowledge a palette. A hung helper's
+        // heartbeat expires; configuration or process existence alone is not ready.
+        try LeanFocusRuntime.publish(
+          configuration: configuration, generationID: palette.generationID,
+          accent: palette.accent)
+        nextRuntimeReport = now + 1
+      }
     } catch { return stop("failure", code: 1, error: "\(error)") }
     let now = ProcessInfo.processInfo.systemUptime
     if now >= nextWatchdog, stopReason == nil {

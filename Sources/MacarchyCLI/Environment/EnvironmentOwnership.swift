@@ -107,7 +107,7 @@ struct EnvironmentOwnershipRecord: Codable, Equatable, Sendable {
 }
 
 struct EnvironmentOwnership: Codable, Equatable, Sendable {
-  static let currentSchemaVersion = 2
+  static let currentSchemaVersion = 3
 
   let schemaVersion: Int
   let generationID: String
@@ -152,7 +152,10 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
     enabledThemeAdapterIDs: [String]? = nil,
     standardNativeEntries: [EnvironmentEntryID] = []
   ) {
-    schemaVersion = standardNativeEntries.isEmpty ? 1 : Self.currentSchemaVersion
+    schemaVersion =
+      borders?.leanService != nil
+      ? Self.currentSchemaVersion
+      : standardNativeEntries.isEmpty ? 1 : 2
     self.generationID = generationID
     self.records = records.sorted { $0.id.rawValue < $1.id.rawValue }
     self.createdDirectories = createdDirectories.sorted()
@@ -267,10 +270,14 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && adapterIDs.contains(PiAdapter.id) == piEnabled
           && adapterIDs.contains(SpicetifyAdapter.id) == spicetifyEnabled
           && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
-          && adapterIDs.contains(BordersAdapter.id) == (borders != nil)
+          && adapterIDs.contains(BordersAdapter.id)
+            == (borders != nil && borders?.leanService == nil)
+          && adapterIDs.contains(BordersAdapter.leanID) == (borders?.leanService != nil)
       } ?? true
     let standard = standardNativeEntries ?? []
-    guard (schemaVersion == 1 && standard.isEmpty) || schemaVersion == Self.currentSchemaVersion,
+    guard [1, 2, Self.currentSchemaVersion].contains(schemaVersion),
+      schemaVersion != 1 || standard.isEmpty,
+      borders?.leanService == nil || schemaVersion == Self.currentSchemaVersion,
       Set(standard).isSubset(of: [.atuinConfiguration, .starship, .zsh, .kitty, .neovim]),
       standard == standard.sorted(by: { $0.rawValue < $1.rawValue }),
       Set(standard).count == standard.count,
@@ -281,8 +288,8 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       Set(originalThemeBridges.map(\.path)).count == originalThemeBridges.count,
       btop?.hasValidShape ?? true,
       borders?.hasValidShape ?? true,
-      records.filter { [.bordersDirectory, .bordersConfiguration].contains($0.id) }.count
-        == (borders == nil ? 0 : 1),
+      records.filter({ [.bordersDirectory, .bordersConfiguration].contains($0.id) }).count
+        == (borders?.retainsBorders == true ? 1 : 0),
       codex?.hasValidShape ?? true,
       herdr?.hasValidShape ?? true,
       pi?.hasValidShape ?? true,

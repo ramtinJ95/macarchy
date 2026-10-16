@@ -346,6 +346,14 @@ struct DependencyProfile: Sendable {
           probes: executable(BordersService.executableURL.path),
           remediation: .externallyTrustedFormula(BordersService.formula)
         ),
+        consumerCapability(
+          .leanFocus,
+          probes: executable(
+            LeanBordersPreview.helperURL(beside: RuntimeEnvironment.live.executableURL).path),
+          remediation: .external(
+            "Install a matching Macarchy release containing macarchy-focus-ring beside macarchy; source builds must build both products. No Homebrew Borders installation or permission grant is required for fresh lean."
+          )
+        ),
         DependencyCapability(
           id: "skhd",
           category: .desktopSubstrate,

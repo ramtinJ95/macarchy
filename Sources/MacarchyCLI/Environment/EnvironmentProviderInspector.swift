@@ -34,6 +34,7 @@ struct EnvironmentProviderInspection: Sendable {
   let tuicrExternalEvidence: EnvironmentEntryEvidence?
   let proposedBordersOwnership: EnvironmentBordersOwnership?
   let bordersServiceInspection: BordersServiceInspection?
+  var leanServiceInspection: EnvironmentLeanObservation? = nil
   var standardNativeEntries: [EnvironmentEntryID] = []
 
   static func blocked(_ error: any Error) -> Self {
@@ -89,7 +90,8 @@ struct EnvironmentProviderInspector: Sendable {
     composition: EnvironmentComposition,
     homeDirectory: URL,
     stateRoot: URL,
-    bordersService: BordersServiceInspection? = nil
+    bordersService: BordersServiceInspection? = nil,
+    leanService: EnvironmentLeanObservation? = nil
   ) -> EnvironmentProviderInspection {
     do {
       if let source = composition.profile.zsh.configurationURL {
@@ -193,7 +195,8 @@ struct EnvironmentProviderInspector: Sendable {
       let entries = desiredEntries(
         profile: composition.profile,
         homeDirectory: homeDirectory,
-        stateRoot: stateRoot
+        stateRoot: stateRoot,
+        retainBorders: ownership?.borders?.retainsBorders == true
       ).map { entry in
         guard let source = nativeSources[entry.id] else { return entry }
         return EnvironmentManagedEntry(
@@ -583,11 +586,19 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
 
+      let desiredLean =
+        composition.profile.focusRing == .lean
+        ? leanService?.configuration ?? ownership?.borders?.leanService : nil
+      if composition.profile.focusRing == .lean, desiredLean == nil {
+        throw EnvironmentLifecycleError.blocked("Lean service evidence was not inspected")
+      }
       let borders = try inspectBorders(
         enabled: composition.profile.focusRing == .borders,
         previous: ownership?.borders,
         homeDirectory: homeDirectory,
-        service: bordersService
+        service: bordersService,
+        lean: desiredLean,
+        leanInspection: leanService?.current
       )
       inspections.append(contentsOf: borders.entries)
       let adoptionRequired = inspections.contains { $0.status == .adoptionRequired }
@@ -626,6 +637,7 @@ struct EnvironmentProviderInspector: Sendable {
         tuicrExternalEvidence: tuicr.externalEvidence,
         proposedBordersOwnership: borders.ownership,
         bordersServiceInspection: bordersService,
+        leanServiceInspection: leanService,
         standardNativeEntries: standardNativeEntries
       )
     } catch {
@@ -636,10 +648,11 @@ struct EnvironmentProviderInspector: Sendable {
   func desiredEntries(
     profile: EnvironmentProfile,
     homeDirectory: URL,
-    stateRoot: URL
+    stateRoot: URL,
+    retainBorders: Bool = false
   ) -> [EnvironmentManagedEntry] {
     var enabled = Set<EnvironmentEntryID>()
-    if profile.focusRing == .borders {
+    if profile.focusRing == .borders || (profile.focusRing == .lean && retainBorders) {
       let directory = homeDirectory.appending(path: ".config/borders")
       var metadata = stat()
       let directoryIsLink =

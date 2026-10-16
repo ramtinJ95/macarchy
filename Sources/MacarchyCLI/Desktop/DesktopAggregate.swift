@@ -396,7 +396,7 @@ struct DesktopThemeController: Sendable {
           enabledAdapterIDs: enabledAdapterIDs
         ).reconcile(
           adapterIDs: adapterIDs,
-          excludingAdapterIDs: Set([HerdrAdapter.id, BordersAdapter.id])
+          excludingAdapterIDs: Set([HerdrAdapter.id, BordersAdapter.id, BordersAdapter.leanID])
             .subtracting(adapterIDs)
         )
         let selected = Set(adapterIDs)

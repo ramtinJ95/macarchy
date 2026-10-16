@@ -33,6 +33,7 @@ enum ThemeRuntimeSelection {
     } else {
       enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
       enabled.remove(BordersAdapter.id)
+      enabled.remove(BordersAdapter.leanID)
       enabled.remove(CodexAdapter.id)
       enabled.remove(HerdrAdapter.id)
       enabled.remove(PiAdapter.id)
@@ -61,7 +62,8 @@ enum ThemeRuntimeSelection {
     }
     var enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
     enabled.remove(BordersAdapter.id)
-    if ownership.borders != nil { enabled.insert(BordersAdapter.id) }
+    enabled.remove(BordersAdapter.leanID)
+    if let borders = ownership.borders { enabled.insert(borders.adapterID) }
     enabled.remove(SpicetifyAdapter.id)
     enabled.remove(TuicrAdapter.id)
     if ownership.spicetifyEnabled {
@@ -109,6 +111,8 @@ enum ThemeRuntimeSelection {
       herdrManagedMode: herdrManagedMode,
       bordersManagedMode: managedBordersMode(
         stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime),
+      leanFocusManagedMode: managedLeanMode(
+        stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime.lean),
       piSelectionIsApplied: {
         try piIsEnabled(stateRoot: stateRoot, consumerPaths: consumerPaths)
       },
@@ -129,9 +133,9 @@ enum ThemeRuntimeSelection {
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: homeDirectory, stateRoot: stateRoot)
     return BordersManagedMode(
-      preflight: { try coordinator.verifyManagedBordersConfiguration() },
+      preflight: { try coordinator.verifySelectedBordersConfiguration() },
       inspect: {
-        try coordinator.verifyManagedBordersConfiguration()
+        try coordinator.verifySelectedBordersConfiguration()
         guard try runtime.preflight(homeDirectory).isRunning else {
           throw EnvironmentLifecycleError.drift("the applied Borders service is stopped")
         }
@@ -146,7 +150,7 @@ enum ThemeRuntimeSelection {
           throw EnvironmentLifecycleError.blocked(
             "Borders environment recovery must finish before theme reconciliation")
         }
-        try coordinator.verifyManagedBordersConfiguration()
+        try coordinator.verifySelectedBordersConfiguration()
         guard try runtime.preflight(homeDirectory).isRunning else {
           throw EnvironmentLifecycleError.drift("the applied Borders service is stopped")
         }

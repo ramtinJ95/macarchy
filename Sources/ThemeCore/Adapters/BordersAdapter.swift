@@ -20,7 +20,14 @@ package struct BordersManagedMode: Sendable {
 
 package struct BordersAdapter: Sendable {
   package static let id = "borders"
+  package static let leanID = "lean-focus-ring"
   let managedMode: BordersManagedMode?
+  let adapterID: String
+
+  init(managedMode: BordersManagedMode?, adapterID: String = Self.id) {
+    self.managedMode = managedMode
+    self.adapterID = adapterID
+  }
 
   private func mode() throws -> BordersManagedMode {
     guard let managedMode else {
@@ -35,16 +42,16 @@ package struct BordersAdapter: Sendable {
   func inspection() -> AdapterInspection {
     do {
       return AdapterInspection(
-        adapterID: Self.id, requirement: .required, message: try mode().inspect())
+        adapterID: adapterID, requirement: .required, message: try mode().inspect())
     } catch {
       return AdapterInspection(
-        adapterID: Self.id, requirement: .required, status: .failed,
+        adapterID: adapterID, requirement: .required, status: .failed,
         message: String(describing: error))
     }
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(id: adapterID, requirement: .required) {
       do {
         return AdapterOutcome(status: .applied, message: try mode().reconcile())
       } catch {
