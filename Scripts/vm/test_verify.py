@@ -196,7 +196,7 @@ class JourneyTests(unittest.TestCase):
                     "theme status did not exit 1 with exactly the inactive report"])
 
     def test_only_grounded_journeys_are_exposed(self):
-        self.assertEqual(set(verify.JOURNEYS), {"theme", "borders"})
+        self.assertEqual(set(verify.JOURNEYS), {"theme", "borders", "lean"})
         self.assertFalse(hasattr(verify, "assess_inspection"))
         steps = [arguments for _, arguments, _ in verify.theme_steps({"alpha": {}})]
         self.assertFalse(any("set" in arguments for arguments in steps))
