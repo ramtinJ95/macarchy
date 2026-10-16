@@ -132,7 +132,10 @@ def _blockers(payload, path='$'):
     if isinstance(payload, dict):
         for key, value in payload.items():
             where, lowered = path + '.' + str(key), str(key).lower()
-            if (lowered == 'blocked' or 'adopt' in lowered) and value:
+            # Inspection always carries this review digest, even for absent entries.
+            # It is evidence identity, not a request/permission to adopt anything.
+            if (lowered == 'blocked' or ('adopt' in lowered
+                    and lowered != 'adoption_evidence_digest')) and value:
                 found.append(where)
             elif lowered in ('status', 'outcome') and isinstance(value, str) \
                     and ('block' in value.lower() or 'adopt' in value.lower()):

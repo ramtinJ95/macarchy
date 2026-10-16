@@ -273,6 +273,12 @@ def assess_theme(results, packages):
 # Only journeys whose fresh-guest output is grounded in source. A journey whose path needs
 # a prerequisite a fresh guest lacks must report blocked with the reason, never pass.
 JOURNEYS = {
+    "lean": {
+        "claim": "Opt-in managed lean source provider: setup/apply, live palette acknowledgement, "
+                 "survival beyond the preview limit, stopped-service diagnosis/repair and owned-service "
+                 "removal (overall teardown remains blocked by absent default consumers). "
+                 "No new physical/display/Spaces/real-app/soak or JankyBorders handoff claim.",
+    },
     "borders": {
         "claim": (
             "lean border helper vs pinned JankyBorders 1.9 on guest fixture windows: lifecycle, "
@@ -349,6 +355,10 @@ def run_journey(client, record, name, session_directory, evidence, report):
     if not recorded_binary(client, record):
         raise Blocked("Guest binary differs from the one launch built; launch a new session.")
     require_fresh_state(client)
+    if name == "lean":
+        import verify_lean
+
+        return verify_lean.run_journey(client, record, evidence, report)
     if name == "borders":
         import verify_borders
 

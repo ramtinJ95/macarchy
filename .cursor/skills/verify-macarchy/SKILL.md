@@ -20,8 +20,11 @@ command or proof of a Homebrew installation.
   Release builds, guest-only zsh environment apply and real theme activation passed.
   The event-driven own-outline-transaction candidate passed motion and 1/8/24
   checks: measured p95 tracking matches JankyBorders with lower helper memory.
-  User accepted the bounded preview; managed replacement and host cutover remain pending.
-  Aggregate setup, keybindings and GUI acceptance remain **not covered**.
+  User accepted the bounded preview; host cutover remains pending.
+- `lean` covers the opt-in managed source provider's lifecycle and live palette
+  acknowledgement; see `features/lean.md` for the bounded teardown result.
+  Native managed-Borders handoff and packaged installation remain unqualified.
+  Broad aggregate setup, keybindings and GUI acceptance remain **not covered**.
 - Qualified on 2026-10-13: clone, start, guest source build, doctor, theme drive,
   cleanup and evidence survival passed in `setup-ffe804179e62/verify-4f7e526e2357`.
   See its retained evidence under `artifacts/vm/runs/`.
