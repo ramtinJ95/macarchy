@@ -20,7 +20,7 @@ Missing prerequisites block; failures remain failures.
 | --- | --- |
 | [Themes](theme.md) | Journey `theme`: built-ins, backgrounds, inactive status; E2E passed |
 | [Focus borders](borders.md) | Journey `borders`: accepted VM motion/1/8/24 preview; hardware/Retina/real-app gaps explicit |
-| [Managed lean focus](lean.md) | Journey `lean`: source apply/live palette/repair/persistence/removal; bounded teardown limitation |
+| [Managed lean focus](lean.md) | `lean`: source lifecycle; `packaged-lean`: release archive, stable Cellar upgrade, zero idle writes; bounded teardown limitation |
 | [Keybindings](keybindings.md) | Mapped, not covered |
 | [Setup](setup.md) | Mapped, not covered; no onboarding claim |
 | [Action menu](menu.md) | Mapped, not covered; GUI needs separate qualification |
