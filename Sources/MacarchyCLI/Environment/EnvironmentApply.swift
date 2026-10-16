@@ -198,6 +198,9 @@ private func runEnvironmentTeardown(
   let bordersService = try observedBordersService(
     desiredEnabled: false, stateRoot: stateRoot, homeDirectory: homeDirectory,
     runtime: bordersRuntime, preflight: !dryRun)
+  _ = try observedLeanService(
+    desiredEnabled: false, stateRoot: stateRoot, homeDirectory: homeDirectory,
+    runtime: bordersRuntime.lean)
   let result = try ActivationLock(root: stateRoot).withLock {
     try coordinator.teardownLocked(dryRun: dryRun, bordersService: bordersService)
   }
@@ -732,11 +735,16 @@ struct EnvironmentApplyCommandRunner: Sendable {
     }
 
     let bordersService: BordersServiceInspection?
+    let leanService: EnvironmentLeanObservation?
     do {
       bordersService = try observedBordersService(
         desiredEnabled: profile.environment.focusRing == .borders,
         stateRoot: stateRoot, homeDirectory: homeDirectory,
-        runtime: bordersRuntime, preflight: true)
+        runtime: bordersRuntime, preflight: true,
+        leanEnabled: profile.environment.focusRing == .lean)
+      leanService = try observedLeanService(
+        desiredEnabled: profile.environment.focusRing == .lean,
+        stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime.lean)
     } catch {
       return try failure(
         profileURL: profileURL, profile: profile.environment,
@@ -746,7 +754,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
       composition: composition,
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
-      bordersService: bordersService
+      bordersService: bordersService,
+      leanService: leanService
     )
     guard !inspection.isBlocked else {
       return try failure(
@@ -768,7 +777,8 @@ struct EnvironmentApplyCommandRunner: Sendable {
           composition: composition,
           homeDirectory: homeDirectory,
           stateRoot: stateRoot,
-          bordersService: bordersService
+          bordersService: bordersService,
+          leanService: leanService
         )
         prepareFreshNativeNeovim = try EnvironmentNeovimPreparer.requiresFreshNativePreparation(
           profile: profile.environment, ownership: lockedInspection.ownership,
@@ -844,7 +854,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         throw EnvironmentLifecycleError.blocked(neovimVerification.message)
       }
       let nonHerdrAdapterIDs = themeAdapterIDs.filter {
-        $0 != HerdrAdapter.id && $0 != BordersAdapter.id
+        ![HerdrAdapter.id, BordersAdapter.id, BordersAdapter.leanID].contains($0)
       }
       let reconciledTheme: [DesktopThemeAdapterStatus]
       if let theme, !nonHerdrAdapterIDs.isEmpty {

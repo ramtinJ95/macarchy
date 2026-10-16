@@ -6,8 +6,26 @@ struct EnvironmentBordersOwnership: Codable, Equatable, Sendable {
   /// Native 1.9.0 falls back to ~/.bordersrc. It stays external and is never edited.
   let fallbackConfiguration: EnvironmentEntryEvidence
   let fallbackTargetDigest: String?
+  /// Nil in historical Borders receipts. Lean may retain the already-owned
+  /// Borders entry/baseline, but a fresh lean selection acquires no Borders files.
+  var leanService: LeanFocusServiceConfiguration? = nil
+  var retainedBordersConfiguration: Bool? = nil
+
+  var retainsBorders: Bool { retainedBordersConfiguration != false }
+  var adapterID: String { leanService == nil ? BordersAdapter.id : BordersAdapter.leanID }
+
+  func selectingLean(_ configuration: LeanFocusServiceConfiguration?) -> Self {
+    var result = self
+    result.leanService = configuration
+    return result
+  }
 
   var hasValidShape: Bool {
+    guard leanService?.isValid ?? true else { return false }
+    if !retainsBorders {
+      return leanService != nil && !originalServiceWasRunning
+        && fallbackConfiguration == .absent && fallbackTargetDigest == nil
+    }
     let evidence = fallbackConfiguration
     guard evidence.inventory.isEmpty,
       (evidence.kind == .symbolicLink) == (fallbackTargetDigest != nil)
@@ -37,10 +55,14 @@ extension EnvironmentProviderInspector {
     do {
       let service = try observedBordersService(
         desiredEnabled: composition.profile.focusRing == .borders,
-        stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: runtime)
+        stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: runtime,
+        leanEnabled: composition.profile.focusRing == .lean)
+      let lean = try observedLeanService(
+        desiredEnabled: composition.profile.focusRing == .lean,
+        stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: runtime.lean)
       return inspect(
         composition: composition, homeDirectory: homeDirectory,
-        stateRoot: stateRoot, bordersService: service)
+        stateRoot: stateRoot, bordersService: service, leanService: lean)
     } catch { return .blocked(error) }
   }
 
@@ -48,8 +70,72 @@ extension EnvironmentProviderInspector {
     enabled: Bool,
     previous: EnvironmentBordersOwnership?,
     homeDirectory: URL,
-    service: BordersServiceInspection?
+    service: BordersServiceInspection?,
+    lean: LeanFocusServiceConfiguration? = nil,
+    leanInspection: LeanFocusServiceInspection? = nil
   ) throws -> (ownership: EnvironmentBordersOwnership?, entries: [EnvironmentEntryInspection]) {
+    if let lean {
+      let alreadySelected = previous?.leanService == lean
+      // The transaction's final local-file inspection has already required a
+      // verified runtime target. It may inspect retained configuration without
+      // making another native call while holding ActivationLock.
+      guard alreadySelected || (service != nil && leanInspection != nil) else {
+        throw EnvironmentLifecycleError.blocked(
+          "Lean apply requires observed native service evidence")
+      }
+      let baseline: EnvironmentBordersOwnership
+      if let previous, previous.retainsBorders {
+        // Validate retained fallback without discarding its first-adoption baseline.
+        _ = try inspectBorders(
+          enabled: false, previous: previous, homeDirectory: homeDirectory, service: service)
+        baseline = previous.selectingLean(lean)
+      } else {
+        guard service == .stopped || (service == nil && alreadySelected) else {
+          throw EnvironmentLifecycleError.blocked(
+            "Lean refuses unmanaged JankyBorders; selecting lean never adopts or stops it")
+        }
+        baseline = EnvironmentBordersOwnership(
+          originalServiceWasRunning: false, fallbackConfiguration: .absent,
+          fallbackTargetDigest: nil, leanService: lean, retainedBordersConfiguration: false)
+      }
+      return (
+        baseline,
+        [
+          EnvironmentEntryInspection(
+            id: "lean_focus_service",
+            path: homeDirectory.appending(
+              path: "Library/LaunchAgents/\(LeanFocusService.label).plist"
+            ).path,
+            status: alreadySelected && (leanInspection?.isRunning ?? true)
+              ? .managed : .installRequired,
+            ownership: previous?.leanService == nil ? "absent" : "macarchy",
+            message: alreadySelected
+              ? "Owned lean configuration; native service and palette acknowledgement are checked separately. Known physical/display/Spaces/app/soak limits remain."
+              : "Start the opt-in lean service; suspend only retained managed Borders. Select borders to switch back.",
+            evidence: nil)
+        ]
+      )
+    }
+    if let previous, !previous.retainsBorders {
+      if enabled {
+        return try inspectBorders(
+          enabled: true, previous: nil, homeDirectory: homeDirectory, service: service)
+      }
+      return (
+        nil,
+        [
+          EnvironmentEntryInspection(
+            id: "lean_focus_service",
+            path: homeDirectory.appending(
+              path: "Library/LaunchAgents/\(LeanFocusService.label).plist"
+            ).path,
+            status: .restorationRequired, ownership: "macarchy",
+            message:
+              "Stop and unregister only the owned lean service; no Borders state was adopted.",
+            evidence: nil)
+        ]
+      )
+    }
     guard enabled || previous != nil else { return (nil, []) }
     let fallback = homeDirectory.appending(path: ".bordersrc")
     let evidence = try capture(fallback, directoryLink: nil)
@@ -69,7 +155,7 @@ extension EnvironmentProviderInspector {
     }
     let baseline: EnvironmentBordersOwnership?
     if let previous {
-      baseline = previous
+      baseline = previous.selectingLean(nil)
     } else if let service {
       baseline = EnvironmentBordersOwnership(
         originalServiceWasRunning: service.isRunning,
@@ -98,6 +184,9 @@ extension EnvironmentProviderInspector {
         baseline?.originalServiceWasRunning == true
         ? "Restore the retained native configuration and restart the original Borders service."
         : "Stop and unregister the managed Borders service; preserve the external fallback configuration."
+    } else if previous?.leanService != nil {
+      status = .installRequired
+      message = "Stop the owned lean service and resume the retained managed Borders provider."
     } else if previous != nil {
       status = service?.isRunning == false ? .drifted : .managed
       message =
@@ -129,7 +218,7 @@ extension EnvironmentProviderInspector {
   }
 }
 
-private func verifyRestoredBordersStartup(homeDirectory: URL) throws {
+func verifyRestoredBordersStartup(homeDirectory: URL) throws {
   let primary = homeDirectory.appending(path: ".config/borders/bordersrc")
   let fallback = homeDirectory.appending(path: ".bordersrc")
   let startup = FileManager.default.fileExists(atPath: primary.path) ? primary : fallback
@@ -151,6 +240,10 @@ struct EnvironmentBordersRuntime: Sendable {
   let restart: @Sendable (URL) throws -> Void
   let stop: @Sendable (URL) throws -> Void
   let request: @Sendable (URL, URL) throws -> String
+  var lean: EnvironmentLeanRuntime = .live
+  var inspectIncumbent: @Sendable (URL) throws -> BordersServiceInspection = {
+    try BordersService(homeDirectory: $0).inspect()
+  }
 
   static let live = Self(
     inspect: { try BordersService(homeDirectory: $0).inspectForPlan() },
@@ -213,6 +306,7 @@ extension EnvironmentTransactionCoordinator {
   func verifyManagedBordersConfiguration() throws {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     guard let ownership = try store.readOwnership(), let borders = ownership.borders,
+      borders.retainsBorders,
       try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
         == "generations/\(ownership.generationID)"
     else { throw EnvironmentLifecycleError.blocked("Borders has no applied environment ownership") }
@@ -232,6 +326,14 @@ extension EnvironmentTransactionCoordinator {
     _ = try inspector.inspectBorders(
       enabled: true, previous: borders, homeDirectory: homeDirectory, service: nil)
   }
+
+  func verifySelectedBordersConfiguration() throws {
+    guard
+      try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()?
+        .borders?.leanService == nil
+    else { throw EnvironmentLifecycleError.blocked("Lean, not Borders, is the applied provider") }
+    try verifyManagedBordersConfiguration()
+  }
 }
 
 /// The environment lifecycle lock must cover this entire function. Native service
@@ -247,6 +349,12 @@ func verifyPendingBordersRuntime(
   guard let transaction = try lock.withLock({ try store.readTransaction() }),
     let target = transaction.pendingBordersRuntimeTarget
   else { return nil }
+  if transaction.previousOwnership?.borders?.leanService != nil
+    || transaction.proposedOwnership?.borders?.leanService != nil
+  {
+    return try verifyPendingLeanHandoff(
+      coordinator: coordinator, runtime: runtime, transaction: transaction, target: target)
+  }
 
   let current =
     try transaction.bordersRuntimeAttempted == true
@@ -340,15 +448,21 @@ func observedBordersService(
   stateRoot: URL,
   homeDirectory: URL,
   runtime: EnvironmentBordersRuntime,
-  preflight: Bool = false
+  preflight: Bool = false,
+  leanEnabled: Bool = false
 ) throws -> BordersServiceInspection? {
   let store = EnvironmentStateStore(stateRoot: stateRoot)
   let ownership = try store.readOwnership()
   let transaction = try store.readTransaction()
   guard
-    desiredEnabled || ownership?.borders != nil
+    desiredEnabled || leanEnabled || ownership?.borders != nil
       || transaction?.previousOwnership?.borders != nil
       || transaction?.proposedOwnership?.borders != nil
   else { return nil }
+  if !desiredEnabled,
+    leanEnabled || ownership?.borders?.leanService != nil
+  {
+    return try runtime.inspectIncumbent(homeDirectory)
+  }
   return try preflight ? runtime.preflight(homeDirectory) : runtime.inspect(homeDirectory)
 }

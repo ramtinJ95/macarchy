@@ -8,6 +8,19 @@ import ThemeCore
 private typealias Bit = FocusTargetPolicy.Bit
 
 @Suite struct FocusRingPolicyTests {
+  @Test func managedModeIsExplicitAndCannotOverridePreviewDuration() throws {
+    let preview = try FocusRingOptions.parse(["--state-root", "/x"])
+    #expect(!preview.managed && preview.previewDuration == 30)
+    let managed = try FocusRingOptions.parse(["--state-root", "/x", "--managed"])
+    #expect(managed.managed && managed.seconds == nil)
+    #expect(throws: (any Error).self) {
+      try FocusRingOptions.parse(["--state-root", "/x", "--managed", "--seconds", "30"])
+    }
+    #expect(throws: (any Error).self) {
+      try FocusRingOptions.parse(["--state-root", "relative", "--managed"])
+    }
+  }
+
   @Test func durationAcceptsInclusiveFiniteBoundsOnly() {
     func parse(_ seconds: Double) throws {
       _ = try FocusRingOptions.parse(["--state-root", "/x", "--seconds", "\(seconds)"])

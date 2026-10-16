@@ -247,6 +247,7 @@ extension EnvironmentProfile {
   var selectedThemeAdapterIDs: [String] {
     (terminal == .kitty ? ["kitty"] : [])
       + (focusRing == .borders ? [BordersAdapter.id] : [])
+      + (focusRing == .lean ? [BordersAdapter.leanID] : [])
       + (prompt == .starship ? ["starship"] : [])
       + (history == .atuin ? ["atuin"] : [])
       + (editor == .neovim ? ["neovim"] : [])

@@ -285,7 +285,7 @@ struct BordersLifecycleTests {
   }
 }
 
-private struct ManagedBordersFixture {
+struct ManagedBordersFixture {
   struct State {
     var running: Bool
     var pid: Int32 = 100
@@ -308,7 +308,7 @@ private struct ManagedBordersFixture {
   let profile: URL
   let kind: String
   let state: StateBox
-  let runtime: EnvironmentBordersRuntime
+  var runtime: EnvironmentBordersRuntime
   let original = Data(
     "#!/bin/sh\n# arbitrary native options, never parsed or rewritten\nborders width=11.0 style=square\n"
       .utf8)
@@ -403,10 +403,14 @@ private struct ManagedBordersFixture {
   }
 
   func writeProfile(enabled: Bool) throws {
+    try writeProfile(provider: enabled ? .borders : .disabled)
+  }
+
+  func writeProfile(provider: FocusRingProviderSelection) throws {
     let contents = """
       schema_version = 1
       [focus_ring]
-      provider = "\(enabled ? "borders" : "disabled")"
+      provider = "\(provider.rawValue)"
       [terminal]
       provider = "disabled"
       [shell]
@@ -441,9 +445,8 @@ private struct ManagedBordersFixture {
     let composition = try EnvironmentConfigurationComposer().compose(
       resourcesRoot: repositoryRoot.appending(path: "Environment"),
       profile: PortableProfileLoader().load(at: profile, required: true), stateRoot: root)
-    let inspection = EnvironmentProviderInspector().inspect(
-      composition: composition, homeDirectory: home, stateRoot: root,
-      bordersService: try runtime.inspect(home))
+    let inspection = EnvironmentProviderInspector().inspectIncludingBordersRuntime(
+      composition: composition, homeDirectory: home, stateRoot: root, runtime: runtime)
     let lifecycleLock = EnvironmentLifecycleLock(stateRoot: root)
     let descriptor = try lifecycleLock.acquire()
     defer { lifecycleLock.release(descriptor) }

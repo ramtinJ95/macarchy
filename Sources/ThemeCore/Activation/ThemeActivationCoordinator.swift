@@ -61,6 +61,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let bat: BatAdapter
   private let btop: BtopAdapter
   private let borders: BordersAdapter
+  private let leanFocus: BordersAdapter
   private let backgroundPreferences: BackgroundPreferenceStore
   private let codex: CodexAdapter
   private let configurationStore: MacarchyConfigurationStore
@@ -87,6 +88,7 @@ package struct ThemeActivationCoordinator: Sendable {
     enabledAdapterIDs: Set<String>? = nil,
     herdrManagedMode: HerdrManagedMode? = nil,
     bordersManagedMode: BordersManagedMode? = nil,
+    leanFocusManagedMode: BordersManagedMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true }
   ) {
@@ -114,6 +116,7 @@ package struct ThemeActivationCoordinator: Sendable {
       enabledAdapterIDs: enabledAdapterIDs,
       herdrManagedMode: herdrManagedMode,
       bordersManagedMode: bordersManagedMode,
+      leanFocusManagedMode: leanFocusManagedMode,
       piSelectionIsApplied: piSelectionIsApplied,
       piThemeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed,
       spicetifyVersionProvider: {
@@ -141,6 +144,7 @@ package struct ThemeActivationCoordinator: Sendable {
     enabledAdapterIDs: Set<String>? = nil,
     herdrManagedMode: HerdrManagedMode? = nil,
     bordersManagedMode: BordersManagedMode? = nil,
+    leanFocusManagedMode: BordersManagedMode? = nil,
     piSelectionIsApplied: @escaping @Sendable () throws -> Bool = { true },
     piThemeLinkRefreshIsAllowed: @escaping @Sendable () throws -> Bool = { true },
     spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
@@ -152,6 +156,8 @@ package struct ThemeActivationCoordinator: Sendable {
     let statusStore = ReconciliationStatusStore(root: root)
     self.root = root
     borders = BordersAdapter(managedMode: bordersManagedMode)
+    leanFocus = BordersAdapter(
+      managedMode: leanFocusManagedMode, adapterID: BordersAdapter.leanID)
     activator = ThemeActivator(
       root: root,
       faultInjector: faultInjector,
@@ -197,7 +203,7 @@ package struct ThemeActivationCoordinator: Sendable {
     configurationStore = MacarchyConfigurationStore(root: root)
     self.enabledAdapterIDs =
       enabledAdapterIDs
-      ?? Set(Self.adapterRequirements.keys).subtracting([BordersAdapter.id])
+      ?? Set(Self.adapterRequirements.keys).subtracting([BordersAdapter.id, BordersAdapter.leanID])
     eza = EzaAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
@@ -539,6 +545,8 @@ package struct ThemeActivationCoordinator: Sendable {
       return ConfiguredAdapter(entry: entry, adapter: btop)
     case .borders:
       return ConfiguredAdapter(entry: entry, adapter: borders)
+    case .leanFocus:
+      return ConfiguredAdapter(entry: entry, adapter: leanFocus)
     case .codex:
       return ConfiguredAdapter(
         entry: entry,

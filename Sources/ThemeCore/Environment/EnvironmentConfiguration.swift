@@ -139,7 +139,9 @@ package struct EnvironmentConfigurationComposer: Sendable {
         ?? readText(at: source.resolvingSymlinksInPath())
     }
 
-    if scope == nil, options.focusRing == .borders {
+    if scope == nil, options.focusRing != .disabled {
+      // Lean retains this inert artifact so an already-owned Borders entry can
+      // stay reversible while its service is suspended. Fresh lean owns no Borders entry.
       artifacts.append(
         EnvironmentConfigurationArtifact(
           path: BordersConfiguration.artifactPath,

@@ -243,6 +243,14 @@ struct EnvironmentPlanCommandRunner: Sendable {
     restorationRequired: Bool
   ) -> [EnvironmentPlanAction] {
     var actions: [EnvironmentPlanAction] = []
+    if profile.focusRing == .lean {
+      actions.append(
+        EnvironmentPlanAction(
+          id: "configure_lean_focus",
+          message:
+            "Run the opt-in Macarchy-owned focus service with live canonical palette acknowledgement. Suspend only already-owned Borders; selecting borders switches back. Physical/display/Spaces/app/soak limits remain."
+        ))
+    }
     if profile.focusRing == .borders {
       actions.append(
         EnvironmentPlanAction(
