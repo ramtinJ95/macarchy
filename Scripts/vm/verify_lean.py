@@ -111,7 +111,7 @@ def assess_restoration(result):
     )
 
 
-def run_journey(client, record, evidence, report):
+def run_journey(client, record, evidence, report, package=None):
     import verify as v
     report["not_covered"] = [
         "Homebrew-installed Macarchy or release archive",
@@ -123,6 +123,9 @@ def run_journey(client, record, evidence, report):
     ]
     source = record["guest"]["source"]
     binary = record["guest"]["binary"]
+    if package is not None:
+        binary = "/opt/homebrew/bin/macarchy"
+        report["not_covered"][0] = "Actual Homebrew installation, receipts and upgrade/cleanup commands"
     helper = str(PurePosixPath(binary).parent / "macarchy-focus-ring")
     scratch = source + "/" + evidence.name
     root = scratch + "/state"
@@ -199,8 +202,11 @@ def run_journey(client, record, evidence, report):
            "test ! -e " + q(plist) + " && test ! -L " + q(plist)
            + " && { /bin/launchctl print gui/$(id -u)/" + q(label)
            + "; rc=$?; test $rc -eq 113; }", blocked=True)
-    sh("helper-build", "cd " + q(source) + " && env " + borders.DEV
-       + " swift build --product macarchy-focus-ring", timeout=180)
+    if package is None:
+        sh("helper-build", "cd " + q(source) + " && env " + borders.DEV
+           + " swift build --product macarchy-focus-ring", timeout=180)
+    else:
+        section["known_limits"].remove("release archive/install provenance")
     section["helper_sha256"] = sh("helper-sha256", "shasum -a 256 " + q(helper)).split()[0]
     sh("scratch-create", "umask 077; mkdir " + q(scratch))
     meter = scratch + "/lean-io"
@@ -223,6 +229,12 @@ def run_journey(client, record, evidence, report):
         section["theme_failures"] = assess_runtime(before, changed, changed_theme=True)
         if section["theme_failures"]:
             raise v.Failed("; ".join(section["theme_failures"]))
+
+        if package is not None:
+            import verify_packaged_lean
+            verify_packaged_lean.upgrade(sh, cli, runtime, root, package)
+            doctor("package-upgraded-doctor")
+            changed = runtime("package-upgraded-runtime")
 
         # SIGTERM is handled normally, not a crash: KeepAlive must leave it stopped.
         sh("terminate-owned-job", "/bin/launchctl kill SIGTERM gui/$(id -u)/" + q(LABEL))

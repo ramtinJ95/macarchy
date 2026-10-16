@@ -61,9 +61,33 @@ and tears down through the product CLI.
 Passed on 2026-10-16 in `setup-39ab6e9f44f7`, `verify-12c17b36a8b2/drive-lean-01`.
 Stopped-job reconcile completed in 23.639 s; the initial 5 s bound had failed.
 Over 306.034956 s: zero logical-write bytes, zero disk-write bytes and zero
-runtime-file replacements. Stable-upgrade and unrelated Borders ownership cases
-are covered by injected tests, not a native Homebrew-upgrade claim.
+runtime-file replacements. Unrelated Borders ownership cases have injected tests.
 The report and per-command logs retain runtime identity and resulting state.
+
+The `packaged-lean` journey additionally builds all release products and runs
+the release archive smoke/rejection gates in that fresh guest. It copies the
+validated archive's `bin` and `share` into two exclusive, marked guest Cellar
+directories and links all three executables under `/opt/homebrew/bin`, matching
+the formula's `prefix.install "bin", "share"` shape. No brew invocation, receipt,
+tap edit, trust or permission grant. Targets must be absent, including dangling
+links; cleanup checks the recorded Cellar inode/marker and exact owned links.
+
+After initial setup/live palette checks it switches only those links, applies
+through the new packaged CLI, and requires a new PID/start and second Cellar
+executable with unchanged palette and plist. `ProgramArguments[0]` must remain
+`/opt/homebrew/bin/macarchy-focus-ring`. The existing repair, idle-I/O, disable,
+re-enable and teardown proof then runs against that second copy. Finally it
+requires no helper/job/plist, removes only owned package fixtures, and reports
+cleanup failures explicitly. Always finish with the normal cleanup/shutdown;
+if transport fails, leave uncertain fixtures on the stopped disposable disk.
+
+Passed on 2026-10-16: `setup-f4309664a178/verify-71668cabc2b6/drive-packaged-lean-01`.
+Stable plist/new Cellar process verified; 306.041267 s with zero logical/disk
+write bytes and no runtime-file replacement. Package fixtures and session removed,
+guest stopped. This simulates an upgrade using the same artifact in two paths;
+it does not prove Homebrew commands, receipts, package migration or old/new code
+compatibility. Archive identity, source snapshot and build logs are retained in
+the report/evidence; the archive itself is removed with guest scratch.
 
 ## Gotchas
 
@@ -76,8 +100,8 @@ This is **not full teardown convergence**. The provider-independent behavior
 predates this slice: base `a947ef7`, `EnvironmentApply.swift:261–306`, restores
 the default adapter set whenever environment ownership is absent.
 
-No pixel claim follows from palette acknowledgement. Release archives and
-Homebrew install provenance belong to the packaging slice.
+No pixel claim follows from palette acknowledgement. Actual Homebrew install
+provenance and physical rollout remain separately coordinated.
 Sealed theme generation directories are mode0555; cleanup now grants owner write
 permission recursively without following symlinks, only after the existing
 session marker and non-symlink checks, then removes that exact guest directory.

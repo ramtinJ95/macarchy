@@ -23,7 +23,9 @@ command or proof of a Homebrew installation.
   User accepted the bounded preview; host cutover remains pending.
 - `lean` covers the opt-in managed source provider's lifecycle and live palette
   acknowledgement; see `features/lean.md` for the bounded teardown result.
-  Native managed-Borders handoff and packaged installation remain unqualified.
+  `packaged-lean` builds/validates a release archive inside the guest and proves
+  stable-path repair across two owned Cellar copies, then the same lifecycle.
+  Actual Homebrew execution and native managed-Borders handoff remain unqualified.
   Broad aggregate setup, keybindings and GUI acceptance remain **not covered**.
 - Qualified on 2026-10-13: clone, start, guest source build, doctor, theme drive,
   cleanup and evidence survival passed in `setup-ffe804179e62/verify-4f7e526e2357`.
@@ -116,6 +118,12 @@ do not blindly rerun it.
 Add another journey only with source-grounded expected behavior, focused tests,
 a feature-map update and a real proof. Missing prerequisites are blocked, never
 converted into permissive success checks. No unrestricted command passthrough.
+
+For `packaged-lean`, use the same fresh launch and drive command with
+`--journey packaged-lean`. This builds locally inside the guest, not from a
+published release. It requires absent `/opt/homebrew/Cellar/macarchy` and absent
+`/opt/homebrew/bin/macarchy{,-menu,-focus-ring}` entries; it never adopts them.
+See `features/lean.md` for install scope, upgrade assertions and cleanup limits.
 
 ## Evidence
 
