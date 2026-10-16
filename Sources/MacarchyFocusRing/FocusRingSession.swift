@@ -19,13 +19,13 @@ final class FocusRingSession {
   private let outline = OutlineView(frame: .zero)
   private var diagnostics = FocusRingDiagnostics()
   private var timer: Timer?
+  private var watchdogTimer: Timer?
   private var settleTimer: Timer?
   private var deadlineTimer: Timer?
   private var notifications: SkyLightNotifications?
   private var cachedTarget: WindowCandidate?
   private var sources: [DispatchSourceSignal] = []
-  private var start = 0.0, nextWatchdog = 0.0
-  private var nextRuntimeReport = 0.0
+  private var start = 0.0
   private var managedConfiguration: LeanFocusServiceConfiguration?
   private var eventCount = 0, fullRefreshCount = 0, geometryRefreshCount = 0
   private var watchdogRefreshCount = 0
@@ -39,30 +39,31 @@ final class FocusRingSession {
     let session: FocusRingSession
     do {
       // Every preflight completes before any window exists.
-      try requireConsoleSession()
       let root = URL(filePath: options.stateRoot)
+      var managed: LeanFocusServiceConfiguration?
+      if options.managed {
+        // launchd preserves the stable ProgramArguments[0], unlike proc_pidpath.
+        let configuration = LeanFocusServiceConfiguration(
+          stateRoot: root, executableURL: URL(filePath: CommandLine.arguments[0]))
+        let state = try LeanFocusService(
+          homeDirectory: URL(filePath: NSHomeDirectory())
+        ).inspect(configuration: configuration)
+        guard state.processID == getpid(), state.executableIsCurrent else {
+          throw FocusRingError("--managed requires the exact current Macarchy-owned launchd job")
+        }
+        try configuration.resetLogDescriptors()
+        managed = configuration
+      }
+      try requireConsoleSession()
       let palette = try PaletteState.load(root: root)
       let focus = try SkyLightFocus()
       try refuseCompetingOutlines()
       NSApplication.shared.setActivationPolicy(.accessory)
       session = FocusRingSession(options: options, root: root, focus: focus, palette: palette)
-      if options.managed {
-        guard let path = processExecutablePath(getpid()) else {
-          throw FocusRingError("cannot resolve managed helper executable")
-        }
-        let configuration = LeanFocusServiceConfiguration(
-          stateRoot: root, executableURL: URL(filePath: path))
-        let state = try LeanFocusService(
-          homeDirectory: URL(filePath: NSHomeDirectory())
-        ).inspect(configuration: configuration)
-        guard state.processID == getpid() else {
-          throw FocusRingError("--managed requires the exact Macarchy-owned launchd job")
-        }
-        session.managedConfiguration = configuration
-      }
+      session.managedConfiguration = managed
     } catch {
       writeError("focus ring refused: \(error)")
-      return 1
+      return options.managed ? 78 : 1
     }
     return session.execute()
   }
@@ -85,7 +86,6 @@ final class FocusRingSession {
 
   private func execute() -> Int32 {
     start = ProcessInfo.processInfo.systemUptime
-    nextWatchdog = start + 2
     for number in [SIGINT, SIGTERM, SIGHUP] {
       Darwin.signal(number, SIG_IGN)
       let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
@@ -103,10 +103,24 @@ final class FocusRingSession {
     }
     if stopReason == nil { tick() }
     if stopReason == nil {
+      do { try publishPalette() } catch { stop("failure", code: 1, error: "\(error)") }
+    }
+    if stopReason == nil {
       // Canonical pointer checks and the 2 s watchdog only; window motion is event-driven.
       let checks = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
         MainActor.assumeIsolated { self?.maintenance() }
       }
+      checks.tolerance = 0.05
+      let watchdog = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self, self.stopReason == nil else { return }
+          self.watchdogRefreshCount += 1
+          self.tick()
+        }
+      }
+      watchdog.tolerance = 0.2
+      RunLoop.main.add(watchdog, forMode: .common)
+      watchdogTimer = watchdog
       if !options.managed {
         let cutoff = Timer(
           timeInterval: max(
@@ -195,8 +209,7 @@ final class FocusRingSession {
     settleTimer = settle
   }
 
-  /// Canonical-pointer checks plus a documented 2 s missed-event reconciliation, not a
-  /// hidden fast poll. Watchdog refreshes are reported so absent events stay visible.
+  /// Read-only canonical-pointer poll. No periodic file publication or heartbeat.
   private func maintenance() {
     guard stopReason == nil else { return }
     do {
@@ -207,25 +220,17 @@ final class FocusRingSession {
         outline.color = palette.color
         return true
       }
-      if moved { tick() }
-      let now = ProcessInfo.processInfo.systemUptime
-      if stopReason == nil, let configuration = managedConfiguration,
-        moved || now >= nextRuntimeReport
-      {
-        // Only the AppKit runloop can acknowledge a palette. A hung helper's
-        // heartbeat expires; configuration or process existence alone is not ready.
-        try LeanFocusRuntime.publish(
-          configuration: configuration, generationID: palette.generationID,
-          accent: palette.accent)
-        nextRuntimeReport = now + 1
+      if moved {
+        tick()
+        if stopReason == nil { try publishPalette() }
       }
     } catch { return stop("failure", code: 1, error: "\(error)") }
-    let now = ProcessInfo.processInfo.systemUptime
-    if now >= nextWatchdog, stopReason == nil {
-      nextWatchdog = now + 2
-      watchdogRefreshCount += 1
-      tick()
-    }
+  }
+
+  private func publishPalette() throws {
+    guard let configuration = managedConfiguration else { return }
+    try LeanFocusRuntime.publish(
+      configuration: configuration, generationID: palette.generationID, accent: palette.accent)
   }
 
   /// Bounds, frame, level, ordering and record for an already selected target.
@@ -304,8 +309,8 @@ final class FocusRingSession {
   private func stop(_ reason: String, code: Int32, error: String? = nil) {
     guard stopReason == nil else { return }
     (stopReason, exitCode, failure) = (reason, code, error)
-    for pending in [timer, settleTimer, deadlineTimer] { pending?.invalidate() }
-    (timer, settleTimer, deadlineTimer) = (nil, nil, nil)
+    for pending in [timer, watchdogTimer, settleTimer, deadlineTimer] { pending?.invalidate() }
+    (timer, watchdogTimer, settleTimer, deadlineTimer) = (nil, nil, nil, nil)
     // Unsubscribe before the outline goes away; a stop error always fails the run.
     if let source = notifications {
       notifications = nil

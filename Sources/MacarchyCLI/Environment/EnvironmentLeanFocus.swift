@@ -29,7 +29,11 @@ extension ThemeRuntimeSelection {
         }
         let configuration = try coordinator.managedLeanConfiguration()
         // The helper observes the canonical pointer itself. This verifies the
-        // live runloop acknowledgement; it never writes a competing palette.
+        // startup/palette acknowledgement; it never writes a competing palette.
+        let (service, _) = try runtime.inspect(homeDirectory, [configuration])
+        if service.isRunning, !service.executableIsCurrent {
+          try runtime.start(homeDirectory, configuration)
+        }
         return try runtime.acknowledge(homeDirectory, configuration, true)
       }
     )
@@ -78,7 +82,14 @@ struct EnvironmentLeanRuntime: Sendable {
         do {
           let before = try service.inspect(configuration: configuration)
           guard let pid = before.processID else {
-            throw EnvironmentLifecycleError.drift("the owned lean service is stopped")
+            let exit = before.lastExitStatus.map { " (last exit \($0))" } ?? ""
+            throw EnvironmentLifecycleError.drift(
+              "the owned lean service is stopped\(exit); run environment apply to repair")
+          }
+          guard before.executableIsCurrent else {
+            throw EnvironmentLifecycleError.drift(
+              "the owned lean service runs an outdated executable; run environment apply to restart it"
+            )
           }
           let palette = try BordersPalette.read(root: URL(filePath: configuration.stateRoot))
           let report = try LeanFocusRuntime.read(configuration: configuration)
@@ -88,7 +99,7 @@ struct EnvironmentLeanRuntime: Sendable {
             throw EnvironmentLifecycleError.drift("lean palette/process acknowledgement is stale")
           }
           return
-            "Lean AppKit runloop acknowledged canonical generation \(palette.generationID) and accent \(palette.accent); not pixel or exact-focus proof. Physical/display/Spaces/app/soak limits remain."
+            "Owned lean PID/start identity and canonical generation \(palette.generationID)/accent \(palette.accent) match; not heartbeat, pixel or exact-focus proof. Physical/display/Spaces/app/soak limits remain."
         } catch { last = String(describing: error) }
         if settle, attempt < 29 { Thread.sleep(forTimeInterval: 0.1) }
       }
@@ -106,16 +117,9 @@ func observedLeanService(
   let (current, _) = try runtime.inspect(homeDirectory, previous.map { [$0] } ?? [])
   let desired = desiredEnabled ? runtime.configuration(stateRoot) : nil
   if previous == nil, let desired {
-    // A fresh managed claim may not overwrite an unrelated status file.
-    var metadata = stat()
-    if lstat(desired.runtimeURL.path, &metadata) == 0 {
-      throw EnvironmentLifecycleError.blocked(
-        "unowned lean runtime evidence exists; inspect it before selecting lean")
-    }
-    guard errno == ENOENT else {
-      throw EnvironmentLifecycleError.blocked(
-        "cannot inspect lean runtime evidence (errno \(errno))")
-    }
+    // An interrupted owned stop may have removed job/ownership before its status
+    // record. Retain only evidence matching this fixed label and exact state root.
+    try LeanFocusRuntime.validateIfPresent(configuration: desired)
   }
   return EnvironmentLeanObservation(configuration: desired, current: current)
 }
@@ -158,16 +162,22 @@ func verifyPendingLeanHandoff(
     attempted
     ? [sourceLean, destinationLean].compactMap { $0 }
     : [transaction.previousOwnership?.borders?.leanService].compactMap { $0 }
-  let (leanState, currentLean) = try runtime.lean.inspect(home, known)
+  let (_, currentLean) = try runtime.lean.inspect(home, known)
+  let preserveRuntime = transaction.direction == .rollback && !attempted
   let needsBorders = source?.retainsBorders == true || destination?.retainsBorders == true
+  // Removing a lean-only claim has no authority over Borders, including an
+  // unregistered process that the strict Homebrew inspector would refuse.
+  let ignoresBorders = !needsBorders && destinationLean == nil
   let currentBorders =
-    try needsBorders
-    ? (attempted ? runtime.recoveryPreflight(home) : runtime.preflight(home))
-    : runtime.inspectIncumbent(home)
+    try ignoresBorders
+    ? .stopped
+    : needsBorders
+      ? (attempted ? runtime.recoveryPreflight(home) : runtime.preflight(home))
+      : runtime.inspectIncumbent(home)
   if !attempted, currentBorders != transaction.bordersPreviousRuntime {
     throw EnvironmentLifecycleError.drift("Borders changed after reviewed focus inspection")
   }
-  if !needsBorders, currentBorders != .stopped {
+  if !preserveRuntime, destinationLean != nil, !needsBorders, currentBorders != .stopped {
     throw EnvironmentLifecycleError.blocked(
       "Unmanaged JankyBorders blocks lean; no process was stopped")
   }
@@ -190,13 +200,22 @@ func verifyPendingLeanHandoff(
     try store.writeTransaction(pending)
   }
 
-  if leanState.registered, currentLean != destinationLean, let currentLean {
+  if !preserveRuntime, currentLean != destinationLean, let currentLean {
+    // Even an externally unregistered job can leave our runtime record behind.
     try runtime.lean.stop(home, currentLean)
   }
   let message: String
-  if let destinationLean {
+  if preserveRuntime {
+    // No native work was attempted: taking over Borders in the proposed
+    // ownership did not confer permission to stop the user's original service.
+    message = "Restored focus configuration; native focus runtimes were unchanged."
+  } else if let destinationLean {
     if currentBorders.isRegistered {
-      guard source?.retainsBorders == true || destination?.retainsBorders == true else {
+      guard
+        destination?.retainsBorders == true
+          || (source?.retainsBorders == true
+            && transaction.bordersPreviousRuntime?.isRunning != true)
+      else {
         throw EnvironmentLifecycleError.blocked("no retained Borders ownership permits stopping it")
       }
       try runtime.stop(home)
@@ -212,9 +231,7 @@ func verifyPendingLeanHandoff(
     }
     message = try runtime.request(root, home)
   } else if let source, source.retainsBorders {
-    if transaction.direction == .rollback, !attempted {
-      message = "Restored focus configuration; the original Borders runtime was unchanged."
-    } else if source.originalServiceWasRunning {
+    if source.originalServiceWasRunning {
       try verifyRestoredBordersStartup(homeDirectory: home)
       if currentBorders.isRegistered { try runtime.restart(home) } else { try runtime.start(home) }
       message = "Stopped owned lean and restored the retained original Borders service."

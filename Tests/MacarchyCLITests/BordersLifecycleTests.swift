@@ -375,7 +375,8 @@ struct ManagedBordersFixture {
           if $0.failRequest { throw BordersServiceError.blocked("injected request failure") }
         }
         return "Accepted canonical palette request; no native settings readback."
-      })
+      },
+      lean: .unexpectedInTest, inspectIncumbent: recovery)
     try FileManager.default.createDirectory(
       at: home.appending(path: ".config"), withIntermediateDirectories: true)
     if kind == "file" {
