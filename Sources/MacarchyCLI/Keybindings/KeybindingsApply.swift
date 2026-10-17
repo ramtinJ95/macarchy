@@ -1693,7 +1693,7 @@ private struct PreparedKeybindingsApply {
   let composition: KeybindingComposition
   let eligibility: KeybindingsApplyEligibility
   let providerEvidence: KeybindingAdoptionEvidence?
-  let service: SkhdServiceChange?
+  let service: UserServiceChange?
 }
 
 private struct KeybindingsApplyEligibility {

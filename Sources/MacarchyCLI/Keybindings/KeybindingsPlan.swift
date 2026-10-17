@@ -106,7 +106,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
         )
       )
     }
-    var serviceChange: SkhdServiceChange?
+    var serviceChange: UserServiceChange?
     if requireRunningProcess, provider.status != .blocked, let service {
       do {
         serviceChange = try service.prepare(home: homeDirectory, stateRoot: stateRoot)
