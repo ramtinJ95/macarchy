@@ -17,16 +17,12 @@ struct FoundationHelperTests {
     let parent = try PinnedFilesystem.openDirectory(at: root)
     defer { Darwin.close(parent) }
     let childURL = root.appending(path: "child", directoryHint: .isDirectory)
-    let created = try {
-      let previousUmask = Darwin.umask(0)
-      defer { Darwin.umask(previousUmask) }
-      return try PinnedFilesystem.openOrCreateChildDirectory(
-        parentDescriptor: parent,
-        name: "child",
-        url: childURL,
-        mode: 0o700
-      )
-    }()
+    let created = try PinnedFilesystem.openOrCreateChildDirectory(
+      parentDescriptor: parent,
+      name: "child",
+      url: childURL,
+      mode: 0o700
+    )
     defer { Darwin.close(created) }
     var createdMetadata = stat()
     #expect(fstat(created, &createdMetadata) == 0)
@@ -55,6 +51,31 @@ struct FoundationHelperTests {
       Issue.record("expected the no-follow open failure to propagate")
     } catch let error as PinnedFilesystemError {
       #expect(error.operation == "open pinned directory")
+    }
+  }
+
+  /// umask is process-wide, so it changes only in a child process; parallel tests keep theirs.
+  @Test
+  func pinnedFilesystemCreatesTheRequestedModeUnderAnOpenUmask() async {
+    await #expect(processExitsWith: .success) {
+      Darwin.umask(0)
+      let root = FileManager.default.temporaryDirectory.appending(
+        path: "macarchy-foundation-helper-tests-\(UUID().uuidString)",
+        directoryHint: .isDirectory
+      )
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: root) }
+      let parent = try PinnedFilesystem.openDirectory(at: root)
+      let created = try PinnedFilesystem.openOrCreateChildDirectory(
+        parentDescriptor: parent,
+        name: "child",
+        url: root.appending(path: "child", directoryHint: .isDirectory),
+        mode: 0o700
+      )
+      var metadata = stat()
+      guard fstat(created, &metadata) == 0, metadata.st_mode & 0o777 == 0o700 else {
+        throw ExitTestFailure("child directory mode is not 0o700 under umask 0")
+      }
     }
   }
 

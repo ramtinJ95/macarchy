@@ -10,6 +10,14 @@ let repositoryRoot = URL(filePath: #filePath)
   .deletingLastPathComponent()
   .deletingLastPathComponent()
 
+/// Thrown inside an exit test: the child reports the reason and exits unsuccessfully after
+/// its cleanup has run.
+struct ExitTestFailure: Error, CustomStringConvertible {
+  let description: String
+
+  init(_ description: String) { self.description = description }
+}
+
 func withTemporaryRoot(
   named name: String = "macarchy-theme-core-tests",
   _ operation: (URL) throws -> Void
