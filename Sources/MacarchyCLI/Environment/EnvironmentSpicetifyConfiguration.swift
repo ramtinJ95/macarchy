@@ -67,89 +67,43 @@ struct EnvironmentSpicetifyOwnership: Codable, Equatable, Sendable {
   }
 }
 
-struct EnvironmentSpicetifyFileTransaction: Sendable {
-  private static let filesystem = EnvironmentPresetFilesystem(
+typealias EnvironmentSpicetifyFileTransaction = EnvironmentPresetFileTransaction<
+  EnvironmentSpicetifyOwnership
+>
+
+extension EnvironmentSpicetifyOwnership: EnvironmentPresetFileOwnership {
+  static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Spicetify configuration",
     residueLabel: "Spicetify transaction residue",
     nonRegularMessage: "Spicetify configuration is not an ordinary file"
   )
+  static let driftLabel = "Spicetify"
+  static let ownershipChangedMessage = "Spicetify selector ownership changed unexpectedly"
+  static let replacementLabel = "Spicetify current_theme and color_scheme selectors"
+  static let replacementFailureLabel: String? = "Spicetify selectors"
 
-  private enum ExpectedState {
-    case original(EnvironmentSpicetifyOwnership)
-    case managed
-  }
+  static func owned(by ownership: EnvironmentOwnership?) -> Self? { ownership?.spicetify }
 
-  let homeDirectory: URL
-
-  func preflight(_ ownership: EnvironmentSpicetifyOwnership) throws {
-    let url = URL(filePath: ownership.path)
-    guard try matches(try Self.filesystem.read(url), .managed, ownership: ownership, at: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
-  }
-
-  func transition(
-    from old: EnvironmentOwnership?,
-    to new: EnvironmentOwnership?,
-    replacementName: String
-  ) throws {
-    guard let ownership = old?.spicetify ?? new?.spicetify else { return }
-    if let oldValue = old?.spicetify, let newValue = new?.spicetify, oldValue != newValue {
-      throw EnvironmentLifecycleError.blocked("Spicetify selector ownership changed unexpectedly")
-    }
-    let url = URL(filePath: ownership.path)
-    let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    let source: ExpectedState = old?.spicetify == nil ? .original(ownership) : .managed
-    let target: ExpectedState = new?.spicetify == nil ? .original(ownership) : .managed
-    guard
-      case .pending(let current) = try Self.filesystem.pendingTransition(
-        at: url, residue: residue, from: source, to: target, driftLabel: "Spicetify",
-        matches: { try matches($0, $1, ownership: ownership, at: $2) })
-    else { return }
-    // matches() rejects missing data, so a pending configuration exists.
+  /// Spicetify owns selectors only in an existing configuration, so the file is never created.
+  static func managed(from current: Data?, at url: URL) throws -> Data {
     guard let current else { throw EnvironmentLifecycleError.drift(url.path) }
-
-    let manager = SetupOwnershipManager()
-    let updated: Data
-    switch target {
-    case .managed:
-      updated = try manager.addingSpicetifySelectors(to: current, target: url)
-    case .original(let original):
-      updated = try manager.restoringSpicetifySelectors(
-        in: current,
-        from: try original.originalSelection(target: url),
-        target: url
-      )
-    }
-    try replace(updated, current: current, at: url, replacementName: replacementName)
-    guard try matches(try Self.filesystem.read(url), target, ownership: ownership, at: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
+    return try SetupOwnershipManager().addingSpicetifySelectors(to: current, target: url)
   }
 
-  private func matches(
-    _ data: Data?,
-    _ state: ExpectedState,
-    ownership: EnvironmentSpicetifyOwnership,
-    at url: URL
-  ) throws -> Bool {
+  static func matchesManaged(_ data: Data, at url: URL) throws -> Bool {
+    try SetupOwnershipManager().spicetifySelectorsAreExternal(data, target: url)
+  }
+
+  /// Restoration always keeps the file.
+  func restored(in current: Data, at url: URL) throws -> Data? {
+    try SetupOwnershipManager().restoringSpicetifySelectors(
+      in: current, from: try originalSelection(target: url), target: url)
+  }
+
+  func matchesOriginal(_ data: Data?, at url: URL) throws -> Bool {
     guard let data else { return false }
     let manager = SetupOwnershipManager()
-    switch state {
-    case .managed:
-      return try manager.spicetifySelectorsAreExternal(data, target: url)
-    case .original(let original):
-      let current = try manager.spicetifySelection(data, target: url)
-      let expected = try original.originalSelection(target: url)
-      return manager.spicetifySelectionsEqual(current, expected)
-    }
-  }
-
-  private func replace(_ data: Data, current: Data, at url: URL, replacementName: String) throws {
-    try Self.filesystem.replace(
-      data, current: current, at: url, replacementName: replacementName,
-      homeDirectory: homeDirectory, label: "Spicetify current_theme and color_scheme selectors",
-      failureLabel: "Spicetify selectors"
-    )
+    let current = try manager.spicetifySelection(data, target: url)
+    return manager.spicetifySelectionsEqual(current, try originalSelection(target: url))
   }
 }

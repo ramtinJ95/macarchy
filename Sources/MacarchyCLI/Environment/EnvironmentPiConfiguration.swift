@@ -151,99 +151,40 @@ struct EnvironmentPiDocument {
   }
 }
 
-struct EnvironmentPiFileTransaction: Sendable {
-  private static let filesystem = EnvironmentPresetFilesystem(
+typealias EnvironmentPiFileTransaction = EnvironmentPresetFileTransaction<EnvironmentPiOwnership>
+
+extension EnvironmentPiOwnership: EnvironmentPresetFileOwnership {
+  static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "Pi settings",
     residueLabel: "Pi transaction residue",
     nonRegularMessage: "Pi settings are not an ordinary file"
   )
+  static let driftLabel = "Pi"
+  static let ownershipChangedMessage = "Pi ownership changed unexpectedly"
+  static let replacementLabel = "Pi theme member"
+  static let replacementFailureLabel: String? = nil
 
-  private enum ExpectedState {
-    case original(EnvironmentPiOwnership)
-    case managed
+  static func owned(by ownership: EnvironmentOwnership?) -> Self? { ownership?.pi }
+
+  static func managed(from current: Data?, at url: URL) throws -> Data {
+    try EnvironmentPiDocument.applyingManaged(to: current ?? Data("{}\n".utf8), source: url)
   }
 
-  let homeDirectory: URL
-
-  func preflight(_ ownership: EnvironmentPiOwnership) throws {
-    let url = URL(filePath: ownership.path)
-    guard try matches(try Self.filesystem.read(url), .managed, ownership: ownership, at: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
+  static func matchesManaged(_ data: Data, at url: URL) throws -> Bool {
+    try EnvironmentPiDocument.matchesManaged(data, source: url)
   }
 
-  func transition(
-    from old: EnvironmentOwnership?,
-    to new: EnvironmentOwnership?,
-    replacementName: String
-  ) throws {
-    guard let ownership = old?.pi ?? new?.pi else { return }
-    if let oldPi = old?.pi, let newPi = new?.pi, oldPi != newPi {
-      throw EnvironmentLifecycleError.blocked("Pi ownership changed unexpectedly")
+  func restored(in current: Data, at url: URL) throws -> Data? {
+    let restored = try EnvironmentPiDocument.restoringOriginal(
+      in: current, ownership: self, source: url)
+    if !originalFileExisted, try EnvironmentPiDocument.isEmptyObject(restored, source: url) {
+      return nil
     }
-    let url = URL(filePath: ownership.path)
-    let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    let source: ExpectedState = old?.pi == nil ? .original(ownership) : .managed
-    let target: ExpectedState = new?.pi == nil ? .original(ownership) : .managed
-    guard
-      case .pending(let current) = try Self.filesystem.pendingTransition(
-        at: url, residue: residue, from: source, to: target, driftLabel: "Pi",
-        matches: { try matches($0, $1, ownership: ownership, at: $2) })
-    else { return }
-
-    switch target {
-    case .managed:
-      let updated = try EnvironmentPiDocument.applyingManaged(
-        to: current ?? Data("{}\n".utf8),
-        source: url
-      )
-      if let current {
-        try replace(updated, current: current, at: url, replacementName: replacementName)
-      } else {
-        try Self.filesystem.create(updated, at: url, replacementName: replacementName)
-      }
-    case .original(let original):
-      guard let current else { return }
-      let restored = try EnvironmentPiDocument.restoringOriginal(
-        in: current,
-        ownership: original,
-        source: url
-      )
-      if !original.originalFileExisted,
-        try EnvironmentPiDocument.isEmptyObject(restored, source: url)
-      {
-        try Self.filesystem.claimAndRemove(
-          at: url, replacementName: replacementName, expected: current)
-      } else {
-        try replace(restored, current: current, at: url, replacementName: replacementName)
-      }
-    }
-    guard try matches(try Self.filesystem.read(url), target, ownership: ownership, at: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
+    return restored
   }
 
-  private func matches(
-    _ data: Data?,
-    _ state: ExpectedState,
-    ownership: EnvironmentPiOwnership,
-    at url: URL
-  ) throws -> Bool {
-    switch state {
-    case .managed:
-      guard let data else { return false }
-      return try EnvironmentPiDocument.matchesManaged(data, source: url)
-    case .original(let original):
-      guard let data else { return !original.originalFileExisted }
-      return try EnvironmentPiDocument.matchesOriginal(data, ownership: original, source: url)
-    }
+  func matchesOriginal(_ data: Data?, at url: URL) throws -> Bool {
+    guard let data else { return !originalFileExisted }
+    return try EnvironmentPiDocument.matchesOriginal(data, ownership: self, source: url)
   }
-
-  private func replace(_ data: Data, current: Data, at url: URL, replacementName: String) throws {
-    try Self.filesystem.replace(
-      data, current: current, at: url, replacementName: replacementName,
-      homeDirectory: homeDirectory, label: "Pi theme member"
-    )
-  }
-
 }

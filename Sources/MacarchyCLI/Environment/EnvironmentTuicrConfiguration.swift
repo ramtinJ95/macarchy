@@ -185,106 +185,47 @@ private struct TuicrValidationDocument: Decodable {
   let theme: String?
 }
 
-struct EnvironmentTuicrFileTransaction: Sendable {
-  private static let filesystem = EnvironmentPresetFilesystem(
+typealias EnvironmentTuicrFileTransaction = EnvironmentPresetFileTransaction<
+  EnvironmentTuicrOwnership
+>
+
+extension EnvironmentTuicrOwnership: EnvironmentPresetFileOwnership {
+  static let filesystem = EnvironmentPresetFilesystem(
     configurationLabel: "tuicr configuration",
     residueLabel: "tuicr transaction residue",
     nonRegularMessage: "tuicr configuration is not an ordinary file"
   )
+  static let driftLabel = "tuicr"
+  static let ownershipChangedMessage = "tuicr ownership changed unexpectedly"
+  static let replacementLabel = "tuicr theme selector"
+  static let replacementFailureLabel: String? = nil
 
-  private enum ExpectedState {
-    case original(EnvironmentTuicrOwnership)
-    case managed
-  }
+  static func owned(by ownership: EnvironmentOwnership?) -> Self? { ownership?.tuicr }
 
-  let homeDirectory: URL
-
-  func preflight(_ ownership: EnvironmentTuicrOwnership) throws {
-    let url = URL(filePath: ownership.path)
-    guard try matches(try Self.filesystem.read(url), .managed, ownership: ownership, at: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
-  }
-
-  func transition(
-    from old: EnvironmentOwnership?,
-    to new: EnvironmentOwnership?,
-    replacementName: String
-  ) throws {
-    guard let ownership = old?.tuicr ?? new?.tuicr else { return }
-    if let oldTuicr = old?.tuicr, let newTuicr = new?.tuicr, oldTuicr != newTuicr {
-      throw EnvironmentLifecycleError.blocked("tuicr ownership changed unexpectedly")
-    }
-    let url = URL(filePath: ownership.path)
-    let residue = url.deletingLastPathComponent().appending(path: replacementName)
-    let source: ExpectedState = old?.tuicr == nil ? .original(ownership) : .managed
-    let target: ExpectedState = new?.tuicr == nil ? .original(ownership) : .managed
-    guard
-      case .pending(let current) = try Self.filesystem.pendingTransition(
-        at: url, residue: residue, from: source, to: target, driftLabel: "tuicr",
-        matches: { try matches($0, $1, ownership: ownership, at: $2) })
-    else { return }
-
-    switch target {
-    case .managed:
-      let updated = try EnvironmentTuicrDocument.applyingManaged(
-        to: current.map { try Self.filesystem.utf8($0, at: url) } ?? "",
-        source: url
-      )
-      let data = Data(updated.utf8)
-      if let current {
-        try replace(data, current: current, at: url, replacementName: replacementName)
-      } else {
-        try Self.filesystem.create(data, at: url, replacementName: replacementName)
-      }
-    case .original(let original):
-      guard let current else { return }
-      let restored = try EnvironmentTuicrDocument.restoringOriginal(
-        in: try Self.filesystem.utf8(current, at: url),
-        ownership: original,
-        source: url
-      )
-      if !original.originalFileExisted,
-        restored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      {
-        try Self.filesystem.claimAndRemove(
-          at: url, replacementName: replacementName, expected: current)
-      } else {
-        try replace(
-          Data(restored.utf8), current: current, at: url, replacementName: replacementName)
-      }
-    }
-    guard try matches(try Self.filesystem.read(url), target, ownership: ownership, at: url) else {
-      throw EnvironmentLifecycleError.drift(url.path)
-    }
-  }
-
-  private func matches(
-    _ data: Data?,
-    _ state: ExpectedState,
-    ownership: EnvironmentTuicrOwnership,
-    at url: URL
-  ) throws -> Bool {
-    switch state {
-    case .managed:
-      guard let data else { return false }
-      return try EnvironmentTuicrDocument.matchesManaged(
-        try Self.filesystem.utf8(data, at: url), source: url)
-    case .original(let original):
-      guard let data else { return !original.originalFileExisted }
-      return try EnvironmentTuicrDocument.matchesOriginal(
-        try Self.filesystem.utf8(data, at: url),
-        ownership: original,
-        source: url
-      )
-    }
-  }
-
-  private func replace(_ data: Data, current: Data, at url: URL, replacementName: String) throws {
-    try Self.filesystem.replace(
-      data, current: current, at: url, replacementName: replacementName,
-      homeDirectory: homeDirectory, label: "tuicr theme selector"
+  static func managed(from current: Data?, at url: URL) throws -> Data {
+    let updated = try EnvironmentTuicrDocument.applyingManaged(
+      to: current.map { try filesystem.utf8($0, at: url) } ?? "",
+      source: url
     )
+    return Data(updated.utf8)
   }
 
+  static func matchesManaged(_ data: Data, at url: URL) throws -> Bool {
+    try EnvironmentTuicrDocument.matchesManaged(try filesystem.utf8(data, at: url), source: url)
+  }
+
+  func restored(in current: Data, at url: URL) throws -> Data? {
+    let restored = try EnvironmentTuicrDocument.restoringOriginal(
+      in: try Self.filesystem.utf8(current, at: url), ownership: self, source: url)
+    if !originalFileExisted, restored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return nil
+    }
+    return Data(restored.utf8)
+  }
+
+  func matchesOriginal(_ data: Data?, at url: URL) throws -> Bool {
+    guard let data else { return !originalFileExisted }
+    return try EnvironmentTuicrDocument.matchesOriginal(
+      try Self.filesystem.utf8(data, at: url), ownership: self, source: url)
+  }
 }
