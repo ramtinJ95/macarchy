@@ -6,6 +6,15 @@ import Testing
 @testable import MacarchyCLI
 @testable import ThemeCore
 
+extension KeybindingsPlanCommandRunner {
+  /// Plans against a running skhd without inspecting host processes or the skhd user service.
+  static let isolated = KeybindingsPlanCommandRunner(
+    effectiveInspector: KeybindingEffectiveBehaviorInspector(
+      processInspector: KeybindingProcessInspector { .testRunning }
+    )
+  )
+}
+
 final class LifecycleFixture: Sendable {
   let calls = Mutex<[String]>([])
 
