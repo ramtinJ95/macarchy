@@ -89,15 +89,18 @@ struct SketchyBarGenerationTests {
     }
   }
 
+  /// umask is process-wide, so it changes only in a child process; parallel tests keep theirs.
   @Test
-  func publicationSetsExactModesUnderARestrictiveUmask() throws {
-    try withTemporaryRoot(named: "macarchy-sketchybar-generation-tests") { root in
-      let previousUmask = Darwin.umask(0o077)
-      defer { Darwin.umask(previousUmask) }
-
-      _ = try installGeneration(try composition(root: root), root: root)
-
-      #expect(SketchyBarGenerationInspector(stateRoot: root).inspect().status == .current)
+  func publicationSetsExactModesUnderARestrictiveUmask() async {
+    await #expect(processExitsWith: .success) {
+      Darwin.umask(0o077)
+      try withTemporaryRoot(named: "macarchy-sketchybar-generation-tests") { root in
+        let tests = SketchyBarGenerationTests()
+        _ = try tests.installGeneration(try tests.composition(root: root), root: root)
+        guard SketchyBarGenerationInspector(stateRoot: root).inspect().status == .current else {
+          throw ExitTestFailure("generation is not current under umask 0o077")
+        }
+      }
     }
   }
 
