@@ -397,11 +397,8 @@ struct NativeUserServiceOwnershipStore<Policy: NativeUserServicePolicy>: Sendabl
     if let ownership {
       let descriptor = try PinnedFilesystem.openDirectory(at: file.deletingLastPathComponent())
       defer { Darwin.close(descriptor) }
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      try PinnedFilesystem.replaceRegularFileAtomically(
-        parentDescriptor: descriptor, name: file.lastPathComponent, url: file,
-        data: try encoder.encode(ownership), mode: 0o600)
+      try PinnedStateFile.write(
+        ownership, parentDescriptor: descriptor, name: file.lastPathComponent, url: file)
     } else {
       guard unlink(file.path) == 0 || errno == ENOENT else {
         throw Policy.lifecycleError("cannot remove \(Policy.name) service ownership receipt")

@@ -384,6 +384,63 @@ package enum PinnedFilesystem {
     }
   }
 
+  /// Renames `source` to `destination` inside one pinned directory without replacing an
+  /// existing entry. Returns false with `errno` set.
+  package static func renameExclusively(
+    _ source: String,
+    to destination: String,
+    in parentDescriptor: Int32
+  ) -> Bool {
+    source.withCString { source in
+      destination.withCString { destination in
+        Darwin.renameatx_np(
+          parentDescriptor, source, parentDescriptor, destination, UInt32(RENAME_EXCL)) == 0
+      }
+    }
+  }
+
+  package enum PublicationStep: Sendable {
+    case publish
+    case sync
+  }
+
+  /// A failed step of `publishNewRegularFile`, so callers keep their own messages.
+  package struct PublicationError: Error, Sendable {
+    package let step: PublicationStep
+    package let code: Int32
+  }
+
+  /// Writes `data` to the new entry `temporaryName`, publishes it as the absent `name` and
+  /// syncs the parent. Write failures throw `PinnedFilesystemError` and leave the temporary
+  /// entry; a failed publication removes it unless `keepsTemporaryOnFailure`.
+  package static func publishNewRegularFile(
+    _ data: Data,
+    as name: String,
+    through temporaryName: String,
+    parentDescriptor: Int32,
+    url: URL,
+    mode: mode_t,
+    keepsTemporaryOnFailure: Bool = false
+  ) throws {
+    try writeNewRegularFile(
+      parentDescriptor: parentDescriptor,
+      name: temporaryName,
+      url: url.deletingLastPathComponent().appending(path: temporaryName),
+      data: data,
+      mode: mode
+    )
+    guard renameExclusively(temporaryName, to: name, in: parentDescriptor) else {
+      let code = errno
+      if !keepsTemporaryOnFailure {
+        temporaryName.withCString { _ = Darwin.unlinkat(parentDescriptor, $0, 0) }
+      }
+      throw PublicationError(step: .publish, code: code)
+    }
+    guard fsync(parentDescriptor) == 0 else {
+      throw PublicationError(step: .sync, code: errno)
+    }
+  }
+
   package static func readRegularFile(
     at url: URL,
     maximumSize: Int = BoundedRegularFile.maximumSize

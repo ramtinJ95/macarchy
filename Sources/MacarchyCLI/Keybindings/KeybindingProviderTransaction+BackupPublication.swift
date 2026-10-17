@@ -122,12 +122,10 @@ extension KeybindingProviderTransaction {
       pathIdentity.st_nlink == 1,
       try claimMarkerMatches(descriptor: temporary, record: record, url: temporaryURL)
     else { throw SetupOwnershipError.ownershipDrift(temporaryURL) }
-    let publication = renameExclusive(
-      descriptor: backupParent,
-      from: temporaryName,
-      to: backup.lastPathComponent
-    )
-    guard publication == 0 else {
+    guard
+      PinnedFilesystem.renameExclusively(
+        temporaryName, to: backup.lastPathComponent, in: backupParent)
+    else {
       throw SetupOwnershipError.posix("publish keybinding backup", backup)
     }
     try sync(backupParent, url: backup.deletingLastPathComponent())

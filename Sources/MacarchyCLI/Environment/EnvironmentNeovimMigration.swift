@@ -274,12 +274,11 @@ struct EnvironmentNeovimMigration: Sendable {
         throw EnvironmentLifecycleError.system("sync Neovim seed directory", url, errno)
       }
     }
-    let result = temporary.lastPathComponent.withCString { source in
-      nativeRoot.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard result == 0, fsync(parent) == 0 else {
+    guard
+      PinnedFilesystem.renameExclusively(
+        temporary.lastPathComponent, to: nativeRoot.lastPathComponent, in: parent),
+      fsync(parent) == 0
+    else {
       throw EnvironmentLifecycleError.system("publish native Neovim seed", nativeRoot, errno)
     }
   }

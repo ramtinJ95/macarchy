@@ -83,30 +83,15 @@ struct EnvironmentPresetFilesystem: Sendable {
   func create(_ data: Data, at url: URL, replacementName: String) throws {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
     defer { Darwin.close(parent) }
-    let temporary = url.deletingLastPathComponent().appending(path: replacementName)
-    try PinnedFilesystem.writeNewRegularFile(
-      parentDescriptor: parent,
-      name: replacementName,
-      url: temporary,
-      data: data,
-      mode: 0o600
-    )
-    // Deliberately installed only after the write, chmod, and file sync succeed.
-    var removeTemporary = true
-    defer {
-      if removeTemporary { _ = replacementName.withCString { Darwin.unlinkat(parent, $0, 0) } }
-    }
-    let published = replacementName.withCString { source in
-      url.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard published == 0 else {
-      throw EnvironmentLifecycleError.system("publish \(configurationLabel)", url, errno)
-    }
-    removeTemporary = false
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync \(configurationLabel) parent", url, errno)
+    do {
+      try PinnedFilesystem.publishNewRegularFile(
+        data, as: url.lastPathComponent, through: replacementName, parentDescriptor: parent,
+        url: url, mode: 0o600)
+    } catch let failure as PinnedFilesystem.PublicationError {
+      let operation =
+        failure.step == .publish
+        ? "publish \(configurationLabel)" : "sync \(configurationLabel) parent"
+      throw EnvironmentLifecycleError.system(operation, url, failure.code)
     }
   }
 
@@ -125,12 +110,8 @@ struct EnvironmentPresetFilesystem: Sendable {
   ) throws {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
     defer { Darwin.close(parent) }
-    let claimed = url.lastPathComponent.withCString { source in
-      replacementName.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard claimed == 0 else {
+    guard PinnedFilesystem.renameExclusively(url.lastPathComponent, to: replacementName, in: parent)
+    else {
       throw EnvironmentLifecycleError.system("claim \(configurationLabel)", url, errno)
     }
     guard fsync(parent) == 0 else {
@@ -145,12 +126,11 @@ struct EnvironmentPresetFilesystem: Sendable {
   func remove(_ url: URL) throws {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
     defer { Darwin.close(parent) }
-    let removed = url.lastPathComponent.withCString { Darwin.unlinkat(parent, $0, 0) }
-    guard removed == 0 || errno == ENOENT else {
-      throw EnvironmentLifecycleError.system("remove \(residueLabel)", url, errno)
-    }
-    if removed == 0, fsync(parent) != 0 {
-      throw EnvironmentLifecycleError.system("sync \(residueLabel)", url, errno)
+    if let failure = PinnedStateFile.remove(
+      url.lastPathComponent, parentDescriptor: parent, syncWhenAbsent: false)
+    {
+      let operation = failure.step == .unlink ? "remove \(residueLabel)" : "sync \(residueLabel)"
+      throw EnvironmentLifecycleError.system(operation, url, failure.code)
     }
   }
 }

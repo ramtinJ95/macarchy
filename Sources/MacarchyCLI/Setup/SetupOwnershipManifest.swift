@@ -168,27 +168,20 @@ extension SetupOwnershipManager {
       )
       defer { Darwin.close(setupDescriptor) }
       if records.isEmpty {
-        let removed = "ownership.json".withCString {
-          Darwin.unlinkat(setupDescriptor, $0, 0)
-        }
-        guard removed == 0 || errno == ENOENT, fsync(setupDescriptor) == 0 else {
+        if let failure = PinnedStateFile.remove(
+          "ownership.json", parentDescriptor: setupDescriptor, syncWhenAbsent: true)
+        {
           throw PinnedFilesystemError(
             operation: "remove setup ownership manifest",
             url: context.manifestURL,
-            code: errno
+            code: failure.code
           )
         }
         return
       }
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      try PinnedFilesystem.replaceRegularFileAtomically(
-        parentDescriptor: setupDescriptor,
-        name: "ownership.json",
-        url: context.manifestURL,
-        data: try encoder.encode(SetupOwnershipManifest(records: records)),
-        mode: 0o600
-      )
+      try PinnedStateFile.write(
+        SetupOwnershipManifest(records: records), parentDescriptor: setupDescriptor,
+        name: "ownership.json", url: context.manifestURL)
     } catch {
       throw SetupOwnershipError.system(
         "write", context.manifestURL, String(describing: error))
