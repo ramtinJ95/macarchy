@@ -293,13 +293,7 @@ struct SketchyBarLifecycleTests {
     #expect(try store.read() == evidence)
   }
 
-  private static let runtime = SketchyBarRuntimeInspection(
-    status: .running,
-    message: "running",
-    processID: 123,
-    executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
-    serviceLabel: SketchyBarHomebrewService.serviceLabel
-  )
+  private static let runtime = SketchyBarRuntimeInspection.testRunning(processID: 123)
 
   private static let coreRuntime = SketchyBarCoreRuntimeInspection(
     status: .converged,

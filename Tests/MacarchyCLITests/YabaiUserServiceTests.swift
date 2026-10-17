@@ -66,13 +66,13 @@ struct YabaiUserServiceTests {
     #expect(try f.service.registration(home: f.home) == nil)
     #expect(try YabaiServiceOwnershipStore(stateRoot: f.stateRoot).read() == nil)
     #expect(!YabaiTransactionStore(stateRoot: f.stateRoot).exists)
-    #expect(!f.state.withLock { $0.disabled })
+    #expect(!f.commands.state.withLock { $0.disabled })
   }
 
   @Test func failedAccessibilityRestoresAbsence() throws {
     let f = try YabaiNativeFixture()
     defer { try? FileManager.default.removeItem(at: f.root) }
-    f.state.withLock { $0.failStart = true }
+    f.commands.state.withLock { $0.failStart = true }
     let result = try f.apply()
     #expect(!result.succeeded)
     #expect(result.output.contains("Accessibility"))
@@ -84,15 +84,15 @@ struct YabaiUserServiceTests {
     #expect(!YabaiTransactionStore(stateRoot: f.stateRoot).exists)
     #expect(try YabaiOwnershipStore(stateRoot: f.stateRoot).read() == nil)
     #expect(YabaiGenerationInspector(stateRoot: f.stateRoot).inspect().status == .missing)
-    #expect(!f.state.withLock { $0.disabled })
-    f.state.withLock { $0.failStart = false }
+    #expect(!f.commands.state.withLock { $0.disabled })
+    f.commands.state.withLock { $0.failStart = false }
     #expect(try f.apply().succeeded)
   }
 
   @Test func failedEnabledStateRestorationRetainsRecoverableJournal() throws {
     let f = try YabaiNativeFixture()
     defer { try? FileManager.default.removeItem(at: f.root) }
-    f.state.withLock {
+    f.commands.state.withLock {
       $0.failStart = true
       $0.failEnable = true
     }
@@ -101,13 +101,13 @@ struct YabaiUserServiceTests {
     #expect(failed.output.contains("enabled state"))
     #expect(YabaiTransactionStore(stateRoot: f.stateRoot).exists)
     #expect(try f.service.registration(home: f.home) != nil)
-    #expect(f.state.withLock { $0.disabled })
-    f.state.withLock {
+    #expect(f.commands.state.withLock { $0.disabled })
+    f.commands.state.withLock {
       $0.failStart = false
       $0.failEnable = false
     }
     #expect(try f.apply().succeeded)
-    #expect(!f.state.withLock { $0.disabled })
+    #expect(!f.commands.state.withLock { $0.disabled })
     #expect(!YabaiTransactionStore(stateRoot: f.stateRoot).exists)
   }
 
@@ -115,10 +115,7 @@ struct YabaiUserServiceTests {
   func deferredAggregateCanRollbackOrCommit(commit: Bool) async throws {
     let f = try YabaiNativeFixture()
     defer { try? FileManager.default.removeItem(at: f.root) }
-    let package = try ThemePackageLoader().load(
-      packageURL: f.resources.deletingLastPathComponent().appending(path: "Themes/catppuccin-mocha")
-    )
-    _ = try ThemeActivator(root: f.stateRoot).activate(package: package)
+    try activateCatppuccinMocha(stateRoot: f.stateRoot)
     let result = try await f.runner.executeAggregate(
       resourcesRoot: f.resources, profileURL: f.profile, profileRequired: true,
       stateRoot: f.stateRoot, homeDirectory: f.home, consumerPaths: testConsumerPaths(),
@@ -144,7 +141,7 @@ struct YabaiUserServiceTests {
     let f = try YabaiNativeFixture()
     defer { try? FileManager.default.removeItem(at: f.root) }
     try f.createRegistration()
-    f.state.withLock {
+    f.commands.state.withLock {
       $0.running = running
       $0.loaded = running
     }
@@ -153,7 +150,7 @@ struct YabaiUserServiceTests {
     _ = try f.provider.teardownLocked(
       lifecycle: f.lifecycle, faultInjector: { _ in }, dryRun: false)
     #expect(try f.service.registration(home: f.home) == before)
-    #expect(f.state.withLock { $0.running } == running)
+    #expect(f.commands.state.withLock { $0.running } == running)
     #expect(!f.mutations.contains("--uninstall-service"))
   }
 
@@ -164,10 +161,10 @@ struct YabaiUserServiceTests {
     let registration = try #require(try f.service.registration(home: f.home))
     _ = try f.provider.teardownLocked(
       lifecycle: f.lifecycle, faultInjector: { _ in }, dryRun: false, deferFinalization: true)
-    #expect(!f.state.withLock { $0.running })
+    #expect(!f.commands.state.withLock { $0.running })
     #expect(try f.service.registration(home: f.home) == registration)
     try f.provider.rollbackDeferred(lifecycle: f.lifecycle)
-    #expect(f.state.withLock { $0.running })
+    #expect(f.commands.state.withLock { $0.running })
     _ = try f.provider.teardownLocked(
       lifecycle: f.lifecycle, faultInjector: { _ in }, dryRun: false, deferFinalization: true)
     // Crash after uninstall but before receipt/journal removal.
@@ -220,7 +217,7 @@ struct YabaiUserServiceTests {
       try FileManager.default.moveItem(at: file, to: target)
       try FileManager.default.createSymbolicLink(at: file, withDestinationURL: target)
     }
-    f.state.withLock {
+    f.commands.state.withLock {
       $0.disabled = kind == "disabled"
       $0.loaded = kind == "failed-job"
       $0.jobError = kind == "unknown-job"
@@ -233,40 +230,33 @@ struct YabaiUserServiceTests {
 }
 
 private final class YabaiNativeFixture: Sendable {
-  struct State {
-    var calls: [String] = []
-    var running = false
-    var loaded = false
-    var failStart = false
-    var failEnable = false
-    var disabled = false
-    var jobError = false
-  }
-  let state = Mutex(State())
   let root: URL
   let home: URL
   let stateRoot: URL
   let profile: URL
+  let commands: NativeServiceCommandFake<YabaiServicePolicy>
   init() throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-yabai-service-\(UUID())")
-    home = root.appending(path: "home")
-    stateRoot = home.appending(path: ".config/macarchy")
+    let home = root.appending(path: "home")
+    let stateRoot = home.appending(path: ".config/macarchy")
+    self.home = home
+    self.stateRoot = stateRoot
     profile = stateRoot.appending(path: "profile.toml")
+    commands = NativeServiceCommandFake(
+      home: home, processID: 42, versionOutput: "yabai-v7.1.25",
+      pendingService: { try YabaiTransactionStore(stateRoot: stateRoot).read().map(\.service) })
     try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: true)
     try "schema_version = 1\n[top_bar]\nprovider = \"disabled\"\n".write(
       to: profile, atomically: true, encoding: .utf8)
   }
-  var resources: URL {
-    URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-      .deletingLastPathComponent().appending(path: "Desktop")
-  }
-  var mutations: [String] { state.withLock { $0.calls } }
+  var resources: URL { repositoryRoot.appending(path: "Desktop") }
+  var mutations: [String] { commands.mutations }
   var service: YabaiUserService {
     YabaiUserService(
-      runner: ProcessRunner { try self.run($0) },
+      runner: commands.runner,
       process: {
-        self.state.withLock { $0.running ? (42, "/opt/homebrew/bin/yabai") : nil }
+        self.commands.state.withLock { $0.running ? (42, "/opt/homebrew/bin/yabai") : nil }
       })
   }
   var provider: YabaiProviderTransaction {
@@ -283,9 +273,9 @@ private final class YabaiNativeFixture: Sendable {
   }
   var lifecycle: YabaiLifecycleController {
     YabaiLifecycleController(
-      preflight: { self.state.withLock { $0.running } },
+      preflight: { self.commands.state.withLock { $0.running } },
       restart: {
-        self.state.withLock {
+        self.commands.state.withLock {
           $0.calls.append("--restart-service")
           $0.running = true
           $0.loaded = true
@@ -293,7 +283,7 @@ private final class YabaiNativeFixture: Sendable {
       },
       stop: { throw YabaiDesktopError.lifecycle("unjournaled stop is not expected") },
       inspect: { composition in
-        guard self.state.withLock({ $0.running }) else { return .stopped }
+        guard self.commands.state.withLock({ $0.running }) else { return .stopped }
         return YabaiRuntimeInspection(
           status: .converged, message: "verified", verifiedSettings: [composition.settings.layout],
           verifiedRuleLabels: composition.settings.rules.compactMap(\.label),
@@ -301,82 +291,12 @@ private final class YabaiNativeFixture: Sendable {
       },
       waitBetweenInspections: {}, service: service,
       verifyStarted: {
-        if self.state.withLock({ $0.failStart }) {
+        if self.commands.state.withLock({ $0.failStart }) {
           throw YabaiDesktopError.lifecycle("manual Accessibility grant unavailable")
         }
       })
   }
   func createRegistration(extra: [String: Bool] = [:]) throws {
-    let file = service.propertyList(home)
-    try FileManager.default.createDirectory(
-      at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-    var plist: [String: Any] = [
-      "Label": YabaiUserService.label, "ProgramArguments": [YabaiUserService.executable.path],
-      "EnvironmentVariables": ["PATH": "/opt/homebrew/bin:/usr/bin:/bin"],
-      "RunAtLoad": true, "KeepAlive": ["SuccessfulExit": false, "Crashed": true],
-      "StandardOutPath": "/tmp/yabai_\(NSUserName()).out.log",
-      "StandardErrorPath": "/tmp/yabai_\(NSUserName()).err.log",
-      "ProcessType": "Interactive", "Nice": -20,
-    ]
-    for (key, value) in extra { plist[key] = value }
-    try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(
-      to: file)
-  }
-  private func run(_ request: ProcessRequest) throws -> ProcessResult {
-    let argument = try #require(request.arguments.first)
-    if request.executableURL.path == "/bin/launchctl" {
-      if argument == "enable" {
-        #expect(request.arguments == ["enable", "gui/\(getuid())/\(YabaiUserService.label)"])
-        #expect(try YabaiTransactionStore(stateRoot: stateRoot).read() != nil)
-        return state.withLock {
-          $0.calls.append("enable")
-          if $0.failEnable {
-            return ProcessResult(terminationStatus: 5, output: "injected enable failure")
-          }
-          $0.disabled = false
-          return ProcessResult(terminationStatus: 0, output: "")
-        }
-      }
-      if argument == "print-disabled" {
-        return ProcessResult(
-          terminationStatus: 0,
-          output: state.withLock {
-            $0.disabled ? "\"\(YabaiUserService.label)\" => disabled" : "disabled services = {}"
-          })
-      }
-      let snapshot = state.withLock { $0 }
-      if snapshot.jobError { return ProcessResult(terminationStatus: 5, output: "I/O failure") }
-      return ProcessResult(
-        terminationStatus: snapshot.loaded ? 0 : 113,
-        output: snapshot.loaded
-          ? "path = \(service.propertyList(home).path)\npid = 42" : "not found")
-    }
-    if argument == "--version" {
-      return ProcessResult(terminationStatus: 0, output: "yabai-v7.1.25")
-    }
-    state.withLock { $0.calls.append(argument) }
-    switch argument {
-    case "--install-service":
-      let pending = try #require(try YabaiTransactionStore(stateRoot: stateRoot).read())
-      #expect(pending.service?.installationAttempted == true)
-      try createRegistration()
-    case "--start-service":
-      let pending = try #require(try YabaiTransactionStore(stateRoot: stateRoot).read())
-      #expect(pending.service?.expectedRegistration != nil)
-      state.withLock {
-        $0.loaded = true
-        $0.running = !$0.failStart
-      }
-    case "--stop-service":
-      state.withLock {
-        $0.running = false
-        $0.loaded = false
-        $0.disabled = true
-      }
-    case "--uninstall-service":
-      try FileManager.default.removeItem(at: service.propertyList(home))
-    default: throw YabaiDesktopError.lifecycle("unexpected operation: \(argument)")
-    }
-    return ProcessResult(terminationStatus: 0, output: "")
+    try commands.createRegistration(extra: extra)
   }
 }

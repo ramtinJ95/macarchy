@@ -6,10 +6,7 @@ import Testing
 @testable import ThemeCore
 
 struct DesktopPlanCommandTests {
-  private let runner = DesktopPlanCommandRunner(
-    keybindings: nil,
-    prerequisites: .assumed
-  )
+  private let runner = DesktopPlanCommandRunner.isolated
 
   @Test
   func cleanDefaultPlansManagedYabaiWithoutMutation() throws {
@@ -546,13 +543,7 @@ struct DesktopPlanCommandTests {
   }
 
   private var sketchyBarLifecycle: SketchyBarLifecycleController {
-    let runtime = SketchyBarRuntimeInspection(
-      status: .running,
-      message: "running",
-      processID: 123,
-      executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
-      serviceLabel: SketchyBarHomebrewService.serviceLabel
-    )
+    let runtime = SketchyBarRuntimeInspection.testRunning(processID: 123)
     return SketchyBarLifecycleController(
       inspect: { runtime },
       preflight: { false },
@@ -572,11 +563,7 @@ struct DesktopPlanCommandTests {
       spaceIndices: [1],
       clockLabelPresent: true
     )
-    return SketchyBarCoreRuntimeController(
-      inspect: { _ in runtime },
-      settle: { _ in runtime },
-      settleRestored: { $0.agreesWithProviderRuntime(runtime) }
-    )
+    return .fixed(runtime)
   }
 
 }

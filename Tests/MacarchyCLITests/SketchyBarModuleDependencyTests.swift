@@ -10,8 +10,7 @@ struct SketchyBarModuleDependencyTests {
       path: "macarchy-module-dependencies-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let source = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-      .deletingLastPathComponent().appending(path: "Desktop/sketchybar/defaults.toml")
+    let source = repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml")
     let defaults = root.appending(path: "defaults.toml")
     let text = try String(contentsOf: source, encoding: .utf8)
       .replacingOccurrences(of: #"(?m)^left = .*$"#, with: "left = []", options: .regularExpression)

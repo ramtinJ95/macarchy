@@ -1286,13 +1286,7 @@ private struct SketchyBarRuntimeFixture {
       directoryHint: .isDirectory
     )
     state = root.appending(path: "state", directoryHint: .isDirectory)
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(
-        path: "Themes/catppuccin-mocha",
-        directoryHint: .isDirectory
-      )
-    )
-    _ = try ThemeActivator(root: state).activate(package: package)
+    try activateCatppuccinMocha(stateRoot: state)
     // Keep the core verifier fixtures isolated from the independently tested
     // personal default modules. Individual module cases select their full layout.
     let defaults = root.appending(path: "defaults.toml")

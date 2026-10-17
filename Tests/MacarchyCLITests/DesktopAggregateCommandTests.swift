@@ -725,8 +725,8 @@ private struct DesktopAggregateFixture {
   let profile: URL
   let desktopResources: URL
   let keybindingResources: URL
-  let yabaiLifecycle = AggregateYabaiLifecycle()
-  let sketchyBarLifecycle = AggregateSketchyBarLifecycle()
+  let yabaiLifecycle = YabaiLifecycleFixture(running: false)
+  let sketchyBarLifecycle = SketchyBarPublicLifecycleFixture()
   let keybindingLifecycle = LifecycleFixture()
   let theme: AggregateThemeController
   let keybindings: DesktopKeybindingOrchestrator
@@ -773,27 +773,17 @@ private struct DesktopAggregateFixture {
       planner: keybindingRunner.planner
     )
     theme = AggregateThemeController(shouldFail: themeFailure)
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(
-        path: "Themes/catppuccin-mocha",
-        directoryHint: .isDirectory
-      )
-    )
-    let generation = try ThemeActivator(root: state).activate(package: package)
+    let generationID = try activateCatppuccinMocha(stateRoot: state)
     let core = SketchyBarCoreRuntimeInspection(
       status: .converged,
       message: "converged",
-      themeGenerationID: generation.generationID,
+      themeGenerationID: generationID,
       barColor: "0xf01e1e2e",
       items: ["macarchy.clock", "macarchy.space.1", "macarchy.theme.ready"],
       spaceIndices: [1],
       clockLabelPresent: true
     )
-    sketchyBarCore = SketchyBarCoreRuntimeController(
-      inspect: { _ in core },
-      settle: { _ in core },
-      settleRestored: { $0.agreesWithProviderRuntime(core) }
-    )
+    sketchyBarCore = .fixed(core)
   }
 
   var applyRunner: DesktopApplyCommandRunner {
@@ -816,59 +806,6 @@ private struct DesktopAggregateFixture {
     )
   }
 
-}
-
-private final class AggregateYabaiLifecycle: Sendable {
-  private let running = Mutex(false)
-
-  var isRunning: Bool { running.withLock { $0 } }
-
-  var controller: YabaiLifecycleController {
-    YabaiLifecycleController(
-      preflight: { self.running.withLock { $0 } },
-      restart: { self.running.withLock { $0 = true } },
-      stop: { self.running.withLock { $0 = false } },
-      inspect: { composition in
-        YabaiRuntimeInspection(
-          status: .converged,
-          message: "converged",
-          verifiedSettings: [composition.settings.layout],
-          verifiedRuleLabels: composition.settings.rules.compactMap(\.label),
-          wallpaperSignalVerified: true,
-          processID: 42,
-          executablePath: "/opt/homebrew/bin/yabai"
-        )
-      },
-      waitBetweenInspections: {}
-    )
-  }
-}
-
-private final class AggregateSketchyBarLifecycle: Sendable {
-  private let running = Mutex(false)
-
-  var isRunning: Bool { running.withLock { $0 } }
-
-  var controller: SketchyBarLifecycleController {
-    SketchyBarLifecycleController(
-      inspect: { self.running.withLock { $0 } ? Self.runtime : .stopped },
-      preflight: { self.running.withLock { $0 } },
-      reload: { _ in Self.runtime },
-      start: {
-        self.running.withLock { $0 = true }
-        return Self.runtime
-      },
-      stop: { self.running.withLock { $0 = false } }
-    )
-  }
-
-  private static let runtime = SketchyBarRuntimeInspection(
-    status: .running,
-    message: "running",
-    processID: 42,
-    executablePath: "/opt/homebrew/Cellar/sketchybar/2.23.0/bin/sketchybar",
-    serviceLabel: SketchyBarHomebrewService.serviceLabel
-  )
 }
 
 private final class AggregateThemeController: Sendable {

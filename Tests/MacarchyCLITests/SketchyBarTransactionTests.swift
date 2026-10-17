@@ -6,7 +6,6 @@ import Testing
 @testable import MacarchyCLI
 @testable import ThemeCore
 
-@Suite(.serialized)
 struct SketchyBarTransactionTests {
   @Test(arguments: [false, true])
   func rebootIdentitySurvivesInspectionAndRestoration(legacy: Bool) throws {
@@ -177,7 +176,7 @@ struct SketchyBarTransactionTests {
     #expect(lstat(retained, &retainedMetadata) == 0)
     #expect(retainedMetadata.st_dev == original.st_dev)
     #expect(retainedMetadata.st_ino == original.st_ino)
-    #expect(try fixture.linkTarget(URL(filePath: retained)) == source.path)
+    #expect(try linkTarget(URL(filePath: retained)) == source.path)
     #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .current)
 
     let second = try fixture.transaction().convergeLocked(
@@ -236,7 +235,7 @@ struct SketchyBarTransactionTests {
     #expect(lstat(retained, &retainedMetadata) == 0)
     #expect(retainedMetadata.st_dev == original.st_dev)
     #expect(retainedMetadata.st_ino == original.st_ino)
-    #expect(try fixture.linkTarget(URL(filePath: retained)) == "../../dotfiles/sketchybar")
+    #expect(try linkTarget(URL(filePath: retained)) == "../../dotfiles/sketchybar")
     #expect(
       try FileManager.default.contentsOfDirectory(atPath: personal.path).sorted()
         == inventoryBefore
@@ -351,7 +350,7 @@ struct SketchyBarTransactionTests {
     #expect(lstat(directory.path, &restored) == 0)
     #expect(restored.st_dev == original.st_dev)
     #expect(restored.st_ino == original.st_ino)
-    #expect(try fixture.linkTarget(directory) == "../../dotfiles/sketchybar")
+    #expect(try linkTarget(directory) == "../../dotfiles/sketchybar")
   }
 
   @Test
@@ -421,7 +420,7 @@ struct SketchyBarTransactionTests {
     #expect(lstat(entry.path, &restored) == 0)
     #expect(restored.st_dev == original.st_dev)
     #expect(restored.st_ino == original.st_ino)
-    #expect(try fixture.linkTarget(entry) == source.path)
+    #expect(try linkTarget(entry) == source.path)
     #expect(try String(contentsOf: source, encoding: .utf8) == "after\n")
     #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
     #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
@@ -579,36 +578,29 @@ struct SketchyBarTransactionTests {
     #expect(SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().status == .missing)
   }
 
-  @Test
-  func failedReloadRestoresTheOriginalEntryBeforeReloadingIt() throws {
-    let fixture = try SketchyBarTransactionFixture(failedReloads: 1)
+  /// `runtimeVerification` false fails the reload itself; true fails the core runtime
+  /// verification after a successful reload.
+  @Test(arguments: [false, true])
+  func failedReloadOrRuntimeVerificationRestoresTheOriginalBeforeReloadingIt(
+    runtimeVerification: Bool
+  ) throws {
+    let fixture =
+      try runtimeVerification
+      ? SketchyBarTransactionFixture(coreRuntimeStatus: .drifted)
+      : SketchyBarTransactionFixture(failedReloads: 1)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let entry = try fixture.installRegularEntry("personal\n")
 
-    #expect(throws: SketchyBarLifecycleTestError.self) {
+    let error = #expect(throws: (any Error).self) {
       try fixture.transaction().convergeLocked(
         composition: fixture.composition,
         adoptionEvidenceDigest: try fixture.adoptionDigest()
       )
     }
-
-    #expect(fixture.lifecycle.reloadEntryStates == ["managed", "personal"])
-    #expect(try String(contentsOf: entry, encoding: .utf8) == "personal\n")
-    #expect(!SketchyBarTransactionStore(stateRoot: fixture.state).exists)
-    #expect(try SketchyBarLifecycleEvidenceStore(stateRoot: fixture.state).read() == nil)
-  }
-
-  @Test
-  func failedCoreRuntimeVerificationRestoresTheOriginalBeforeReloadingIt() throws {
-    let fixture = try SketchyBarTransactionFixture(coreRuntimeStatus: .drifted)
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let entry = try fixture.installRegularEntry("personal\n")
-
-    #expect(throws: SketchyBarDesktopError.self) {
-      try fixture.transaction().convergeLocked(
-        composition: fixture.composition,
-        adoptionEvidenceDigest: try fixture.adoptionDigest()
-      )
+    if runtimeVerification {
+      #expect(error is SketchyBarDesktopError)
+    } else {
+      #expect(error is SketchyBarLifecycleTestError)
     }
 
     #expect(fixture.lifecycle.reloadEntryStates == ["managed", "personal"])
@@ -842,11 +834,7 @@ private struct SketchyBarTransactionFixture {
       homeDirectory: home,
       stateRoot: state,
       lifecycle: lifecycle.controller,
-      coreRuntime: SketchyBarCoreRuntimeController(
-        inspect: { _ in self.coreRuntime },
-        settle: { _ in self.coreRuntime },
-        settleRestored: { $0.agreesWithProviderRuntime(self.coreRuntime) }
-      ),
+      coreRuntime: .fixed(coreRuntime),
       faultInjector: faultInjector
     )
   }
@@ -890,23 +878,7 @@ private struct SketchyBarTransactionFixture {
   }
 
   func adoptionDigest() throws -> String {
-    let inspection = SketchyBarProviderPlanInspector().inspect(
-      homeDirectory: home,
-      stateRoot: state,
-      enabled: true,
-      generation: SketchyBarGenerationInspector(stateRoot: state).inspect()
-    )
-    return try #require(inspection.adoptionEvidenceDigest)
-  }
-
-  func linkTarget(_ url: URL) throws -> String {
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) + 1)
-    let count = readlink(url.path, &buffer, buffer.count - 1)
-    guard count >= 0 else { throw POSIXError(.EIO) }
-    return String(
-      decoding: buffer.prefix(Int(count)).map(UInt8.init(bitPattern:)),
-      as: UTF8.self
-    )
+    try sketchyBarAdoptionDigest(home: home, stateRoot: state)
   }
 
   private func configurationEntry() throws -> URL {
@@ -943,7 +915,9 @@ private final class SketchyBarLifecycleFixture: Sendable {
   var controller: SketchyBarLifecycleController {
     SketchyBarLifecycleController(
       inspect: {
-        self.state.withLock { $0.running ? Self.runtime(processID: $0.processID) : .stopped }
+        self.state.withLock {
+          $0.running ? SketchyBarRuntimeInspection.testRunning(processID: $0.processID) : .stopped
+        }
       },
       preflight: { self.state.withLock { $0.running } },
       reload: { url in
@@ -956,14 +930,14 @@ private final class SketchyBarLifecycleFixture: Sendable {
             throw SketchyBarLifecycleTestError.reload
           }
           guard $0.running else { throw SketchyBarLifecycleTestError.reload }
-          return Self.runtime(processID: $0.processID)
+          return SketchyBarRuntimeInspection.testRunning(processID: $0.processID)
         }
       },
       start: {
         self.state.withLock {
           $0.events.append("start")
           $0.running = true
-          return Self.runtime(processID: $0.processID)
+          return SketchyBarRuntimeInspection.testRunning(processID: $0.processID)
         }
       },
       stop: {
@@ -985,16 +959,6 @@ private final class SketchyBarLifecycleFixture: Sendable {
 
   func replaceProcess() {
     state.withLock { $0.processID += 1 }
-  }
-
-  private static func runtime(processID: Int32) -> SketchyBarRuntimeInspection {
-    SketchyBarRuntimeInspection(
-      status: .running,
-      message: "running",
-      processID: processID,
-      executablePath: "/opt/homebrew/Cellar/sketchybar/test/bin/sketchybar",
-      serviceLabel: SketchyBarHomebrewService.serviceLabel
-    )
   }
 
   private static func entryState(_ url: URL) -> String {
