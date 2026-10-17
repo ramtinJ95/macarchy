@@ -168,21 +168,15 @@ struct EnvironmentNativeSeed: Sendable {
     let parent = try PinnedFilesystem.openDirectory(at: destination.deletingLastPathComponent())
     defer { Darwin.close(parent) }
     let temporary = "\(temporaryPrefix)-\(UUID().uuidString.lowercased()).seed"
-    let temporaryURL = destination.deletingLastPathComponent().appending(path: temporary)
+    // Also removes a partially written seed.
     defer { temporary.withCString { _ = Darwin.unlinkat(parent, $0, 0) } }
-    try PinnedFilesystem.writeNewRegularFile(
-      parentDescriptor: parent, name: temporary, url: temporaryURL,
-      data: data, mode: 0o600)
-    let result = temporary.withCString { source in
-      destination.lastPathComponent.withCString {
-        Darwin.renameatx_np(parent, source, parent, $0, UInt32(RENAME_EXCL))
-      }
-    }
-    guard result == 0 else {
-      throw EnvironmentLifecycleError.system(publishOperation, destination, errno)
-    }
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system(syncOperation, destination, errno)
+    do {
+      try PinnedFilesystem.publishNewRegularFile(
+        data, as: destination.lastPathComponent, through: temporary, parentDescriptor: parent,
+        url: destination, mode: 0o600)
+    } catch let failure as PinnedFilesystem.PublicationError {
+      throw EnvironmentLifecycleError.system(
+        failure.step == .publish ? publishOperation : syncOperation, destination, failure.code)
     }
   }
 

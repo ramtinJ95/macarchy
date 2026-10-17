@@ -270,8 +270,9 @@ extension KeybindingProviderTransaction {
     to destination: String,
     url: URL
   ) throws {
-    let result = renameExclusive(descriptor: parentDescriptor, from: source, to: destination)
-    guard result == 0 else { throw SetupOwnershipError.posix("publish keybinding claim", url) }
+    guard PinnedFilesystem.renameExclusively(source, to: destination, in: parentDescriptor) else {
+      throw SetupOwnershipError.posix("publish keybinding claim", url)
+    }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
   }
 

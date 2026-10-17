@@ -1398,18 +1398,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
         temporaryName.withCString { _ = Darwin.unlinkat(parentDescriptor, $0, AT_REMOVEDIR) }
       }
     }
-    let published = temporaryName.withCString { source in
-      entry.url.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(
-          parentDescriptor,
-          source,
-          parentDescriptor,
-          destination,
-          UInt32(RENAME_EXCL)
-        )
-      }
-    }
-    guard published == 0 else {
+    guard
+      PinnedFilesystem.renameExclusively(
+        temporaryName, to: entry.url.lastPathComponent, in: parentDescriptor)
+    else {
       throw EnvironmentLifecycleError.system("publish provider bridge", entry.url, errno)
     }
     guard try inspector.managedEntryIsExact(entry, parentDescriptor: parentDescriptor),

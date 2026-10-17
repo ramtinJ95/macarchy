@@ -413,33 +413,23 @@ struct EnvironmentBtopFileTransaction: Sendable {
   private func create(_ data: Data, at url: URL, replacementName: String) throws {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
     defer { Darwin.close(parent) }
-    let temporary = url.deletingLastPathComponent().appending(path: replacementName)
-    try PinnedFilesystem.writeNewRegularFile(
-      parentDescriptor: parent,
-      name: replacementName,
-      url: temporary,
-      data: data,
-      mode: 0o600
-    )
-    let published = replacementName.withCString { source in
-      url.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard published == 0, fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("publish btop configuration", url, errno)
+    do {
+      // Unlike the other presets, btop keeps a failed publication's file as residue.
+      try PinnedFilesystem.publishNewRegularFile(
+        data, as: url.lastPathComponent, through: replacementName, parentDescriptor: parent,
+        url: url, mode: 0o600, keepsTemporaryOnFailure: true)
+    } catch let failure as PinnedFilesystem.PublicationError {
+      throw EnvironmentLifecycleError.system("publish btop configuration", url, failure.code)
     }
   }
 
   private func claimAndRemove(at url: URL, replacementName: String, expected: Data) throws {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
     defer { Darwin.close(parent) }
-    let claimed = url.lastPathComponent.withCString { source in
-      replacementName.withCString { destination in
-        Darwin.renameatx_np(parent, source, parent, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard claimed == 0, fsync(parent) == 0 else {
+    guard
+      PinnedFilesystem.renameExclusively(url.lastPathComponent, to: replacementName, in: parent),
+      fsync(parent) == 0
+    else {
       throw EnvironmentLifecycleError.system("claim btop configuration", url, errno)
     }
     let residue = url.deletingLastPathComponent().appending(path: replacementName)

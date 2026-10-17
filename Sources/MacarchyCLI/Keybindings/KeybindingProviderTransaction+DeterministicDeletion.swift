@@ -177,8 +177,7 @@ extension KeybindingProviderTransaction {
     }
     try faultInjector(.deletionSourcePinned)
 
-    let moved = renameExclusive(descriptor: parentDescriptor, from: name, to: deletionName)
-    guard moved == 0 else {
+    guard PinnedFilesystem.renameExclusively(name, to: deletionName, in: parentDescriptor) else {
       throw SetupOwnershipError.posix("claim keybinding item for deletion", url)
     }
     try sync(parentDescriptor, url: url.deletingLastPathComponent())
@@ -204,8 +203,7 @@ extension KeybindingProviderTransaction {
         authenticate: authenticate
       )
     } catch {
-      let restored = renameExclusive(descriptor: parentDescriptor, from: deletionName, to: name)
-      if restored == 0 {
+      if PinnedFilesystem.renameExclusively(deletionName, to: name, in: parentDescriptor) {
         try sync(parentDescriptor, url: url.deletingLastPathComponent())
         throw error
       }
@@ -301,16 +299,6 @@ extension KeybindingProviderTransaction {
       return true
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
       return false
-    }
-  }
-
-  /// Renames within one directory without replacing an existing entry. Returns the system
-  /// call result so the caller reads `errno` itself.
-  func renameExclusive(descriptor: Int32, from source: String, to destination: String) -> Int32 {
-    source.withCString { sourceName in
-      destination.withCString {
-        Darwin.renameatx_np(descriptor, sourceName, descriptor, $0, UInt32(RENAME_EXCL))
-      }
     }
   }
 

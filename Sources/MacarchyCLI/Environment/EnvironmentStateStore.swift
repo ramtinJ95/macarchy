@@ -122,15 +122,8 @@ struct EnvironmentStateStore: Sendable {
       Darwin.close(directoryDescriptor)
       Darwin.close(stateDescriptor)
     }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try PinnedFilesystem.replaceRegularFileAtomically(
-      parentDescriptor: directoryDescriptor,
-      name: url.lastPathComponent,
-      url: url,
-      data: encoder.encode(value),
-      mode: 0o600
-    )
+    try PinnedStateFile.write(
+      value, parentDescriptor: directoryDescriptor, name: url.lastPathComponent, url: url)
   }
 
   private func remove(_ url: URL) throws {
@@ -145,14 +138,11 @@ struct EnvironmentStateStore: Sendable {
       Darwin.close(directoryDescriptor)
       Darwin.close(stateDescriptor)
     }
-    let removed = url.lastPathComponent.withCString {
-      Darwin.unlinkat(directoryDescriptor, $0, 0)
-    }
-    guard removed == 0 || errno == ENOENT else {
-      throw EnvironmentLifecycleError.system("remove state", url, errno)
-    }
-    if removed == 0, fsync(directoryDescriptor) != 0 {
-      throw EnvironmentLifecycleError.system("sync removed state", url, errno)
+    if let failure = PinnedStateFile.remove(
+      url.lastPathComponent, parentDescriptor: directoryDescriptor, syncWhenAbsent: false)
+    {
+      throw EnvironmentLifecycleError.system(
+        failure.step == .unlink ? "remove state" : "sync removed state", url, failure.code)
     }
   }
 

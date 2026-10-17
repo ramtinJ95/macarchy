@@ -391,18 +391,7 @@ extension SetupOwnershipManager {
     let removalName = removalURL.lastPathComponent
     let destinationPath = destination.path
     if !alreadyClaimed {
-      let claimed = name.withCString { source in
-        removalName.withCString { claimed in
-          Darwin.renameatx_np(
-            parentDescriptor,
-            source,
-            parentDescriptor,
-            claimed,
-            UInt32(RENAME_EXCL)
-          )
-        }
-      }
-      guard claimed == 0 else {
+      guard PinnedFilesystem.renameExclusively(name, to: removalName, in: parentDescriptor) else {
         throw SetupOwnershipError.ownershipDrift(target)
       }
     }
@@ -483,18 +472,8 @@ extension SetupOwnershipManager {
     target: URL,
     label: String
   ) throws {
-    let restored = removalName.withCString { source in
-      targetName.withCString { restored in
-        Darwin.renameatx_np(
-          parentDescriptor,
-          source,
-          parentDescriptor,
-          restored,
-          UInt32(RENAME_EXCL)
-        )
-      }
-    }
-    guard restored == 0 else {
+    guard PinnedFilesystem.renameExclusively(removalName, to: targetName, in: parentDescriptor)
+    else {
       throw SetupOwnershipError.posix("restore concurrently replaced \(label) link", removalURL)
     }
     guard fsync(parentDescriptor) == 0 else {

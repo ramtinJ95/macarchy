@@ -221,15 +221,8 @@ private struct KeybindingStateFiles {
       url: directory
     )
     defer { Darwin.close(descriptor) }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try PinnedFilesystem.replaceRegularFileAtomically(
-      parentDescriptor: descriptor,
-      name: name,
-      url: directory.appending(path: name),
-      data: try encoder.encode(value),
-      mode: 0o600
-    )
+    try PinnedStateFile.write(
+      value, parentDescriptor: descriptor, name: name, url: directory.appending(path: name))
   }
 
   func remove(_ name: String, label: String, ignoringMissingDirectory: Bool) throws {
@@ -242,16 +235,13 @@ private struct KeybindingStateFiles {
       return
     }
     defer { Darwin.close(descriptor) }
-    let removed = name.withCString { Darwin.unlinkat(descriptor, $0, 0) }
-    guard removed == 0 || errno == ENOENT else {
+    switch PinnedStateFile.remove(name, parentDescriptor: descriptor, syncWhenAbsent: true) {
+    case nil: return
+    case (.unlink, let code)?:
       throw KeybindingApplyTransactionError.system(
-        "remove \(label)",
-        directory.appending(path: name),
-        errno
-      )
-    }
-    guard fsync(descriptor) == 0 else {
-      throw KeybindingApplyTransactionError.system("sync \(label) removal", directory, errno)
+        "remove \(label)", directory.appending(path: name), code)
+    case (.sync, let code)?:
+      throw KeybindingApplyTransactionError.system("sync \(label) removal", directory, code)
     }
   }
 }
