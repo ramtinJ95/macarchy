@@ -19,26 +19,17 @@ struct NeovimStarshipSetupTests {
     try bridge.write(to: fixture.starshipBridge)
     let watcher = try Data(contentsOf: fixture.neovimWatcherConfiguration)
     let behavior = try Data(contentsOf: fixture.starshipBehavior)
-    try fixture.writeLegacyOwnership([
-      fixture.legacyThemeLink(SetupOwnershipManager.neovimThemeLinkID),
-      fixture.legacyThemeLink(SetupOwnershipManager.starshipConfigurationLinkID),
-    ])
-
-    let teardown = try SetupOwnershipManager().teardown(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
-
-    var teardownStatuses = unownedTeardownStatuses
-    teardownStatuses["neovim.theme-link"] = .removed
-    teardownStatuses["starship.configuration-link"] = .removed
-    expectStatuses(teardown, teardownStatuses)
+    try fixture.tearDownLegacyOwnership(
+      [
+        fixture.legacyThemeLink(SetupOwnershipManager.neovimThemeLinkID),
+        fixture.legacyThemeLink(SetupOwnershipManager.starshipConfigurationLinkID),
+      ],
+      expectingRemoved: ["neovim.theme-link", "starship.configuration-link"])
     #expect(!FileManager.default.fileExists(atPath: fixture.neovimThemeLink.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.starshipConfigurationLink.path))
     #expect(try Data(contentsOf: fixture.neovimWatcherConfiguration) == watcher)
     #expect(try Data(contentsOf: fixture.starshipBehavior) == behavior)
     #expect(try Data(contentsOf: fixture.starshipBridge) == bridge)
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 }
 

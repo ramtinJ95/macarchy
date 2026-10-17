@@ -25,35 +25,26 @@ struct AgentTUISetupTests {
     let codex = "model = \"gpt-5\"\r\n\r\n[tui]\r\nanimations = false\r\n"
     let providerRewrite =
       "{\n  \"lastChangelogVersion\": \"9.9.9\",\n  \"theme\": \"macarchy-current\",\n  \"provider\": \"anthropic\"\n}\n"
-    try fixture.writeLegacyOwnership([
-      fixture.legacyPiSelector(contents: providerRewrite),
-      fixture.legacyThemeLink(SetupOwnershipManager.piThemeLinkID),
-      fixture.legacyFileRecord(
-        SetupOwnershipManager.tuicrSelectorID,
-        original: tuicr,
-        installed: "theme = \"macarchy-current\"\r\n" + tuicr
-      ),
-      fixture.legacyThemeLink(SetupOwnershipManager.tuicrThemeLinkID),
-      fixture.legacyThemeLink(SetupOwnershipManager.tuicrSyntaxLinkID),
-      fixture.legacyFileRecord(
-        SetupOwnershipManager.codexSelectorID,
-        original: codex,
-        installed:
-          "model = \"gpt-5\"\r\n\r\n[tui]\r\ntheme = \"macarchy-current\"\r\nanimations = false\r\n"
-      ),
-      fixture.legacyThemeLink(SetupOwnershipManager.codexThemeLinkID),
-    ])
-
-    let teardown = try SetupOwnershipManager().teardown(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
-
-    var teardownStatuses = unownedTeardownStatuses
-    for id in ownedIntegrationIDs {
-      teardownStatuses[id] = .removed
-    }
-    expectStatuses(teardown, teardownStatuses)
+    try fixture.tearDownLegacyOwnership(
+      [
+        fixture.legacyPiSelector(contents: providerRewrite),
+        fixture.legacyThemeLink(SetupOwnershipManager.piThemeLinkID),
+        fixture.legacyFileRecord(
+          SetupOwnershipManager.tuicrSelectorID,
+          original: tuicr,
+          installed: "theme = \"macarchy-current\"\r\n" + tuicr
+        ),
+        fixture.legacyThemeLink(SetupOwnershipManager.tuicrThemeLinkID),
+        fixture.legacyThemeLink(SetupOwnershipManager.tuicrSyntaxLinkID),
+        fixture.legacyFileRecord(
+          SetupOwnershipManager.codexSelectorID,
+          original: codex,
+          installed:
+            "model = \"gpt-5\"\r\n\r\n[tui]\r\ntheme = \"macarchy-current\"\r\nanimations = false\r\n"
+        ),
+        fixture.legacyThemeLink(SetupOwnershipManager.codexThemeLinkID),
+      ],
+      expectingRemoved: ownedIntegrationIDs)
     #expect(
       try String(contentsOf: fixture.piConfiguration, encoding: .utf8)
         == "{\n  \"lastChangelogVersion\": \"9.9.9\",\n  \"provider\": \"anthropic\"\n}\n"
@@ -64,106 +55,55 @@ struct AgentTUISetupTests {
     #expect(try fixture.pathIsMissing(fixture.tuicrThemeLink))
     #expect(try fixture.pathIsMissing(fixture.tuicrSyntaxLink))
     #expect(try fixture.pathIsMissing(fixture.codexThemeLink))
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
-  @Test
-  func piSelectorRejectsTrailingCommasAtEveryNestedContainerBoundary() throws {
-    let fixture = try Fixture()
-    defer { fixture.remove() }
-    let documents = [
-      ("{\"theme\": \"macarchy-current\",}\n", "trailing comma in JSON object"),
+  /// Pi's selector document is strict JSON; each malformed or noncanonical shape is refused.
+  @Test(
+    arguments: [
+      ("{\"theme\": \"macarchy-current\",}\n", invalidPiSelector("trailing comma in JSON object")),
       (
         "{\"theme\": \"macarchy-current\", \"provider\": {\"name\": \"test\",}}\n",
-        "trailing comma in JSON object"
+        invalidPiSelector("trailing comma in JSON object")
       ),
       (
         "{\"theme\": \"macarchy-current\", \"models\": [\"one\",]}\n",
-        "trailing comma in JSON array"
+        invalidPiSelector("trailing comma in JSON array")
+      ),
+      (
+        "{\"theme\": \"macarchy-current\", \"provider\": {\"name\": \"one\", \"name\": \"two\"}}\n",
+        invalidPiSelector("duplicate JSON key \"name\"")
+      ),
+      (
+        "{\n  \"theme\": \"macarchy-current\",\n  \"theme\": \"macarchy-current\"\n}\n",
+        invalidPiSelector("duplicate top-level JSON key \"theme\"")
+      ),
+      // An equivalent but noncanonical key spelling is a conflicting directive, not a match.
+      (
+        "{\"th\\u0065me\": \"macarchy-current\"}\n",
+        SetupOwnershipError.conflictingDirective("pi.selector", piSelectorTarget)
       ),
     ]
-
-    for (document, expectedReason) in documents {
-      do {
-        _ = try SetupOwnershipManager().jsonSelectionIsExternal(
-          Data(document.utf8),
-          key: PiAdapter.selectionKey,
-          value: PiAdapter.themeName,
-          id: "pi.selector",
-          target: fixture.piConfiguration
-        )
-        Issue.record("Expected a trailing JSON comma to fail")
-      } catch SetupOwnershipError.invalidConfiguration(_, _, let reason) {
-        #expect(reason == expectedReason)
-      }
-    }
-  }
-
-  @Test
-  func piSelectorRejectsDuplicateKeysInsideNestedObjects() throws {
-    let fixture = try Fixture()
-    defer { fixture.remove() }
-    let document =
-      "{\"theme\": \"macarchy-current\", \"provider\": {\"name\": \"one\", \"name\": \"two\"}}\n"
-
-    do {
+  )
+  func piSelectorRejectsMalformedOrNoncanonicalDocuments(
+    document: String, expected: SetupOwnershipError
+  ) {
+    #expect(throws: expected) {
       _ = try SetupOwnershipManager().jsonSelectionIsExternal(
         Data(document.utf8),
         key: PiAdapter.selectionKey,
         value: PiAdapter.themeName,
         id: "pi.selector",
-        target: fixture.piConfiguration
-      )
-      Issue.record("Expected a nested duplicate JSON key to fail")
-    } catch SetupOwnershipError.invalidConfiguration(_, _, let reason) {
-      #expect(reason == "duplicate JSON key \"name\"")
-    }
-  }
-
-  @Test
-  func piSelectorRejectsDuplicateTopLevelKeys() throws {
-    let fixture = try Fixture()
-    defer { fixture.remove() }
-    let pi =
-      "{\n  \"theme\": \"macarchy-current\",\n  \"theme\": \"macarchy-current\"\n}\n"
-
-    do {
-      _ = try SetupOwnershipManager().jsonSelectionIsExternal(
-        Data(pi.utf8),
-        key: PiAdapter.selectionKey,
-        value: PiAdapter.themeName,
-        id: "pi.selector",
-        target: fixture.piConfiguration
-      )
-      Issue.record("Expected duplicate Pi keys to fail")
-    } catch SetupOwnershipError.invalidConfiguration(let id, let target, let reason) {
-      #expect(id == "pi.selector")
-      #expect(target == fixture.piConfiguration)
-      #expect(reason == "duplicate top-level JSON key \"theme\"")
-    }
-  }
-
-  @Test
-  func piSelectorRejectsEquivalentButNoncanonicalKeySpelling() throws {
-    let fixture = try Fixture()
-    defer { fixture.remove() }
-    let pi = "{\"th\\u0065me\": \"macarchy-current\"}\n"
-
-    #expect(
-      throws: SetupOwnershipError.conflictingDirective(
-        "pi.selector",
-        fixture.piConfiguration
-      )
-    ) {
-      _ = try SetupOwnershipManager().jsonSelectionIsExternal(
-        Data(pi.utf8),
-        key: PiAdapter.selectionKey,
-        value: PiAdapter.themeName,
-        id: "pi.selector",
-        target: fixture.piConfiguration
+        target: piSelectorTarget
       )
     }
   }
+}
+
+/// The selector checks only parse bytes; the target names the file in their errors.
+private let piSelectorTarget = URL(filePath: "/test/home/.pi/agent/settings.json")
+
+private func invalidPiSelector(_ reason: String) -> SetupOwnershipError {
+  .invalidConfiguration("pi.selector", piSelectorTarget, reason)
 }
 
 extension Fixture {

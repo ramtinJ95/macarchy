@@ -111,7 +111,7 @@ extension SetupOwnershipTests {
     )
     let ezaBefore = try fixture.shellConfigurationText()
 
-    expectOwnershipError(.ownershipDrift(fixture.batConfiguration)) {
+    #expect(throws: SetupOwnershipError.ownershipDrift(fixture.batConfiguration)) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     }
 
@@ -137,7 +137,7 @@ extension SetupOwnershipTests {
     )
     let batBefore = try fixture.batConfigurationText()
 
-    expectOwnershipError(.ownershipDrift(fixture.ezaThemeLink)) {
+    #expect(throws: SetupOwnershipError.ownershipDrift(fixture.ezaThemeLink)) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     }
 
@@ -420,7 +420,7 @@ extension SetupOwnershipTests {
     )
 
     let expected = SetupOwnershipError.ownershipDrift(fixture.kittyConfiguration)
-    expectOwnershipError(expected) {
+    #expect(throws: expected) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     }
     let execution = try TeardownCommandRunner(
@@ -450,7 +450,7 @@ extension SetupOwnershipTests {
     )
     try Data(#"{"schema_version":99,"records":[]}"#.utf8).write(to: fixture.manifest)
 
-    expectOwnershipError(.invalidManifest("unsupported schema version 99")) {
+    #expect(throws: SetupOwnershipError.invalidManifest("unsupported schema version 99")) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: true)
     }
   }
@@ -508,7 +508,7 @@ extension SetupOwnershipTests {
     )
 
     let expected = SetupOwnershipError.corruptBackup(fixture.backup)
-    expectOwnershipError(expected) {
+    #expect(throws: expected) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: true)
     }
     let execution = try TeardownCommandRunner(
@@ -533,7 +533,7 @@ extension SetupOwnershipTests {
       ofItemAtPath: fixture.backup.path
     )
 
-    expectOwnershipError(.corruptBackup(fixture.backup)) {
+    #expect(throws: SetupOwnershipError.corruptBackup(fixture.backup)) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: true)
     }
   }
@@ -555,7 +555,7 @@ extension SetupOwnershipTests {
     let sentinel = fixture.backup.appending(path: "preserve")
     try Data("evidence".utf8).write(to: sentinel)
 
-    expectOwnershipError(.corruptBackup(fixture.backup)) {
+    #expect(throws: SetupOwnershipError.corruptBackup(fixture.backup)) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     }
     #expect(try String(contentsOf: sentinel, encoding: .utf8) == "evidence")
@@ -573,7 +573,7 @@ extension SetupOwnershipTests {
     ])
     let residue = try Data(contentsOf: fixture.replacement)
 
-    expectOwnershipError(.corruptBackup(fixture.backup)) {
+    #expect(throws: SetupOwnershipError.corruptBackup(fixture.backup)) {
       _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     }
     #expect(try Data(contentsOf: fixture.replacement) == residue)
@@ -661,19 +661,5 @@ extension AgentTUISetupTests {
     #expect(teardown.first { $0.id == "pi.selector" }?.status == .removed)
     #expect(try String(contentsOf: fixture.piConfiguration, encoding: .utf8) == original)
     #expect(try fixture.pathIsMissing(fixture.piSelectorReplacement))
-  }
-}
-
-private func expectOwnershipError(
-  _ expected: SetupOwnershipError,
-  operation: () throws -> Void
-) {
-  do {
-    try operation()
-    Issue.record("Expected \(expected)")
-  } catch let error as SetupOwnershipError {
-    #expect(error == expected)
-  } catch {
-    Issue.record("Expected \(expected), got \(error)")
   }
 }

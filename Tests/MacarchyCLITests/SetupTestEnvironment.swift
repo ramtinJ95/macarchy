@@ -106,6 +106,21 @@ final class Fixture: LegacySetupOwnershipFixture {
     stateRoot.appending(path: "state/setup/ownership.json")
   }
 
+  /// Tears down `records` as legacy setup ownership, expecting exactly `removedIDs` removed and
+  /// the manifest gone.
+  func tearDownLegacyOwnership(
+    _ records: [SetupOwnershipRecord], expectingRemoved removedIDs: [String]
+  ) throws {
+    try writeLegacyOwnership(records)
+    let teardown = try SetupOwnershipManager().teardown(homeDirectory: home, dryRun: false)
+    var teardownStatuses = unownedTeardownStatuses
+    for id in removedIDs {
+      teardownStatuses[id] = .removed
+    }
+    expectStatuses(teardown, teardownStatuses)
+    #expect(!FileManager.default.fileExists(atPath: manifest.path))
+  }
+
   var backup: URL {
     stateRoot.appending(path: "state/setup/backups/kitty.conf")
   }

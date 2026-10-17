@@ -11,8 +11,6 @@ struct SetupOwnershipTests {
   func batAndEzaOwnedSeamsRoundTripTogether() throws {
     let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeLegacyOwnership(
-      fixture.legacyBatEza(bat: "--italic-text=always\n", shell: "export EDITOR=nvim\n"))
     let cacheSentinel = fixture.home.appending(path: ".cache/bat/preserve")
     try FileManager.default.createDirectory(
       at: cacheSentinel.deletingLastPathComponent(),
@@ -20,21 +18,13 @@ struct SetupOwnershipTests {
     )
     try Data("cache".utf8).write(to: cacheSentinel)
 
-    let teardown = try SetupOwnershipManager().teardown(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
-
-    var teardownStatuses = unownedTeardownStatuses
-    for id in ["bat.selector", "bat.theme-link", "eza.environment", "eza.theme-link"] {
-      teardownStatuses[id] = .removed
-    }
-    expectStatuses(teardown, teardownStatuses)
+    try fixture.tearDownLegacyOwnership(
+      fixture.legacyBatEza(bat: "--italic-text=always\n", shell: "export EDITOR=nvim\n"),
+      expectingRemoved: ["bat.selector", "bat.theme-link", "eza.environment", "eza.theme-link"])
     #expect(try fixture.batConfigurationText() == "--italic-text=always\n")
     #expect(try fixture.shellConfigurationText() == "export EDITOR=nvim\n")
     #expect(!FileManager.default.fileExists(atPath: fixture.batThemeLink.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.ezaThemeLink.path))
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.batSelectorBackup.path))
     #expect(!FileManager.default.fileExists(atPath: fixture.ezaEnvironmentBackup.path))
     #expect(try String(contentsOf: cacheSentinel, encoding: .utf8) == "cache")
