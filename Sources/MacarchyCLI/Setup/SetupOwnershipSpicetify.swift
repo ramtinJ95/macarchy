@@ -2,19 +2,6 @@ import Foundation
 import ThemeCore
 
 extension SetupOwnershipManager {
-  func withSpicetifySetupGroup(
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord],
-    execute: ConsumerSetupPlan.Execution
-  ) throws -> [SetupIntegrationResult] {
-    if try spicetifyProviderStateIsAbsent(context: context, records: records) {
-      return disabledSpicetifyIntegrationResults(context: context)
-    }
-    return try withSpicetifyLock(
-      context: context, dryRun: dryRun, records: &records, execute: execute)
-  }
-
   private func withSpicetifyLock(
     context: Context,
     dryRun: Bool,
@@ -24,56 +11,11 @@ extension SetupOwnershipManager {
     if dryRun {
       return try execute(&records)
     }
-    // Central setup already holds activation.lock. Reconciliation never takes that lock,
+    // Setup teardown already holds activation.lock. Reconciliation never takes that lock,
     // so the global order is activation.lock followed by spicetify.lock.
     return try SpicetifyLock(root: context.stateRoot).withLock {
       try execute(&records)
     }
-  }
-
-  private func disabledSpicetifyIntegrationResults(
-    context: Context
-  ) -> [SetupIntegrationResult] {
-    [
-      integrationResult(
-        id: Self.spicetifySelectorsID,
-        target: context.spicetifyConfiguration,
-        status: .disabled,
-        message: "Spicetify configuration is absent; "
-          + "the optional selector integration is disabled"
-      ),
-      integrationResult(
-        id: Self.spicetifyColorLinkID,
-        target: context.spicetifyColorLink,
-        status: .disabled,
-        message: "Spicetify configuration is absent; "
-          + "the optional color integration is disabled"
-      ),
-    ]
-  }
-
-  private func spicetifyProviderStateIsAbsent(
-    context: Context,
-    records: [SetupOwnershipRecord]
-  ) throws -> Bool {
-    let integrationIDs = [Self.spicetifySelectorsID, Self.spicetifyColorLinkID]
-    guard !records.contains(where: { integrationIDs.contains($0.id) }) else { return false }
-    let replacement = context.spicetifyConfiguration.deletingLastPathComponent()
-      .appending(path: context.spicetifySelectorsReplacementName)
-    let linkRemoval = themeLinkRemovalURL(
-      id: Self.spicetifyColorLinkID,
-      target: context.spicetifyColorLink
-    )
-    for path in [
-      context.spicetifyConfiguration,
-      context.spicetifyColorLink,
-      context.spicetifySelectorsBackup,
-      replacement,
-      linkRemoval,
-    ] where try itemExists(path) {
-      return false
-    }
-    return true
   }
 
   func withSpicetifyTeardownGroup(
@@ -107,34 +49,6 @@ extension SetupOwnershipManager {
         message: "No Macarchy-owned Spicetify color scheme link exists"
       ),
     ]
-  }
-
-  func setupSpicetifySelectors(
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> SetupIntegrationResult {
-    try setupSpicetifySelectorOwnership(
-      context: context,
-      dryRun: dryRun,
-      records: &records
-    )
-  }
-
-  func setupSpicetifyColorLink(
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> SetupIntegrationResult {
-    try setupThemeLink(
-      id: Self.spicetifyColorLinkID,
-      target: context.spicetifyColorLink,
-      destination: context.spicetifyColorDestination,
-      label: "Spicetify color scheme",
-      context: context,
-      dryRun: dryRun,
-      records: &records
-    )
   }
 
   func spicetifySelectorsAreExternal(

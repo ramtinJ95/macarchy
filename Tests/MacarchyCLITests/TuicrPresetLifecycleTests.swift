@@ -673,15 +673,15 @@ struct TuicrPresetLifecycleTests {
     let fixture = try TuicrFixture(configuration: "wrap = true\n")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
-    try FileManager.default.createDirectory(
-      at: fixture.themeLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    var records = [SetupOwnershipRecord]()
     let manager = SetupOwnershipManager()
-    _ = try manager.setupTuicrThemeLink(context: context, dryRun: false, records: &records)
-    _ = try manager.setupTuicrSyntaxLink(context: context, dryRun: false, records: &records)
-    _ = try manager.setupTuicrSelector(context: context, dryRun: false, records: &records)
+    try fixture.writeLegacyOwnership([
+      try fixture.legacyThemeLink(SetupOwnershipManager.tuicrThemeLinkID),
+      try fixture.legacyThemeLink(SetupOwnershipManager.tuicrSyntaxLinkID),
+      try fixture.legacyFileRecord(
+        SetupOwnershipManager.tuicrSelectorID,
+        original: "wrap = true\n",
+        installed: "theme = \"macarchy-current\"\nwrap = true\n"),
+    ])
     try fixture.writeProfile(tuicr: false)
 
     #expect(
@@ -778,7 +778,7 @@ private struct ExternalTuicrSnapshot: Equatable {
   let entries: [String: Entry]
 }
 
-private struct TuicrFixture {
+private struct TuicrFixture: LegacySetupOwnershipFixture {
   let root: URL
   let home: URL
   let state: URL

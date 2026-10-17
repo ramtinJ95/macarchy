@@ -163,25 +163,17 @@ struct EnvironmentInspectionContractTests {
     }
     let manager = SetupOwnershipManager()
     let context = SetupOwnershipManager.Context(homeDirectory: home)
-    var records = [SetupOwnershipRecord]()
-    if partial.contains("Codex") {
-      _ = try manager.setupCodexThemeLink(context: context, dryRun: false, records: &records)
-    }
-    if partial.contains("Pi") {
-      _ = try manager.setupPiThemeLink(context: context, dryRun: false, records: &records)
-    }
-    if partial.contains("Spicetify") {
-      _ = try manager.setupSpicetifyColorLink(context: context, dryRun: false, records: &records)
-    }
-    if partial.contains("tuicr") {
-      _ = try manager.setupTuicrThemeLink(context: context, dryRun: false, records: &records)
-    }
     let ids = [
       "Codex": SetupOwnershipManager.codexThemeLinkID,
       "Pi": SetupOwnershipManager.piThemeLinkID,
       "Spicetify": SetupOwnershipManager.spicetifyColorLinkID,
       "tuicr": SetupOwnershipManager.tuicrThemeLinkID,
     ]
+    let legacy = LegacySetupHome(home: home)
+    let records = try ["Codex", "Pi", "Spicetify", "tuicr"].filter(partial.contains).map {
+      try legacy.legacyThemeLink(ids[$0]!)
+    }
+    try legacy.writeLegacyOwnership(records)
     let runtimeFirst = try #require(partial.first)
     let planFirst = try #require(
       ["tuicr", "Pi", "Spicetify", "Codex"].first(where: partial.contains))

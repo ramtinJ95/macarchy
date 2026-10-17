@@ -35,7 +35,7 @@ struct ConsumerSetupPlan {
     /// How Macarchy owns the step's target, which also fixes the paths it may touch,
     /// the manifest record it may leave, and how teardown removes it.
     enum Mechanism {
-      /// An externally owned prerequisite that setup verifies and teardown leaves alone.
+      /// An externally owned prerequisite that teardown leaves alone.
       case external(teardownMessage: String)
       case regularFile(
         backup: URL, replacementName: String, label: String, read: (URL) throws -> Data)
@@ -47,7 +47,6 @@ struct ConsumerSetupPlan {
     let operation: Operation
     let target: URL
     let mechanism: Mechanism
-    let setupRank: Int
     let teardownRank: Int
 
     var id: String { operation.rawValue }
@@ -105,42 +104,20 @@ struct ConsumerSetupPlan {
     self.executionGroup = executionGroup
   }
 
-  func setup(
-    _ dryRun: Bool,
-    _ records: inout [SetupOwnershipRecord]
-  ) throws -> [SetupIntegrationResult] {
-    try run(.setup, dryRun: dryRun, records: &records)
-  }
-
   func teardown(
     _ dryRun: Bool,
     _ records: inout [SetupOwnershipRecord]
   ) throws -> [SetupIntegrationResult] {
-    try run(.teardown, dryRun: dryRun, records: &records)
-  }
-
-  private func run(
-    _ phase: Phase,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> [SetupIntegrationResult] {
     let operation: Execution = {
-      try execute(phase, dryRun: dryRun, records: &$0)
+      try execute(dryRun: dryRun, records: &$0)
     }
     switch executionGroup {
     case .independent:
       return try operation(&records)
     case .spicetify:
       do {
-        let results =
-          switch phase {
-          case .setup:
-            try manager.withSpicetifySetupGroup(
-              context: context, dryRun: dryRun, records: &records, execute: operation)
-          case .teardown:
-            try manager.withSpicetifyTeardownGroup(
-              context: context, dryRun: dryRun, records: &records, execute: operation)
-          }
+        let results = try manager.withSpicetifyTeardownGroup(
+          context: context, dryRun: dryRun, records: &records, execute: operation)
         return resultsInStepOrder(results)
       } catch let error as ConsumerSetupPlanPartialFailure {
         throw error.cause
@@ -148,32 +125,18 @@ struct ConsumerSetupPlan {
     }
   }
 
-  private enum Phase {
-    case setup
-    case teardown
-  }
-
   private func execute(
-    _ phase: Phase,
     dryRun: Bool,
     records: inout [SetupOwnershipRecord]
   ) throws -> [SetupIntegrationResult] {
     let rankedSteps = steps.sorted {
-      let lhsRank = phase == .setup ? $0.setupRank : $0.teardownRank
-      let rhsRank = phase == .setup ? $1.setupRank : $1.teardownRank
-      return lhsRank == rhsRank ? $0.id < $1.id : lhsRank < rhsRank
+      $0.teardownRank == $1.teardownRank ? $0.id < $1.id : $0.teardownRank < $1.teardownRank
     }
     var completed = [SetupIntegrationResult]()
     do {
       for step in rankedSteps {
-        let result: SetupIntegrationResult
-        switch phase {
-        case .setup:
-          result = try manager.setup(step, context: context, dryRun: dryRun, records: &records)
-        case .teardown:
-          result = try manager.teardown(step, context: context, dryRun: dryRun, records: &records)
-        }
-        completed.append(result)
+        completed.append(
+          try manager.teardown(step, context: context, dryRun: dryRun, records: &records))
       }
       return completed
     } catch let error as SetupOwnershipTransactionError {
@@ -219,7 +182,6 @@ extension SetupOwnershipManager {
             replacementName: context.replacementName,
             label: "Kitty include",
             read: { try readConfiguration($0) },
-            setupRank: 0,
             teardownRank: 0
           )
         ],
@@ -236,7 +198,6 @@ extension SetupOwnershipManager {
             replacementName: context.batSelectorReplacementName,
             label: "bat selector",
             read: { try readConfiguration($0, id: Self.batSelectorID) },
-            setupRank: 0,
             teardownRank: 1
           ),
           themeLinkStep(
@@ -244,7 +205,6 @@ extension SetupOwnershipManager {
             target: context.batThemeLink,
             destination: context.batThemeDestination,
             teardownLabel: "bat",
-            setupRank: 1,
             teardownRank: 0
           ),
         ],
@@ -261,7 +221,6 @@ extension SetupOwnershipManager {
             replacementName: context.ezaEnvironmentReplacementName,
             label: "eza environment",
             read: { try readConfiguration($0, id: Self.ezaEnvironmentID) },
-            setupRank: 0,
             teardownRank: 1
           ),
           themeLinkStep(
@@ -269,7 +228,6 @@ extension SetupOwnershipManager {
             target: context.ezaThemeLink,
             destination: context.ezaThemeDestination,
             teardownLabel: "eza",
-            setupRank: 1,
             teardownRank: 0
           ),
         ],
@@ -283,7 +241,6 @@ extension SetupOwnershipManager {
             .btopSelector,
             target: context.btopConfiguration,
             teardownMessage: "No Macarchy-owned btop selector exists",
-            setupRank: 0,
             teardownRank: 0
           ),
           themeLinkStep(
@@ -291,7 +248,6 @@ extension SetupOwnershipManager {
             target: context.btopThemeLink,
             destination: context.btopThemeDestination,
             teardownLabel: "btop",
-            setupRank: 1,
             teardownRank: 1
           ),
         ],
@@ -308,7 +264,6 @@ extension SetupOwnershipManager {
             replacementName: context.yaziSelectorReplacementName,
             label: "Yazi flavor selector",
             read: { try readConfiguration($0, id: Self.yaziSelectorID) },
-            setupRank: 2,
             teardownRank: 0
           ),
           themeLinkStep(
@@ -316,7 +271,6 @@ extension SetupOwnershipManager {
             target: context.yaziFlavorLink,
             destination: context.yaziFlavorDestination,
             teardownLabel: "Yazi flavor",
-            setupRank: 0,
             teardownRank: 2
           ),
           themeLinkStep(
@@ -324,7 +278,6 @@ extension SetupOwnershipManager {
             target: context.yaziSyntaxLink,
             destination: context.yaziSyntaxDestination,
             teardownLabel: "Yazi syntax theme",
-            setupRank: 1,
             teardownRank: 1
           ),
         ],
@@ -341,7 +294,6 @@ extension SetupOwnershipManager {
             replacementName: context.atuinSelectorReplacementName,
             label: "Atuin theme selector",
             read: { try readConfiguration($0, id: Self.atuinSelectorID) },
-            setupRank: 1,
             teardownRank: 0
           ),
           themeLinkStep(
@@ -349,7 +301,6 @@ extension SetupOwnershipManager {
             target: context.atuinThemeLink,
             destination: context.atuinThemeDestination,
             teardownLabel: "Atuin",
-            setupRank: 0,
             teardownRank: 1
           ),
         ],
@@ -363,7 +314,6 @@ extension SetupOwnershipManager {
             .neovimWatcher,
             target: context.neovimWatcherConfiguration,
             teardownMessage: "The externally owned Neovim watcher is not a teardown target",
-            setupRank: 0,
             teardownRank: 1
           ),
           themeLinkStep(
@@ -371,7 +321,6 @@ extension SetupOwnershipManager {
             target: context.neovimThemeLink,
             destination: context.neovimThemeDestination,
             teardownLabel: "Neovim theme",
-            setupRank: 1,
             teardownRank: 0
           ),
         ],
@@ -386,7 +335,6 @@ extension SetupOwnershipManager {
             target: context.starshipBehavior,
             teardownMessage:
               "The externally owned Starship behavior source is not a teardown target",
-            setupRank: 0,
             teardownRank: 1
           ),
           themeLinkStep(
@@ -394,7 +342,6 @@ extension SetupOwnershipManager {
             target: context.starshipConfigurationLink,
             destination: context.starshipBridgeDestination,
             teardownLabel: "Starship configuration",
-            setupRank: 1,
             teardownRank: 0
           ),
         ],
@@ -404,13 +351,12 @@ extension SetupOwnershipManager {
       ConsumerSetupPlan(
         consumerID: .pi,
         steps: [
-          piSelectorStep(setupRank: 1, teardownRank: 0, context: context),
+          piSelectorStep(teardownRank: 0, context: context),
           themeLinkStep(
             .piThemeLink,
             target: context.piThemeLink,
             destination: context.piThemeDestination,
             teardownLabel: "Pi theme",
-            setupRank: 0,
             teardownRank: 1
           ),
         ],
@@ -424,7 +370,6 @@ extension SetupOwnershipManager {
             .herdrSelector,
             target: context.herdrConfiguration,
             teardownMessage: "Herdr's adapter-managed selector has no setup ownership record",
-            setupRank: 0,
             teardownRank: 0
           )
         ],
@@ -441,7 +386,6 @@ extension SetupOwnershipManager {
             replacementName: context.tuicrSelectorReplacementName,
             label: "tuicr theme selector",
             read: { try readConfiguration($0, id: Self.tuicrSelectorID) },
-            setupRank: 2,
             teardownRank: 0
           ),
           themeLinkStep(
@@ -449,7 +393,6 @@ extension SetupOwnershipManager {
             target: context.tuicrThemeLink,
             destination: context.tuicrThemeDestination,
             teardownLabel: "tuicr palette",
-            setupRank: 0,
             teardownRank: 2
           ),
           themeLinkStep(
@@ -457,7 +400,6 @@ extension SetupOwnershipManager {
             target: context.tuicrSyntaxLink,
             destination: context.tuicrSyntaxDestination,
             teardownLabel: "tuicr syntax theme",
-            setupRank: 1,
             teardownRank: 1
           ),
         ],
@@ -474,7 +416,6 @@ extension SetupOwnershipManager {
             replacementName: context.codexSelectorReplacementName,
             label: "Codex TUI theme selector",
             read: { try readConfiguration($0, id: Self.codexSelectorID) },
-            setupRank: 1,
             teardownRank: 0
           ),
           themeLinkStep(
@@ -482,7 +423,6 @@ extension SetupOwnershipManager {
             target: context.codexThemeLink,
             destination: context.codexThemeDestination,
             teardownLabel: "Codex TextMate theme",
-            setupRank: 0,
             teardownRank: 1
           ),
         ],
@@ -492,13 +432,12 @@ extension SetupOwnershipManager {
       ConsumerSetupPlan(
         consumerID: .spicetify,
         steps: [
-          spicetifySelectorStep(setupRank: 1, teardownRank: 0, context: context),
+          spicetifySelectorStep(teardownRank: 0, context: context),
           themeLinkStep(
             .spicetifyColorLink,
             target: context.spicetifyColorLink,
             destination: context.spicetifyColorDestination,
             teardownLabel: "Spicetify color scheme",
-            setupRank: 0,
             teardownRank: 1
           ),
         ],
@@ -513,72 +452,6 @@ extension SetupOwnershipManager {
       preconditionFailure("Invalid consumer setup catalog integration: \(error)")
     }
     return plans
-  }
-
-  func setup(
-    _ step: ConsumerSetupPlan.Step,
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> SetupIntegrationResult {
-    switch step.operation {
-    case .kittyInclude:
-      return try setupKitty(context: context, dryRun: dryRun, records: &records)
-    case .batSelector:
-      return try setupBatSelector(context: context, dryRun: dryRun, records: &records)
-    case .batThemeLink:
-      return try setupBatThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .ezaEnvironment:
-      return try setupEzaEnvironment(context: context, dryRun: dryRun, records: &records)
-    case .ezaThemeLink:
-      return try setupEzaThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .btopSelector:
-      return try setupBtopSelector(context: context)
-    case .btopThemeLink:
-      return try setupBtopThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .yaziSelector:
-      return try setupYaziSelector(context: context, dryRun: dryRun, records: &records)
-    case .yaziFlavorLink:
-      return try setupYaziFlavorLink(context: context, dryRun: dryRun, records: &records)
-    case .yaziSyntaxLink:
-      return try setupYaziSyntaxLink(context: context, dryRun: dryRun, records: &records)
-    case .atuinSelector:
-      return try setupAtuinSelector(context: context, dryRun: dryRun, records: &records)
-    case .atuinThemeLink:
-      return try setupAtuinThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .neovimWatcher:
-      return try setupNeovimWatcher(context: context)
-    case .neovimThemeLink:
-      return try setupNeovimThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .starshipBehavior:
-      return try setupStarshipBehavior(context: context)
-    case .starshipConfigurationLink:
-      return try setupStarshipConfigurationLink(
-        context: context,
-        dryRun: dryRun,
-        records: &records
-      )
-    case .piSelector:
-      return try setupPiSelector(context: context, dryRun: dryRun, records: &records)
-    case .piThemeLink:
-      return try setupPiThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .herdrSelector:
-      return try setupHerdrSelector(context: context)
-    case .tuicrSelector:
-      return try setupTuicrSelector(context: context, dryRun: dryRun, records: &records)
-    case .tuicrThemeLink:
-      return try setupTuicrThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .tuicrSyntaxLink:
-      return try setupTuicrSyntaxLink(context: context, dryRun: dryRun, records: &records)
-    case .codexSelector:
-      return try setupCodexSelector(context: context, dryRun: dryRun, records: &records)
-    case .codexThemeLink:
-      return try setupCodexThemeLink(context: context, dryRun: dryRun, records: &records)
-    case .spicetifySelectors:
-      return try setupSpicetifySelectors(context: context, dryRun: dryRun, records: &records)
-    case .spicetifyColorLink:
-      return try setupSpicetifyColorLink(context: context, dryRun: dryRun, records: &records)
-    }
   }
 
   func teardown(
@@ -661,14 +534,12 @@ extension SetupOwnershipManager {
     _ operation: ConsumerSetupPlan.Step.Operation,
     target: URL,
     teardownMessage: String,
-    setupRank: Int,
     teardownRank: Int
   ) -> ConsumerSetupPlan.Step {
     ConsumerSetupPlan.Step(
       operation: operation,
       target: target,
       mechanism: .external(teardownMessage: teardownMessage),
-      setupRank: setupRank,
       teardownRank: teardownRank
     )
   }
@@ -680,7 +551,6 @@ extension SetupOwnershipManager {
     replacementName: String,
     label: String,
     read: @escaping (URL) throws -> Data,
-    setupRank: Int,
     teardownRank: Int
   ) -> ConsumerSetupPlan.Step {
     ConsumerSetupPlan.Step(
@@ -688,7 +558,6 @@ extension SetupOwnershipManager {
       target: target,
       mechanism: .regularFile(
         backup: backup, replacementName: replacementName, label: label, read: read),
-      setupRank: setupRank,
       teardownRank: teardownRank
     )
   }
@@ -698,20 +567,17 @@ extension SetupOwnershipManager {
     target: URL,
     destination: URL,
     teardownLabel: String,
-    setupRank: Int,
     teardownRank: Int
   ) -> ConsumerSetupPlan.Step {
     ConsumerSetupPlan.Step(
       operation: operation,
       target: target,
       mechanism: .themeLink(destination: destination, teardownLabel: teardownLabel),
-      setupRank: setupRank,
       teardownRank: teardownRank
     )
   }
 
   private func piSelectorStep(
-    setupRank: Int,
     teardownRank: Int,
     context: Context
   ) -> ConsumerSetupPlan.Step {
@@ -719,13 +585,11 @@ extension SetupOwnershipManager {
       operation: .piSelector,
       target: context.piConfiguration,
       mechanism: .piSelector(replacementName: context.piSelectorReplacementName),
-      setupRank: setupRank,
       teardownRank: teardownRank
     )
   }
 
   private func spicetifySelectorStep(
-    setupRank: Int,
     teardownRank: Int,
     context: Context
   ) -> ConsumerSetupPlan.Step {
@@ -736,7 +600,6 @@ extension SetupOwnershipManager {
         backup: context.spicetifySelectorsBackup,
         replacementName: context.spicetifySelectorsReplacementName
       ),
-      setupRank: setupRank,
       teardownRank: teardownRank
     )
   }

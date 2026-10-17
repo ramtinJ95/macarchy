@@ -29,7 +29,6 @@ extension SetupOwnershipManager {
     let neovimThemeDestination: URL
     let starshipBehavior: URL
     let starshipConfigurationLink: URL
-    let starshipStowConfigurationLink: URL
     let starshipBridgeDestination: URL
     let piConfiguration: URL
     let piThemeLink: URL
@@ -46,7 +45,6 @@ extension SetupOwnershipManager {
     let spicetifyConfiguration: URL
     let spicetifyColorLink: URL
     let spicetifyColorDestination: URL
-    let includeDirective: String
     let manifestURL: URL
 
     init(homeDirectory: URL) {
@@ -91,8 +89,6 @@ extension SetupOwnershipManager {
         path: "current/\(NeovimAdapter.outputPath)")
       starshipBehavior = homeDirectory.appending(path: ".config/starship/behavior.toml")
       starshipConfigurationLink = homeDirectory.appending(path: ".config/starship.toml")
-      starshipStowConfigurationLink = homeDirectory.appending(
-        path: SetupOwnershipManager.starshipStowConfigurationRelativePath)
       starshipBridgeDestination = stateRoot.appending(path: StarshipAdapter.bridgePath)
       piConfiguration = homeDirectory.appending(path: ".pi/agent/settings.json")
       piThemeLink = homeDirectory.appending(
@@ -121,7 +117,6 @@ extension SetupOwnershipManager {
         path: "Themes/\(SpicetifyAdapter.themeName)/color.ini")
       spicetifyColorDestination = stateRoot.appending(
         path: "current/\(SpicetifyAdapter.outputPath)")
-      includeDirective = ThemeActivationCoordinator.kittyIncludeDirective(root: stateRoot)
       manifestURL = stateRoot.appending(path: "state/setup/ownership.json")
     }
 
@@ -138,10 +133,6 @@ extension SetupOwnershipManager {
       stateRoot.appending(path: "state/setup/backups/\(name)")
     }
 
-    var bridgeURL: URL {
-      stateRoot.appending(path: "state/adapters/kitty.conf")
-    }
-
     let replacementName = ".macarchy-kitty-transaction"
     let batSelectorReplacementName = ".macarchy-bat-config-transaction"
     let ezaEnvironmentReplacementName = ".macarchy-zshrc-transaction"
@@ -152,9 +143,5 @@ extension SetupOwnershipManager {
     let codexSelectorReplacementName = ".macarchy-codex-config-transaction"
     let spicetifySelectorsReplacementName =
       ".macarchy-spicetify-config-transaction"
-
-    var replacementURL: URL {
-      kittyConfiguration.deletingLastPathComponent().appending(path: replacementName)
-    }
   }
 }

@@ -34,34 +34,9 @@ let allIntegrationIDs = [
   "spicetify.color-link",
 ]
 
-let externalFixtureStatuses: [String: SetupIntegrationResult.Status] = [
-  "kitty.include": .external,
-  "bat.selector": .external,
-  "bat.theme-link": .external,
-  "eza.environment": .external,
-  "eza.theme-link": .external,
-  "btop.selector": .external,
-  "btop.theme-link": .external,
-  "yazi.selector": .external,
-  "yazi.flavor-link": .external,
-  "yazi.syntax-link": .external,
-  "atuin.selector": .external,
-  "atuin.theme-link": .external,
-  "neovim.watcher": .external,
-  "neovim.theme-link": .external,
-  "starship.behavior": .external,
-  "starship.configuration-link": .external,
-  "pi.selector": .external,
-  "pi.theme-link": .external,
-  "herdr.selector": .external,
-  "tuicr.selector": .external,
-  "tuicr.theme-link": .external,
-  "tuicr.syntax-link": .external,
-  "codex.selector": .external,
-  "codex.theme-link": .external,
-  "spicetify.selectors": .disabled,
-  "spicetify.color-link": .disabled,
-]
+/// Teardown statuses when no legacy setup record exists.
+let unownedTeardownStatuses = Dictionary(
+  uniqueKeysWithValues: allIntegrationIDs.map { ($0, SetupIntegrationResult.Status.none) })
 
 protocol IntegrationStatusResult {
   associatedtype IntegrationStatus: Equatable
@@ -103,41 +78,16 @@ enum FixtureError: Error {
   case interrupted
 }
 
-final class Fixture {
+final class Fixture: LegacySetupOwnershipFixture {
   let root: URL
   let home: URL
 
-  init(
-    configuration: String? = nil,
-    externalBatEza: Bool = true,
-    externalBtopYaziAtuin: Bool = true,
-    externalNeovimStarship: Bool = true,
-    externalAgentTUIs: Bool = true
-  ) throws {
+  init() throws {
     root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-ownership-\(UUID().uuidString)",
       directoryHint: .isDirectory
     )
     home = root.appending(path: "home", directoryHint: .isDirectory)
-    if let configuration {
-      try FileManager.default.createDirectory(
-        at: kittyConfiguration.deletingLastPathComponent(),
-        withIntermediateDirectories: true
-      )
-      try Data(configuration.utf8).write(to: kittyConfiguration)
-    }
-    if externalBatEza {
-      try createExternalBatEzaSeams()
-    }
-    if externalBtopYaziAtuin {
-      try createExternalBtopYaziAtuinSeams()
-    }
-    if externalNeovimStarship {
-      try createExternalNeovimStarshipSeams()
-    }
-    if externalAgentTUIs {
-      try createExternalAgentTUISeams()
-    }
   }
 
   var stateRoot: URL {
@@ -233,17 +183,9 @@ final class Fixture {
       path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/flavor.toml")
   }
 
-  var yaziFlavorDestination: URL {
-    stateRoot.appending(path: "current/\(YaziAdapter.flavorOutputPath)")
-  }
-
   var yaziSyntaxLink: URL {
     home.appending(
       path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/tmtheme.xml")
-  }
-
-  var yaziSyntaxDestination: URL {
-    stateRoot.appending(path: "current/\(TextMateThemeArtifact.yaziOutputPath)")
   }
 
   var atuinConfiguration: URL {
@@ -258,76 +200,6 @@ final class Fixture {
     stateRoot.appending(path: "current/\(AtuinAdapter.outputPath)")
   }
 
-  var yaziSelectorBackup: URL {
-    stateRoot.appending(path: "state/setup/backups/yazi-theme.toml")
-  }
-
-  var atuinSelectorBackup: URL {
-    stateRoot.appending(path: "state/setup/backups/atuin-config.toml")
-  }
-
-  func writeKittyConfiguration(_ configuration: String) throws {
-    try FileManager.default.createDirectory(
-      at: kittyConfiguration.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data(configuration.utf8).write(to: kittyConfiguration, options: .atomic)
-  }
-
-  func createLocalBatEzaConfigurations(bat: String, shell: String) throws {
-    try FileManager.default.createDirectory(
-      at: batThemeLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data(bat.utf8).write(to: batConfiguration)
-    try Data(shell.utf8).write(to: shellConfiguration)
-    try FileManager.default.createDirectory(
-      at: ezaThemeLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-  }
-
-  func createLocalBtopYaziAtuinConfigurations(
-    btop: String,
-    yazi: String,
-    atuin: String
-  ) throws {
-    try FileManager.default.createDirectory(
-      at: btopThemeLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data(btop.utf8).write(to: btopConfiguration)
-    try FileManager.default.createDirectory(
-      at: yaziFlavorLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data(yazi.utf8).write(to: yaziConfiguration)
-    try FileManager.default.createDirectory(
-      at: atuinThemeLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data(atuin.utf8).write(to: atuinConfiguration)
-  }
-
-  func createBtopYaziAtuinThemeLinks() throws {
-    try FileManager.default.createSymbolicLink(
-      at: btopThemeLink,
-      withDestinationURL: btopThemeDestination
-    )
-    try FileManager.default.createSymbolicLink(
-      at: yaziFlavorLink,
-      withDestinationURL: yaziFlavorDestination
-    )
-    try FileManager.default.createSymbolicLink(
-      at: yaziSyntaxLink,
-      withDestinationURL: yaziSyntaxDestination
-    )
-    try FileManager.default.createSymbolicLink(
-      at: atuinThemeLink,
-      withDestinationURL: atuinThemeDestination
-    )
-  }
-
   func batConfigurationText() throws -> String {
     try String(contentsOf: batConfiguration, encoding: .utf8)
   }
@@ -340,112 +212,13 @@ final class Fixture {
     try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
   }
 
-  private func createExternalBatEzaSeams() throws {
-    let batDirectory = home.appending(path: ".config/bat")
-    let batThemes = batDirectory.appending(path: "themes")
-    try FileManager.default.createDirectory(at: batThemes, withIntermediateDirectories: true)
-    try Data("\(batDirective)\n".utf8).write(
-      to: batDirectory.appending(path: "config")
-    )
-    try FileManager.default.createSymbolicLink(
-      at: batThemes.appending(path: BatAdapter.themeFileName),
-      withDestinationURL: batThemeDestination
-    )
-
-    try Data("\(ezaDirective)\n".utf8).write(
-      to: home.appending(path: ".zshrc")
-    )
-    let ezaDirectory = home.appending(path: ".config/eza")
-    try FileManager.default.createDirectory(at: ezaDirectory, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: ezaDirectory.appending(path: "theme.yml"),
-      withDestinationURL: ezaThemeDestination
-    )
-  }
-
-  private func createExternalBtopYaziAtuinSeams() throws {
-    let dotfiles = root.appending(path: "dotfiles")
-    let configurationRoot = home.appending(path: ".config")
-    try FileManager.default.createDirectory(
-      at: configurationRoot,
-      withIntermediateDirectories: true
-    )
-
-    let btop = dotfiles.appending(path: "btop")
-    let btopThemes = btop.appending(path: "themes")
-    try FileManager.default.createDirectory(at: btopThemes, withIntermediateDirectories: true)
-    try Data("\(BtopAdapter.themeDirective)\n".utf8).write(
-      to: btop.appending(path: "btop.conf")
-    )
-    try FileManager.default.createSymbolicLink(
-      at: btopThemes.appending(path: BtopAdapter.themeFileName),
-      withDestinationURL: btopThemeDestination
-    )
-    try FileManager.default.createSymbolicLink(
-      at: configurationRoot.appending(path: "btop"),
-      withDestinationURL: btop
-    )
-
-    let yazi = dotfiles.appending(path: "yazi")
-    let yaziFlavorDirectory = yazi.appending(
-      path: "flavors/\(YaziAdapter.flavorName).yazi")
-    try FileManager.default.createDirectory(
-      at: yaziFlavorDirectory,
-      withIntermediateDirectories: true
-    )
-    try Data("[flavor]\ndark = \"\(YaziAdapter.flavorName)\"\n".utf8).write(
-      to: yazi.appending(path: "theme.toml")
-    )
-    try FileManager.default.createSymbolicLink(
-      at: yaziFlavorDirectory.appending(path: "flavor.toml"),
-      withDestinationURL: yaziFlavorDestination
-    )
-    try FileManager.default.createSymbolicLink(
-      at: yaziFlavorDirectory.appending(path: "tmtheme.xml"),
-      withDestinationURL: yaziSyntaxDestination
-    )
-    try FileManager.default.createSymbolicLink(
-      at: configurationRoot.appending(path: "yazi"),
-      withDestinationURL: yazi
-    )
-
-    let atuin = configurationRoot.appending(path: "atuin")
-    try FileManager.default.createDirectory(at: atuin, withIntermediateDirectories: true)
-    let externalAtuin = dotfiles.appending(path: "atuin")
-    let externalAtuinThemes = externalAtuin.appending(path: "themes")
-    try FileManager.default.createDirectory(
-      at: externalAtuinThemes,
-      withIntermediateDirectories: true
-    )
-    let externalAtuinConfiguration = externalAtuin.appending(path: "config.toml")
-    try Data("[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".utf8).write(
-      to: externalAtuinConfiguration
-    )
-    try FileManager.default.createSymbolicLink(
-      at: externalAtuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
-      withDestinationURL: atuinThemeDestination
-    )
-    try FileManager.default.createSymbolicLink(
-      at: atuin.appending(path: "config.toml"),
-      withDestinationURL: externalAtuinConfiguration
-    )
-    try FileManager.default.createSymbolicLink(
-      at: atuin.appending(path: "themes"),
-      withDestinationURL: externalAtuinThemes
-    )
-  }
-
   func configuration() throws -> String {
     try String(contentsOf: kittyConfiguration, encoding: .utf8)
   }
 
   func permissions() throws -> Int {
-    try permissions(at: kittyConfiguration)
-  }
-
-  func permissions(at url: URL) throws -> Int {
     try #require(
-      FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions]
+      FileManager.default.attributesOfItem(atPath: kittyConfiguration.path)[.posixPermissions]
         as? Int
     )
   }
@@ -485,12 +258,185 @@ extension IntegrationReport: IntegrationStatusResult {
   typealias IntegrationStatus = String
 }
 
-struct OwnershipManifest: Decodable {
-  let schemaVersion: Int
-  let records: [OwnershipRecord]
+/// A home whose legacy setup ownership can be written exactly as an older release left it.
+/// Setup no longer creates these records, so teardown tests build them directly.
+protocol LegacySetupOwnershipFixture {
+  var home: URL { get }
 }
 
-struct OwnershipRecord: Decodable {
+struct LegacySetupHome: LegacySetupOwnershipFixture {
+  let home: URL
+}
+
+enum LegacyLinkPlacement {
+  case target
+  /// An interrupted teardown moved the link to its removal claim.
+  case claimed
+  case absent
+}
+
+private struct UnsupportedLegacyStep: Error {
   let id: String
-  let phase: String
+}
+
+extension LegacySetupOwnershipFixture {
+  var ownershipContext: SetupOwnershipManager.Context {
+    SetupOwnershipManager.Context(homeDirectory: home)
+  }
+
+  func writeLegacyOwnership(_ records: [SetupOwnershipRecord]) throws {
+    let context = ownershipContext
+    try FileManager.default.createDirectory(
+      at: context.stateRoot, withIntermediateDirectories: true)
+    try SetupOwnershipManager().persist(
+      records: records.sorted { $0.id < $1.id }, context: context)
+  }
+
+  /// A whole-file or Spicetify selector record. The target holds `onDisk` (the installed bytes
+  /// by default), the 0600 backup holds `original`, and `residue` sits at the replacement name.
+  func legacyFileRecord(
+    _ id: String,
+    original: String,
+    installed: String,
+    onDisk: String? = nil,
+    phase: SetupOwnershipRecord.Phase = .applied,
+    backupPresent: Bool = true,
+    residue: String? = nil
+  ) throws -> SetupOwnershipRecord {
+    let step = try legacyStep(id)
+    let backup: URL
+    let replacementName: String
+    let kind: SetupOwnershipRecord.Kind
+    switch step.mechanism {
+    case .regularFile(let url, let name, _, _):
+      backup = url
+      replacementName = name
+      kind = .regularFile
+    case .spicetifySelectors(let url, let name):
+      backup = url
+      replacementName = name
+      kind = .spicetifySelection
+    default:
+      throw UnsupportedLegacyStep(id: id)
+    }
+    try writeLegacyFile(onDisk ?? installed, to: step.target)
+    if backupPresent {
+      try writeLegacyFile(original, to: backup)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: backup.path)
+    }
+    if let residue {
+      try writeLegacyFile(
+        residue, to: step.target.deletingLastPathComponent().appending(path: replacementName))
+    }
+    return SetupOwnershipRecord(
+      id: id,
+      phase: phase,
+      kind: kind,
+      targetPath: step.target.path,
+      backupPath: SetupOwnershipManager().relativePath(
+        backup, below: ownershipContext.stateRoot),
+      originalDigest: sha256Digest(Data(original.utf8)),
+      installedDigest: sha256Digest(Data(installed.utf8)),
+      linkDestination: nil
+    )
+  }
+
+  func legacyThemeLink(
+    _ id: String,
+    phase: SetupOwnershipRecord.Phase = .applied,
+    placement: LegacyLinkPlacement = .target
+  ) throws -> SetupOwnershipRecord {
+    let step = try legacyStep(id)
+    guard case .themeLink(let destination, _) = step.mechanism else {
+      throw UnsupportedLegacyStep(id: id)
+    }
+    try FileManager.default.createDirectory(
+      at: step.target.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let location: URL? =
+      switch placement {
+      case .target: step.target
+      case .claimed: SetupOwnershipManager().themeLinkRemovalURL(id: id, target: step.target)
+      case .absent: nil
+      }
+    if let location {
+      try FileManager.default.createSymbolicLink(at: location, withDestinationURL: destination)
+    }
+    return SetupOwnershipRecord(
+      id: id,
+      phase: phase,
+      kind: .symbolicLink,
+      targetPath: step.target.path,
+      backupPath: nil,
+      originalDigest: nil,
+      installedDigest: sha256Digest(Data(destination.path.utf8)),
+      linkDestination: destination.path
+    )
+  }
+
+  /// The key-level Pi record; `contents` is the settings file as the release left it.
+  func legacyPiSelector(
+    contents: String,
+    phase: SetupOwnershipRecord.Phase = .applied
+  ) throws -> SetupOwnershipRecord {
+    let target = ownershipContext.piConfiguration
+    try writeLegacyFile(contents, to: target)
+    return SetupOwnershipRecord(
+      id: SetupOwnershipManager.piSelectorID,
+      phase: phase,
+      kind: .jsonSelector,
+      targetPath: target.path,
+      backupPath: nil,
+      originalDigest: nil,
+      installedDigest: SetupOwnershipManager().piSelectorContractDigest(),
+      linkDestination: nil
+    )
+  }
+
+  private func legacyStep(_ id: String) throws -> ConsumerSetupPlan.Step {
+    try #require(
+      SetupOwnershipManager().consumerSetupPlans(context: ownershipContext)
+        .flatMap(\.steps).first { $0.id == id })
+  }
+
+  private func writeLegacyFile(_ contents: String, to url: URL) throws {
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(contents.utf8).write(to: url)
+  }
+}
+
+extension Fixture {
+  /// The Kitty include an older release added to `original`.
+  func legacyKittyInclude(
+    original: String = "font_size 13\n",
+    onDisk: String? = nil,
+    phase: SetupOwnershipRecord.Phase = .applied,
+    backupPresent: Bool = true,
+    residue: String? = nil
+  ) throws -> SetupOwnershipRecord {
+    try legacyFileRecord(
+      SetupOwnershipManager.integrationID,
+      original: original,
+      installed: original + "\(includeDirective)\n",
+      onDisk: onDisk,
+      phase: phase,
+      backupPresent: backupPresent,
+      residue: residue
+    )
+  }
+
+  /// The four bat and eza seams an older release owned, with the selectors appended.
+  func legacyBatEza(bat: String, shell: String) throws -> [SetupOwnershipRecord] {
+    [
+      try legacyFileRecord(
+        SetupOwnershipManager.batSelectorID,
+        original: bat, installed: bat + "\(batDirective)\n"),
+      try legacyThemeLink(SetupOwnershipManager.batThemeLinkID),
+      try legacyFileRecord(
+        SetupOwnershipManager.ezaEnvironmentID,
+        original: shell, installed: shell + "\(ezaDirective)\n"),
+      try legacyThemeLink(SetupOwnershipManager.ezaThemeLinkID),
+    ]
+  }
 }

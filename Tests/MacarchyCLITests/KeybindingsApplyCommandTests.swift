@@ -299,9 +299,9 @@ struct KeybindingsApplyCommandTests {
 
   @Test
   func globalTeardownPreflightsSiblingOwnershipBeforeRestoringKeybindings() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership([fixture.legacyKittyInclude()])
     let skhd = fixture.home.appending(path: ".config/skhd", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: skhd, withIntermediateDirectories: true)
     let entry = skhd.appending(path: "skhdrc")

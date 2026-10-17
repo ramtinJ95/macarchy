@@ -296,12 +296,14 @@ struct CodexPresetLifecycleTests {
     let fixture = try CodexFixture(configuration: "[tui]\nanimations = false\n")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
-    try FileManager.default.createDirectory(
-      at: fixture.themeLink.deletingLastPathComponent(), withIntermediateDirectories: true)
-    var records = [SetupOwnershipRecord]()
     let manager = SetupOwnershipManager()
-    _ = try manager.setupCodexThemeLink(context: context, dryRun: false, records: &records)
-    _ = try manager.setupCodexSelector(context: context, dryRun: false, records: &records)
+    try fixture.writeLegacyOwnership([
+      try fixture.legacyThemeLink(SetupOwnershipManager.codexThemeLinkID),
+      try fixture.legacyFileRecord(
+        SetupOwnershipManager.codexSelectorID,
+        original: "[tui]\nanimations = false\n",
+        installed: "[tui]\ntheme = \"macarchy-current\"\nanimations = false\n"),
+    ])
     try fixture.writeProfile(enabled: false)
     #expect(
       try ThemeRuntimeSelection.enabledAdapterIDs(
@@ -392,7 +394,7 @@ private struct CodexSnapshotEntry: Equatable {
   let data: Data?
 }
 
-private struct CodexFixture {
+private struct CodexFixture: LegacySetupOwnershipFixture {
   let root: URL
   let home: URL
   let state: URL

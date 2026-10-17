@@ -58,145 +58,28 @@ extension SetupOwnershipTests {
   }
 
   @Test
-  func batAndEzaTransactionsResumeFileAndLinkBoundaries() throws {
-    for checkpoint in [
-      SetupOwnershipCheckpoint.manifestPrepared,
-      .backupWritten,
-      .replacementSwapped,
-      .targetWritten,
-    ] {
-      let fixture = try Fixture(configuration: "", externalBatEza: false)
-      defer { fixture.remove() }
-      try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-      try fixture.createLocalBatEzaConfigurations(
-        bat: "--italic-text=always\n",
-        shell: "\(fixture.ezaDirective)\n"
-      )
-      let interrupted = SetupOwnershipManager { observed in
-        if observed == checkpoint { throw FixtureError.interrupted }
-      }
-
-      #expect(throws: SetupOwnershipTransactionError.self) {
-        _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
-      }
-      let resumed = try SetupOwnershipManager().setup(
-        homeDirectory: fixture.home,
-        dryRun: false
-      )
-      var resumedStatuses = externalFixtureStatuses
-      for id in ["bat.selector", "bat.theme-link", "eza.theme-link"] {
-        resumedStatuses[id] = .owned
-      }
-      expectStatuses(resumed, resumedStatuses)
-      #expect(try fixture.batConfigurationText().contains(fixture.batDirective))
-      #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
-      #expect(try fixture.linkDestination(fixture.ezaThemeLink) == fixture.ezaThemeDestination.path)
-    }
-
-    for checkpoint in [SetupOwnershipCheckpoint.manifestPrepared, .targetWritten] {
-      let fixture = try Fixture(configuration: "", externalBatEza: false)
-      defer { fixture.remove() }
-      try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-      try fixture.createLocalBatEzaConfigurations(
-        bat: "\(fixture.batDirective)\n",
-        shell: "\(fixture.ezaDirective)\n"
-      )
-      let interrupted = SetupOwnershipManager { observed in
-        if observed == checkpoint { throw FixtureError.interrupted }
-      }
-
-      #expect(throws: SetupOwnershipTransactionError.self) {
-        _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
-      }
-      let resumed = try SetupOwnershipManager().setup(
-        homeDirectory: fixture.home,
-        dryRun: false
-      )
-      var resumedStatuses = externalFixtureStatuses
-      for id in ["bat.theme-link", "eza.theme-link"] {
-        resumedStatuses[id] = .owned
-      }
-      expectStatuses(resumed, resumedStatuses)
-      #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
-    }
-
-    let fixture = try Fixture(configuration: "", externalBatEza: false)
+  func teardownFinishesAnInterruptedThemeLinkRemoval() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createLocalBatEzaConfigurations(
-      bat: "\(fixture.batDirective)\n",
-      shell: "\(fixture.ezaDirective)\n"
-    )
-    try FileManager.default.createSymbolicLink(
-      at: fixture.ezaThemeLink,
-      withDestinationURL: fixture.ezaThemeDestination
-    )
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
+    try fixture.writeLegacyOwnership([
+      fixture.legacyThemeLink(SetupOwnershipManager.batThemeLinkID, placement: .claimed)
+    ])
 
-    let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    var resumedStatuses = externalFixtureStatuses
-    resumedStatuses["bat.theme-link"] = .owned
-    expectStatuses(resumed, resumedStatuses)
-    #expect(try fixture.linkDestination(fixture.batThemeLink) == fixture.batThemeDestination.path)
-    #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
-
-    try FileManager.default.moveItem(at: fixture.batThemeLink, to: fixture.batThemeRemoval)
     let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
-    var teardownStatuses = externalFixtureStatuses.mapValues { _ in
-      SetupIntegrationResult.Status.none
-    }
+    var teardownStatuses = unownedTeardownStatuses
     teardownStatuses["bat.theme-link"] = .removed
     expectStatuses(teardown, teardownStatuses)
-    #expect(!FileManager.default.fileExists(atPath: fixture.batThemeRemoval.path))
-  }
-
-  @Test
-  func themeLinkCreationNeverOverwritesAConcurrentPathClaim() throws {
-    let fixture = try Fixture(configuration: "", externalBatEza: false)
-    defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createLocalBatEzaConfigurations(
-      bat: "\(fixture.batDirective)\n",
-      shell: "\(fixture.ezaDirective)\n"
-    )
-    let batThemeLink = fixture.batThemeLink
-    let manager = SetupOwnershipManager { checkpoint in
-      if checkpoint == .manifestPrepared {
-        try Data("concurrent owner\n".utf8).write(to: batThemeLink)
-      }
-    }
-
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try manager.setup(homeDirectory: fixture.home, dryRun: false)
-    }
-    #expect(
-      try String(contentsOf: fixture.batThemeLink, encoding: .utf8)
-        == "concurrent owner\n"
-    )
-    expectOwnershipError(.ownershipDrift(fixture.batThemeLink)) {
-      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    }
-    #expect(
-      try String(contentsOf: fixture.batThemeLink, encoding: .utf8)
-        == "concurrent owner\n"
-    )
+    #expect(try fixture.pathIsMissing(fixture.batThemeRemoval))
+    #expect(try fixture.pathIsMissing(fixture.batThemeLink))
   }
 
   @Test
   func themeLinkTeardownNeverDeletesAConcurrentPathClaim() throws {
-    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createLocalBatEzaConfigurations(
-      bat: "\(fixture.batDirective)\n",
-      shell: "\(fixture.ezaDirective)\n"
-    )
-    try FileManager.default.createSymbolicLink(
-      at: fixture.ezaThemeLink,
-      withDestinationURL: fixture.ezaThemeDestination
-    )
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership([
+      fixture.legacyThemeLink(SetupOwnershipManager.batThemeLinkID)
+    ])
     let batThemeLink = fixture.batThemeLink
     let manager = SetupOwnershipManager { checkpoint in
       if checkpoint == .teardownReady {
@@ -218,14 +101,10 @@ extension SetupOwnershipTests {
 
   @Test
   func teardownPreflightsEveryOwnedSeamBeforeChangingAnyOfThem() throws {
-    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createLocalBatEzaConfigurations(
-      bat: "--italic-text=always\n",
-      shell: "export EDITOR=nvim\n"
-    )
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership(
+      fixture.legacyBatEza(bat: "--italic-text=always\n", shell: "export EDITOR=nvim\n"))
     try Data("user edit\n\(fixture.batDirective)\n".utf8).write(
       to: fixture.batConfiguration,
       options: .atomic
@@ -245,14 +124,10 @@ extension SetupOwnershipTests {
 
   @Test
   func teardownRejectsAnOwnedThemeLinkBelowASwappedParentBeforeMutation() throws {
-    let fixture = try Fixture(configuration: "", externalBatEza: false)
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createLocalBatEzaConfigurations(
-      bat: "--italic-text=always\n",
-      shell: "export EDITOR=nvim\n"
-    )
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership(
+      fixture.legacyBatEza(bat: "--italic-text=always\n", shell: "export EDITOR=nvim\n"))
     let ezaDirectory = fixture.ezaThemeLink.deletingLastPathComponent()
     let movedEzaDirectory = fixture.root.appending(path: "eza-original")
     try FileManager.default.moveItem(at: ezaDirectory, to: movedEzaDirectory)
@@ -272,118 +147,104 @@ extension SetupOwnershipTests {
     #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
-  @Test
-  func setupResumesAtEveryRecordedTransactionBoundary() throws {
-    let setupCheckpoints: [SetupOwnershipCheckpoint] = [
-      .manifestPrepared, .backupWritten, .replacementSwapped, .targetWritten,
-    ]
-    for selectedCheckpoint in setupCheckpoints {
-      let fixture = try Fixture(configuration: "font_size 13\n")
-      defer { fixture.remove() }
-      let interrupted = SetupOwnershipManager { checkpoint in
-        if checkpoint == selectedCheckpoint { throw FixtureError.interrupted }
-      }
+  /// Where an older release's setup stopped after recording a prepared Kitty include.
+  enum InterruptedSetupBoundary: CaseIterable {
+    case recordOnly
+    case backupSaved
+    case replacementSwapped
+    case targetWritten
+  }
 
-      #expect(throws: SetupOwnershipTransactionError.self) {
-        try interrupted.setup(
-          homeDirectory: fixture.home,
-          dryRun: false
-        )
-      }
-      let prepared = try decode(
-        OwnershipManifest.self,
-        String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
+  @Test(arguments: InterruptedSetupBoundary.allCases)
+  func teardownRemovesAPreparedRecordAtEveryInterruptedSetupBoundary(
+    _ boundary: InterruptedSetupBoundary
+  ) throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let original = "font_size 13\n"
+    let installed = original + "\(fixture.includeDirective)\n"
+    let swapped = boundary == .replacementSwapped || boundary == .targetWritten
+    try fixture.writeLegacyOwnership([
+      fixture.legacyKittyInclude(
+        original: original,
+        onDisk: swapped ? installed : original,
+        phase: .prepared,
+        backupPresent: boundary != .recordOnly,
+        residue: boundary == .replacementSwapped ? original : nil
       )
-      #expect(prepared.records.map(\.phase) == ["prepared"])
+    ])
 
-      let resumed = try #require(
-        SetupOwnershipManager().setup(
-          homeDirectory: fixture.home,
-          dryRun: false
-        ).first)
-      let applied = try decode(
-        OwnershipManifest.self,
-        String(decoding: Data(contentsOf: fixture.manifest), as: UTF8.self)
-      )
+    let preview = try #require(
+      SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: true).first)
+    #expect(preview.status == .planned)
+    #expect(try fixture.configuration() == (swapped ? installed : original))
 
-      #expect(resumed.status == .owned)
-      #expect(resumed.mutationAttempted)
-      #expect(applied.records.map(\.phase) == ["applied"])
-      #expect(try fixture.configuration().contains(fixture.includeDirective))
-      #expect(FileManager.default.fileExists(atPath: fixture.backup.path))
-      #expect(
-        try #require(
-          SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false).first
-        ).status
-          == .removed
-      )
-      #expect(try fixture.configuration() == "font_size 13\n")
-    }
+    let teardown = try #require(
+      SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false).first)
+
+    #expect(teardown.status == .removed)
+    #expect(teardown.mutationAttempted)
+    #expect(try fixture.configuration() == original)
+    #expect(try fixture.pathIsMissing(fixture.backup))
+    #expect(try fixture.pathIsMissing(fixture.replacement))
+    #expect(try fixture.pathIsMissing(fixture.manifest))
   }
 
   @Test
-  func setupPreservesReplacementResidueUntilTheBackupIsValidated() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+  func teardownClearsPreparedLinkAndPiSelectorRecords() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    let interrupted = SetupOwnershipManager { checkpoint in
-      if checkpoint == .replacementSwapped { throw FixtureError.interrupted }
-    }
+    let pi = "{\n  \"provider\": \"openai\"\n}\n"
+    try fixture.writeLegacyOwnership([
+      fixture.legacyThemeLink(
+        SetupOwnershipManager.batThemeLinkID, phase: .prepared, placement: .absent),
+      fixture.legacyThemeLink(SetupOwnershipManager.ezaThemeLinkID, phase: .prepared),
+      fixture.legacyPiSelector(contents: pi, phase: .prepared),
+    ])
 
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
-    }
-    let residue = try Data(contentsOf: fixture.replacement)
-    try FileManager.default.removeItem(at: fixture.backup)
+    let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
 
-    expectOwnershipError(.corruptBackup(fixture.backup)) {
-      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    var teardownStatuses = unownedTeardownStatuses
+    for id in ["bat.theme-link", "eza.theme-link", "pi.selector"] {
+      teardownStatuses[id] = .removed
     }
-    #expect(try Data(contentsOf: fixture.replacement) == residue)
-    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
+    expectStatuses(teardown, teardownStatuses)
+    #expect(try fixture.pathIsMissing(fixture.batThemeLink))
+    #expect(try fixture.pathIsMissing(fixture.ezaThemeLink))
+    #expect(try String(contentsOf: fixture.piConfiguration, encoding: .utf8) == pi)
+    #expect(try fixture.pathIsMissing(fixture.manifest))
   }
 
   @Test
   func concurrentConfigurationEditsAreNeverOverwritten() throws {
-    let setupFixture = try Fixture(configuration: "font_size 13\n")
-    defer { setupFixture.remove() }
-    let setupTarget = setupFixture.kittyConfiguration
-    let setupEdit = Data("font_size 14\n".utf8)
-    let interruptedSetup = SetupOwnershipManager { checkpoint in
-      if checkpoint == .backupWritten {
-        try setupEdit.write(to: setupTarget, options: .atomic)
-      }
-    }
-
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interruptedSetup.setup(homeDirectory: setupFixture.home, dryRun: false)
-    }
-    #expect(try setupFixture.configuration() == "font_size 14\n")
-
-    let boundaryFixture = try Fixture(configuration: "font_size 13\n")
+    let boundaryFixture = try Fixture()
     defer { boundaryFixture.remove() }
+    try boundaryFixture.writeLegacyOwnership([boundaryFixture.legacyKittyInclude()])
     let boundaryTarget = boundaryFixture.kittyConfiguration
     let boundaryEdit = Data("font_size 15\n".utf8)
-    let boundarySetup = SetupOwnershipManager { checkpoint in
+    let boundaryTeardown = SetupOwnershipManager { checkpoint in
       if checkpoint == .replacementReady {
         try boundaryEdit.write(to: boundaryTarget, options: .atomic)
       }
     }
     #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try boundarySetup.setup(homeDirectory: boundaryFixture.home, dryRun: false)
+      _ = try boundaryTeardown.teardown(homeDirectory: boundaryFixture.home, dryRun: false)
     }
     #expect(try boundaryFixture.configuration() == "font_size 15\n")
     #expect(!FileManager.default.fileExists(atPath: boundaryFixture.replacement.path))
 
-    let metadataFixture = try Fixture(configuration: "font_size 13\n")
+    let metadataFixture = try Fixture()
     defer { metadataFixture.remove() }
+    try metadataFixture.writeLegacyOwnership([metadataFixture.legacyKittyInclude()])
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o600],
       ofItemAtPath: metadataFixture.kittyConfiguration.path
     )
     let metadataTarget = metadataFixture.kittyConfiguration
-    let metadataSetup = SetupOwnershipManager { checkpoint in
+    let installed = try metadataFixture.configuration()
+    let metadataTeardown = SetupOwnershipManager { checkpoint in
       if checkpoint == .replacementReady {
-        try Data("font_size 13\n".utf8).write(to: metadataTarget, options: .atomic)
+        try Data(installed.utf8).write(to: metadataTarget, options: .atomic)
         try FileManager.default.setAttributes(
           [.posixPermissions: 0o644],
           ofItemAtPath: metadataTarget.path
@@ -391,15 +252,15 @@ extension SetupOwnershipTests {
       }
     }
     #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try metadataSetup.setup(homeDirectory: metadataFixture.home, dryRun: false)
+      _ = try metadataTeardown.teardown(homeDirectory: metadataFixture.home, dryRun: false)
     }
-    #expect(try metadataFixture.configuration() == "font_size 13\n")
+    #expect(try metadataFixture.configuration() == installed)
     #expect(try metadataFixture.permissions() == 0o644)
     #expect(!FileManager.default.fileExists(atPath: metadataFixture.replacement.path))
 
-    let teardownFixture = try Fixture(configuration: "font_size 13\n")
+    let teardownFixture = try Fixture()
     defer { teardownFixture.remove() }
-    _ = try SetupOwnershipManager().setup(homeDirectory: teardownFixture.home, dryRun: false)
+    try teardownFixture.writeLegacyOwnership([teardownFixture.legacyKittyInclude()])
     let teardownTarget = teardownFixture.kittyConfiguration
     let teardownEdit = Data(
       "font_size 14\n\(teardownFixture.includeDirective)\n".utf8
@@ -420,9 +281,11 @@ extension SetupOwnershipTests {
   }
 
   @Test
-  func parentDirectorySwapCannotRedirectTheSetupWrite() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+  func parentDirectorySwapCannotRedirectTheTeardownWrite() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
+    try fixture.writeLegacyOwnership([fixture.legacyKittyInclude()])
+    let installed = try fixture.configuration()
     let kittyDirectory = fixture.kittyConfiguration.deletingLastPathComponent()
     let movedDirectory = kittyDirectory.appendingPathExtension("original")
     let externalDirectory = fixture.root.appending(path: "external-kitty")
@@ -431,9 +294,9 @@ extension SetupOwnershipTests {
       at: externalDirectory,
       withIntermediateDirectories: true
     )
-    try Data("font_size 13\n".utf8).write(to: externalConfiguration)
+    try Data(installed.utf8).write(to: externalConfiguration)
     let manager = SetupOwnershipManager { checkpoint in
-      if checkpoint == .backupWritten {
+      if checkpoint == .teardownReady {
         try FileManager.default.moveItem(at: kittyDirectory, to: movedDirectory)
         try FileManager.default.createSymbolicLink(
           at: kittyDirectory,
@@ -443,40 +306,42 @@ extension SetupOwnershipTests {
     }
 
     #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try manager.setup(homeDirectory: fixture.home, dryRun: false)
+      _ = try manager.teardown(homeDirectory: fixture.home, dryRun: false)
     }
-    #expect(try String(contentsOf: externalConfiguration, encoding: .utf8) == "font_size 13\n")
+    #expect(try String(contentsOf: externalConfiguration, encoding: .utf8) == installed)
     #expect(
       try String(
         contentsOf: movedDirectory.appending(path: "kitty.conf"),
         encoding: .utf8
-      ) == "font_size 13\n"
+      ) == installed
     )
   }
 
   @Test(arguments: [false, true])
-  func setupWaitsForActivationPreflightAndCanonicalCommit(abortCoordinator: Bool) async throws {
+  func teardownWaitsForActivationPreflightAndCanonicalCommit(abortCoordinator: Bool) async throws {
     // Other suites can synchronously wait on the held activation lock. Keep its
     // release coordinator off the cooperative pool those waiters can occupy.
     // The entire scenario must stay synchronous: Task.sleep can depend on that
     // pool even when the sleeping task prefers a Dispatch executor.
-    let executor = BlockingTaskExecutor(label: "setup-activation-overlap")
+    let executor = BlockingTaskExecutor(label: "teardown-activation-overlap")
     try await withTaskExecutorPreference(executor) {
       if abortCoordinator {
         #expect(throws: OverlapCoordinatorFailure.self) {
-          try setupActivationOverlapScenario(abortCoordinator: true)
+          try teardownActivationOverlapScenario(abortCoordinator: true)
         }
       } else {
-        try setupActivationOverlapScenario(abortCoordinator: false)
+        try teardownActivationOverlapScenario(abortCoordinator: false)
       }
     }
   }
 
   private struct OverlapCoordinatorFailure: Error {}
 
-  private func setupActivationOverlapScenario(abortCoordinator: Bool) throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+  private func teardownActivationOverlapScenario(abortCoordinator: Bool) throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
+    try fixture.writeLegacyOwnership([fixture.legacyKittyInclude()])
+    let installed = try fixture.configuration()
     let package = try ThemePackageLoader().load(
       packageURL: URL(filePath: FileManager.default.currentDirectoryPath)
         .appending(path: "Themes/catppuccin-mocha")
@@ -517,41 +382,38 @@ extension SetupOwnershipTests {
     // the worker coordination budget, not the short contention observation
     // below, to establish that this scenario has actually started.
     try #require(preflightEntered.wait(timeout: .now() + 5) == .success)
-    let setupCompleted = Mutex(false)
-    let setupResult = Mutex<Result<[SetupIntegrationResult], any Error>?>(nil)
+    let teardownCompleted = Mutex(false)
+    let teardownResult = Mutex<Result<[SetupIntegrationResult], any Error>?>(nil)
     workers.enter()
     DispatchQueue.global().async {
       defer { workers.leave() }
       let result = Result {
-        try SetupOwnershipManager().setup(
+        try SetupOwnershipManager().teardown(
           homeDirectory: home,
           dryRun: false
         )
       }
-      setupResult.withLock { $0 = result }
-      setupCompleted.withLock { $0 = true }
+      teardownResult.withLock { $0 = result }
+      teardownCompleted.withLock { $0 = true }
     }
 
     Thread.sleep(forTimeInterval: 0.025)
-    #expect(!setupCompleted.withLock { $0 })
-    #expect(try fixture.configuration() == "font_size 13\n")
+    #expect(!teardownCompleted.withLock { $0 })
+    #expect(try fixture.configuration() == installed)
     if abortCoordinator { throw OverlapCoordinatorFailure() }
     releasePreflight.signal()
 
     try #require(workers.wait(timeout: .now() + 5) == .success)
     _ = try #require(activationResult.withLock { $0 }).get()
-    #expect(try #require(setupResult.withLock { $0 }).get().first?.status == .owned)
-    #expect(try fixture.configuration().contains(fixture.includeDirective))
+    #expect(try #require(teardownResult.withLock { $0 }).get().first?.status == .removed)
+    #expect(try fixture.configuration() == "font_size 13\n")
   }
 
   @Test
   func teardownRefusesToEraseChangesMadeAfterSetup() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    _ = try SetupOwnershipManager().setup(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
+    try fixture.writeLegacyOwnership([fixture.legacyKittyInclude()])
     try Data("font_size 14\n\(fixture.includeDirective)\n".utf8).write(
       to: fixture.kittyConfiguration,
       options: .atomic
@@ -579,34 +441,8 @@ extension SetupOwnershipTests {
   }
 
   @Test
-  func ownershipRejectsAnInstalledDigestThatCannotBeReproducedFromBackup() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
-    defer { fixture.remove() }
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    let forgedConfiguration = Data("font_size 99\n".utf8)
-    var manifest = try #require(
-      JSONSerialization.jsonObject(with: Data(contentsOf: fixture.manifest))
-        as? [String: Any]
-    )
-    var records = try #require(manifest["records"] as? [[String: Any]])
-    records[0]["installed_digest"] = sha256Digest(forgedConfiguration)
-    manifest["records"] = records
-    try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys]).write(
-      to: fixture.manifest,
-      options: .atomic
-    )
-    try forgedConfiguration.write(to: fixture.kittyConfiguration, options: .atomic)
-
-    expectOwnershipError(
-      .invalidManifest("Kitty installed digest cannot be reproduced")
-    ) {
-      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
-    }
-  }
-
-  @Test
   func ownershipRejectsAnUnsupportedSchemaVersion() throws {
-    let fixture = try Fixture(configuration: "")
+    let fixture = try Fixture()
     defer { fixture.remove() }
     try FileManager.default.createDirectory(
       at: fixture.manifest.deletingLastPathComponent(),
@@ -615,13 +451,13 @@ extension SetupOwnershipTests {
     try Data(#"{"schema_version":99,"records":[]}"#.utf8).write(to: fixture.manifest)
 
     expectOwnershipError(.invalidManifest("unsupported schema version 99")) {
-      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
+      _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: true)
     }
   }
 
   @Test
   func ownershipRejectsOutOfContractSchemaOneShapes() throws {
-    let fixture = try Fixture(configuration: "")
+    let fixture = try Fixture()
     defer { fixture.remove() }
     try FileManager.default.createDirectory(
       at: fixture.manifest.deletingLastPathComponent(),
@@ -649,7 +485,7 @@ extension SetupOwnershipTests {
     for document in documents {
       try Data(document.utf8).write(to: fixture.manifest, options: .atomic)
       do {
-        _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
+        _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: true)
         Issue.record("Expected strict schema-v1 rejection")
       } catch SetupOwnershipError.invalidManifest {
       } catch {
@@ -660,9 +496,9 @@ extension SetupOwnershipTests {
 
   @Test
   func teardownDryRunRejectsASymlinkedBackupBeforePromisingRestoration() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership([fixture.legacyKittyInclude()])
     let externalBackup = fixture.root.appending(path: "external-kitty.conf")
     try FileManager.default.removeItem(at: fixture.backup)
     try Data("font_size 13\n".utf8).write(to: externalBackup)
@@ -689,9 +525,9 @@ extension SetupOwnershipTests {
 
   @Test
   func teardownRejectsAPermissiveBackup() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership([fixture.legacyKittyInclude()])
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o644],
       ofItemAtPath: fixture.backup.path
@@ -704,9 +540,9 @@ extension SetupOwnershipTests {
 
   @Test
   func teardownNeverRecursivelyRemovesSubstitutedBackupState() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership([fixture.legacyKittyInclude()])
     try Data("font_size 13\n".utf8).write(
       to: fixture.kittyConfiguration,
       options: .atomic
@@ -727,64 +563,38 @@ extension SetupOwnershipTests {
   }
 
   @Test
-  func setupRefusesAnOrphanedBackup() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
+  func teardownPreservesReplacementResidueUntilTheBackupIsValidated() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try FileManager.default.createDirectory(
-      at: fixture.backup.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data("recovery evidence".utf8).write(to: fixture.backup)
+    let original = "font_size 13\n"
+    try fixture.writeLegacyOwnership([
+      fixture.legacyKittyInclude(
+        original: original, phase: .prepared, backupPresent: false, residue: original)
+    ])
+    let residue = try Data(contentsOf: fixture.replacement)
 
-    expectOwnershipError(.orphanedBackup(fixture.backup)) {
-      _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: true)
+    expectOwnershipError(.corruptBackup(fixture.backup)) {
+      _ = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
     }
-    #expect(try String(contentsOf: fixture.backup, encoding: .utf8) == "recovery evidence")
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+    #expect(try Data(contentsOf: fixture.replacement) == residue)
+    #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 }
 
 extension BtopYaziAtuinSetupTests {
   @Test
-  func interruptedTOMLSelectorReproducesAndResumesFromBackup() throws {
-    let fixture = try Fixture(configuration: "", externalBtopYaziAtuin: false)
-    defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createLocalBtopYaziAtuinConfigurations(
-      btop: "\(BtopAdapter.themeDirective)\n",
-      yazi: "[flavor]\nlight = \"default\"\n",
-      atuin: "[theme]\nname = \"macarchy-current\"\n"
-    )
-    try fixture.createBtopYaziAtuinThemeLinks()
-    let interrupted = SetupOwnershipManager { checkpoint in
-      if checkpoint == .replacementSwapped { throw FixtureError.interrupted }
-    }
-
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
-    }
-    let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-
-    var resumedStatuses = externalFixtureStatuses
-    resumedStatuses["yazi.selector"] = .owned
-    expectStatuses(resumed, resumedStatuses)
-    #expect(
-      try String(contentsOf: fixture.yaziConfiguration, encoding: .utf8)
-        == "[flavor]\ndark = \"macarchy-current\"\nlight = \"default\"\n"
-    )
-  }
-
-  @Test
   func teardownPreflightsTheWholeBatchBeforeRemovingAnySeam() throws {
-    let fixture = try Fixture(configuration: "", externalBtopYaziAtuin: false)
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createLocalBtopYaziAtuinConfigurations(
-      btop: "\(BtopAdapter.themeDirective)\n",
-      yazi: "[flavor]\nlight = \"default\"\n",
-      atuin: "sync_frequency = \"5m\"\n"
-    )
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership([
+      fixture.legacyThemeLink(SetupOwnershipManager.btopThemeLinkID),
+      fixture.legacyFileRecord(
+        SetupOwnershipManager.yaziSelectorID,
+        original: "[flavor]\nlight = \"default\"\n",
+        installed: "[flavor]\ndark = \"macarchy-current\"\nlight = \"default\"\n"
+      ),
+      fixture.legacyThemeLink(SetupOwnershipManager.atuinThemeLinkID),
+    ])
     try Data("user changed this file\n".utf8).write(
       to: fixture.yaziConfiguration,
       options: .atomic
@@ -802,55 +612,13 @@ extension BtopYaziAtuinSetupTests {
 
 extension NeovimStarshipSetupTests {
   @Test
-  func ownedLinksResumeAtTheirRecordedCreationBoundaries() throws {
-    let neovim = try Fixture(configuration: "", externalNeovimStarship: false)
-    defer { neovim.remove() }
-    try neovim.writeKittyConfiguration("\(neovim.includeDirective)\n")
-    try neovim.createNeovimStarshipPrerequisites()
-    let interruptedNeovim = SetupOwnershipManager { checkpoint in
-      if checkpoint == .targetWritten { throw FixtureError.interrupted }
-    }
-
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interruptedNeovim.setup(homeDirectory: neovim.home, dryRun: false)
-    }
-    let resumedNeovim = try SetupOwnershipManager().setup(
-      homeDirectory: neovim.home,
-      dryRun: false
-    )
-    var resumedNeovimStatuses = externalFixtureStatuses
-    resumedNeovimStatuses["neovim.theme-link"] = .owned
-    resumedNeovimStatuses["starship.configuration-link"] = .owned
-    expectStatuses(resumedNeovim, resumedNeovimStatuses)
-
-    let starship = try Fixture(configuration: "", externalNeovimStarship: false)
-    defer { starship.remove() }
-    try starship.writeKittyConfiguration("\(starship.includeDirective)\n")
-    try starship.createNeovimStarshipPrerequisites()
-    try starship.createExternalNeovimThemeLink()
-    let interruptedStarship = SetupOwnershipManager { checkpoint in
-      if checkpoint == .manifestPrepared { throw FixtureError.interrupted }
-    }
-
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interruptedStarship.setup(homeDirectory: starship.home, dryRun: false)
-    }
-    let resumedStarship = try SetupOwnershipManager().setup(
-      homeDirectory: starship.home,
-      dryRun: false
-    )
-    var resumedStarshipStatuses = externalFixtureStatuses
-    resumedStarshipStatuses["starship.configuration-link"] = .owned
-    expectStatuses(resumedStarship, resumedStarshipStatuses)
-  }
-
-  @Test
   func teardownPreflightsBothOwnedLinksBeforeRemovingEither() throws {
-    let fixture = try Fixture(configuration: "", externalNeovimStarship: false)
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    try fixture.createNeovimStarshipPrerequisites()
-    _ = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
+    try fixture.writeLegacyOwnership([
+      fixture.legacyThemeLink(SetupOwnershipManager.neovimThemeLinkID),
+      fixture.legacyThemeLink(SetupOwnershipManager.starshipConfigurationLinkID),
+    ])
     try FileManager.default.removeItem(at: fixture.neovimThemeLink)
     try Data("user-owned configuration\n".utf8).write(
       to: fixture.neovimThemeLink
@@ -869,29 +637,14 @@ extension NeovimStarshipSetupTests {
 
 extension AgentTUISetupTests {
   @Test
-  func piSelectorResumesInterruptedKeyInsertionAndRemoval() throws {
-    let fixture = try Fixture(configuration: "", externalAgentTUIs: false)
+  func piSelectorTeardownResumesAnInterruptedKeyRemoval() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
     let original = "{\n  \"provider\": \"openai\"\n}\n"
-    try fixture.createLocalAgentTUIConfigurations(
-      pi: original,
-      tuicr: "theme = \"macarchy-current\"\n",
-      codex: "[tui]\ntheme = \"macarchy-current\"\n"
-    )
-    try fixture.createAgentTUIThemeLinks()
-    let interruptedSetup = SetupOwnershipManager { checkpoint in
-      if checkpoint == .replacementSwapped { throw FixtureError.interrupted }
-    }
-
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try interruptedSetup.setup(homeDirectory: fixture.home, dryRun: false)
-    }
-    #expect(try fixture.pathIsMissing(fixture.piSelectorReplacement) == false)
-
-    let resumed = try SetupOwnershipManager().setup(homeDirectory: fixture.home, dryRun: false)
-    #expect(resumed.first { $0.id == "pi.selector" }?.status == .owned)
-    #expect(try fixture.pathIsMissing(fixture.piSelectorReplacement))
+    try fixture.writeLegacyOwnership([
+      fixture.legacyPiSelector(
+        contents: "{\n  \"theme\": \"macarchy-current\",\n  \"provider\": \"openai\"\n}\n")
+    ])
 
     let interruptedTeardown = SetupOwnershipManager { checkpoint in
       if checkpoint == .replacementSwapped { throw FixtureError.interrupted }

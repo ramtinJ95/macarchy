@@ -2,8 +2,6 @@ import Foundation
 import ThemeCore
 
 enum SetupOwnershipCheckpoint: Equatable, Sendable {
-  case manifestPrepared
-  case backupWritten
   case replacementReady
   case replacementSwapped
   case targetWritten
@@ -11,10 +9,7 @@ enum SetupOwnershipCheckpoint: Equatable, Sendable {
 }
 
 enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
-  case conflictingKittyInclude(URL)
   case conflictingDirective(String, URL)
-  case conflictingThemeLink(String, URL)
-  case configurationIsExternallyOwned(String, URL)
   case configurationTooLarge(String, URL)
   case corruptBackup(URL)
   case environmentCodexOwnershipActive
@@ -23,15 +18,10 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
   case environmentTuicrOwnershipActive
   case invalidManifest(String)
   case invalidConfiguration(String, URL, String)
-  case installedConfigurationTooLarge(String, URL)
-  case kittyConfigurationIsExternallyOwned(URL)
   case kittyConfigurationTooLarge(URL)
   case missingConfiguration(String, URL)
-  case missingExternalDirective(String, URL)
-  case missingIntegrationParent(String, URL)
   case missingKittyConfiguration(URL)
   case orphanedBackup(URL)
-  case orphanedReplacement(URL)
   case ownershipDrift(URL)
   case system(String, URL, String)
   case unreadableConfiguration(String, URL)
@@ -39,14 +29,8 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
 
   var description: String {
     switch self {
-    case .conflictingKittyInclude(let url):
-      "Kitty configuration at \(url.path) contains a conflicting Macarchy include"
     case .conflictingDirective(let id, let url):
       "Configuration at \(url.path) contains a conflicting \(id) directive"
-    case .conflictingThemeLink(let id, let url):
-      "Theme path at \(url.path) conflicts with the required \(id) link"
-    case .configurationIsExternallyOwned(let id, let url):
-      "Configuration for \(id) at \(url.path) is symlinked or inside a symlinked directory; update its external source instead"
     case .configurationTooLarge(let id, let url):
       "Configuration for \(id) at \(url.path) exceeds 1 MiB"
     case .corruptBackup(let url):
@@ -63,24 +47,14 @@ enum SetupOwnershipError: Error, CustomStringConvertible, Equatable, Sendable {
       "Setup ownership manifest is invalid: \(reason)"
     case .invalidConfiguration(let id, let url, let reason):
       "Configuration for \(id) at \(url.path) is invalid: \(reason)"
-    case .installedConfigurationTooLarge(let id, let url):
-      "Adding the \(id) directive would make \(url.path) exceed 1 MiB"
-    case .kittyConfigurationIsExternallyOwned(let url):
-      "Kitty configuration at \(url.path) is symlinked or inside a symlinked directory; update its external source instead"
     case .kittyConfigurationTooLarge(let url):
       "Kitty configuration at \(url.path) exceeds 1 MiB"
     case .missingKittyConfiguration(let url):
       "Kitty configuration must already exist as an ordinary file at \(url.path)"
     case .missingConfiguration(let id, let url):
       "Configuration for \(id) must already exist as an ordinary file at \(url.path)"
-    case .missingExternalDirective(let id, let url):
-      "Configuration at \(url.path) must contain the exact externally owned \(id) directive"
-    case .missingIntegrationParent(let id, let url):
-      "The required external parent directory for \(id) must exist at \(url.path)"
     case .orphanedBackup(let url):
       "Setup backup exists without an ownership manifest at \(url.path); refusing to overwrite recovery evidence"
-    case .orphanedReplacement(let url):
-      "Setup replacement residue exists without an ownership manifest at \(url.path); refusing to overwrite recovery evidence"
     case .ownershipDrift(let url):
       "Macarchy-owned integration at \(url.path) changed after setup; refusing to overwrite it"
     case .system(let operation, let url, let cause):
@@ -152,8 +126,6 @@ func attributingFailure<T>(
 
 struct SetupIntegrationResult: Encodable, Sendable {
   enum Status: String, Encodable, Sendable {
-    case disabled
-    case external
     case failed
     case none
     case owned
@@ -241,18 +213,13 @@ struct SetupOwnershipManager: Sendable {
     } else if let ownershipError = error as? SetupOwnershipError {
       switch ownershipError {
       case .conflictingDirective(let id, let url),
-        .conflictingThemeLink(let id, let url),
-        .configurationIsExternallyOwned(let id, let url),
         .configurationTooLarge(let id, let url),
         .invalidConfiguration(let id, let url, _),
-        .installedConfigurationTooLarge(let id, let url),
         .missingConfiguration(let id, let url),
-        .missingExternalDirective(let id, let url),
-        .missingIntegrationParent(let id, let url),
         .unreadableConfiguration(let id, let url):
         identity = (id, url.path)
       case .ownershipDrift(let url), .corruptBackup(let url), .orphanedBackup(let url),
-        .orphanedReplacement(let url), .system(_, let url, _):
+        .system(_, let url, _):
         identity = integrationIdentity(for: url, context: context)
       case .environmentTuicrOwnershipActive:
         identity = (tuicrSelectorID, context.tuicrConfiguration.path)
@@ -330,92 +297,11 @@ struct SetupOwnershipManager: Sendable {
     return ("setup.ownership", url.path)
   }
 
-  func setup(
-    homeDirectory: URL,
-    dryRun: Bool,
-    excluding excludedConsumers: Set<ConsumerID> = []
-  ) throws -> [SetupIntegrationResult] {
-    let context = Context(homeDirectory: homeDirectory)
-    if dryRun {
-      return try setup(context: context, dryRun: true, excluding: excludedConsumers)
-    }
-    return try ActivationLock(root: context.stateRoot).withLock {
-      try setup(context: context, dryRun: false, excluding: excludedConsumers)
-    }
-  }
-
   func teardown(homeDirectory: URL, dryRun: Bool) throws -> [SetupIntegrationResult] {
     let context = Context(homeDirectory: homeDirectory)
     if dryRun { return try teardown(context: context, dryRun: true) }
     return try ActivationLock(root: context.stateRoot).withLock {
       try teardown(context: context, dryRun: false)
-    }
-  }
-
-  private func setup(
-    context: Context,
-    dryRun: Bool,
-    excluding excludedConsumers: Set<ConsumerID>
-  ) throws -> [SetupIntegrationResult] {
-    var records = try readRecords(context: context)
-    let spicetifyIDs = Set([Self.spicetifySelectorsID, Self.spicetifyColorLinkID])
-    let recordedSpicetifyIDs = Set(records.map(\.id)).intersection(spicetifyIDs)
-    guard recordedSpicetifyIDs.isEmpty || recordedSpicetifyIDs == spicetifyIDs else {
-      throw SetupOwnershipError.invalidManifest(
-        "legacy Spicetify ownership must contain both spicetify.selectors and spicetify.color-link"
-      )
-    }
-    let hasLegacySpicetifyOwnership = recordedSpicetifyIDs == spicetifyIDs
-    var results = [SetupIntegrationResult]()
-    do {
-      for plan in consumerSetupPlans(context: context)
-      where !excludedConsumers.contains(plan.consumerID) {
-        if plan.consumerID == .spicetify, !hasLegacySpicetifyOwnership {
-          // New Spicetify configuration belongs to the aggregate environment
-          // lifecycle. Retain this setup plan only to validate and tear down
-          // complete legacy ownership records.
-          results.append(
-            SetupIntegrationResult(
-              id: Self.spicetifySelectorsID,
-              status: .disabled,
-              target: context.spicetifyConfiguration.path,
-              message:
-                "Spicetify selector ownership is disabled in setup; use the environment preset lifecycle.",
-              mutationAttempted: false
-            )
-          )
-          results.append(
-            SetupIntegrationResult(
-              id: Self.spicetifyColorLinkID,
-              status: .disabled,
-              target: context.spicetifyColorLink.path,
-              message:
-                "Spicetify color-link ownership is disabled in setup; use the environment preset lifecycle.",
-              mutationAttempted: false
-            )
-          )
-          continue
-        }
-        results.append(contentsOf: try plan.setup(dryRun, &records))
-      }
-      return Self.orderedResults(results, context: context)
-    } catch let error as SetupOwnershipTransactionError {
-      throw SetupOwnershipTransactionError(wrapping: error, completedResults: results)
-    } catch let error as ConsumerSetupPlanPartialFailure {
-      let completed = results + error.completedResults
-      guard completed.contains(where: \.mutationAttempted) else { throw error.cause }
-      throw Self.afterCompletedMutations(
-        error.cause,
-        completed: completed,
-        homeDirectory: context.homeDirectory
-      )
-    } catch {
-      guard results.contains(where: \.mutationAttempted) else { throw error }
-      throw Self.afterCompletedMutations(
-        error,
-        completed: results,
-        homeDirectory: context.homeDirectory
-      )
     }
   }
 
@@ -563,22 +449,6 @@ struct SetupOwnershipManager: Sendable {
     )
   }
 
-}
-
-extension SetupOwnershipManager {
-  func environmentOwns(_ ids: Set<EnvironmentEntryID>, context: Context) throws -> Bool {
-    let store = EnvironmentStateStore(stateRoot: context.stateRoot)
-    guard try store.readTransaction() == nil else {
-      throw EnvironmentLifecycleError.blocked(
-        "an interrupted environment transaction must be recovered before legacy setup"
-      )
-    }
-    guard let ownership = try store.readOwnership()
-    else { return false }
-    return !ids.isDisjoint(with: Set(ownership.records.map(\.id)))
-      || (ids.contains(.btopConfiguration) && ownership.btop != nil)
-      || (ids.contains(.codexConfiguration) && ownership.codex != nil)
-  }
 }
 
 struct TeardownCommandRunner: Sendable {

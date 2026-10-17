@@ -334,14 +334,8 @@ struct PiPresetLifecycleTests {
     let fixture = try PiFixture(settings: "{}\n")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
-    try FileManager.default.createDirectory(
-      at: fixture.themeLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    var records = [SetupOwnershipRecord]()
     let manager = SetupOwnershipManager()
-    _ = try manager.setupPiThemeLink(context: context, dryRun: false, records: &records)
-    _ = try manager.setupPiSelector(context: context, dryRun: false, records: &records)
+    try fixture.installLegacyTuple()
     #expect(try fixture.plan().output.contains("legacy_setup"))
     #expect(try await fixture.apply().succeeded)
     let ownership = try #require(
@@ -372,13 +366,9 @@ struct PiPresetLifecycleTests {
 
     let partial = try PiFixture(settings: "{}\n")
     defer { try? FileManager.default.removeItem(at: partial.root) }
-    let partialContext = SetupOwnershipManager.Context(homeDirectory: partial.home)
-    var partialRecords = [SetupOwnershipRecord]()
-    _ = try manager.setupPiSelector(
-      context: partialContext,
-      dryRun: false,
-      records: &partialRecords
-    )
+    try partial.writeLegacyOwnership([
+      try partial.legacyPiSelector(contents: PiFixture.legacySelectedSettings)
+    ])
     #expect(throws: EnvironmentLifecycleError.self) {
       try ThemeRuntimeSelection.enabledAdapterIDs(
         stateRoot: partial.state,
@@ -478,7 +468,7 @@ private struct ExternalPiSnapshot: Equatable {
   let entries: [String: Entry]
 }
 
-private struct PiFixture {
+private struct PiFixture: LegacySetupOwnershipFixture {
   let root: URL
   let home: URL
   let state: URL
@@ -636,16 +626,14 @@ private struct PiFixture {
     )
   }
 
+  /// The `{}` settings after an older release's setup added the exact selector.
+  static let legacySelectedSettings = "{\"theme\": \"macarchy-current\"}\n"
+
   func installLegacyTuple() throws {
-    try FileManager.default.createDirectory(
-      at: themeLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    var records = [SetupOwnershipRecord]()
-    let manager = SetupOwnershipManager()
-    let context = SetupOwnershipManager.Context(homeDirectory: home)
-    _ = try manager.setupPiThemeLink(context: context, dryRun: false, records: &records)
-    _ = try manager.setupPiSelector(context: context, dryRun: false, records: &records)
+    try writeLegacyOwnership([
+      try legacyThemeLink(SetupOwnershipManager.piThemeLinkID),
+      try legacyPiSelector(contents: Self.legacySelectedSettings),
+    ])
   }
 
   func externalTupleSnapshot() throws -> ExternalPiSnapshot {
