@@ -162,6 +162,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           adopt: adoptions.environment,
           json: true,
           deferFinalization: true,
+          withinUnifiedSetup: true,
           enabledThemeAdapterIDs: enabledThemeAdapterIDs,
           profile: profile
         )

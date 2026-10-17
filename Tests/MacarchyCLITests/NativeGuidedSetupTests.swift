@@ -270,7 +270,7 @@ struct NativeGuidedSetupTests {
             profileRequired: true, stateRoot: context.stateRoot,
             homeDirectory: context.homeDirectory,
             consumerPaths: paths, adopt: approvals.environment, json: true, deferFinalization: true,
-            enabledThemeAdapterIDs: adapters, profile: profile))
+            withinUnifiedSetup: true, enabledThemeAdapterIDs: adapters, profile: profile))
       })
   }
 }
