@@ -858,7 +858,7 @@ struct KeybindingsApplyCommandTests {
         atomically: true,
         encoding: .utf8
       )
-      let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+      let preparation = try KeybindingsPlanCommandRunner.isolated.prepare(
         resourcesRoot: fixture.resources,
         profileURL: fixture.profile,
         profileRequired: false,
@@ -1057,7 +1057,7 @@ struct KeybindingsApplyCommandTests {
   func interruptedActivatingInstallRollsBackBeforeAFreshApply() throws {
     let fixture = try KeybindingsApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+    let preparation = try KeybindingsPlanCommandRunner.isolated.prepare(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -1178,7 +1178,7 @@ struct KeybindingsApplyCommandTests {
       atomically: true,
       encoding: .utf8
     )
-    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+    let preparation = try KeybindingsPlanCommandRunner.isolated.prepare(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -1422,7 +1422,7 @@ struct KeybindingsApplyCommandTests {
     let original = Data("alt - x : rollback finalized\n".utf8)
     try original.write(to: entry)
     let evidence = try fixture.adoptionEvidence()
-    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+    let preparation = try KeybindingsPlanCommandRunner.isolated.prepare(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -2430,7 +2430,7 @@ struct KeybindingsApplyCommandTests {
       atomically: true,
       encoding: .utf8
     )
-    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+    let preparation = try KeybindingsPlanCommandRunner.isolated.prepare(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -2498,7 +2498,7 @@ struct KeybindingsApplyCommandTests {
       atomically: true,
       encoding: .utf8
     )
-    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+    let preparation = try KeybindingsPlanCommandRunner.isolated.prepare(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -3017,7 +3017,7 @@ struct KeybindingsApplyCommandTests {
     let original = Data("alt - x : automatic rollback\n".utf8)
     try original.write(to: entry)
     let evidence = try fixture.adoptionEvidence()
-    let preparation = try KeybindingsPlanCommandRunner.live.prepare(
+    let preparation = try KeybindingsPlanCommandRunner.isolated.prepare(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,

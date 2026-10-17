@@ -400,7 +400,7 @@ struct DesktopApplyCommandTests {
     )
     #expect(!execution.succeeded)
     #expect(execution.output.contains("pending desktop/setup transaction"))
-    let plan = try DesktopPlanCommandRunner(keybindings: nil, prerequisites: .assumed).execute(
+    let plan = try DesktopPlanCommandRunner.isolated.execute(
       resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
       stateRoot: fixture.state, homeDirectory: fixture.home, json: true, scope: .yabaiOnly
     )
@@ -699,7 +699,7 @@ struct DesktopApplyCommandTests {
     [top_bar]
     provider = "disabled"
     """.write(to: fixture.profile, atomically: true, encoding: .utf8)
-    let disablePlan = try DesktopPlanCommandRunner.live.execute(
+    let disablePlan = try DesktopPlanCommandRunner.isolated.execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
@@ -796,7 +796,7 @@ struct DesktopApplyCommandTests {
       withIntermediateDirectories: true
     )
     try Data("{}".utf8).write(to: sketchyBarOwnership)
-    let plan = try DesktopPlanCommandRunner.live.execute(
+    let plan = try DesktopPlanCommandRunner.isolated.execute(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -1158,7 +1158,7 @@ private struct DesktopApplyFixture {
   }
 
   func adoptionDigest() throws -> String {
-    let execution = try DesktopPlanCommandRunner.live.execute(
+    let execution = try DesktopPlanCommandRunner.isolated.execute(
       resourcesRoot: resources,
       profileURL: profile,
       profileRequired: false,
@@ -1342,4 +1342,9 @@ private final class YabaiLifecycleFixture: Sendable {
       waitBetweenInspections: {}
     )
   }
+}
+
+extension DesktopPlanCommandRunner {
+  /// Plans without inspecting host prerequisites, keybinding processes or the yabai user service.
+  static let isolated = DesktopPlanCommandRunner(keybindings: nil, prerequisites: .assumed)
 }
