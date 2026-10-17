@@ -2,6 +2,8 @@ import Darwin
 import Foundation
 import Testing
 
+@testable import ThemeCore
+
 let repositoryRoot = URL(filePath: #filePath)
   .deletingLastPathComponent()
   .deletingLastPathComponent()
@@ -9,6 +11,15 @@ let repositoryRoot = URL(filePath: #filePath)
 
 func jsonObject(_ output: String) throws -> [String: Any] {
   try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+}
+
+/// Activates the bundled Catppuccin Mocha theme and returns the generation ID.
+@discardableResult
+func activateCatppuccinMocha(stateRoot: URL) throws -> String {
+  let package = try ThemePackageLoader().load(
+    packageURL: repositoryRoot.appending(
+      path: "Themes/catppuccin-mocha", directoryHint: .isDirectory))
+  return try ThemeActivator(root: stateRoot).activate(package: package).generationID
 }
 
 func fixtureContents(_ path: String) throws -> String {

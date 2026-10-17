@@ -163,32 +163,14 @@ private struct SlackPresetFixture {
       format: .xml, options: 0)
     try plist.write(to: contents.appending(path: "Info.plist"))
     if activateTheme {
-      let package = try ThemePackageLoader().load(
-        packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
-      _ = try ThemeActivator(root: state).activate(package: package)
+      try activateCatppuccinMocha(stateRoot: state)
     }
   }
 
   func composition(enabled: Bool) throws -> EnvironmentComposition {
     let profile = root.appending(path: "profile-\(enabled).toml")
-    try """
-    schema_version = 1
-    [focus_ring]
-    provider = "disabled"
-    [terminal]
-    provider = "disabled"
-    [shell]
-    provider = "disabled"
-    [editor]
-    provider = "disabled"
-    [tools]
-    bat = false
-    eza = false
-    btop = false
-    yazi = false
-    [presets]
-    slack = \(enabled)
-    """.write(to: profile, atomically: true, encoding: .utf8)
+    try presetTestProfile(presets: ["slack": enabled])
+      .write(to: profile, atomically: true, encoding: .utf8)
     return try EnvironmentConfigurationComposer().compose(
       resourcesRoot: repositoryRoot.appending(path: "Environment"),
       profile: PortableProfileLoader().load(at: profile, required: true),

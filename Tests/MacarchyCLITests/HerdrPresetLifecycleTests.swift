@@ -1153,28 +1153,13 @@ private struct HerdrFixture {
 
   private func writeProfile(enabled: Bool) throws -> URL {
     let profile = root.appending(path: "profile-\(enabled).toml")
-    try """
-    schema_version = 1
-    [focus_ring]
-    provider = "disabled"
-    [terminal]
-    provider = "disabled"
-    [shell]
-    provider = "disabled"
-    [editor]
-    provider = "disabled"
-    [tools]
-    bat = false
-    eza = false
-    btop = \(otherPresets)
-    yazi = false
-    [presets]
-    herdr = \(enabled)
-    codex = \(otherPresets)
-    pi = \(otherPresets)
-    spicetify = \(otherPresets)
-    tuicr = \(otherPresets)
-    """.write(to: profile, atomically: true, encoding: .utf8)
+    try presetTestProfile(
+      btop: otherPresets,
+      presets: [
+        "herdr": enabled, "codex": otherPresets, "pi": otherPresets, "spicetify": otherPresets,
+        "tuicr": otherPresets,
+      ]
+    ).write(to: profile, atomically: true, encoding: .utf8)
     return profile
   }
 }
