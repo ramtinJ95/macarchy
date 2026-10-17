@@ -497,9 +497,7 @@ struct DesktopApplyCommandTests {
       homeDirectory: fixture.home,
       json: true
     )
-    let report = try #require(
-      JSONSerialization.jsonObject(with: Data(status.output.utf8)) as? [String: Any]
-    )
+    let report = try jsonObject(status.output)
 
     #expect(apply.succeeded)
     #expect(status.succeeded)
@@ -539,14 +537,12 @@ struct DesktopApplyCommandTests {
     )
     #expect(apply.succeeded)
     #expect(fixture.lifecycle.isRunning)
-    let applyReport = try #require(
-      JSONSerialization.jsonObject(with: Data(apply.output.utf8)) as? [String: Any]
-    )
+    let applyReport = try jsonObject(apply.output)
     #expect(
       (applyReport["sketchybar"] as? [String: Any])?["generation_id"] as? String != nil
     )
     #expect(
-      try fixture.linkTarget(fixture.home.appending(path: ".config/sketchybar/sketchybarrc"))
+      try linkTarget(fixture.home.appending(path: ".config/sketchybar/sketchybarrc"))
         == "../macarchy/desktop/sketchybar/current/sketchybarrc"
     )
 
@@ -559,9 +555,7 @@ struct DesktopApplyCommandTests {
       adopt: nil,
       json: true
     )
-    let repeatReport = try #require(
-      JSONSerialization.jsonObject(with: Data(repeatApply.output.utf8)) as? [String: Any]
-    )
+    let repeatReport = try jsonObject(repeatApply.output)
     #expect(repeatApply.succeeded)
     #expect(repeatReport["outcome"] as? String == "no_change")
 
@@ -593,11 +587,7 @@ struct DesktopApplyCommandTests {
     let driftedStatus = try DesktopStatusCommandRunner(
       lifecycle: yabaiLifecycle.controller,
       sketchyBarLifecycle: fixture.lifecycle.controller,
-      sketchyBarCoreRuntime: SketchyBarCoreRuntimeController(
-        inspect: { _ in driftedCore },
-        settle: { _ in driftedCore },
-        settleRestored: { $0.agreesWithProviderRuntime(driftedCore) }
-      ),
+      sketchyBarCoreRuntime: .fixed(driftedCore),
       keybindings: nil,
       theme: nil
     ).execute(
@@ -608,9 +598,7 @@ struct DesktopApplyCommandTests {
       homeDirectory: fixture.home,
       json: true
     )
-    let driftedReport = try #require(
-      JSONSerialization.jsonObject(with: Data(driftedStatus.output.utf8)) as? [String: Any]
-    )
+    let driftedReport = try jsonObject(driftedStatus.output)
     #expect(!driftedStatus.succeeded)
     #expect(driftedReport["outcome"] as? String == "drifted")
     #expect(
@@ -634,10 +622,7 @@ struct DesktopApplyCommandTests {
       homeDirectory: fixture.home,
       json: true
     )
-    let corruptReport = try #require(
-      JSONSerialization.jsonObject(with: Data(corruptTransactionStatus.output.utf8))
-        as? [String: Any]
-    )
+    let corruptReport = try jsonObject(corruptTransactionStatus.output)
     #expect(!corruptTransactionStatus.succeeded)
     #expect(corruptReport["outcome"] as? String == "drifted")
     #expect((corruptReport["diagnostics"] as? [String])?.isEmpty == false)
@@ -688,7 +673,7 @@ struct DesktopApplyCommandTests {
     )
     let entry = fixture.home.appending(path: ".config/yabai/yabairc")
     #expect(apply.succeeded)
-    #expect(try fixture.linkTarget(entry) == fixture.managedTarget)
+    #expect(try linkTarget(entry) == fixture.managedTarget)
 
     try """
     schema_version = 1
@@ -708,9 +693,7 @@ struct DesktopApplyCommandTests {
       json: true,
       scope: .yabaiOnly
     )
-    let disablePlanReport = try #require(
-      JSONSerialization.jsonObject(with: Data(disablePlan.output.utf8)) as? [String: Any]
-    )
+    let disablePlanReport = try jsonObject(disablePlan.output)
     let disableActions = try #require(disablePlanReport["actions"] as? [[String: Any]])
     #expect(disableActions.compactMap { $0["id"] as? String } == ["teardown_yabai_provider"])
     let disable = try runner.execute(
@@ -770,7 +753,7 @@ struct DesktopApplyCommandTests {
       json: true
     )
     #expect(apply.succeeded)
-    #expect(try fixture.linkTarget(entry) == fixture.managedTarget)
+    #expect(try linkTarget(entry) == fixture.managedTarget)
 
     let repeatApply = try runner.execute(
       resourcesRoot: fixture.resources,
@@ -781,9 +764,7 @@ struct DesktopApplyCommandTests {
       adopt: nil,
       json: true
     )
-    let repeatReport = try #require(
-      JSONSerialization.jsonObject(with: Data(repeatApply.output.utf8)) as? [String: Any]
-    )
+    let repeatReport = try jsonObject(repeatApply.output)
     #expect(repeatApply.succeeded)
     #expect(repeatReport["outcome"] as? String == "no_change")
     #expect(repeatReport["mutated"] as? Bool == false)
@@ -805,9 +786,7 @@ struct DesktopApplyCommandTests {
       json: true,
       scope: .yabaiOnly
     )
-    let planReport = try #require(
-      JSONSerialization.jsonObject(with: Data(plan.output.utf8)) as? [String: Any]
-    )
+    let planReport = try jsonObject(plan.output)
     #expect((planReport["actions"] as? [Any])?.isEmpty == true)
     #expect(planReport["sketchybar"] == nil)
     try FileManager.default.removeItem(at: sketchyBarOwnership)
@@ -892,7 +871,7 @@ struct DesktopApplyCommandTests {
       json: true
     )
     #expect(teardown.succeeded)
-    #expect(try fixture.linkTarget(directory) == originalTarget)
+    #expect(try linkTarget(directory) == originalTarget)
     var restoredMetadata = stat()
     #expect(lstat(directory.path, &restoredMetadata) == 0)
     #expect(restoredMetadata.st_ino == originalMetadata.st_ino)
@@ -944,7 +923,7 @@ struct DesktopApplyCommandTests {
     )
     #expect(retry.succeeded)
     #expect(!YabaiTransactionStore(stateRoot: fixture.state).exists)
-    #expect(try fixture.linkTarget(entry) == fixture.managedTarget)
+    #expect(try linkTarget(entry) == fixture.managedTarget)
   }
 
   @Test
@@ -1084,7 +1063,7 @@ struct DesktopApplyCommandTests {
       json: true
     )
     #expect(!teardown.succeeded)
-    #expect(try fixture.linkTarget(entry) == fixture.managedTarget)
+    #expect(try linkTarget(entry) == fixture.managedTarget)
     #expect(YabaiTransactionStore(stateRoot: fixture.state).exists)
   }
 
@@ -1108,9 +1087,7 @@ struct DesktopApplyCommandTests {
       dryRun: true,
       json: true
     )
-    let report = try #require(
-      JSONSerialization.jsonObject(with: Data(result.output.utf8)) as? [String: Any]
-    )
+    let report = try jsonObject(result.output)
 
     #expect(!result.succeeded)
     #expect(report["mutated"] as? Bool == false)
@@ -1139,13 +1116,7 @@ private struct DesktopApplyFixture {
     """.write(to: profile, atomically: true, encoding: .utf8)
   }
 
-  var resources: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Desktop", directoryHint: .isDirectory)
-  }
+  var resources: URL { repositoryRoot.appending(path: "Desktop", directoryHint: .isDirectory) }
 
   var managedTarget: String { "../macarchy/desktop/yabai/current/yabairc" }
 
@@ -1167,15 +1138,9 @@ private struct DesktopApplyFixture {
       json: true,
       scope: .yabaiOnly
     )
-    let object = try #require(
-      JSONSerialization.jsonObject(with: Data(execution.output.utf8)) as? [String: Any]
-    )
+    let object = try jsonObject(execution.output)
     let provider = try #require(object["provider"] as? [String: Any])
     return try #require(provider["adoption_evidence_digest"] as? String)
-  }
-
-  func linkTarget(_ url: URL) throws -> String {
-    try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
   }
 
 }
@@ -1207,18 +1172,12 @@ private struct SketchyBarPublicCommandFixture {
       )
     }
     try profileText.write(to: profile, atomically: true, encoding: .utf8)
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(
-        path: "Themes/catppuccin-mocha",
-        directoryHint: .isDirectory
-      )
-    )
-    let generation = try ThemeActivator(root: state).activate(package: package)
+    let generationID = try activateCatppuccinMocha(stateRoot: state)
     lifecycle = SketchyBarPublicLifecycleFixture()
     core = SketchyBarCoreRuntimeInspection(
       status: hasHook ? .partial : .converged,
       message: hasHook ? "partial" : "converged",
-      themeGenerationID: generation.generationID,
+      themeGenerationID: generationID,
       barColor: "0xf01e1e2e",
       items: (["macarchy.clock", "macarchy.spaces.unavailable", "macarchy.theme.ready"]
         + (hasHook ? ["personal.demo"] : [])).sorted(),
@@ -1229,17 +1188,7 @@ private struct SketchyBarPublicCommandFixture {
 
   var resources: URL { repositoryRoot.appending(path: "Desktop", directoryHint: .isDirectory) }
 
-  var coreController: SketchyBarCoreRuntimeController {
-    SketchyBarCoreRuntimeController(
-      inspect: { _ in core },
-      settle: { _ in core },
-      settleRestored: { $0.agreesWithProviderRuntime(core) }
-    )
-  }
-
-  func linkTarget(_ url: URL) throws -> String {
-    try FileManager.default.destinationOfSymbolicLink(atPath: url.path)
-  }
+  var coreController: SketchyBarCoreRuntimeController { .fixed(core) }
 
   func installRegularEntry(_ contents: String) throws -> URL {
     let directory = home.appending(path: ".config/sketchybar", directoryHint: .isDirectory)
@@ -1250,98 +1199,9 @@ private struct SketchyBarPublicCommandFixture {
   }
 
   func adoptionDigest() throws -> String {
-    let generation = SketchyBarGenerationInspector(stateRoot: state).inspect()
-    let provider = SketchyBarProviderPlanInspector().inspect(
-      homeDirectory: home,
-      stateRoot: state,
-      enabled: true,
-      generation: generation
-    )
-    return try #require(provider.adoptionEvidenceDigest)
+    try sketchyBarAdoptionDigest(home: home, stateRoot: state)
   }
 
-}
-
-private final class SketchyBarPublicLifecycleFixture: Sendable {
-  let calls = Mutex<[String]>([])
-  private let running = Mutex(false)
-
-  var isRunning: Bool { running.withLock { $0 } }
-
-  var controller: SketchyBarLifecycleController {
-    SketchyBarLifecycleController(
-      inspect: {
-        self.calls.withLock { $0.append("inspect") }
-        return self.running.withLock { $0 } ? Self.runtime : .stopped
-      },
-      preflight: {
-        self.calls.withLock { $0.append("preflight") }
-        return self.running.withLock { $0 }
-      },
-      reload: { _ in
-        self.calls.withLock { $0.append("reload") }
-        return Self.runtime
-      },
-      start: {
-        self.calls.withLock { $0.append("start") }
-        self.running.withLock { $0 = true }
-        return Self.runtime
-      },
-      stop: {
-        self.calls.withLock { $0.append("stop") }
-        self.running.withLock { $0 = false }
-      }
-    )
-  }
-
-  private static let runtime = SketchyBarRuntimeInspection(
-    status: .running,
-    message: "running",
-    processID: 42,
-    executablePath: "/opt/homebrew/Cellar/sketchybar/2.23.0/bin/sketchybar",
-    serviceLabel: SketchyBarHomebrewService.serviceLabel
-  )
-}
-
-private final class YabaiLifecycleFixture: Sendable {
-  let calls = Mutex<[String]>([])
-  private let running: Mutex<Bool>
-  private let runtimeStatus: YabaiRuntimeStatus
-
-  init(running: Bool, runtimeStatus: YabaiRuntimeStatus = .converged) {
-    self.running = Mutex(running)
-    self.runtimeStatus = runtimeStatus
-  }
-
-  var controller: YabaiLifecycleController {
-    YabaiLifecycleController(
-      preflight: {
-        self.calls.withLock { $0.append("preflight") }
-        return self.running.withLock { $0 }
-      },
-      restart: {
-        self.calls.withLock { $0.append("restart") }
-        self.running.withLock { $0 = true }
-      },
-      stop: {
-        self.calls.withLock { $0.append("stop") }
-        self.running.withLock { $0 = false }
-      },
-      inspect: { composition in
-        self.calls.withLock { $0.append("inspect") }
-        return YabaiRuntimeInspection(
-          status: self.runtimeStatus,
-          message: self.runtimeStatus == .drifted ? "injected runtime drift" : "verified",
-          verifiedSettings: [composition.settings.layout],
-          verifiedRuleLabels: composition.settings.rules.compactMap(\.label),
-          wallpaperSignalVerified: self.runtimeStatus != .drifted,
-          processID: 42,
-          executablePath: "/opt/homebrew/bin/yabai"
-        )
-      },
-      waitBetweenInspections: {}
-    )
-  }
 }
 
 extension DesktopPlanCommandRunner {

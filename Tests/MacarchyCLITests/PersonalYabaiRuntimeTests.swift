@@ -18,8 +18,7 @@ struct PersonalYabaiRuntimeTests {
         ? "schema_version = 1\n"
         : "schema_version = 1\n[yabai]\nconfiguration = \"personal.sh\"\n",
       source: root.appending(path: "profile.toml"))
-    let defaults = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-      .deletingLastPathComponent().appending(path: "Desktop/yabai/defaults.toml")
+    let defaults = repositoryRoot.appending(path: "Desktop/yabai/defaults.toml")
     let composition = try YabaiConfigurationComposer().compose(
       defaultsURL: defaults, profile: profile)
     let inspection = YabaiLifecycleController.inspectRuntime(
