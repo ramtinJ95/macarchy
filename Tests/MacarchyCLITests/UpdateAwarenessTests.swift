@@ -5,7 +5,6 @@ import Testing
 @testable import MacarchyCLI
 @testable import ThemeCore
 
-@Suite(.serialized)
 struct UpdateAwarenessTests {
   @Test func reviewFetchDoesNotCreateCacheOrLockFiles() throws {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
