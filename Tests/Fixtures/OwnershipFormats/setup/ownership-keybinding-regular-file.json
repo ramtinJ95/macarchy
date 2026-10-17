@@ -1,0 +1,25 @@
+{
+  "records" : [
+    {
+      "backup_path" : "state/setup/backups/keybindings-skhdrc",
+      "claim_nonce" : "33333333-3333-4333-8333-333333333333",
+      "id" : "keybindings.skhd-entry",
+      "installed_digest" : "sha256:8eb21083930d381c515343f46f12e947aad6befca3e5851814dfba2be34eb593",
+      "kind" : "symbolic_link",
+      "link_destination" : "../macarchy/keybindings/current/skhdrc",
+      "original_device" : 16777234,
+      "original_digest" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "original_file_mode" : 420,
+      "original_inode" : 9004,
+      "original_inventory" : [
+
+      ],
+      "original_kind" : "regular_file",
+      "original_metadata_digest" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "original_source_digest" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "phase" : "teardown_prepared",
+      "target_path" : "{{HOME}}/.config/skhd/skhdrc"
+    }
+  ],
+  "schema_version" : 1
+}

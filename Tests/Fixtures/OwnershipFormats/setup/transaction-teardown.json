@@ -1,0 +1,11 @@
+{
+  "context_digest" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "desired_appearance" : "light",
+  "operation" : "teardown",
+  "phase" : "mutating",
+  "schema_version" : 1,
+  "stages" : [
+    "environment",
+    "desktop"
+  ]
+}

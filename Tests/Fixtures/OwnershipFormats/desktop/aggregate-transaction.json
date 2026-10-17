@@ -1,0 +1,5 @@
+{
+  "operation" : "apply",
+  "phase" : "committing",
+  "schema_version" : 1
+}

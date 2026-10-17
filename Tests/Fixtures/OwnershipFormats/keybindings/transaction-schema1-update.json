@@ -1,0 +1,8 @@
+{
+  "generation_created" : true,
+  "generation_id" : "k-22222222-2222-4222-8222-222222222222",
+  "operation" : "update_generation",
+  "phase" : "current_selected",
+  "previous_generation_id" : "k-11111111-1111-4111-8111-111111111111",
+  "schema_version" : 1
+}

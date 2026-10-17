@@ -1,0 +1,12 @@
+{
+  "original" : {
+    "loaded" : false,
+    "running" : false
+  },
+  "registration" : {
+      "digest" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "inode" : 4242,
+      "permissions" : 420,
+      "volumeUUID" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+    }
+}

@@ -1,0 +1,22 @@
+{
+  "generation_created" : true,
+  "generation_id" : "s-22222222-2222-4222-8222-222222222222",
+  "operation" : "apply",
+  "ownership" : {
+    "created_configuration_directory" : true,
+    "generation_id" : "s-22222222-2222-4222-8222-222222222222",
+    "managed_target" : "../macarchy/desktop/sketchybar/current/sketchybarrc",
+    "original" : {
+      "inventory" : [
+
+      ],
+      "kind" : "absent",
+      "public_path" : "{{HOME}}/.config/sketchybar/sketchybarrc"
+    },
+    "prior_service_running" : false,
+    "schema_version" : 2
+  },
+  "phase" : "generation_published",
+  "schema_version" : 3,
+  "service_was_running" : false
+}

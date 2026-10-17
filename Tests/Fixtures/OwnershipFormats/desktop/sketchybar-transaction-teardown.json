@@ -1,0 +1,87 @@
+{
+  "generation_created" : false,
+  "generation_id" : "s-11111111-1111-4111-8111-111111111111",
+  "operation" : "teardown",
+  "ownership" : {
+    "created_configuration_directory" : false,
+    "generation_id" : "s-11111111-1111-4111-8111-111111111111",
+    "managed_target" : "../macarchy/desktop/sketchybar/current/sketchybarrc",
+    "original" : {
+      "content_digest" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "device" : 16777234,
+      "inode" : 9002,
+      "inventory" : [
+
+      ],
+      "kind" : "regular_file",
+      "permissions" : 420,
+      "public_path" : "{{HOME}}/.config/sketchybar/sketchybarrc",
+      "volume_uuid" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+    },
+    "prior_service_running" : true,
+    "retained_original_path" : "{{STATE}}/desktop/sketchybar/retained-55555555-5555-4555-8555-555555555555",
+    "schema_version" : 2
+  },
+  "phase" : "provider_changing",
+  "previous_generation_id" : "s-11111111-1111-4111-8111-111111111111",
+  "previous_lifecycle" : {
+    "core_runtime" : {
+      "apple_state_present" : false,
+      "bar_color" : "0xff1e1e2e",
+      "battery_state_present" : false,
+      "clock_label_present" : false,
+      "items" : [
+        "macarchy.theme.ready"
+      ],
+      "media_state_present" : false,
+      "message" : "SketchyBar runs the native configuration",
+      "metric_modules" : [
+
+      ],
+      "native_configuration" : true,
+      "schema_version" : 1,
+      "space_indices" : [
+
+      ],
+      "status" : "partial",
+      "theme_generation_id" : "g-11111111-1111-4111-8111-111111111111",
+      "toggle_state_present" : false,
+      "volume_level_present" : false,
+      "wifi_state_present" : false
+    },
+    "generation_id" : "s-11111111-1111-4111-8111-111111111111",
+    "runtime" : {
+      "executable_path" : "/opt/homebrew/Cellar/sketchybar/2.22.1/bin/sketchybar",
+      "message" : "SketchyBar is running",
+      "process_id" : 555,
+      "service_label" : "homebrew.mxcl.sketchybar",
+      "status" : "running"
+    },
+    "schema_version" : 2
+  },
+  "previous_ownership" : {
+    "created_configuration_directory" : false,
+    "generation_id" : "s-11111111-1111-4111-8111-111111111111",
+    "managed_target" : "../macarchy/desktop/sketchybar/current/sketchybarrc",
+    "original" : {
+      "content_digest" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "device" : 16777234,
+      "inode" : 9002,
+      "inventory" : [
+
+      ],
+      "kind" : "regular_file",
+      "permissions" : 420,
+      "public_path" : "{{HOME}}/.config/sketchybar/sketchybarrc",
+      "volume_uuid" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+    },
+    "prior_service_running" : true,
+    "retained_original_path" : "{{STATE}}/desktop/sketchybar/retained-55555555-5555-4555-8555-555555555555",
+    "schema_version" : 2
+  },
+  "schema_version" : 3,
+  "service_was_running" : true,
+  "teardown_generation_ids" : [
+    "s-11111111-1111-4111-8111-111111111111"
+  ]
+}
