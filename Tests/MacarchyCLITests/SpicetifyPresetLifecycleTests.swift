@@ -580,9 +580,7 @@ private struct SpicetifyPresetFixture {
       try FileManager.default.createDirectory(
         at: colorLink.deletingLastPathComponent(), withIntermediateDirectories: true)
     }
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
-    _ = try ThemeActivator(root: state).activate(package: package)
+    try activateCatppuccinMocha(stateRoot: state)
   }
 
   func composition(enabled: Bool) throws -> EnvironmentComposition {
@@ -596,25 +594,8 @@ private struct SpicetifyPresetFixture {
 
   func profile(enabled: Bool, slack: Bool = false) throws -> URL {
     let profile = root.appending(path: "profile-\(enabled)-\(slack).toml")
-    try """
-    schema_version = 1
-    [focus_ring]
-    provider = "disabled"
-    [terminal]
-    provider = "disabled"
-    [shell]
-    provider = "disabled"
-    [editor]
-    provider = "disabled"
-    [tools]
-    bat = false
-    eza = false
-    btop = false
-    yazi = false
-    [presets]
-    slack = \(slack)
-    spicetify = \(enabled)
-    """.write(to: profile, atomically: true, encoding: .utf8)
+    try presetTestProfile(presets: ["slack": slack, "spicetify": enabled])
+      .write(to: profile, atomically: true, encoding: .utf8)
     return profile
   }
 
