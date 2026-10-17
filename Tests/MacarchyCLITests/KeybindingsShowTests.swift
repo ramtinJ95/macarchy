@@ -7,8 +7,7 @@ import Testing
 struct KeybindingsShowTests {
   @Test
   func packagedHelpShortcutSelectsTheCategorizedManagedView() throws {
-    let root = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent()
+    let root = repositoryRoot
     let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let state = KeybindingEffectiveStateInspector().inspect(
       resourcesRoot: root.appending(path: "Keybindings"),
@@ -188,10 +187,8 @@ struct KeybindingsShowTests {
 }
 
 private func testTheme() throws -> NormalizedTheme {
-  let fixture = URL(filePath: #filePath)
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .appending(path: "Fixtures/Golden/catppuccin-mocha/theme.json")
+  let fixture = repositoryRoot.appending(
+    path: "Tests/Fixtures/Golden/catppuccin-mocha/theme.json")
   return try JSONDecoder().decode(
     NormalizedTheme.self,
     from: Data(contentsOf: fixture)
