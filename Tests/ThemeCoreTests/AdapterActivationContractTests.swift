@@ -272,71 +272,33 @@ extension AdapterContractTests {
     #expect(try store.read() == .current(recovered))
   }
 
-  @Test
-  func requiredAdapterPreflightFailuresPreserveThePreviousGeneration() async throws {
-    for adapterID in ["bat", "eza", "kitty", "sketchybar"] {
-      let root = try temporaryDirectory()
-      defer {
-        makeWritableForRemoval(root)
-        try? FileManager.default.removeItem(at: root)
-      }
+  @Test(arguments: PreflightFailure.allCases)
+  func requiredAdapterPreflightFailurePreservesThePreviousGeneration(
+    _ failure: PreflightFailure
+  ) async throws {
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
       let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
-      let consumerPaths = try Self.consumerPaths(
-        root: root,
-        adapterIDs: [adapterID]
-      )
-      let kittyConfiguration = consumerPaths.kittyConfigurationURL
-      let sketchyBarConfiguration = consumerPaths.sketchyBarConfigurationURL
-      if adapterID == "bat" {
-        try "--theme=\"other\"\n".write(
-          to: consumerPaths.batConfigurationDirectoryURL.appending(path: "config"),
-          atomically: true,
-          encoding: .utf8
-        )
-      } else if adapterID == "eza" {
-        try "export EZA_CONFIG_DIR=\"other\"\n".write(
-          to: consumerPaths.shellConfigurationURL,
-          atomically: true,
-          encoding: .utf8
-        )
-      } else if adapterID == "kitty" {
-        try "include bindings.conf\n".write(
-          to: kittyConfiguration,
-          atomically: true,
-          encoding: .utf8
-        )
-      } else {
-        try "-- missing init import\n".write(
-          to: sketchyBarConfiguration,
-          atomically: true,
-          encoding: .utf8
-        )
-      }
       let calls = Mutex(0)
       let coordinator = ThemeActivationCoordinator(
         root: root,
-        consumerPaths: consumerPaths,
+        consumerPaths: try failure.consumerPaths(root: root),
         processRunner: ProcessRunner { _ in
           calls.withLock { $0 += 1 }
           return ProcessResult(terminationStatus: 0, output: "")
         },
-        wallpaperControl: Self.wallpaperControl(),
+        wallpaperControl: failure == .wallpaper
+          ? WallpaperControl(inspect: { [] }, set: { _, _ in }) : Self.wallpaperControl(),
         wallpaperSignal: try Self.wallpaperSignal(root: root),
+        appearanceControlIsAvailable: { failure != .macOSAppearance },
         onThemeChanged: { _ in calls.withLock { $0 += 1 } },
-        enabledAdapterIDs: [adapterID]
+        enabledAdapterIDs: failure.enabledAdapterIDs
       )
 
       do {
         _ = try await coordinator.activate(package: catppuccinPackage())
-        Issue.record("Expected \(adapterID) preflight to fail")
-      } catch is BatAdapterError {
-        #expect(adapterID == "bat")
-      } catch is EzaAdapterError {
-        #expect(adapterID == "eza")
-      } catch is KittyAdapterError {
-        #expect(adapterID == "kitty")
-      } catch is SketchyBarAdapterError {
-        #expect(adapterID == "sketchybar")
+        Issue.record("Expected \(failure) preflight to fail")
+      } catch {
+        #expect(failure.isExpected(error), "unexpected error: \(error)")
       }
 
       #expect(calls.withLock { $0 } == 0)
@@ -788,4 +750,56 @@ extension AdapterContractTests {
     #expect(processCalls.withLock { $0 } == 0)
   }
 
+}
+
+/// A required adapter whose preflight refuses activation before anything is published.
+enum PreflightFailure: String, CaseIterable, Sendable {
+  case bat, eza, kitty, sketchybar
+  /// Every adapter enabled while the appearance control is unavailable.
+  case macOSAppearance
+  /// Only wallpaper enabled while no display is reported.
+  case wallpaper
+
+  var enabledAdapterIDs: Set<String>? {
+    switch self {
+    case .macOSAppearance: nil
+    case .wallpaper: [WallpaperAdapter.id]
+    case .bat, .eza, .kitty, .sketchybar: [rawValue]
+    }
+  }
+
+  func consumerPaths(root: URL) throws -> ThemeConsumerPaths {
+    switch self {
+    case .macOSAppearance, .wallpaper:
+      let kittyConfiguration = root.appending(path: "kitty.conf")
+      try "include \(root.path)/state/adapters/kitty.conf\n".write(
+        to: kittyConfiguration, atomically: true, encoding: .utf8)
+      return try AdapterContractTests.consumerPaths(
+        root: root, kittyConfigurationURL: kittyConfiguration,
+        sketchyBarConfigurationURL: try AdapterContractTests.sketchyBarConfiguration(root: root))
+    case .bat, .eza, .kitty, .sketchybar:
+      let paths = try AdapterContractTests.consumerPaths(root: root, adapterIDs: [rawValue])
+      let (contents, url): (String, URL) =
+        switch self {
+        case .bat:
+          ("--theme=\"other\"\n", paths.batConfigurationDirectoryURL.appending(path: "config"))
+        case .eza: ("export EZA_CONFIG_DIR=\"other\"\n", paths.shellConfigurationURL)
+        case .kitty: ("include bindings.conf\n", paths.kittyConfigurationURL)
+        default: ("-- missing init import\n", paths.sketchyBarConfigurationURL)
+        }
+      try contents.write(to: url, atomically: true, encoding: .utf8)
+      return paths
+    }
+  }
+
+  func isExpected(_ error: any Error) -> Bool {
+    switch self {
+    case .bat: error is BatAdapterError
+    case .eza: error is EzaAdapterError
+    case .kitty: error is KittyAdapterError
+    case .sketchybar: error is SketchyBarAdapterError
+    case .macOSAppearance: error is MacOSAppearanceAdapterError
+    case .wallpaper: error as? WallpaperAdapterError == .noDisplays
+    }
+  }
 }

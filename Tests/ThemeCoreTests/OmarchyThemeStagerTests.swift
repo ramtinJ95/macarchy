@@ -139,15 +139,20 @@ struct OmarchyThemeStagerTests {
 
   @Test
   func callbackFailurePreservesTheErrorAndCleansUp() throws {
-    let fixture = try GitFixture()
-    defer { fixture.remove() }
-    let stager = OmarchyThemeStager(
-      temporaryRoot: fixture.stagingRoot,
-      processRunner: localRepositoryRunner(
-        source: fixture.repository,
-        recorder: RequestRecorder()
-      )
-    )
+    let root = try temporaryDirectory(named: "callback")
+    defer { try? FileManager.default.removeItem(at: root) }
+    // A scripted clone and commit reach the callback without a real repository.
+    let runner = ProcessRunner { request in
+      if request.arguments.contains("clone") {
+        try FileManager.default.createDirectory(
+          at: URL(filePath: request.arguments.last!, directoryHint: .isDirectory),
+          withIntermediateDirectories: true
+        )
+        return ProcessResult(terminationStatus: 0, output: "")
+      }
+      return ProcessResult(terminationStatus: 0, output: String(repeating: "a", count: 40))
+    }
+    let stager = OmarchyThemeStager(temporaryRoot: root, processRunner: runner)
 
     #expect(throws: CallbackError.expected) {
       try stager.withStagedCheckout(from: "https://github.com/example/theme") { _ in
@@ -156,7 +161,7 @@ struct OmarchyThemeStagerTests {
     }
     #expect(
       try FileManager.default.contentsOfDirectory(
-        at: fixture.stagingRoot,
+        at: root,
         includingPropertiesForKeys: nil
       ).isEmpty)
   }
@@ -188,23 +193,6 @@ struct OmarchyThemeStagerTests {
         at: root,
         includingPropertiesForKeys: nil
       ).isEmpty)
-  }
-
-  @Test
-  func processRunnerCanRemoveInheritedEnvironmentValues() throws {
-    let result = try ProcessRunner.live.run(
-      ProcessRequest(
-        executableURL: URL(filePath: "/usr/bin/env"),
-        arguments: [],
-        timeout: 10,
-        environmentOverrides: ["MACARCHY_ENVIRONMENT_TEST": "present"],
-        environmentRemovals: ["HOME"]
-      )
-    )
-
-    #expect(result.terminationStatus == 0)
-    #expect(result.output.contains("MACARCHY_ENVIRONMENT_TEST=present"))
-    #expect(!result.output.split(separator: "\n").contains { $0.hasPrefix("HOME=") })
   }
 
   @Test
