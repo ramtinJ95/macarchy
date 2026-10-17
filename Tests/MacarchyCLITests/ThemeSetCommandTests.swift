@@ -38,16 +38,13 @@ struct ThemeSetCommandTests {
     #expect(try String(contentsOf: kittyConfigurationURL, encoding: .utf8) == configuration)
   }
 
-  @Test
-  func precommitFailureReportsThatCanonicalStateIsUnchanged() async throws {
-    let runner = runner {
-      throw TestFailure.precommit
-    }
-
+  /// Every runner outcome renders its text and JSON goldens and reports the right exit status.
+  @Test(arguments: GoldenOutcome.allCases)
+  func outcomeMatchesItsGoldens(_ outcome: GoldenOutcome) async throws {
     try await expectGoldens(
-      runner: runner,
-      basename: "precommit-failure",
-      succeeded: false
+      runner: runner { try outcome.activate() },
+      basename: outcome.rawValue,
+      succeeded: outcome == .success
     )
   }
 
@@ -98,34 +95,6 @@ struct ThemeSetCommandTests {
   }
 
   @Test
-  func successfulCommitAcceptsRestartRequiredAndOptionalFailure() async throws {
-    let runner = runner {
-      try activation(
-        results: [
-          AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
-          AdapterResult(
-            adapterID: "btop",
-            requirement: .required,
-            status: .restartRequired
-          ),
-          AdapterResult(
-            adapterID: "spicetify",
-            requirement: .optional,
-            status: .failed,
-            message: "apply failed"
-          ),
-        ]
-      )
-    }
-
-    try await expectGoldens(
-      runner: runner,
-      basename: "success",
-      succeeded: true
-    )
-  }
-
-  @Test
   func successfulCommitPrintsAndEncodesTheSlackImportPayload() async throws {
     let runner = runner {
       try activation(results: [])
@@ -163,62 +132,6 @@ struct ThemeSetCommandTests {
     #expect(
       object["slack_theme"] as? String
         == "#1e1e2e,#cba6f7,#a6e3a1,#f38ba8"
-    )
-  }
-
-  @Test
-  func requiredFailureReturnsFailureWithoutUndoingTheCommit() async throws {
-    let runner = runner {
-      try activation(
-        results: [
-          AdapterResult(
-            adapterID: "kitty",
-            requirement: .required,
-            status: .failed,
-            message: "reload denied"
-          )
-        ]
-      )
-    }
-
-    try await expectGoldens(
-      runner: runner,
-      basename: "required-failure",
-      succeeded: false
-    )
-  }
-
-  @Test
-  func postcommitInfrastructureFailureStillReportsTheCommittedGeneration() async throws {
-    let manifest = manifest()
-    let runner = runner {
-      throw ThemeCommittedWithReconciliationError(
-        manifest: manifest,
-        cause: "active generation changed before status persistence"
-      )
-    }
-
-    try await expectGoldens(
-      runner: runner,
-      basename: "committed-error",
-      succeeded: false
-    )
-  }
-
-  @Test
-  func postcommitActivationFailureDoesNotClaimTheCommitWasRolledBack() async throws {
-    let manifest = manifest()
-    let runner = runner {
-      throw ThemeCommittedActivationError(
-        manifest: manifest,
-        cause: "generation cleanup was denied"
-      )
-    }
-
-    try await expectGoldens(
-      runner: runner,
-      basename: "committed-activation-error",
-      succeeded: false
     )
   }
 
@@ -560,6 +473,52 @@ struct ThemeSetCommandTests {
       codexConfigurationDirectoryURL: codexDirectory,
       spicetifyConfigurationDirectoryURL: spicetifyDirectory
     )
+  }
+}
+
+extension ThemeSetCommandTests {
+  enum GoldenOutcome: String, CaseIterable, Sendable {
+    /// Fails before the commit, so canonical state is unchanged.
+    case precommitFailure = "precommit-failure"
+    /// Commits and accepts a required restart and an optional adapter failure.
+    case success
+    /// A required adapter failure fails the command without undoing the commit.
+    case requiredFailure = "required-failure"
+    /// A post-commit infrastructure failure still reports the committed generation.
+    case committedError = "committed-error"
+    /// A post-commit activation failure doesn't claim the commit was rolled back.
+    case committedActivationError = "committed-activation-error"
+
+    func activate() throws -> ThemeActivationResult {
+      switch self {
+      case .precommitFailure:
+        throw TestFailure.precommit
+      case .success:
+        return try activation(
+          results: [
+            AdapterResult(adapterID: "kitty", requirement: .required, status: .applied),
+            AdapterResult(adapterID: "btop", requirement: .required, status: .restartRequired),
+            AdapterResult(
+              adapterID: "spicetify", requirement: .optional, status: .failed,
+              message: "apply failed"),
+          ]
+        )
+      case .requiredFailure:
+        return try activation(
+          results: [
+            AdapterResult(
+              adapterID: "kitty", requirement: .required, status: .failed,
+              message: "reload denied")
+          ]
+        )
+      case .committedError:
+        throw ThemeCommittedWithReconciliationError(
+          manifest: manifest(), cause: "active generation changed before status persistence")
+      case .committedActivationError:
+        throw ThemeCommittedActivationError(
+          manifest: manifest(), cause: "generation cleanup was denied")
+      }
+    }
   }
 }
 
