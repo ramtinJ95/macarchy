@@ -7,6 +7,20 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-17
+
+### Fixed
+
+- Standalone environment apply and teardown now refuse while a unified setup
+  operation is pending, preserving its recovery decision. Recover through
+  `setup apply` or `setup teardown` before retrying (#270).
+
+### Changed
+
+- Shared internal ownership transaction mechanics and retired the unused legacy
+  setup apply path while preserving released ownership formats and teardown
+  support (#265–#269).
+
 ## [0.13.0] - 2026-10-16
 
 ### Added
