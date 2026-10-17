@@ -904,36 +904,7 @@ struct EnvironmentLifecycleTests {
   func interruptedApplyIsForwardRecoveredBeforeRetry() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let digest = try #require(
-      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
-    )
-    let profile = try PortableProfileLoader().load(at: fixture.profile, required: true)
-    let composition = try EnvironmentConfigurationComposer().compose(
-      resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
-      profile: profile,
-      stateRoot: fixture.state
-    )
-    let inspection = EnvironmentProviderInspector().inspect(
-      composition: composition,
-      homeDirectory: fixture.home,
-      stateRoot: fixture.state
-    )
-    _ = try ActivationLock(root: fixture.state).withLock {
-      try EnvironmentTransactionCoordinator(
-        homeDirectory: fixture.home,
-        stateRoot: fixture.state
-      ).applyLocked(
-        composition: composition,
-        inspection: inspection,
-        adoptionDigest: digest,
-        themeBridges: try EnvironmentThemeBridgeState.capture(
-          profile: profile.environment,
-          stateRoot: fixture.state
-        )
-      )
-    }
-    #expect(EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
-    try EnvironmentStateStore(stateRoot: fixture.state).writeOwnership(nil)
+    try fixture.stageInterruptedApply()
 
     let recovery = try await fixture.apply(adopt: nil)
 
@@ -976,6 +947,69 @@ struct EnvironmentLifecycleTests {
 
     #expect(teardown.succeeded)
     #expect(try fixture.entryEvidence() == originalEntries)
+    #expect(!store.transactionExists)
+  }
+
+  @Test
+  func standaloneApplyLeavesAnInterruptedStageToPendingUnifiedSetup() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.stageInterruptedApply()
+    let unified = try fixture.writePendingUnifiedSetup(.apply)
+    let environment = try fixture.environmentStateFiles()
+
+    let refused = try await fixture.apply(adopt: nil)
+
+    let report = try jsonObject(refused.output)
+    #expect(!refused.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(report["mutated"] as? Bool == false)
+    #expect(report["message"] as? String == pendingUnifiedSetupMessage)
+    #expect(try fixture.environmentStateFiles() == environment)
+    #expect(try Data(contentsOf: fixture.unifiedSetupJournal) == unified)
+
+    // Unified setup's own call still recovers its stage.
+    let nested = try await fixture.apply(adopt: nil, withinUnifiedSetup: true)
+    #expect(nested.output.contains("recovered"))
+    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
+  }
+
+  @Test
+  func standaloneTeardownLeavesAnInterruptedStageToPendingUnifiedSetup() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    let ownership = try #require(try store.readOwnership())
+    try store.writeTransaction(
+      EnvironmentTransaction(
+        operation: .teardown,
+        previousOwnership: ownership,
+        proposedOwnership: nil,
+        previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
+          .currentDestination(),
+        btopReplacementName: ".macarchy-environment-btop-test.replacement"
+      )
+    )
+    let unified = try fixture.writePendingUnifiedSetup(.teardown)
+    let environment = try fixture.environmentStateFiles()
+
+    let refused = try await fixture.teardown()
+
+    let report = try jsonObject(refused.output)
+    #expect(!refused.succeeded)
+    #expect(report["outcome"] as? String == "blocked")
+    #expect(report["mutated"] as? Bool == false)
+    #expect(report["message"] as? String == pendingUnifiedSetupMessage)
+    #expect(try fixture.environmentStateFiles() == environment)
+    #expect(try fixture.isManaged())
+    #expect(try Data(contentsOf: fixture.unifiedSetupJournal) == unified)
+
+    // Unified setup's own call still finishes the teardown forward.
+    #expect(try await fixture.teardown(withinUnifiedSetup: true).succeeded)
     #expect(!store.transactionExists)
   }
 
@@ -1709,7 +1743,8 @@ struct EnvironmentLifecycleFixture {
     theme: DesktopThemeController? = nil,
     verifier: EnvironmentSessionVerifier = .assumed,
     neovim: EnvironmentNeovimPreparer = .assumed,
-    enabledThemeAdapterIDs: [String]? = nil
+    enabledThemeAdapterIDs: [String]? = nil,
+    withinUnifiedSetup: Bool = false
   ) async throws -> (output: String, succeeded: Bool) {
     try await EnvironmentApplyCommandRunner(
       prerequisites: prerequisites,
@@ -1725,6 +1760,7 @@ struct EnvironmentLifecycleFixture {
       consumerPaths: testConsumerPaths(),
       adopt: adopt,
       json: true,
+      withinUnifiedSetup: withinUnifiedSetup,
       enabledThemeAdapterIDs: enabledThemeAdapterIDs
     )
   }
@@ -1746,14 +1782,16 @@ struct EnvironmentLifecycleFixture {
 
   func teardown(
     dryRun: Bool = false,
-    theme: DesktopThemeController? = nil
+    theme: DesktopThemeController? = nil,
+    withinUnifiedSetup: Bool = false
   ) async throws -> (output: String, succeeded: Bool) {
     try await EnvironmentTeardownCommandRunner(theme: theme).execute(
       stateRoot: state,
       homeDirectory: home,
       consumerPaths: testConsumerPaths(),
       dryRun: dryRun,
-      json: true
+      json: true,
+      withinUnifiedSetup: withinUnifiedSetup
     )
   }
 
@@ -1835,5 +1873,72 @@ extension Int32 {
     guard self == 0 else {
       throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
     }
+  }
+}
+
+private let pendingUnifiedSetupMessage =
+  "Recover the pending unified operation with setup apply or setup teardown first."
+
+extension EnvironmentLifecycleFixture {
+  var unifiedSetupJournal: URL { UnifiedSetupTransactionStore(stateRoot: state).url }
+
+  /// Leaves a forward apply journal as if the process stopped before ownership was published.
+  func stageInterruptedApply() throws {
+    let digest = try #require(
+      try jsonObject(plan().output)["adoption_evidence_digest"] as? String
+    )
+    let profile = try PortableProfileLoader().load(at: self.profile, required: true)
+    let composition = try EnvironmentConfigurationComposer().compose(
+      resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
+      profile: profile,
+      stateRoot: state
+    )
+    let inspection = EnvironmentProviderInspector().inspect(
+      composition: composition,
+      homeDirectory: home,
+      stateRoot: state
+    )
+    _ = try ActivationLock(root: state).withLock {
+      try EnvironmentTransactionCoordinator(
+        homeDirectory: home,
+        stateRoot: state
+      ).applyLocked(
+        composition: composition,
+        inspection: inspection,
+        adoptionDigest: digest,
+        themeBridges: try EnvironmentThemeBridgeState.capture(
+          profile: profile.environment,
+          stateRoot: state
+        )
+      )
+    }
+    #expect(EnvironmentStateStore(stateRoot: state).transactionExists)
+    try EnvironmentStateStore(stateRoot: state).writeOwnership(nil)
+  }
+
+  /// Records an interrupted unified operation whose environment stage is still pending.
+  func writePendingUnifiedSetup(_ operation: UnifiedSetupTransactionOperation) throws -> Data {
+    try UnifiedSetupTransactionStore(stateRoot: state).write(
+      UnifiedSetupTransaction(
+        operation: operation,
+        stages: [.environment],
+        desiredAppearance: .dark,
+        contextDigest: sha256Digest(Data("pending unified setup".utf8))
+      )
+    )
+    return try Data(contentsOf: unifiedSetupJournal)
+  }
+
+  /// The environment journal and ownership receipt, by file name.
+  func environmentStateFiles() throws -> [String: Data] {
+    let directory = state.appending(path: "environment", directoryHint: .isDirectory)
+    var files = [String: Data]()
+    for name in ["ownership.json", "transaction.json"] {
+      let url = directory.appending(path: name)
+      if FileManager.default.fileExists(atPath: url.path) {
+        files[name] = try Data(contentsOf: url)
+      }
+    }
+    return files
   }
 }

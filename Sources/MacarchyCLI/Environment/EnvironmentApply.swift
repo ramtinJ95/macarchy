@@ -424,6 +424,23 @@ struct EnvironmentNeovimPreparer: Sendable {
   }
 }
 
+/// Why a standalone environment mutation must not proceed: a pending unified setup journal owns
+/// the direction of its environment stage, and environment recovery would complete forward a
+/// stage that unified recovery may roll back. Unreadable unified state also blocks. Callers check
+/// under the environment lifecycle lock, which orders this against unified setup's environment
+/// stage without adding a process-wide wait to every standalone run.
+private func pendingUnifiedSetupRefusal(stateRoot: URL, withinUnifiedSetup: Bool) -> String? {
+  guard !withinUnifiedSetup else { return nil }
+  do {
+    guard try UnifiedSetupTransactionStore(stateRoot: stateRoot).read() == nil else {
+      return "Recover the pending unified operation with setup apply or setup teardown first."
+    }
+    return nil
+  } catch {
+    return String(describing: error)
+  }
+}
+
 struct EnvironmentApplyCommandRunner: Sendable {
   let prerequisites: EnvironmentPrerequisiteInspector
   let theme: DesktopThemeController?
@@ -466,6 +483,24 @@ struct EnvironmentApplyCommandRunner: Sendable {
     self.transactionFaultInjector = transactionFaultInjector
   }
 
+  private func unifiedSetupRefusal(
+    stateRoot: URL, profileURL: URL, json: Bool, withinUnifiedSetup: Bool
+  ) throws -> (output: String, succeeded: Bool)? {
+    guard
+      let refusal = pendingUnifiedSetupRefusal(
+        stateRoot: stateRoot, withinUnifiedSetup: withinUnifiedSetup)
+    else { return nil }
+    return try failure(
+      profileURL: profileURL,
+      message: refusal,
+      mutated: false,
+      transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
+        ? "recovery_required" : "clear",
+      json: json
+    )
+  }
+
+  /// Unified setup calls this with `withinUnifiedSetup` from inside its own transaction.
   func execute(
     resourcesRoot: URL,
     profileURL: URL,
@@ -476,6 +511,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     adopt: String?,
     json: Bool,
     deferFinalization: Bool = false,
+    withinUnifiedSetup: Bool = false,
     enabledThemeAdapterIDs suppliedThemeAdapterIDs: [String]? = nil,
     profile suppliedProfile: PortableProfile? = nil
   ) async throws -> (output: String, succeeded: Bool) {
@@ -585,6 +621,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
         let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
         let lifecycleLockDescriptor = try lifecycleLock.acquire()
         defer { lifecycleLock.release(lifecycleLockDescriptor) }
+        if let refusal = try unifiedSetupRefusal(
+          stateRoot: stateRoot, profileURL: profileURL, json: json,
+          withinUnifiedSetup: withinUnifiedSetup)
+        {
+          return refusal
+        }
         let result = try runEnvironmentTeardown(
           coordinator: coordinator,
           dryRun: false,
@@ -663,6 +705,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
     let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
     let lifecycleLockDescriptor = try lifecycleLock.acquire()
     defer { lifecycleLock.release(lifecycleLockDescriptor) }
+    if let refusal = try unifiedSetupRefusal(
+      stateRoot: stateRoot, profileURL: profileURL, json: json,
+      withinUnifiedSetup: withinUnifiedSetup)
+    {
+      return refusal
+    }
 
     do {
       let recovered = try recoverEnvironmentTransaction(
@@ -1106,12 +1154,14 @@ struct EnvironmentTeardownCommandRunner: Sendable {
     self.bordersRuntime = bordersRuntime
   }
 
+  /// Unified setup calls this with `withinUnifiedSetup` from inside its own transaction.
   func execute(
     stateRoot: URL,
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
-    json: Bool
+    json: Bool,
+    withinUnifiedSetup: Bool = false
   ) async throws -> (output: String, succeeded: Bool) {
     var prerequisiteState = [EnvironmentPrerequisiteStatus]()
     do {
@@ -1154,6 +1204,21 @@ struct EnvironmentTeardownCommandRunner: Sendable {
       let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
       let lifecycleLockDescriptor = try lifecycleLock.acquire()
       defer { lifecycleLock.release(lifecycleLockDescriptor) }
+      if !dryRun,
+        let refusal = pendingUnifiedSetupRefusal(
+          stateRoot: stateRoot, withinUnifiedSetup: withinUnifiedSetup)
+      {
+        let report = Self.report(
+          outcome: "blocked",
+          mutated: false,
+          generationStatus: "unknown",
+          transactionStatus: store.transactionExists ? "recovery_required" : "clear",
+          prerequisites: [],
+          theme: [],
+          message: refusal
+        )
+        return (try report.render(json: json), false)
+      }
       let coordinator = EnvironmentTransactionCoordinator(
         homeDirectory: homeDirectory,
         stateRoot: stateRoot

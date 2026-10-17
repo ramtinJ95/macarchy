@@ -52,7 +52,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
           homeDirectory: context.homeDirectory,
           consumerPaths: consumerPaths,
           dryRun: dryRun,
-          json: true
+          json: true,
+          withinUnifiedSetup: true
         )
       )
     },
