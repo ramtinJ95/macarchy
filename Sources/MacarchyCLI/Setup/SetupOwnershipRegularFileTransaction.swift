@@ -8,236 +8,6 @@ extension SetupOwnershipManager {
   static let maximumExtendedAttributeValueSize = 64 * 1_024
   static let maximumExtendedAttributeAggregateSize = 256 * 1_024
 
-  func setupRegularFile(
-    id: String,
-    target: URL,
-    backupURL: URL,
-    replacementName: String,
-    label: String,
-    read: (URL) throws -> Data,
-    isExternal: (Data) throws -> Bool,
-    installedData: (Data) throws -> Data,
-    externalOwnershipError: SetupOwnershipError,
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> SetupIntegrationResult {
-    if let record = records.first(where: { $0.id == id }) {
-      return try resumeRegularFile(
-        record: record,
-        target: target,
-        backupURL: backupURL,
-        replacementName: replacementName,
-        label: label,
-        read: read,
-        installedData: installedData,
-        context: context,
-        dryRun: dryRun,
-        records: &records
-      )
-    }
-
-    guard try itemExists(backupURL) == false else {
-      throw SetupOwnershipError.orphanedBackup(backupURL)
-    }
-    let replacementURL = target.deletingLastPathComponent().appending(path: replacementName)
-    guard try itemExists(replacementURL) == false else {
-      throw SetupOwnershipError.orphanedReplacement(replacementURL)
-    }
-    let original = try read(target)
-    if try isExternal(original) {
-      return integrationResult(
-        id: id,
-        target: target,
-        status: .external,
-        message: "The exact \(label) is already externally owned"
-      )
-    }
-    guard try pathContainsSymlink(target, below: context.homeDirectory) == false else {
-      throw externalOwnershipError
-    }
-
-    let installed = try installedConfiguration(
-      id: id,
-      target: target,
-      original: original,
-      transform: installedData
-    )
-    if dryRun {
-      return integrationResult(
-        id: id,
-        target: target,
-        status: .planned,
-        message: "Would back up the configuration and add the exact \(label)"
-      )
-    }
-
-    let record = SetupOwnershipRecord(
-      id: id,
-      phase: .prepared,
-      kind: .regularFile,
-      targetPath: target.path,
-      backupPath: relativePath(backupURL, below: context.stateRoot),
-      originalDigest: sha256Digest(original),
-      installedDigest: sha256Digest(installed),
-      linkDestination: nil
-    )
-    try attributingFailure(to: id, target: target) {
-      try save(record: record, records: &records, context: context)
-      try faultInjector(.manifestPrepared)
-      try writeRegularBackup(original, record: record, backupURL: backupURL)
-      try faultInjector(.backupWritten)
-      try replaceRegularFile(
-        target: target,
-        replacementName: replacementName,
-        homeDirectory: context.homeDirectory,
-        expectedDigest: try requiredOriginalDigest(record),
-        data: installed,
-        label: label
-      )
-      try faultInjector(.targetWritten)
-      try save(record: record.applied, records: &records, context: context)
-    }
-    return integrationResult(
-      id: id,
-      target: target,
-      status: .owned,
-      message: "Added the \(label) and recorded Macarchy ownership",
-      mutationAttempted: true
-    )
-  }
-
-  func resumeRegularFile(
-    record: SetupOwnershipRecord,
-    target: URL,
-    backupURL: URL,
-    replacementName: String,
-    label: String,
-    read: (URL) throws -> Data,
-    installedData: (Data) throws -> Data,
-    context: Context,
-    dryRun: Bool,
-    records: inout [SetupOwnershipRecord]
-  ) throws -> SetupIntegrationResult {
-    let (originalDigest, replacementResidueExists, current) = try inspectOwnedRegularFile(
-      record: record,
-      target: target,
-      backupURL: backupURL,
-      replacementName: replacementName,
-      label: label,
-      read: read,
-      context: context
-    )
-    let digest = sha256Digest(current)
-
-    if digest == record.installedDigest {
-      let original = try readRegularBackup(record: record, backupURL: backupURL)
-      try requireReproducibleInstallation(
-        record: record, target: target, original: original, label: label, transform: installedData)
-      if record.phase == .applied {
-        if replacementResidueExists {
-          if dryRun {
-            return integrationResult(
-              id: record.id,
-              target: target,
-              status: .planned,
-              message: "Would remove the validated interrupted \(label) replacement"
-            )
-          }
-          try attributingFailure(to: record.id, target: target) {
-            _ = try validateRegularReplacementResidue(
-              record: record,
-              target: target,
-              replacementName: replacementName,
-              context: context,
-              remove: true,
-              label: label
-            )
-          }
-          return integrationResult(
-            id: record.id,
-            target: target,
-            status: .owned,
-            message: "Removed the validated interrupted \(label) replacement",
-            mutationAttempted: true
-          )
-        }
-        return integrationResult(
-          id: record.id,
-          target: target,
-          status: .owned,
-          message: "The \(label) is Macarchy-owned and current"
-        )
-      }
-      if dryRun {
-        return integrationResult(
-          id: record.id,
-          target: target,
-          status: .planned,
-          message: "Would finalize the interrupted \(label) ownership record"
-        )
-      }
-      try attributingFailure(to: record.id, target: target) {
-        try save(record: record.applied, records: &records, context: context)
-      }
-      return integrationResult(
-        id: record.id,
-        target: target,
-        status: .owned,
-        message: "Finalized the interrupted \(label) ownership record",
-        mutationAttempted: true
-      )
-    }
-
-    guard digest == originalDigest else { throw SetupOwnershipError.ownershipDrift(target) }
-    if dryRun {
-      return integrationResult(
-        id: record.id,
-        target: target,
-        status: .planned,
-        message: "Would resume the recorded \(label) change"
-      )
-    }
-
-    let backupExists = try itemExists(backupURL)
-    let original =
-      backupExists ? try readRegularBackup(record: record, backupURL: backupURL) : current
-    let installed = try requireReproducibleInstallation(
-      record: record, target: target, original: original, label: label, transform: installedData)
-    try attributingFailure(to: record.id, target: target) {
-      if replacementResidueExists {
-        _ = try validateRegularReplacementResidue(
-          record: record,
-          target: target,
-          replacementName: replacementName,
-          context: context,
-          remove: true,
-          label: label
-        )
-      }
-      if !backupExists {
-        try writeRegularBackup(original, record: record, backupURL: backupURL)
-      }
-      try replaceRegularFile(
-        target: target,
-        replacementName: replacementName,
-        homeDirectory: context.homeDirectory,
-        expectedDigest: originalDigest,
-        data: installed,
-        label: label
-      )
-      try faultInjector(.targetWritten)
-      try save(record: record.applied, records: &records, context: context)
-    }
-    return integrationResult(
-      id: record.id,
-      target: target,
-      status: .owned,
-      message: "Resumed the recorded \(label) change",
-      mutationAttempted: true
-    )
-  }
-
   func teardownRegularFile(
     id: String,
     target: URL,
@@ -328,19 +98,6 @@ extension SetupOwnershipManager {
     return digest
   }
 
-  func installedConfiguration(
-    id: String,
-    target: URL,
-    original: Data,
-    transform: (Data) throws -> Data
-  ) throws -> Data {
-    let installed = try transform(original)
-    guard installed.count <= Self.maximumConfigurationSize else {
-      throw SetupOwnershipError.installedConfigurationTooLarge(id, target)
-    }
-    return installed
-  }
-
   /// Validates a regular-file record and its path, then reads the target. Reports
   /// whether an interrupted replacement's residue remains (validated, not removed).
   private func inspectOwnedRegularFile(
@@ -368,35 +125,6 @@ extension SetupOwnershipManager {
       label: label
     )
     return (originalDigest, residueExists, try read(target))
-  }
-
-  /// Rebuilds the installed bytes from `original` and requires the recorded digest.
-  @discardableResult
-  private func requireReproducibleInstallation(
-    record: SetupOwnershipRecord,
-    target: URL,
-    original: Data,
-    label: String,
-    transform: (Data) throws -> Data
-  ) throws -> Data {
-    let installed = try installedConfiguration(
-      id: record.id,
-      target: target,
-      original: original,
-      transform: transform
-    )
-    guard sha256Digest(installed) == record.installedDigest else {
-      throw SetupOwnershipError.invalidManifest(
-        installedDigestError(recordID: record.id, label: label)
-      )
-    }
-    return installed
-  }
-
-  func installedDigestError(recordID: String, label: String) -> String {
-    recordID == Self.integrationID
-      ? "Kitty installed digest cannot be reproduced"
-      : "\(label) digest cannot be reproduced"
   }
 
   func validateRegularFileRecord(
@@ -448,58 +176,6 @@ extension SetupOwnershipManager {
       throw SetupOwnershipError.corruptBackup(backupURL)
     }
     return backup.data
-  }
-
-  func writeRegularBackup(
-    _ data: Data,
-    record: SetupOwnershipRecord,
-    backupURL: URL
-  ) throws {
-    guard sha256Digest(data) == (try requiredOriginalDigest(record)) else {
-      throw SetupOwnershipError.invalidManifest(
-        "\(record.id) original digest changed before backup")
-    }
-    do {
-      try FileManager.default.createDirectory(
-        at: backupURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
-      )
-    } catch {
-      throw SetupOwnershipError.system(
-        "create backup directory", backupURL, String(describing: error))
-    }
-
-    let safeID = record.id.replacingOccurrences(of: ".", with: "-")
-    let temporary = backupURL.deletingLastPathComponent()
-      .appending(path: ".\(safeID)-backup-\(UUID().uuidString).tmp")
-    let descriptor = temporary.path.withCString {
-      Darwin.open($0, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0o600)
-    }
-    guard descriptor >= 0 else {
-      throw SetupOwnershipError.posix("create temporary backup", temporary)
-    }
-    defer { Darwin.close(descriptor) }
-    var published = false
-    defer {
-      if !published { _ = Darwin.unlink(temporary.path) }
-    }
-    try write(
-      data,
-      descriptor: descriptor,
-      url: temporary,
-      operation: "write temporary \(record.id) backup"
-    )
-    guard fsync(descriptor) == 0 else {
-      throw SetupOwnershipError.posix("sync temporary backup", temporary)
-    }
-    let publication = temporary.path.withCString { source in
-      backupURL.path.withCString { destination in
-        Darwin.renamex_np(source, destination, UInt32(RENAME_EXCL))
-      }
-    }
-    guard publication == 0 else { throw SetupOwnershipError.posix("publish backup", backupURL) }
-    published = true
-    _ = try readRegularBackup(record: record, backupURL: backupURL)
   }
 
   func validateRegularReplacementResidue(
@@ -1011,6 +687,28 @@ extension SetupOwnershipManager {
     }
     guard String(data: data, encoding: .utf8) != nil else {
       throw SetupOwnershipError.unreadableKittyConfiguration(url)
+    }
+    return data
+  }
+
+  func readConfiguration(_ url: URL, id: String) throws -> Data {
+    var metadata = stat()
+    guard stat(url.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG else {
+      throw SetupOwnershipError.missingConfiguration(id, url)
+    }
+    let data: Data
+    do {
+      data = try BoundedRegularFile.read(
+        at: url.resolvingSymlinksInPath(),
+        maximumSize: Self.maximumConfigurationSize
+      ).data
+    } catch BoundedRegularFileError.tooLarge {
+      throw SetupOwnershipError.configurationTooLarge(id, url)
+    } catch {
+      throw SetupOwnershipError.system("read", url, String(describing: error))
+    }
+    guard String(data: data, encoding: .utf8) != nil else {
+      throw SetupOwnershipError.unreadableConfiguration(id, url)
     }
     return data
   }

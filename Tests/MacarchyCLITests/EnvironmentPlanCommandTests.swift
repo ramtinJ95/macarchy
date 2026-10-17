@@ -407,25 +407,13 @@ struct EnvironmentPlanCommandTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let context = SetupOwnershipManager.Context(homeDirectory: home)
-    try FileManager.default.createDirectory(
-      at: context.stateRoot,
-      withIntermediateDirectories: true
-    )
-    try FileManager.default.createDirectory(
-      at: context.batConfiguration.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try "--style=plain\n".write(
-      to: context.batConfiguration,
-      atomically: true,
-      encoding: .utf8
-    )
-    var records = [SetupOwnershipRecord]()
-    _ = try SetupOwnershipManager().setupBatSelector(
-      context: context,
-      dryRun: false,
-      records: &records
-    )
+    let legacy = LegacySetupHome(home: home)
+    try legacy.writeLegacyOwnership([
+      try legacy.legacyFileRecord(
+        SetupOwnershipManager.batSelectorID,
+        original: "--style=plain\n",
+        installed: "--style=plain\n\(BatAdapter.themeDirective)\n")
+    ])
 
     let execution = try assumedRunner.execute(
       resourcesRoot: resourcesRoot,

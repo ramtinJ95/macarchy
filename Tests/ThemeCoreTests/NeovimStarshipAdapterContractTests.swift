@@ -6,6 +6,16 @@ import Testing
 
 extension AdapterContractTests {
   @Test
+  func watcherDirectiveRecognitionRejectsCRLF() {
+    let watcher =
+      "local macarchy = require(\"config.macarchy-theme\")\n\(NeovimAdapter.integrationDirective)\n"
+    #expect(NeovimAdapter.containsIntegrationDirective(in: watcher))
+    #expect(
+      !NeovimAdapter.containsIntegrationDirective(
+        in: watcher.replacingOccurrences(of: "\n", with: "\r\n")))
+  }
+
+  @Test
   func namedApplicationAdaptersPreserveBehaviorAndUpdateAtTheirBoundaries() async throws {
     let root = try temporaryDirectory()
     defer {

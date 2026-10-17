@@ -6,22 +6,6 @@ import Testing
 
 @Suite(.serialized)
 struct ConsumerSetupPlanTests {
-  private let setupDispatchIDs = [
-    "kitty.include",
-    "bat.selector", "bat.theme-link",
-    "eza.environment", "eza.theme-link",
-    "btop.selector", "btop.theme-link",
-    "yazi.flavor-link", "yazi.syntax-link", "yazi.selector",
-    "atuin.theme-link", "atuin.selector",
-    "neovim.watcher", "neovim.theme-link",
-    "starship.behavior", "starship.configuration-link",
-    "pi.theme-link", "pi.selector",
-    "herdr.selector",
-    "tuicr.theme-link", "tuicr.syntax-link", "tuicr.selector",
-    "codex.theme-link", "codex.selector",
-    "spicetify.color-link", "spicetify.selectors",
-  ]
-
   private let teardownDispatchIDs = [
     "spicetify.selectors", "spicetify.color-link",
     "codex.selector", "codex.theme-link",
@@ -80,7 +64,7 @@ struct ConsumerSetupPlanTests {
       context.spicetifySelectorsBackup.path: "spicetify.selectors",
     ]
     let replacementPaths = [
-      context.replacementURL.path: "kitty.include",
+      replacementPath(context.kittyConfiguration, context.replacementName): "kitty.include",
       replacementPath(context.batConfiguration, context.batSelectorReplacementName):
         "bat.selector",
       replacementPath(context.shellConfiguration, context.ezaEnvironmentReplacementName):
@@ -137,7 +121,7 @@ struct ConsumerSetupPlanTests {
 
   @Test
   func plansOwnTheDeterministicConsumerAndResultOrder() throws {
-    let fixture = try Fixture(configuration: "")
+    let fixture = try Fixture()
     defer { fixture.remove() }
     let manager = SetupOwnershipManager()
     let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
@@ -186,89 +170,67 @@ struct ConsumerSetupPlanTests {
     }
     #expect(
       plans.allSatisfy { plan in
-        Set(plan.steps.map(\.setupRank)) == Set(0..<plan.steps.count)
-          && Set(plan.steps.map(\.teardownRank)) == Set(0..<plan.steps.count)
+        Set(plan.steps.map(\.teardownRank)) == Set(0..<plan.steps.count)
       }
     )
   }
 
   @Test
-  func setupAndTeardownResultsUseThePlanOrder() throws {
-    let fixture = try Fixture(configuration: "")
+  func teardownResultsUseThePlanOrder() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
-    let manager = SetupOwnershipManager()
 
-    let setup = try manager.setup(homeDirectory: fixture.home, dryRun: true)
-    let teardown = try manager.teardown(homeDirectory: fixture.home, dryRun: true)
+    let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: true)
 
-    #expect(setup.map(\.id) == allIntegrationIDs)
     #expect(teardown.map(\.id) == allIntegrationIDs)
   }
 
   @Test
-  func plansPreserveTheConcreteSetupAndTeardownRanks() throws {
-    let fixture = try Fixture(configuration: "")
+  func plansPreserveTheConcreteTeardownRanks() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
     let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
     let plans = SetupOwnershipManager().consumerSetupPlans(context: context)
-    let setupIDs = plans.flatMap { plan in
-      plan.steps.sorted { $0.setupRank < $1.setupRank }.map(\.id)
-    }
     let teardownIDs = plans.reversed().flatMap { plan in
       plan.steps.sorted { $0.teardownRank < $1.teardownRank }.map(\.id)
     }
 
-    #expect(setupIDs == setupDispatchIDs)
     #expect(teardownIDs == teardownDispatchIDs)
   }
 
   @Test
-  func manifestResumeLookupCoversEveryOwnedStepAndRecordKind() throws {
-    let fixture = try Fixture(
-      configuration: "font_size 13\n",
-      externalBatEza: false,
-      externalBtopYaziAtuin: false,
-      externalNeovimStarship: false,
-      externalAgentTUIs: false
-    )
+  func manifestLookupCoversEveryOwnedStepAndRecordKind() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-    try fixture.createLocalBatEzaConfigurations(
-      bat: "--italic-text=always\n",
-      shell: "export EDITOR=nvim\n"
-    )
-    try fixture.createLocalBtopYaziAtuinConfigurations(
-      btop: "\(BtopAdapter.themeDirective)\n",
-      yazi: "[flavor]\nlight = \"default\"\n",
-      atuin: "sync_frequency = \"5m\"\n"
-    )
-    try fixture.createNeovimStarshipPrerequisites()
-    try fixture.createLocalAgentTUIConfigurations(
-      pi: "{\n  \"provider\": \"openai\"\n}\n",
-      tuicr: "show_help = true\n",
-      codex: "[tui]\nanimations = false\n"
-    )
-    let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
-    try FileManager.default.createDirectory(
-      at: context.spicetifyColorLink.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
-    try Data("[Setting]\ninject_css = 1\nreplace_colors = 1\n".utf8).write(
-      to: context.spicetifyConfiguration
-    )
+    let context = fixture.ownershipContext
     let manager = SetupOwnershipManager()
+    var written = [SetupOwnershipRecord]()
+    for step in manager.consumerSetupPlans(context: context).flatMap(\.steps)
+    where step.id != SetupOwnershipManager.spicetifyColorLinkID {
+      switch step.mechanism {
+      case .external, .spicetifySelectors:
+        continue
+      case .regularFile:
+        written.append(
+          try fixture.legacyFileRecord(step.id, original: "original\n", installed: "installed\n"))
+      case .themeLink:
+        written.append(try fixture.legacyThemeLink(step.id))
+      case .piSelector:
+        written.append(
+          try fixture.legacyPiSelector(contents: "{\"theme\": \"macarchy-current\"}\n"))
+      }
+    }
+    try fixture.writeLegacyOwnership(written)
 
-    _ = try manager.setup(homeDirectory: fixture.home, dryRun: false)
     let records = try manager.readRecords(context: context)
-    let resumedOwnership = Dictionary(
+    let ownership = Dictionary(
       uniqueKeysWithValues: records.map { ($0.id, $0.kind) }
     )
 
     var expected = expectedOwnershipKinds()
     expected.removeValue(forKey: "spicetify.selectors")
     expected.removeValue(forKey: "spicetify.color-link")
-    #expect(resumedOwnership == expected)
+    #expect(ownership == expected)
     #expect(
       Set(records.map(\.kind))
         == Set([.regularFile, .symbolicLink, .jsonSelector])
@@ -286,39 +248,8 @@ struct ConsumerSetupPlanTests {
   }
 
   @Test
-  func partialPlanFailureRetainsEarlierUnownedStepAfterAPriorMutation() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
-    defer { fixture.remove() }
-    try FileManager.default.removeItem(at: fixture.btopThemeLink)
-    try FileManager.default.createSymbolicLink(
-      at: fixture.btopThemeLink,
-      withDestinationURL: fixture.root.appending(path: "wrong-btop-theme")
-    )
-    let manager = SetupOwnershipManager()
-    let error: any Error
-    do {
-      _ = try manager.setup(homeDirectory: fixture.home, dryRun: false)
-      throw FixtureError.interrupted
-    } catch let caught {
-      error = caught
-    }
-
-    let results = SetupOwnershipManager.failureResults(error, homeDirectory: fixture.home)
-
-    #expect(results.map(\.id) == Array(allIntegrationIDs.prefix(7)))
-    #expect(
-      results.map(\.status)
-        == [.owned, .external, .external, .external, .external, .external, .failed]
-    )
-    #expect(
-      results.map(\.mutationAttempted)
-        == [true, false, false, false, false, false, false]
-    )
-  }
-
-  @Test
   func everyExpectedTargetBackupAndReplacementPathAttributesFailureToItsID() throws {
-    let fixture = try Fixture(configuration: "")
+    let fixture = try Fixture()
     defer { fixture.remove() }
     let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
     for (path, expectedID) in expectedPathToID(context: context) {
@@ -330,28 +261,5 @@ struct ConsumerSetupPlanTests {
       #expect(failure.id == expectedID)
       #expect(failure.target == path)
     }
-  }
-
-  @Test
-  func interruptedOwnershipResumesThroughThePlanAndRetainsOrder() throws {
-    let fixture = try Fixture(configuration: "font_size 13\n")
-    defer { fixture.remove() }
-    let interrupted = SetupOwnershipManager { checkpoint in
-      if checkpoint == .manifestPrepared { throw FixtureError.interrupted }
-    }
-
-    #expect(throws: (any Error).self) {
-      _ = try interrupted.setup(homeDirectory: fixture.home, dryRun: false)
-    }
-
-    let resumed = try SetupOwnershipManager().setup(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
-
-    #expect(resumed.map(\.id) == allIntegrationIDs)
-    #expect(resumed.first?.status == .owned)
-    #expect(resumed.first?.mutationAttempted == true)
-    #expect(try fixture.configuration() == "font_size 13\n\(fixture.includeDirective)\n")
   }
 }

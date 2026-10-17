@@ -6,7 +6,7 @@ import Testing
 @testable import MacarchyCLI
 @testable import ThemeCore
 
-// Setup takes the process-wide Spicetify lock synchronously. A lock holder in
+// Teardown takes the process-wide Spicetify lock synchronously. A lock holder in
 // another suite may need the cooperative pool to resume and release it.
 private struct SpicetifySetupBlockingScope: SuiteTrait, TestTrait, TestScoping {
   let isRecursive = true
@@ -24,24 +24,9 @@ private struct SpicetifySetupBlockingScope: SuiteTrait, TestTrait, TestScoping {
 @Suite(.serialized, SpicetifySetupBlockingScope())
 struct SpicetifySetupTests {
   @Test
-  func absentOptionalProviderIsExplicitlyDisabledAndSuccessful() throws {
+  func absentOptionalProviderTeardownIsUnownedAndLockFree() throws {
     let fixture = try SpicetifySetupFixture(configuration: nil)
     defer { fixture.remove() }
-
-    let setup = try fixture.setup(dryRun: false)
-
-    expectStatuses(
-      setup,
-      ["spicetify.selectors": .disabled, "spicetify.color-link": .disabled]
-    )
-    #expect(setup.allSatisfy { $0.succeeded })
-    #expect(setup.allSatisfy { !$0.mutationAttempted })
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
-    #expect(
-      !FileManager.default.fileExists(
-        atPath: fixture.stateRoot.appending(path: "run/spicetify.lock").path
-      )
-    )
 
     let teardown = try fixture.teardown(dryRun: false)
     expectStatuses(
@@ -56,30 +41,9 @@ struct SpicetifySetupTests {
   }
 
   @Test
-  func partialProviderStateFailsInsteadOfBeingReportedAsDisabled() throws {
-    let fixture = try SpicetifySetupFixture(
-      configuration: nil,
-      createColorLink: true
-    )
+  func teardownLeavesUnownedSpicetifyConfigurationAlone() throws {
+    let fixture = try Fixture()
     defer { fixture.remove() }
-
-    #expect(
-      throws: SetupOwnershipError.missingConfiguration(
-        "spicetify.selectors",
-        fixture.configuration
-      )
-    ) {
-      _ = try fixture.setup(dryRun: false)
-    }
-    #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
-  }
-
-  @Test
-  func centralSetupLeavesNewSpicetifyConfigurationForEnvironmentOwnership() throws {
-    let fixture = try Fixture(configuration: "")
-    defer { fixture.remove() }
-    try fixture.writeKittyConfiguration("\(fixture.includeDirective)\n")
     let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
     let original = Data(
       "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 1\n".utf8
@@ -94,27 +58,12 @@ struct SpicetifySetupTests {
     let css = Data("/* preserve provider CSS */\n".utf8)
     try css.write(to: userCSS)
 
-    let setup = try SetupOwnershipManager().setup(
-      homeDirectory: fixture.home,
-      dryRun: false
-    )
-
-    expectStatuses(setup, externalFixtureStatuses)
-    #expect(!setup.first { $0.id == "spicetify.selectors" }!.mutationAttempted)
-    #expect(!setup.first { $0.id == "spicetify.color-link" }!.mutationAttempted)
-    #expect(try Data(contentsOf: userCSS) == css)
-    #expect(try Data(contentsOf: context.spicetifyConfiguration) == original)
-    #expect(!FileManager.default.fileExists(atPath: context.spicetifyColorLink.path))
-
     let teardown = try SetupOwnershipManager().teardown(
       homeDirectory: fixture.home,
       dryRun: false
     )
 
-    let teardownStatuses = externalFixtureStatuses.mapValues { _ in
-      SetupIntegrationResult.Status.none
-    }
-    expectStatuses(teardown, teardownStatuses)
+    expectStatuses(teardown, unownedTeardownStatuses)
     #expect(try Data(contentsOf: context.spicetifyConfiguration) == original)
     #expect(try Data(contentsOf: userCSS) == css)
     #expect(!FileManager.default.fileExists(atPath: context.spicetifyColorLink.path))
@@ -122,146 +71,23 @@ struct SpicetifySetupTests {
   }
 
   @Test
-  func centralSetupBlocksBothPartialLegacyOwnershipShapesBeforeProviderMutation() throws {
-    let original = Data(
-      "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 1\n".utf8
-    )
-    for retainedID in [
-      SetupOwnershipManager.spicetifySelectorsID,
-      SetupOwnershipManager.spicetifyColorLinkID,
-    ] {
-      let fixture = try SpicetifySetupFixture(configuration: original)
-      defer { fixture.remove() }
-      _ = try fixture.setup(dryRun: false)
-      let manager = SetupOwnershipManager()
-      let context = SetupOwnershipManager.Context(homeDirectory: fixture.home)
-      let completeRecords = try manager.readRecords(context: context)
-      let retained = try #require(completeRecords.first { $0.id == retainedID })
-      try manager.persist(records: [retained], context: context)
-
-      if retainedID == SetupOwnershipManager.spicetifySelectorsID {
-        try FileManager.default.removeItem(at: fixture.colorLink)
-      } else {
-        try FileManager.default.removeItem(at: fixture.selectorsBackup)
-        try original.write(to: fixture.configuration, options: .atomic)
-      }
-      let beforeManifest = try Data(contentsOf: fixture.manifest)
-      let beforeConfiguration = try Data(contentsOf: fixture.configuration)
-      let beforeLink = try? fixture.colorLinkDestination()
-      var excluded = Set(manager.consumerSetupPlans(context: context).map(\.consumerID))
-      excluded.remove(.spicetify)
-
-      #expect(
-        throws: SetupOwnershipError.invalidManifest(
-          "legacy Spicetify ownership must contain both spicetify.selectors and spicetify.color-link"
-        )
-      ) {
-        _ = try manager.setup(
-          homeDirectory: fixture.home,
-          dryRun: false,
-          excluding: excluded
-        )
-      }
-      #expect(try Data(contentsOf: fixture.manifest) == beforeManifest)
-      #expect(try Data(contentsOf: fixture.configuration) == beforeConfiguration)
-      #expect((try? fixture.colorLinkDestination()) == beforeLink)
-    }
-  }
-
-  @Test
-  func exactStowOwnedSeamsRemainExternalAndByteIdentical() throws {
-    let configuration = Data(
-      """
-      [Setting]
-      prefs_path              = /Users/test/Library/Application Support/Spotify/prefs
-      inject_css              = 1
-      current_theme           = text
-      color_scheme            = MacarchyCurrent
-      replace_colors          = 1
-
-      [Preprocesses]
-      disable_sentry          = 1
-
-      """.utf8
-    )
-    let fixture = try SpicetifySetupFixture(
-      configuration: configuration,
-      externallyOwned: true,
-      createColorLink: true
-    )
-    defer { fixture.remove() }
-    let css = try Data(contentsOf: fixture.userCSS)
-
-    let results = try fixture.setup(dryRun: false)
-
-    expectStatuses(
-      results,
-      ["spicetify.selectors": .external, "spicetify.color-link": .external]
-    )
-    #expect(!results.contains { $0.mutationAttempted })
-    #expect(try Data(contentsOf: fixture.configuration) == configuration)
-    #expect(try Data(contentsOf: fixture.userCSS) == css)
-    #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
-  }
-
-  @Test
-  func ownedSelectorsAndColorLinkPreserveProviderBytesAndRoundTrip() throws {
-    let original = Data(
+  func ownedSelectorsAndColorLinkRestoreProviderBytes() throws {
+    let original =
       "[Setting]\r\n; provider comment\r\ninject_css = 1\r\nreplace_colors = 1\r\n"
-        .appending("\r\n[Backup]\r\nversion = 1.2.3\r\n").utf8
-    )
-    let fixture = try SpicetifySetupFixture(configuration: original)
+      + "\r\n[Backup]\r\nversion = 1.2.3\r\n"
+    let fixture = try SpicetifySetupFixture(configuration: Data(original.utf8))
     defer { fixture.remove() }
     let css = try Data(contentsOf: fixture.userCSS)
-
-    let preview = try fixture.setup(dryRun: true)
-
-    expectStatuses(
-      preview,
-      ["spicetify.selectors": .planned, "spicetify.color-link": .planned]
-    )
-    #expect(try Data(contentsOf: fixture.configuration) == original)
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
-    #expect(throws: (any Error).self) {
-      _ = try fixture.colorLinkDestination()
-    }
-
-    let setup = try fixture.setup(dryRun: false)
-    let expected = Data(
-      "[Setting]\r\ncurrent_theme = text\r\ncolor_scheme = MacarchyCurrent\r\n"
-        .appending("; provider comment\r\ninject_css = 1\r\nreplace_colors = 1\r\n")
-        .appending("\r\n[Backup]\r\nversion = 1.2.3\r\n").utf8
-    )
-
-    expectStatuses(
-      setup,
-      ["spicetify.selectors": .owned, "spicetify.color-link": .owned]
-    )
-    #expect(setup.allSatisfy { $0.mutationAttempted })
-    #expect(try Data(contentsOf: fixture.configuration) == expected)
-    #expect(try Data(contentsOf: fixture.userCSS) == css)
-    #expect(try Data(contentsOf: fixture.selectorsBackup) == original)
-    #expect(try fixture.permissions(at: fixture.selectorsBackup) == 0o600)
-    #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
-    let manifest = try fixture.manifestJSON()
-    #expect(manifest["schema_version"] as? Int == 1)
-    #expect(
-      (manifest["records"] as? [[String: Any]])?.compactMap { $0["id"] as? String }
-        == ["spicetify.color-link", "spicetify.selectors"]
-    )
-    #expect(
-      (manifest["records"] as? [[String: Any]])?
-        .first { $0["id"] as? String == "spicetify.selectors" }?["kind"] as? String
-        == "spicetify_selection"
-    )
-
-    let repeated = try fixture.setup(dryRun: false)
-    expectStatuses(
-      repeated,
-      ["spicetify.selectors": .owned, "spicetify.color-link": .owned]
-    )
-    #expect(repeated.allSatisfy { !$0.mutationAttempted })
+    try fixture.writeLegacyOwnership([
+      fixture.legacyFileRecord(
+        SetupOwnershipManager.spicetifySelectorsID,
+        original: original,
+        installed: "[Setting]\r\ncurrent_theme = text\r\ncolor_scheme = MacarchyCurrent\r\n"
+          + "; provider comment\r\ninject_css = 1\r\nreplace_colors = 1\r\n"
+          + "\r\n[Backup]\r\nversion = 1.2.3\r\n"
+      ),
+      fixture.legacyThemeLink(SetupOwnershipManager.spicetifyColorLinkID),
+    ])
 
     let teardown = try fixture.teardown(dryRun: false)
 
@@ -269,7 +95,7 @@ struct SpicetifySetupTests {
       teardown,
       ["spicetify.selectors": .removed, "spicetify.color-link": .removed]
     )
-    #expect(try Data(contentsOf: fixture.configuration) == original)
+    #expect(try Data(contentsOf: fixture.configuration) == Data(original.utf8))
     #expect(try Data(contentsOf: fixture.userCSS) == css)
     #expect(throws: (any Error).self) {
       _ = try fixture.colorLinkDestination()
@@ -279,18 +105,13 @@ struct SpicetifySetupTests {
   }
 
   @Test
-  func providerRewriteOfUnrelatedFieldsSurvivesRepeatSetupAndTeardown() throws {
-    let original = Data(
-      "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 1\n".utf8
-    )
+  func providerRewriteOfUnrelatedFieldsSurvivesTeardown() throws {
     let fixture = try SpicetifySetupFixture(
-      configuration: original,
+      configuration: Data(marketplaceConfiguration.utf8),
       createColorLink: true
     )
     defer { fixture.remove() }
-    _ = try fixture.setup(dryRun: false)
-    let providerRewrite = Data(
-      """
+    let providerRewrite = """
       [Setting]
       spotify_path = /Applications/Spotify.app/Contents/Resources
       current_theme = text
@@ -300,18 +121,10 @@ struct SpicetifySetupTests {
       [Preprocesses]
       disable_sentry = 0
 
-      """.utf8
-    )
-    try providerRewrite.write(to: fixture.configuration, options: .atomic)
-
-    let repeated = try fixture.setup(dryRun: false)
-
-    expectStatuses(
-      repeated,
-      ["spicetify.selectors": .owned, "spicetify.color-link": .external]
-    )
-    #expect(repeated.allSatisfy { !$0.mutationAttempted })
-    #expect(try Data(contentsOf: fixture.configuration) == providerRewrite)
+      """
+    try fixture.writeLegacyOwnership([
+      fixture.legacySelectors(onDisk: providerRewrite)
+    ])
 
     let teardown = try fixture.teardown(dryRun: false)
     let expected = Data(
@@ -335,28 +148,26 @@ struct SpicetifySetupTests {
   }
 
   @Test
-  func setupWaitsForTheSharedSpicetifyLock() async throws {
+  func teardownWaitsForTheSharedSpicetifyLock() async throws {
     let executor = SpicetifySetupBlockingScope.executor
     // Synchronous boundary for bounded gates on the explicitly preferred executor.
     func wait(_ semaphore: DispatchSemaphore, timeout: DispatchTime) -> DispatchTimeoutResult {
       semaphore.wait(timeout: timeout)
     }
 
-    let original = Data(
-      "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n".utf8
-    )
     let fixture = try SpicetifySetupFixture(
-      configuration: original,
+      configuration: Data(marketplaceConfiguration.utf8),
       createColorLink: true
     )
     defer { fixture.remove() }
+    try fixture.writeLegacyOwnership([fixture.legacySelectors()])
     let refreshEntered = DispatchSemaphore(value: 0)
     let releaseLock = DispatchSemaphore(value: 0)
     let reconciliationFinished = DispatchSemaphore(value: 0)
-    let setupStarted = DispatchSemaphore(value: 0)
-    let setupFinished = DispatchSemaphore(value: 0)
+    let teardownStarted = DispatchSemaphore(value: 0)
+    let teardownFinished = DispatchSemaphore(value: 0)
     let reconciliationError = Mutex<String?>(nil)
-    let setupError = Mutex<String?>(nil)
+    let teardownError = Mutex<String?>(nil)
     let package = try ThemePackageLoader().load(
       packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
     )
@@ -392,37 +203,38 @@ struct SpicetifySetupTests {
       }
       try #require(wait(refreshEntered, timeout: .now() + 5) == .success)
       let providerEdit = Data(
-        "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\n".utf8
+        "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\ninject_css = 0\n".utf8
       )
       try providerEdit.write(to: fixture.configuration, options: .atomic)
 
       group.addTask(executorPreference: executor) { @Sendable in
-        defer { setupFinished.signal() }
-        setupStarted.signal()
+        defer { teardownFinished.signal() }
+        teardownStarted.signal()
         do {
-          _ = try fixture.setup(dryRun: false)
+          _ = try fixture.teardown(dryRun: false)
         } catch {
-          setupError.withLock { $0 = String(describing: error) }
+          teardownError.withLock { $0 = String(describing: error) }
         }
       }
-      try #require(wait(setupStarted, timeout: .now() + 5) == .success)
+      try #require(wait(teardownStarted, timeout: .now() + 5) == .success)
       // Started is not proof of a lock attempt; retain the negative window and
       // the unchanged-file/manifest checks while refresh demonstrably holds it.
-      #expect(wait(setupFinished, timeout: .now() + 0.1) == .timedOut)
+      #expect(wait(teardownFinished, timeout: .now() + 0.1) == .timedOut)
       #expect(try Data(contentsOf: fixture.configuration) == providerEdit)
-      #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
+      #expect(FileManager.default.fileExists(atPath: fixture.manifest.path))
 
       releaseLock.signal()
       try #require(wait(reconciliationFinished, timeout: .now() + 5) == .success)
-      try #require(wait(setupFinished, timeout: .now() + 5) == .success)
+      try #require(wait(teardownFinished, timeout: .now() + 5) == .success)
       try await group.waitForAll()
     }
     #expect(reconciliationError.withLock { $0 } == nil)
-    #expect(setupError.withLock { $0 } == nil)
+    #expect(teardownError.withLock { $0 } == nil)
     #expect(
       try String(contentsOf: fixture.configuration, encoding: .utf8)
-        == "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n"
+        == "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 0\n"
     )
+    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 
   @Test
@@ -431,19 +243,17 @@ struct SpicetifySetupTests {
       SetupOwnershipCheckpoint.replacementSwapped,
       .targetWritten,
     ] {
-      let original = Data(
-        "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 1\n".utf8
-      )
       let fixture = try SpicetifySetupFixture(
-        configuration: original,
+        configuration: Data(marketplaceConfiguration.utf8),
         createColorLink: true
       )
       defer { fixture.remove() }
-      _ = try fixture.setup(dryRun: false)
-      let providerRewrite = Data(
-        "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\ninject_css = 0\n".utf8
-      )
-      try providerRewrite.write(to: fixture.configuration, options: .atomic)
+      try fixture.writeLegacyOwnership([
+        fixture.legacySelectors(
+          onDisk:
+            "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\ninject_css = 0\n"
+        )
+      ])
       let interrupted = SetupOwnershipManager { observed in
         if observed == checkpoint { throw SpicetifySetupTestError.interrupted }
       }
@@ -466,75 +276,40 @@ struct SpicetifySetupTests {
   }
 
   @Test
-  func interruptedSelectorReplacementNeverPublishesOnlyOneSelector() throws {
-    let original = Data("[Setting]\ninject_css = 1\n".utf8)
+  func teardownRestoresAnInterruptedSelectorReplacementFromItsResidue() throws {
+    let original = "[Setting]\ninject_css = 1\n"
     let fixture = try SpicetifySetupFixture(
-      configuration: original,
+      configuration: Data(original.utf8),
       createColorLink: true
     )
     defer { fixture.remove() }
-    let interrupted = SetupOwnershipManager { checkpoint in
-      if checkpoint == .replacementSwapped { throw SpicetifySetupTestError.interrupted }
-    }
+    try fixture.writeLegacyOwnership([
+      fixture.legacyFileRecord(
+        SetupOwnershipManager.spicetifySelectorsID,
+        original: original,
+        installed:
+          "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\ninject_css = 1\n",
+        phase: .prepared,
+        residue: original
+      )
+    ])
 
-    #expect(throws: SetupOwnershipTransactionError.self) {
-      _ = try fixture.setup(manager: interrupted, dryRun: false)
-    }
-    let interruptedConfiguration = try String(
-      contentsOf: fixture.configuration,
-      encoding: .utf8
-    )
-    #expect(interruptedConfiguration.contains("current_theme = text\n"))
-    #expect(interruptedConfiguration.contains("color_scheme = MacarchyCurrent\n"))
-
-    let resumed = try fixture.setup(dryRun: false)
-
-    expectStatuses(
-      resumed,
-      ["spicetify.selectors": .owned, "spicetify.color-link": .external]
-    )
     let teardown = try fixture.teardown(dryRun: false)
+
     expectStatuses(
       teardown,
       ["spicetify.selectors": .removed, "spicetify.color-link": .none]
     )
-    #expect(try Data(contentsOf: fixture.configuration) == original)
+    #expect(try Data(contentsOf: fixture.configuration) == Data(original.utf8))
+    #expect(!FileManager.default.fileExists(atPath: fixture.replacement.path))
+    #expect(!FileManager.default.fileExists(atPath: fixture.selectorsBackup.path))
+    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
     #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
   }
 
   @Test
-  func selectorParserRejectsMalformedAndDuplicateStateWithoutMutation() throws {
-    let malformedConfigurations = [
-      "[Setting]\ncurrent_theme = text\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n",
-      "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n[Setting]\n",
-      "[Setting]\nmalformed provider setting\n",
-      "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n[Backup]\nmalformed later section\n",
-      "[Backup]\nversion = 1\n",
-    ]
-    for configuration in malformedConfigurations {
-      let original = Data(configuration.utf8)
-      let fixture = try SpicetifySetupFixture(
-        configuration: original,
-        createColorLink: true
-      )
-      defer { fixture.remove() }
-
-      do {
-        _ = try fixture.setup(dryRun: true)
-        Issue.record("Expected malformed Spicetify configuration to fail")
-      } catch SetupOwnershipError.invalidConfiguration(let id, let target, _) {
-        #expect(id == "spicetify.selectors")
-        #expect(target == fixture.configuration)
-      }
-      #expect(try Data(contentsOf: fixture.configuration) == original)
-      #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
-    }
-  }
-
-  @Test
-  func existingSelectorValuesAreReplacedWithoutRewritingTheirFormatting() throws {
-    let original = Data(
-      """
+  func existingSelectorValuesAreRestoredWithoutRewritingTheirFormatting() throws {
+    let original = """
       [Setting]
       current_theme          = marketplace   ; keep theme comment
       color_scheme\t=\tDefault\t# keep scheme comment
@@ -543,103 +318,80 @@ struct SpicetifySetupTests {
       [Preprocesses]
       disable_sentry = 1
 
-      """.utf8
-    )
+      """
     let fixture = try SpicetifySetupFixture(
-      configuration: original,
+      configuration: Data(original.utf8),
       createColorLink: true
     )
     defer { fixture.remove() }
     let css = try Data(contentsOf: fixture.userCSS)
+    try fixture.writeLegacyOwnership([
+      fixture.legacyFileRecord(
+        SetupOwnershipManager.spicetifySelectorsID,
+        original: original,
+        installed: """
+          [Setting]
+          current_theme          = text
+          color_scheme\t=\tMacarchyCurrent
+          inject_css = 1
 
-    let setup = try fixture.setup(dryRun: false)
+          [Preprocesses]
+          disable_sentry = 1
 
-    expectStatuses(
-      setup,
-      ["spicetify.selectors": .owned, "spicetify.color-link": .external]
-    )
-    #expect(
-      try String(contentsOf: fixture.configuration, encoding: .utf8)
-        == """
-        [Setting]
-        current_theme          = text
-        color_scheme\t=\tMacarchyCurrent
-        inject_css = 1
-
-        [Preprocesses]
-        disable_sentry = 1
-
-        """
-    )
-    #expect(try Data(contentsOf: fixture.userCSS) == css)
+          """
+      )
+    ])
 
     let teardown = try fixture.teardown(dryRun: false)
     expectStatuses(
       teardown,
       ["spicetify.selectors": .removed, "spicetify.color-link": .none]
     )
-    #expect(try Data(contentsOf: fixture.configuration) == original)
+    #expect(try Data(contentsOf: fixture.configuration) == Data(original.utf8))
+    #expect(try Data(contentsOf: fixture.userCSS) == css)
     #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
   }
 
   @Test
-  func laterSelectorFailureReportsTheEarlierOwnedLinkAndExactIdentity() throws {
+  func selectorParserRejectsMalformedAndDuplicateState() throws {
+    let malformedConfigurations = [
+      "[Setting]\ncurrent_theme = text\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n",
+      "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n[Setting]\n",
+      "[Setting]\nmalformed provider setting\n",
+      "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n[Backup]\nmalformed later section\n",
+      "[Backup]\nversion = 1\n",
+    ]
+    let fixture = try SpicetifySetupFixture(configuration: nil)
+    defer { fixture.remove() }
+    for configuration in malformedConfigurations {
+      do {
+        _ = try SetupOwnershipManager().spicetifySelection(
+          Data(configuration.utf8),
+          target: fixture.configuration
+        )
+        Issue.record("Expected malformed Spicetify configuration to fail")
+      } catch SetupOwnershipError.invalidConfiguration(let id, let target, _) {
+        #expect(id == "spicetify.selectors")
+        #expect(target == fixture.configuration)
+      }
+    }
+  }
+
+  @Test
+  func teardownRemovesALoneColorLinkRecordBesideMalformedConfiguration() throws {
     let original = Data("[Setting]\nmalformed provider setting\n".utf8)
     let fixture = try SpicetifySetupFixture(configuration: original)
     defer { fixture.remove() }
-    let error: any Error
-    do {
-      _ = try fixture.setup(dryRun: false)
-      Issue.record("Expected the malformed selector configuration to fail")
-      return
-    } catch let caught {
-      error = caught
-    }
-
-    let results = SetupOwnershipManager.failureResults(error, homeDirectory: fixture.home)
-
-    expectStatuses(
-      results,
-      ["spicetify.selectors": .failed, "spicetify.color-link": .owned]
-    )
-    #expect(
-      results.first { $0.id == "spicetify.selectors" }?.mutationAttempted == false
-    )
-    #expect(results.first { $0.id == "spicetify.color-link" }?.mutationAttempted == true)
-    #expect(results.first { $0.id == "spicetify.selectors" }?.target == fixture.configuration.path)
-    #expect(try Data(contentsOf: fixture.configuration) == original)
-    #expect(try fixture.colorLinkDestination() == fixture.colorDestination.path)
+    try fixture.writeLegacyOwnership([
+      fixture.legacyThemeLink(SetupOwnershipManager.spicetifyColorLinkID)
+    ])
 
     let teardown = try fixture.teardown(dryRun: false)
     expectStatuses(
       teardown,
       ["spicetify.selectors": .none, "spicetify.color-link": .removed]
     )
-    #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
-  }
-
-  @Test
-  func existingColorFileIsNeverClaimedOrReplaced() throws {
-    let configuration = Data(
-      "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\n".utf8
-    )
-    let fixture = try SpicetifySetupFixture(configuration: configuration)
-    defer { fixture.remove() }
-    let staticColors = Data("[Legacy]\nmain = 000000\n".utf8)
-    try staticColors.write(to: fixture.colorLink)
-    let css = try Data(contentsOf: fixture.userCSS)
-
-    #expect(
-      throws: SetupOwnershipError.conflictingThemeLink(
-        "spicetify.color-link",
-        fixture.colorLink
-      )
-    ) {
-      _ = try fixture.setup(dryRun: false)
-    }
-    #expect(try Data(contentsOf: fixture.colorLink) == staticColors)
-    #expect(try Data(contentsOf: fixture.configuration) == configuration)
-    #expect(try Data(contentsOf: fixture.userCSS) == css)
+    #expect(try Data(contentsOf: fixture.configuration) == original)
     #expect(!FileManager.default.fileExists(atPath: fixture.manifest.path))
   }
 }
@@ -648,7 +400,10 @@ private enum SpicetifySetupTestError: Error {
   case interrupted
 }
 
-private final class SpicetifySetupFixture: @unchecked Sendable {
+private let marketplaceConfiguration =
+  "[Setting]\ncurrent_theme = marketplace\ncolor_scheme = Default\ninject_css = 1\n"
+
+private final class SpicetifySetupFixture: LegacySetupOwnershipFixture, @unchecked Sendable {
   let root: URL
   let home: URL
 
@@ -734,13 +489,20 @@ private final class SpicetifySetupFixture: @unchecked Sendable {
     stateRoot.appending(path: "state/setup/backups/spicetify-config-xpui.ini")
   }
 
-  func setup(
-    manager: SetupOwnershipManager = SetupOwnershipManager(),
-    dryRun: Bool
-  ) throws -> [SetupIntegrationResult] {
-    let context = SetupOwnershipManager.Context(homeDirectory: home)
-    var records = try manager.readRecords(context: context)
-    return try spicetifyPlan(manager: manager, context: context).setup(dryRun, &records)
+  var replacement: URL {
+    configuration.deletingLastPathComponent()
+      .appending(path: ".macarchy-spicetify-config-transaction")
+  }
+
+  /// The selector record an older release left for the marketplace configuration.
+  func legacySelectors(onDisk: String? = nil) throws -> SetupOwnershipRecord {
+    try legacyFileRecord(
+      SetupOwnershipManager.spicetifySelectorsID,
+      original: marketplaceConfiguration,
+      installed:
+        "[Setting]\ncurrent_theme = text\ncolor_scheme = MacarchyCurrent\ninject_css = 1\n",
+      onDisk: onDisk
+    )
   }
 
   func teardown(
@@ -768,18 +530,6 @@ private final class SpicetifySetupFixture: @unchecked Sendable {
 
   func colorLinkDestination() throws -> String {
     try FileManager.default.destinationOfSymbolicLink(atPath: colorLink.path)
-  }
-
-  func manifestJSON() throws -> [String: Any] {
-    try #require(
-      JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any]
-    )
-  }
-
-  func permissions(at url: URL) throws -> Int {
-    try #require(
-      FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int
-    )
   }
 
   func remove() {
