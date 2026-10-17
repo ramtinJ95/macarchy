@@ -8,24 +8,16 @@ import Testing
 
 struct PiPresetLifecycleTests {
   @Test
-  func cleanEnableNoOpDisableAndLaterSettingsPreservation() async throws {
+  func statusDoctorAndTeardownKeepLaterSettingsAroundTheOwnedMember() async throws {
     let fixture = try PiFixture(settings: nil)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
 
-    let plan = try fixture.plan()
-    #expect(plan.succeeded)
+    #expect(try fixture.plan().succeeded)
     #expect(try await fixture.apply().succeeded)
-    #expect(
-      try String(contentsOf: fixture.settings, encoding: .utf8)
-        == "{\"theme\": \"macarchy-current\"}\n")
-    #expect(try fixture.linkDestination() == fixture.themeDestination.path)
-    #expect(
-      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?
-        .enabledThemeAdapterIDs == [PiAdapter.id]
-    )
     #expect(try fixture.status().succeeded)
     #expect(try fixture.doctor().succeeded)
-    #expect(try jsonObject((try await fixture.apply()).output)["outcome"] as? String == "no_change")
+    let repeated = try await fixture.apply()
+    #expect(try jsonObject(repeated.output)["outcome"] as? String == "no_change")
 
     try "{\"theme\": \"macarchy-current\", \"lastModel\": \"private-value\"}\n".write(
       to: fixture.settings,
@@ -44,14 +36,6 @@ struct PiPresetLifecycleTests {
         homeDirectory: fixture.home
       ).contains(PiAdapter.id)
     )
-
-    let clean = try PiFixture(settings: nil)
-    defer { try? FileManager.default.removeItem(at: clean.root) }
-    #expect(try await clean.apply().succeeded)
-    try clean.writeProfile(pi: false)
-    #expect(try await clean.apply().succeeded)
-    #expect(!FileManager.default.fileExists(atPath: clean.settings.path))
-    #expect(!FileManager.default.fileExists(atPath: clean.home.appending(path: ".pi").path))
   }
 
   @Test
@@ -141,39 +125,6 @@ struct PiPresetLifecycleTests {
         == "{\n  \"lastModel\": \"provider-rewrite\",\n  \"theme\"  :  {\"personal\":true},\n  \"thinking\": \"max\"\n}\n"
     )
     #expect(!FileManager.default.fileExists(atPath: fixture.themeLink.path))
-  }
-
-  @Test
-  func interruptedAuthorityPublicationRollsBackAndForwardRecovers() async throws {
-    let fixture = try PiFixture(settings: nil)
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let captured = Mutex<EnvironmentTransaction?>(nil)
-    let result = try await fixture.apply { checkpoint in
-      guard checkpoint == .authorityPublished else { return }
-      captured.withLock {
-        $0 = try? EnvironmentStateStore(stateRoot: fixture.state).readTransaction()
-      }
-      throw PiFixtureError.injected
-    }
-    #expect(!result.succeeded)
-    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
-    #expect(!FileManager.default.fileExists(atPath: fixture.settings.path))
-
-    try EnvironmentStateStore(stateRoot: fixture.state).writeTransaction(
-      try #require(captured.withLock { $0 })
-    )
-    #expect(
-      try EnvironmentTransactionCoordinator(
-        homeDirectory: fixture.home,
-        stateRoot: fixture.state
-      ).recoverLocked()
-    )
-    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?.piEnabled == true)
-    #expect(
-      try EnvironmentPiDocument.matchesManaged(
-        Data(contentsOf: fixture.settings), source: fixture.settings))
-    #expect(try await fixture.teardown().succeeded)
-    #expect(!FileManager.default.fileExists(atPath: fixture.settings.path))
   }
 
   @Test(arguments: [ExternalPiLayout.configurationSymlink, .directorySymlink])
@@ -274,59 +225,6 @@ struct PiPresetLifecycleTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: partial.state.appending(path: "environment/ownership.json").path))
-  }
-
-  @Test
-  func driftBlocksMutationAndInterruptedTeardownRecoversExactMemberAndLink() async throws {
-    let fixture = try PiFixture(settings: "{\"theme\":\"personal\",\"keep\":true}\n")
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let digest = try #require(
-      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
-    )
-    #expect(try await fixture.apply(adopt: digest).succeeded)
-
-    try "{\"theme\":\"wrong\",\"later\":1}\n".write(
-      to: fixture.settings,
-      atomically: true,
-      encoding: .utf8
-    )
-    #expect(try !fixture.status().succeeded)
-    let driftedTeardown = try await fixture.teardown()
-    #expect(!driftedTeardown.succeeded)
-    #expect(try fixture.linkDestination() == fixture.themeDestination.path)
-    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
-
-    try "{\"later\":1,\"theme\":\"macarchy-current\"}\n".write(
-      to: fixture.settings,
-      atomically: true,
-      encoding: .utf8
-    )
-    let store = EnvironmentStateStore(stateRoot: fixture.state)
-    let ownership = try #require(try store.readOwnership())
-    try store.writeTransaction(
-      EnvironmentTransaction(
-        operation: .teardown,
-        previousOwnership: ownership,
-        proposedOwnership: nil,
-        previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
-          .currentDestination(),
-        piReplacementName: ".macarchy-environment-pi-recovery.replacement"
-      )
-    )
-
-    #expect(
-      try EnvironmentTransactionCoordinator(
-        homeDirectory: fixture.home,
-        stateRoot: fixture.state
-      ).recoverLocked()
-    )
-    #expect(
-      try String(contentsOf: fixture.settings, encoding: .utf8)
-        == "{\"later\":1,\"theme\":\"personal\"}\n"
-    )
-    #expect(!FileManager.default.fileExists(atPath: fixture.themeLink.path))
-    #expect(try store.readOwnership() == nil)
-    #expect(!store.transactionExists)
   }
 
   @Test
@@ -436,8 +334,6 @@ struct PiPresetLifecycleTests {
   }
 }
 
-private enum PiFixtureError: Error { case injected }
-
 enum ExternalPiLayout: Sendable {
   case configurationSymlink
   case directorySymlink
@@ -446,26 +342,6 @@ enum ExternalPiLayout: Sendable {
 enum OwnedPiLink: Sendable {
   case environment
   case legacySetup
-}
-
-private struct ExternalPiSnapshot: Equatable {
-  struct Entry: Equatable {
-    let device: UInt64
-    let inode: UInt64
-    let mode: UInt32
-    let size: Int64
-    let userID: UInt32
-    let groupID: UInt32
-    let flags: UInt32
-    let modificationTimeSeconds: Int64
-    let modificationTimeNanoseconds: Int64
-    let statusChangeTimeSeconds: Int64
-    let statusChangeTimeNanoseconds: Int64
-    let linkDestination: String?
-    let data: Data?
-  }
-
-  let entries: [String: Entry]
 }
 
 private struct PiFixture: LegacySetupOwnershipFixture {
@@ -496,10 +372,7 @@ private struct PiFixture: LegacySetupOwnershipFixture {
       )
       try contents.write(to: settings, atomically: true, encoding: .utf8)
     }
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
-    )
-    _ = try ThemeActivator(root: state).activate(package: package)
+    try activateCatppuccinMocha(stateRoot: state)
     try writeProfile(pi: true)
   }
 
@@ -510,25 +383,8 @@ private struct PiFixture: LegacySetupOwnershipFixture {
   var externalSettings: URL { externalAgent.appending(path: "settings.json") }
 
   func writeProfile(pi: Bool) throws {
-    try """
-    schema_version = 1
-    [focus_ring]
-    provider = "disabled"
-    [terminal]
-    provider = "disabled"
-    [shell]
-    provider = "disabled"
-    [editor]
-    provider = "disabled"
-    [tools]
-    bat = false
-    eza = false
-    btop = false
-    yazi = false
-    [presets]
-    pi = \(pi)
-    tuicr = false
-    """.write(to: profile, atomically: true, encoding: .utf8)
+    try presetTestProfile(presets: ["pi": pi, "tuicr": false])
+      .write(to: profile, atomically: true, encoding: .utf8)
   }
 
   private var lifecycle: PresetLifecycleTestHarness {
@@ -636,8 +492,8 @@ private struct PiFixture: LegacySetupOwnershipFixture {
     ])
   }
 
-  func externalTupleSnapshot() throws -> ExternalPiSnapshot {
-    let paths = [
+  func externalTupleSnapshot() throws -> ExternalTupleSnapshot {
+    try ExternalTupleSnapshot([
       settings.deletingLastPathComponent(),
       settings,
       themeLink,
@@ -645,33 +501,7 @@ private struct PiFixture: LegacySetupOwnershipFixture {
       externalSettings,
       externalAgent.appending(path: "themes", directoryHint: .isDirectory),
       externalAgent.appending(path: "themes/\(themeLink.lastPathComponent)"),
-    ]
-    var entries = [String: ExternalPiSnapshot.Entry]()
-    for path in paths {
-      var metadata = stat()
-      guard lstat(path.path, &metadata) == 0 else {
-        if errno == ENOENT { continue }
-        throw EnvironmentLifecycleError.system("snapshot external Pi tuple", path, errno)
-      }
-      let kind = metadata.st_mode & S_IFMT
-      entries[path.path] = ExternalPiSnapshot.Entry(
-        device: UInt64(metadata.st_dev),
-        inode: UInt64(metadata.st_ino),
-        mode: UInt32(metadata.st_mode),
-        size: Int64(metadata.st_size),
-        userID: metadata.st_uid,
-        groupID: metadata.st_gid,
-        flags: metadata.st_flags,
-        modificationTimeSeconds: Int64(metadata.st_mtimespec.tv_sec),
-        modificationTimeNanoseconds: Int64(metadata.st_mtimespec.tv_nsec),
-        statusChangeTimeSeconds: Int64(metadata.st_ctimespec.tv_sec),
-        statusChangeTimeNanoseconds: Int64(metadata.st_ctimespec.tv_nsec),
-        linkDestination: kind == S_IFLNK
-          ? try FileManager.default.destinationOfSymbolicLink(atPath: path.path) : nil,
-        data: kind == S_IFREG ? try BoundedRegularFile.read(at: path).data : nil
-      )
-    }
-    return ExternalPiSnapshot(entries: entries)
+    ])
   }
 
   func linkDestination(_ url: URL? = nil) throws -> String {
@@ -794,32 +624,9 @@ private struct PiFixture: LegacySetupOwnershipFixture {
   }
 
   private var themeController: DesktopThemeController {
-    DesktopThemeController(
-      reconcile: { adapterIDs, _, _ in
-        DesktopThemeReconciliation(
-          generationID: "theme",
-          results: adapterIDs.map {
-            DesktopThemeAdapterStatus(
-              adapterID: $0,
-              requirement: "required",
-              status: "applied",
-              message: "Running Pi sessions reloaded the active palette"
-            )
-          },
-          succeeded: true
-        )
-      },
-      inspect: { adapterIDs, _, _ in
-        adapterIDs.map {
-          DesktopThemeAdapterStatus(
-            adapterID: $0,
-            requirement: "required",
-            status: "ready",
-            message: "Pi watches the active palette"
-          )
-        }
-      }
-    )
+    stubThemeController(
+      reconciled: ("applied", "Running Pi sessions reloaded the active palette"),
+      inspected: ("ready", "Pi watches the active palette"))
   }
 
   var restartRequiredThemeController: DesktopThemeController {
@@ -842,4 +649,26 @@ private struct PiFixture: LegacySetupOwnershipFixture {
       inspect: { _, _, _ in [] }
     )
   }
+}
+
+extension PiFixture: PresetFileFixture {
+  var presetFile: URL { settings }
+
+  var themeLinks: [(link: URL, destination: URL)] { [(themeLink, themeDestination)] }
+
+  func setPresetEnabled(_ enabled: Bool) throws {
+    try writeProfile(pi: enabled)
+  }
+
+  func applyPreset(
+    adopt: String?,
+    faultInjector: @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
+  ) async throws -> (output: String, succeeded: Bool) {
+    try await apply(adopt: adopt, faultInjector: faultInjector)
+  }
+}
+
+/// The Pi fixture activates its theme on creation.
+func makePiPresetFileFixture(settings: String?) throws -> any PresetFileFixture {
+  try PiFixture(settings: settings)
 }
