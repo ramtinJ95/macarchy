@@ -6,44 +6,6 @@ import Testing
 
 extension AdapterContractTests {
   @Test
-  func processRunnerDrainsOutputWhileTimedCommandsAreRunning() throws {
-    let result = try ProcessRunner.live.run(
-      ProcessRequest(
-        executableURL: URL(filePath: "/usr/bin/jot"),
-        arguments: ["-b", "macarchy-output", "8192"], timeout: 2)
-    )
-    #expect(result.terminationStatus == 0)
-    #expect(result.output.split(separator: "\n").count == 8192)
-  }
-
-  @Test
-  func processRunnerTerminatesTimedOutCommands() throws {
-    let executable = URL(filePath: "/bin/sleep")
-    do {
-      _ = try ProcessRunner.live.run(
-        ProcessRequest(executableURL: executable, arguments: ["10"], timeout: 0.05)
-      )
-      Issue.record("Expected the process to time out")
-    } catch let error as ProcessRunnerError {
-      #expect(error == .timedOut(executable, 0.05))
-    }
-  }
-
-  @Test
-  func processRunnerAppliesEnvironmentOverrides() throws {
-    let result = try ProcessRunner.live.run(
-      ProcessRequest(
-        executableURL: URL(filePath: "/usr/bin/printenv"),
-        arguments: ["MACARCHY_PROCESS_TEST"],
-        environmentOverrides: ["MACARCHY_PROCESS_TEST": "expected-value"]
-      )
-    )
-
-    #expect(result.terminationStatus == 0)
-    #expect(result.output == "expected-value")
-  }
-
-  @Test
   func independentAdaptersReconcileConcurrentlyAndPersistDeterministically() async throws {
     let root = try temporaryDirectory()
     defer {

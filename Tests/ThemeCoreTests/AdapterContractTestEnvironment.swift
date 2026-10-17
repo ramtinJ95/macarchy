@@ -9,21 +9,11 @@ struct AdapterContractTests {}
 
 extension AdapterContractTests {
   func catppuccinPackage() throws -> ThemePackage {
-    try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(
-        path: "Themes/catppuccin-mocha",
-        directoryHint: .isDirectory
-      )
-    )
+    try BuiltInThemePackages.catppuccinMocha.get()
   }
 
   func tokyoNightPackage() throws -> ThemePackage {
-    try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(
-        path: "Themes/tokyo-night",
-        directoryHint: .isDirectory
-      )
-    )
+    try BuiltInThemePackages.tokyoNight.get()
   }
 
   func packageWithoutNamedThemeMappings(_ base: ThemePackage) -> ThemePackage {
