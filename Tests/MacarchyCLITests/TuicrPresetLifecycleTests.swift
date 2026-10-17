@@ -35,7 +35,7 @@ struct TuicrPresetLifecycleTests {
   }
 
   @Test
-  func cleanEnableNoOpPersistedSelectionAndDisableAreOneLifecycle() async throws {
+  func cleanPlanOwnsTheConfigurationAndBothThemeLinksBeforeTuicrIsSelected() throws {
     let fixture = try TuicrFixture(configuration: nil)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     try fixture.activateTheme()
@@ -56,48 +56,6 @@ struct TuicrPresetLifecycleTests {
     #expect(
       Set((planJSON["entries"] as? [[String: Any]])?.compactMap { $0["id"] as? String } ?? [])
         == ["tuicr_configuration", "tuicr_theme", "tuicr_syntax"]
-    )
-
-    let first = try await fixture.apply()
-    #expect(first.succeeded)
-    #expect(
-      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()?
-        .enabledThemeAdapterIDs == [TuicrAdapter.id]
-    )
-    #expect(
-      try String(contentsOf: fixture.configuration, encoding: .utf8)
-        == "theme = \"macarchy-current\"\n"
-    )
-    #expect(try fixture.link(fixture.themeLink) == fixture.themeDestination.path)
-    #expect(try fixture.link(fixture.syntaxLink) == fixture.syntaxDestination.path)
-    #expect(
-      try ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state,
-        homeDirectory: fixture.home
-      ) == [TuicrAdapter.id]
-    )
-
-    let repeatApply = try await fixture.apply()
-    #expect(repeatApply.succeeded)
-    #expect(try jsonObject(repeatApply.output)["outcome"] as? String == "no_change")
-
-    try fixture.writeProfile(tuicr: false)
-    #expect(
-      try ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state,
-        homeDirectory: fixture.home
-      ).contains("tuicr")
-    )
-    let disabled = try await fixture.apply()
-    #expect(disabled.succeeded)
-    #expect(!FileManager.default.fileExists(atPath: fixture.configuration.path))
-    #expect(!FileManager.default.fileExists(atPath: fixture.themeLink.path))
-    #expect(!FileManager.default.fileExists(atPath: fixture.syntaxLink.path))
-    #expect(
-      try !ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state,
-        homeDirectory: fixture.home
-      ).contains("tuicr")
     )
   }
 
@@ -186,67 +144,6 @@ struct TuicrPresetLifecycleTests {
         stateRoot: fixture.state,
         homeDirectory: fixture.home
       ) == [TuicrAdapter.id]
-    )
-  }
-
-  @Test
-  func malformedAndUnknownAppliedAdapterInventoriesBlockRuntimeSelection() throws {
-    let fixture = try TuicrFixture(configuration: nil)
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let store = EnvironmentStateStore(stateRoot: fixture.state)
-
-    for ownership in [
-      EnvironmentOwnership(
-        generationID: "e-00000000-0000-0000-0000-000000000000",
-        records: [],
-        createdDirectories: [],
-        originalThemeBridges: [],
-        tuicrEnabled: true,
-        enabledThemeAdapterIDs: [TuicrAdapter.id, TuicrAdapter.id]
-      ),
-      EnvironmentOwnership(
-        generationID: "e-00000000-0000-0000-0000-000000000000",
-        records: [],
-        createdDirectories: [],
-        originalThemeBridges: [],
-        enabledThemeAdapterIDs: ["unknown-adapter"]
-      ),
-    ] {
-      try store.writeOwnership(ownership)
-      #expect(throws: (any Error).self) {
-        try ThemeRuntimeSelection.enabledAdapterIDs(
-          stateRoot: fixture.state,
-          homeDirectory: fixture.home
-        )
-      }
-    }
-  }
-
-  @Test
-  func ownershipWithoutAppliedAdapterInventoryDecodesWithLegacySelection() throws {
-    let fixture = try TuicrFixture(configuration: nil)
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    let legacy = EnvironmentOwnership(
-      generationID: "e-00000000-0000-0000-0000-000000000000",
-      records: [],
-      createdDirectories: [],
-      originalThemeBridges: [],
-      tuicrEnabled: true
-    )
-    let data = try JSONEncoder().encode(legacy)
-    #expect(!String(decoding: data, as: UTF8.self).contains("enabled_theme_adapter_ids"))
-    let decoded = try JSONDecoder().decode(EnvironmentOwnership.self, from: data)
-    #expect(decoded.enabledThemeAdapterIDs == nil)
-    try EnvironmentStateStore(stateRoot: fixture.state).writeOwnership(decoded)
-
-    #expect(
-      try ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state,
-        homeDirectory: fixture.home
-      )
-        == Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-          BordersAdapter.id, BordersAdapter.leanID, SpicetifyAdapter.id,
-        ])
     )
   }
 
@@ -408,148 +305,6 @@ struct TuicrPresetLifecycleTests {
         source: source
       ) == "wrap = true\ntheme = \"personal\"\nmouse = false\n"
     )
-  }
-
-  @Test
-  func lateAuthorityPublicationFailureRollsBackSelectionAndOwnership() async throws {
-    let fixture = try TuicrFixture(configuration: nil)
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    try fixture.activateTheme()
-    let checkpointObserved = Mutex(false)
-    let interruptedTransaction = Mutex<EnvironmentTransaction?>(nil)
-
-    let result = try await fixture.apply { checkpoint in
-      guard checkpoint == .authorityPublished else { return }
-      #expect(EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
-      interruptedTransaction.withLock {
-        $0 = try? EnvironmentStateStore(stateRoot: fixture.state).readTransaction()
-      }
-      #expect(
-        try ThemeRuntimeSelection.enabledAdapterIDs(
-          stateRoot: fixture.state,
-          homeDirectory: fixture.home
-        ).contains(TuicrAdapter.id)
-      )
-      checkpointObserved.withLock { $0 = true }
-      throw TuicrFixtureError.injectedFailure
-    }
-
-    #expect(!result.succeeded)
-    #expect(checkpointObserved.withLock { $0 })
-    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
-    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
-    #expect(
-      try !ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state,
-        homeDirectory: fixture.home
-      ).contains(TuicrAdapter.id)
-    )
-    #expect(!FileManager.default.fileExists(atPath: fixture.configuration.path))
-
-    try EnvironmentStateStore(stateRoot: fixture.state).writeTransaction(
-      try #require(interruptedTransaction.withLock { $0 })
-    )
-    #expect(
-      try EnvironmentTransactionCoordinator(
-        homeDirectory: fixture.home,
-        stateRoot: fixture.state
-      ).recoverLocked()
-    )
-    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
-    #expect(
-      try ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state,
-        homeDirectory: fixture.home
-      ).contains(TuicrAdapter.id)
-    )
-    let recoveredOwnership = try #require(
-      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()
-    )
-    let replacementName = ".macarchy-environment-tuicr-claimed.replacement"
-    try EnvironmentStateStore(stateRoot: fixture.state).writeTransaction(
-      EnvironmentTransaction(
-        operation: .teardown,
-        previousOwnership: recoveredOwnership,
-        proposedOwnership: nil,
-        previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
-          .currentDestination(),
-        tuicrReplacementName: replacementName
-      )
-    )
-    try FileManager.default.moveItem(
-      at: fixture.configuration,
-      to: fixture.configuration.deletingLastPathComponent().appending(path: replacementName)
-    )
-    #expect(
-      try EnvironmentTransactionCoordinator(
-        homeDirectory: fixture.home,
-        stateRoot: fixture.state
-      ).recoverLocked()
-    )
-    #expect(!FileManager.default.fileExists(atPath: fixture.configuration.path))
-    #expect(!FileManager.default.fileExists(atPath: fixture.themeLink.path))
-    #expect(!FileManager.default.fileExists(atPath: fixture.syntaxLink.path))
-    #expect(
-      try !ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state,
-        homeDirectory: fixture.home
-      ).contains(TuicrAdapter.id)
-    )
-  }
-
-  @Test
-  func driftIsVisibleAndInterruptedTeardownRecoversTheOwnedKeyAndLinks() async throws {
-    let fixture = try TuicrFixture(configuration: "wrap = true\n")
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    try fixture.activateTheme()
-    let digest = try #require(
-      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
-    )
-    #expect(try await fixture.apply(adopt: digest).succeeded)
-    try "theme = \"wrong\"\nwrap = true\n".write(
-      to: fixture.configuration,
-      atomically: true,
-      encoding: .utf8
-    )
-    let driftedStatus = try fixture.status()
-    #expect(!driftedStatus.succeeded)
-    let preview: (output: String, succeeded: Bool) = (try? fixture.plan()) ?? ("", false)
-    #expect(!preview.succeeded)
-    let driftedTeardown = try await fixture.teardown()
-    #expect(!driftedTeardown.succeeded)
-    #expect(try fixture.link(fixture.themeLink) == fixture.themeDestination.path)
-    #expect(try fixture.link(fixture.syntaxLink) == fixture.syntaxDestination.path)
-    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
-
-    try "theme = \"macarchy-current\"\nwrap = true\n".write(
-      to: fixture.configuration,
-      atomically: true,
-      encoding: .utf8
-    )
-    let store = EnvironmentStateStore(stateRoot: fixture.state)
-    let observedOwnership = try store.readOwnership()
-    let ownership = try #require(observedOwnership)
-    try store.writeTransaction(
-      EnvironmentTransaction(
-        operation: .teardown,
-        previousOwnership: ownership,
-        proposedOwnership: nil,
-        previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
-          .currentDestination(),
-        btopReplacementName: nil,
-        tuicrReplacementName: ".macarchy-environment-tuicr-recovery.replacement"
-      )
-    )
-
-    #expect(
-      try EnvironmentTransactionCoordinator(
-        homeDirectory: fixture.home,
-        stateRoot: fixture.state
-      ).recoverLocked()
-    )
-    #expect(try String(contentsOf: fixture.configuration, encoding: .utf8) == "wrap = true\n")
-    #expect(!FileManager.default.fileExists(atPath: fixture.themeLink.path))
-    #expect(!FileManager.default.fileExists(atPath: fixture.syntaxLink.path))
   }
 
   @Test(arguments: [ExternalTuicrLayout.configurationSymlink, .directorySymlink])
@@ -765,19 +520,6 @@ enum ExternalTuicrLayout: Sendable {
   case directorySymlink
 }
 
-private struct ExternalTuicrSnapshot: Equatable {
-  struct Entry: Equatable {
-    let device: UInt64
-    let inode: UInt64
-    let mode: UInt32
-    let size: Int64
-    let linkDestination: String?
-    let data: Data?
-  }
-
-  let entries: [String: Entry]
-}
-
 private struct TuicrFixture: LegacySetupOwnershipFixture {
   let root: URL
   let home: URL
@@ -814,24 +556,8 @@ private struct TuicrFixture: LegacySetupOwnershipFixture {
   }
 
   func writeProfile(tuicr: Bool, bat: Bool = false) throws {
-    try """
-    schema_version = 1
-    [focus_ring]
-    provider = "disabled"
-    [terminal]
-    provider = "disabled"
-    [shell]
-    provider = "disabled"
-    [editor]
-    provider = "disabled"
-    [tools]
-    bat = \(bat)
-    eza = false
-    btop = false
-    yazi = false
-    [presets]
-    tuicr = \(tuicr)
-    """.write(to: profile, atomically: true, encoding: .utf8)
+    try presetTestProfile(bat: bat, presets: ["tuicr": tuicr])
+      .write(to: profile, atomically: true, encoding: .utf8)
   }
 
   func runtimeConsumerPaths() -> ThemeConsumerPaths {
@@ -858,10 +584,7 @@ private struct TuicrFixture: LegacySetupOwnershipFixture {
   }
 
   func activateTheme() throws {
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")
-    )
-    _ = try ThemeActivator(root: state).activate(package: package)
+    try activateCatppuccinMocha(stateRoot: state)
   }
 
   func installExternalTuple(layout: ExternalTuicrLayout, selector: String) throws {
@@ -903,9 +626,9 @@ private struct TuicrFixture: LegacySetupOwnershipFixture {
     )
   }
 
-  func externalTupleSnapshot() throws -> ExternalTuicrSnapshot {
+  func externalTupleSnapshot() throws -> ExternalTupleSnapshot {
     let external = root.appending(path: "dotfiles/tuicr", directoryHint: .isDirectory)
-    let paths = [
+    return try ExternalTupleSnapshot([
       configuration.deletingLastPathComponent(),
       configuration,
       themeLink,
@@ -915,26 +638,7 @@ private struct TuicrFixture: LegacySetupOwnershipFixture {
       external.appending(path: "themes", directoryHint: .isDirectory),
       external.appending(path: "themes/\(themeLink.lastPathComponent)"),
       external.appending(path: "themes/\(syntaxLink.lastPathComponent)"),
-    ]
-    var entries = [String: ExternalTuicrSnapshot.Entry]()
-    for path in paths {
-      var metadata = stat()
-      guard lstat(path.path, &metadata) == 0 else {
-        if errno == ENOENT { continue }
-        throw EnvironmentLifecycleError.system("snapshot external tuicr tuple", path, errno)
-      }
-      let kind = metadata.st_mode & S_IFMT
-      entries[path.path] = ExternalTuicrSnapshot.Entry(
-        device: UInt64(metadata.st_dev),
-        inode: UInt64(metadata.st_ino),
-        mode: UInt32(metadata.st_mode),
-        size: Int64(metadata.st_size),
-        linkDestination: kind == S_IFLNK
-          ? try FileManager.default.destinationOfSymbolicLink(atPath: path.path) : nil,
-        data: kind == S_IFREG ? try BoundedRegularFile.read(at: path).data : nil
-      )
-    }
-    return ExternalTuicrSnapshot(entries: entries)
+    ])
   }
 
   private var lifecycle: PresetLifecycleTestHarness {
@@ -980,31 +684,38 @@ private struct TuicrFixture: LegacySetupOwnershipFixture {
   }
 
   private var themeController: DesktopThemeController {
-    DesktopThemeController(
-      reconcile: { adapterIDs, _, _ in
-        DesktopThemeReconciliation(
-          generationID: "theme",
-          results: adapterIDs.map {
-            DesktopThemeAdapterStatus(
-              adapterID: $0,
-              requirement: "required",
-              status: "restart_required",
-              message: "Restart tuicr to use the active palette"
-            )
-          },
-          succeeded: true
-        )
-      },
-      inspect: { adapterIDs, _, _ in
-        adapterIDs.map {
-          DesktopThemeAdapterStatus(
-            adapterID: $0,
-            requirement: "required",
-            status: "ready",
-            message: "Fresh tuicr sessions use the active palette"
-          )
-        }
-      }
-    )
+    stubThemeController(
+      reconciled: ("restart_required", "Restart tuicr to use the active palette"),
+      inspected: ("ready", "Fresh tuicr sessions use the active palette"))
   }
+}
+
+extension TuicrFixture: PresetFileFixture {
+  var presetFile: URL { configuration }
+
+  var themeLinks: [(link: URL, destination: URL)] {
+    [(themeLink, themeDestination), (syntaxLink, syntaxDestination)]
+  }
+
+  func setPresetEnabled(_ enabled: Bool) throws {
+    try writeProfile(tuicr: enabled)
+  }
+
+  func applyPreset(
+    adopt: String?,
+    faultInjector: @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
+  ) async throws -> (output: String, succeeded: Bool) {
+    try await apply(adopt: adopt, faultInjector: faultInjector)
+  }
+}
+
+func makeTuicrPresetFileFixture(configuration: String?) throws -> any PresetFileFixture {
+  let fixture = try TuicrFixture(configuration: configuration)
+  do {
+    try fixture.activateTheme()
+  } catch {
+    try? FileManager.default.removeItem(at: fixture.root)
+    throw error
+  }
+  return fixture
 }

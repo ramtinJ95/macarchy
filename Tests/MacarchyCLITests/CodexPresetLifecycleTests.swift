@@ -1,68 +1,10 @@
-import Darwin
 import Foundation
-import Synchronization
 import Testing
 
 @testable import MacarchyCLI
 @testable import ThemeCore
 
 struct CodexPresetLifecycleTests {
-  @Test
-  func cleanEnableNoOpFreshSessionStatusDisableAndTeardownShareOneAuthority() async throws {
-    let fixture = try CodexFixture(configuration: nil)
-    defer { try? FileManager.default.removeItem(at: fixture.root) }
-    try fixture.activateTheme()
-
-    let plan = try fixture.plan()
-    #expect(plan.succeeded)
-    let first = try await fixture.apply()
-    #expect(first.succeeded)
-    #expect(try jsonObject(first.output)["outcome"] as? String == "applied")
-    #expect(
-      try String(contentsOf: fixture.configuration, encoding: .utf8)
-        == "[tui]\ntheme = \"macarchy-current\"\n"
-    )
-    #expect(try fixture.linkDestination() == fixture.themeDestination.path)
-    let ownership = try #require(
-      try EnvironmentStateStore(stateRoot: fixture.state).readOwnership()
-    )
-    #expect(ownership.codexEnabled)
-    #expect(ownership.enabledThemeAdapterIDs == [CodexAdapter.id])
-    #expect(
-      try ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state, homeDirectory: fixture.home) == [CodexAdapter.id]
-    )
-    let theme = try #require(
-      (try jsonObject(first.output)["theme"] as? [[String: Any]])?.first
-    )
-    #expect(theme["status"] as? String == "restart_required")
-    #expect((theme["message"] as? String)?.contains("fresh Codex") == true)
-
-    let repeatApply = try await fixture.apply()
-    #expect(repeatApply.succeeded)
-    #expect(try jsonObject(repeatApply.output)["outcome"] as? String == "no_change")
-
-    try fixture.writeProfile(enabled: false)
-    #expect(
-      try ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state, homeDirectory: fixture.home
-      ).contains(CodexAdapter.id)
-    )
-    let disabled = try await fixture.apply()
-    #expect(disabled.succeeded)
-    #expect(!FileManager.default.fileExists(atPath: fixture.configuration.path))
-    #expect(!FileManager.default.fileExists(atPath: fixture.themeLink.path))
-    #expect(
-      try !ThemeRuntimeSelection.enabledAdapterIDs(
-        stateRoot: fixture.state, homeDirectory: fixture.home
-      ).contains(CodexAdapter.id)
-    )
-
-    let teardown = try await fixture.teardown()
-    #expect(teardown.succeeded)
-    #expect(try jsonObject(teardown.output)["outcome"] as? String == "absent")
-  }
-
   @Test
   func divergentSelectorAdoptionRestoresInsideTUIAfterProviderShiftsEarlierLines() async throws {
     let original =
@@ -145,7 +87,7 @@ struct CodexPresetLifecycleTests {
   }
 
   @Test
-  func malformedNoncanonicalDuplicateAndOwnedDriftBlockWithoutMutation() async throws {
+  func malformedNoncanonicalAndDuplicateSelectorsBlockWithoutMutation() async throws {
     for text in [
       "[tui\ntheme = \"personal\"\n",
       "tui.theme = \"personal\"\n",
@@ -160,19 +102,6 @@ struct CodexPresetLifecycleTests {
       #expect(try Data(contentsOf: fixture.configuration) == before)
       #expect(try EnvironmentGenerationStore(stateRoot: fixture.state).currentDestination() == nil)
     }
-
-    let drift = try CodexFixture(configuration: "[tui]\ntheme = \"personal\"\n")
-    defer { try? FileManager.default.removeItem(at: drift.root) }
-    try drift.activateTheme()
-    let digest = try #require(
-      try jsonObject(drift.plan().output)["adoption_evidence_digest"] as? String)
-    #expect(try await drift.apply(adopt: digest).succeeded)
-    try "[tui]\ntheme = \"wrong\"\n".write(
-      to: drift.configuration, atomically: true, encoding: .utf8)
-    #expect(try !drift.status().succeeded)
-    let driftedTeardown = try await drift.teardown()
-    #expect(!driftedTeardown.succeeded)
-    #expect(try drift.linkDestination() == drift.themeDestination.path)
   }
 
   @Test
@@ -244,7 +173,7 @@ struct CodexPresetLifecycleTests {
   }
 
   @Test
-  func partialExternalTupleAndLateFailureBlockOrRollbackAuthority() async throws {
+  func partialExternalTupleBlocksBeforeAuthority() async throws {
     let partial = try CodexFixture(configuration: nil)
     defer { try? FileManager.default.removeItem(at: partial.root) }
     try partial.installPersonalExternalTuple(
@@ -253,42 +182,6 @@ struct CodexPresetLifecycleTests {
     #expect(try !partial.plan().succeeded)
     #expect(!(try await partial.apply()).succeeded)
     #expect(try EnvironmentStateStore(stateRoot: partial.state).readOwnership() == nil)
-
-    let rollback = try CodexFixture(configuration: nil)
-    defer { try? FileManager.default.removeItem(at: rollback.root) }
-    try rollback.activateTheme()
-    let observed = Mutex(false)
-    let interrupted = Mutex<EnvironmentTransaction?>(nil)
-    let result = try await rollback.apply { checkpoint in
-      guard checkpoint == .authorityPublished else { return }
-      let ownership = try #require(
-        try EnvironmentStateStore(stateRoot: rollback.state).readOwnership())
-      #expect(ownership.codexEnabled)
-      interrupted.withLock {
-        $0 = try? EnvironmentStateStore(stateRoot: rollback.state).readTransaction()
-      }
-      observed.withLock { $0 = true }
-      throw CodexFixtureError.injectedFailure
-    }
-    #expect(!result.succeeded)
-    #expect(observed.withLock { $0 })
-    #expect(try EnvironmentStateStore(stateRoot: rollback.state).readOwnership() == nil)
-    #expect(!EnvironmentStateStore(stateRoot: rollback.state).transactionExists)
-    #expect(!FileManager.default.fileExists(atPath: rollback.configuration.path))
-
-    try EnvironmentStateStore(stateRoot: rollback.state).writeTransaction(
-      try #require(interrupted.withLock { $0 })
-    )
-    #expect(
-      try EnvironmentTransactionCoordinator(
-        homeDirectory: rollback.home, stateRoot: rollback.state
-      ).recoverLocked()
-    )
-    #expect(
-      try EnvironmentStateStore(stateRoot: rollback.state).readOwnership()?.codexEnabled == true
-    )
-    #expect(try rollback.linkDestination() == rollback.themeDestination.path)
-    #expect(try await rollback.teardown().succeeded)
   }
 
   @Test
@@ -381,19 +274,6 @@ struct CodexPresetLifecycleTests {
 
 }
 
-private enum CodexFixtureError: Error {
-  case injectedFailure
-}
-
-private struct CodexSnapshotEntry: Equatable {
-  let device: UInt64
-  let inode: UInt64
-  let mode: UInt32
-  let size: Int64
-  let destination: String?
-  let data: Data?
-}
-
 private struct CodexFixture: LegacySetupOwnershipFixture {
   let root: URL
   let home: URL
@@ -422,30 +302,12 @@ private struct CodexFixture: LegacySetupOwnershipFixture {
   }
 
   func writeProfile(enabled: Bool) throws {
-    try """
-    schema_version = 1
-    [focus_ring]
-    provider = "disabled"
-    [terminal]
-    provider = "disabled"
-    [shell]
-    provider = "disabled"
-    [editor]
-    provider = "disabled"
-    [tools]
-    bat = false
-    eza = false
-    btop = false
-    yazi = false
-    [presets]
-    codex = \(enabled)
-    """.write(to: profile, atomically: true, encoding: .utf8)
+    try presetTestProfile(presets: ["codex": enabled])
+      .write(to: profile, atomically: true, encoding: .utf8)
   }
 
   func activateTheme() throws {
-    let package = try ThemePackageLoader().load(
-      packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
-    _ = try ThemeActivator(root: state).activate(package: package)
+    try activateCatppuccinMocha(stateRoot: state)
   }
 
   private var lifecycle: PresetLifecycleTestHarness {
@@ -508,65 +370,52 @@ private struct CodexFixture: LegacySetupOwnershipFixture {
     )
   }
 
-  func externalSnapshot() throws -> [String: CodexSnapshotEntry] {
-    let paths = [
-      configuration,
-      configuration.resolvingSymlinksInPath(),
-      themeLink.deletingLastPathComponent(),
-      themeLink,
-      root.appending(path: "dotfiles/codex-themes", directoryHint: .isDirectory),
-      root.appending(path: "dotfiles/codex-themes/\(themeLink.lastPathComponent)"),
-    ]
-    return try Dictionary(
-      uniqueKeysWithValues: paths.map { url in
-        var metadata = stat()
-        guard lstat(url.path, &metadata) == 0 else {
-          throw EnvironmentLifecycleError.system("snapshot Codex tuple", url, errno)
-        }
-        let kind = metadata.st_mode & S_IFMT
-        return (
-          url.path,
-          CodexSnapshotEntry(
-            device: UInt64(metadata.st_dev),
-            inode: UInt64(metadata.st_ino),
-            mode: UInt32(metadata.st_mode),
-            size: Int64(metadata.st_size),
-            destination: kind == S_IFLNK
-              ? try FileManager.default.destinationOfSymbolicLink(atPath: url.path) : nil,
-            data: kind == S_IFREG ? try BoundedRegularFile.read(at: url).data : nil
-          )
-        )
-      })
+  func externalSnapshot() throws -> ExternalTupleSnapshot {
+    try ExternalTupleSnapshot(
+      [
+        configuration,
+        configuration.resolvingSymlinksInPath(),
+        themeLink.deletingLastPathComponent(),
+        themeLink,
+        root.appending(path: "dotfiles/codex-themes", directoryHint: .isDirectory),
+        root.appending(path: "dotfiles/codex-themes/\(themeLink.lastPathComponent)"),
+      ],
+      requireAll: true
+    )
   }
 
   private var themeController: DesktopThemeController {
-    DesktopThemeController(
-      reconcile: { ids, _, _ in
-        DesktopThemeReconciliation(
-          generationID: "theme",
-          results: ids.map {
-            DesktopThemeAdapterStatus(
-              adapterID: $0,
-              requirement: "required",
-              status: "restart_required",
-              message:
-                "A fresh Codex TUI launch uses the active palette; running sessions are unchanged."
-            )
-          },
-          succeeded: true
-        )
-      },
-      inspect: { ids, _, _ in
-        ids.map {
-          DesktopThemeAdapterStatus(
-            adapterID: $0,
-            requirement: "required",
-            status: "restart_required",
-            message:
-              "A fresh Codex TUI launch uses the active palette; running sessions are unchanged."
-          )
-        }
-      }
-    )
+    let freshLaunch =
+      "A fresh Codex TUI launch uses the active palette; running sessions are unchanged."
+    return stubThemeController(
+      reconciled: ("restart_required", freshLaunch), inspected: ("restart_required", freshLaunch))
   }
+}
+
+extension CodexFixture: PresetFileFixture {
+  var presetFile: URL { configuration }
+
+  var themeLinks: [(link: URL, destination: URL)] { [(themeLink, themeDestination)] }
+
+  func setPresetEnabled(_ enabled: Bool) throws {
+    try writeProfile(enabled: enabled)
+  }
+
+  func applyPreset(
+    adopt: String?,
+    faultInjector: @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void
+  ) async throws -> (output: String, succeeded: Bool) {
+    try await apply(adopt: adopt, faultInjector: faultInjector)
+  }
+}
+
+func makeCodexPresetFileFixture(configuration: String?) throws -> any PresetFileFixture {
+  let fixture = try CodexFixture(configuration: configuration)
+  do {
+    try fixture.activateTheme()
+  } catch {
+    try? FileManager.default.removeItem(at: fixture.root)
+    throw error
+  }
+  return fixture
 }
