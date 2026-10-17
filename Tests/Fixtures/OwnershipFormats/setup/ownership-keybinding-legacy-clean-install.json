@@ -1,0 +1,13 @@
+{
+  "records" : [
+    {
+      "id" : "keybindings.skhd-entry",
+      "installed_digest" : "sha256:8eb21083930d381c515343f46f12e947aad6befca3e5851814dfba2be34eb593",
+      "kind" : "symbolic_link",
+      "link_destination" : "../macarchy/keybindings/current/skhdrc",
+      "phase" : "applied",
+      "target_path" : "{{HOME}}/.config/skhd/skhdrc"
+    }
+  ],
+  "schema_version" : 1
+}

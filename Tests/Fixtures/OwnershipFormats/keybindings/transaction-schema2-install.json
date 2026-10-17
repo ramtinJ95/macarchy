@@ -1,0 +1,20 @@
+{
+  "generation_created" : true,
+  "generation_id" : "k-22222222-2222-4222-8222-222222222222",
+  "operation" : "install_entry",
+  "phase" : "entry_installed",
+  "schema_version" : 2,
+  "service" : {
+    "installationAttempted" : true,
+    "installed" : {
+      "digest" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "inode" : 4242,
+      "permissions" : 420,
+      "volumeUUID" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+    },
+    "previous" : {
+      "loaded" : false,
+      "running" : false
+    }
+  }
+}

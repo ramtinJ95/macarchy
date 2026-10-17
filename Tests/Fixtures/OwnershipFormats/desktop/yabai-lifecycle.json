@@ -1,0 +1,17 @@
+{
+  "generation_id" : "y-11111111-1111-4111-8111-111111111111",
+  "runtime" : {
+    "executable_path" : "/opt/homebrew/Cellar/yabai/7.1.15/bin/yabai",
+    "message" : "yabai is running with the managed configuration",
+    "process_id" : 777,
+    "status" : "converged",
+    "verified_rule_labels" : [
+      "macarchy-float-system-settings"
+    ],
+    "verified_settings" : [
+      "layout"
+    ],
+    "wallpaper_signal_verified" : true
+  },
+  "schema_version" : 1
+}

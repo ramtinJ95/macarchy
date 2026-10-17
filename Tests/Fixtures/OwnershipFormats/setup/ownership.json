@@ -1,0 +1,42 @@
+{
+  "records" : [
+    {
+      "id" : "bat.theme-link",
+      "installed_digest" : "{{BAT_THEME_DIGEST}}",
+      "kind" : "symbolic_link",
+      "link_destination" : "{{STATE}}/current/generated/bat.tmTheme",
+      "phase" : "applied",
+      "target_path" : "{{HOME}}/.config/bat/themes/Macarchy Current.tmTheme"
+    },
+    {
+      "claim_nonce" : "33333333-3333-4333-8333-333333333333",
+      "id" : "keybindings.skhd-entry",
+      "installed_digest" : "sha256:8eb21083930d381c515343f46f12e947aad6befca3e5851814dfba2be34eb593",
+      "kind" : "symbolic_link",
+      "link_destination" : "../macarchy/keybindings/current/skhdrc",
+      "original_device" : 16777234,
+      "original_digest" : "sha256:dcef1dbc062fb3cc7435c303e82f5ba6a71df52bcd90269ff9b3b0534e033663",
+      "original_inode" : 9003,
+      "original_inventory" : [
+
+      ],
+      "original_kind" : "symbolic_link",
+      "original_link_destination" : "../../dotfiles/skhd/skhdrc",
+      "original_source_digest" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "original_volume_uuid" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+      "phase" : "applied",
+      "retained_original_path" : "{{HOME}}/.config/skhd/.skhdrc.macarchy-keybindings-33333333-3333-4333-8333-333333333333",
+      "target_path" : "{{HOME}}/.config/skhd/skhdrc"
+    },
+    {
+      "backup_path" : "state/setup/backups/kitty.conf",
+      "id" : "kitty.include",
+      "installed_digest" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "kind" : "regular_file",
+      "original_digest" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "phase" : "applied",
+      "target_path" : "{{HOME}}/.config/kitty/kitty.conf"
+    }
+  ],
+  "schema_version" : 1
+}

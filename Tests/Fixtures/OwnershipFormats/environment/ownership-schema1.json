@@ -1,0 +1,53 @@
+{
+  "codex_enabled" : false,
+  "created_directories" : [
+    "{{HOME}}/.config/bat/themes"
+  ],
+  "enabled_theme_adapter_ids" : [
+    "bat",
+    "kitty"
+  ],
+  "generation_id" : "e-11111111-1111-4111-8111-111111111111",
+  "herdr_enabled" : false,
+  "original_theme_bridges" : [
+    {
+      "path" : "{{STATE}}/state/adapters/kitty.conf"
+    }
+  ],
+  "pi_enabled" : false,
+  "records" : [
+    {
+      "id" : "bat_theme",
+      "managed_kind" : "symbolic_link",
+      "managed_target" : "{{STATE}}/current/generated/bat.tmTheme",
+      "original" : {
+        "inventory" : [],
+        "kind" : "absent"
+      },
+      "public_path" : "{{HOME}}/.config/bat/themes/Macarchy Current.tmTheme"
+    },
+    {
+      "id" : "kitty",
+      "managed_kind" : "kitty_directory",
+      "managed_target" : "{{STATE}}/environment/current/kitty/kitty.conf",
+      "original" : {
+        "device" : 16777234,
+        "inode" : 9005,
+        "inventory" : [
+          "kitty.conf"
+        ],
+        "kind" : "symbolic_link",
+        "link_destination" : "../dotfiles/kitty",
+        "metadata_digest" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "mode" : 41453,
+        "size" : 17
+      },
+      "public_path" : "{{HOME}}/.config/kitty",
+      "retained_path" : "{{HOME}}/.config/.macarchy-environment-kitty-66666666-6666-4666-8666-666666666666.retained"
+    }
+  ],
+  "schema_version" : 1,
+  "slack_enabled" : false,
+  "spicetify_enabled" : false,
+  "tuicr_enabled" : false
+}

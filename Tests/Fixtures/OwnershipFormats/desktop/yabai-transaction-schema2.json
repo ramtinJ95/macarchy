@@ -1,0 +1,35 @@
+{
+  "generation_created" : true,
+  "generation_id" : "y-22222222-2222-4222-8222-222222222222",
+  "operation" : "apply",
+  "ownership" : {
+    "created_configuration_directory" : true,
+    "generation_id" : "y-22222222-2222-4222-8222-222222222222",
+    "managed_target" : "../macarchy/desktop/yabai/current/yabairc",
+    "original" : {
+      "inventory" : [
+
+      ],
+      "kind" : "absent",
+      "publicPath" : "{{HOME}}/.config/yabai/yabairc"
+    },
+    "prior_service_running" : false,
+    "schema_version" : 1
+  },
+  "phase" : "service_changed",
+  "schema_version" : 2,
+  "service" : {
+    "installationAttempted" : true,
+    "installed" : {
+        "digest" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "inode" : 4242,
+        "permissions" : 420,
+        "volumeUUID" : "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"
+      },
+    "previous" : {
+      "loaded" : false,
+      "running" : false
+    }
+  },
+  "service_was_running" : false
+}

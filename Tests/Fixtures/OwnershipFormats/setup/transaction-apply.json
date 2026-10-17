@@ -1,0 +1,13 @@
+{
+  "context_digest" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "desired_appearance" : "dark",
+  "operation" : "apply",
+  "phase" : "committing",
+  "schema_version" : 1,
+  "stages" : [
+    "theme",
+    "desktop",
+    "environment",
+    "preferences"
+  ]
+}

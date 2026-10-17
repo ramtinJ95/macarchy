@@ -1,0 +1,19 @@
+{
+  "created_configuration_directory" : false,
+  "generation_id" : "s-11111111-1111-4111-8111-111111111111",
+  "managed_target" : "../macarchy/desktop/sketchybar/current/sketchybarrc",
+  "original" : {
+    "content_digest" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "device" : 16777234,
+    "inode" : 9002,
+    "inventory" : [
+
+    ],
+    "kind" : "regular_file",
+    "permissions" : 420,
+    "public_path" : "{{HOME}}/.config/sketchybar/sketchybarrc"
+  },
+  "prior_service_running" : true,
+  "retained_original_path" : "{{STATE}}/desktop/sketchybar/retained-55555555-5555-4555-8555-555555555555",
+  "schema_version" : 2
+}
