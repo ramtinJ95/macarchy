@@ -39,7 +39,7 @@ struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
   let generationID: String
   let previousGenerationID: String?
   let generationCreated: Bool
-  var service: SkhdServiceChange?
+  var service: UserServiceChange?
 
   init(
     operation: KeybindingApplyOperation,
@@ -47,7 +47,7 @@ struct KeybindingApplyTransaction: Codable, Equatable, Sendable {
     generationID: String,
     previousGenerationID: String?,
     generationCreated: Bool,
-    service: SkhdServiceChange? = nil
+    service: UserServiceChange? = nil
   ) {
     schemaVersion = service == nil ? 1 : 2
     self.operation = operation

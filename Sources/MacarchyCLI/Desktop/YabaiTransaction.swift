@@ -26,7 +26,7 @@ struct YabaiTransaction: Codable, Equatable, Sendable {
   let previousOwnership: YabaiOwnershipRecord?
   let previousLifecycle: YabaiLifecycleEvidence?
   let serviceWasRunning: Bool
-  var service: YabaiServiceChange?
+  var service: UserServiceChange?
 
   init(
     operation: YabaiTransactionOperation,
@@ -38,7 +38,7 @@ struct YabaiTransaction: Codable, Equatable, Sendable {
     previousOwnership: YabaiOwnershipRecord?,
     previousLifecycle: YabaiLifecycleEvidence?,
     serviceWasRunning: Bool,
-    service: YabaiServiceChange? = nil
+    service: UserServiceChange? = nil
   ) {
     schemaVersion = service == nil ? 1 : 2
     self.operation = operation

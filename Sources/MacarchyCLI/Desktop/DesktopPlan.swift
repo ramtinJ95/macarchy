@@ -67,7 +67,7 @@ struct DesktopPlanCommandRunner: Sendable {
     }
 
     let yabaiEnabled = profile?.desktop.provider == .yabaiSkhd
-    var serviceChange: YabaiServiceChange?
+    var serviceChange: UserServiceChange?
     if yabaiEnabled, let service {
       do {
         serviceChange = try service.prepare(home: homeDirectory, stateRoot: stateRoot)
@@ -337,7 +337,7 @@ struct DesktopPlanCommandRunner: Sendable {
     composition: YabaiComposition?,
     generation: YabaiGenerationInspection,
     blocked: Bool,
-    serviceChange: YabaiServiceChange?
+    serviceChange: UserServiceChange?
   ) -> [DesktopPlanAction] {
     guard !blocked else { return [] }
     if !enabled {
