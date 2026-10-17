@@ -141,3 +141,102 @@ enum EnvironmentPresetTransition {
   /// The file holds the source state and must be transitioned from `current`.
   case pending(current: Data?)
 }
+
+/// A preset's ownership of selectors inside one provider-writable configuration file
+/// (ADR-0043). Each preset keeps its own document rules, labels and messages; the shared
+/// transaction only sequences residue settlement, the write and its verification.
+protocol EnvironmentPresetFileOwnership: Equatable, Sendable {
+  static var filesystem: EnvironmentPresetFilesystem { get }
+  /// Names the preset in residue drift errors.
+  static var driftLabel: String { get }
+  static var ownershipChangedMessage: String { get }
+  static var replacementLabel: String { get }
+  static var replacementFailureLabel: String? { get }
+  static func owned(by ownership: EnvironmentOwnership?) -> Self?
+  /// The file contents with the managed selectors applied to `current`, or to the preset's
+  /// empty document when the file is absent.
+  static func managed(from current: Data?, at url: URL) throws -> Data
+  static func matchesManaged(_ data: Data, at url: URL) throws -> Bool
+
+  var path: String { get }
+  /// The original selectors restored in `current`, or nil when the file should be removed.
+  func restored(in current: Data, at url: URL) throws -> Data?
+  func matchesOriginal(_ data: Data?, at url: URL) throws -> Bool
+}
+
+struct EnvironmentPresetFileTransaction<Ownership: EnvironmentPresetFileOwnership>: Sendable {
+  private enum ExpectedState {
+    case original(Ownership)
+    case managed
+  }
+
+  let homeDirectory: URL
+
+  func preflight(_ ownership: Ownership) throws {
+    let url = URL(filePath: ownership.path)
+    guard try matches(try Ownership.filesystem.read(url), .managed, at: url) else {
+      throw EnvironmentLifecycleError.drift(url.path)
+    }
+  }
+
+  func transition(
+    from old: EnvironmentOwnership?,
+    to new: EnvironmentOwnership?,
+    replacementName: String
+  ) throws {
+    let oldOwnership = Ownership.owned(by: old)
+    let newOwnership = Ownership.owned(by: new)
+    guard let ownership = oldOwnership ?? newOwnership else { return }
+    if let oldOwnership, let newOwnership, oldOwnership != newOwnership {
+      throw EnvironmentLifecycleError.blocked(Ownership.ownershipChangedMessage)
+    }
+    let filesystem = Ownership.filesystem
+    let url = URL(filePath: ownership.path)
+    let residue = url.deletingLastPathComponent().appending(path: replacementName)
+    let source: ExpectedState = oldOwnership == nil ? .original(ownership) : .managed
+    let target: ExpectedState = newOwnership == nil ? .original(ownership) : .managed
+    guard
+      case .pending(let current) = try filesystem.pendingTransition(
+        at: url, residue: residue, from: source, to: target, driftLabel: Ownership.driftLabel,
+        matches: { try matches($0, $1, at: $2) })
+    else { return }
+
+    switch target {
+    case .managed:
+      let updated = try Ownership.managed(from: current, at: url)
+      if let current {
+        try replace(updated, current: current, at: url, replacementName: replacementName)
+      } else {
+        try filesystem.create(updated, at: url, replacementName: replacementName)
+      }
+    case .original(let original):
+      guard let current else { return }
+      if let restored = try original.restored(in: current, at: url) {
+        try replace(restored, current: current, at: url, replacementName: replacementName)
+      } else {
+        try filesystem.claimAndRemove(at: url, replacementName: replacementName, expected: current)
+      }
+    }
+    guard try matches(try filesystem.read(url), target, at: url) else {
+      throw EnvironmentLifecycleError.drift(url.path)
+    }
+  }
+
+  private func matches(_ data: Data?, _ state: ExpectedState, at url: URL) throws -> Bool {
+    switch state {
+    case .managed:
+      guard let data else { return false }
+      return try Ownership.matchesManaged(data, at: url)
+    case .original(let original):
+      return try original.matchesOriginal(data, at: url)
+    }
+  }
+
+  private func replace(_ data: Data, current: Data, at url: URL, replacementName: String) throws {
+    try Ownership.filesystem.replace(
+      data, current: current, at: url, replacementName: replacementName,
+      homeDirectory: homeDirectory, label: Ownership.replacementLabel,
+      failureLabel: Ownership.replacementFailureLabel
+    )
+  }
+}
