@@ -48,6 +48,18 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Maccy version other than 2.7.1, Macarchy deletes no files, reports that pinned items
   may remain, and exits with an error. Macarchy never reads clipboard or history
   content.
+- `macarchy clipboard enable` also turns on an automatic clear. Once 24 hours have
+  passed since the last clear, a Macarchy launch agent quits Maccy, so Maccy clears
+  its unpinned history. The agent then empties the clipboard and starts Maccy again
+  if it was running. Every clear of the history restarts the 24 hours. The agent
+  checks hourly while the Mac is awake, so a due clear runs within about an hour of
+  the Mac being awake. Pinned items survive it. The automatic
+  clear never reaches Maccy's protected folder, so it raises no permission dialog,
+  and it relies on the two Maccy settings that `enable` turned on.
+  `macarchy clipboard auto-clear off` and `on` turn it off and on without changing
+  Maccy's settings, and `disable` turns it off. `macarchy clipboard status` shows the
+  last and next clear and the last failure. A failed automatic clear shows an alert
+  at most once a day.
 
 ## [0.13.1] - 2026-10-17
 
