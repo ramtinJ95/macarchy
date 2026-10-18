@@ -60,8 +60,12 @@ def prepare(sh, record, evidence, section):
     archive = work + "/dist/" + package + ".tar.gz"
     # Both smoke paths create adversarial fixtures only through TestSafety in this VM.
     environment = "env " + borders.DEV + " MACARCHY_TEST_VM=1 TMPDIR=/private/tmp/ "
+    # The archive bundles ttfx, so the guest needs git, network and a Rust toolchain.
+    sh("package-ttfx-build", "cd " + q(source) + " && Scripts/build-ttfx.sh "
+       + q(work + "/ttfx"), timeout=900)
     sh("package-archive-validation", "cd " + q(source) + " && " + environment
-       + "Scripts/build-release-archive.sh .build/release/macarchy " + q(work + "/dist")
+       + "Scripts/build-release-archive.sh .build/release/macarchy " + q(work + "/ttfx")
+       + " " + q(work + "/dist")
        + " " + q(revision) + " && " + environment + "Scripts/test-release-archive-validation.sh "
        + shlex.join([archive, archive + ".sha256", revision]), timeout=600)
     section.update(archive=archive, archive_sha256=sh(
@@ -75,10 +79,10 @@ def prepare(sh, record, evidence, section):
         "package-cellar-identity", "stat -f '%d:%i' " + q(CELLAR)).strip()}
     section["copies"] = [CELLAR + "/" + version + "_" + str(index) for index in (1, 2)]
     for index, copy in enumerate(section["copies"], 1):
-        # Formula install is prefix.install 'bin', 'share'. No synthetic brew receipt.
+        # Formula install is prefix.install 'bin', 'libexec', 'share'. No synthetic brew receipt.
         sh("package-copy-" + str(index), owner_guard(section["owner"]) + " && mkdir " + q(copy)
-           + " && ditto " + q(work + "/unpacked/" + package + "/bin") + " " + q(copy + "/bin")
-           + " && ditto " + q(work + "/unpacked/" + package + "/share") + " " + q(copy + "/share"))
+           + "".join(" && ditto " + q(work + "/unpacked/" + package + "/" + part) + " "
+                     + q(copy + "/" + part) for part in ("bin", "libexec", "share")))
     first = section["copies"][0]
     sh("package-link", owner_guard(section["owner"]) + " && " + " && ".join(
         "ln -s " + q(first + "/bin/" + name) + " " + q(BIN + "/" + name) for name in PRODUCTS))

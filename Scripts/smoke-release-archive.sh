@@ -77,8 +77,9 @@ done < <(/usr/bin/tar -tvzf "$archive")
 
 /usr/bin/tar -xzf "$archive" -C "$temporary_directory"
 layout="$temporary_directory/$package_name"
-# The shared layout gate requires every helper, exact 0755 modes, arm64 and
-# strict ad-hoc signatures as well as the complete resource inventory.
+# The shared layout gate requires every helper and the ttfx engine, exact 0755
+# modes, arm64 and strict ad-hoc signatures, the ttfx licences and the complete
+# resource inventory.
 "$script_directory/smoke-release-layout.sh" "$layout"
 
 metadata="$layout/share/macarchy/build-info.json"

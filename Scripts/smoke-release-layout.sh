@@ -13,6 +13,8 @@ metadata="$layout/share/macarchy/build-info.json"
 resources="$layout/share/macarchy"
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
+ttfx_documents="$layout/share/doc/macarchy/ttfx"
+source "$script_directory/release-common.zsh"
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/macarchy-layout-smoke.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
 home="$temporary_directory/home"
@@ -25,6 +27,10 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -x "$binary" ]]
 [[ -x "$layout/bin/macarchy-menu" ]]
 [[ -x "$layout/bin/macarchy-focus-ring" ]]
+[[ -x "$layout/libexec/ttfx" ]]
+[[ -f "$ttfx_documents/LICENSE" ]]
+[[ -f "$ttfx_documents/NOTICE" ]]
+[[ -n "$(find -P "$ttfx_documents/third-party" -type f -print -quit)" ]]
 [[ -f "$metadata" ]]
 [[ -d "$layout/share/macarchy/themes" ]]
 [[ -f "$layout/share/macarchy/keybindings/defaults.skhdrc" ]]
@@ -49,23 +55,30 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
 [[ -f "$snapshot_source" ]]
 [[ -z "$(find -P "$layout" ! -type f ! -type d -print)" ]]
-for executable in macarchy macarchy-menu macarchy-focus-ring; do
-  [[ "$(/usr/bin/stat -f '%Lp' "$layout/bin/$executable")" == "755" ]]
-  [[ "$(/usr/bin/lipo -archs "$layout/bin/$executable")" == "arm64" ]]
-  /usr/bin/codesign --verify --strict "$layout/bin/$executable"
-  signature=$(/usr/bin/codesign -dv --verbose=2 "$layout/bin/$executable" 2>&1)
+for executable in bin/macarchy bin/macarchy-menu bin/macarchy-focus-ring libexec/ttfx; do
+  [[ "$(/usr/bin/stat -f '%Lp' "$layout/$executable")" == "755" ]]
+  [[ "$(/usr/bin/lipo -archs "$layout/$executable")" == "arm64" ]]
+  /usr/bin/codesign --verify --strict "$layout/$executable"
+  signature=$(/usr/bin/codesign -dv --verbose=2 "$layout/$executable" 2>&1)
   print -r -- "$signature" | grep -q '^Signature=adhoc$'
 done
 "$layout/bin/macarchy-menu" --help | grep -q 'Permission must be enabled manually'
+[[ "$("$layout/libexec/ttfx" --version)" == "ttfx $ttfx_version" ]]
 
 {
   print "bin/macarchy"
   print "bin/macarchy-menu"
   print "bin/macarchy-focus-ring"
+  print "libexec/ttfx"
   print "share/macarchy/build-info.json"
   print "share/doc/macarchy/CHANGELOG.md"
   print "share/doc/macarchy/theme-json.md"
   print "share/doc/macarchy/LICENSE"
+  print "share/doc/macarchy/ttfx/LICENSE"
+  print "share/doc/macarchy/ttfx/NOTICE"
+  # The crate set follows ttfx's lockfile; Scripts/build-ttfx.sh already refused
+  # any compiled crate without a licence file.
+  (cd "$layout" && find -P share/doc/macarchy/ttfx/third-party -type f -print)
   git -C "$repository_root" ls-files -- Themes \
     | sed 's#^Themes/#share/macarchy/themes/#'
   git -C "$repository_root" ls-files -- Keybindings \

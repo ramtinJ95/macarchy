@@ -80,10 +80,14 @@ jobs:
       - name: Build release
         run: swift build -c release
 
+      - name: Build ttfx engine
+        timeout-minutes: 15
+        run: Scripts/build-ttfx.sh "$RUNNER_TEMP/ttfx"
+
       - name: Build and validate release archive
         run: |
           Scripts/build-release-archive.sh \
-            .build/release/macarchy dist "$REVISION"
+            .build/release/macarchy "$RUNNER_TEMP/ttfx" dist "$REVISION"
           Scripts/test-release-archive-validation.sh \
             "dist/$ARCHIVE_NAME" \
             "dist/$ARCHIVE_NAME.sha256" \
