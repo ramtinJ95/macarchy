@@ -2,14 +2,15 @@
 
 set -eu
 
-if [[ $# -ne 3 ]]; then
-  print -u2 "usage: $0 <macarchy-binary> <destination-directory> <git-revision>"
+if [[ $# -ne 4 ]]; then
+  print -u2 "usage: $0 <macarchy-binary> <ttfx-directory> <destination-directory> <git-revision>"
   exit 64
 fi
 
 binary=${1:A}
-destination=${2:A}
-revision=$3
+ttfx_directory=${2:A}
+destination=${3:A}
+revision=$4
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
 version=$(<"$repository_root/VERSION.txt")
@@ -30,7 +31,7 @@ trap 'rm -rf "$destination"' EXIT HUP INT TERM
 staging="$destination/.staging"
 mkdir -m 0755 "$staging"
 layout="$staging/$package_name"
-"$script_directory/build-release-layout.sh" "$binary" "$layout" "$revision"
+"$script_directory/build-release-layout.sh" "$binary" "$ttfx_directory" "$layout" "$revision"
 
 archive="$destination/$archive_name"
 checksum="$destination/$checksum_name"

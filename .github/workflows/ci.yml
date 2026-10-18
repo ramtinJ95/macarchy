@@ -167,12 +167,16 @@ jobs:
       - name: Build release
         run: swift build -c release
 
+      - name: Build ttfx engine
+        timeout-minutes: 15
+        run: Scripts/build-ttfx.sh "$RUNNER_TEMP/ttfx"
+
       - name: Build and validate release archive
         run: |
           revision=$(git rev-parse HEAD)
           destination="$RUNNER_TEMP/macarchy-dist"
           Scripts/build-release-archive.sh \
-            .build/release/macarchy "$destination" "$revision"
+            .build/release/macarchy "$RUNNER_TEMP/ttfx" "$destination" "$revision"
           Scripts/test-release-archive-validation.sh \
             "$destination"/*.tar.gz \
             "$destination"/*.tar.gz.sha256 \
