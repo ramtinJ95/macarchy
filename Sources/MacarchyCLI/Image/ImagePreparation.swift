@@ -237,15 +237,29 @@ struct ImagePreparation {
   private static func validate(output: URL, preset: ImagePreset) throws {
     guard UTType(filenameExtension: output.pathExtension.lowercased()) == preset.parameters.format
     else { throw ImagePreparationError.outputExtension(output.path, preset) }
-    // Includes dangling links; the exclusive write rechecks existence.
-    if (try? FileManager.default.attributesOfItem(atPath: output.path)) != nil {
-      throw ImagePreparationError.outputExists(output.path)
+    try checkNewFile(output)
+  }
+
+  /// A path the user chose must name nothing yet, not even a dangling link, inside an existing
+  /// folder. `writeNewFile` rechecks existence.
+  static func checkNewFile(_ url: URL) throws {
+    if (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil {
+      throw ImagePreparationError.outputExists(url.path)
     }
-    let parent = output.deletingLastPathComponent()
+    let parent = url.deletingLastPathComponent()
     var isDirectory: ObjCBool = false
     guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory),
       isDirectory.boolValue
     else { throw ImagePreparationError.outputParent(parent.path) }
+  }
+
+  /// Writes exclusively, so a file that appeared after `checkNewFile` is never replaced.
+  static func writeNewFile(_ data: Data, to url: URL) throws {
+    do {
+      try data.write(to: url, options: .withoutOverwriting)
+    } catch let error where alreadyExists(error) {
+      throw ImagePreparationError.outputExists(url.path)
+    }
   }
 
   private func load(_ source: ImageSource) throws -> Data {
@@ -273,11 +287,7 @@ struct ImagePreparation {
     throws -> URL
   {
     if let output {
-      do {
-        try data.write(to: output, options: .withoutOverwriting)
-      } catch let error where Self.alreadyExists(error) {
-        throw ImagePreparationError.outputExists(output.path)
-      }
+      try Self.writeNewFile(data, to: output)
       return output
     }
     let folder: URL
@@ -333,15 +343,7 @@ struct ImagePreparation {
 extension ImagePreparation {
   static var live: Self {
     Self(
-      clipboardImage: {
-        // Original encodings first; apps often synthesize the TIFF.
-        let types = [UTType.png, .jpeg, .heic, .tiff].map {
-          NSPasteboard.PasteboardType($0.identifier)
-        }
-        let board = NSPasteboard.general
-        guard let type = board.availableType(from: types) else { return nil }
-        return board.data(forType: type)
-      },
+      clipboardImage: { ClipboardImageData.readGeneralPasteboard()?.data },
       copyToClipboard: { file, data, format in
         let item = NSPasteboardItem()
         guard item.setString(file.absoluteString, forType: .fileURL),
