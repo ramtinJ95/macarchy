@@ -63,10 +63,6 @@ struct SaverIdleActivation: Equatable {
 
   /// The record while idle activation runs: its record, its own plist and a loaded job.
   var enabled: SaverIdleRecord? { agent == .owned && loaded ? record : nil }
-
-  /// Whether the bar shows the pause indicator. A paused record without its running observer
-  /// does not count, since nothing would be paused.
-  var isPaused: Bool { enabled?.paused == true }
 }
 
 /// Turns idle activation on and off and pauses it. The record's lock serializes every change, so
