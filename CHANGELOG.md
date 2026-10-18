@@ -7,6 +7,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-19
+
 ### Added
 
 - `macarchy saver idle toggle` and the **Toggle idle screensaver** menu action turn
@@ -17,6 +19,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Macarchy enters alpha. It is in daily use on real Macs, but expect rough edges:
+  fresh-Mac setup and first-use permission flows are not yet fully tested.
 - The three icons left of the managed bar clock are now always shown and turn their
   feature on or off when clicked. The cup toggles keep-awake, the microphone mutes or
   unmutes the default microphone, and a new screen with sparkles toggles idle
