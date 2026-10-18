@@ -30,7 +30,11 @@ struct ClockCompanion: Sendable {
     item: SketchyBarMicrophoneIndicator.item,
     detailItem: SketchyBarMicrophoneIndicator.detailItem, side: .left, plugin: "microphone",
     updateFrequency: 30, events: hoverEvents + [Microphone.barEvent])
-  static let all = [update, keepAwake, microphone]
+  static let saverPaused = Self(
+    item: SketchyBarSaverPausedIndicator.item,
+    detailItem: SketchyBarSaverPausedIndicator.detailItem, side: .left, plugin: "saver-paused",
+    updateFrequency: 30, events: hoverEvents + [SaverIdle.barEvent])
+  static let all = [update, keepAwake, microphone, saverPaused]
 
   /// Asks a running bar to refresh a companion now. Its 30-second timer is the backstop, so a
   /// failed hint only warns and the owning state stays authoritative.
@@ -151,11 +155,12 @@ extension Desktop {
     @Flag var updateIndicator = false
     @Flag var keepAwakeIndicator = false
     @Flag var microphoneIndicator = false
+    @Flag var saverPausedIndicator = false
 
     var companions: [ClockCompanion] {
       let requested: [(Bool, ClockCompanion)] = [
         (updateIndicator, .update), (keepAwakeIndicator, .keepAwake),
-        (microphoneIndicator, .microphone),
+        (microphoneIndicator, .microphone), (saverPausedIndicator, .saverPaused),
       ]
       return requested.filter { $0.0 }.map { $0.1 }
     }

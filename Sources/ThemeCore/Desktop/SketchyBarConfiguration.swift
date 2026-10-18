@@ -119,6 +119,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let microphoneIcon = "\u{1002B3}"
   /// Idle screensaver changes trigger this event so the pause indicator refreshes before its timer.
   package static let saverIdleEvent = "macarchy_saver_idle_changed"
+  /// A monochrome pause sign: the text variation selector stops emoji presentation.
+  package static let saverPausedIcon = "⏸\u{FE0E}"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
     "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
@@ -272,6 +274,12 @@ package struct SketchyBarConfigurationComposer: Sendable {
         item: "macarchy.microphone", helper: "_microphone-indicator",
         options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
         failure: "Microphone indicator failed; see SketchyBar stderr for details."))
+    addPlugin(
+      .clock, "saver-paused",
+      clockCompanion(
+        item: "macarchy.saver-paused", helper: "_saver-paused-indicator",
+        options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
+        failure: "Screensaver pause indicator failed; see SketchyBar stderr for details."))
     addPlugin(
       .volume, "volume",
       SketchyBarVolumeScript.render(
@@ -507,6 +515,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.microphone \(position.rawValue) --set macarchy.microphone drawing=off icon='\(Self.microphoneIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/microphone.sh\" popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.microphone.detail popup.macarchy.microphone --set macarchy.microphone.detail icon.drawing=off label='Microphone is live.'",
             "\"$SKETCHYBAR\" --subscribe macarchy.microphone mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.microphoneEvent)",
+            "\"$SKETCHYBAR\" --add event \(Self.saverIdleEvent)",
+            "\"$SKETCHYBAR\" --add item macarchy.saver-paused \(position.rawValue) --set macarchy.saver-paused drawing=off icon='\(Self.saverPausedIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/saver-paused.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.saver-paused.detail popup.macarchy.saver-paused --set macarchy.saver-paused.detail icon.drawing=off label='Idle screensaver is not paused.'",
+            "\"$SKETCHYBAR\" --subscribe macarchy.saver-paused mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.saverIdleEvent)",
           ]
         case .toggle:
           lines += [
@@ -616,7 +628,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "set -eu",
       "[ \"${NAME-}\" = macarchy.clock ] || exit 1",
       ". \(DesktopShellSyntax.literal(palettePath))",
-      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator --keep-awake-indicator --microphone-indicator; then",
+      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator --keep-awake-indicator --microphone-indicator --saver-paused-indicator; then",
       "  /opt/homebrew/bin/sketchybar --set macarchy.clock label.color=\"$MACARCHY_TEXT_COLOR\"",
       "else",
       "  echo 'Macarchy: calendar query failed' >&2",

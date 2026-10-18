@@ -78,7 +78,7 @@ package struct SketchyBarGenerationInspector: Sendable {
     "plugins/user-hook.sh", "plugins/volume.sh", "plugins/battery.sh",
     "plugins/cpu.sh", "plugins/memory.sh", "plugins/wifi.sh", "plugins/media.sh",
     "plugins/apple.sh", "plugins/toggle.sh", "plugins/update.sh", "plugins/keep-awake.sh",
-    "plugins/microphone.sh",
+    "plugins/microphone.sh", "plugins/saver-paused.sh",
   ]
   fileprivate static let pluginNames = Set(
     (coreArtifactPaths + optionalArtifactPaths)

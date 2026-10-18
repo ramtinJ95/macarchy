@@ -23,8 +23,7 @@ struct SketchyBarCalendarTests {
   }
 
   // Right-side items are laid out in reverse order: "after" the clock there is visually left.
-  // Each left companion moves next to the clock, so the microphone ends up between the clock and
-  // keep-awake.
+  // Each left companion moves next to the clock, so the last one requested ends up beside it.
   @Test(arguments: ["center", "right"])
   func leftCompanionsSitLeftOfTheClockAndUpdateRight(position: String) throws {
     let state = State()
@@ -33,17 +32,19 @@ struct SketchyBarCalendarTests {
       sleep: { _ in })
     try calendar.execute(
       sender: "routine", position: position, format: "+%H:%M",
-      companions: [.update, .keepAwake, .microphone])
+      companions: [.update, .keepAwake, .microphone, .saverPaused])
     let args = try #require(state.value.withLock { $0.calls.last })
     let right = position == "right"
     #expect(
-      args.suffix(21) == [
+      args.suffix(28) == [
         "--set", "macarchy.update", "position=\(position)",
         "--move", "macarchy.update", right ? "before" : "after", "macarchy.clock",
         "--set", "macarchy.keep-awake", "position=\(position)",
         "--move", "macarchy.keep-awake", right ? "after" : "before", "macarchy.clock",
         "--set", "macarchy.microphone", "position=\(position)",
         "--move", "macarchy.microphone", right ? "after" : "before", "macarchy.clock",
+        "--set", "macarchy.saver-paused", "position=\(position)",
+        "--move", "macarchy.saver-paused", right ? "after" : "before", "macarchy.clock",
       ])
   }
 
@@ -60,6 +61,13 @@ struct SketchyBarCalendarTests {
       try Desktop.Calendar.parse(
         base + ["--update-indicator", "--keep-awake-indicator", "--microphone-indicator"]
       ).companions.map(\.item) == ["macarchy.update", "macarchy.keep-awake", "macarchy.microphone"])
+    let all = try Desktop.Calendar.parse(
+      base + [
+        "--update-indicator", "--keep-awake-indicator", "--microphone-indicator",
+        "--saver-paused-indicator",
+      ])
+    #expect(all.companions.map(\.item) == ClockCompanion.all.map(\.item))
+    #expect(all.companions.last?.item == "macarchy.saver-paused")
   }
 
   @Test(arguments: ["auto-internal", "auto-external", "left", "center", "right"])
