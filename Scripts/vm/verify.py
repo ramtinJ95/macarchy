@@ -36,7 +36,8 @@ _spec = importlib.util.spec_from_file_location("run_tests", lab.HERE / "run-test
 run_tests = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(run_tests)
 
-GUEST_HOME = "/Users/omarchy"
+GUEST_USER = "omarchy"
+GUEST_HOME = "/Users/" + GUEST_USER
 STATE_ROOT = GUEST_HOME + "/.config/macarchy"
 DEVELOPER_DIR = "DEVELOPER_DIR=/Library/Developer/CommandLineTools"
 # A clean, user-like environment; update checks and Homebrew auto-update stay off.
@@ -56,6 +57,9 @@ NOT_COVERED = ["Homebrew-installed Macarchy or release archive", "guided setup o
                "GUI menus, viewers or popups", "native permission prompts",
                "network, browser, processes and paths outside the watched roots (not observed)",
                "physical hardware"]
+CONSOLE_OWNER = "/usr/bin/stat -f %Su /dev/console"
+LOGIN_PROMPT = "Enter Password"
+LOGIN_WAIT = 60
 EXIT = {"passed": 0, "ready": 0, "cleaned": 0, "running": 0, "failed": 1, "blocked": 3}
 
 
@@ -412,9 +416,9 @@ def run_journey(client, record, name, session_directory, evidence, report):
     return "failed" if failures else "passed"
 
 
-def next_evidence(session_directory, journey):
+def next_evidence(session_directory, name):
     for index in range(1, 100):
-        path = session_directory / f"drive-{journey}-{index:02d}"
+        path = session_directory / f"{name}-{index:02d}"
         try:
             path.mkdir(mode=0o700)
             return path
@@ -592,7 +596,7 @@ def drive(inputs, run, session, journey, border_count=None, candidate_session=No
     directory = test_clone(inputs, run)
     with RunLock(directory):
         record = session_ready(directory, session)
-        evidence = next_evidence(directory / session, journey)
+        evidence = next_evidence(directory / session, "drive-" + journey)
         report = {"tool": "verify.py", "run": run, "session": session, "journey": journey,
                   "status": "in_progress", "started": now(), "claim": JOURNEYS[journey]["claim"],
                   "not_covered": NOT_COVERED, "binary_sha256": record["guest"]["binary_sha256"],
@@ -616,6 +620,88 @@ def drive(inputs, run, session, journey, border_count=None, candidate_session=No
 
 
 describe = lab.describe
+
+
+class OwnedTart:
+    """lab.control's process view of the exact Tart process recorded by verify.py start."""
+
+    def __init__(self, record):
+        self.record, self.pid = record, record["pid"]
+
+    def poll(self):
+        return None if owned_tart(self.record) else 1
+
+
+def wait_for_console(client, seconds):
+    """The console owner, or None when the last observation itself failed."""
+    deadline = time.monotonic() + seconds
+    while True:
+        result = client.command(CONSOLE_OWNER, check=False, timeout=10)
+        owner = result.stdout.strip() if result.returncode == 0 else None
+        if owner == GUEST_USER or time.monotonic() >= deadline:
+            return owner
+        time.sleep(2)
+
+
+def login(inputs, run, session):
+    """Log the guest console in once: the run's stored password, typed PID-targeted into the
+    exact owned Tart window. No clicks, global input, activation or retry."""
+    directory = test_clone(inputs, run)
+    with RunLock(directory):
+        record = session_ready(directory, session)
+        path = directory / "verify-tart.json"
+        if not path.exists():
+            raise Blocked("login needs a VM started by verify.py start or restart.")
+        tart = OwnedTart(json.loads(path.read_text()))
+        if tart.poll() is not None:
+            raise Blocked("The recorded Tart process is not running.")
+        evidence = next_evidence(directory / session, "login")
+        # credential: not_sent until input starts; uncertain until Return is confirmed.
+        report = {"tool": "verify.py", "operation": "login", "run": run, "session": session,
+                  "status": "in_progress", "started": now(), "credential": "not_sent"}
+        lab.write_json(evidence / "report.json", report)
+        try:
+            with tempfile.TemporaryDirectory(prefix="verify-", dir=lab.STATE) as temporary:
+                client = connect(inputs, run, write_askpass(temporary), strict=True)
+                guest_baseline(client, inputs)
+                guest_identity(client, record)
+                report["console_before"] = client.command(CONSOLE_OWNER, timeout=15).stdout.strip()
+                if report["console_before"] == GUEST_USER:
+                    report["status"] = "ready"
+                    return report
+                helper = lab.STATE / "tools/window-control"
+                if not helper.is_file():
+                    raise Blocked("window-control helper is missing; run lab.py preflight.")
+                lab.guest_password(directory, create=False)
+                lab.audit_no_listener(tart.pid)
+                target = lab.checked_capture(helper, tart, inputs, run, evidence / "before.png")
+                report["window"] = target
+                if lab.text_anchor(helper, evidence / "before.png", LOGIN_PROMPT) is None:
+                    raise Blocked(f"No '{LOGIN_PROMPT}' field in the owned window; "
+                                  "no credential sent.")
+                current = lab.control(helper, "window", tart, inputs, run)
+                if current is None or any(current[key] != target[key]
+                                          for key in ("bounds", "window_id")):
+                    raise Blocked("Window changed since the login capture; no credential sent.")
+                report["credential"] = "uncertain"
+                lab.write_json(evidence / "report.json", report)
+                lab.type_guest_password(helper, tart, inputs, run, directory, create=False)
+                lab.control(helper, "key", tart, inputs, run, {"key": "return"})
+                report["credential"] = "submitted"
+                report["console_after"] = wait_for_console(client, LOGIN_WAIT)
+                lab.checked_capture(helper, tart, inputs, run, evidence / "after.png")
+                if report["console_after"] != GUEST_USER:
+                    raise Blocked(f"Console owner is {report['console_after']!r} after one "
+                                  f"submission; not retrying.")
+                report["status"] = "ready"
+        except Exception as error:
+            report["status"] = "blocked"
+            report["reason"] = describe(error)
+        finally:
+            report["finished"] = now()
+            lab.write_json(evidence / "report.json", report)
+            print(json.dumps({"evidence": str(evidence), **report}, indent=2))
+        return report
 
 
 class Checks:
@@ -674,7 +760,7 @@ def require_idle(directory):
 def guest_baseline(client, inputs):
     user = client.command("/usr/bin/id -un").stdout.strip()
     build = client.command("/usr/bin/sw_vers -buildVersion").stdout.strip()
-    if (user, build) != ("omarchy", inputs["macos"]["build"]):
+    if (user, build) != (GUEST_USER, inputs["macos"]["build"]):
         raise Blocked("Guest account or OS build differs from the prepared baseline.")
     return f"{user} on {build}"
 
@@ -888,13 +974,14 @@ def build_parser():
                        ("restart", "Restart a stopped owned clone, preserving prior boot evidence"),
                        ("launch", "Snapshot current source and build macarchy in the guest"),
                        ("doctor", "Read-only readiness and identity checks"),
+                       ("login", "Log the guest console in once through the owned window"),
                        ("drive", "Run one closed journey against the launched build"),
                        ("evidence", "Read-only index of retained evidence"),
                        ("cleanup", "Remove session guest scratch; optionally shut down")):
         command = commands.add_parser(name, help=text)
         command.add_argument("--run", required=True, help="Recorded clone: setup-<12 hex>")
-        if name in ("doctor", "drive", "evidence", "cleanup"):
-            command.add_argument("--session", required=name in ("drive", "evidence"),
+        if name in ("doctor", "login", "drive", "evidence", "cleanup"):
+            command.add_argument("--session", required=name in ("login", "drive", "evidence"),
                                  help="verify-<12 hex> printed by launch")
         if name == "launch":
             command.add_argument("--wait", type=int, default=300, choices=range(30, 901),
@@ -942,6 +1029,8 @@ def main(argv=None):
         return EXIT[record["status"]]
     if args.operation == "launch":
         return EXIT[launch(inputs, args.run, args.wait)["status"]]
+    if args.operation == "login":
+        return EXIT[login(inputs, args.run, args.session)["status"]]
     if args.operation == "drive":
         return EXIT[drive(inputs, args.run, args.session, args.journey, args.border_count,
                           args.candidate_session, args.border_motion)["status"]]

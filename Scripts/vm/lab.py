@@ -296,10 +296,10 @@ def write_password(directory, password):
         stream.write(password)
 
 
-def type_guest_password(helper, process, inputs, run_id, directory):
+def type_guest_password(helper, process, inputs, run_id, directory, create=True):
     # The native helper accepts text only through stdin and never echoes it.
     return control(helper, "type", process, inputs, run_id,
-                   {"text": guest_password(directory)}, sensitive=True)
+                   {"text": guest_password(directory, create)}, sensitive=True)
 
 
 def capture(helper, process, inputs, name, path):
