@@ -18,6 +18,17 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   release archive bundles the ttfx animation engine (MIT) at `libexec/ttfx`, built
   from a pinned upstream commit, with its licences in `share/doc/macarchy/ttfx/`.
   Source builds report the engine as missing.
+- `macarchy saver idle on` starts the animated screensaver after 5 minutes without
+  input, or after 1 minute to 4 hours with `--after`. It stays off until you turn it
+  on, and `saver idle off` removes its launch agent and record. Pause, keep-awake, a
+  locked screen, the macOS screensaver and display sleep hold it off. Locking the
+  screen, the macOS screensaver or display sleep closes a showing screensaver.
+  Macarchy changes no macOS settings: `idle on` and `saver status` warn when the
+  macOS screensaver or display sleep would come first. `saver pause`, `saver resume`,
+  `saver toggle-pause` and the **Toggle screensaver pause** menu action hold idle
+  starts off. While paused, a pause icon left of the managed bar clock resumes them
+  on click. To activate the icon after upgrading, review and apply the generated bar
+  configuration.
 - `macarchy keep-awake` and the **Toggle keep-awake** menu action keep the display
   awake and stop the idle screensaver and idle lock from starting until you turn
   keep-awake off. `keep-awake on --for` ends the session after 1 minute to 24 hours.
