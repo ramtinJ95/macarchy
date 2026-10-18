@@ -11,6 +11,18 @@ func showNativeAlert(title: String, message: String, style: NSAlert.Style = .cri
   }
 }
 
+/// Asks before a menu-launched command does something it cannot undo; false when cancelled.
+@MainActor
+func showNativeConfirmation(title: String, message: String, action: String) -> Bool {
+  runNativeAlert { alert in
+    alert.messageText = title
+    alert.informativeText = message
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: action).hasDestructiveAction = true
+    alert.addButton(withTitle: "Cancel")
+  } == .alertFirstButtonReturn
+}
+
 /// Lets a menu-launched command pick one of `choices` and press one of `actions`, the buttons
 /// before Cancel; nil when cancelled.
 @MainActor
