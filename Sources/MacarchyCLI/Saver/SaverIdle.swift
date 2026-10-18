@@ -95,45 +95,69 @@ struct SaverIdle {
   /// Installs and loads the launch agent and writes the record. `after` replaces the timeout;
   /// without it, an existing timeout stays. A pause stays either way.
   func turnOn(after duration: Duration?) throws -> SaverIdleChange {
-    let change = try SaverIdleRecord.lock.withLock(root: stateRoot) {
-      () throws -> SaverIdleChange in
-      let installed = try agent.install()
-      let previous = try record.read()
-      let next = SaverIdleRecord(
-        timeout: duration.map { Int($0.components.seconds) } ?? previous?.timeout
-          ?? SaverIdleRecord.defaultTimeout,
-        paused: previous?.paused ?? false)
-      // The observer exits when it finds no record, so the record comes before the job.
-      if next != previous { try record.write(next) }
-      let loaded = try agent.load()
-      // launchd keeps an observer that exited cleanly loaded but stopped. A kickstart runs it
-      // again and leaves a running one alone.
-      try agent.kickstart()
-      return installed || loaded || next != previous ? .turnedOn(next) : .alreadyOn(next)
-    }
-    if case .turnedOn = change { notifyBar() }
-    return change
+    try locked { try on(after: duration) }
   }
 
   /// Boots the job out, then removes the plist and the record.
   func turnOff() throws -> SaverIdleChange {
-    let change = try SaverIdleRecord.lock.withLock(root: stateRoot) {
-      () throws -> SaverIdleChange in
-      // A job loaded from somebody else's plist under this label is not Macarchy's to stop.
-      if case .conflict = try agent.file() { throw agent.conflict }
-      let unloaded = try agent.unload()
-      let removed = try agent.remove()
-      let recorded: Bool
-      do {
-        recorded = try record.readStrictly() != nil
-      } catch is InvalidRunStateRecord {
-        recorded = true
-      }
-      try record.remove()
-      return unloaded || removed || recorded ? .turnedOff : .alreadyOff
+    try locked { try off() }
+  }
+
+  /// Turns idle activation off while it runs, otherwise on with its stored timeout or the
+  /// default. An incomplete activation counts as off, so toggling finishes turning it on.
+  func toggle() throws -> SaverIdleChange {
+    try locked {
+      let activation = try current()
+      if case .conflict = activation.agent { throw agent.conflict }
+      return try activation.enabled == nil ? on(after: nil) : off()
     }
-    if change == .turnedOff { notifyBar() }
+  }
+
+  /// The native-timer warnings that keep the screensaver from showing once `change` leaves idle
+  /// activation on; none once it is off.
+  func warnings(after change: SaverIdleChange) -> [String] {
+    change.record.map { nativeTimers().warnings(timeout: $0.timeout) } ?? []
+  }
+
+  /// Runs `body` under the record lock and hints the bar when it changed idle activation.
+  private func locked(_ body: () throws -> SaverIdleChange) throws -> SaverIdleChange {
+    let change = try SaverIdleRecord.lock.withLock(root: stateRoot, body)
+    switch change {
+    case .turnedOn, .turnedOff: notifyBar()
+    case .alreadyOn, .alreadyOff: break
+    }
     return change
+  }
+
+  private func on(after duration: Duration?) throws -> SaverIdleChange {
+    let installed = try agent.install()
+    let previous = try record.read()
+    let next = SaverIdleRecord(
+      timeout: duration.map { Int($0.components.seconds) } ?? previous?.timeout
+        ?? SaverIdleRecord.defaultTimeout,
+      paused: previous?.paused ?? false)
+    // The observer exits when it finds no record, so the record comes before the job.
+    if next != previous { try record.write(next) }
+    let loaded = try agent.load()
+    // launchd keeps an observer that exited cleanly loaded but stopped. A kickstart runs it
+    // again and leaves a running one alone.
+    try agent.kickstart()
+    return installed || loaded || next != previous ? .turnedOn(next) : .alreadyOn(next)
+  }
+
+  private func off() throws -> SaverIdleChange {
+    // A job loaded from somebody else's plist under this label is not Macarchy's to stop.
+    if case .conflict = try agent.file() { throw agent.conflict }
+    let unloaded = try agent.unload()
+    let removed = try agent.remove()
+    let recorded: Bool
+    do {
+      recorded = try record.readStrictly() != nil
+    } catch is InvalidRunStateRecord {
+      recorded = true
+    }
+    try record.remove()
+    return unloaded || removed || recorded ? .turnedOff : .alreadyOff
   }
 
   /// Pausing holds off idle starts until resumed; it never stops a showing saver.

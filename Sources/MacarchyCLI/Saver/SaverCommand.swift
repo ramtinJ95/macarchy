@@ -1,3 +1,4 @@
+import AppKit
 import ArgumentParser
 import Foundation
 
@@ -99,9 +100,11 @@ struct SaverCommand: ParsableCommand {
         idle for the timeout, 5 minutes unless --after says otherwise. Pause, keep-awake, a locked
         screen, the macOS screensaver and display sleep hold it off. Macarchy never changes macOS
         screensaver, lock, password or sleep settings; on and status warn when one of their
-        timers comes first. Off removes the launch agent and its record.
+        timers comes first. Off removes the launch agent and its record. Toggle turns it off
+        while it is on, otherwise on after 5 minutes, or with the timeout an incomplete
+        activation kept.
         """,
-      subcommands: [On.self, Off.self])
+      subcommands: [On.self, Off.self, Toggle.self])
 
     struct On: AsyncParsableCommand {
       static let configuration = CommandConfiguration(
@@ -121,8 +124,7 @@ struct SaverCommand: ParsableCommand {
         try options.run("Idle screensaver not turned on") { root in
           let idle = SaverIdle.live(stateRoot: root)
           let change = try idle.turnOn(after: timeout)
-          let warnings = change.record.map { idle.nativeTimers().warnings(timeout: $0.timeout) }
-          return ([change.message] + (warnings ?? [])).joined(separator: "\n")
+          return ([change.message] + idle.warnings(after: change)).joined(separator: "\n")
         }
       }
     }
@@ -138,6 +140,35 @@ struct SaverCommand: ParsableCommand {
         try options.run("Idle screensaver not turned off") {
           try SaverIdle.live(stateRoot: $0).turnOff().message
         }
+      }
+    }
+
+    struct Toggle: AsyncParsableCommand {
+      static let configuration = CommandConfiguration(
+        abstract: "Turn idle activation off when on, otherwise on with the default timeout.")
+
+      @OptionGroup var options: Options
+
+      @MainActor
+      mutating func run() async throws {
+        let alert = options.alertOnError
+        try options.run("Idle screensaver not changed") { root in
+          try Self.toggle(SaverIdle.live(stateRoot: root)) { warnings in
+            guard alert else { return }
+            showNativeAlert(
+              title: "Idle screensaver on, but it will not show",
+              message: warnings.joined(separator: "\n\n"), style: .warning)
+          }
+        }
+      }
+
+      /// The toggle's output. Menu and bar launches have no terminal, so `warn` also gets the
+      /// native-timer warnings when the toggle turned idle activation on and one applies.
+      static func toggle(_ idle: SaverIdle, warn: ([String]) -> Void) throws -> String {
+        let change = try idle.toggle()
+        let warnings = idle.warnings(after: change)
+        if !warnings.isEmpty { warn(warnings) }
+        return ([change.message] + warnings).joined(separator: "\n")
       }
     }
   }
