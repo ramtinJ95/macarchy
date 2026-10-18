@@ -85,6 +85,7 @@ struct ActionMenuTests {
     (.clipboardHistory, ["clipboard", "open", "--alert-on-error"]),
     (.clearClipboardHistory, ["clipboard", "clear", "--confirm", "--alert-on-error"]),
     (.keepAwake, ["keep-awake", "toggle", "--alert-on-error"]),
+    (.startScreensaver, ["saver", "start", "--alert-on-error"]),
     (.chooseMicrophone, ["mic", "choose", "--alert-on-error"]),
     (.toggleMicrophone, ["mic", "toggle", "--alert-on-error"]),
   ])
@@ -171,12 +172,24 @@ struct ActionMenuTests {
     #expect(
       Array(ActionMenuAction.allCases[(ocr + 1)...(ocr + 3)])
         == [.prepareImage, .clipboardHistory, .clearClipboardHistory])
-    for query in ["keep awake", "caffeinate", "always on", "screensaver", "idle lock"] {
+    for query in ["keep awake", "caffeinate", "always on", "idle lock"] {
       state.search(query)
       #expect(state.actions == [.keepAwake], Comment(rawValue: query))
     }
     #expect(ActionMenuAction.keepAwake.category == "Controls")
     #expect(ActionMenuAction.keepAwake.title == "Toggle keep-awake")
+    for query in ["screensaver", "saver", "idle"] {
+      state.search(query)
+      #expect(state.actions == [.keepAwake, .startScreensaver], Comment(rawValue: query))
+    }
+    for query in ["start screensaver", "ttfx", "animation", "away"] {
+      state.search(query)
+      #expect(state.actions == [.startScreensaver], Comment(rawValue: query))
+    }
+    #expect(ActionMenuAction.startScreensaver.category == "Controls")
+    #expect(ActionMenuAction.startScreensaver.title == "Start screensaver")
+    let keepAwake = try #require(ActionMenuAction.allCases.firstIndex(of: .keepAwake))
+    #expect(ActionMenuAction.allCases[keepAwake + 1] == .startScreensaver)
     for query in ["choose microphone", "input device", "select mic"] {
       state.search(query)
       #expect(state.actions == [.chooseMicrophone], Comment(rawValue: query))
