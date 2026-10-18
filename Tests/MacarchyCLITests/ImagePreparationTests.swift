@@ -317,6 +317,49 @@ struct ImagePreparationTests {
     #expect(fixture.clipboardReads == 0)
   }
 
+  @Test func cancellingTheDialogOrTheFilePanelWritesNothing() throws {
+    let fixture = try ImageFixture()
+    fixture.clipboard = try pngData(patternImage(width: 30, height: 20))
+    let dismissed = try fixture.engine.choose(
+      pick: { nil },
+      chooseFile: {
+        Issue.record("The file panel opened after the dialog was cancelled")
+        return nil
+      })
+    #expect(dismissed == nil)
+    let noFile = try fixture.engine.choose(
+      pick: { (ImagePreset.png, ImageSourceChoice.file) }, chooseFile: { nil })
+    #expect(noFile == nil)
+    #expect(try fixture.files() == [])
+    #expect(try fixture.files(fixture.downloads) == [])
+    #expect(fixture.copies.isEmpty)
+    #expect(fixture.revealed.isEmpty)
+    #expect(fixture.clipboardReads == 0)
+  }
+
+  @Test func menuChoicePreparesCopiesAndRevealsTheResult() throws {
+    let fixture = try ImageFixture()
+    let source = try fixture.file("photo.png", pngData(patternImage(width: 30, height: 20)))
+    let chosen = try fixture.engine.choose(
+      pick: { (ImagePreset.small, ImageSourceChoice.file) }, chooseFile: { source })
+    let fromFile = try #require(chosen)
+    #expect(fromFile.output.path == fixture.pictures.appending(path: "photo-small.jpg").path)
+
+    fixture.clipboard = try pngData(patternImage(width: 30, height: 20))
+    let pasted = try fixture.engine.choose(
+      pick: { (ImagePreset.png, ImageSourceChoice.clipboard) },
+      chooseFile: {
+        Issue.record("The file panel opened for a clipboard image")
+        return nil
+      })
+    let fromClipboard = try #require(pasted)
+    #expect(try fixture.files(fixture.downloads) == [fromClipboard.output.lastPathComponent])
+    #expect(fromClipboard.output.pathExtension == "png")
+    #expect(fixture.copies.map(\.file) == [fromFile.output, fromClipboard.output])
+    #expect(fixture.revealed == [fromFile.output, fromClipboard.output])
+    #expect(ImageSourceChoice.allCases.map(\.title) == ["Use clipboard image", "Choose file…"])
+  }
+
   @Test func outputLineAndJSONDescribeTheResult() throws {
     let prepared = PreparedImage(
       output: URL(filePath: "/tmp/macarchy/photo-share.jpg"), pixelWidth: 2048,
@@ -366,6 +409,10 @@ struct ImagePreparationTests {
     #expect(clipboard.preset == .png)
     #expect(clipboard.noCopy && clipboard.reveal && clipboard.json)
     #expect(clipboard.output == "/tmp/out.png")
+
+    let choose = try #require(
+      Macarchy.parseAsRoot(["image", "choose", "--alert-on-error"]) as? ImageCommand.Choose)
+    #expect(choose.alertOnError)
 
     for arguments in [
       ["image", "prepare", "--preset", "share"],

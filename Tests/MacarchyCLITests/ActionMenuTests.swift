@@ -81,6 +81,7 @@ struct ActionMenuTests {
     (.screenshot, ["capture", "screenshot", "--alert-on-error"]),
     (.annotate, ["capture", "annotate", "--alert-on-error"]),
     (.ocr, ["capture", "ocr", "--alert-on-error"]),
+    (.prepareImage, ["image", "choose", "--alert-on-error"]),
     (.keepAwake, ["keep-awake", "toggle", "--alert-on-error"]),
     (.chooseMicrophone, ["mic", "choose", "--alert-on-error"]),
     (.toggleMicrophone, ["mic", "toggle", "--alert-on-error"]),
@@ -115,7 +116,7 @@ struct ActionMenuTests {
     }
   }
 
-  @Test func searchSelectionAndEmptyDispatch() {
+  @Test func searchSelectionAndEmptyDispatch() throws {
     var state = ActionMenuState()
     #expect(state.notice == "Configure · Appearance · Capture · Controls · Maintenance")
     #expect(state.selectedAction == .profile(.portable))
@@ -142,6 +143,16 @@ struct ActionMenuTests {
     #expect(state.actions == [.ocr])
     state.search("flameshot annotation")
     #expect(state.actions == [.annotate])
+    for query in ["prepare image", "compress", "jpeg", "strip metadata", "resize png"] {
+      state.search(query)
+      #expect(state.actions == [.prepareImage], Comment(rawValue: query))
+    }
+    state.search("capture image")
+    #expect(state.actions == [.screenshot, .prepareImage])
+    #expect(ActionMenuAction.prepareImage.category == "Capture")
+    #expect(ActionMenuAction.prepareImage.title == "Prepare an image")
+    let ocr = try #require(ActionMenuAction.allCases.firstIndex(of: .ocr))
+    #expect(ActionMenuAction.allCases[ocr + 1] == .prepareImage)
     for query in ["keep awake", "caffeinate", "always on", "screensaver", "idle lock"] {
       state.search(query)
       #expect(state.actions == [.keepAwake], Comment(rawValue: query))
