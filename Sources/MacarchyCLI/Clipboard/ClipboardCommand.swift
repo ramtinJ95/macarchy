@@ -5,17 +5,17 @@ import Foundation
 struct ClipboardCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "clipboard",
-    abstract: "Open and clear the clipboard history Maccy keeps.",
+    abstract: "Open and clear the clipboard history Maccy keeps, and save the clipboard image.",
     discussion: """
       Maccy is an optional app: brew install --cask maccy. Enabling turns on Maccy's clearOnQuit
       and clearSystemClipboard settings and records their previous values, which disabling
       restores. Enabling also turns on the automatic clear: once 24 hours have passed since the
       last clear, Macarchy clears unpinned history and the clipboard. Clearing deletes all
-      history, pinned items included, and empties the clipboard. Macarchy never reads clipboard
-      or history content.
+      history, pinned items included, and empties the clipboard. Macarchy never reads history
+      content. Of these commands, only save reads the clipboard, and only its image.
       """,
     subcommands: [
-      Status.self, Enable.self, Disable.self, Clear.self, Open.self, AutoClear.self,
+      Status.self, Enable.self, Disable.self, Clear.self, Open.self, Save.self, AutoClear.self,
       RunAutoClear.self,
     ])
 
@@ -217,6 +217,52 @@ struct ClipboardCommand: ParsableCommand {
           showNativeAlert(title: "Maccy started", message: opening.message, style: .informational)
         }
         return opening.message
+      }
+    }
+  }
+
+  struct Save: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Save the clipboard image to a new file, or write it to standard output.",
+      discussion: """
+        Saves the image on the clipboard now, so pick an older item in Maccy's history first.
+        Works without Maccy. For text, use pbpaste.
+        The file's extension picks the format: .png, .jpg or .jpeg, .tiff or .tif, or .heic. When
+        the clipboard holds that format, its bytes are saved unchanged; otherwise the image is
+        converted at its own size. The file must not exist and its folder must. With -, the image
+        goes to standard output, as PNG unless --format says otherwise, and never to a terminal.
+        """)
+
+    @Argument(help: "A new image file, or - for standard output.")
+    var output: String
+
+    @Option(help: "The format written to standard output. Default: png.")
+    var format: ClipboardImageFormat?
+
+    @Flag(help: "Emit machine-readable output.")
+    var json = false
+
+    var destination: ClipboardSaveDestination {
+      guard output != "-" else { return .standardOutput(format ?? .png) }
+      return .file(URL(filePath: output).standardizedFileURL)
+    }
+
+    mutating func validate() throws {
+      if output.isEmpty { throw ValidationError("The output path is empty.") }
+      if output == "-", json {
+        throw ValidationError("--json applies only when saving to a file.")
+      }
+      if output != "-", format != nil {
+        throw ValidationError("--format applies only to -; a file's extension picks its format.")
+      }
+    }
+
+    @MainActor
+    mutating func run() async throws {
+      let destination = destination
+      let saved = try ClipboardImageSaver.live.save(to: destination)
+      if case .file(let url) = destination {
+        print(try json ? saved.renderJSON(savedTo: url) : saved.message(savedTo: url))
       }
     }
   }
