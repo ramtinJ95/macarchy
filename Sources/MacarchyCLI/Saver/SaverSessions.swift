@@ -95,6 +95,11 @@ struct Saver {
       text: text(), sessions: sessions.sorted { $0.display.label < $1.display.label })
   }
 
+  /// Whether a session's runner still matches its record, read without the lock.
+  func isRunning() throws -> Bool {
+    try records.entries().contains { $0.record.map { owns($0.runner) } ?? false }
+  }
+
   func start() throws -> SaverStart {
     guard kitty != .missing else {
       throw SaverError("Kitty is missing at \(SaverKitty.application.path). \(SaverKitty.remedy)")
