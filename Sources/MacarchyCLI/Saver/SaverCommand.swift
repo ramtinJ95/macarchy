@@ -11,7 +11,7 @@ struct SaverCommand: ParsableCommand {
       It is decorative, not a lock: native screensaver, lock, password and sleep settings stay
       untouched. Put your own text in screensaver.txt in the state directory.
       """,
-    subcommands: [Start.self, Stop.self, Status.self, Run.self])
+    subcommands: [Start.self, Stop.self, Status.self, Run.self, Observe.self])
 
   static let defaultStateRoot = FileManager.default.homeDirectoryForCurrentUser
     .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
@@ -102,6 +102,43 @@ struct SaverCommand: ParsableCommand {
       }
       let status = runner.run()
       guard status == 0 else { throw ExitCode(status) }
+    }
+  }
+
+  /// The idle launch agent's observer. It exits once idle activation is turned off.
+  struct Observe: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "_idle", shouldDisplay: false)
+
+    @Option var stateRoot: String
+
+    /// Shows the alert for this start failure instead of observing. The observer starts itself
+    /// this way, so its polls never wait on an alert.
+    @Option(help: .hidden) var alert: String?
+
+    @MainActor
+    mutating func run() async throws {
+      if let alert {
+        showNativeAlert(
+          title: "Idle screensaver did not start",
+          message: (alert.hasSuffix(".") ? alert : alert + ".")
+            + " Run `macarchy saver status` for details.")
+        return
+      }
+      let root = stateRoot
+      SaverIdleObserver.run(
+        .live(
+          stateRoot: URL(filePath: root, directoryHint: .isDirectory).standardizedFileURL,
+          alert: { failure in
+            let process = Process()
+            process.executableURL = RuntimeEnvironment.live.executableURL
+            process.arguments = ["saver", "_idle", "--state-root", root, "--alert=\(failure)"]
+            do {
+              try process.run()
+            } catch {
+              let line = "Could not show the alert for this failure: \(error)\n"
+              try? FileHandle.standardError.write(contentsOf: Data(line.utf8))
+            }
+          }))
     }
   }
 }

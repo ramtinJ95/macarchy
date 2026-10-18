@@ -524,8 +524,10 @@ struct SaverSessionTests {
       let machine = try SaverMachine(root)
       machine.text = .custom("Away until 3 pm")
       let saver = machine.saver()
+      #expect(try saver.isRunning() == false)
 
       let start = try saver.start()
+      #expect(try saver.isRunning())
 
       let expectedStart = SaverStart.started(
         .outputs(["DP-1", "HDMI-1"]), .custom("Away until 3 pm"))
@@ -559,6 +561,7 @@ struct SaverSessionTests {
       #expect(machine.terminated.sorted() == sessions.map(\.runner.pid).sorted())
       #expect(machine.processes.isEmpty)
       #expect(try saver.status().sessions.isEmpty)
+      #expect(try saver.isRunning() == false)
       #expect(try SaverRecords(stateRoot: root).entries().isEmpty)
 
       #expect(try saver.stop() == .notRunning)
@@ -819,6 +822,7 @@ struct SaverSessionTests {
       }
       let saver = machine.saver()
 
+      #expect(try saver.isRunning() == false)
       #expect(try saver.status().sessions.isEmpty)
       #expect(try saver.stop() == .notRunning)
       #expect(machine.terminated.isEmpty)
