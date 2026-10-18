@@ -10,6 +10,7 @@ import ThemeCore
 /// Every launch agent Macarchy owns, built for a temporary home and state folder.
 enum OwnedAgentKind: CaseIterable, Sendable {
   case clipboardAutoClear
+  case saverIdle
 
   static let executable = URL(filePath: "/opt/homebrew/bin/macarchy")
 
@@ -17,6 +18,10 @@ enum OwnedAgentKind: CaseIterable, Sendable {
     switch self {
     case .clipboardAutoClear:
       .clipboardAutoClear(
+        home: home, stateRoot: stateRoot, executable: Self.executable, userID: 501,
+        runner: runner)
+    case .saverIdle:
+      .saverIdle(
         home: home, stateRoot: stateRoot, executable: Self.executable, userID: 501,
         runner: runner)
     }
@@ -59,6 +64,39 @@ struct OwnedLaunchAgentTests {
       let run = try #require(command as? ClipboardCommand.RunAutoClear)
       #expect(run.options.stateRoot == state.path)
       #expect(run.alert == nil)
+    }
+  }
+
+  @Test func theIdlePlistKeepsTheObserverRunningInTheLoginSessionUntilItExitsCleanly() throws {
+    try withAgent(.saverIdle) { agent, _, state throws in
+      let plist = try #require(
+        try PropertyListSerialization.propertyList(from: agent.propertyList(), format: nil)
+          as? [String: Any])
+      let keys: Set<String> = [
+        "Label", "ProgramArguments", "RunAtLoad", "KeepAlive", "LimitLoadToSessionType",
+        "ProcessType", "StandardOutPath", "StandardErrorPath",
+      ]
+      #expect(Set(plist.keys) == keys)
+      #expect(plist["Label"] as? String == "io.github.ramtinj95.macarchy.saver-idle")
+      let arguments = try #require(plist["ProgramArguments"] as? [String])
+      let expected = ["/opt/homebrew/bin/macarchy", "saver", "_idle", "--state-root", state.path]
+      #expect(arguments == expected)
+      #expect(plist["RunAtLoad"] as? Bool == true)
+      let keepAlive = try #require(plist["KeepAlive"] as? [String: Any])
+      #expect(keepAlive.count == 1)
+      #expect(keepAlive["SuccessfulExit"] as? Bool == false)
+      #expect(plist["LimitLoadToSessionType"] as? String == "Aqua")
+      #expect(plist["ProcessType"] as? String == "Interactive")
+      let logs = state.appending(path: "run")
+      #expect(
+        plist["StandardOutPath"] as? String == logs.appending(path: "saver-idle.stdout.log").path)
+      #expect(
+        plist["StandardErrorPath"] as? String == logs.appending(path: "saver-idle.stderr.log").path)
+
+      let command = try Macarchy.parseAsRoot(Array(arguments.dropFirst()))
+      let observe = try #require(command as? SaverCommand.Observe)
+      #expect(observe.stateRoot == state.path)
+      #expect(observe.alert == nil)
     }
   }
 
