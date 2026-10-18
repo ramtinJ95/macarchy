@@ -526,6 +526,11 @@ If the microphone does not behave as expected, check these points:
   ignored the request. When this happens partway through silencing by level,
   Macarchy restores the levels it already changed. Menu launches show the error in
   an alert.
+- If a change stops partway, so that only some of a microphone's channels are
+  muted or silenced, `macarchy mic status` reports it live, because the other
+  channels still hear you. Macarchy keeps the saved levels of the channels it left
+  at zero. Run `macarchy mic unmute` to finish restoring them, or `macarchy mic mute`
+  to mute every channel.
 - If you disconnect a silenced microphone, Macarchy keeps its saved level. After you
   reconnect it, unmuting restores that level while it is the default. If you mute
   another microphone while the first is still disconnected, the saved level is

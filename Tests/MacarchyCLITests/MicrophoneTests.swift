@@ -135,6 +135,86 @@ struct MicrophoneTests {
     }
   }
 
+  @Test(arguments: ["refused", "not-applied"])
+  func aRestoreThatFailsHalfwayKeepsOnlyThePendingLevelUntilUnmuteFinishes(failure: String)
+    throws
+  {
+    let audio = Self.audio(selected: Self.builtIn)
+    try withEngine(audio) { engine, record throws in
+      _ = try engine.apply(.mute)
+      let blocked: (Audio.Write) -> Bool = { $0.element == 2 && $0.value > 0 }
+      if failure == "refused" { audio.refuses = blocked } else { audio.ignores = blocked }
+      #expect(throws: (any Error).self) { try engine.apply(.unmute) }
+      #expect(audio.value(Self.builtIn.id, .level, 1) == 0.7)
+      #expect(audio.value(Self.builtIn.id, .level, 2) == 0)
+      let pending = MicrophoneSilence(identity: Self.builtIn.identity, levels: [2: 0.5])
+      #expect(try record.read() == pending)
+
+      #expect(try engine.status() == .input(Self.builtIn, .live))
+      #expect(try record.read() == pending)
+
+      audio.refuses = { _ in false }
+      audio.ignores = { _ in false }
+      let finished = try engine.apply(.toggle)
+      #expect(finished == .changed(Self.builtIn, from: .silencedByLevel, to: .live))
+      #expect(
+        finished.message
+          == "Microphone \"MacBook Pro Microphone\" is live again (input level restored).")
+      #expect(audio.value(Self.builtIn.id, .level, 1) == 0.7)
+      #expect(audio.value(Self.builtIn.id, .level, 2) == 0.5)
+      #expect(try record.read() == nil)
+    }
+  }
+
+  @Test func aSilenceWhoseRollbackFailsLeavesTheZeroedLevelRecoverable() throws {
+    let audio = Self.audio(selected: Self.builtIn)
+    audio.refuses = { ($0.element == 2 && $0.value == 0) || ($0.element == 1 && $0.value > 0) }
+    try withEngine(audio) { engine, record throws in
+      let error = #expect(throws: MicrophoneError.self) { try engine.apply(.mute) }
+      #expect(error?.description.contains("restoring the input level also failed") == true)
+      #expect(audio.value(Self.builtIn.id, .level, 1) == 0)
+      #expect(audio.value(Self.builtIn.id, .level, 2) == 0.5)
+      let pending = MicrophoneSilence(identity: Self.builtIn.identity, levels: [1: 0.7])
+      #expect(try record.read() == pending)
+      #expect(try engine.status() == .input(Self.builtIn, .live))
+      #expect(try record.read() == pending)
+
+      audio.refuses = { _ in false }
+      #expect(
+        try engine.apply(.unmute) == .changed(Self.builtIn, from: .silencedByLevel, to: .live))
+      #expect(audio.value(Self.builtIn.id, .level, 1) == 0.7)
+      #expect(audio.value(Self.builtIn.id, .level, 2) == 0.5)
+      #expect(try record.read() == nil)
+    }
+  }
+
+  @Test(arguments: [MicrophoneRequest.unmute, .toggle, .mute])
+  func aPartlyHardwareMutedInputReadsLiveAndConvergesOnRequest(request: MicrophoneRequest)
+    throws
+  {
+    let audio = Self.audio(selected: Self.usb)
+    audio.channels[Self.usb.id] = 2
+    audio.controls[Self.usb.id]?[.mute] = [
+      1: Audio.Control(value: 1, settable: true), 2: Audio.Control(value: 0, settable: true),
+    ]
+    try withEngine(audio) { engine, _ throws in
+      #expect(try engine.status() == .input(Self.usb, .live))
+      let change = try engine.apply(request)
+      if request == .mute {
+        #expect(change == .changed(Self.usb, from: .live, to: .hardwareMuted))
+        #expect(audio.value(Self.usb.id, .mute, 1) == 1)
+        #expect(audio.value(Self.usb.id, .mute, 2) == 1)
+      } else {
+        #expect(change == .changed(Self.usb, from: .hardwareMuted, to: .live))
+        #expect(change.message == "Microphone \"USB Mic\" is live again (hardware mute off).")
+        #expect(audio.writes == [.init(device: Self.usb.id, property: .mute, element: 1, value: 0)])
+        #expect(audio.value(Self.usb.id, .mute, 1) == 0)
+        #expect(audio.value(Self.usb.id, .mute, 2) == 0)
+      }
+      #expect(audio.notifications == 1)
+    }
+  }
+
   @Test func microphoneWithoutMuteOrLevelControlIsReportedAndNeverWritten() throws {
     let audio = Self.audio(selected: Self.lineIn)
     try withEngine(audio) { engine, record throws in
@@ -186,12 +266,26 @@ struct MicrophoneTests {
         id: 77, name: Self.builtIn.name, identity: Self.builtIn.identity)
       audio.devices.append(returned)
       audio.controls[returned.id] = levels
+      audio.channels[returned.id] = audio.channels[Self.builtIn.id]
       audio.selected = returned.id
       #expect(try engine.status() == .input(returned, .silencedByLevel))
       #expect(try engine.apply(.unmute) == .changed(returned, from: .silencedByLevel, to: .live))
       #expect(audio.value(returned.id, .level, 1) == 0.7)
       #expect(audio.value(returned.id, .level, 2) == 0.5)
       #expect(try record.read() == nil)
+    }
+  }
+
+  @Test func aSilenceWhoseLevelControlBecomesReadOnlyIsNotReportedAsComplete() throws {
+    let audio = Self.audio(selected: Self.builtIn)
+    try withEngine(audio) { engine, record throws in
+      _ = try engine.apply(.mute)
+      let saved = try record.read()
+      for element: UInt32 in [1, 2] {
+        audio.controls[Self.builtIn.id]?[.level]?[element]?.settable = false
+      }
+      #expect(try engine.status() == .input(Self.builtIn, .unsupported))
+      #expect(try record.read() == saved)
     }
   }
 

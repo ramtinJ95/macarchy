@@ -103,16 +103,16 @@ struct Microphone {
       let silenced = try silence(in: inputs)
       let observed = try observe(device, silenced: silenced)
       switch (request, observed) {
-      case (.mute, .hardwareMuted), (.mute, .silencedByLevel), (.unmute, .live):
+      case (.mute, .hardwareMuted(_, _, completely: true)),
+        (.mute, .silencedByLevel(_, _, completely: true)), (.unmute, .live):
         return .unchanged(device, observed.state)
-      case (.mute, .live(let control)), (.toggle, .live(let control)):
-        let muted = try mute(device, control, replacing: silenced)
+      case (.mute, _), (.toggle, .live):
+        let muted = try mute(device, observed.control, replacing: silenced)
         return .changed(device, from: observed.state, to: muted)
-      case (.unmute, .hardwareMuted(let elements)), (.toggle, .hardwareMuted(let elements)):
-        try write(
-          device, .mute, Dictionary(uniqueKeysWithValues: elements.map { ($0, Float32(0)) }))
+      case (_, .hardwareMuted(_, let muted, _)):
+        try write(device, .mute, Dictionary(uniqueKeysWithValues: muted.map { ($0, Float32(0)) }))
         return .changed(device, from: .hardwareMuted, to: .live)
-      case (.unmute, .silencedByLevel(let silence)), (.toggle, .silencedByLevel(let silence)):
+      case (_, .silencedByLevel(_, let silence, _)):
         try restore(silence, on: device)
         return .changed(device, from: .silencedByLevel, to: .live)
       }
@@ -160,18 +160,26 @@ struct Microphone {
     inputs.devices.first { $0.id == inputs.selected }
   }
 
-  /// The default input's mute and what undoing it needs.
+  /// The default input's mute and what undoing it needs. A mute that covers only some elements
+  /// reads as live, because the rest still records, yet unmute clears what remains of it.
   private enum Observed {
     case live(MicrophoneMuteControl)
-    case hardwareMuted([UInt32])
-    case silencedByLevel(MicrophoneSilence)
+    case hardwareMuted(MicrophoneMuteControl, muted: [UInt32], completely: Bool)
+    case silencedByLevel(MicrophoneMuteControl, MicrophoneSilence, completely: Bool)
+
+    var control: MicrophoneMuteControl {
+      switch self {
+      case .live(let control), .hardwareMuted(let control, _, _),
+        .silencedByLevel(let control, _, _):
+        control
+      }
+    }
 
     var state: MicrophoneMuteState {
       switch self {
-      case .live(.unsupported): .unsupported
-      case .live: .live
-      case .hardwareMuted: .hardwareMuted
-      case .silencedByLevel: .silencedByLevel
+      case .hardwareMuted(_, _, completely: true): .hardwareMuted
+      case .silencedByLevel(_, _, completely: true): .silencedByLevel
+      default: control == .unsupported ? .unsupported : .live
       }
     }
   }
@@ -179,14 +187,20 @@ struct Microphone {
   private typealias Silenced = (device: AudioDevice, silence: MicrophoneSilence)
 
   private func observe(_ device: AudioDevice, silenced: Silenced?) throws -> Observed {
-    if let silenced, silenced.device == device { return .silencedByLevel(silenced.silence) }
     let control = try hardware.control(device.id)
-    if case .hardware(let elements) = control,
-      try elements.allSatisfy({ try hardware.value(device.id, .mute, $0) != 0 })
-    {
-      return .hardwareMuted(elements)
+    if let silenced, silenced.device == device {
+      // Only the live input-level control can prove every element is at zero; without it the
+      // silence may be partial, so it must not be reported as complete.
+      var completely = false
+      if case .inputLevel(let elements) = control {
+        completely = try elements.allSatisfy { try hardware.value(device.id, .level, $0) == 0 }
+      }
+      return .silencedByLevel(control, silenced.silence, completely: completely)
     }
-    return .live(control)
+    guard case .hardware(let elements) = control else { return .live(control) }
+    let muted = try elements.filter { try hardware.value(device.id, .mute, $0) != 0 }
+    if muted.isEmpty { return .live(control) }
+    return .hardwareMuted(control, muted: muted, completely: muted.count == elements.count)
   }
 
   /// Macarchy's level silence while it still holds. A record whose device is absent waits for its
@@ -252,8 +266,31 @@ struct Microphone {
     for (element, level) in silence.levels where level > 0 {
       if try hardware.value(device.id, .level, element) == 0 { targets[element] = level }
     }
-    try write(device, .level, targets)
+    do {
+      try write(device, .level, targets)
+    } catch {
+      throw keepPending(targets, on: device, after: error)
+    }
     try record.remove()
+  }
+
+  /// After a partial restore the record keeps only the elements still at zero, so a level that
+  /// did return is not mistaken for the user's change and a later unmute can finish.
+  private func keepPending(
+    _ targets: [UInt32: Float32], on device: AudioDevice, after error: any Error
+  ) -> any Error {
+    do {
+      let pending = try targets.filter { try hardware.value(device.id, .level, $0.key) == 0 }
+      if pending.isEmpty {
+        try record.remove()
+      } else {
+        try record.write(MicrophoneSilence(identity: device.identity, levels: pending))
+      }
+      return error
+    } catch let cleanup {
+      return MicrophoneError(
+        "\(error); recording the levels still to restore also failed: \(cleanup)")
+    }
   }
 
   /// Every write is read back: a setter that returns noErr without taking effect fails, as in
