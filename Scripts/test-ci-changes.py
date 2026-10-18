@@ -29,6 +29,7 @@ class PathPolicyTests(unittest.TestCase):
             b"Documentation/theme-json.md", b"Themes/example/README.md",
             b"Desktop/defaults.toml", b"Environment/Brewfile",
             b"Keybindings/metadata.toml", b"Scripts/build-release-layout.sh",
+            b"Scripts/build-ttfx.sh", b"Scripts/release-common.zsh",
             b".github/workflows/ci.yml", b".github/workflows/release.yml",
             b".gitignore", b"new-directory/file", b"README.md\nother",
             b"README.md/file", b"readme.md", b"non-utf8-\xff",
