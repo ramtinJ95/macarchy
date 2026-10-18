@@ -14,6 +14,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   case clearClipboardHistory
   case keepAwake
   case startScreensaver
+  case toggleScreensaverPause
   case chooseMicrophone
   case toggleMicrophone
   case profile(ProfileEditAction)
@@ -26,8 +27,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
       + [.neovim] + MenuConfigurationAction.allCases.map(Self.configuration)
       + [
         .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage, .clipboardHistory,
-        .clearClipboardHistory, .keepAwake, .startScreensaver, .chooseMicrophone,
-        .toggleMicrophone,
+        .clearClipboardHistory, .keepAwake, .startScreensaver, .toggleScreensaverPause,
+        .chooseMicrophone, .toggleMicrophone,
       ]
       + MaintenanceAction.allCases.map(Self.maintenance)
   }
@@ -38,7 +39,9 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .appearance, .keybindings: "Appearance"
     case .screenshot, .annotate, .ocr, .prepareImage: "Capture"
     case .clipboardHistory, .clearClipboardHistory: "Clipboard"
-    case .keepAwake, .startScreensaver, .chooseMicrophone, .toggleMicrophone: "Controls"
+    case .keepAwake, .startScreensaver, .toggleScreensaverPause, .chooseMicrophone,
+      .toggleMicrophone:
+      "Controls"
     case .maintenance: "Maintenance"
     }
   }
@@ -55,6 +58,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .clearClipboardHistory: "Clear clipboard history"
     case .keepAwake: "Toggle keep-awake"
     case .startScreensaver: "Start screensaver"
+    case .toggleScreensaverPause: "Toggle screensaver pause"
     case .chooseMicrophone: "Choose microphone"
     case .toggleMicrophone: "Toggle microphone mute"
     case .profile(let action): action.title
@@ -80,6 +84,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
       "controls toggle keep awake keep-awake caffeinate sleep display idle always on screensaver lock"
     case .startScreensaver:
       "controls start screensaver saver ttfx animation animated text fullscreen idle away"
+    case .toggleScreensaverPause: "controls toggle screensaver saver pause resume idle away lock"
     case .chooseMicrophone: "controls choose select microphone mic input device default audio"
     case .toggleMicrophone: "controls toggle microphone mic mute unmute silence input privacy"
     case .profile(let action): "configure \(action.title) edit".lowercased()
@@ -163,7 +168,7 @@ struct ActionMenu: AsyncParsableCommand {
             profileArguments: profileArguments)
         case .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage,
           .clipboardHistory, .clearClipboardHistory, .keepAwake, .startScreensaver,
-          .chooseMicrophone, .toggleMicrophone:
+          .toggleScreensaverPause, .chooseMicrophone, .toggleMicrophone:
           _ = try Self.launchViewer(action, executableURL: runtime.executableURL)
         }
       },
@@ -212,6 +217,8 @@ struct ActionMenu: AsyncParsableCommand {
       process.arguments = ["clipboard", "clear", "--confirm", "--alert-on-error"]
     case .keepAwake: process.arguments = ["keep-awake", "toggle", "--alert-on-error"]
     case .startScreensaver: process.arguments = ["saver", "start", "--alert-on-error"]
+    case .toggleScreensaverPause:
+      process.arguments = ["saver", "toggle-pause", "--alert-on-error"]
     case .chooseMicrophone: process.arguments = ["mic", "choose", "--alert-on-error"]
     case .toggleMicrophone: process.arguments = ["mic", "toggle", "--alert-on-error"]
     case .maintenance, .profile, .neovim, .configuration:

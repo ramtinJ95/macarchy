@@ -86,6 +86,7 @@ struct ActionMenuTests {
     (.clearClipboardHistory, ["clipboard", "clear", "--confirm", "--alert-on-error"]),
     (.keepAwake, ["keep-awake", "toggle", "--alert-on-error"]),
     (.startScreensaver, ["saver", "start", "--alert-on-error"]),
+    (.toggleScreensaverPause, ["saver", "toggle-pause", "--alert-on-error"]),
     (.chooseMicrophone, ["mic", "choose", "--alert-on-error"]),
     (.toggleMicrophone, ["mic", "toggle", "--alert-on-error"]),
   ])
@@ -172,24 +173,38 @@ struct ActionMenuTests {
     #expect(
       Array(ActionMenuAction.allCases[(ocr + 1)...(ocr + 3)])
         == [.prepareImage, .clipboardHistory, .clearClipboardHistory])
-    for query in ["keep awake", "caffeinate", "always on", "idle lock"] {
+    for query in ["keep awake", "caffeinate", "always on"] {
       state.search(query)
       #expect(state.actions == [.keepAwake], Comment(rawValue: query))
     }
+    state.search("idle lock")
+    #expect(state.actions == [.keepAwake, .toggleScreensaverPause])
     #expect(ActionMenuAction.keepAwake.category == "Controls")
     #expect(ActionMenuAction.keepAwake.title == "Toggle keep-awake")
     for query in ["screensaver", "saver", "idle"] {
       state.search(query)
-      #expect(state.actions == [.keepAwake, .startScreensaver], Comment(rawValue: query))
+      #expect(
+        state.actions == [.keepAwake, .startScreensaver, .toggleScreensaverPause],
+        Comment(rawValue: query))
     }
-    for query in ["start screensaver", "ttfx", "animation", "away"] {
+    for query in ["start screensaver", "ttfx", "animation"] {
       state.search(query)
       #expect(state.actions == [.startScreensaver], Comment(rawValue: query))
     }
+    state.search("away")
+    #expect(state.actions == [.startScreensaver, .toggleScreensaverPause])
+    for query in ["pause", "resume", "screensaver pause", "away lock"] {
+      state.search(query)
+      #expect(state.actions == [.toggleScreensaverPause], Comment(rawValue: query))
+    }
     #expect(ActionMenuAction.startScreensaver.category == "Controls")
     #expect(ActionMenuAction.startScreensaver.title == "Start screensaver")
+    #expect(ActionMenuAction.toggleScreensaverPause.category == "Controls")
+    #expect(ActionMenuAction.toggleScreensaverPause.title == "Toggle screensaver pause")
     let keepAwake = try #require(ActionMenuAction.allCases.firstIndex(of: .keepAwake))
-    #expect(ActionMenuAction.allCases[keepAwake + 1] == .startScreensaver)
+    #expect(
+      Array(ActionMenuAction.allCases[(keepAwake + 1)...(keepAwake + 2)])
+        == [.startScreensaver, .toggleScreensaverPause])
     for query in ["choose microphone", "input device", "select mic"] {
       state.search(query)
       #expect(state.actions == [.chooseMicrophone], Comment(rawValue: query))
