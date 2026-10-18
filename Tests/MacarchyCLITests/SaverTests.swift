@@ -3,6 +3,10 @@ import Testing
 
 @testable import MacarchyCLI
 
+// Saver tests drive every process, panel, signal and terminal through injected seams: they never
+// start Kitty, open, ttfx or a shell, never signal a real process and never change the test
+// process's terminal. Files are regular files and directories in a temporary directory.
+
 struct SaverInstallationTests {
   @Test(arguments: ["present", "absent", "directory", "not-executable"])
   func engineMustBeARegularExecutableBesideTheBinDirectory(layout: String) throws {
@@ -99,7 +103,90 @@ struct SaverInstallationTests {
   }
 }
 
-func withTemporaryDirectory(_ body: (URL) throws -> Void) throws {
+struct SaverTextTests {
+  @Test func missingFileShowsTheBannerWithoutANotice() throws {
+    try withTemporaryDirectory { root in
+      let file = SaverText.fileURL(stateRoot: root)
+      #expect(file.path == root.appending(path: "screensaver.txt").path)
+      #expect(SaverText.read(file) == .absent)
+      #expect(SaverText.read(root.appending(path: "missing/screensaver.txt")) == .absent)
+
+      let text = SaverText.choose(.absent)
+      #expect(text == .banner(rejected: nil))
+      #expect(text.content == SaverText.bannerText)
+      #expect(text.notice(textFile: file) == nil)
+    }
+  }
+
+  @Test func customTextKeepsNewlinesAndTabsAndDropsOtherControlCharacters() throws {
+    try withTemporaryDirectory { root in
+      let file = SaverText.fileURL(stateRoot: root)
+      let contents = Data("Back at\t3 pm\r\n\u{1B}[31mbye\u{7}".utf8)
+      try contents.write(to: file)
+
+      let found = SaverText.read(file)
+
+      #expect(found == .contents(contents))
+      #expect(SaverText.choose(found) == .custom("Back at\t3 pm\n[31mbye"))
+      #expect(SaverText.choose(found).notice(textFile: file) == nil)
+    }
+  }
+
+  @Test func textUpToTheLimitIsUsed() throws {
+    try withTemporaryDirectory { root in
+      let file = SaverText.fileURL(stateRoot: root)
+      try Data(repeating: 0x61, count: SaverText.maximumSize).write(to: file)
+
+      let text = SaverText.choose(SaverText.read(file))
+
+      #expect(text.content.count == SaverText.maximumSize)
+    }
+  }
+
+  @Test(arguments: [
+    "symbolic-link", "directory", "too-large", "invalid-utf8", "blank", "unreadable",
+  ])
+  func unusableFileFallsBackToTheBannerAndSaysWhy(kind: String) throws {
+    try withTemporaryDirectory { root in
+      let file = SaverText.fileURL(stateRoot: root)
+      let found: SaverTextFile
+      switch kind {
+      // The reader opens without following links; tests never create one.
+      case "symbolic-link": found = .symbolicLink
+      case "directory":
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        found = SaverText.read(file)
+        #expect(found == .notRegularFile)
+      case "too-large":
+        try Data(repeating: 0x61, count: SaverText.maximumSize + 1).write(to: file)
+        found = SaverText.read(file)
+        #expect(found == .tooLarge)
+      case "invalid-utf8": found = .contents(Data([0x48, 0xFF, 0xFE]))
+      case "blank": found = .contents(Data(" \n\t\u{7}".utf8))
+      default: found = .unreadable("errno 13")
+      }
+      let reason =
+        switch kind {
+        case "symbolic-link": "it is a symbolic link"
+        case "directory": "it is not a regular file"
+        case "too-large": "it is larger than 64 KiB"
+        case "invalid-utf8": "it is not valid UTF-8"
+        case "blank": "it contains no visible text"
+        default: "it cannot be read (errno 13)"
+        }
+
+      let text = SaverText.choose(found)
+
+      #expect(text == .banner(rejected: reason))
+      #expect(text.content == SaverText.bannerText)
+      #expect(
+        text.notice(textFile: file)
+          == "Showing the Macarchy banner: \(file.path) is not used because \(reason).")
+    }
+  }
+}
+
+private func withTemporaryDirectory(_ body: (URL) throws -> Void) throws {
   let root = FileManager.default.temporaryDirectory.appending(
     path: "macarchy-saver-\(UUID().uuidString.lowercased())", directoryHint: .isDirectory)
   try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
