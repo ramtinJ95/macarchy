@@ -114,6 +114,7 @@ struct ActionMenuTests {
 
   @Test func searchSelectionAndEmptyDispatch() {
     var state = ActionMenuState()
+    #expect(state.notice == "Configure · Appearance · Capture · Maintenance")
     #expect(state.selectedAction == .profile(.portable))
     state.move(by: 1)
     #expect(state.selectedAction == .profile(.machine))
@@ -123,8 +124,10 @@ struct ActionMenuTests {
     #expect(state.selectedAction == .profile(.portable))
     state.search("  WALLPAPER colors ")
     #expect(state.actions == [.appearance])
+    #expect(state.notice == "Configure · Appearance · Capture · Maintenance")
     state.search("missing")
     #expect(state.selectedAction == nil)
+    #expect(state.notice == "No matching actions")
     state.move(by: 1)
     #expect(state.selectedAction == nil)
     state.search("shortcuts")
