@@ -11,6 +11,7 @@ archive=${1:A}
 checksum=${2:A}
 revision=$3
 script_directory=${0:A:h}
+package_name=${archive:t:r:r}
 temporary_directory=$(mktemp -d "${TMPDIR:-/tmp}/macarchy-archive-validation.XXXXXX")
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
 
@@ -25,44 +26,40 @@ expect_rejected() {
   fi
 }
 
+# Repacks the archive after running <command...> inside its layout, with a valid
+# checksum, and fails unless validation rejects it.
+expect_layout_rejected() {
+  local fixture=$1 description=$2
+  shift 2
+  mkdir "$temporary_directory/$fixture" "$temporary_directory/$fixture/unpacked"
+  /usr/bin/tar -xzf "$archive" -C "$temporary_directory/$fixture/unpacked"
+  (
+    cd "$temporary_directory/$fixture/unpacked/$package_name"
+    "$@"
+  )
+  COPYFILE_DISABLE=1 /usr/bin/tar -czf "$temporary_directory/$fixture/${archive:t}" \
+    -C "$temporary_directory/$fixture/unpacked" "$package_name"
+  (
+    cd "$temporary_directory/$fixture"
+    /usr/bin/shasum -a 256 "${archive:t}" > "${checksum:t}"
+  )
+  expect_rejected "$fixture" "$description"
+}
+
 mkdir "$temporary_directory/tampered"
 cp "$archive" "$temporary_directory/tampered/${archive:t}"
 cp "$checksum" "$temporary_directory/tampered/${checksum:t}"
 printf 'tampered\n' >> "$temporary_directory/tampered/${archive:t}"
 expect_rejected tampered "a checksum mismatch"
 
-mkdir "$temporary_directory/malformed" "$temporary_directory/unpacked"
-/usr/bin/tar -xzf "$archive" -C "$temporary_directory/unpacked"
-package_name=${archive:t:r:r}
-rm "$temporary_directory/unpacked/$package_name/share/doc/macarchy/LICENSE"
-COPYFILE_DISABLE=1 /usr/bin/tar -czf \
-  "$temporary_directory/malformed/${archive:t}" \
-  -C "$temporary_directory/unpacked" \
-  "$package_name"
-(
-  cd "$temporary_directory/malformed"
-  /usr/bin/shasum -a 256 "${archive:t}" > "${checksum:t}"
-)
-expect_rejected malformed "a missing release resource"
+expect_layout_rejected malformed "a missing release resource" \
+  rm share/doc/macarchy/LICENSE
 
-# Independently corrupt the new helper, preserving valid archive checksums.
-for defect in missing mode signature; do
-  fixture="$temporary_directory/focus-$defect"
-  mkdir "$fixture" "$fixture/unpacked"
-  /usr/bin/tar -xzf "$archive" -C "$fixture/unpacked"
-  helper="$fixture/unpacked/$package_name/bin/macarchy-focus-ring"
-  case "$defect" in
-    missing) rm "$helper" ;;
-    mode) chmod 0744 "$helper" ;;
-    signature) /usr/bin/codesign --remove-signature "$helper" ;;
-  esac
-  COPYFILE_DISABLE=1 /usr/bin/tar -czf "$fixture/${archive:t}" \
-    -C "$fixture/unpacked" "$package_name"
-  (
-    cd "$fixture"
-    /usr/bin/shasum -a 256 "${archive:t}" > "${checksum:t}"
-  )
-  expect_rejected "focus-$defect" "a focus helper with invalid $defect"
-done
+# Independently corrupt the new helper.
+expect_layout_rejected focus-missing "a missing focus helper" rm bin/macarchy-focus-ring
+expect_layout_rejected focus-mode "a focus helper with invalid mode" \
+  chmod 0744 bin/macarchy-focus-ring
+expect_layout_rejected focus-signature "a focus helper with an invalid signature" \
+  /usr/bin/codesign --remove-signature bin/macarchy-focus-ring
 
 print "release archive rejection tests passed"
