@@ -44,7 +44,7 @@ struct KeepAwakeCommand: ParsableCommand {
     @Option(
       name: .customLong("for"),
       help: "Turn off automatically after 1m to 24h, such as 30m, 2h or 1h30m.",
-      transform: { try KeepAwake.parseDuration($0) })
+      transform: { try KeepAwake.duration.parse($0) })
     var duration: Duration?
 
     @OptionGroup var options: Options

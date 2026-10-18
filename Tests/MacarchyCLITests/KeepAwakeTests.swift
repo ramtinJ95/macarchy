@@ -150,14 +150,21 @@ struct KeepAwakeTests {
     ("1m", 60), ("30m", 1_800), ("2h", 7_200), ("1h30m", 5_400), ("24h", 86_400),
   ])
   func durationsAcceptMinutesAndHoursUpToADay(text: String, seconds: Int) throws {
-    #expect(try KeepAwake.parseDuration(text) == .seconds(seconds))
+    #expect(try KeepAwake.duration.parse(text) == .seconds(seconds))
   }
 
   @Test(arguments: [
     "0m", "-5m", "25h", "24h1m", "1441m", "garbage", "", "30", "m", "30m1h", "1h1h", "1.5h",
   ])
   func durationsRejectAnythingElse(text: String) {
-    #expect(throws: ValidationError.self) { try KeepAwake.parseDuration(text) }
+    #expect(throws: ValidationError.self) { try KeepAwake.duration.parse(text) }
+  }
+
+  @Test func durationErrorsNameTheOptionAndItsRange() {
+    let error = #expect(throws: ValidationError.self) { try KeepAwake.duration.parse("25h") }
+    #expect(
+      error?.message
+        == "--for takes a duration from 1m to 24h, such as 30m, 2h or 1h30m; got '25h'")
   }
 
   @Test func commandLineParsesTheOptionalBound() throws {

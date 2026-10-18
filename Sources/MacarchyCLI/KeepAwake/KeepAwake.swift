@@ -53,6 +53,7 @@ struct KeepAwake {
   /// With the live 50 ms pause, about two seconds for caffeinate to exit after SIGTERM.
   static let exitPolls = 40
   static let effect = "The display stays on; the idle screensaver and idle lock will not start."
+  static let duration = DurationOption(flag: "--for", maximumMinutes: 24 * 60)
   private static let lock = ProcessScopedFileLock<KeepAwakeError>(
     filename: "keep-awake.lock",
     cannotCreateRunDirectory: { url, error in
@@ -157,30 +158,6 @@ struct KeepAwake {
       polls += 1
     }
     try record.remove()
-  }
-
-  /// Accepts `<n>h`, `<n>m` or `<n>h<n>m` from one minute to 24 hours.
-  static func parseDuration(_ text: String) throws -> Duration {
-    let invalid = ValidationError(
-      "--for takes a duration from 1m to 24h, such as 30m, 2h or 1h30m; got '\(text)'")
-    let scale: [Character: Int] = ["h": 60, "m": 1]
-    var minutes = 0
-    var digits = ""
-    var lastUnit: Character?
-    for character in text {
-      if character.isASCII, character.isNumber {
-        digits.append(character)
-        continue
-      }
-      guard let unit = scale[character], let value = Int(digits), digits.count <= 4,
-        lastUnit == nil || (lastUnit == "h" && character == "m")
-      else { throw invalid }
-      minutes += value * unit
-      digits = ""
-      lastUnit = character
-    }
-    guard digits.isEmpty, lastUnit != nil, (1...24 * 60).contains(minutes) else { throw invalid }
-    return .seconds(minutes * 60)
   }
 }
 
