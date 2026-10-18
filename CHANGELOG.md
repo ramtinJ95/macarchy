@@ -9,6 +9,10 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The release archive bundles the ttfx text-animation engine (MIT) at
+  `libexec/ttfx`, built from a pinned upstream commit, with its licences in
+  `share/doc/macarchy/ttfx/`. `macarchy saver status` reports whether the engine
+  and Kitty are present. Source builds report the engine as missing.
 - `macarchy keep-awake` and the **Toggle keep-awake** menu action keep the display
   awake and stop the idle screensaver and idle lock from starting until you turn
   keep-awake off. `keep-awake on --for` ends the session after 1 minute to 24 hours.
