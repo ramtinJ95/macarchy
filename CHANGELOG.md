@@ -16,6 +16,16 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keep-awake sessions. While keep-awake is on, a cup left of the managed bar clock
   shows when it ends. Click the cup to turn keep-awake off. To activate the cup
   after upgrading, review and apply the generated bar configuration.
+- `macarchy mic` and the **Choose microphone** and **Toggle microphone mute** menu
+  actions choose the default microphone and mute it. Mute uses the microphone's own
+  hardware mute when it has one. Otherwise Macarchy sets its input level to zero,
+  restores the level on unmute, and labels the result "silenced by input level, not
+  a hardware mute". Macarchy reports a microphone with neither control and changes
+  nothing. Both act on the system default input only. Apps that choose their own
+  input are not affected, so neither is a privacy guarantee. While the default
+  microphone is muted, a slashed microphone left of the managed bar clock shows how
+  it is muted. Click it to unmute. To activate the icon after upgrading, review and
+  apply the generated bar configuration.
 
 ## [0.13.1] - 2026-10-17
 
