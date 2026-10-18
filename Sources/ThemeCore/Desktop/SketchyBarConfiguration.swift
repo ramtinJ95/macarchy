@@ -119,7 +119,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let microphoneMutedIcon = "\u{1002B3}"
   /// SF Symbols mic.fill, the live counterpart of `microphoneMutedIcon`.
   package static let microphoneLiveIcon = "\u{1002B1}"
-  /// Idle screensaver changes trigger this event so the pause indicator refreshes before its timer.
+  /// Idle screensaver changes trigger this event so its toggle refreshes before its timer.
   package static let saverIdleEvent = "macarchy_saver_idle_changed"
   /// A monochrome pause sign: the text variation selector stops emoji presentation.
   package static let saverPausedIcon = "⏸\u{FE0E}"
@@ -270,20 +270,20 @@ package struct SketchyBarConfigurationComposer: Sendable {
       .clock, "keep-awake",
       clockCompanion(
         item: "macarchy.keep-awake", helper: "_keep-awake-indicator",
-        options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
-        failure: "Keep-awake indicator failed; see SketchyBar stderr for details."))
+        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --muted \"$MACARCHY_MUTED_COLOR\"",
+        failure: "Keep-awake toggle failed; see SketchyBar stderr for details."))
     addPlugin(
       .clock, "microphone",
       clockCompanion(
         item: "macarchy.microphone", helper: "_microphone-indicator",
-        options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
-        failure: "Microphone indicator failed; see SketchyBar stderr for details."))
+        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --muted \"$MACARCHY_MUTED_COLOR\"",
+        failure: "Microphone toggle failed; see SketchyBar stderr for details."))
     addPlugin(
       .clock, "saver-paused",
       clockCompanion(
         item: "macarchy.saver-paused", helper: "_saver-paused-indicator",
-        options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
-        failure: "Screensaver pause indicator failed; see SketchyBar stderr for details."))
+        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --muted \"$MACARCHY_MUTED_COLOR\"",
+        failure: "Idle screensaver toggle failed; see SketchyBar stderr for details."))
     addPlugin(
       .volume, "volume",
       SketchyBarVolumeScript.render(
@@ -512,16 +512,16 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.update.detail popup.macarchy.update --set macarchy.update.detail icon.drawing=off label='Checking Macarchy updates…'",
             "\"$SKETCHYBAR\" --subscribe macarchy.update mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke",
             "\"$SKETCHYBAR\" --add event \(Self.keepAwakeEvent)",
-            "\"$SKETCHYBAR\" --add item macarchy.keep-awake \(position.rawValue) --set macarchy.keep-awake drawing=off icon='\(Self.keepAwakeIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/keep-awake.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.keep-awake \(position.rawValue) --set macarchy.keep-awake drawing=on icon='\(Self.keepAwakeIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_MUTED_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/keep-awake.sh\" popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.keep-awake.detail popup.macarchy.keep-awake --set macarchy.keep-awake.detail icon.drawing=off label='Keep-awake is off.'",
             "\"$SKETCHYBAR\" --subscribe macarchy.keep-awake mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.keepAwakeEvent)",
             "\"$SKETCHYBAR\" --add event \(Self.microphoneEvent)",
-            "\"$SKETCHYBAR\" --add item macarchy.microphone \(position.rawValue) --set macarchy.microphone drawing=off icon='\(Self.microphoneMutedIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/microphone.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.microphone \(position.rawValue) --set macarchy.microphone drawing=on icon='\(Self.microphoneLiveIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_MUTED_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/microphone.sh\" popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.microphone.detail popup.macarchy.microphone --set macarchy.microphone.detail icon.drawing=off label='Microphone is live.'",
             "\"$SKETCHYBAR\" --subscribe macarchy.microphone mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.microphoneEvent)",
             "\"$SKETCHYBAR\" --add event \(Self.saverIdleEvent)",
-            "\"$SKETCHYBAR\" --add item macarchy.saver-paused \(position.rawValue) --set macarchy.saver-paused drawing=off icon='\(Self.saverPausedIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/saver-paused.sh\" popup.align=center",
-            "\"$SKETCHYBAR\" --add item macarchy.saver-paused.detail popup.macarchy.saver-paused --set macarchy.saver-paused.detail icon.drawing=off label='Idle screensaver is not paused.'",
+            "\"$SKETCHYBAR\" --add item macarchy.saver-paused \(position.rawValue) --set macarchy.saver-paused drawing=on icon='\(Self.saverIdleIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_MUTED_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/saver-paused.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.saver-paused.detail popup.macarchy.saver-paused --set macarchy.saver-paused.detail icon.drawing=off label='Idle screensaver is off.'",
             "\"$SKETCHYBAR\" --subscribe macarchy.saver-paused mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.saverIdleEvent)",
           ]
         case .toggle:
