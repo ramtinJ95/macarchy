@@ -65,8 +65,18 @@ struct ActionMenuState {
   private(set) var actions = ActionMenuAction.allCases
   private(set) var selection: Int? = 0
 
+  private static let categories: String = {
+    var seen = Set<String>()
+    return ActionMenuAction.allCases.map(\.category).filter { seen.insert($0).inserted }
+      .joined(separator: " · ")
+  }()
+
   var selectedAction: ActionMenuAction? {
     selection.map { actions[$0] }
+  }
+
+  var notice: String {
+    actions.isEmpty ? "No matching actions" : Self.categories
   }
 
   mutating func search(_ query: String) {
@@ -238,8 +248,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
   private var dispatched: ActionMenuAction?
   private let search = NSSearchField()
   private let table = ActionMenuTable()
-  private let notice = NSTextField(
-    labelWithString: "Configure · Appearance · Capture · Maintenance")
+  private let notice = NSTextField(labelWithString: ActionMenuState().notice)
   private let hint = NSTextField(labelWithString: "")
   private let fieldEditor = ActionMenuFieldEditor()
 
@@ -357,7 +366,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
     table.reloadData()
     table.selectRowIndexes(
       selection.map { IndexSet(integer: $0) } ?? [], byExtendingSelection: false)
-    notice.stringValue = state.actions.isEmpty ? "No matching actions" : "Appearance · Maintenance"
+    notice.stringValue = state.notice
   }
 
   func controlTextDidBeginEditing(_ notification: Notification) {
