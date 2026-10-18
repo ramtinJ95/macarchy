@@ -1,5 +1,11 @@
 # Shared release input checks. Source after `set -eu`; failures exit 65.
 
+# ttfx v0.5.0 (MIT), the screensaver engine bundled in the release archive. The full
+# commit ID is the integrity pin: Scripts/build-ttfx.sh refuses any other checkout.
+ttfx_repository=https://github.com/omacom/ttfx.git
+ttfx_revision=112ebb310b848d8f1251a5c2919a9cd5a5c78e18
+ttfx_version=0.5.0
+
 # Reads the stable semantic version from VERSION.txt into $version.
 read_release_version() {
   local version_file=$1
