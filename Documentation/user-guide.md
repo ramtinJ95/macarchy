@@ -98,7 +98,7 @@ macarchy setup doctor
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding
-viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, keep-awake and maintenance:
+viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, keep-awake, microphone controls and maintenance:
 use j/k or arrows to navigate, / to focus search, and Return to open. In search,
 letters type normally; Escape returns to the list without clearing the filter.
 Escape from the list dismisses. A highlighted row and mode hint show keyboard
@@ -469,6 +469,71 @@ If keep-awake does not behave as expected, check these points:
   hold their own assertions.
 - If turning keep-awake off fails, the session stays on and the command reports the
   error. Menu launches show the error in an alert.
+- The bar icon is part of the generated bar configuration. After upgrading, use
+  **Review & apply configuration** to activate it. Installing the upgrade alone
+  does not reload the bar. Removing the clock module also removes the icon.
+- If the icon shows `!`, its helper failed. SketchyBar's stderr log has the details.
+
+### Control the microphone
+
+To change which microphone the Mac uses, choose **Choose microphone** in the action
+menu. It lists every microphone with the current default selected. **Choose** makes
+your pick the default, and **Cancel** changes nothing. To mute or unmute the default
+microphone, choose **Toggle microphone mute**. You can also run:
+
+```sh
+macarchy mic list                # * marks the default; shows how each one mutes
+macarchy mic select "USB Mic"    # Exact name, or the identity from `mic list --json`
+macarchy mic mute
+macarchy mic unmute
+macarchy mic toggle
+macarchy mic status --json
+```
+
+Selecting and muting act on the system default microphone only. Apps that choose
+their own microphone in their settings keep using it, so muting here does not
+silence them. Check an app's own audio settings when it matters. Neither kind of
+mute is a privacy guarantee.
+
+Macarchy mutes in one of two ways and always says which:
+
+- **Hardware mute.** When the microphone has its own mute control, Macarchy turns
+  it on, for example `Microphone "USB Mic" muted (hardware mute).` Unmuting turns it
+  off.
+- **Silenced by input level, not a hardware mute.** When the microphone has no mute
+  control but its input level can be changed, Macarchy saves the level, sets it to
+  zero, and restores the saved level when you unmute. Any app, or the input volume
+  in **System Settings** › **Sound**, can raise the level again.
+
+A microphone with neither control is reported as `this microphone has no mute or
+input-level control`, and Macarchy changes nothing.
+
+If you raise a silenced level yourself, for example in **System Settings**,
+Macarchy treats the microphone as live again. It drops the saved level and never
+overwrites your change. Macarchy keeps a saved level for one microphone at a time,
+so muting a different microphone first restores the one it silenced.
+
+While the default microphone is muted, a slashed microphone appears left of the bar
+clock. Hover over it to see which microphone is muted and how. Click it to unmute.
+
+If the microphone does not behave as expected, check these points:
+
+- `macarchy mic status` reports the default microphone and whether it is muted.
+  `macarchy mic list` shows how each microphone can be muted.
+- If an app still hears you while the microphone is muted, the app probably uses
+  its own microphone setting rather than the system default.
+- If a command reports that a change was accepted but not applied, the microphone
+  ignored the request. When this happens partway through silencing by level,
+  Macarchy restores the levels it already changed. Menu launches show the error in
+  an alert.
+- If you disconnect a silenced microphone, Macarchy keeps its saved level. After you
+  reconnect it, unmuting restores that level while it is the default. If you mute
+  another microphone while the first is still disconnected, the saved level is
+  replaced, and you must raise the reconnected microphone's level yourself in
+  **System Settings**.
+- The saved level is stored in `~/.config/macarchy/run/microphone-silence.json`.
+  Macarchy ignores this file if it is damaged, and then you must raise the level
+  yourself.
 - The bar icon is part of the generated bar configuration. After upgrading, use
   **Review & apply configuration** to activate it. Installing the upgrade alone
   does not reload the bar. Removing the clock module also removes the icon.
@@ -867,10 +932,12 @@ fixes its position unless you set `automatic_clock = true` in `[sketchybar]`.
 This enables monitor-dependent placement without changing your module arrays
 (for example, when omitting media). `false` fixes the array position; omission
 preserves the inherited-versus-explicit behavior. Click the clock for a
-four-second ISO-week preview. The clock module also places two indicators beside
-the clock. The circular arrow on its right appears when a newer Macarchy release is
-known. The cup on its left appears while keep-awake is on. See
-[Keep the Mac awake](#keep-the-mac-awake).
+four-second ISO-week preview. The clock module also places up to three indicators
+beside the clock. The circular arrow on its right appears when a newer Macarchy
+release is known. On its left, the cup appears while keep-awake is on, and a slashed
+microphone appears while the default microphone is muted. See
+[Keep the Mac awake](#keep-the-mac-awake) and
+[Control the microphone](#control-the-microphone).
 
 Volume supports scrolling (Ctrl for fine steps), a slider, safe output-device
 selection, and right-click Sound settings. Wi-Fi never requests Location access:
