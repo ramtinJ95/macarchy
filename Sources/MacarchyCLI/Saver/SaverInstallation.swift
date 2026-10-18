@@ -64,14 +64,14 @@ enum SaverKitty: Equatable, Sendable {
   }
 }
 
-/// What `macarchy saver status` reports.
+/// What `macarchy saver status` reports. It never includes the saver text itself.
 struct SaverStatus: Equatable, Sendable {
   let engine: SaverEngine
   let kitty: SaverKitty
-
-  static func inspect(executable: URL) -> Self {
-    Self(engine: .locate(executable: executable), kitty: .inspect())
-  }
+  let textFile: URL
+  let text: SaverText
+  /// Sessions whose runner still matches its record.
+  let sessions: [SaverRunnerRecord]
 
   var message: String {
     let engineLine =
@@ -86,7 +86,22 @@ struct SaverStatus: Equatable, Sendable {
       case .present(let version):
         "Kitty: \(version.map { "\($0) " } ?? "")at \(SaverKitty.application.path)"
       }
-    return [engineLine, kittyLine, "Screensaver: not running"].joined(separator: "\n")
+    let textLine =
+      switch text {
+      case .custom: "Text: \(textFile.path)"
+      case .banner(.none): "Text: the Macarchy banner (add \(textFile.path) to show your own)"
+      case .banner(.some(let rejected)):
+        "Text: the Macarchy banner; \(textFile.path) is not used because \(rejected)"
+      }
+    let sessionLine =
+      if sessions.isEmpty {
+        "Screensaver: not running"
+      } else if sessions.allSatisfy({ $0.display == .main }) {
+        "Screensaver: running; it covers the main display only"
+      } else {
+        "Screensaver: running on \(sessions.map(\.display.label).joined(separator: ", "))"
+      }
+    return [engineLine, kittyLine, textLine, sessionLine].joined(separator: "\n")
   }
 
   func renderJSON() throws -> String {
@@ -107,9 +122,21 @@ struct SaverStatus: Equatable, Sendable {
       kittyDocument["remedy"] = NSNull()
       if let version { kittyDocument["version"] = version }
     }
+    var textDocument: [String: Any] = [
+      "path": textFile.path, "source": "custom", "rejected": NSNull(),
+    ]
+    if case .banner(let rejected) = text {
+      textDocument["source"] = "banner"
+      if let rejected { textDocument["rejected"] = rejected }
+    }
+    let sessionDocuments: [[String: Any]] = sessions.map { session in
+      var document: [String: Any] = ["display": NSNull(), "pid": Int(session.runner.pid)]
+      if let output = session.output { document["display"] = output }
+      return document
+    }
     let document: [String: Any] = [
-      "engine": engineDocument, "kitty": kittyDocument, "running": false,
-      "sessions": [Any](),
+      "engine": engineDocument, "kitty": kittyDocument, "text": textDocument,
+      "running": !sessions.isEmpty, "sessions": sessionDocuments,
     ]
     let data = try JSONSerialization.data(
       withJSONObject: document, options: [.sortedKeys, .withoutEscapingSlashes])
