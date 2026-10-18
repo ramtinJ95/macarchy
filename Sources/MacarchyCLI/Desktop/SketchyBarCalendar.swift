@@ -27,6 +27,28 @@ struct ClockCompanion: Sendable {
     side: .left, plugin: "keep-awake", updateFrequency: 30,
     events: hoverEvents + [KeepAwake.barEvent])
   static let all = [update, keepAwake]
+
+  /// Asks a running bar to refresh a companion now. Its 30-second timer is the backstop, so a
+  /// failed hint only warns and the owning state stays authoritative.
+  static func hintBar(
+    event: String, processRunner: ProcessRunner, installed: Bool, warn: (String) -> Void
+  ) {
+    guard installed else { return }
+    let result = try? processRunner.run(
+      .init(
+        executableURL: SketchyBarCoreRuntimeVerifier.controlURL,
+        arguments: ["--trigger", event], timeout: 1))
+    if result?.terminationStatus == 0 { return }
+    warn("SketchyBar was not notified of \(event); the indicator refreshes within 30 seconds.")
+  }
+
+  static func hintRunningBar(event: String) {
+    hintBar(
+      event: event, processRunner: .live,
+      installed: FileManager.default.isExecutableFile(
+        atPath: SketchyBarCoreRuntimeVerifier.controlURL.path),
+      warn: { try? FileHandle.standardError.write(contentsOf: Data("\($0)\n".utf8)) })
+  }
 }
 
 struct SketchyBarCalendar {
