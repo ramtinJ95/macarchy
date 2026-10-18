@@ -74,35 +74,42 @@ struct SketchyBarRuntimeTests {
         == (["hidden", "warning"].contains(condition) ? .converged : .drifted))
   }
 
-  @Test(arguments: [
-    "hidden", "visible", "position", "script", "frequency", "events", "undeclared-event", "popup",
-  ])
-  func keepAwakeIndicatorRequiresWiringIncludingItsChangeEvent(condition: String) throws {
+  @Test(
+    arguments: [ClockCompanion.keepAwake, .microphone],
+    [
+      "hidden", "visible", "position", "script", "frequency", "events", "undeclared-event",
+      "popup",
+    ])
+  func eventDrivenCompanionRequiresWiringIncludingItsChangeEvent(
+    companion: ClockCompanion, condition: String
+  ) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let event = try #require(companion.events.last)
+    let bit = try #require(Self.changeEventBits[event])
     let verifier = fixture.verifier { request in
       let result = Self.dynamicResult(request, fixture: fixture, indices: [1])
       var output = result.output
       switch (request.arguments, condition) {
-      case (["--query", SketchyBarKeepAwakeIndicator.item], "visible"):
+      case (["--query", companion.item], "visible"):
         output = output.replacingOccurrences(
           of: "\"drawing\":\"off\"", with: "\"drawing\":\"on\"",
           range: output.range(of: "\"drawing\":\"off\""))
-      case (["--query", SketchyBarKeepAwakeIndicator.item], "position"):
+      case (["--query", companion.item], "position"):
         output = output.replacingOccurrences(
           of: "\"position\":\"right\"", with: "\"position\":\"left\"")
-      case (["--query", SketchyBarKeepAwakeIndicator.item], "script"):
-        output = output.replacingOccurrences(of: "plugins/keep-awake.sh", with: "plugins/wrong.sh")
-      case (["--query", SketchyBarKeepAwakeIndicator.item], "frequency"):
+      case (["--query", companion.item], "script"):
+        output = output.replacingOccurrences(
+          of: "plugins/\(companion.plugin).sh", with: "plugins/wrong.sh")
+      case (["--query", companion.item], "frequency"):
         output = output.replacingOccurrences(of: "\"update_freq\":30", with: "\"update_freq\":0")
-      case (["--query", SketchyBarKeepAwakeIndicator.item], "events"):
-        output = output.replacingOccurrences(of: "\"update_mask\":489", with: "\"update_mask\":233")
-      case (["--query", SketchyBarKeepAwakeIndicator.item], "popup"):
+      case (["--query", companion.item], "events"):
         output = output.replacingOccurrences(
-          of: "[\"macarchy.keep-awake.detail\"]", with: "[]")
+          of: "\"update_mask\":\(233 + bit)", with: "\"update_mask\":233")
+      case (["--query", companion.item], "popup"):
+        output = output.replacingOccurrences(of: "[\"\(companion.detailItem)\"]", with: "[]")
       case (["--query", "events"], "undeclared-event"):
-        output = output.replacingOccurrences(
-          of: ",\"macarchy_keep_awake_changed\":{\"bit\":256}", with: "")
+        output = output.replacingOccurrences(of: ",\"\(event)\":{\"bit\":\(bit)}", with: "")
       default: break
       }
       return .init(terminationStatus: result.terminationStatus, output: output)
@@ -112,8 +119,12 @@ struct SketchyBarRuntimeTests {
         == (["hidden", "visible"].contains(condition) ? .converged : .drifted))
   }
 
-  @Test(arguments: ["complete", "without-keep-awake", "detail-missing", "without-clock"])
-  func keepAwakeEvidenceIsOptionalButCompleteBesideAClock(inventory: String) throws {
+  @Test(
+    arguments: [ClockCompanion.keepAwake, .microphone],
+    ["complete", "without-companion", "detail-missing", "without-clock"])
+  func eventDrivenCompanionEvidenceIsOptionalButCompleteBesideAClock(
+    companion: ClockCompanion, inventory: String
+  ) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let current = fixture.verifier {
@@ -122,8 +133,8 @@ struct SketchyBarRuntimeTests {
     let absent =
       [
         "complete": [],
-        "without-keep-awake": ["macarchy.keep-awake", "macarchy.keep-awake.detail"],
-        "detail-missing": ["macarchy.keep-awake.detail"],
+        "without-companion": [companion.item, companion.detailItem],
+        "detail-missing": [companion.detailItem],
         "without-clock": [
           "macarchy.clock", "macarchy.clock.preview", "macarchy.update", "macarchy.update.detail",
         ],
@@ -136,7 +147,7 @@ struct SketchyBarRuntimeTests {
       clockLabelPresent: inventory != "without-clock",
       volumeLevelPresent: current.volumeLevelPresent ?? false)
     #expect(current.status == .converged)
-    #expect(evidence.isValidEvidence == ["complete", "without-keep-awake"].contains(inventory))
+    #expect(evidence.isValidEvidence == ["complete", "without-companion"].contains(inventory))
   }
 
   @Test(arguments: ["custom", "theme-drift", "not-ready"])
@@ -396,8 +407,9 @@ struct SketchyBarRuntimeTests {
     #expect(
       inspection.items == [
         "macarchy.clock", "macarchy.clock.preview", "macarchy.keep-awake",
-        "macarchy.keep-awake.detail", "macarchy.space.1", "macarchy.space.2",
-        "macarchy.theme.ready", "macarchy.update", "macarchy.update.detail",
+        "macarchy.keep-awake.detail", "macarchy.microphone", "macarchy.microphone.detail",
+        "macarchy.space.1", "macarchy.space.2", "macarchy.theme.ready", "macarchy.update",
+        "macarchy.update.detail",
       ])
   }
 
@@ -413,12 +425,13 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail"]}
+             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail"]}
             """
         )
       case ["--query", "macarchy.clock.preview"], ["--query", "events"],
         ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"],
-        ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"]:
+        ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"],
+        ["--query", "macarchy.microphone"], ["--query", "macarchy.microphone.detail"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.clock"]:
         return ProcessResult(
@@ -488,13 +501,14 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail"]}
+             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail"]}
             """
         )
       case ["--query", "macarchy.clock.preview"], ["--query", "events"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"],
-        ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"]:
+        ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"],
+        ["--query", "macarchy.microphone"], ["--query", "macarchy.microphone.detail"]:
         let result = Self.dynamicResult(request, fixture: fixture, indices: [])
         return .init(
           terminationStatus: 0,
@@ -1015,7 +1029,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.space.1"\(extra)]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.space.1"\(extra)]}
               """
           )
         }
@@ -1054,7 +1068,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.space.1","\(extra)"]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.space.1","\(extra)"]}
               """
           )
         }
@@ -1137,7 +1151,7 @@ struct SketchyBarRuntimeTests {
     #expect(waits.withLock { $0 } == 20)
   }
 
-  @Test(arguments: ["current", "without-keep-awake", "without-companions"])
+  @Test(arguments: ["current", "before-microphone", "before-keep-awake", "before-companions"])
   func rollbackSettleRestoresThePreviousObservableRuntime(generation: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1147,10 +1161,14 @@ struct SketchyBarRuntimeTests {
     let absent =
       [
         "current": [],
-        "without-keep-awake": ["macarchy.keep-awake", "macarchy.keep-awake.detail"],
-        "without-companions": [
-          "macarchy.keep-awake", "macarchy.keep-awake.detail", "macarchy.update",
-          "macarchy.update.detail",
+        "before-microphone": ["macarchy.microphone", "macarchy.microphone.detail"],
+        "before-keep-awake": [
+          "macarchy.keep-awake", "macarchy.keep-awake.detail", "macarchy.microphone",
+          "macarchy.microphone.detail",
+        ],
+        "before-companions": [
+          "macarchy.keep-awake", "macarchy.keep-awake.detail", "macarchy.microphone",
+          "macarchy.microphone.detail", "macarchy.update", "macarchy.update.detail",
         ],
       ][generation]!
     let expected = SketchyBarCoreRuntimeInspection(
@@ -1209,6 +1227,25 @@ struct SketchyBarRuntimeTests {
     #expect(waits.withLock { $0 } == 20)
   }
 
+  /// The bits the fixture's `--query events` reply gives each companion's change event.
+  private static let changeEventBits = [
+    "macarchy_keep_awake_changed": 256, "macarchy_microphone_changed": 512,
+  ]
+
+  /// A hidden event-driven companion with its popup, as SketchyBar reports it.
+  private static func companionResult(
+    _ name: String, plugin: String, mask: UInt64, fixture: SketchyBarRuntimeFixture
+  ) -> ProcessResult {
+    let item = itemJSON(
+      name: name, drawing: "off", position: "right",
+      script: fixture.state.appending(path: "desktop/sketchybar/current/plugins/\(plugin).sh").path,
+      updateFrequency: 30, updateMask: mask, updates: "on")
+    return .init(
+      terminationStatus: 0,
+      output: String(item.dropLast())
+        + ",\"popup\":{\"drawing\":\"off\",\"items\":[\"\(name).detail\"]}}")
+  }
+
   private static func dynamicResult(
     _ request: ProcessRequest,
     fixture: SketchyBarRuntimeFixture,
@@ -1223,6 +1260,7 @@ struct SketchyBarRuntimeTests {
         [
           "macarchy.clock", "macarchy.clock.preview", "macarchy.theme.ready", "macarchy.update",
           "macarchy.update.detail", "macarchy.keep-awake", "macarchy.keep-awake.detail",
+          "macarchy.microphone", "macarchy.microphone.detail",
         ]
         + indices.map { "macarchy.space.\($0)" }
       let items = names.map { "\"\($0)\"" }.joined(separator: ",")
@@ -1242,7 +1280,7 @@ struct SketchyBarRuntimeTests {
       return ProcessResult(
         terminationStatus: 0,
         output:
-          #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16},"mouse.entered":{"bit":32},"mouse.exited":{"bit":64},"mouse.exited.global":{"bit":128},"macarchy_keep_awake_changed":{"bit":256}}"#
+          #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16},"mouse.entered":{"bit":32},"mouse.exited":{"bit":64},"mouse.exited.global":{"bit":128},"macarchy_keep_awake_changed":{"bit":256},"macarchy_microphone_changed":{"bit":512}}"#
       )
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.update"]):
       let item = itemJSON(
@@ -1260,16 +1298,8 @@ struct SketchyBarRuntimeTests {
           name: "macarchy.update.detail", drawing: "on", position: "popup",
           label: "Last update check failed", labelDrawing: "on"))
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.keep-awake"]):
-      let item = itemJSON(
-        name: "macarchy.keep-awake", drawing: "off", position: "right",
-        script: fixture.state.appending(
-          path: "desktop/sketchybar/current/plugins/keep-awake.sh"
-        ).path,
-        updateFrequency: 30, updateMask: 489, updates: "on")
-      return .init(
-        terminationStatus: 0,
-        output: String(item.dropLast())
-          + ",\"popup\":{\"drawing\":\"off\",\"items\":[\"macarchy.keep-awake.detail\"]}}")
+      return companionResult(
+        "macarchy.keep-awake", plugin: "keep-awake", mask: 489, fixture: fixture)
     case (
       SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.keep-awake.detail"]
     ):
@@ -1278,6 +1308,17 @@ struct SketchyBarRuntimeTests {
         output: itemJSON(
           name: "macarchy.keep-awake.detail", drawing: "on", position: "popup",
           label: "Keep-awake is off.", labelDrawing: "on"))
+    case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.microphone"]):
+      return companionResult(
+        "macarchy.microphone", plugin: "microphone", mask: 745, fixture: fixture)
+    case (
+      SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.microphone.detail"]
+    ):
+      return .init(
+        terminationStatus: 0,
+        output: itemJSON(
+          name: "macarchy.microphone.detail", drawing: "on", position: "popup",
+          label: "Microphone is live.", labelDrawing: "on"))
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.clock"]):
       return ProcessResult(
         terminationStatus: 0,

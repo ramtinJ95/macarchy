@@ -159,7 +159,8 @@ struct SketchyBarConfigurationTests {
       #expect(composition.automaticClock == !explicit)
       let clock = try #require(composition.artifacts.first { $0.path == "plugins/clock.sh" })
       #expect(clock.contents.contains("--position '\(explicit ? "right" : "auto")'"))
-      #expect(clock.contents.contains("--update-indicator --keep-awake-indicator"))
+      #expect(
+        clock.contents.contains("--update-indicator --keep-awake-indicator --microphone-indicator"))
       let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
       #expect(entry.contents.contains("macarchy.clock.preview right"))
       #expect(entry.contents.contains("mouse.clicked display_change system_woke"))
@@ -167,32 +168,36 @@ struct SketchyBarConfigurationTests {
       #expect(update.contents.contains("desktop _update-indicator"))
       #expect(update.contents.contains("--state-root '\(root.path)'"))
       let lines = entry.contents.split(separator: "\n").map(String.init)
-      let event = try #require(
-        lines.firstIndex(of: "\"$SKETCHYBAR\" --add event macarchy_keep_awake_changed"))
-      let subscription = try #require(
-        lines.firstIndex(
-          of:
-            "\"$SKETCHYBAR\" --subscribe macarchy.keep-awake mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke macarchy_keep_awake_changed"
-        ))
-      #expect(event < subscription)
-      let item = try #require(lines.first { $0.contains("--add item macarchy.keep-awake ") })
-      for setting in [
-        "drawing=off", "icon='☕\u{FE0E}'", "icon.color=\"$MACARCHY_ACCENT_COLOR\"",
-        "label.drawing=off", "updates=on", "update_freq=30",
-        "script=\"$PLUGIN_DIR/keep-awake.sh\"", "popup.align=center",
+      for (name, event, icon) in [
+        ("keep-awake", "macarchy_keep_awake_changed", "☕\u{FE0E}"),
+        ("microphone", "macarchy_microphone_changed", "\u{1002B3}"),
       ] {
-        #expect(item.contains(" \(setting)"), Comment(rawValue: setting))
+        let declaration = try #require(
+          lines.firstIndex(of: "\"$SKETCHYBAR\" --add event \(event)"))
+        let subscription = try #require(
+          lines.firstIndex(
+            of:
+              "\"$SKETCHYBAR\" --subscribe macarchy.\(name) mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(event)"
+          ))
+        #expect(declaration < subscription)
+        let item = try #require(lines.first { $0.contains("--add item macarchy.\(name) ") })
+        for setting in [
+          "drawing=off", "icon='\(icon)'", "icon.color=\"$MACARCHY_ACCENT_COLOR\"",
+          "label.drawing=off", "updates=on", "update_freq=30",
+          "script=\"$PLUGIN_DIR/\(name).sh\"", "popup.align=center",
+        ] {
+          #expect(item.contains(" \(setting)"), Comment(rawValue: setting))
+        }
+        #expect(
+          entry.contents.contains("--add item macarchy.\(name).detail popup.macarchy.\(name)"))
+        let plugin = try #require(composition.artifacts.first { $0.path == "plugins/\(name).sh" })
+        #expect(plugin.contents.contains("[ \"${NAME-}\" = macarchy.\(name) ] || exit 1"))
+        #expect(
+          plugin.contents.contains(
+            "desktop _\(name)-indicator --sender \"${SENDER-forced}\" --state-root '\(root.path)' --accent \"$MACARCHY_ACCENT_COLOR\"; then"
+          ))
+        #expect(plugin.contents.contains("--set macarchy.\(name) drawing=on icon='!'"))
       }
-      #expect(
-        entry.contents.contains("--add item macarchy.keep-awake.detail popup.macarchy.keep-awake"))
-      let keepAwake = try #require(
-        composition.artifacts.first { $0.path == "plugins/keep-awake.sh" })
-      #expect(keepAwake.contents.contains("[ \"${NAME-}\" = macarchy.keep-awake ] || exit 1"))
-      #expect(
-        keepAwake.contents.contains(
-          "desktop _keep-awake-indicator --sender \"${SENDER-forced}\" --state-root '\(root.path)' --accent \"$MACARCHY_ACCENT_COLOR\"; then"
-        ))
-      #expect(keepAwake.contents.contains("--set macarchy.keep-awake drawing=on icon='!'"))
       try requireValidShellSyntax(composition.artifacts, root: root)
     }
   }
@@ -207,9 +212,11 @@ struct SketchyBarConfigurationTests {
       defaultsURL: defaultsURL, profile: profile, stateRoot: root)
     #expect(!composition.artifacts.contains { $0.path == "plugins/update.sh" })
     #expect(!composition.artifacts.contains { $0.path == "plugins/keep-awake.sh" })
+    #expect(!composition.artifacts.contains { $0.path == "plugins/microphone.sh" })
     let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
     #expect(!entry.contents.contains("macarchy.update"))
     #expect(!entry.contents.contains("macarchy.keep-awake"))
+    #expect(!entry.contents.contains("macarchy.microphone"))
     #expect(!entry.contents.contains("--add event"))
   }
 
@@ -339,7 +346,7 @@ struct SketchyBarConfigurationTests {
       first.artifacts.map { $0.path }
         == [
           "sketchybarrc", "plugins/clock.sh", "plugins/space-indexes.sh", "plugins/toggle.sh",
-          "plugins/update.sh", "plugins/keep-awake.sh",
+          "plugins/update.sh", "plugins/keep-awake.sh", "plugins/microphone.sh",
           "plugins/volume.sh",
           "plugins/battery.sh", "plugins/cpu.sh", "plugins/memory.sh", "plugins/wifi.sh",
           "plugins/apple.sh", "plugins/media.sh",

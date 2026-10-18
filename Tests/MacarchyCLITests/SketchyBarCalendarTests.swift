@@ -23,23 +23,27 @@ struct SketchyBarCalendarTests {
   }
 
   // Right-side items are laid out in reverse order: "after" the clock there is visually left.
+  // Each left companion moves next to the clock, so the microphone ends up between the clock and
+  // keep-awake.
   @Test(arguments: ["center", "right"])
-  func keepAwakeSitsLeftOfTheClockAndUpdateRight(position: String) throws {
+  func leftCompanionsSitLeftOfTheClockAndUpdateRight(position: String) throws {
     let state = State()
     let calendar = SketchyBarCalendar(
       processRunner: runner(state), hasExternalDisplay: { false }, uptime: { 100 },
       sleep: { _ in })
     try calendar.execute(
       sender: "routine", position: position, format: "+%H:%M",
-      companions: [.update, .keepAwake])
+      companions: [.update, .keepAwake, .microphone])
     let args = try #require(state.value.withLock { $0.calls.last })
     let right = position == "right"
     #expect(
-      args.suffix(14) == [
+      args.suffix(21) == [
         "--set", "macarchy.update", "position=\(position)",
         "--move", "macarchy.update", right ? "before" : "after", "macarchy.clock",
         "--set", "macarchy.keep-awake", "position=\(position)",
         "--move", "macarchy.keep-awake", right ? "after" : "before", "macarchy.clock",
+        "--set", "macarchy.microphone", "position=\(position)",
+        "--move", "macarchy.microphone", right ? "after" : "before", "macarchy.clock",
       ])
   }
 
@@ -52,6 +56,10 @@ struct SketchyBarCalendarTests {
     #expect(
       try Desktop.Calendar.parse(base + ["--update-indicator", "--keep-awake-indicator"])
         .companions.map(\.item) == ["macarchy.update", "macarchy.keep-awake"])
+    #expect(
+      try Desktop.Calendar.parse(
+        base + ["--update-indicator", "--keep-awake-indicator", "--microphone-indicator"]
+      ).companions.map(\.item) == ["macarchy.update", "macarchy.keep-awake", "macarchy.microphone"])
   }
 
   @Test(arguments: ["auto-internal", "auto-external", "left", "center", "right"])
