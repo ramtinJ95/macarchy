@@ -112,10 +112,12 @@ struct SketchyBarCoreRuntimeInspection: Codable, Equatable, Sendable {
       guard hasClock else { return false }
       managedItems.append(SketchyBarCalendar.previewItem)
     }
-    let updateItems = [SketchyBarUpdateIndicator.item, SketchyBarUpdateIndicator.detailItem]
-    if updateItems.contains(where: items.contains) {
-      guard hasClock, updateItems.allSatisfy(items.contains) else { return false }
-      managedItems += updateItems
+    // Older generations lack some companions; a present companion must be complete.
+    for companion in ClockCompanion.all {
+      let companionItems = [companion.item, companion.detailItem]
+      guard companionItems.contains(where: items.contains) else { continue }
+      guard hasClock, companionItems.allSatisfy(items.contains) else { return false }
+      managedItems += companionItems
     }
     if hasVolume { managedItems.append("macarchy.volume") }
     if items.contains("macarchy.volume.slider") {
@@ -346,9 +348,10 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
           if expected.items.contains(SketchyBarCalendar.previewItem) {
             presentationMatches = try presentationMatches && validClockPreview()
           }
-          if expected.items.contains(SketchyBarUpdateIndicator.item) {
+          for companion in ClockCompanion.all where expected.items.contains(companion.item) {
             presentationMatches =
-              try presentationMatches && validUpdateIndicator(position: clock.geometry.position)
+              try presentationMatches
+              && validCompanion(companion, position: clock.geometry.position)
           }
         }
         if expected.toggleStatePresent == true {
@@ -519,10 +522,10 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         clock.scripting.updates == "on",
         bits.count == 3, clock.scripting.updateMask.map({ $0 & mask == mask }) == true,
         try validClockPreview(),
-        try validUpdateIndicator(position: actualPosition)
+        try ClockCompanion.all.allSatisfy({ try validCompanion($0, position: actualPosition) })
       else {
         return drift(
-          "running SketchyBar clock/update indicator is incomplete: "
+          "running SketchyBar clock or its companions are incomplete: "
             + "name=\(clock.name), type=\(clock.type), drawing=\(clock.geometry.drawing), "
             + "position=\(clock.geometry.position), label_drawing=\(clock.label.drawing), "
             + "label_present=\(clockLabelPresent), script=\(clock.scripting.script), "
@@ -881,25 +884,22 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     value == "inactive" || value.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
   }
 
-  private func validUpdateIndicator(position: String) throws -> Bool {
-    let item: SketchyBarItemQuery = try query(SketchyBarUpdateIndicator.item)
-    let detail: SketchyBarItemQuery = try query(SketchyBarUpdateIndicator.detailItem)
+  private func validCompanion(_ companion: ClockCompanion, position: String) throws -> Bool {
+    let item: SketchyBarItemQuery = try query(companion.item)
+    let detail: SketchyBarItemQuery = try query(companion.detailItem)
     let events: [String: SketchyBarEventQuery] = try query("events")
-    let names = [
-      "mouse.clicked", "mouse.entered", "mouse.exited", "mouse.exited.global", "system_woke",
-    ]
-    let bits = names.compactMap { events[$0]?.bit }
+    let bits = companion.events.compactMap { events[$0]?.bit }
     let mask = bits.reduce(0, |)
-    // Availability and network errors are volatile UI state, not activation readiness.
-    return item.name == SketchyBarUpdateIndicator.item && item.type == "item"
+    // Visibility, update availability and keep-awake state are volatile UI state, not readiness.
+    return item.name == companion.item && item.type == "item"
       && ["on", "off"].contains(item.geometry.drawing) && item.geometry.position == position
       && item.label.drawing == "off" && item.scripting.updates == "on"
-      && item.scripting.updateFrequency == 60
-      && item.scripting.script
-        == pluginPath("update")
-      && bits.count == names.count && item.scripting.updateMask.map { $0 & mask == mask } == true
-      && item.popup?.items == [SketchyBarUpdateIndicator.detailItem]
-      && detail.name == SketchyBarUpdateIndicator.detailItem && detail.type == "item"
+      && item.scripting.updateFrequency == companion.updateFrequency
+      && item.scripting.script == pluginPath(companion.plugin)
+      && bits.count == companion.events.count
+      && item.scripting.updateMask.map { $0 & mask == mask } == true
+      && item.popup?.items == [companion.detailItem]
+      && detail.name == companion.detailItem && detail.type == "item"
       && detail.geometry.position == "popup" && detail.label.drawing == "on"
   }
 
@@ -987,7 +987,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     if layout.position(of: .clock) != nil {
       names.append("macarchy.clock")
       names.append(SketchyBarCalendar.previewItem)
-      names += [SketchyBarUpdateIndicator.item, SketchyBarUpdateIndicator.detailItem]
+      names += ClockCompanion.all.flatMap { [$0.item, $0.detailItem] }
     }
     if layout.position(of: .media) != nil { names += SketchyBarMedia.items }
     if layout.position(of: .apple) != nil { names.append("macarchy.apple") }

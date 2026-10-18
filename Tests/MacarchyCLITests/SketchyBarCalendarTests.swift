@@ -13,13 +13,45 @@ struct SketchyBarCalendarTests {
       processRunner: runner(state), hasExternalDisplay: { external },
       uptime: { 100 }, sleep: { _ in })
     try calendar.execute(
-      sender: "display_change", position: "auto", format: "+%H:%M", updateIndicator: true)
+      sender: "display_change", position: "auto", format: "+%H:%M", companions: [.update])
     let args = try #require(state.value.withLock { $0.calls.last })
     #expect(
       args.suffix(7) == [
         "--set", "macarchy.update", "position=\(external ? "center" : "right")", "--move",
         "macarchy.update", external ? "after" : "before", "macarchy.clock",
       ])
+  }
+
+  // Right-side items are laid out in reverse order: "after" the clock there is visually left.
+  @Test(arguments: ["center", "right"])
+  func keepAwakeSitsLeftOfTheClockAndUpdateRight(position: String) throws {
+    let state = State()
+    let calendar = SketchyBarCalendar(
+      processRunner: runner(state), hasExternalDisplay: { false }, uptime: { 100 },
+      sleep: { _ in })
+    try calendar.execute(
+      sender: "routine", position: position, format: "+%H:%M",
+      companions: [.update, .keepAwake])
+    let args = try #require(state.value.withLock { $0.calls.last })
+    let right = position == "right"
+    #expect(
+      args.suffix(14) == [
+        "--set", "macarchy.update", "position=\(position)",
+        "--move", "macarchy.update", right ? "before" : "after", "macarchy.clock",
+        "--set", "macarchy.keep-awake", "position=\(position)",
+        "--move", "macarchy.keep-awake", right ? "after" : "before", "macarchy.clock",
+      ])
+  }
+
+  @Test func clockScriptsRequestOnlyTheCompanionsTheirGenerationHas() throws {
+    let base = ["--position", "auto", "--format", "+%H:%M"]
+    #expect(try Desktop.Calendar.parse(base).companions.isEmpty)
+    #expect(
+      try Desktop.Calendar.parse(base + ["--update-indicator"]).companions.map(\.item)
+        == ["macarchy.update"])
+    #expect(
+      try Desktop.Calendar.parse(base + ["--update-indicator", "--keep-awake-indicator"])
+        .companions.map(\.item) == ["macarchy.update", "macarchy.keep-awake"])
   }
 
   @Test(arguments: ["auto-internal", "auto-external", "left", "center", "right"])
@@ -44,6 +76,7 @@ struct SketchyBarCalendarTests {
         position == "right" ? "+%a %d %b %H:%M" : "+%a %d %b  %H:%M"
       ])
     #expect(probes == (automatic ? 1 : 0))
+    #expect(!args.contains("--move"))
   }
 
   @Test(arguments: [false, true])
