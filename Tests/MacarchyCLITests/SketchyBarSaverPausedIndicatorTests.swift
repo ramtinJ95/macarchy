@@ -1,93 +1,83 @@
+import ArgumentParser
 import Foundation
-import Synchronization
 import Testing
 import ThemeCore
 
 @testable import MacarchyCLI
 
 struct SketchyBarSaverPausedIndicatorTests {
-  @Test func clickResumesIdleActivationAndHidesTheIndicator() throws {
-    let bar = BarCalls()
-    var paused = true
-    var resumed = 0
-    try SketchyBarSaverPausedIndicator(
-      processRunner: recorder(bar), paused: { paused },
-      resume: {
-        resumed += 1
-        paused = false
+  private static let conflict = URL(filePath: "/Users/me/Library/LaunchAgents/saver-idle.plist")
+
+  @Test(arguments: [
+    "off", "incomplete", "on", "paused", "paused-not-loaded", "paused-without-agent", "conflict",
+  ])
+  func refreshAlwaysDrawsTheScreensaverLitWhileIdleActivationRuns(state: String) throws {
+    let activation = Self.activation(state)
+    let run = try CompanionToggleHarness.run(
+      .saverPaused, sender: SaverIdle.barEvent,
+      read: { SketchyBarSaverPausedIndicator.toggle(activation) })
+    let detail =
+      switch state {
+      case "on": "Idle screensaver on: it starts after 5 minutes idle. Click to turn it off."
+      case "paused": "Idle screensaver paused. Click to resume."
+      case "incomplete": "Idle screensaver is off. Click to start it after 30 minutes idle."
+      case "conflict":
+        "Warning: \(Self.conflict.path) is not the launch agent this Macarchy writes, so the idle "
+          + "screensaver cannot change. Click for details."
+      default: "Idle screensaver is off. Click to start it after 5 minutes idle."
       }
-    ).execute(sender: "mouse.clicked", accent: "accent")
-    #expect(resumed == 1)
+    let lit = ["on", "paused"].contains(state)
+    let icon = state == "paused" ? "⏸\u{FE0E}" : "\u{10114B}"
     #expect(
-      bar.value.withLock { $0 } == [
-        ["--set", "macarchy.saver-paused", "popup.drawing=off"],
-        ["--set", "macarchy.saver-paused", "drawing=off", "popup.drawing=off"],
+      run.bar == [
+        [
+          "--set", "macarchy.saver-paused", "drawing=on", "icon=\(icon)",
+          "icon.color=\(lit ? CompanionToggleHarness.accent : CompanionToggleHarness.muted)",
+          "--set", "macarchy.saver-paused.detail", "label=\(detail)",
+        ]
       ])
   }
 
-  @Test(arguments: ["mouse.entered", "mouse.exited", "mouse.exited.global"])
-  func hoverOnlyTogglesTheDetailPopup(sender: String) throws {
-    let bar = BarCalls()
-    try SketchyBarSaverPausedIndicator(
-      processRunner: recorder(bar),
-      paused: {
-        Issue.record("hover must not inspect idle activation")
-        return false
-      },
-      resume: { Issue.record("hover must not resume idle activation") }
-    ).execute(sender: sender, accent: "accent")
-    let popup = sender == "mouse.entered" ? "popup.drawing=on" : "popup.drawing=off"
-    #expect(bar.value.withLock { $0 } == [["--set", "macarchy.saver-paused", popup]])
+  /// A paused activation resumes; every other state toggles idle activation, and a foreign launch
+  /// agent makes the toggle fail with its alert and change nothing (see SaverIdleTests).
+  @Test(arguments: ["off", "incomplete", "on", "paused", "paused-not-loaded", "conflict"])
+  func clickResumesAPauseAndOtherwiseTogglesIdleActivation(state: String) throws {
+    let activation = Self.activation(state)
+    let run = try CompanionToggleHarness.run(
+      .saverPaused, sender: "mouse.clicked",
+      read: { SketchyBarSaverPausedIndicator.toggle(activation) })
+    let command = state == "paused" ? ["saver", "resume"] : ["saver", "idle", "toggle"]
+    #expect(
+      run.launched == [
+        command + ["--state-root", CompanionToggleHarness.stateRoot.path, "--alert-on-error"]
+      ])
   }
 
-  /// Only idle activation that runs and is paused shows the icon.
-  @Test(arguments: [
-    "off", "on", "paused", "paused-not-loaded", "paused-without-agent", "paused-conflict",
-  ])
-  func refreshShowsTheIconOnlyWhileRunningIdleActivationIsPaused(state: String) throws {
-    let paused = SaverIdleRecord(timeout: 300, paused: true)
-    let conflict = URL(filePath: "/Users/me/Library/LaunchAgents/saver-idle.plist")
-    let activation =
-      switch state {
-      case "off": SaverIdleActivation(agent: .absent, loaded: false, record: nil)
-      case "on":
-        SaverIdleActivation(
-          agent: .owned, loaded: true, record: SaverIdleRecord(timeout: 300, paused: false))
-      case "paused": SaverIdleActivation(agent: .owned, loaded: true, record: paused)
-      case "paused-not-loaded": SaverIdleActivation(agent: .owned, loaded: false, record: paused)
-      case "paused-without-agent":
-        SaverIdleActivation(agent: .absent, loaded: true, record: paused)
-      default: SaverIdleActivation(agent: .conflict(conflict), loaded: true, record: paused)
-      }
-    let bar = BarCalls()
-    try SketchyBarSaverPausedIndicator(
-      processRunner: recorder(bar), paused: { activation.isPaused },
-      resume: { Issue.record("a refresh must not resume idle activation") }
-    ).execute(sender: SaverIdle.barEvent, accent: "0xffaabbcc")
+  /// Bars generated before the toggles still show only the pause sign, only while paused.
+  @Test(arguments: ["off", "on", "paused", "paused-not-loaded", "conflict"])
+  func olderBarsShowOnlyThePauseSignWhilePaused(state: String) throws {
+    let activation = Self.activation(state)
+    let run = try CompanionToggleHarness.run(
+      .saverPaused, sender: SaverIdle.barEvent, muted: nil,
+      read: { SketchyBarSaverPausedIndicator.toggle(activation) })
     let shown = [
-      "--set", "macarchy.saver-paused", "drawing=on", "icon=⏸\u{FE0E}", "icon.color=0xffaabbcc",
-      "--set", "macarchy.saver-paused.detail", "label=Idle screensaver paused. Click to resume.",
+      "--set", "macarchy.saver-paused", "drawing=on", "icon=⏸\u{FE0E}",
+      "icon.color=\(CompanionToggleHarness.accent)", "--set", "macarchy.saver-paused.detail",
+      "label=Idle screensaver paused. Click to resume.",
     ]
     let hidden = ["--set", "macarchy.saver-paused", "drawing=off", "popup.drawing=off"]
-    let calls = bar.value.withLock { $0 }
-    #expect(calls.count == 1)
-    #expect(calls.first == (state == "paused" ? shown : hidden))
+    #expect(run.bar == [state == "paused" ? shown : hidden])
+    #expect(
+      SketchyBarSaverPausedIndicator.toggle(activation).olderBarClick
+        == (state == "paused" ? ["saver", "resume"] : nil))
   }
 
-  @Test(arguments: ["resume", "state", "bar"])
-  func failuresPropagateForTheScriptWarning(failing: String) {
-    let indicator = SketchyBarSaverPausedIndicator(
-      processRunner: ProcessRunner { _ in
-        .init(terminationStatus: failing == "bar" ? 1 : 0, output: "")
-      },
-      paused: {
-        if failing == "state" { throw SaverError("unreadable record") }
-        return false
-      },
-      resume: { if failing == "resume" { throw SaverError("Idle activation is not on") } })
-    #expect(throws: SaverError.self) {
-      try indicator.execute(sender: "mouse.clicked", accent: "accent")
-    }
+  @Test func theHelperAcceptsOlderAndCurrentBarArguments() throws {
+    let base = ["--state-root", "/Users/me/.config/macarchy", "--accent", "0xffaabbcc"]
+    #expect(try Desktop.SaverPausedIndicator.parse(base).muted == nil)
+    #expect(
+      try Desktop.SaverPausedIndicator.parse(base + ["--muted", "0xff585b70"]).muted
+        == "0xff585b70")
   }
 
   @Test func theCompanionSitsLeftOfTheClockAndRefreshesOnIdleChanges() {
@@ -97,18 +87,26 @@ struct SketchyBarSaverPausedIndicatorTests {
     #expect(companion.updateFrequency == 30)
     #expect(companion.events.last == "macarchy_saver_idle_changed")
     #expect(companion.events.contains("mouse.clicked"))
-    #expect(ClockCompanion.all.last?.item == "macarchy.saver-paused")
+    #expect(
+      ClockCompanion.all.map(\.item) == [
+        "macarchy.update", "macarchy.keep-awake", "macarchy.microphone", "macarchy.saver-paused",
+      ])
   }
 
-  private final class BarCalls: Sendable {
-    let value = Mutex([[String]]())
-  }
-
-  private func recorder(_ calls: BarCalls) -> ProcessRunner {
-    ProcessRunner { request in
-      #expect(request.executableURL == SketchyBarCoreRuntimeVerifier.controlURL)
-      calls.value.withLock { $0.append(request.arguments) }
-      return .init(terminationStatus: 0, output: "")
+  private static func activation(_ state: String) -> SaverIdleActivation {
+    let paused = SaverIdleRecord(timeout: 300, paused: true)
+    return switch state {
+    case "off": SaverIdleActivation(agent: .absent, loaded: false, record: nil)
+    case "incomplete":
+      SaverIdleActivation(
+        agent: .owned, loaded: false, record: SaverIdleRecord(timeout: 1_800, paused: false))
+    case "on":
+      SaverIdleActivation(
+        agent: .owned, loaded: true, record: SaverIdleRecord(timeout: 300, paused: false))
+    case "paused": SaverIdleActivation(agent: .owned, loaded: true, record: paused)
+    case "paused-not-loaded": SaverIdleActivation(agent: .owned, loaded: false, record: paused)
+    case "paused-without-agent": SaverIdleActivation(agent: .absent, loaded: true, record: paused)
+    default: SaverIdleActivation(agent: .conflict(conflict), loaded: true, record: paused)
     }
   }
 }

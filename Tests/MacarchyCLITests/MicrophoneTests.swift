@@ -464,8 +464,12 @@ struct MicrophoneTests {
     audio.selected = 0
     try withEngine(audio) { engine, _ throws in
       #expect(try engine.status() == .noInput)
-      #expect(throws: MicrophoneError.self) { try engine.apply(.mute) }
+      for request in [MicrophoneRequest.mute, .toggle] {
+        let error = #expect(throws: MicrophoneError.self) { try engine.apply(request) }
+        #expect(error?.description == "there is no default microphone; nothing changed")
+      }
       #expect(audio.writes.isEmpty)
+      #expect(audio.notifications == 0)
     }
   }
 

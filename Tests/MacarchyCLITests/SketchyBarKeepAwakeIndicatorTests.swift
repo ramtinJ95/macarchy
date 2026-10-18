@@ -1,99 +1,86 @@
+import ArgumentParser
 import Foundation
-import Synchronization
 import Testing
 import ThemeCore
 
 @testable import MacarchyCLI
 
 struct SketchyBarKeepAwakeIndicatorTests {
-  @Test func clickTurnsOwnedKeepAwakeOffAndHidesTheIndicator() throws {
-    let bar = BarCalls()
-    var status = KeepAwakeStatus.on(.init(pid: 7, started: 1, expires: nil))
-    var turnedOff = 0
-    try SketchyBarKeepAwakeIndicator(
-      processRunner: recorder(bar), status: { status },
-      turnOff: {
-        turnedOff += 1
-        status = .off
-      }
-    ).execute(sender: "mouse.clicked", accent: "accent")
-    #expect(turnedOff == 1)
-    #expect(
-      bar.value.withLock { $0 } == [
-        ["--set", "macarchy.keep-awake", "popup.drawing=off"],
-        ["--set", "macarchy.keep-awake", "drawing=off", "popup.drawing=off"],
-      ])
-  }
-
-  @Test(arguments: [
-    ("mouse.entered", "popup.drawing=on"), ("mouse.exited", "popup.drawing=off"),
-    ("mouse.exited.global", "popup.drawing=off"),
-  ])
-  func hoverOnlyTogglesTheDetailPopup(sender: String, popup: String) throws {
-    let bar = BarCalls()
-    try SketchyBarKeepAwakeIndicator(
-      processRunner: recorder(bar),
-      status: {
-        Issue.record("hover must not inspect the session")
-        return .off
-      },
-      turnOff: { Issue.record("hover must not turn keep-awake off") }
-    ).execute(sender: sender, accent: "accent")
-    #expect(bar.value.withLock { $0 } == [["--set", "macarchy.keep-awake", popup]])
-  }
-
   @Test(arguments: ["bounded", "indefinite", "off"])
-  func refreshShowsOnlyALiveOwnedSession(state: String) throws {
+  func refreshAlwaysDrawsTheCupLitOnlyWhileASessionRuns(state: String) throws {
     let end = Date(timeIntervalSince1970: 1_800_005_400)
     let local = Calendar.current.dateComponents([.hour, .minute], from: end)
     let clock = String(format: "%02d:%02d", local.hour!, local.minute!)
-    let bar = BarCalls()
-    let status: KeepAwakeStatus =
-      state == "off"
-      ? .off : .on(.init(pid: 7, started: 1, expires: state == "bounded" ? end : nil))
-    try SketchyBarKeepAwakeIndicator(
-      processRunner: recorder(bar), status: { status },
-      turnOff: { Issue.record("a refresh must not turn keep-awake off") }
-    ).execute(sender: "macarchy_keep_awake_changed", accent: "0xffaabbcc")
+    let status = Self.status(state, expires: end)
+    let run = try CompanionToggleHarness.run(
+      .keepAwake, sender: KeepAwake.barEvent,
+      read: { SketchyBarKeepAwakeIndicator.toggle(status) })
     let until = state == "bounded" ? "until \(clock)" : "until turned off"
+    let detail =
+      state == "off"
+      ? "Keep-awake is off. Click to keep the display awake."
+      : "Keep-awake on \(until). Idle screensaver and idle lock won't start. Click to turn off."
+    let color = state == "off" ? CompanionToggleHarness.muted : CompanionToggleHarness.accent
     #expect(
-      bar.value.withLock { $0 } == [
-        state == "off"
-          ? ["--set", "macarchy.keep-awake", "drawing=off", "popup.drawing=off"]
-          : [
-            "--set", "macarchy.keep-awake", "drawing=on", "icon=☕\u{FE0E}",
-            "icon.color=0xffaabbcc", "--set", "macarchy.keep-awake.detail",
-            "label=Keep-awake on \(until). Idle screensaver and idle lock won't start. "
-              + "Click to turn off.",
-          ]
+      run.bar == [
+        [
+          "--set", "macarchy.keep-awake", "drawing=on", "icon=☕\u{FE0E}", "icon.color=\(color)",
+          "--set", "macarchy.keep-awake.detail", "label=\(detail)",
+        ]
       ])
   }
 
-  @Test(arguments: ["turn-off", "status", "bar"])
-  func failuresPropagateForTheScriptWarning(failing: String) {
-    let indicator = SketchyBarKeepAwakeIndicator(
-      processRunner: ProcessRunner { _ in
-        .init(terminationStatus: failing == "bar" ? 1 : 0, output: "")
-      },
-      status: {
-        if failing == "status" { throw KeepAwakeError("unreadable record") }
-        return .off
-      },
-      turnOff: { if failing == "turn-off" { throw KeepAwakeError("still running") } })
-    #expect(throws: KeepAwakeError.self) {
-      try indicator.execute(sender: "mouse.clicked", accent: "accent")
-    }
+  /// Off starts a session until turned off and on stops it, like the menu's toggle.
+  @Test(arguments: ["bounded", "indefinite", "off"])
+  func clickRunsTheKeepAwakeToggleInEveryState(state: String) throws {
+    let status = Self.status(state, expires: Date(timeIntervalSince1970: 1_800_005_400))
+    let run = try CompanionToggleHarness.run(
+      .keepAwake, sender: "mouse.clicked",
+      read: { SketchyBarKeepAwakeIndicator.toggle(status) })
+    #expect(
+      run.launched == [
+        [
+          "keep-awake", "toggle", "--state-root", CompanionToggleHarness.stateRoot.path,
+          "--alert-on-error",
+        ]
+      ])
   }
 
-  private final class BarCalls: Sendable {
-    let value = Mutex([[String]]())
+  /// Bars generated before the toggles still show the cup only while keep-awake is on.
+  @Test(arguments: ["indefinite", "off"])
+  func olderBarsShowTheCupOnlyWhileASessionRuns(state: String) throws {
+    let status = Self.status(state, expires: Date(timeIntervalSince1970: 1_800_005_400))
+    let run = try CompanionToggleHarness.run(
+      .keepAwake, sender: KeepAwake.barEvent, muted: nil,
+      read: { SketchyBarKeepAwakeIndicator.toggle(status) })
+    let shown = [
+      "--set", "macarchy.keep-awake", "drawing=on", "icon=☕\u{FE0E}",
+      "icon.color=\(CompanionToggleHarness.accent)", "--set", "macarchy.keep-awake.detail",
+      "label=Keep-awake on until turned off. Idle screensaver and idle lock won't start. "
+        + "Click to turn off.",
+    ]
+    let hidden = ["--set", "macarchy.keep-awake", "drawing=off", "popup.drawing=off"]
+    #expect(run.bar == [state == "off" ? hidden : shown])
+    #expect(
+      SketchyBarKeepAwakeIndicator.toggle(status).olderBarClick
+        == (state == "off" ? nil : ["keep-awake", "off"]))
   }
 
-  private func recorder(_ calls: BarCalls) -> ProcessRunner {
-    ProcessRunner { request in
-      #expect(request.executableURL == SketchyBarCoreRuntimeVerifier.controlURL)
-      calls.value.withLock { $0.append(request.arguments) }
-      return .init(terminationStatus: 0, output: "")
-    }
+  @Test func theHelperAcceptsOlderAndCurrentBarArguments() throws {
+    let older = try Desktop.KeepAwakeIndicator.parse([
+      "--sender", "mouse.clicked", "--state-root", "/Users/me/.config/macarchy", "--accent",
+      "0xffaabbcc",
+    ])
+    #expect(older.muted == nil)
+    let current = try Desktop.KeepAwakeIndicator.parse([
+      "--sender", "forced", "--state-root", "/Users/me/.config/macarchy", "--accent",
+      "0xffaabbcc", "--muted", "0xff585b70",
+    ])
+    #expect(current.muted == "0xff585b70")
+  }
+
+  private static func status(_ state: String, expires: Date) -> KeepAwakeStatus {
+    state == "off"
+      ? .off : .on(.init(pid: 7, started: 1, expires: state == "bounded" ? expires : nil))
   }
 }

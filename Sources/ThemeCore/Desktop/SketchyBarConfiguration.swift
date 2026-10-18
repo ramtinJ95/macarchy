@@ -116,11 +116,15 @@ package struct SketchyBarConfigurationComposer: Sendable {
   /// Microphone mute changes trigger this event so the indicator refreshes before its timer.
   package static let microphoneEvent = "macarchy_microphone_changed"
   /// SF Symbols mic.slash.fill, drawn by the SF Pro font like the bar's other symbol glyphs.
-  package static let microphoneIcon = "\u{1002B3}"
+  package static let microphoneMutedIcon = "\u{1002B3}"
+  /// SF Symbols mic.fill, the live counterpart of `microphoneMutedIcon`.
+  package static let microphoneLiveIcon = "\u{1002B1}"
   /// Idle screensaver changes trigger this event so the pause indicator refreshes before its timer.
   package static let saverIdleEvent = "macarchy_saver_idle_changed"
   /// A monochrome pause sign: the text variation selector stops emoji presentation.
   package static let saverPausedIcon = "⏸\u{FE0E}"
+  /// SF Symbols sparkles.tv: a screen showing decorative sparkles, drawn by SF Pro.
+  package static let saverIdleIcon = "\u{10114B}"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
     "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
@@ -512,7 +516,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.keep-awake.detail popup.macarchy.keep-awake --set macarchy.keep-awake.detail icon.drawing=off label='Keep-awake is off.'",
             "\"$SKETCHYBAR\" --subscribe macarchy.keep-awake mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.keepAwakeEvent)",
             "\"$SKETCHYBAR\" --add event \(Self.microphoneEvent)",
-            "\"$SKETCHYBAR\" --add item macarchy.microphone \(position.rawValue) --set macarchy.microphone drawing=off icon='\(Self.microphoneIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/microphone.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.microphone \(position.rawValue) --set macarchy.microphone drawing=off icon='\(Self.microphoneMutedIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/microphone.sh\" popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.microphone.detail popup.macarchy.microphone --set macarchy.microphone.detail icon.drawing=off label='Microphone is live.'",
             "\"$SKETCHYBAR\" --subscribe macarchy.microphone mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.microphoneEvent)",
             "\"$SKETCHYBAR\" --add event \(Self.saverIdleEvent)",
