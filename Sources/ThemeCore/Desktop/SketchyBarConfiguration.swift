@@ -113,6 +113,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let keepAwakeEvent = "macarchy_keep_awake_changed"
   /// A monochrome cup: the text variation selector stops emoji presentation.
   package static let keepAwakeIcon = "☕\u{FE0E}"
+  /// Microphone mute changes trigger this event so the indicator refreshes before its timer.
+  package static let microphoneEvent = "macarchy_microphone_changed"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
     "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
