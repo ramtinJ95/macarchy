@@ -172,7 +172,8 @@ struct KeepAwakeTests {
   func barHintSkipsAMissingBarAndOnlyWarnsWhenItFails(outcome: String) {
     let calls = Mutex([[String]]())
     var warnings: [String] = []
-    KeepAwake.hintBar(
+    ClockCompanion.hintBar(
+      event: KeepAwake.barEvent,
       processRunner: ProcessRunner { request in
         calls.withLock { $0.append(request.arguments) }
         #expect(request.executableURL == SketchyBarCoreRuntimeVerifier.controlURL)
@@ -214,7 +215,9 @@ struct KeepAwakeTests {
     var signalFails = false
   }
 
-  private func withEngine(_ body: (KeepAwake, Machine, KeepAwakeRecord) throws -> Void) throws {
+  private func withEngine(
+    _ body: (KeepAwake, Machine, RunStateRecord<KeepAwakeSession>) throws -> Void
+  ) throws {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-keep-awake-\(UUID().uuidString.lowercased())", directoryHint: .isDirectory)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -239,8 +242,6 @@ struct KeepAwakeTests {
       pause: {},
       now: { Self.now },
       notifyBar: { machine.notifications += 1 })
-    try body(
-      engine, machine,
-      KeepAwakeRecord(directory: root.appending(path: "run", directoryHint: .isDirectory)))
+    try body(engine, machine, KeepAwake.sessionRecord(stateRoot: root))
   }
 }

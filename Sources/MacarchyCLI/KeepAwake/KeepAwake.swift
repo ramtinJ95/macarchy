@@ -70,9 +70,12 @@ struct KeepAwake {
   let now: () -> Date
   let notifyBar: () -> Void
 
-  private var record: KeepAwakeRecord {
-    KeepAwakeRecord(directory: stateRoot.appending(path: "run", directoryHint: .isDirectory))
+  /// `<state root>/run/keep-awake.json`.
+  static func sessionRecord(stateRoot: URL) -> RunStateRecord<KeepAwakeSession> {
+    RunStateRecord("keep-awake.json", stateRoot: stateRoot) { $0.pid > 1 && $0.started > 0 }
   }
+
+  private var record: RunStateRecord<KeepAwakeSession> { Self.sessionRecord(stateRoot: stateRoot) }
 
   func status() throws -> KeepAwakeStatus {
     try Self.lock.withLock(root: stateRoot) { try current() }
@@ -201,25 +204,7 @@ extension KeepAwake {
       },
       pause: { Thread.sleep(forTimeInterval: 0.05) },
       now: Date.init,
-      notifyBar: {
-        Self.hintBar(
-          processRunner: .live,
-          installed: FileManager.default.isExecutableFile(
-            atPath: SketchyBarCoreRuntimeVerifier.controlURL.path),
-          warn: { try? FileHandle.standardError.write(contentsOf: Data("\($0)\n".utf8)) })
-      })
-  }
-
-  /// Asks a running bar to refresh the indicator now. Its 30-second timer is the backstop, so a
-  /// failed hint only warns and the session stays authoritative.
-  static func hintBar(processRunner: ProcessRunner, installed: Bool, warn: (String) -> Void) {
-    guard installed else { return }
-    let result = try? processRunner.run(
-      .init(
-        executableURL: SketchyBarCoreRuntimeVerifier.controlURL,
-        arguments: ["--trigger", barEvent], timeout: 1))
-    if result?.terminationStatus == 0 { return }
-    warn("The SketchyBar keep-awake indicator was not notified; it refreshes within 30 seconds.")
+      notifyBar: { ClockCompanion.hintRunningBar(event: barEvent) })
   }
 
   /// Starts caffeinate in its own session with null standard streams, so closing the launching
@@ -260,58 +245,6 @@ extension KeepAwake {
     try require(
       posix_spawn(&pid, caffeinatePath, &actions, &attributes, &pointers, environ), "launch")
     return pid
-  }
-}
-
-/// `<state root>/run/keep-awake.json`, beside the lock that serializes every access to it.
-struct KeepAwakeRecord {
-  static let name = "keep-awake.json"
-  let directory: URL
-
-  var url: URL { directory.appending(path: Self.name) }
-
-  /// nil when absent or when its content is not a session record.
-  func read() throws -> KeepAwakeSession? {
-    try withDirectory { parent in
-      let data: Data
-      do {
-        data =
-          try PinnedFilesystem.readRegularFile(
-            parentDescriptor: parent, name: Self.name, url: url, maximumSize: 4096
-          ).data
-      } catch let error as PinnedFilesystemError where error.code == ENOENT {
-        return nil
-      } catch BoundedRegularFileError.tooLarge {
-        return nil
-      }
-      guard let session = try? JSONDecoder().decode(KeepAwakeSession.self, from: data),
-        session.pid > 1, session.started > 0
-      else { return nil }
-      return session
-    }
-  }
-
-  func write(_ session: KeepAwakeSession) throws {
-    try withDirectory {
-      try PinnedStateFile.write(session, parentDescriptor: $0, name: Self.name, url: url)
-    }
-  }
-
-  func remove() throws {
-    try withDirectory { parent in
-      guard
-        let failure = PinnedStateFile.remove(
-          Self.name, parentDescriptor: parent, syncWhenAbsent: false)
-      else { return }
-      let operation = failure.step == .unlink ? "remove" : "sync the removal of"
-      throw KeepAwakeError("cannot \(operation) \(url.path) (errno \(failure.code))")
-    }
-  }
-
-  private func withDirectory<Value>(_ body: (Int32) throws -> Value) throws -> Value {
-    let parent = try PinnedFilesystem.openDirectory(at: directory)
-    defer { Darwin.close(parent) }
-    return try body(parent)
   }
 }
 
