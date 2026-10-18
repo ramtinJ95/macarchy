@@ -178,16 +178,8 @@ struct SketchyBarToggle {
     return Double(point.y - bounds.minY)
   }
 
-  static func processStart(_ pid: Int32) -> UInt64? {
-    var info = proc_bsdinfo()
-    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-    guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size, info.pbi_uid == getuid()
-    else { return nil }
-    return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
-  }
-
   static func matchesProcess(_ heartbeat: ToggleHeartbeat) -> Bool {
-    guard processStart(heartbeat.pid) == heartbeat.started else { return false }
+    guard processStartTime(heartbeat.pid) == heartbeat.started else { return false }
     return processExecutablePath(heartbeat.pid) == RuntimeEnvironment.live.executableURL.path
   }
 }
@@ -223,7 +215,7 @@ extension Desktop {
         filename: "sketchybar-toggle.lock",
         cannotCreateRunDirectory: { _, error in .lock(error) },
         operationError: { operation, code in .lock("\(operation): \(code)") })
-      guard let started = SketchyBarToggle.processStart(getpid()) else {
+      guard let started = processStartTime(getpid()) else {
         throw ToggleError.processQuery
       }
       try lock.withLockIfAvailable(root: URL(filePath: stateRoot)) {

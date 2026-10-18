@@ -123,7 +123,7 @@ struct LeanFocusServiceTests {
 
   @Test func runtimeRequiresOwnedLabelRootCurrentPIDStartAndPaletteWithoutHeartbeat() throws {
     let path = try #require(processExecutablePath(getpid()))
-    let started = try #require(LeanFocusRuntime.processStart(getpid()))
+    let started = try #require(processStartTime(getpid()))
     let configuration = LeanFocusServiceConfiguration(
       stateRoot: URL(filePath: "/fixture"), executableURL: URL(filePath: path))
     let palette = BordersPalette(generationID: "g-current", themeID: "theme", accent: "#abcdef")

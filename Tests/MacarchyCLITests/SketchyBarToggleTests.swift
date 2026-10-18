@@ -146,7 +146,7 @@ struct SketchyBarToggleTests {
     #expect(!value.fresh(at: 0.9))
     #expect(ToggleHeartbeat.parse(token + "|007|1000|1000000") == nil)
     #expect(ToggleHeartbeat.parse(token + "|starting") == nil)
-    let start = try #require(SketchyBarToggle.processStart(getpid()))
+    let start = try #require(processStartTime(getpid()))
     #expect(
       SketchyBarToggle.matchesProcess(
         .init(token: token, pid: getpid(), milliseconds: 0, started: start)))
