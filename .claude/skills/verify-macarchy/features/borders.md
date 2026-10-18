@@ -133,6 +133,6 @@ sleep can freeze the stream despite live guest movement/screenshots. Keep sparse
 video assertions. Awake leases require explicit approval; no silent renewal or
 persistent settings changes. Guest-only caffeinate cannot keep host capture live.
 
-Native login remains manual: working SSH credentials did not establish successful
-PID-targeted GUI login. Do not retry credentials, drive a locked guest, send global
-input or steal host focus. Historical PIDs/windowIDs are not current kill targets.
+Log in only with `verify.py login` (see ../SKILL.md, Drive); earlier SSH-credential
+attempts did not establish a GUI login. Do not retry credentials, drive a locked
+guest, send global input or steal host focus. Historical PIDs/windowIDs are not current kill targets.

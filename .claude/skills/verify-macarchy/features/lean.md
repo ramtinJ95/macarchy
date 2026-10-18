@@ -37,7 +37,7 @@ to Borders, or `"disabled"` to remove managed focus. No automatic host switch.
 
 ## Driving it with verify.py
 
-Run the normal fresh-clone/start/launch flow, establish the console login (see
+Run the normal fresh-clone/start/launch flow, then `verify.py login` (see
 ../SKILL.md, Drive), rerun doctor, then:
 
 ```sh
@@ -50,7 +50,7 @@ Requires the guest's console owned by `omarchy` (checked only as `stat -f %Su
 `homebrew.mxcl.borders`/`sh.brew.borders` registrations, an absent managed plist, an
 absent guest `~/.config/macarchy` and an absent journey scratch directory. Each
 journey needs its own fresh clone: `start` refuses a clone it already started. Never
-grant permissions, install tools or automate login without separate approval. All
+grant permissions, install tools or log in other than through `verify.py login`. All
 product mutations remain guest-only.
 
 The fixed recipe builds the matching helper from the same source snapshot, uses

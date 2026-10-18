@@ -105,14 +105,23 @@ snapshot built-in, and `theme status --json`. See `features/theme.md` for assert
 It rechecks target, session ownership, binary identity and fresh state.
 The closed journeys are `theme`, `borders`, `lean` and `packaged-lean`.
 `borders`, `lean` and `packaged-lean` also need the guest console owned by
-`omarchy`. No drive logs in, and `verify.py` has no login operation. Each login
-needs explicit user approval for that run. The approved 2026-10-18 method ran
-after launch and a ready doctor, under the run's `RunLock`, against the exact
-recorded Tart process. It was a one-off script using `lab.checked_capture`
-(saving `login-before.{json,png}`), `lab.type_guest_password` and a PID-targeted
-Return, then polled `stat -f %Su /dev/console` for `omarchy` (≤60 s), captured
-`login-login.{json,png}` and reran doctor. No clicks, global input or retries
-that steal focus. Without approval, report these journeys as blocked on login.
+`omarchy`. Drives never log in; after a ready doctor, run:
+
+```sh
+uv run --project Scripts/vm --locked python -B Scripts/vm/verify.py login --run setup-<run-id> --session verify-<session-id>
+```
+
+It needs a VM started by `verify.py start`/`restart` and the run's stored guest
+password. Under the run lock it checks guest identity and returns `ready` without
+input if `omarchy` already owns the console. Otherwise it captures the exact owned
+Tart window and requires an `Enter Password` field. It types the password once,
+PID-targeted, presses Return and waits up to 60 s for `omarchy`. No clicks, global
+input, activation or retry. Any other outcome is `blocked` (exit 3). The report's
+`credential` is `not_sent`, `uncertain` (input started but Return was not
+confirmed) or `submitted`. Evidence: `login-NN/report.json`, plus `before.png` and
+`after.png` once the window was captured; a missing owned VM is refused before any
+evidence. Rerun doctor afterwards. A blocked login blocks the journey; never retry
+credentials or log in by other means.
 
 Each command uses a clean user environment with update checks and Homebrew
 auto-update disabled. Before and after, checked native `find`/`stat` snapshots
@@ -188,8 +197,8 @@ overwritten; cleanup uses its recorded owned-process fallback.
 
 ## Helpers
 
-- `Scripts/vm/verify.py` is executable. Its seven operations (`start`, `restart`,
-  `launch`, `doctor`, `drive`, `evidence`, `cleanup`) are shown above;
+- `Scripts/vm/verify.py` is executable. Its eight operations (`start`, `restart`,
+  `launch`, `doctor`, `login`, `drive`, `evidence`, `cleanup`) are shown above;
   `python3 -B Scripts/vm/verify.py --help` lists them.
 - `Scripts/vm/lab.py clone` creates the disposable baseline clone as shown above.
 - `guest.py` supplies the existing SSH and shutdown boundary; `run-tests.py`
