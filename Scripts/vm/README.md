@@ -56,7 +56,7 @@ theme` runs the qualified listing/status journey; `evidence` indexes retained pr
 `cleanup --shutdown` removes only the session's marked guest directory and stops only
 what it owns. Evidence stays in `artifacts/vm/runs/<run>/verify-<session>/`.
 The agent-facing recipe and feature map are in
-`.cursor/skills/verify-macarchy/` (also linked for Pi from `.pi/skills/`). Journeys
+`.claude/skills/verify-macarchy/` (also linked for Pi from `.pi/skills/`). Journeys
 are source-CLI evidence only, not Homebrew, GUI or guided-setup qualification.
 
 ```sh
