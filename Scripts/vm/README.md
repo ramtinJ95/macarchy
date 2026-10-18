@@ -51,7 +51,8 @@ retrying. Do not reuse old test binaries with `--skip-build`.
 fresh `test-base` clone. It reuses `lab.py` clone records and pins, `guest.py` SSH and
 shutdown, and the `run-tests.py` snapshot; Macarchy is built (`swift build --product
 macarchy`) and run only in the guest. `start` boots the clone detached and records the
-exact Tart process; `launch` builds; `doctor` is read-only; `drive --journey
+exact Tart process; `launch` builds; `doctor` is read-only; `login` submits the
+stored guest password once to the owned window's login field; `drive --journey
 theme` runs the qualified listing/status journey; `evidence` indexes retained proof;
 `cleanup --shutdown` removes only the session's marked guest directory and stops only
 what it owns. Evidence stays in `artifacts/vm/runs/<run>/verify-<session>/`.
