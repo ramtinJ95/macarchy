@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the current Macarchy source build inside an owned, disposable lab guest.
 
-Developer verification only; see .cursor/skills/verify-macarchy/SKILL.md. Reuses the
+Developer verification only; see .claude/skills/verify-macarchy/SKILL.md. Reuses the
 lab clone records, pinned Tart, guest SSH boundary and run-tests source snapshot.
 Macarchy is built and executed only inside the guest, never on the host. Journeys
 are a closed list of CLI paths, not a command executor. Evidence stays under
