@@ -46,8 +46,7 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   own clear runs, deletes its history database and its Shortcuts image export, pinned
   items included, empties the clipboard, and restarts Maccy if it was running. With a
   Maccy version other than 2.7.1, Macarchy deletes no files, reports that pinned items
-  may remain, and exits with an error. Macarchy never reads clipboard or history
-  content.
+  may remain, and exits with an error. Macarchy never reads Maccy's history.
 - `macarchy clipboard enable` also turns on an automatic clear. Once 24 hours have
   passed since the last clear, a Macarchy launch agent quits Maccy, so Maccy clears
   its unpinned history. The agent then empties the clipboard and starts Maccy again
@@ -60,6 +59,12 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Maccy's settings, and `disable` turns it off. `macarchy clipboard status` shows the
   last and next clear and the last failure. A failed automatic clear shows an alert
   at most once a day.
+- `macarchy clipboard save` saves the image on the clipboard, such as an older item
+  you picked in Maccy's history, to a new file or to standard output. The file's
+  extension picks PNG, JPEG, TIFF, or HEIC, and `--format` picks it for standard
+  output. An image already in that format is saved unchanged, and any other is
+  converted at its own size. Macarchy never replaces a file and refuses to write
+  image data to a terminal. `save` works without Maccy. For text, use `pbpaste`.
 
 ## [0.13.1] - 2026-10-17
 

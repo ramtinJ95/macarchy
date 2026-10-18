@@ -556,17 +556,19 @@ The launch agent logs to `~/.config/macarchy/run/clipboard-auto-clear.stdout.log
 and `clipboard-auto-clear.stderr.log` in the same folder. The logs never contain
 clipboard content.
 
-Macarchy never reads your clipboard or Maccy's history. Status reports the Maccy
-version, whether it runs, whether clearing is enabled, the two settings, and the
-automatic clear's state, but no items, titles, or counts. Maccy does not record
+Macarchy never reads Maccy's history. Of the `macarchy clipboard` commands, only
+`save` reads the clipboard, and only its image. Status reports the Maccy version,
+whether it runs, whether clearing is enabled, the two settings, and the automatic
+clear's state, but no items, titles, or counts. Maccy does not record
 content that an app marks as concealed or transient, which is what password managers
 do with copied passwords.
 
 If clipboard history does not behave as expected, check these points:
 
 - `macarchy clipboard status` shows what Macarchy sees. Every command except
-  `status` reports `Maccy is not installed. Install it with: brew install --cask maccy`
-  when Maccy is missing.
+  `status` and `save` reports
+  `Maccy is not installed. Install it with: brew install --cask maccy` when Maccy is
+  missing.
 - If `enable` reports that Maccy has not run yet, open Maccy once and run it again.
   Settings written before Maccy's first start might not reach it.
 - If Macarchy reports that its record of Maccy's settings is damaged, it no longer
@@ -578,6 +580,52 @@ If clipboard history does not behave as expected, check these points:
   it again. No automatic clear runs while that alert is open. Run
   `macarchy clipboard auto-clear on` to start a new 24-hour window.
 - Menu launches show failures in an alert.
+
+#### Use history in the terminal
+
+To use an older item in a terminal, pick it in Maccy's history first. Picking an
+item makes it the current clipboard. For text, `pbpaste` then prints it:
+
+```sh
+pbpaste > notes.txt
+pbpaste | grep error
+```
+
+For an image, `macarchy clipboard save` saves the image that is on the clipboard
+now, to a new file or to standard output:
+
+```sh
+macarchy clipboard save ~/Desktop/shot.png
+macarchy clipboard save photo.heic --json
+macarchy clipboard save - > shot.png
+macarchy clipboard save - --format jpeg | ssh devbox 'cat > shot.jpg'
+```
+
+The file's extension picks the format: `.png`, `.jpg` or `.jpeg`, `.tiff` or `.tif`,
+or `.heic`. If the clipboard already holds that format, Macarchy saves its bytes
+unchanged. Otherwise Macarchy converts the image at its own size and keeps its color
+profile and its metadata, where the new format can hold them. To share a copy without
+metadata, use `macarchy image prepare --clipboard --preset share`. JPEG has no
+transparency, so transparent areas turn white. The file must not exist, and its folder
+must exist. Macarchy never replaces a file. On success, the command prints a line such
+as this one:
+
+```text
+Saved the clipboard image to ~/Desktop/shot.png (PNG, 412 KB).
+```
+
+`--json` reports the saved path, the format as a type identifier such as
+`public.png`, the byte count, and whether Macarchy converted the image.
+
+With `-` instead of a file, Macarchy writes only the image to standard output. The
+format is PNG unless you pass `--format jpeg`, `--format tiff`, or `--format heic`.
+If standard output is a terminal, Macarchy refuses and suggests a redirect such as
+`macarchy clipboard save - > image.png`. Errors go to stderr.
+
+`save` reads only PNG, JPEG, HEIC, and TIFF data from the clipboard, and it works
+without Maccy. If the clipboard has no image, Macarchy reports
+`The clipboard has no image. For text, use pbpaste.`, writes nothing, and exits with
+an error.
 
 #### Reuse several items
 
