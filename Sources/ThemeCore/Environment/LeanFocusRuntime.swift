@@ -12,19 +12,10 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
   package let generationID: String
   package let accent: String
 
-  package static func processStart(_ pid: Int32) -> UInt64? {
-    var info = proc_bsdinfo()
-    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-    guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
-      info.pbi_uid == getuid()
-    else { return nil }
-    return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
-  }
-
   package static func publish(
     configuration: LeanFocusServiceConfiguration, generationID: String, accent: String
   ) throws {
-    guard let started = processStart(getpid()),
+    guard let started = processStartTime(getpid()),
       let processPath = processExecutablePath(getpid()),
       let physical = LeanFocusServiceConfiguration.physicalPath(processPath),
       physical == configuration.currentExecutablePath
@@ -98,7 +89,7 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
     palette: BordersPalette
   ) -> Bool {
     label == LeanFocusService.label && stateRoot == configuration.stateRoot
-      && pid == processID && started == Self.processStart(pid)
+      && pid == processID && started == processStartTime(pid)
       && configuration.currentExecutablePath != nil
       && executablePath == configuration.currentExecutablePath
       && processExecutablePath(pid).flatMap(LeanFocusServiceConfiguration.physicalPath)
