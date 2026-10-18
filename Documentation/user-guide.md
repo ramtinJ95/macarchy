@@ -561,7 +561,6 @@ version, whether it runs, whether clearing is enabled, the two settings, and the
 automatic clear's state, but no items, titles, or counts. Maccy does not record
 content that an app marks as concealed or transient, which is what password managers
 do with copied passwords.
-Maccy 2.7.1 has no paste stack and cannot select several items at once.
 
 If clipboard history does not behave as expected, check these points:
 
@@ -579,6 +578,31 @@ If clipboard history does not behave as expected, check these points:
   it again. No automatic clear runs while that alert is open. Run
   `macarchy clipboard auto-clear on` to start a new 24-hour window.
 - Menu launches show failures in an alert.
+
+#### Reuse several items
+
+Maccy 2.7.1 cannot select several items at once or paste them as a stack, so
+Macarchy adds no paste queue. To paste several earlier items in order, reuse them
+one at a time:
+
+1. Open the history with **Clipboard history** in the action menu or with
+   **Shift–Command–C**.
+2. Select the first item you need and press **Return**. Maccy puts it on the
+   clipboard.
+3. Paste it with **Command–V**.
+4. Repeat these steps for each remaining item.
+
+**Option–Return** puts the item on the clipboard and pastes it in one step. For
+that, Maccy needs the Accessibility permission in **System Settings → Privacy &
+Security → Accessibility**.
+
+To keep an item you reuse often, select it in the history and press **Option–P**,
+Maccy's default pin shortcut. Maccy keeps pinned items at the top of the history and
+gives each one its own keyboard shortcut. When the history is full, and when Maccy
+runs its own clear, Maccy removes only unpinned items. Press **Option–P** again to
+unpin the item. Maccy's **Pin to** setting can move pinned items to the bottom
+instead. A full clear, with **Clear clipboard history** or `macarchy clipboard clear`,
+deletes pinned items too.
 
 ### Bring an Omarchy theme
 
