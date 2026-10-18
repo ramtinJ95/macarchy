@@ -34,6 +34,20 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it is never larger than the original. Macarchy saves it beside the original, or in `~/Downloads`
   for a clipboard image, and never replaces a file. Macarchy copies the result to
   the clipboard, and the menu action also shows it in Finder.
+- `macarchy clipboard` and the **Clipboard history** and **Clear clipboard history**
+  menu actions work with Maccy, an optional app that keeps your clipboard history.
+  Install it with `macarchy setup add-packages cask:maccy` or
+  `brew install --cask maccy`; no upgrade or setup run installs it on its own.
+  `macarchy clipboard enable` turns on Maccy's `clearOnQuit` and
+  `clearSystemClipboard` settings and saves their earlier values, which
+  `macarchy clipboard disable` puts back unless you changed them in Maccy since.
+  **Clipboard history** opens Maccy's history. **Clear clipboard history** asks for
+  confirmation, and `macarchy clipboard clear` does not. A clear quits Maccy so its
+  own clear runs, deletes its history database and its Shortcuts image export, pinned
+  items included, empties the clipboard, and restarts Maccy if it was running. With a
+  Maccy version other than 2.7.1, Macarchy deletes no files, reports that pinned items
+  may remain, and exits with an error. Macarchy never reads clipboard or history
+  content.
 
 ## [0.13.1] - 2026-10-17
 
