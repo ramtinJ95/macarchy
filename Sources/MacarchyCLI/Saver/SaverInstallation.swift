@@ -49,6 +49,8 @@ enum SaverKitty: Equatable, Sendable {
   case present(version: String?)
 
   static let application = URL(filePath: "/Applications/kitty.app", directoryHint: .isDirectory)
+  /// The executable every saver panel runs, and the only parent a runner accepts.
+  static let executable = application.appending(path: "Contents/MacOS/kitty").path
   static let remedy = "Install Kitty with `brew install --cask kitty`."
 
   static func inspect(application: URL = application) -> Self {

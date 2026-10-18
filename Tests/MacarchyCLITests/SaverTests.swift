@@ -186,6 +186,351 @@ struct SaverTextTests {
   }
 }
 
+struct SaverRecordsTests {
+  @Test func recordNamesStayInsideTheRecordsDirectory() {
+    let names = [SaverDisplay.main, .output("DP-1"), .output("HDMI-1"), .output("../../etc/x")]
+      .map(\.recordName)
+
+    #expect(names[0] == "main.json")
+    #expect(Set(names).count == names.count)
+    for name in names.dropFirst() {
+      #expect(name.hasPrefix("output-") && name.hasSuffix(".json"))
+      #expect(name.count == "output-".count + 16 + ".json".count)
+      #expect(!name.contains("/"))
+    }
+  }
+}
+
+struct SaverRunnerTests {
+  @Test func ttfxArgumentsPutTerminalOptionsBeforeTheEffectAndCarryNoText() {
+    let expected = [
+      "--frame-rate", "30", "--canvas-width", "0", "--canvas-height", "0", "--anchor-canvas", "c",
+      "--anchor-text", "c", "--reuse-canvas", "--no-eol", "--no-restore-cursor",
+      "--terminal-background-color", "#1a1b26", "beams", "--final-gradient-stops", "#7aa2f7",
+      "#7dcfff", "#c0caf5",
+    ]
+
+    #expect(SaverRunner.arguments(effect: "beams", palette: SaverFixture.palette) == expected)
+    #expect(SaverRunner.effects.count == 34)
+    #expect(Set(SaverRunner.effects).count == SaverRunner.effects.count)
+    for excluded in ["matrix", "thunderstorm", "synthgrid"] {
+      #expect(!SaverRunner.effects.contains(excluded))
+    }
+  }
+
+  @Test func inputEndsTheSessionAfterEffectsThatNeverRepeatBackToBack() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      machine.script(.engineExited(0), at: 4)
+      machine.script(.input, at: 6)
+
+      #expect(machine.runner().run() == 0)
+
+      #expect(machine.randomBounds == [34, 33])
+      let expectedArguments = [
+        SaverRunner.arguments(effect: "beams", palette: SaverFixture.palette),
+        SaverRunner.arguments(effect: "binarypath", palette: SaverFixture.palette),
+      ]
+      #expect(machine.startedArguments == expectedArguments)
+      #expect(machine.inputs == ["Back soon", "Back soon"])
+      #expect(!machine.startedArguments.joined().contains("Back soon"))
+      #expect(machine.stopped == [902])
+      #expect(machine.screen == ["prepare", "restore"])
+      let expectedRecords: [SaverRunnerRecord?] = [machine.identity, machine.identity]
+      #expect(machine.recorded == expectedRecords)
+      #expect(try SaverRecords(stateRoot: root).record(.output("DP-1")).read() == nil)
+    }
+  }
+
+  @Test func inputWhileThePanelSettlesIsIgnored() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      machine.script(.input, at: 0.4)
+      machine.script(.timeout, at: 0.8)
+      machine.script(.input, at: 1.2)
+
+      #expect(machine.runner().run() == 0)
+
+      #expect(machine.startedArguments.count == 1)
+      #expect(machine.stopped == [901])
+      #expect(machine.waits.count == 3)
+    }
+  }
+
+  @Test func signalEndsTheSessionEvenWhileThePanelSettles() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      machine.script(.terminate, at: 0.2)
+
+      #expect(machine.runner().run() == 0)
+
+      #expect(machine.stopped == [901])
+      #expect(machine.screen == ["prepare", "restore"])
+      #expect(try SaverRecords(stateRoot: root).record(.output("DP-1")).read() == nil)
+    }
+  }
+
+  @Test func ttfxFailureIsShownThenTheSessionEndsWithAnError() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      machine.script(.engineExited(0), at: 3)
+      machine.script(.engineExited(2), at: 5)
+      machine.script(.timeout, at: 10)
+
+      #expect(machine.runner().run() == 1)
+
+      let expectedScreen = [
+        "prepare", "Macarchy screensaver stopped: ttfx binarypath exited with status 2", "restore",
+      ]
+      #expect(machine.screen == expectedScreen)
+      let expectedWaits: [Duration?] = [nil, nil, .seconds(5)]
+      #expect(machine.waits == expectedWaits)
+      #expect(machine.stopped.isEmpty)
+      #expect(try SaverRecords(stateRoot: root).record(.output("DP-1")).read() == nil)
+    }
+  }
+
+  @Test func ttfxThatCannotStartIsShownThenTheSessionEndsWithAnError() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      machine.startFails = true
+      machine.script(.input, at: 2)
+
+      #expect(machine.runner().run() == 1)
+
+      let expectedScreen = [
+        "prepare", "Macarchy screensaver stopped: cannot start ttfx: exec format error", "restore",
+      ]
+      #expect(machine.screen == expectedScreen)
+      let expectedWaits: [Duration?] = [.seconds(5)]
+      #expect(machine.waits == expectedWaits)
+    }
+  }
+
+  @Test(arguments: ["another-launch", "no-launch", "display-taken"])
+  func runnerOutsideTheCurrentLaunchClosesWithoutPlayingOrSignalling(kind: String) throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root, opensLaunch: kind == "display-taken")
+      let records = SaverRecords(stateRoot: root)
+      try records.create()
+      if kind == "another-launch" {
+        try records.launch.write(
+          SaverLaunch(token: String(repeating: "f", count: 32), created: SaverFixture.created))
+      }
+      let sibling = SaverFixture.session(810, "HDMI-1", macarchy: machine.macarchy)
+      try records.record(.output("HDMI-1")).write(sibling)
+      let taken = SaverFixture.session(850, "DP-1", macarchy: machine.macarchy)
+      if kind == "display-taken" { try records.record(.output("DP-1")).write(taken) }
+      machine.processes = [800: machine.identity.runner, 810: sibling.runner]
+
+      #expect(machine.runner().run() == 1)
+
+      #expect(machine.screen == [RunnerMachine.refusal])
+      #expect(machine.waits.isEmpty)
+      #expect(machine.startedArguments.isEmpty)
+      #expect(machine.terminated.isEmpty)
+      #expect(try records.record(.output("HDMI-1")).read() == sibling)
+      let expected: SaverRunnerRecord? = kind == "display-taken" ? taken : nil
+      #expect(try records.record(.output("DP-1")).read() == expected)
+    }
+  }
+
+  @Test func endingRemovesTheDisplayRecordOnlyWhileItNamesThisRunner() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      let records = SaverRecords(stateRoot: root)
+      let other = SaverFixture.session(850, "DP-1", macarchy: machine.macarchy)
+      machine.duringPlay = { try records.record(.output("DP-1")).write(other) }
+      machine.script(.input, at: 2)
+
+      #expect(machine.runner().run() == 0)
+
+      #expect(try records.record(.output("DP-1")).read() == other)
+    }
+  }
+
+  @Test func endingStopsOnlySiblingRunnersThatStillMatchTheirRecords() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      let records = SaverRecords(stateRoot: root)
+      try records.create()
+      let sibling = SaverFixture.session(810, "HDMI-1", macarchy: machine.macarchy)
+      let reused = SaverFixture.session(820, "DP-2", macarchy: machine.macarchy)
+      try records.record(.output("HDMI-1")).write(sibling)
+      try records.record(.output("DP-2")).write(reused)
+      machine.processes = [
+        800: machine.identity.runner, 810: sibling.runner,
+        820: SaverProcess(pid: 820, started: 1, executablePath: machine.macarchy),
+      ]
+      machine.script(.input, at: 2)
+
+      #expect(machine.runner().run() == 0)
+
+      #expect(machine.terminated == [810])
+      #expect(try records.record(.output("HDMI-1")).read() == sibling)
+      #expect(try records.record(.output("DP-1")).read() == nil)
+    }
+  }
+
+  @Test func runnerWhoseExecutableIsNotARegularFileNeitherRegistersNorPlays() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root)
+      try FileManager.default.removeItem(atPath: machine.macarchy)
+      try FileManager.default.createDirectory(
+        atPath: machine.macarchy, withIntermediateDirectories: false)
+      machine.script(.timeout, at: 5)
+
+      #expect(machine.runner().run() == 1)
+
+      let expectedScreen = [
+        "Macarchy screensaver cannot start: this runner's executable \(machine.macarchy) is not a"
+          + " regular file"
+      ]
+      #expect(machine.screen == expectedScreen)
+      #expect(machine.startedArguments.isEmpty)
+      #expect(machine.terminated.isEmpty)
+      #expect(try SaverRecords(stateRoot: root).entries().isEmpty)
+    }
+  }
+
+  @Test func runnerThatCannotRegisterNeitherPlaysNorSignals() throws {
+    try withTemporaryDirectory { root throws in
+      let machine = try RunnerMachine(root, opensLaunch: false)
+      // A regular file where the run directory belongs.
+      try Data().write(to: root.appending(path: "run"))
+      machine.script(.timeout, at: 5)
+
+      #expect(machine.runner().run() == 1)
+
+      #expect(machine.screen.count == 1)
+      #expect(machine.screen.first?.hasPrefix("Macarchy screensaver cannot start: ") == true)
+      let expectedWaits: [Duration?] = [.seconds(5)]
+      #expect(machine.waits == expectedWaits)
+      #expect(machine.startedArguments.isEmpty)
+      #expect(machine.terminated.isEmpty)
+    }
+  }
+}
+
+private enum SaverFixture {
+  static let macarchy = "/opt/homebrew/Cellar/macarchy/0.14.0/bin/macarchy"
+  static let command = URL(filePath: "/opt/homebrew/bin/macarchy")
+  static let stateRoot = URL(filePath: "/Users/me/.config/macarchy", directoryHint: .isDirectory)
+  static let textFile = URL(filePath: "/Users/me/.config/macarchy/screensaver.txt")
+  static let palette = SaverPalette(
+    background: "#1a1b26", foreground: "#c0caf5", accents: ["#7aa2f7", "#7dcfff", "#c0caf5"])
+  static let created = Date(timeIntervalSince1970: 1_800_000_000)
+  static let launch = SaverLaunch(token: "0123456789abcdef0123456789abcdef", created: created)
+
+  /// A session whose runner is `pid` and whose panel Kitty is `pid + 1`.
+  static func session(
+    _ pid: Int32, _ output: String?, macarchy: String = SaverFixture.macarchy,
+    launch: SaverLaunch = SaverFixture.launch
+  ) -> SaverRunnerRecord {
+    SaverRunnerRecord(
+      output: output, launch: launch.token,
+      runner: SaverProcess(pid: pid, started: UInt64(pid) * 1_000, executablePath: macarchy),
+      panel: SaverProcess(
+        pid: pid + 1, started: UInt64(pid + 1) * 1_000,
+        executablePath: SaverKitty.executable))
+  }
+
+  /// A regular file named macarchy in `root`, as a runner's executable must be when it registers.
+  static func macarchyFile(in root: URL) throws -> String {
+    let url = root.appending(path: "Cellar/macarchy/0.14.0/bin/macarchy")
+    try writeFile("", to: url, permissions: 0o755)
+    return url.path
+  }
+}
+
+/// The panel terminal, ttfx and clock a runner sees, replayed from a script of events.
+private final class RunnerMachine {
+  static let refusal =
+    "Macarchy screensaver did not start: this panel is not part of a start in progress."
+
+  let identity: SaverRunnerRecord
+  var waits: [Duration?] = []
+  var randomBounds: [Int] = []
+  var startedArguments: [[String]] = []
+  var inputs: [String] = []
+  var recorded: [SaverRunnerRecord?] = []
+  var stopped: [Int32] = []
+  var screen: [String] = []
+  var processes: [Int32: SaverProcess] = [:]
+  var terminated: [Int32] = []
+  var startFails = false
+  /// Runs as each ttfx starts.
+  var duringPlay: () throws -> Void = {}
+  private let records: SaverRecords
+  private var events: [SaverRunnerEvent] = []
+  private var times: [TimeInterval] = []
+  private var time: TimeInterval = 0
+  private var lastPID: Int32 = 900
+
+  /// A runner of `launch` whose executable is a regular file in `root`. With `opensLaunch`,
+  /// `launch` is the current launch, as when its start has just opened the panel.
+  init(
+    _ root: URL, output: String = "DP-1", pid: Int32 = 800,
+    launch: SaverLaunch = SaverFixture.launch, opensLaunch: Bool = true
+  ) throws {
+    let macarchy = try SaverFixture.macarchyFile(in: root)
+    records = SaverRecords(stateRoot: root)
+    identity = SaverFixture.session(pid, output, macarchy: macarchy, launch: launch)
+    guard opensLaunch else { return }
+    try records.create()
+    try records.launch.write(launch)
+  }
+
+  var macarchy: String { identity.runner.executablePath }
+
+  /// `next` returns `event` once the clock reads `time` seconds after the runner began.
+  func script(_ event: SaverRunnerEvent, at time: TimeInterval) {
+    events.append(event)
+    times.append(time)
+  }
+
+  func runner() -> SaverRunner {
+    let records = self.records
+    let identity = self.identity
+    return SaverRunner(
+      identity: identity,
+      records: records,
+      palette: SaverFixture.palette,
+      text: "Back soon",
+      terminal: SaverTerminal(
+        prepare: { self.screen.append("prepare") },
+        restore: { self.screen.append("restore") },
+        show: { self.screen.append($0) }),
+      processes: SaverEngineProcesses(
+        start: { arguments, input in
+          if self.startFails { throw SaverError("exec format error") }
+          try self.duringPlay()
+          self.startedArguments.append(arguments)
+          self.inputs.append(input)
+          self.recorded.append(try records.record(identity.display).read())
+          self.lastPID += 1
+          return self.lastPID
+        },
+        stop: { self.stopped.append($0) }),
+      next: { _, timeout in
+        self.waits.append(timeout)
+        guard !self.events.isEmpty else {
+          Issue.record("the runner waited past its scripted events")
+          return .terminate
+        }
+        self.time = self.times.removeFirst()
+        return self.events.removeFirst()
+      },
+      observe: { self.processes[$0] },
+      terminate: { self.terminated.append($0) },
+      random: { bound in
+        self.randomBounds.append(bound)
+        return 0
+      },
+      now: { Date(timeIntervalSince1970: self.time) })
+  }
+}
+
 private func withTemporaryDirectory(_ body: (URL) throws -> Void) throws {
   let root = FileManager.default.temporaryDirectory.appending(
     path: "macarchy-saver-\(UUID().uuidString.lowercased())", directoryHint: .isDirectory)
