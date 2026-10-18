@@ -235,7 +235,7 @@ struct ClipboardHistoryTests {
 
       let error = #expect(throws: ClipboardHistoryError.self) { try engine.clear() }
       #expect(error?.description.contains("did not quit within five seconds") == true)
-      #expect(machine.pauses == ClipboardHistory.exitPolls)
+      #expect(machine.pauses == ClipboardHistory.waitPolls)
       #expect(machine.log == ["quit"])
       #expect(Self.storeFiles.allSatisfy(fixture.exists))
     }
