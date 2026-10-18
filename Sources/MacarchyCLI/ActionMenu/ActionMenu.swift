@@ -10,6 +10,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   case annotate
   case ocr
   case keepAwake
+  case chooseMicrophone
+  case toggleMicrophone
   case profile(ProfileEditAction)
   case neovim
   case configuration(MenuConfigurationAction)
@@ -18,7 +20,10 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   static var allCases: [Self] {
     ProfileEditAction.allCases.map(Self.profile)
       + [.neovim] + MenuConfigurationAction.allCases.map(Self.configuration)
-      + [.appearance, .keybindings, .screenshot, .annotate, .ocr, .keepAwake]
+      + [
+        .appearance, .keybindings, .screenshot, .annotate, .ocr, .keepAwake, .chooseMicrophone,
+        .toggleMicrophone,
+      ]
       + MaintenanceAction.allCases.map(Self.maintenance)
   }
 
@@ -27,7 +32,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .profile, .neovim, .configuration: "Configure"
     case .appearance, .keybindings: "Appearance"
     case .screenshot, .annotate, .ocr: "Capture"
-    case .keepAwake: "Controls"
+    case .keepAwake, .chooseMicrophone, .toggleMicrophone: "Controls"
     case .maintenance: "Maintenance"
     }
   }
@@ -40,6 +45,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .annotate: "Annotate screenshot"
     case .ocr: "Copy text from region"
     case .keepAwake: "Toggle keep-awake"
+    case .chooseMicrophone: "Choose microphone"
+    case .toggleMicrophone: "Toggle microphone mute"
     case .profile(let action): action.title
     case .neovim: "Neovim"
     case .configuration(let action): action.title
@@ -56,6 +63,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .ocr: "capture text region ocr recognize clipboard english"
     case .keepAwake:
       "controls toggle keep awake keep-awake caffeinate sleep display idle always on screensaver lock"
+    case .chooseMicrophone: "controls choose select microphone mic input device default audio"
+    case .toggleMicrophone: "controls toggle microphone mic mute unmute silence input privacy"
     case .profile(let action): "configure \(action.title) edit".lowercased()
     case .neovim: "configure neovim nvim editor lua native"
     case .configuration(let action):
@@ -135,7 +144,8 @@ struct ActionMenu: AsyncParsableCommand {
           _ = try MenuMaintenance.launch(
             operation, theme: theme, executableURL: runtime.executableURL,
             profileArguments: profileArguments)
-        case .appearance, .keybindings, .screenshot, .annotate, .ocr, .keepAwake:
+        case .appearance, .keybindings, .screenshot, .annotate, .ocr, .keepAwake,
+          .chooseMicrophone, .toggleMicrophone:
           _ = try Self.launchViewer(action, executableURL: runtime.executableURL)
         }
       },
@@ -179,6 +189,8 @@ struct ActionMenu: AsyncParsableCommand {
     case .annotate: process.arguments = ["capture", "annotate", "--alert-on-error"]
     case .ocr: process.arguments = ["capture", "ocr", "--alert-on-error"]
     case .keepAwake: process.arguments = ["keep-awake", "toggle", "--alert-on-error"]
+    case .chooseMicrophone: process.arguments = ["mic", "choose", "--alert-on-error"]
+    case .toggleMicrophone: process.arguments = ["mic", "toggle", "--alert-on-error"]
     case .maintenance, .profile, .neovim, .configuration:
       throw ValidationError(
         "Configuration and maintenance actions must launch through their menu terminal")

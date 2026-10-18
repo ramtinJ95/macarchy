@@ -82,6 +82,8 @@ struct ActionMenuTests {
     (.annotate, ["capture", "annotate", "--alert-on-error"]),
     (.ocr, ["capture", "ocr", "--alert-on-error"]),
     (.keepAwake, ["keep-awake", "toggle", "--alert-on-error"]),
+    (.chooseMicrophone, ["mic", "choose", "--alert-on-error"]),
+    (.toggleMicrophone, ["mic", "toggle", "--alert-on-error"]),
   ])
   func launchUsesExactExecutableAndShortcutArguments(
     action: ActionMenuAction, arguments: [String]
@@ -146,6 +148,20 @@ struct ActionMenuTests {
     }
     #expect(ActionMenuAction.keepAwake.category == "Controls")
     #expect(ActionMenuAction.keepAwake.title == "Toggle keep-awake")
+    for query in ["choose microphone", "input device", "select mic"] {
+      state.search(query)
+      #expect(state.actions == [.chooseMicrophone], Comment(rawValue: query))
+    }
+    for query in ["mute", "unmute", "microphone privacy"] {
+      state.search(query)
+      #expect(state.actions == [.toggleMicrophone], Comment(rawValue: query))
+    }
+    state.search("microphone")
+    #expect(state.actions == [.chooseMicrophone, .toggleMicrophone])
+    #expect(ActionMenuAction.chooseMicrophone.category == "Controls")
+    #expect(ActionMenuAction.toggleMicrophone.category == "Controls")
+    #expect(ActionMenuAction.chooseMicrophone.title == "Choose microphone")
+    #expect(ActionMenuAction.toggleMicrophone.title == "Toggle microphone mute")
     state.select(row: -1)
     #expect(state.selectedAction == nil)
     state.search("")
