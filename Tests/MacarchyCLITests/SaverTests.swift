@@ -78,13 +78,16 @@ struct SaverInstallationTests {
       textFile: SaverFixture.textFile, text: .banner(rejected: nil), sessions: [])
 
     #expect(
-      try ready.renderJSON()
+      try SaverFixture.report(ready).renderJSON()
         == #"{"engine":{"path":"/opt/homebrew/Cellar/macarchy/0.14.0/libexec/ttfx","reason":null,"#
-        + #""remedy":null,"state":"present"},"kitty":{"path":"/Applications/kitty.app","#
+        + #""remedy":null,"state":"present"},"idle":{"displaySleep":{"error":null,"seconds":null,"#
+        + #""state":"never"},"loaded":false,"nativeScreensaver":{"error":null,"seconds":null,"#
+        + #""state":"never"},"paused":false,"state":"off","timeout":null,"warnings":[]},"#
+        + #""kitty":{"path":"/Applications/kitty.app","#
         + #""remedy":null,"state":"present","version":"0.49.0"},"running":false,"sessions":[],"#
         + #""text":{"path":"/Users/me/.config/macarchy/screensaver.txt","rejected":null,"#
         + #""source":"banner"}}"#)
-    let document = try jsonObject(try missing.renderJSON())
+    let document = try jsonObject(try SaverFixture.report(missing).renderJSON())
     let engineDocument = try #require(document["engine"] as? [String: Any])
     let kittyDocument = try #require(document["kitty"] as? [String: Any])
     #expect(engineDocument["state"] as? String == "missing")
@@ -122,19 +125,19 @@ struct SaverInstallationTests {
       outputs.message.hasSuffix(
         "Text: /Users/me/.config/macarchy/screensaver.txt\nScreensaver: running on DP-1, HDMI-1"))
     #expect(
-      try outputs.renderJSON().hasSuffix(
+      try SaverFixture.report(outputs).renderJSON().hasSuffix(
         #""running":true,"sessions":[{"display":"DP-1","pid":700},{"display":"HDMI-1","pid":710}],"#
           + #""text":{"path":"/Users/me/.config/macarchy/screensaver.txt","rejected":null,"#
           + #""source":"custom"}}"#))
-    #expect(try outputs.renderJSON().contains("Gone fishing") == false)
+    #expect(try SaverFixture.report(outputs).renderJSON().contains("Gone fishing") == false)
     #expect(
       main.message.hasSuffix(
         "Text: the Macarchy banner; /Users/me/.config/macarchy/screensaver.txt is not used"
           + " because it is not valid UTF-8\nScreensaver: running; it covers the main display only"
       ))
-    #expect(try main.renderJSON().contains(#""sessions":[{"display":null,"pid":700}]"#))
-    #expect(
-      try main.renderJSON().contains(#""rejected":"it is not valid UTF-8","source":"banner""#))
+    let mainJSON = try SaverFixture.report(main).renderJSON()
+    #expect(mainJSON.contains(#""sessions":[{"display":null,"pid":700}]"#))
+    #expect(mainJSON.contains(#""rejected":"it is not valid UTF-8","source":"banner""#))
   }
 }
 
@@ -935,6 +938,15 @@ private enum SaverFixture {
     background: "#1a1b26", foreground: "#c0caf5", accents: ["#7aa2f7", "#7dcfff", "#c0caf5"])
   static let created = Date(timeIntervalSince1970: 1_800_000_000)
   static let launch = SaverLaunch(token: "0123456789abcdef0123456789abcdef", created: created)
+
+  /// `saver status` for `saver` while idle activation is off and no native timer is set.
+  static func report(_ saver: SaverStatus) -> SaverReport {
+    SaverReport(
+      saver: saver,
+      idle: SaverIdleStatus(
+        activation: SaverIdleActivation(agent: .absent, loaded: false, record: nil),
+        timers: SaverNativeTimers(screensaver: .never, displaySleep: .never)))
+  }
 
   /// A session whose runner is `pid` and whose panel Kitty is `pid + 1`.
   static func session(

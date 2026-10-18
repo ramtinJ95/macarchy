@@ -64,7 +64,7 @@ enum SaverKitty: Equatable, Sendable {
   }
 }
 
-/// What `macarchy saver status` reports. It never includes the saver text itself.
+/// What `macarchy saver status` reports about the screensaver. It never includes the saver text.
 struct SaverStatus: Equatable, Sendable {
   let engine: SaverEngine
   let kitty: SaverKitty
@@ -104,7 +104,7 @@ struct SaverStatus: Equatable, Sendable {
     return [engineLine, kittyLine, textLine, sessionLine].joined(separator: "\n")
   }
 
-  func renderJSON() throws -> String {
+  var json: [String: Any] {
     var engineDocument: [String: Any] = [
       "path": engine.url.path, "state": "present", "reason": NSNull(), "remedy": NSNull(),
     ]
@@ -134,12 +134,9 @@ struct SaverStatus: Equatable, Sendable {
       if let output = session.output { document["display"] = output }
       return document
     }
-    let document: [String: Any] = [
+    return [
       "engine": engineDocument, "kitty": kittyDocument, "text": textDocument,
       "running": !sessions.isEmpty, "sessions": sessionDocuments,
     ]
-    let data = try JSONSerialization.data(
-      withJSONObject: document, options: [.sortedKeys, .withoutEscapingSlashes])
-    return String(decoding: data, as: UTF8.self)
   }
 }

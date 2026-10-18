@@ -117,6 +117,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let microphoneEvent = "macarchy_microphone_changed"
   /// SF Symbols mic.slash.fill, drawn by the SF Pro font like the bar's other symbol glyphs.
   package static let microphoneIcon = "\u{1002B3}"
+  /// Idle screensaver changes trigger this event so the pause indicator refreshes before its timer.
+  package static let saverIdleEvent = "macarchy_saver_idle_changed"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
     "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
