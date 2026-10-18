@@ -3,6 +3,32 @@ import CoreGraphics
 import Foundation
 import ThemeCore
 
+/// An optional item the generated clock module keeps beside the clock (ADR-0256). Older
+/// generations lack some companions, so their clock scripts request only what they generated.
+struct ClockCompanion: Sendable {
+  enum Side: Sendable { case left, right }
+
+  let item: String
+  let detailItem: String
+  /// Visual side of the clock.
+  let side: Side
+  let plugin: String
+  let updateFrequency: Int
+  let events: [String]
+
+  private static let hoverEvents = [
+    "mouse.clicked", "mouse.entered", "mouse.exited", "mouse.exited.global", "system_woke",
+  ]
+  static let update = Self(
+    item: SketchyBarUpdateIndicator.item, detailItem: SketchyBarUpdateIndicator.detailItem,
+    side: .right, plugin: "update", updateFrequency: 60, events: hoverEvents)
+  static let keepAwake = Self(
+    item: SketchyBarKeepAwakeIndicator.item, detailItem: SketchyBarKeepAwakeIndicator.detailItem,
+    side: .left, plugin: "keep-awake", updateFrequency: 30,
+    events: hoverEvents + [KeepAwake.barEvent])
+  static let all = [update, keepAwake]
+}
+
 struct SketchyBarCalendar {
   static let previewItem = "macarchy.clock.preview"
   let processRunner: ProcessRunner
@@ -23,9 +49,9 @@ struct SketchyBarCalendar {
     return displays.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) == 0 }
   }
 
-  func execute(sender: String, position: String, format: String, updateIndicator: Bool = false)
-    throws
-  {
+  func execute(
+    sender: String, position: String, format: String, companions: [ClockCompanion] = []
+  ) throws {
     guard ["auto", "left", "center", "right"].contains(position), format.hasPrefix("+") else {
       throw CalendarError.invalidInvocation
     }
@@ -53,11 +79,12 @@ struct SketchyBarCalendar {
       "label.padding_left=\(compact ? 1 : 3)", "label.padding_right=\(compact ? 1 : 3)",
       "label=\(label)",
     ]
-    if updateIndicator {
-      // Right-side items are laid out in reverse order; keep the indicator visually right of the clock.
+    for companion in companions {
+      // Right-side items are laid out in reverse order, so "before" there is visually right.
+      let before = (companion.side == .right) == compact
       arguments += [
-        "--set", SketchyBarUpdateIndicator.item, "position=\(actualPosition)",
-        "--move", SketchyBarUpdateIndicator.item, compact ? "before" : "after", "macarchy.clock",
+        "--set", companion.item, "position=\(actualPosition)",
+        "--move", companion.item, before ? "before" : "after", "macarchy.clock",
       ]
     }
     try bar(arguments)
@@ -96,6 +123,11 @@ extension Desktop {
     @Option var position: String
     @Option var format: String
     @Flag var updateIndicator = false
+    @Flag var keepAwakeIndicator = false
+
+    var companions: [ClockCompanion] {
+      (updateIndicator ? [.update] : []) + (keepAwakeIndicator ? [.keepAwake] : [])
+    }
 
     mutating func run() throws {
       try SketchyBarCalendar(
@@ -103,7 +135,7 @@ extension Desktop {
         hasExternalDisplay: SketchyBarCalendar.externalDisplayPresent,
         uptime: { ProcessInfo.processInfo.systemUptime }, sleep: Thread.sleep(forTimeInterval:)
       )
-      .execute(sender: sender, position: position, format: format, updateIndicator: updateIndicator)
+      .execute(sender: sender, position: position, format: format, companions: companions)
     }
   }
 }

@@ -49,7 +49,7 @@ struct KeepAwakeError: Error, CustomStringConvertible {
 /// stale: it is removed and that PID is never signalled.
 struct KeepAwake {
   static let caffeinatePath = "/usr/bin/caffeinate"
-  static let barEvent = "macarchy_keep_awake_changed"
+  static let barEvent = SketchyBarConfigurationComposer.keepAwakeEvent
   /// With the live 50 ms pause, about two seconds for caffeinate to exit after SIGTERM.
   static let exitPolls = 40
   static let effect = "The display stays on; the idle screensaver and idle lock will not start."

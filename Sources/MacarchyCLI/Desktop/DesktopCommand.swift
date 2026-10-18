@@ -9,7 +9,7 @@ struct Desktop: ParsableCommand {
       Plan.self, Apply.self, Status.self, Doctor.self, Teardown.self, MigrateOwnership.self,
       RunSketchyBarHook.self,
       Borders.self, CPULoad.self, WiFi.self, AudioOutputCommand.self, AudioPicker.self,
-      Calendar.self, Media.self, Toggle.self, UpdateIndicator.self,
+      Calendar.self, Media.self, Toggle.self, UpdateIndicator.self, KeepAwakeIndicator.self,
     ]
   )
 

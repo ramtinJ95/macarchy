@@ -74,6 +74,71 @@ struct SketchyBarRuntimeTests {
         == (["hidden", "warning"].contains(condition) ? .converged : .drifted))
   }
 
+  @Test(arguments: [
+    "hidden", "visible", "position", "script", "frequency", "events", "undeclared-event", "popup",
+  ])
+  func keepAwakeIndicatorRequiresWiringIncludingItsChangeEvent(condition: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let verifier = fixture.verifier { request in
+      let result = Self.dynamicResult(request, fixture: fixture, indices: [1])
+      var output = result.output
+      switch (request.arguments, condition) {
+      case (["--query", SketchyBarKeepAwakeIndicator.item], "visible"):
+        output = output.replacingOccurrences(
+          of: "\"drawing\":\"off\"", with: "\"drawing\":\"on\"",
+          range: output.range(of: "\"drawing\":\"off\""))
+      case (["--query", SketchyBarKeepAwakeIndicator.item], "position"):
+        output = output.replacingOccurrences(
+          of: "\"position\":\"right\"", with: "\"position\":\"left\"")
+      case (["--query", SketchyBarKeepAwakeIndicator.item], "script"):
+        output = output.replacingOccurrences(of: "plugins/keep-awake.sh", with: "plugins/wrong.sh")
+      case (["--query", SketchyBarKeepAwakeIndicator.item], "frequency"):
+        output = output.replacingOccurrences(of: "\"update_freq\":30", with: "\"update_freq\":0")
+      case (["--query", SketchyBarKeepAwakeIndicator.item], "events"):
+        output = output.replacingOccurrences(of: "\"update_mask\":489", with: "\"update_mask\":233")
+      case (["--query", SketchyBarKeepAwakeIndicator.item], "popup"):
+        output = output.replacingOccurrences(
+          of: "[\"macarchy.keep-awake.detail\"]", with: "[]")
+      case (["--query", "events"], "undeclared-event"):
+        output = output.replacingOccurrences(
+          of: ",\"macarchy_keep_awake_changed\":{\"bit\":256}", with: "")
+      default: break
+      }
+      return .init(terminationStatus: result.terminationStatus, output: output)
+    }
+    #expect(
+      verifier.inspect(fixture.dynamicComposition).status
+        == (["hidden", "visible"].contains(condition) ? .converged : .drifted))
+  }
+
+  @Test(arguments: ["complete", "without-keep-awake", "detail-missing", "without-clock"])
+  func keepAwakeEvidenceIsOptionalButCompleteBesideAClock(inventory: String) throws {
+    let fixture = try SketchyBarRuntimeFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let current = fixture.verifier {
+      Self.dynamicResult($0, fixture: fixture, indices: [1])
+    }.inspect(fixture.dynamicComposition)
+    let absent =
+      [
+        "complete": [],
+        "without-keep-awake": ["macarchy.keep-awake", "macarchy.keep-awake.detail"],
+        "detail-missing": ["macarchy.keep-awake.detail"],
+        "without-clock": [
+          "macarchy.clock", "macarchy.clock.preview", "macarchy.update", "macarchy.update.detail",
+        ],
+      ][inventory]!
+    let evidence = SketchyBarCoreRuntimeInspection(
+      status: current.status, message: current.message,
+      themeGenerationID: current.themeGenerationID, barColor: current.barColor,
+      items: current.items.filter { !absent.contains($0) },
+      spaceIndices: current.spaceIndices,
+      clockLabelPresent: inventory != "without-clock",
+      volumeLevelPresent: current.volumeLevelPresent ?? false)
+    #expect(current.status == .converged)
+    #expect(evidence.isValidEvidence == ["complete", "without-keep-awake"].contains(inventory))
+  }
+
   @Test(arguments: ["custom", "theme-drift", "not-ready"])
   func nativeBehaviorDoesNotWeakenThemeOrCompletionChecks(condition: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
@@ -304,7 +369,7 @@ struct SketchyBarRuntimeTests {
         {
           output = output.replacingOccurrences(of: "\"value\":\"0\"", with: "\"value\":\"bad\"")
         }
-        if request.arguments == ["--query", SketchyBarUpdateIndicator.item] {
+        if ClockCompanion.all.contains(where: { request.arguments == ["--query", $0.item] }) {
           output = output.replacingOccurrences(
             of: "\"position\":\"right\"", with: "\"position\":\"center\"")
         }
@@ -330,7 +395,8 @@ struct SketchyBarRuntimeTests {
     #expect(inspection.spaceIndices == [1, 2])
     #expect(
       inspection.items == [
-        "macarchy.clock", "macarchy.clock.preview", "macarchy.space.1", "macarchy.space.2",
+        "macarchy.clock", "macarchy.clock.preview", "macarchy.keep-awake",
+        "macarchy.keep-awake.detail", "macarchy.space.1", "macarchy.space.2",
         "macarchy.theme.ready", "macarchy.update", "macarchy.update.detail",
       ])
   }
@@ -347,11 +413,12 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail"]}
+             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail"]}
             """
         )
       case ["--query", "macarchy.clock.preview"], ["--query", "events"],
-        ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"]:
+        ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"],
+        ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.clock"]:
         return ProcessResult(
@@ -421,12 +488,13 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail"]}
+             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail"]}
             """
         )
       case ["--query", "macarchy.clock.preview"], ["--query", "events"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
-      case ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"]:
+      case ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"],
+        ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"]:
         let result = Self.dynamicResult(request, fixture: fixture, indices: [])
         return .init(
           terminationStatus: 0,
@@ -947,7 +1015,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.space.1"\(extra)]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.space.1"\(extra)]}
               """
           )
         }
@@ -986,7 +1054,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.space.1","\(extra)"]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.space.1","\(extra)"]}
               """
           )
         }
@@ -1069,19 +1137,28 @@ struct SketchyBarRuntimeTests {
     #expect(waits.withLock { $0 } == 20)
   }
 
-  @Test(arguments: [false, true])
-  func rollbackSettleRestoresThePreviousObservableRuntime(legacy: Bool) throws {
+  @Test(arguments: ["current", "without-keep-awake", "without-companions"])
+  func rollbackSettleRestoresThePreviousObservableRuntime(generation: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let current = fixture.verifier {
       Self.dynamicResult($0, fixture: fixture, indices: [1])
     }.inspect(fixture.dynamicComposition)
+    let absent =
+      [
+        "current": [],
+        "without-keep-awake": ["macarchy.keep-awake", "macarchy.keep-awake.detail"],
+        "without-companions": [
+          "macarchy.keep-awake", "macarchy.keep-awake.detail", "macarchy.update",
+          "macarchy.update.detail",
+        ],
+      ][generation]!
     let expected = SketchyBarCoreRuntimeInspection(
       status: current.status,
       message: "evidence from the previous theme",
       themeGenerationID: "g-00000000-0000-0000-0000-000000000001",
       barColor: "0xff000000",
-      items: legacy ? current.items.filter { !$0.hasPrefix("macarchy.update") } : current.items,
+      items: current.items.filter { !absent.contains($0) },
       spaceIndices: current.spaceIndices,
       clockLabelPresent: current.clockLabelPresent,
       volumeLevelPresent: current.volumeLevelPresent ?? false
@@ -1115,9 +1192,8 @@ struct SketchyBarRuntimeTests {
           output = output.replacingOccurrences(
             of: "\"updates\":\"on\"", with: "\"updates\":\"when_shown\"")
         }
-        if legacy {
-          output = output.replacingOccurrences(
-            of: ",\"macarchy.update\",\"macarchy.update.detail\"", with: "")
+        for item in absent {
+          output = output.replacingOccurrences(of: ",\"\(item)\"", with: "")
         }
         return ProcessResult(
           terminationStatus: result.terminationStatus,
@@ -1128,7 +1204,7 @@ struct SketchyBarRuntimeTests {
     )
 
     #expect(expected.isValidEvidence)
-    #expect(expected.agreesWithProviderRuntime(current) == !legacy)
+    #expect(expected.agreesWithProviderRuntime(current) == absent.isEmpty)
     #expect(verifier.settleRestored(expected))
     #expect(waits.withLock { $0 } == 20)
   }
@@ -1146,7 +1222,7 @@ struct SketchyBarRuntimeTests {
       let names =
         [
           "macarchy.clock", "macarchy.clock.preview", "macarchy.theme.ready", "macarchy.update",
-          "macarchy.update.detail",
+          "macarchy.update.detail", "macarchy.keep-awake", "macarchy.keep-awake.detail",
         ]
         + indices.map { "macarchy.space.\($0)" }
       let items = names.map { "\"\($0)\"" }.joined(separator: ",")
@@ -1166,7 +1242,7 @@ struct SketchyBarRuntimeTests {
       return ProcessResult(
         terminationStatus: 0,
         output:
-          #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16},"mouse.entered":{"bit":32},"mouse.exited":{"bit":64},"mouse.exited.global":{"bit":128}}"#
+          #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16},"mouse.entered":{"bit":32},"mouse.exited":{"bit":64},"mouse.exited.global":{"bit":128},"macarchy_keep_awake_changed":{"bit":256}}"#
       )
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.update"]):
       let item = itemJSON(
@@ -1183,6 +1259,25 @@ struct SketchyBarRuntimeTests {
         output: itemJSON(
           name: "macarchy.update.detail", drawing: "on", position: "popup",
           label: "Last update check failed", labelDrawing: "on"))
+    case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.keep-awake"]):
+      let item = itemJSON(
+        name: "macarchy.keep-awake", drawing: "off", position: "right",
+        script: fixture.state.appending(
+          path: "desktop/sketchybar/current/plugins/keep-awake.sh"
+        ).path,
+        updateFrequency: 30, updateMask: 489, updates: "on")
+      return .init(
+        terminationStatus: 0,
+        output: String(item.dropLast())
+          + ",\"popup\":{\"drawing\":\"off\",\"items\":[\"macarchy.keep-awake.detail\"]}}")
+    case (
+      SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.keep-awake.detail"]
+    ):
+      return .init(
+        terminationStatus: 0,
+        output: itemJSON(
+          name: "macarchy.keep-awake.detail", drawing: "on", position: "popup",
+          label: "Keep-awake is off.", labelDrawing: "on"))
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.clock"]):
       return ProcessResult(
         terminationStatus: 0,

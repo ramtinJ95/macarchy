@@ -109,6 +109,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let providerID = "sketchybar"
   package static let paletteArtifactPath = "generated/sketchybar.sh"
   package static let readyItem = "macarchy.theme.ready"
+  /// Keep-awake changes trigger this event so the indicator refreshes before its timer.
+  package static let keepAwakeEvent = "macarchy_keep_awake_changed"
+  /// A monochrome cup: the text variation selector stops emoji presentation.
+  package static let keepAwakeIcon = "☕\u{FE0E}"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
     "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
@@ -221,6 +225,20 @@ package struct SketchyBarConfigurationComposer: Sendable {
       artifacts.append(
         SketchyBarConfigurationArtifact(path: "plugins/\(name).sh", contents: contents()))
     }
+    func clockCompanion(item: String, helper: String, options: String, failure: String) -> String {
+      [
+        "#!/bin/sh",
+        "set -eu",
+        "[ \"${NAME-}\" = \(item) ] || exit 1",
+        ". \(DesktopShellSyntax.literal(palettePath))",
+        "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(helper) --sender \"${SENDER-forced}\" --state-root \(DesktopShellSyntax.literal(stateRoot.path)) \(options); then",
+        "  exit 0",
+        "else",
+        "  /opt/homebrew/bin/sketchybar --set \(item) drawing=on icon='!' icon.color=\"$MACARCHY_BATTERY_RED\" --set \(item).detail label='\(failure)'",
+        "  exit 1",
+        "fi",
+      ].joined(separator: "\n") + "\n"
+    }
     addPlugin(
       .toggle, "toggle",
       """
@@ -232,18 +250,16 @@ package struct SketchyBarConfigurationComposer: Sendable {
       """)
     addPlugin(
       .clock, "update",
-      [
-        "#!/bin/sh",
-        "set -eu",
-        "[ \"${NAME-}\" = macarchy.update ] || exit 1",
-        ". \(DesktopShellSyntax.literal(palettePath))",
-        "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _update-indicator --sender \"${SENDER-forced}\" --state-root \(DesktopShellSyntax.literal(stateRoot.path)) --accent \"$MACARCHY_ACCENT_COLOR\" --warning \"$MACARCHY_BATTERY_RED\"; then",
-        "  exit 0",
-        "else",
-        "  /opt/homebrew/bin/sketchybar --set macarchy.update drawing=on icon='!' icon.color=\"$MACARCHY_BATTERY_RED\" --set macarchy.update.detail label='Update indicator failed; see SketchyBar stderr for details.'",
-        "  exit 1",
-        "fi",
-      ].joined(separator: "\n") + "\n")
+      clockCompanion(
+        item: "macarchy.update", helper: "_update-indicator",
+        options: "--accent \"$MACARCHY_ACCENT_COLOR\" --warning \"$MACARCHY_BATTERY_RED\"",
+        failure: "Update indicator failed; see SketchyBar stderr for details."))
+    addPlugin(
+      .clock, "keep-awake",
+      clockCompanion(
+        item: "macarchy.keep-awake", helper: "_keep-awake-indicator",
+        options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
+        failure: "Keep-awake indicator failed; see SketchyBar stderr for details."))
     addPlugin(
       .volume, "volume",
       SketchyBarVolumeScript.render(
@@ -471,6 +487,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.update \(position.rawValue) --set macarchy.update drawing=off icon='↻' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=60 script=\"$PLUGIN_DIR/update.sh\" popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.update.detail popup.macarchy.update --set macarchy.update.detail icon.drawing=off label='Checking Macarchy updates…'",
             "\"$SKETCHYBAR\" --subscribe macarchy.update mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke",
+            "\"$SKETCHYBAR\" --add event \(Self.keepAwakeEvent)",
+            "\"$SKETCHYBAR\" --add item macarchy.keep-awake \(position.rawValue) --set macarchy.keep-awake drawing=off icon='\(Self.keepAwakeIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/keep-awake.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.keep-awake.detail popup.macarchy.keep-awake --set macarchy.keep-awake.detail icon.drawing=off label='Keep-awake is off.'",
+            "\"$SKETCHYBAR\" --subscribe macarchy.keep-awake mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.keepAwakeEvent)",
           ]
         case .toggle:
           lines += [
@@ -580,7 +600,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "set -eu",
       "[ \"${NAME-}\" = macarchy.clock ] || exit 1",
       ". \(DesktopShellSyntax.literal(palettePath))",
-      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator; then",
+      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator --keep-awake-indicator; then",
       "  /opt/homebrew/bin/sketchybar --set macarchy.clock label.color=\"$MACARCHY_TEXT_COLOR\"",
       "else",
       "  echo 'Macarchy: calendar query failed' >&2",
