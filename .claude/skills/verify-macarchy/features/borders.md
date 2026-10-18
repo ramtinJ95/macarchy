@@ -4,11 +4,15 @@ The event-driven own-outline-transaction helper passed motion, eight-window
 behavior/theming and 24-window scaling. Measured p95 tracking matches JankyBorders
 with much lower helper memory. This is NOT managed replacement acceptance or
 blanket hardware/app parity. User accepted this bounded preview on 2026-10-14.
-Release packaging/lifecycle integration is pending.
+Release packaging and the opt-in managed lifecycle (`--managed`) landed on
+2026-10-16 with real helper changes; see [lean.md](lean.md). The accepted
+motion/1/8/24 evidence below predates them. The 2026-10-18 re-run did not
+re-qualify the 8/24-window or motion cases.
 
 ## Sub-features
 
-- One reusable active outline, six-point rounded accent, transparent interior.
+- One reusable active outline: 6 pt accent stroke centered on the window edge,
+  corner radius from the window's native radius (9 pt fallback), transparent interior.
 - Same-app/cross-app focus, movement, resize, minimize/restore, close and fullscreen.
 - Real canonical theme activation/repaint, without native appearance consumers.
 - Physical footprint and CPU for renderer and system-wide WindowServer separately.
@@ -22,8 +26,9 @@ An active canonical theme and the sibling helper executable are required:
 macarchy desktop borders preview --renderer lean --seconds 30
 ```
 
-Existing Borders processes or Homebrew service registrations refuse the lean
-preview. The default renderer remains JankyBorders; no managed service is selected.
+Existing Borders processes, Homebrew service registrations or another running
+`macarchy-focus-ring` refuse the lean preview. The default renderer remains
+JankyBorders; no managed service is selected.
 
 ## Driving it with verify.py
 
@@ -31,9 +36,10 @@ preview. The default renderer remains JankyBorders; no managed service is select
 uv run --project Scripts/vm --locked python -B Scripts/vm/verify.py drive --run setup-<run-id> --session verify-<session-id> --journey borders
 ```
 
-Requires an unlocked guest, existing host capture/AX grants and supported zsh-only
-shell prerequisites. Do not auto-install or grant permissions. User approval covers
-only fzf, zoxide, zsh-autosuggestions and zsh-syntax-highlighting in
+Requires an unlocked guest whose console owner is `omarchy` (the journey checks
+only `stat -f %Su /dev/console`), existing host capture/AX grants and supported
+zsh-only shell prerequisites. Do not auto-install or grant permissions. User
+approval covers only fzf, zoxide, zsh-autosuggestions and zsh-syntax-highlighting in
 `setup-650968813a9c`, not a new clone.
 
 Preparation builds optimized CLI/helper and a guest-only native fixture, applies
@@ -51,6 +57,13 @@ binary is overwritten while attributed to its previous snapshot.
 
 `--border-count 1|8|24` selects an explicitly partial workload. Omit for all sizes.
 Each size compares none/incumbent/lean, eight top samples; first CPU sample excluded.
+Previews run 60 s (90 s for eight-window and motion cases). Each lean case must
+report exactly completed/duration with no missing settled-action outline, and an
+event-driven `update_driver` of `window-server-events` with enough geometry
+refreshes (reports without a driver are accepted as `legacy-polling`). The
+eight-window case also requires two theme generations, both Catppuccin and Tokyo
+Night accents, and native-fullscreen hiding. Display geometry/scale must match
+across cases; backing scale below 2 adds a Retina not-covered entry.
 The eight-window case records20s plus later cross-app/fullscreen/theme PNGs.
 A provisional24-window helper median<=half incumbent gate is not a universal
 memory guarantee, total-system saving or leak-fix proof.
@@ -87,12 +100,27 @@ artifacts/vm/runs/setup-650968813a9c/verify-5d36b73c0e5b/.
 - Guest1440×900/backing1; incumbent hidpi=on supersamples, helper uses native
   backing. Retina, ordinary Spaces, multiple displays, third-party apps,
   physical hardware and long-duration stability remain unqualified.
-- Current functional helper:23 guarded Swift tests passed in5 suites; earlier
-  CLI-preview tests passed. Pure Python68 checks passed. No full/special-file
-  suites on a physical Mac. Subsequent product edits are comments only.
+- At acceptance: 23 guarded helper Swift tests passed in 5 suites; earlier
+  CLI-preview tests passed; 68 pure Python checks passed. No full/special-file
+  suites on a physical Mac. The helper suites now hold 26 tests, and the helper
+  and harness (`verify_borders.py`, `border_workload.py`, fixture) changed on
+  2026-10-16, so this evidence does not describe current source.
 - Supported guest shutdown passed. VM, helper, fixture and recorder stopped;
   approved temporary host/guest awake leases ended. No persistent setting changes,
   host provider switch, installation, release or commit.
+
+### 2026-10-18 re-run at `0a499fff`
+
+The same guest was restarted (`verify.py restart`, an approved same-guest
+continuation) and run with candidate session `verify-86f4252f0b1d` against the
+retained preparation (`drive-borders-26`, reused from `drive-borders-02`).
+none-1, borders-1 and lean-1 passed. lean-1 reported `window-server-events`
+with 91 geometry refreshes from 126 events, no missing outlines and the
+Catppuccin accent. The no-border none-8 baseline then failed with recorder exit 1:
+`short or sparse clip: 20.12 s, 29 frames`. No renderer runs in that case. The
+cause is not established; the awake-lease `caffeinate` process had exited by the
+time recovery checked it. No retry or motion drive ran. Evidence is in the mini's
+primary checkout under `artifacts/vm/runs/setup-650968813a9c/`.
 
 ### Native capture constraints
 
