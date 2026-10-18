@@ -102,6 +102,49 @@ struct SaverIdleTests {
     }
   }
 
+  @Test func toggleTurnsOffWhileOnAndOtherwiseOnWithTheStoredOrDefaultTimeout() throws {
+    try withIdle { idle, machine throws in
+      #expect(try idle.toggle() == .turnedOn(SaverIdleRecord(timeout: 300, paused: false)))
+      #expect(try idle.activation().enabled == SaverIdleRecord(timeout: 300, paused: false))
+      #expect(machine.hints == 1)
+
+      #expect(try idle.toggle() == .turnedOff)
+      #expect(try idle.agent.file() == .absent)
+      #expect(machine.launchd.loaded == false)
+      #expect(try machine.record.read() == nil)
+      #expect(machine.hints == 2)
+
+      _ = try idle.turnOn(after: .seconds(1_800))
+      machine.launchd.state.withLock { $0.loaded = false }
+      #expect(try idle.activation().enabled == nil)
+      #expect(try idle.toggle() == .turnedOn(SaverIdleRecord(timeout: 1_800, paused: false)))
+      #expect(machine.launchd.loaded)
+      #expect(machine.hints == 4)
+    }
+  }
+
+  @Test func theToggleCommandWarnsOnlyWhenItTurnsIdleActivationOnBeforeANativeTimer() throws {
+    try withIdle { idle, machine throws in
+      var warned: [[String]] = []
+      let on = try SaverCommand.Idle.Toggle.toggle(idle) { warned.append($0) }
+      #expect(
+        on == "Idle screensaver on: it starts after 5 minutes idle. It is decorative, not a lock.")
+      #expect(warned.isEmpty)
+
+      machine.timers = SaverNativeTimers(screensaver: .after(300), displaySleep: .never)
+      let off = try SaverCommand.Idle.Toggle.toggle(idle) { warned.append($0) }
+      #expect(off == "Idle screensaver off.")
+      #expect(warned.isEmpty)
+
+      let warnedOn = try SaverCommand.Idle.Toggle.toggle(idle) { warned.append($0) }
+      let warning = try #require(warned.first?.first)
+      #expect(warned.count == 1)
+      #expect(warned.first?.count == 1)
+      #expect(warning.hasPrefix("Warning: the macOS screensaver starts after 5 minutes idle"))
+      #expect(warnedOn.split(separator: "\n").last.map(String.init) == warning)
+    }
+  }
+
   @Test func aFailedLoadLeavesOnRetryable() throws {
     try withIdle { idle, machine throws in
       machine.launchd.state.withLock { $0.bootstrapStatus = 5 }
@@ -132,6 +175,7 @@ struct SaverIdleTests {
       let changes: [() throws -> Void] = [
         { _ = try idle.turnOn(after: nil) }, { _ = try idle.turnOff() },
         { _ = try idle.apply(.pause) }, { _ = try idle.apply(.toggle) },
+        { _ = try idle.toggle() },
       ]
       for change in changes {
         let error = #expect(throws: OwnedLaunchAgentError.self) { try change() }
@@ -385,6 +429,8 @@ struct SaverIdleTests {
     #expect(try SaverCommand.Status.parse(["--json"]).json)
     #expect(try Macarchy.parseAsRoot(["saver", "idle", "on"]) is SaverCommand.Idle.On)
     #expect(try Macarchy.parseAsRoot(["saver", "idle", "off"]) is SaverCommand.Idle.Off)
+    #expect(try Macarchy.parseAsRoot(["saver", "idle", "toggle"]) is SaverCommand.Idle.Toggle)
+    #expect(try SaverCommand.Idle.Toggle.parse(["--alert-on-error"]).options.alertOnError)
     #expect(try Macarchy.parseAsRoot(["saver", "pause"]) is SaverCommand.Pause)
     #expect(try Macarchy.parseAsRoot(["saver", "resume"]) is SaverCommand.Resume)
     #expect(try Macarchy.parseAsRoot(["saver", "toggle-pause"]) is SaverCommand.TogglePause)
