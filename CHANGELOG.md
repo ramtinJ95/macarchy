@@ -7,6 +7,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-18
+
 ### Added
 
 - `macarchy saver start` and the **Start screensaver** menu action fill every
