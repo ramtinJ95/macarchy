@@ -48,6 +48,19 @@ enum ImageSource: Equatable {
   }
 }
 
+/// The two ways the menu dialog can pick the image to prepare.
+enum ImageSourceChoice: CaseIterable, Equatable {
+  case clipboard
+  case file
+
+  var title: String {
+    switch self {
+    case .clipboard: "Use clipboard image"
+    case .file: "Choose file…"
+    }
+  }
+}
+
 struct PreparedImage: Equatable {
   let output: URL
   let pixelWidth: Int
@@ -136,6 +149,24 @@ struct ImagePreparation {
     return PreparedImage(
       output: saved, pixelWidth: encoded.pixelWidth, pixelHeight: encoded.pixelHeight,
       bytes: encoded.data.count, primaryFrameOnly: encoded.primaryFrameOnly)
+  }
+
+  /// The menu flow: `pick` returns the preset and where the image comes from, and `chooseFile`
+  /// the chosen file. Either returning nil cancels with nothing written. The result is copied
+  /// and revealed.
+  func choose(
+    pick: () -> (preset: ImagePreset, source: ImageSourceChoice)?, chooseFile: () -> URL?
+  ) throws -> PreparedImage? {
+    guard let picked = pick() else { return nil }
+    let source: ImageSource
+    switch picked.source {
+    case .clipboard:
+      source = .clipboard
+    case .file:
+      guard let url = chooseFile() else { return nil }
+      source = .file(url)
+    }
+    return try prepare(source, preset: picked.preset, copy: true, reveal: true)
   }
 
   /// Decodes the primary frame with its orientation applied, never larger than the source, draws

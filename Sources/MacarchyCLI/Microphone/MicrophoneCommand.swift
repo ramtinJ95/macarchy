@@ -140,7 +140,7 @@ struct MicrophoneCommand: ParsableCommand {
         let device = try engine.choose { names, selected in
           showNativeChoice(
             title: "Choose microphone", message: Microphone.appsNote, choices: names,
-            selected: selected)
+            selected: selected)?.choice
         }
         return device.map { "Default microphone: \"\($0.name)\"." }
       }

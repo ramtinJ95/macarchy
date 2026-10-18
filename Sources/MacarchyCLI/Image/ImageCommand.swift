@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import UniformTypeIdentifiers
 
 struct ImageCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
@@ -9,7 +10,7 @@ struct ImageCommand: ParsableCommand {
       The result is a separate sRGB file with none of the source's EXIF, GPS, TIFF, XMP or IPTC
       metadata and with orientation applied. It is never larger than the source, and the source is only read.
       """,
-    subcommands: [Prepare.self])
+    subcommands: [Prepare.self, Choose.self])
 
   struct Prepare: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -64,6 +65,44 @@ struct ImageCommand: ParsableCommand {
         source, preset: preset, output: output.map { URL(filePath: $0).standardizedFileURL },
         copy: !noCopy, reveal: reveal)
       print(try json ? prepared.renderJSON() : prepared.message(copied: !noCopy))
+    }
+  }
+
+  struct Choose: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Choose a preset and an image in native dialogs, then copy and reveal the result.",
+      shouldDisplay: false)
+
+    @Flag(help: .hidden)
+    var alertOnError = false
+
+    @MainActor
+    mutating func run() async throws {
+      do {
+        let prepared = try ImagePreparation.live.choose(
+          pick: {
+            let presets = ImagePreset.allCases
+            let sources = ImageSourceChoice.allCases
+            guard
+              let picked = showNativeChoice(
+                title: "Prepare an image",
+                message: "Saves a new copy without metadata beside the original, or in Downloads "
+                  + "for a clipboard image, then copies it and shows it in Finder.",
+                choices: presets.map(\.parameters.title), selected: 0,
+                actions: sources.map(\.title))
+            else { return nil }
+            return (presets[picked.choice], sources[picked.action])
+          },
+          chooseFile: {
+            showNativeOpenPanel(message: "Choose an image to prepare.", types: [.image])
+          })
+        print(prepared?.message(copied: true) ?? "Image preparation cancelled.")
+      } catch {
+        if alertOnError {
+          showNativeAlert(title: "Prepare an image", message: String(describing: error))
+        }
+        throw error
+      }
     }
   }
 }
