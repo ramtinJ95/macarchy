@@ -81,6 +81,7 @@ struct ActionMenuTests {
     (.screenshot, ["capture", "screenshot", "--alert-on-error"]),
     (.annotate, ["capture", "annotate", "--alert-on-error"]),
     (.ocr, ["capture", "ocr", "--alert-on-error"]),
+    (.keepAwake, ["keep-awake", "toggle", "--alert-on-error"]),
   ])
   func launchUsesExactExecutableAndShortcutArguments(
     action: ActionMenuAction, arguments: [String]
@@ -114,7 +115,7 @@ struct ActionMenuTests {
 
   @Test func searchSelectionAndEmptyDispatch() {
     var state = ActionMenuState()
-    #expect(state.notice == "Configure · Appearance · Capture · Maintenance")
+    #expect(state.notice == "Configure · Appearance · Capture · Controls · Maintenance")
     #expect(state.selectedAction == .profile(.portable))
     state.move(by: 1)
     #expect(state.selectedAction == .profile(.machine))
@@ -124,7 +125,7 @@ struct ActionMenuTests {
     #expect(state.selectedAction == .profile(.portable))
     state.search("  WALLPAPER colors ")
     #expect(state.actions == [.appearance])
-    #expect(state.notice == "Configure · Appearance · Capture · Maintenance")
+    #expect(state.notice == "Configure · Appearance · Capture · Controls · Maintenance")
     state.search("missing")
     #expect(state.selectedAction == nil)
     #expect(state.notice == "No matching actions")
@@ -139,6 +140,12 @@ struct ActionMenuTests {
     #expect(state.actions == [.ocr])
     state.search("flameshot annotation")
     #expect(state.actions == [.annotate])
+    for query in ["keep awake", "caffeinate", "always on", "screensaver", "idle lock"] {
+      state.search(query)
+      #expect(state.actions == [.keepAwake], Comment(rawValue: query))
+    }
+    #expect(ActionMenuAction.keepAwake.category == "Controls")
+    #expect(ActionMenuAction.keepAwake.title == "Toggle keep-awake")
     state.select(row: -1)
     #expect(state.selectedAction == nil)
     state.search("")
