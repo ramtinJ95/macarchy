@@ -78,7 +78,7 @@ struct ClipboardHistoryError: Error, CustomStringConvertible {
 /// files but never reads them.
 struct ClipboardHistory {
   /// With the live 50 ms pause, about five seconds for Maccy to quit.
-  static let exitPolls = 100
+  static let waitPolls = 100
   private static let lock = ProcessScopedFileLock<ClipboardHistoryError>(
     filename: "clipboard.lock",
     cannotCreateRunDirectory: { url, error in
@@ -169,7 +169,11 @@ struct ClipboardHistory {
       let unknown = try unknownStore(version: try clearableVersion())
       let instances = try maccy.instances()
       let wasRunning = !instances.isEmpty
-      if wasRunning { try quit(instances) }
+      if wasRunning, !quit(instances) {
+        throw ClipboardHistoryError(
+          "Maccy did not quit within five seconds, so Macarchy deleted nothing and left the "
+            + "clipboard as it was. If Maccy quits later, open it again. Then clear again.")
+      }
       if unknown == nil {
         // Maccy can start again meanwhile, from the Dock or a login item; never delete under it.
         guard try maccy.instances().isEmpty else {
@@ -184,14 +188,7 @@ struct ClipboardHistory {
         }
       }
       clearPasteboard()
-      if wasRunning {
-        do {
-          try maccy.open(.background)
-        } catch {
-          throw ClipboardHistoryError(
-            "Restarting Maccy after the clear failed: \(error). Open Maccy yourself.")
-        }
-      }
+      if wasRunning { try reopen() }
       guard let unknown else { return .cleared(maccyWasRunning: wasRunning) }
       return .clearedUnpinnedOnly(maccyWasRunning: wasRunning, reason: unknown)
     }
@@ -261,18 +258,29 @@ struct ClipboardHistory {
     }
   }
 
-  /// Asks every instance to quit normally and waits until each process has exited.
-  private func quit(_ instances: [RunningMaccy]) throws {
+  /// Asks every instance to quit normally; false when one has not exited after the wait.
+  private func quit(_ instances: [RunningMaccy]) -> Bool {
     for instance in instances { maccy.quit(instance) }
+    return poll { !instances.contains(where: maccy.isAlive) }
+  }
+
+  /// Pauses until `done` holds, at most `waitPolls` times; false when it never did.
+  private func poll(until done: () throws -> Bool) rethrows -> Bool {
     var polls = 0
-    while instances.contains(where: maccy.isAlive) {
-      guard polls < Self.exitPolls else {
-        throw ClipboardHistoryError(
-          "Maccy did not quit within five seconds, so Macarchy deleted nothing and left the "
-            + "clipboard as it was. If Maccy quits later, open it again. Then clear again.")
-      }
+    while try !done() {
+      guard polls < Self.waitPolls else { return false }
       pause()
       polls += 1
+    }
+    return true
+  }
+
+  private func reopen() throws {
+    do {
+      try maccy.open(.background)
+    } catch {
+      throw ClipboardHistoryError(
+        "Restarting Maccy after the clear failed: \(error). Open Maccy yourself.")
     }
   }
 
