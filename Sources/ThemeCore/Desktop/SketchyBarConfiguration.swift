@@ -115,6 +115,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let keepAwakeIcon = "☕\u{FE0E}"
   /// Microphone mute changes trigger this event so the indicator refreshes before its timer.
   package static let microphoneEvent = "macarchy_microphone_changed"
+  /// SF Symbols mic.slash.fill, drawn by the SF Pro font like the bar's other symbol glyphs.
+  package static let microphoneIcon = "\u{1002B3}"
   static let paletteSource = ". \"$PALETTE\""
   static let managedReadyMarkerDeclaration =
     "\"$SKETCHYBAR\" --add item \(readyItem) right --set \(readyItem) drawing=off"
@@ -262,6 +264,12 @@ package struct SketchyBarConfigurationComposer: Sendable {
         item: "macarchy.keep-awake", helper: "_keep-awake-indicator",
         options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
         failure: "Keep-awake indicator failed; see SketchyBar stderr for details."))
+    addPlugin(
+      .clock, "microphone",
+      clockCompanion(
+        item: "macarchy.microphone", helper: "_microphone-indicator",
+        options: "--accent \"$MACARCHY_ACCENT_COLOR\"",
+        failure: "Microphone indicator failed; see SketchyBar stderr for details."))
     addPlugin(
       .volume, "volume",
       SketchyBarVolumeScript.render(
@@ -493,6 +501,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
             "\"$SKETCHYBAR\" --add item macarchy.keep-awake \(position.rawValue) --set macarchy.keep-awake drawing=off icon='\(Self.keepAwakeIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/keep-awake.sh\" popup.align=center",
             "\"$SKETCHYBAR\" --add item macarchy.keep-awake.detail popup.macarchy.keep-awake --set macarchy.keep-awake.detail icon.drawing=off label='Keep-awake is off.'",
             "\"$SKETCHYBAR\" --subscribe macarchy.keep-awake mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.keepAwakeEvent)",
+            "\"$SKETCHYBAR\" --add event \(Self.microphoneEvent)",
+            "\"$SKETCHYBAR\" --add item macarchy.microphone \(position.rawValue) --set macarchy.microphone drawing=off icon='\(Self.microphoneIcon)' icon.font='SF Pro:Semibold:14.0' icon.color=\"$MACARCHY_ACCENT_COLOR\" label.drawing=off updates=on update_freq=30 script=\"$PLUGIN_DIR/microphone.sh\" popup.align=center",
+            "\"$SKETCHYBAR\" --add item macarchy.microphone.detail popup.macarchy.microphone --set macarchy.microphone.detail icon.drawing=off label='Microphone is live.'",
+            "\"$SKETCHYBAR\" --subscribe macarchy.microphone mouse.clicked mouse.entered mouse.exited mouse.exited.global system_woke \(Self.microphoneEvent)",
           ]
         case .toggle:
           lines += [
@@ -602,7 +614,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       "set -eu",
       "[ \"${NAME-}\" = macarchy.clock ] || exit 1",
       ". \(DesktopShellSyntax.literal(palettePath))",
-      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator --keep-awake-indicator; then",
+      "if \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _calendar --sender \"${SENDER-forced}\" --position \(DesktopShellSyntax.literal(position)) --format \(DesktopShellSyntax.literal(settings.clockFormat)) --update-indicator --keep-awake-indicator --microphone-indicator; then",
       "  /opt/homebrew/bin/sketchybar --set macarchy.clock label.color=\"$MACARCHY_TEXT_COLOR\"",
       "else",
       "  echo 'Macarchy: calendar query failed' >&2",

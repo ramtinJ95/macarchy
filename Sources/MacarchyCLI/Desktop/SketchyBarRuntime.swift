@@ -890,7 +890,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
     let events: [String: SketchyBarEventQuery] = try query("events")
     let bits = companion.events.compactMap { events[$0]?.bit }
     let mask = bits.reduce(0, |)
-    // Visibility, update availability and keep-awake state are volatile UI state, not readiness.
+    // Visibility and the state each companion shows are volatile UI state, not readiness.
     return item.name == companion.item && item.type == "item"
       && ["on", "off"].contains(item.geometry.drawing) && item.geometry.position == position
       && item.label.drawing == "off" && item.scripting.updates == "on"
