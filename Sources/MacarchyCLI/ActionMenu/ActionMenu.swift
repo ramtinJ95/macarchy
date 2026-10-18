@@ -10,6 +10,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
   case annotate
   case ocr
   case prepareImage
+  case clipboardHistory
+  case clearClipboardHistory
   case keepAwake
   case chooseMicrophone
   case toggleMicrophone
@@ -22,8 +24,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     ProfileEditAction.allCases.map(Self.profile)
       + [.neovim] + MenuConfigurationAction.allCases.map(Self.configuration)
       + [
-        .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage, .keepAwake,
-        .chooseMicrophone, .toggleMicrophone,
+        .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage, .clipboardHistory,
+        .clearClipboardHistory, .keepAwake, .chooseMicrophone, .toggleMicrophone,
       ]
       + MaintenanceAction.allCases.map(Self.maintenance)
   }
@@ -33,6 +35,7 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .profile, .neovim, .configuration: "Configure"
     case .appearance, .keybindings: "Appearance"
     case .screenshot, .annotate, .ocr, .prepareImage: "Capture"
+    case .clipboardHistory, .clearClipboardHistory: "Clipboard"
     case .keepAwake, .chooseMicrophone, .toggleMicrophone: "Controls"
     case .maintenance: "Maintenance"
     }
@@ -46,6 +49,8 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .annotate: "Annotate screenshot"
     case .ocr: "Copy text from region"
     case .prepareImage: "Prepare an image"
+    case .clipboardHistory: "Clipboard history"
+    case .clearClipboardHistory: "Clear clipboard history"
     case .keepAwake: "Toggle keep-awake"
     case .chooseMicrophone: "Choose microphone"
     case .toggleMicrophone: "Toggle microphone mute"
@@ -65,6 +70,9 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
     case .ocr: "capture text region ocr recognize clipboard english"
     case .prepareImage:
       "capture image prepare convert compress resize jpeg png share small metadata strip"
+    case .clipboardHistory: "clipboard history maccy paste copy open recall"
+    case .clearClipboardHistory:
+      "clipboard clear history maccy paste copy wipe delete pinned secret password"
     case .keepAwake:
       "controls toggle keep awake keep-awake caffeinate sleep display idle always on screensaver lock"
     case .chooseMicrophone: "controls choose select microphone mic input device default audio"
@@ -148,8 +156,9 @@ struct ActionMenu: AsyncParsableCommand {
           _ = try MenuMaintenance.launch(
             operation, theme: theme, executableURL: runtime.executableURL,
             profileArguments: profileArguments)
-        case .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage, .keepAwake,
-          .chooseMicrophone, .toggleMicrophone:
+        case .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage,
+          .clipboardHistory, .clearClipboardHistory, .keepAwake, .chooseMicrophone,
+          .toggleMicrophone:
           _ = try Self.launchViewer(action, executableURL: runtime.executableURL)
         }
       },
@@ -193,6 +202,9 @@ struct ActionMenu: AsyncParsableCommand {
     case .annotate: process.arguments = ["capture", "annotate", "--alert-on-error"]
     case .ocr: process.arguments = ["capture", "ocr", "--alert-on-error"]
     case .prepareImage: process.arguments = ["image", "choose", "--alert-on-error"]
+    case .clipboardHistory: process.arguments = ["clipboard", "open", "--alert-on-error"]
+    case .clearClipboardHistory:
+      process.arguments = ["clipboard", "clear", "--confirm", "--alert-on-error"]
     case .keepAwake: process.arguments = ["keep-awake", "toggle", "--alert-on-error"]
     case .chooseMicrophone: process.arguments = ["mic", "choose", "--alert-on-error"]
     case .toggleMicrophone: process.arguments = ["mic", "toggle", "--alert-on-error"]

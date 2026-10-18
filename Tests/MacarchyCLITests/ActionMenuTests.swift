@@ -82,6 +82,8 @@ struct ActionMenuTests {
     (.annotate, ["capture", "annotate", "--alert-on-error"]),
     (.ocr, ["capture", "ocr", "--alert-on-error"]),
     (.prepareImage, ["image", "choose", "--alert-on-error"]),
+    (.clipboardHistory, ["clipboard", "open", "--alert-on-error"]),
+    (.clearClipboardHistory, ["clipboard", "clear", "--confirm", "--alert-on-error"]),
     (.keepAwake, ["keep-awake", "toggle", "--alert-on-error"]),
     (.chooseMicrophone, ["mic", "choose", "--alert-on-error"]),
     (.toggleMicrophone, ["mic", "toggle", "--alert-on-error"]),
@@ -118,7 +120,7 @@ struct ActionMenuTests {
 
   @Test func searchSelectionAndEmptyDispatch() throws {
     var state = ActionMenuState()
-    #expect(state.notice == "Configure · Appearance · Capture · Controls · Maintenance")
+    #expect(state.notice == "Configure · Appearance · Capture · Clipboard · Controls · Maintenance")
     #expect(state.selectedAction == .profile(.portable))
     state.move(by: 1)
     #expect(state.selectedAction == .profile(.machine))
@@ -128,7 +130,7 @@ struct ActionMenuTests {
     #expect(state.selectedAction == .profile(.portable))
     state.search("  WALLPAPER colors ")
     #expect(state.actions == [.appearance])
-    #expect(state.notice == "Configure · Appearance · Capture · Controls · Maintenance")
+    #expect(state.notice == "Configure · Appearance · Capture · Clipboard · Controls · Maintenance")
     state.search("missing")
     #expect(state.selectedAction == nil)
     #expect(state.notice == "No matching actions")
@@ -153,6 +155,22 @@ struct ActionMenuTests {
     #expect(ActionMenuAction.prepareImage.title == "Prepare an image")
     let ocr = try #require(ActionMenuAction.allCases.firstIndex(of: .ocr))
     #expect(ActionMenuAction.allCases[ocr + 1] == .prepareImage)
+    for query in ["clipboard history", "maccy", "paste", "copy"] {
+      state.search(query)
+      #expect(
+        state.actions == [.clipboardHistory, .clearClipboardHistory], Comment(rawValue: query))
+    }
+    for query in ["clear", "wipe", "secret", "password"] {
+      state.search(query)
+      #expect(state.actions == [.clearClipboardHistory], Comment(rawValue: query))
+    }
+    #expect(ActionMenuAction.clipboardHistory.category == "Clipboard")
+    #expect(ActionMenuAction.clearClipboardHistory.category == "Clipboard")
+    #expect(ActionMenuAction.clipboardHistory.title == "Clipboard history")
+    #expect(ActionMenuAction.clearClipboardHistory.title == "Clear clipboard history")
+    #expect(
+      Array(ActionMenuAction.allCases[(ocr + 1)...(ocr + 3)])
+        == [.prepareImage, .clipboardHistory, .clearClipboardHistory])
     for query in ["keep awake", "caffeinate", "always on", "screensaver", "idle lock"] {
       state.search(query)
       #expect(state.actions == [.keepAwake], Comment(rawValue: query))
