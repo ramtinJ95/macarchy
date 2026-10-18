@@ -93,7 +93,7 @@ struct ClipboardHistory {
   let maccy: MaccyApp
   let defaults: MaccyDefaults
   let storage: MaccyStorage
-  let agent: ClipboardAutoClearAgent
+  let agent: OwnedLaunchAgent
   let clearPasteboard: () -> Void
   let pause: () -> Void
   let now: () -> Date
@@ -475,7 +475,7 @@ extension ClipboardHistory {
     let home = FileManager.default.homeDirectoryForCurrentUser
     return Self(
       stateRoot: stateRoot, maccy: .live, defaults: .live, storage: .live(home: home),
-      agent: ClipboardAutoClearAgent(
+      agent: .clipboardAutoClear(
         home: home, stateRoot: stateRoot,
         executable: RuntimeEnvironment.live.persistentCommandURL, userID: getuid(),
         runner: .live),

@@ -595,7 +595,7 @@ struct ClipboardHistoryTests {
 
       let conflict = "is not the launch agent this Macarchy writes"
       for request in ClipboardAutoClearSwitch.allCases {
-        let error = #expect(throws: ClipboardHistoryError.self) {
+        let error = #expect(throws: OwnedLaunchAgentError.self) {
           try engine.setAutoClear(request)
         }
         #expect(error?.description.contains(conflict) == true)
@@ -906,7 +906,7 @@ struct ClipboardHistoryTests {
     var log: [String] = []
     /// 2027-01-15T08:00:00Z.
     var now = Date(timeIntervalSince1970: 1_800_000_000)
-    let launchd = ClipboardLaunchdFake()
+    let launchd = LaunchdFake()
 
     func exit() {
       running = false
@@ -1022,7 +1022,7 @@ struct ClipboardHistoryTests {
           }
           return try PinnedFilesystem.openDirectoryIfPresent(at: url)
         }),
-      agent: ClipboardAutoClearAgent(
+      agent: .clipboardAutoClear(
         home: fixture.home, stateRoot: fixture.state,
         executable: URL(filePath: "/opt/homebrew/bin/macarchy"), userID: 501,
         runner: machine.launchd.runner),
