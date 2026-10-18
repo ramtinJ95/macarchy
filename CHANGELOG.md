@@ -26,6 +26,14 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   microphone is muted, a slashed microphone left of the managed bar clock shows how
   it is muted. Click it to unmute. To activate the icon after upgrading, review and
   apply the generated bar configuration.
+- `macarchy image prepare` and the **Prepare an image** menu action save a
+  separate copy of an image file or the clipboard image with the `share` preset
+  (JPEG, up to 2048 px), the `small` preset (JPEG, up to 1280 px), or the `png`
+  preset (lossless, original size). The copy has the orientation applied, sRGB
+  colors, and none of the original's EXIF, GPS, TIFF, XMP, or IPTC metadata, and
+  it is never larger than the original. Macarchy saves it beside the original, or in `~/Downloads`
+  for a clipboard image, and never replaces a file. Macarchy copies the result to
+  the clipboard, and the menu action also shows it in Finder.
 
 ## [0.13.1] - 2026-10-17
 
