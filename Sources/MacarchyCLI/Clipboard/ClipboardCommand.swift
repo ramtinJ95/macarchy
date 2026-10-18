@@ -5,14 +5,19 @@ import Foundation
 struct ClipboardCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "clipboard",
-    abstract: "Open and fully clear the clipboard history Maccy keeps.",
+    abstract: "Open and clear the clipboard history Maccy keeps.",
     discussion: """
       Maccy is an optional app: brew install --cask maccy. Enabling turns on Maccy's clearOnQuit
       and clearSystemClipboard settings and records their previous values, which disabling
-      restores. Clearing deletes all history, pinned items included, and empties the clipboard.
-      Macarchy never reads clipboard or history content.
+      restores. Enabling also turns on the automatic clear: once 24 hours have passed since the
+      last clear, Macarchy clears unpinned history and the clipboard. Clearing deletes all
+      history, pinned items included, and empties the clipboard. Macarchy never reads clipboard
+      or history content.
       """,
-    subcommands: [Status.self, Enable.self, Disable.self, Clear.self, Open.self])
+    subcommands: [
+      Status.self, Enable.self, Disable.self, Clear.self, Open.self, AutoClear.self,
+      RunAutoClear.self,
+    ])
 
   static let defaultStateRoot = FileManager.default.homeDirectoryForCurrentUser
     .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
@@ -45,7 +50,7 @@ struct ClipboardCommand: ParsableCommand {
 
   struct Status: ParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Show whether Maccy is installed and running and whether clearing is enabled.")
+      abstract: "Show Maccy, whether clearing is enabled, and the automatic clear's state.")
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
@@ -60,25 +65,25 @@ struct ClipboardCommand: ParsableCommand {
 
   struct Enable: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Turn on Maccy's clearOnQuit and clearSystemClipboard, recording their values.")
+      abstract: "Turn on Maccy's clearOnQuit and clearSystemClipboard, then the automatic clear.")
 
     @OptionGroup var options: Options
 
     @MainActor
     mutating func run() async throws {
-      try options.run("Clipboard history clearing not enabled") { try $0.enable().message }
+      try options.run("Clipboard history clearing not enabled") { try $0.enableWithAutoClear() }
     }
   }
 
   struct Disable: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-      abstract: "Restore Maccy's two settings unless changed since; history is kept.")
+      abstract: "Turn off the automatic clear and restore Maccy's two settings unless changed.")
 
     @OptionGroup var options: Options
 
     @MainActor
     mutating func run() async throws {
-      try options.run("Clipboard history clearing not disabled") { try $0.disable().message }
+      try options.run("Clipboard history clearing not disabled") { try $0.disableWithAutoClear() }
     }
   }
 
@@ -117,6 +122,86 @@ struct ClipboardCommand: ParsableCommand {
     }
   }
 
+  struct AutoClear: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      commandName: "auto-clear",
+      abstract: "Turn the automatic clear on or off without changing Maccy's settings.",
+      discussion: """
+        Once 24 hours have passed since the last clear, a Macarchy launch agent clears unpinned
+        history and the clipboard. Every clear of the history restarts the 24 hours. Pinned items
+        survive automatic clears. Off removes the launch agent and its record.
+        """)
+
+    @Argument var state: ClipboardAutoClearSwitch
+
+    @OptionGroup var options: Options
+
+    @MainActor
+    mutating func run() async throws {
+      let state = state
+      try options.run("Automatic clipboard clear not changed") {
+        try $0.setAutoClear(state).message
+      }
+    }
+  }
+
+  /// The launch agent's hourly run. Nobody reads its log, so a failure shows an alert.
+  struct RunAutoClear: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      commandName: "_auto-clear", shouldDisplay: false)
+
+    /// Shows the alert for this failure instead of running; a failed run starts itself this way.
+    @Option(help: .hidden) var alert: String?
+
+    @OptionGroup var options: Options
+
+    @MainActor
+    mutating func run() async throws {
+      if let alert {
+        Self.show(alert)
+        return
+      }
+      let outcome: ClipboardAutoClearRun
+      do {
+        outcome = try options.engine.runAutoClear()
+      } catch {
+        // Nothing succeeds until someone acts on this error. launchd skips the hourly runs while
+        // this alert waits, so alerts never pile up.
+        Self.show(String(describing: error))
+        throw error
+      }
+      if let message = outcome.message { print(message) }
+      guard case .failed(let message, let needsAlert) = outcome else { return }
+      if needsAlert { showSeparately(message) }
+      throw ClipboardHistoryError(message)
+    }
+
+    /// The next hourly run may succeed, and launchd skips it while this run waits on an alert,
+    /// so the alert shows in a separate process. The plist's AbandonProcessGroup keeps launchd
+    /// from stopping that process when this run exits.
+    @MainActor
+    private func showSeparately(_ failure: String) {
+      let process = Process()
+      process.executableURL = RuntimeEnvironment.live.executableURL
+      process.arguments = [
+        "clipboard", "_auto-clear", "--state-root", options.stateRoot, "--alert=\(failure)",
+      ]
+      do {
+        try process.run()
+      } catch {
+        Self.show(failure)
+      }
+    }
+
+    @MainActor
+    private static func show(_ failure: String) {
+      showNativeAlert(
+        title: "Automatic clipboard clear failed",
+        message: (failure.hasSuffix(".") ? failure : failure + ".")
+          + " Run `macarchy clipboard clear` to clear now.")
+    }
+  }
+
   struct Open: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Show Maccy's clipboard history, starting Maccy when it is not running.")
@@ -136,3 +221,5 @@ struct ClipboardCommand: ParsableCommand {
     }
   }
 }
+
+extension ClipboardAutoClearSwitch: ExpressibleByArgument {}

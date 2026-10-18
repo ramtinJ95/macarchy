@@ -1,3 +1,4 @@
+import ArgumentParser
 import Darwin
 import Foundation
 import Synchronization
@@ -40,6 +41,11 @@ struct ClipboardAutoClearAgentTests {
       #expect(
         plist["StandardErrorPath"] as? String
           == logs.appending(path: "clipboard-auto-clear.stderr.log").path)
+
+      let command = try Macarchy.parseAsRoot(Array(arguments.dropFirst()))
+      let run = try #require(command as? ClipboardCommand.RunAutoClear)
+      #expect(run.options.stateRoot == state.path)
+      #expect(run.alert == nil)
     }
   }
 
