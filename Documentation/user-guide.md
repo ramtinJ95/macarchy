@@ -748,10 +748,12 @@ off, so use the command for a bounded session. Running `on` during a session
 replaces that session with the new request. The exception is an unbounded request
 while an unbounded session is on, which changes nothing.
 
-While keep-awake is on, a cup icon appears left of the bar clock. Hover over it to
-see when keep-awake ends, and click it to turn keep-awake off. A bounded session
-ends on time even when the bar is not running, and the icon disappears within 30
-seconds.
+A cup icon left of the bar clock shows keep-awake and turns it on or off. While
+keep-awake is off, the cup is dimmed, and a click keeps the display awake until you
+turn keep-awake off, like the menu toggle. While keep-awake is on, the cup is lit in
+the theme's accent color. Hover over it to see when keep-awake ends, and click it to
+turn keep-awake off. A bounded session ends on time even when the bar is not running,
+and the cup dims within 30 seconds.
 
 Keep-awake runs Apple's `caffeinate -d -i` as one process that Macarchy owns. The
 display stays on, and the idle screensaver and idle lock do not start. You can still
@@ -770,6 +772,8 @@ If keep-awake does not behave as expected, check these points:
 - The bar icon is part of the generated bar configuration. After upgrading, use
   **Review & apply configuration** to activate it. Installing the upgrade alone
   does not reload the bar. Removing the clock module also removes the icon.
+  Until you apply it, an earlier bar configuration shows the cup only while
+  keep-awake is on.
 - If the icon shows `!`, its helper failed. SketchyBar's stderr log has the details.
 
 ### Show the animated screensaver
@@ -823,12 +827,22 @@ animated screensaver after a period without keyboard or mouse input:
 macarchy saver idle on              # After 5 minutes idle
 macarchy saver idle on --after 20m  # Or after 20 minutes; run again to change it
 macarchy saver idle off
+macarchy saver idle toggle          # Off when on, otherwise on after 5 minutes
 macarchy saver status
 ```
 
 `--after` takes minutes, hours, or both, such as `5m`, `30m`, or `1h30m`, from one
 minute up to 4 hours. Running `on` while idle activation is on changes nothing
-unless you pass a new `--after`.
+unless you pass a new `--after`. `toggle` turns idle activation off while it is on,
+otherwise on after 5 minutes. To use another timeout, run `on --after`. If an earlier
+`on` stopped partway, `toggle` finishes it with the timeout that `on` recorded.
+**Toggle idle screensaver** in the action menu runs `toggle`.
+
+A screen with sparkles left of the bar clock also turns idle activation on or off.
+It is dimmed while idle activation is off and lit in the theme's accent color while
+it is on. Hover over it to see the timeout. If the macOS screensaver or display
+sleep comes first when a click or the menu turns idle activation on, an alert says
+so, because Macarchy's screensaver will not show.
 
 The screensaver starts once per idle period. After you dismiss it, it starts again
 only after you use the Mac and then leave it idle for the whole timeout. It does not
@@ -864,9 +878,10 @@ macarchy saver resume
 macarchy saver toggle-pause
 ```
 
-While idle activation is paused, a pause icon appears left of the bar clock. Hover
-over it to see why, and click it to resume. Pausing does not close a screensaver that
-is already showing. A pause lasts until you resume or turn idle activation off.
+While idle activation is paused, the screen with sparkles changes to a lit pause
+icon. Hover over it to see why, and click it to resume. Pausing does not close a
+screensaver that is already showing. A pause lasts until you resume or turn idle
+activation off.
 
 Like **Start screensaver**, the idle screensaver is decorative, not a lock. Anyone
 can dismiss it, and dismissing it never unlocks the Mac. Lock the screen with
@@ -886,11 +901,15 @@ If idle activation does not behave as expected, check these points:
   screensaver fails to start, the log says why, and an alert appears at most once an
   hour for the same failure.
 - Macarchy changes or removes the launch agent only while it is exactly the file
-  Macarchy wrote. If another file has that name, `idle on`, `idle off`, `pause` and
-  `resume` stop and say how to remove it.
+  Macarchy wrote. If another file has that name, `idle on`, `idle off`,
+  `idle toggle`, `pause` and `resume` stop and say how to remove it. The bar icon
+  stays dimmed, and hovering over it shows a warning. Clicking it shows the same
+  error in an alert.
 - The bar icon is part of the generated bar configuration. After upgrading, use
   **Review & apply configuration** to activate it. Installing the upgrade alone
   does not reload the bar. Removing the clock module also removes the icon.
+  Until you apply it, an earlier bar configuration shows only the pause icon, and
+  only while idle activation is paused.
 
 ### Control the microphone
 
@@ -931,8 +950,13 @@ Macarchy treats the microphone as live again. It drops the saved level and never
 overwrites your change. Macarchy keeps a saved level for one microphone at a time,
 so muting a different microphone first restores the one it silenced.
 
-While the default microphone is muted, a slashed microphone appears left of the bar
-clock. Hover over it to see which microphone is muted and how. Click it to unmute.
+A microphone icon left of the bar clock shows the default microphone and mutes or
+unmutes it, like **Toggle microphone mute**. While the microphone is live, the icon
+is dimmed, and a click mutes it. While it is muted, a slashed microphone is lit in
+the theme's accent color. Hover over it to see which microphone is muted and how,
+hardware mute or silenced by input level. Click it to unmute. When there is no
+default microphone, or it has neither control, the icon stays dimmed and the hover
+text says why. A click then shows the error in an alert and changes nothing.
 
 If the microphone does not behave as expected, check these points:
 
@@ -960,6 +984,8 @@ If the microphone does not behave as expected, check these points:
 - The bar icon is part of the generated bar configuration. After upgrading, use
   **Review & apply configuration** to activate it. Installing the upgrade alone
   does not reload the bar. Removing the clock module also removes the icon.
+  Until you apply it, an earlier bar configuration shows the microphone only while
+  it is muted.
 - If the icon shows `!`, its helper failed. SketchyBar's stderr log has the details.
 
 ## Make it yours
@@ -1357,9 +1383,11 @@ This enables monitor-dependent placement without changing your module arrays
 preserves the inherited-versus-explicit behavior. Click the clock for a
 four-second ISO-week preview. The clock module also places up to four indicators
 beside the clock. The circular arrow on its right appears when a newer Macarchy
-release is known. On its left, the cup appears while keep-awake is on, a slashed
-microphone appears while the default microphone is muted, and a pause icon appears
-while idle activation of the animated screensaver is paused. See
+release is known. On its left, three icons are always shown and turn their feature
+on or off when clicked: a cup for keep-awake, a microphone for muting the default
+microphone, and a screen with sparkles for idle activation of the animated
+screensaver. Each icon is dimmed in the theme's muted color while its feature is off
+and lit in the accent color while it is on. See
 [Keep the Mac awake](#keep-the-mac-awake),
 [Control the microphone](#control-the-microphone) and
 [Start the animated screensaver when idle](#start-the-animated-screensaver-when-idle).

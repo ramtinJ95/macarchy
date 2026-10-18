@@ -7,6 +7,28 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `macarchy saver idle toggle` and the **Toggle idle screensaver** menu action turn
+  idle activation of the animated screensaver off while it is on, otherwise on after
+  5 minutes. When the menu or the bar turns it on and the
+  macOS screensaver or display sleep would come first, an alert says that Macarchy's
+  screensaver will not show.
+
+### Changed
+
+- The three icons left of the managed bar clock are now always shown and turn their
+  feature on or off when clicked. The cup toggles keep-awake, the microphone mutes or
+  unmutes the default microphone, and a new screen with sparkles toggles idle
+  activation of the animated screensaver. Each icon is dimmed in the theme's muted
+  color while its feature is off and lit in the accent color while it is on. While
+  idle activation is paused, the screen shows the lit pause icon, and a click resumes
+  it. When a feature cannot change, such as a microphone with no mute or input-level
+  control, the icon stays dimmed, the hover text says why, and a click shows the error
+  in an alert. To get the toggles, review and apply the generated bar configuration.
+  Until then, the bar shows each icon only while keep-awake is on, the microphone is
+  muted, or idle starts are paused.
+
 ## [0.14.0] - 2026-10-18
 
 ### Added
