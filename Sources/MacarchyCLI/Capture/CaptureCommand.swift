@@ -97,14 +97,6 @@ struct CaptureCommand: ParsableCommand {
 
   @MainActor
   static func showAlert(_ message: String, style: NSAlert.Style = .critical) {
-    let app = NSApplication.shared
-    _ = app.setActivationPolicy(.accessory)
-    app.finishLaunching()
-    let alert = NSAlert()
-    alert.messageText = "Capture not completed"
-    alert.informativeText = message
-    alert.alertStyle = style
-    app.activate(ignoringOtherApps: true)
-    alert.runModal()
+    showNativeAlert(title: "Capture not completed", message: message, style: style)
   }
 }
