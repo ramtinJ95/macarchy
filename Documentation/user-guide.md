@@ -9,6 +9,7 @@ Detailed setup, customization and troubleshooting reference.
 - [Screenshot capture](#capture-a-screenshot)
 - [Themes](#bring-an-omarchy-theme)
 - [Screensaver](#choose-your-screensaver-image)
+- [Animated screensaver](#show-the-animated-screensaver)
 - [Configuration](#make-it-yours)
 - [Updates and removal](#updates-diagnostics-and-removal)
 
@@ -98,7 +99,7 @@ macarchy setup doctor
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding
-viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, image preparation, clipboard history, keep-awake, microphone controls and maintenance:
+viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, image preparation, clipboard history, keep-awake, the animated screensaver, microphone controls and maintenance:
 use j/k or arrows to navigate, / to focus search, and Return to open. In search,
 letters type normally; Escape returns to the list without clearing the filter.
 Escape from the list dismisses. A highlighted row and mode hint show keyboard
@@ -770,6 +771,47 @@ If keep-awake does not behave as expected, check these points:
   **Review & apply configuration** to activate it. Installing the upgrade alone
   does not reload the bar. Removing the clock module also removes the icon.
 - If the icon shows `!`, its helper failed. SketchyBar's stderr log has the details.
+
+### Show the animated screensaver
+
+The animated screensaver fills every display with text animated in the active
+theme's colors. Choose **Start screensaver** in the action menu, or run:
+
+```sh
+macarchy saver start
+macarchy saver stop
+macarchy saver status --json
+```
+
+Press any key or move the mouse to dismiss it on every display. Each cycle plays a
+different random effect at 30 frames per second. Running `start` while the
+screensaver is starting or showing changes nothing.
+
+The animated screensaver is decorative, not a lock, and anyone can dismiss it. It
+never locks the Mac and does not start when the Mac is idle. Lock the screen with
+**Control–Command–Q** when you step away. Macarchy changes no native screensaver,
+lock, password or sleep settings, so the
+[native screensaver](#choose-your-screensaver-image) keeps working as before.
+
+The screensaver needs Kitty in `/Applications` and the ttfx engine that the
+Macarchy release installs. `macarchy saver status` reports both and says how to
+install whichever is missing. Source builds do not include ttfx. Each display shows
+its own Kitty panel, which does not use your Kitty configuration. `saver stop` and
+dismissing the screensaver close only the panels that Macarchy opened, never your
+Kitty windows.
+
+By default the screensaver shows the Macarchy banner. To show your own text, save it
+in **`~/.config/macarchy/screensaver.txt`**. Use a regular file of at most 64 KiB of
+UTF-8 text. Macarchy removes control characters other than newlines and tabs, and
+passes the text only to the animation. A symbolic link, a larger or unreadable file,
+or a file with no visible text is not used. `start` and `status` then say why, and
+the banner is shown instead. With a custom `--state-root`, use
+`<state-root>/screensaver.txt`.
+
+If Kitty does not name your displays, the screensaver covers the main display only,
+and `start` says so. If a display's panel fails to start, `start` closes the panels
+that did start and names the display that failed. Menu launches show the error in an
+alert.
 
 ### Control the microphone
 
