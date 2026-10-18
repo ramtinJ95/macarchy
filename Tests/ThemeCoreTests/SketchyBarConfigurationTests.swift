@@ -170,10 +170,11 @@ struct SketchyBarConfigurationTests {
       #expect(update.contents.contains("desktop _update-indicator"))
       #expect(update.contents.contains("--state-root '\(root.path)'"))
       let lines = entry.contents.split(separator: "\n").map(String.init)
+      // The toggles are always drawn, dimmed until their script reads the feature's state.
       for (name, event, icon) in [
         ("keep-awake", "macarchy_keep_awake_changed", "☕\u{FE0E}"),
-        ("microphone", "macarchy_microphone_changed", "\u{1002B3}"),
-        ("saver-paused", "macarchy_saver_idle_changed", "⏸\u{FE0E}"),
+        ("microphone", "macarchy_microphone_changed", "\u{1002B1}"),
+        ("saver-paused", "macarchy_saver_idle_changed", "\u{10114B}"),
       ] {
         let declaration = try #require(
           lines.firstIndex(of: "\"$SKETCHYBAR\" --add event \(event)"))
@@ -185,7 +186,7 @@ struct SketchyBarConfigurationTests {
         #expect(declaration < subscription)
         let item = try #require(lines.first { $0.contains("--add item macarchy.\(name) ") })
         for setting in [
-          "drawing=off", "icon='\(icon)'", "icon.color=\"$MACARCHY_ACCENT_COLOR\"",
+          "drawing=on", "icon='\(icon)'", "icon.color=\"$MACARCHY_MUTED_COLOR\"",
           "label.drawing=off", "updates=on", "update_freq=30",
           "script=\"$PLUGIN_DIR/\(name).sh\"", "popup.align=center",
         ] {
@@ -197,7 +198,7 @@ struct SketchyBarConfigurationTests {
         #expect(plugin.contents.contains("[ \"${NAME-}\" = macarchy.\(name) ] || exit 1"))
         #expect(
           plugin.contents.contains(
-            "desktop _\(name)-indicator --sender \"${SENDER-forced}\" --state-root '\(root.path)' --accent \"$MACARCHY_ACCENT_COLOR\"; then"
+            "desktop _\(name)-indicator --sender \"${SENDER-forced}\" --state-root '\(root.path)' --accent \"$MACARCHY_ACCENT_COLOR\" --muted \"$MACARCHY_MUTED_COLOR\"; then"
           ))
         #expect(plugin.contents.contains("--set macarchy.\(name) drawing=on icon='!'"))
       }
