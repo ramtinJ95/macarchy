@@ -2,7 +2,8 @@ import Darwin
 import Foundation
 import ThemeCore
 
-/// A small JSON record in `<state root>/run/`, beside the lock that serializes every access to it.
+/// A small JSON record under `<state root>/run/`. Callers serialize access to it, with the lock
+/// beside it or by giving each concurrent writer its own record.
 struct RunStateRecord<Value: Codable> {
   let name: String
   let directory: URL
@@ -10,8 +11,15 @@ struct RunStateRecord<Value: Codable> {
   let isValid: (Value) -> Bool
 
   init(_ name: String, stateRoot: URL, isValid: @escaping (Value) -> Bool) {
+    self.init(
+      name, directory: stateRoot.appending(path: "run", directoryHint: .isDirectory),
+      isValid: isValid)
+  }
+
+  /// A record in `directory`, which its owner creates.
+  init(_ name: String, directory: URL, isValid: @escaping (Value) -> Bool) {
     self.name = name
-    directory = stateRoot.appending(path: "run", directoryHint: .isDirectory)
+    self.directory = directory
     self.isValid = isValid
   }
 
