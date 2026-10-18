@@ -98,7 +98,7 @@ macarchy setup doctor
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding
-viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, image preparation, keep-awake, microphone controls and maintenance:
+viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, image preparation, clipboard history, keep-awake, microphone controls and maintenance:
 use j/k or arrows to navigate, / to focus search, and Return to open. In search,
 letters type normally; Escape returns to the list without clearing the filter.
 Escape from the list dismisses. A highlighted row and mode hint show keyboard
@@ -416,6 +416,110 @@ nothing. If copying fails after the file is saved, Macarchy keeps the file, repo
 
 Image preparation does not edit, crop, or enlarge images, and it does not write HEIC
 or WebP. Macarchy refuses source files larger than 256 MiB.
+
+### Clipboard history
+
+Macarchy uses the Maccy app to keep your clipboard history, and adds a
+full clear that also removes pinned items. Maccy is an optional package, and no
+Macarchy upgrade or setup run installs it. To install it and record it in your
+personal Brewfile, preview and then approve the addition:
+
+```sh
+macarchy setup add-packages cask:maccy
+macarchy setup add-packages cask:maccy --approve 'digest-from-preview'
+```
+
+You can also run `brew install --cask maccy`. Open Maccy once, so that it creates
+its settings, then turn on clearing:
+
+```sh
+macarchy clipboard enable
+```
+
+Maccy keeps its settings and history in its own protected folder. The first time
+Macarchy reaches it, macOS asks whether the app you ran Macarchy from, such as
+Kitty, may access data from other apps. Choose **Allow** once. The action menu runs
+its commands under the same app, so one answer covers both. If you refuse, enable,
+status and clear stop with an error that names this permission and change nothing.
+Allowing it lets every command you run in that app read other apps' data, not just
+Macarchy.
+
+To see your history, choose **Clipboard history** in the action menu, run
+`macarchy clipboard open`, or press Maccy's own shortcut, **Shift–Command–C** by
+default. If Maccy is not running, Macarchy starts it and says to press the shortcut,
+in an alert when you use the menu. Macarchy adds no keybinding. Maccy's own
+**Launch at login** setting decides whether it starts at login, and
+`macarchy clipboard status` reports whether Maccy is running.
+
+```sh
+macarchy clipboard status         # Installed version, running, clearing, the two settings
+macarchy clipboard status --json
+macarchy clipboard open
+macarchy clipboard clear          # Deletes everything, including pinned items
+macarchy clipboard disable
+```
+
+Enabling changes two Maccy settings. It turns on `clearOnQuit`, so Maccy clears its
+unpinned history when it quits, and `clearSystemClipboard`, so that clear also empties
+the clipboard. Macarchy saves each setting's earlier value in
+`~/.config/macarchy/run/clipboard-maccy-settings.json` first. Running `enable` again
+keeps the saved values and turns either setting back on if you turned it off.
+`macarchy clipboard disable` puts back each setting that still has the value Macarchy
+set. If you changed a setting in Maccy since, your change stays, and `disable` says
+which one. Disabling never deletes history. Every other Maccy setting, such as the
+history size, ignored apps and types, and **Launch at login**, stays Maccy's.
+
+To clear everything, choose **Clear clipboard history** in the action menu. It asks
+`Clear all clipboard history, including pinned items?` first. **Clear** goes ahead,
+and **Cancel** changes nothing. `macarchy clipboard clear` does not ask, so scripts
+can call it. Clearing needs `macarchy clipboard enable` first. A clear does this:
+
+1. If Maccy is running, Macarchy asks it to quit. Maccy runs its own clear as it
+   quits. If Maccy has not quit after five seconds, Macarchy stops with an error
+   and deletes nothing. If Maccy quits later, open it again.
+2. Macarchy deletes Maccy's history database, `Storage.sqlite` with its
+   `Storage.sqlite-shm` and `Storage.sqlite-wal` files, from
+   `~/Library/Containers/org.p0deje.Maccy/Data/Library/Application Support/Maccy/`.
+   It also deletes `Documents/image.png` in the same container, the image Maccy's
+   Shortcuts action saves, which no Maccy clear removes.
+3. Macarchy empties the clipboard, which also covers a Maccy that was not running.
+4. If Maccy was running, Macarchy starts it again in the background, now with an
+   empty history.
+
+Pinned items go too, and a clear cannot be undone. Macarchy deletes only those exact
+files. It never follows a symbolic link or deletes a folder. If anything other than
+an ordinary file has one of those names, Macarchy deletes none of them, restarts
+Maccy if it was running, and reports the path.
+
+Macarchy knows where Maccy 2.7.1 keeps its history. With any other Maccy version, or
+when that folder is missing from the container, Macarchy deletes no files. Maccy's
+own clear still runs if Maccy was running, and the clipboard is emptied, but pinned
+items may remain. The menu says so in its confirmation, which then asks
+`Clear unpinned clipboard history?`. The command exits with an error, and the menu
+shows it in an alert, for example:
+
+```text
+Cleared Maccy's unpinned history and the clipboard, but pinned items may remain: Maccy 2.8.0 is not the supported 2.7.1, so its storage layout is unknown. Maccy restarted.
+```
+
+Macarchy never reads your clipboard or Maccy's history. Status reports the Maccy
+version, whether it runs, whether clearing is enabled, and the two settings, but no
+items, titles, or counts. Maccy does not record content that an app marks as
+concealed or transient, which is what password managers do with copied passwords.
+Maccy 2.7.1 has no paste stack and cannot select several items at once.
+
+If clipboard history does not behave as expected, check these points:
+
+- `macarchy clipboard status` shows what Macarchy sees. Every command except
+  `status` reports `Maccy is not installed. Install it with: brew install --cask maccy`
+  when Maccy is missing.
+- If `enable` reports that Maccy has not run yet, open Maccy once and run it again.
+  Settings written before Maccy's first start might not reach it.
+- If Macarchy reports that its record of Maccy's settings is damaged, it no longer
+  knows their earlier values. Set `clearOnQuit` and `clearSystemClipboard` in Maccy
+  as you want them, delete the file it names, and run `macarchy clipboard enable` if
+  you want clearing again.
+- Menu launches show failures in an alert.
 
 ### Bring an Omarchy theme
 
