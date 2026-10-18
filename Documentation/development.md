@@ -25,6 +25,11 @@ Tests use temporary roots, not your live Macarchy state. CI also validates the
 release archive and installed layout. The theme format is documented in
 [theme-json.md](theme-json.md).
 
+The release archive bundles the [ttfx](https://github.com/omacom/ttfx) screensaver
+engine at `libexec/ttfx`. `Scripts/build-ttfx.sh <directory>` builds it from the
+pinned commit with git and a Rust toolchain, and collects its licences. Source
+builds do not include it, so `macarchy saver status` reports the engine as missing.
+
 ### Local GUI VM lab
 
 The opt-in [VM lab](../Scripts/vm/README.md) keeps reproducible macOS guest

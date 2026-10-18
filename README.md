@@ -115,3 +115,9 @@ for more detail, including how to preview restoration before uninstalling.
 ## License
 
 [MIT](LICENSE). Wallpaper credits and licensing live in their theme packages.
+
+The release archive bundles [ttfx](https://github.com/omacom/ttfx) (MIT), a port of
+[TerminalTextEffects](https://github.com/ChrisBuilds/terminaltexteffects), for the
+animated screensaver. Its licence and notice, and the licences of the Rust crates
+compiled into it, are installed in `share/doc/macarchy/ttfx/` under the Macarchy
+prefix, for example `/opt/homebrew/opt/macarchy/share/doc/macarchy/ttfx/`.
