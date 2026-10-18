@@ -75,7 +75,7 @@ struct SketchyBarRuntimeTests {
   }
 
   @Test(
-    arguments: [ClockCompanion.keepAwake, .microphone],
+    arguments: [ClockCompanion.keepAwake, .microphone, .saverPaused],
     [
       "hidden", "visible", "position", "script", "frequency", "events", "undeclared-event",
       "popup",
@@ -120,7 +120,7 @@ struct SketchyBarRuntimeTests {
   }
 
   @Test(
-    arguments: [ClockCompanion.keepAwake, .microphone],
+    arguments: [ClockCompanion.keepAwake, .microphone, .saverPaused],
     ["complete", "without-companion", "detail-missing", "without-clock"])
   func eventDrivenCompanionEvidenceIsOptionalButCompleteBesideAClock(
     companion: ClockCompanion, inventory: String
@@ -408,8 +408,8 @@ struct SketchyBarRuntimeTests {
       inspection.items == [
         "macarchy.clock", "macarchy.clock.preview", "macarchy.keep-awake",
         "macarchy.keep-awake.detail", "macarchy.microphone", "macarchy.microphone.detail",
-        "macarchy.space.1", "macarchy.space.2", "macarchy.theme.ready", "macarchy.update",
-        "macarchy.update.detail",
+        "macarchy.saver-paused", "macarchy.saver-paused.detail", "macarchy.space.1",
+        "macarchy.space.2", "macarchy.theme.ready", "macarchy.update", "macarchy.update.detail",
       ])
   }
 
@@ -425,13 +425,14 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail"]}
+             "items":["macarchy.spaces.unavailable","macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.saver-paused","macarchy.saver-paused.detail"]}
             """
         )
       case ["--query", "macarchy.clock.preview"], ["--query", "events"],
         ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"],
         ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"],
-        ["--query", "macarchy.microphone"], ["--query", "macarchy.microphone.detail"]:
+        ["--query", "macarchy.microphone"], ["--query", "macarchy.microphone.detail"],
+        ["--query", "macarchy.saver-paused"], ["--query", "macarchy.saver-paused.detail"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.clock"]:
         return ProcessResult(
@@ -501,14 +502,15 @@ struct SketchyBarRuntimeTests {
           output: """
             {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
              "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail"]}
+             "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.saver-paused","macarchy.saver-paused.detail"]}
             """
         )
       case ["--query", "macarchy.clock.preview"], ["--query", "events"]:
         return Self.dynamicResult(request, fixture: fixture, indices: [])
       case ["--query", "macarchy.update"], ["--query", "macarchy.update.detail"],
         ["--query", "macarchy.keep-awake"], ["--query", "macarchy.keep-awake.detail"],
-        ["--query", "macarchy.microphone"], ["--query", "macarchy.microphone.detail"]:
+        ["--query", "macarchy.microphone"], ["--query", "macarchy.microphone.detail"],
+        ["--query", "macarchy.saver-paused"], ["--query", "macarchy.saver-paused.detail"]:
         let result = Self.dynamicResult(request, fixture: fixture, indices: [])
         return .init(
           terminationStatus: 0,
@@ -1029,7 +1031,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.space.1"\(extra)]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.saver-paused","macarchy.saver-paused.detail","macarchy.space.1"\(extra)]}
               """
           )
         }
@@ -1068,7 +1070,7 @@ struct SketchyBarRuntimeTests {
             output: """
               {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,
                "margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on",
-               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.space.1","\(extra)"]}
+               "items":["macarchy.clock","macarchy.clock.preview","macarchy.theme.ready","macarchy.update","macarchy.update.detail","macarchy.keep-awake","macarchy.keep-awake.detail","macarchy.microphone","macarchy.microphone.detail","macarchy.saver-paused","macarchy.saver-paused.detail","macarchy.space.1","\(extra)"]}
               """
           )
         }
@@ -1151,7 +1153,9 @@ struct SketchyBarRuntimeTests {
     #expect(waits.withLock { $0 } == 20)
   }
 
-  @Test(arguments: ["current", "before-microphone", "before-keep-awake", "before-companions"])
+  @Test(arguments: [
+    "current", "before-saver-paused", "before-microphone", "before-keep-awake", "before-companions",
+  ])
   func rollbackSettleRestoresThePreviousObservableRuntime(generation: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1161,14 +1165,19 @@ struct SketchyBarRuntimeTests {
     let absent =
       [
         "current": [],
-        "before-microphone": ["macarchy.microphone", "macarchy.microphone.detail"],
+        "before-saver-paused": ["macarchy.saver-paused", "macarchy.saver-paused.detail"],
+        "before-microphone": [
+          "macarchy.microphone", "macarchy.microphone.detail", "macarchy.saver-paused",
+          "macarchy.saver-paused.detail",
+        ],
         "before-keep-awake": [
           "macarchy.keep-awake", "macarchy.keep-awake.detail", "macarchy.microphone",
-          "macarchy.microphone.detail",
+          "macarchy.microphone.detail", "macarchy.saver-paused", "macarchy.saver-paused.detail",
         ],
         "before-companions": [
           "macarchy.keep-awake", "macarchy.keep-awake.detail", "macarchy.microphone",
-          "macarchy.microphone.detail", "macarchy.update", "macarchy.update.detail",
+          "macarchy.microphone.detail", "macarchy.saver-paused", "macarchy.saver-paused.detail",
+          "macarchy.update", "macarchy.update.detail",
         ],
       ][generation]!
     let expected = SketchyBarCoreRuntimeInspection(
@@ -1230,6 +1239,7 @@ struct SketchyBarRuntimeTests {
   /// The bits the fixture's `--query events` reply gives each companion's change event.
   private static let changeEventBits = [
     "macarchy_keep_awake_changed": 256, "macarchy_microphone_changed": 512,
+    "macarchy_saver_idle_changed": 1024,
   ]
 
   /// A hidden event-driven companion with its popup, as SketchyBar reports it.
@@ -1260,7 +1270,8 @@ struct SketchyBarRuntimeTests {
         [
           "macarchy.clock", "macarchy.clock.preview", "macarchy.theme.ready", "macarchy.update",
           "macarchy.update.detail", "macarchy.keep-awake", "macarchy.keep-awake.detail",
-          "macarchy.microphone", "macarchy.microphone.detail",
+          "macarchy.microphone", "macarchy.microphone.detail", "macarchy.saver-paused",
+          "macarchy.saver-paused.detail",
         ]
         + indices.map { "macarchy.space.\($0)" }
       let items = names.map { "\"\($0)\"" }.joined(separator: ",")
@@ -1280,7 +1291,7 @@ struct SketchyBarRuntimeTests {
       return ProcessResult(
         terminationStatus: 0,
         output:
-          #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16},"mouse.entered":{"bit":32},"mouse.exited":{"bit":64},"mouse.exited.global":{"bit":128},"macarchy_keep_awake_changed":{"bit":256},"macarchy_microphone_changed":{"bit":512}}"#
+          #"{"mouse.clicked":{"bit":1},"system_woke":{"bit":8},"display_change":{"bit":16},"mouse.entered":{"bit":32},"mouse.exited":{"bit":64},"mouse.exited.global":{"bit":128},"macarchy_keep_awake_changed":{"bit":256},"macarchy_microphone_changed":{"bit":512},"macarchy_saver_idle_changed":{"bit":1024}}"#
       )
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.update"]):
       let item = itemJSON(
@@ -1319,6 +1330,17 @@ struct SketchyBarRuntimeTests {
         output: itemJSON(
           name: "macarchy.microphone.detail", drawing: "on", position: "popup",
           label: "Microphone is live.", labelDrawing: "on"))
+    case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.saver-paused"]):
+      return companionResult(
+        "macarchy.saver-paused", plugin: "saver-paused", mask: 1_257, fixture: fixture)
+    case (
+      SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.saver-paused.detail"]
+    ):
+      return .init(
+        terminationStatus: 0,
+        output: itemJSON(
+          name: "macarchy.saver-paused.detail", drawing: "on", position: "popup",
+          label: "Idle screensaver is not paused.", labelDrawing: "on"))
     case (SketchyBarCoreRuntimeVerifier.controlURL.path, ["--query", "macarchy.clock"]):
       return ProcessResult(
         terminationStatus: 0,

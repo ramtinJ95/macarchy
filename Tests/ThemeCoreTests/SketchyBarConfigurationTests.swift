@@ -160,7 +160,9 @@ struct SketchyBarConfigurationTests {
       let clock = try #require(composition.artifacts.first { $0.path == "plugins/clock.sh" })
       #expect(clock.contents.contains("--position '\(explicit ? "right" : "auto")'"))
       #expect(
-        clock.contents.contains("--update-indicator --keep-awake-indicator --microphone-indicator"))
+        clock.contents.contains(
+          "--update-indicator --keep-awake-indicator --microphone-indicator "
+            + "--saver-paused-indicator"))
       let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
       #expect(entry.contents.contains("macarchy.clock.preview right"))
       #expect(entry.contents.contains("mouse.clicked display_change system_woke"))
@@ -171,6 +173,7 @@ struct SketchyBarConfigurationTests {
       for (name, event, icon) in [
         ("keep-awake", "macarchy_keep_awake_changed", "☕\u{FE0E}"),
         ("microphone", "macarchy_microphone_changed", "\u{1002B3}"),
+        ("saver-paused", "macarchy_saver_idle_changed", "⏸\u{FE0E}"),
       ] {
         let declaration = try #require(
           lines.firstIndex(of: "\"$SKETCHYBAR\" --add event \(event)"))
@@ -213,10 +216,12 @@ struct SketchyBarConfigurationTests {
     #expect(!composition.artifacts.contains { $0.path == "plugins/update.sh" })
     #expect(!composition.artifacts.contains { $0.path == "plugins/keep-awake.sh" })
     #expect(!composition.artifacts.contains { $0.path == "plugins/microphone.sh" })
+    #expect(!composition.artifacts.contains { $0.path == "plugins/saver-paused.sh" })
     let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
     #expect(!entry.contents.contains("macarchy.update"))
     #expect(!entry.contents.contains("macarchy.keep-awake"))
     #expect(!entry.contents.contains("macarchy.microphone"))
+    #expect(!entry.contents.contains("macarchy.saver-paused"))
     #expect(!entry.contents.contains("--add event"))
   }
 
@@ -347,7 +352,7 @@ struct SketchyBarConfigurationTests {
         == [
           "sketchybarrc", "plugins/clock.sh", "plugins/space-indexes.sh", "plugins/toggle.sh",
           "plugins/update.sh", "plugins/keep-awake.sh", "plugins/microphone.sh",
-          "plugins/volume.sh",
+          "plugins/saver-paused.sh", "plugins/volume.sh",
           "plugins/battery.sh", "plugins/cpu.sh", "plugins/memory.sh", "plugins/wifi.sh",
           "plugins/apple.sh", "plugins/media.sh",
         ]
