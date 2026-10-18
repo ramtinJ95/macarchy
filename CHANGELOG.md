@@ -7,6 +7,16 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `macarchy keep-awake` and the **Toggle keep-awake** menu action keep the display
+  awake and stop the idle screensaver and idle lock from starting until you turn
+  keep-awake off. `keep-awake on --for` ends the session after 1 minute to 24 hours.
+  Macarchy runs one Apple `caffeinate` process and never stops other apps'
+  keep-awake sessions. While keep-awake is on, a cup left of the managed bar clock
+  shows when it ends. Click the cup to turn keep-awake off. To activate the cup
+  after upgrading, review and apply the generated bar configuration.
+
 ## [0.13.1] - 2026-10-17
 
 ### Fixed

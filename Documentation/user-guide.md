@@ -98,7 +98,7 @@ macarchy setup doctor
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding
-viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots and maintenance:
+viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, keep-awake and maintenance:
 use j/k or arrows to navigate, / to focus search, and Return to open. In search,
 letters type normally; Escape returns to the list without clearing the filter.
 Escape from the list dismisses. A highlighted row and mode hint show keyboard
@@ -429,6 +429,50 @@ The native **Control–Command–Q** lock background inherits the desktop wallpa
 Macarchy does not offer a separate lock image or make locking start the saver.
 Authentication, password and idle settings, startup/login, and FileVault remain
 untouched. No custom screensaver plugin or additional permission is needed.
+
+### Keep the Mac awake
+
+To keep the idle screensaver and idle lock from starting during a presentation, a
+video, or a long-running job, turn on keep-awake. Choose **Toggle keep-awake** in
+the action menu, or run:
+
+```sh
+macarchy keep-awake on              # Until you turn it off
+macarchy keep-awake on --for 90m    # Turns off by itself after 90 minutes
+macarchy keep-awake off
+macarchy keep-awake toggle
+macarchy keep-awake status --json
+```
+
+`--for` takes minutes, hours, or both, such as `30m`, `2h`, or `1h30m`, from one
+minute up to 24 hours. The menu toggle always turns keep-awake on until you turn it
+off, so use the command for a bounded session. Running `on` during a session
+replaces that session with the new request. The exception is an unbounded request
+while an unbounded session is on, which changes nothing.
+
+While keep-awake is on, a cup icon appears left of the bar clock. Hover over it to
+see when keep-awake ends, and click it to turn keep-awake off. A bounded session
+ends on time even when the bar is not running, and the icon disappears within 30
+seconds.
+
+Keep-awake runs Apple's `caffeinate -d -i` as one process that Macarchy owns. The
+display stays on, and the idle screensaver and idle lock do not start. You can still
+lock the screen with **Control–Command–Q**, choose **Sleep**, or close the lid.
+Logging out ends the session, and Macarchy does not restart it at login. Macarchy
+changes no power settings. It never stops keep-awake sessions that other apps start,
+including other `caffeinate` processes.
+
+If keep-awake does not behave as expected, check these points:
+
+- `macarchy keep-awake status` reports Macarchy's session. `pmset -g assertions`
+  lists the `caffeinate` assertions that keep the display awake. Other apps can
+  hold their own assertions.
+- If turning keep-awake off fails, the session stays on and the command reports the
+  error. Menu launches show the error in an alert.
+- The bar icon is part of the generated bar configuration. After upgrading, use
+  **Review & apply configuration** to activate it. Installing the upgrade alone
+  does not reload the bar. Removing the clock module also removes the icon.
+- If the icon shows `!`, its helper failed. SketchyBar's stderr log has the details.
 
 ## Make it yours
 
@@ -823,7 +867,10 @@ fixes its position unless you set `automatic_clock = true` in `[sketchybar]`.
 This enables monitor-dependent placement without changing your module arrays
 (for example, when omitting media). `false` fixes the array position; omission
 preserves the inherited-versus-explicit behavior. Click the clock for a
-four-second ISO-week preview.
+four-second ISO-week preview. The clock module also places two indicators beside
+the clock. The circular arrow on its right appears when a newer Macarchy release is
+known. The cup on its left appears while keep-awake is on. See
+[Keep the Mac awake](#keep-the-mac-awake).
 
 Volume supports scrolling (Ctrl for fine steps), a slider, safe output-device
 selection, and right-click Sound settings. Wi-Fi never requests Location access:
