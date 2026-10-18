@@ -22,8 +22,9 @@ physical/display/Spaces/real-app/soak or visual-parity qualification.
   failures are not retried. No idle publication or heartbeat is introduced.
 - Theme reconciliation starts a stopped exact-owned job once and reports the
   repair plus palette acknowledgement. It does not create an absent registration.
-  Owned kickstart has a 35 s command bound to accommodate launchd's configured
-  30 s throttle after a recent exit; read-only inspection remains bounded at 5 s.
+  Any start while the job is loaded (`kickstart`/`kickstart -k`) has a 35 s bound
+  to accommodate launchd's configured 30 s throttle after a recent exit; bootstrap
+  and `launchctl print` stay at 5 s and the `pgrep` inspection at 2 s.
 - Managed Borders handoff/rollback and unmanaged refusal have injected lifecycle
   tests; this journey does not install Borders or claim native handoff evidence.
 
@@ -36,16 +37,21 @@ to Borders, or `"disabled"` to remove managed focus. No automatic host switch.
 
 ## Driving it with verify.py
 
-Run the normal fresh-clone/start/launch flow, then:
+Run the normal fresh-clone/start/launch flow, establish the console login (see
+../SKILL.md, Drive), rerun doctor, then:
 
 ```sh
 uv run --project Scripts/vm --locked python -B Scripts/vm/verify.py drive \
   --run setup-<run> --session verify-<session> --journey lean
 ```
 
-Requires the guest's unlocked `omarchy` console, absent incumbent processes/jobs,
-and an absent managed plist. Never grant permissions, install tools or automate
-login without separate approval. All product mutations remain guest-only.
+Requires the guest's console owned by `omarchy` (checked only as `stat -f %Su
+/dev/console`; unlocking is not checked), absent incumbent processes and
+`homebrew.mxcl.borders`/`sh.brew.borders` registrations, an absent managed plist, an
+absent guest `~/.config/macarchy` and an absent journey scratch directory. Each
+journey needs its own fresh clone: `start` refuses a clone it already started. Never
+grant permissions, install tools or automate login without separate approval. All
+product mutations remain guest-only.
 
 The fixed recipe builds the matching helper from the same source snapshot, uses
 a focus-only profile, runs real setup plan/apply, changes Catppuccin to Tokyo Night,
@@ -58,19 +64,23 @@ must show zero logical-write/disk-write deltas, with unchanged runtime-file
 identity/metadata/content. It then disables/re-enables
 and tears down through the product CLI.
 
-Passed on 2026-10-16 in `setup-39ab6e9f44f7`, `verify-12c17b36a8b2/drive-lean-01`.
-Stopped-job reconcile completed in 23.639 s; the initial 5 s bound had failed.
-Over 306.034956 s: zero logical-write bytes, zero disk-write bytes and zero
+Last passed on 2026-10-18 at `0a499fff` (0.13.1-dev) in
+`setup-6454f824d1d8/verify-3eabc8ffc48e/drive-lean-01`, run from the mini's
+`macarchy-scratch/package-lean-focus-helper` worktree (as was packaged-lean).
+Stopped-job reconcile completed in 22.647 s (an earlier 5 s bound had failed; hence
+35 s). Over 306.060914 s: zero logical-write bytes, zero disk-write bytes and zero
 runtime-file replacements. Unrelated Borders ownership cases have injected tests.
 The report and per-command logs retain runtime identity and resulting state.
 
-The `packaged-lean` journey additionally builds all release products and runs
-the release archive smoke/rejection gates in that fresh guest. It copies the
-validated archive's `bin` and `share` into two exclusive, marked guest Cellar
-directories and links all three executables under `/opt/homebrew/bin`, matching
-the formula's `prefix.install "bin", "share"` shape. No brew invocation, receipt,
-tap edit, trust or permission grant. Targets must be absent, including dangling
-links; cleanup checks the recorded Cellar inode/marker and exact owned links.
+The `packaged-lean` journey additionally builds all release products and runs the
+release archive smoke/rejection gates in that fresh guest. It copies the validated
+archive's `bin` and `share` into `<VERSION>_1` and `<VERSION>_2` under one
+exclusive, marked `/opt/homebrew/Cellar/macarchy` root (its `.verify-owner` marker
+and inode are recorded first) and links all three executables under
+`/opt/homebrew/bin`, matching the formula's `prefix.install "bin", "share"` shape.
+No brew invocation, receipt, tap edit, trust or permission grant. Targets must be
+absent, including dangling links; cleanup checks the recorded Cellar inode/marker
+and exact owned links.
 
 After initial setup/live palette checks it switches only those links, applies
 through the new packaged CLI, and requires a new PID/start and second Cellar
@@ -81,13 +91,15 @@ requires no helper/job/plist, removes only owned package fixtures, and reports
 cleanup failures explicitly. Always finish with the normal cleanup/shutdown;
 if transport fails, leave uncertain fixtures on the stopped disposable disk.
 
-Passed on 2026-10-16: `setup-f4309664a178/verify-71668cabc2b6/drive-packaged-lean-01`.
-Stable plist/new Cellar process verified; 306.041267 s with zero logical/disk
-write bytes and no runtime-file replacement. Package fixtures and session removed,
-guest stopped. This simulates an upgrade using the same artifact in two paths;
-it does not prove Homebrew commands, receipts, package migration or old/new code
-compatibility. Archive identity, source snapshot and build logs are retained in
-the report/evidence; the archive itself is removed with guest scratch.
+Last passed on 2026-10-18 at `0a499fff`:
+`setup-2418039dc241/verify-999f065fd0bd/drive-packaged-lean-01`. Version 0.13.1,
+`0.13.1_1` → `0.13.1_2` with a new PID and stable `ProgramArguments[0]`; 306.056548
+s with zero logical/disk write bytes and no runtime-file replacement. Package
+fixtures and session removed, guest stopped. This simulates an upgrade using the
+same artifact in two paths; it does not prove Homebrew commands, receipts, package
+migration or old/new code compatibility. Archive identity, source snapshot and build
+logs are retained in the report/evidence; the archive itself is removed with guest
+scratch.
 
 ## Gotchas
 
@@ -97,8 +109,13 @@ the existing default-consumer reconciliation runs. The journey accepts only
 the exact expected consumer failures and positive lean removal result; it
 separately requires no helper, job, plist, runtime receipt, ownership or journal.
 This is **not full teardown convergence**. The provider-independent behavior
-predates this slice: base `a947ef7`, `EnvironmentApply.swift:261–306`, restores
-the default adapter set whenever environment ownership is absent.
+predates this slice: base `a947ef7`, `EnvironmentApply.swift:261–306` (now
+`:264–309`), restores the default adapter set whenever environment ownership is absent.
+
+Since `be7df829`, standalone `environment apply`/`teardown` refuse while a unified
+setup journal is pending. The journey's repair, disable, re-enable and teardown
+steps run after `setup apply`, so they also prove that a completed setup apply
+leaves no pending journal.
 
 No pixel claim follows from palette acknowledgement. Actual Homebrew install
 provenance and physical rollout remain separately coordinated.

@@ -1,6 +1,6 @@
 ---
 name: verify-macarchy
-description: Verify Macarchy's current-source CLI in a disposable macOS guest on the Mac mini. Use for built-in theme/background listing and inactive status, or when extending real user-path verification. Includes launch, read-only doctor, retained evidence and cleanup. Other mapped features remain explicitly uncovered.
+description: Verify Macarchy's current-source CLI in a disposable macOS guest on the Mac mini. Use for built-in theme/background listing and inactive status, the lean focus-border preview, the managed lean focus lifecycle (source and packaged), or when extending real user-path verification. Includes launch, read-only doctor, retained evidence and cleanup. Other mapped features remain explicitly uncovered.
 ---
 
 # Verify Macarchy
@@ -27,12 +27,14 @@ command or proof of a Homebrew installation.
   stable-path repair across two owned Cellar copies, then the same lifecycle.
   Actual Homebrew execution and native managed-Borders handoff remain unqualified.
   Broad aggregate setup, keybindings and GUI acceptance remain **not covered**.
-- Qualified on 2026-10-13: clone, start, guest source build, doctor, theme drive,
-  cleanup and evidence survival passed in `setup-ffe804179e62/verify-4f7e526e2357`.
-  See its retained evidence under `artifacts/vm/runs/`.
-  28 focused Python checks passed; no full Swift suite was needed for this slice.
-- Pi discovers the same skill through `.pi/skills/verify-macarchy`, a symlink to
-  this directory. Pi's loader was checked; Cursor runtime discovery was not.
+- Last qualified on 2026-10-18 at `0a499fff`: clone, start, guest source build,
+  doctor, theme drive, cleanup and evidence survival passed in
+  `setup-5a1787da27ab/verify-c1c43d2d47fc`. 28 helper checks passed.
+- Lab state lives in each checkout's own `artifacts/vm/` (`Scripts/vm/lab.py`).
+  Evidence stays in the checkout that ran it; a run ID is not found from another
+  worktree.
+- Claude Code discovers this skill under `.claude/skills/`. Pi discovers it
+  through `.pi/skills/verify-macarchy`, a symlink to this directory.
 
 ## Launch
 
@@ -101,6 +103,16 @@ The fixed journey invokes the guest-built binary, not internal setters or test
 endpoints: `version --json`, `theme list`, `theme background list` for every
 snapshot built-in, and `theme status --json`. See `features/theme.md` for assertions.
 It rechecks target, session ownership, binary identity and fresh state.
+The closed journeys are `theme`, `borders`, `lean` and `packaged-lean`.
+`borders`, `lean` and `packaged-lean` also need the guest console owned by
+`omarchy`. No drive logs in, and `verify.py` has no login operation. Each login
+needs explicit user approval for that run. The approved 2026-10-18 method ran
+after launch and a ready doctor, under the run's `RunLock`, against the exact
+recorded Tart process. It was a one-off script using `lab.checked_capture`
+(saving `login-before.{json,png}`), `lab.type_guest_password` and a PID-targeted
+Return, then polled `stat -f %Su /dev/console` for `omarchy` (≤60 s), captured
+`login-login.{json,png}` and reran doctor. No clicks, global input or retries
+that steal focus. Without approval, report these journeys as blocked on login.
 
 Each command uses a clean user environment with update checks and Homebrew
 auto-update disabled. Before and after, checked native `find`/`stat` snapshots
@@ -176,7 +188,8 @@ overwritten; cleanup uses its recorded owned-process fallback.
 
 ## Helpers
 
-- `Scripts/vm/verify.py` is executable. Its six operations are shown above;
+- `Scripts/vm/verify.py` is executable. Its seven operations (`start`, `restart`,
+  `launch`, `doctor`, `drive`, `evidence`, `cleanup`) are shown above;
   `python3 -B Scripts/vm/verify.py --help` lists them.
 - `Scripts/vm/lab.py clone` creates the disposable baseline clone as shown above.
 - `guest.py` supplies the existing SSH and shutdown boundary; `run-tests.py`
@@ -186,6 +199,6 @@ overwritten; cleanup uses its recorded owned-process fallback.
 - Full/FIFO Swift tests are separate, guest-only via `Scripts/vm/run-tests.py`;
   never run unfiltered `swift test` on a physical Mac.
 
-Upstream `/maintain-verification-skill` from Cursor's `pstack` plugin is the
-maintenance option; it is **not installed here**. Keep this map accurate as features
-change, and report uncovered entry points rather than substituting CLI evidence.
+Maintain this skill with `pstack`'s `/maintain-verification-skill` (in Claude Code,
+`/pstack:maintain-verification-skill`). Keep this map accurate as features change,
+and report uncovered entry points rather than substituting CLI evidence.

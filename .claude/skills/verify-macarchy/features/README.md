@@ -19,11 +19,17 @@ Missing prerequisites block; failures remain failures.
 | Feature | Coverage |
 | --- | --- |
 | [Themes](theme.md) | Journey `theme`: built-ins, backgrounds, inactive status; E2E passed |
-| [Focus borders](borders.md) | Journey `borders`: accepted VM motion/1/8/24 preview; hardware/Retina/real-app gaps explicit |
+| [Focus borders](borders.md) | Journey `borders`: accepted VM motion/1/8/24 preview predates 2026-10-16 helper changes; 2026-10-18 re-run passed 1-window cases, failed none-8 capture; hardware/Retina/real-app gaps explicit |
 | [Managed lean focus](lean.md) | `lean`: source lifecycle; `packaged-lean`: release archive, stable Cellar upgrade, zero idle writes; bounded teardown limitation |
 | [Keybindings](keybindings.md) | Mapped, not covered |
 | [Setup](setup.md) | Mapped, not covered; no onboarding claim |
 | [Action menu](menu.md) | Mapped, not covered; GUI needs separate qualification |
+
+Unmapped, with no journey: `capture`, `preferences`, `desktop` beyond
+`borders preview`, `environment` beyond lean focus, `reconcile`, top-level
+`doctor`/`teardown`, `update`, and the `macarchy-menu` SketchyBar Apple-menu
+helper. Command tree: `Sources/MacarchyCLI/Macarchy.swift`. Report these as not
+covered; add a page before claiming any of them.
 
 ## Feature entry contract
 
