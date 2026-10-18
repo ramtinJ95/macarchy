@@ -788,7 +788,8 @@ different random effect at 30 frames per second. Running `start` while the
 screensaver is starting or showing changes nothing.
 
 The animated screensaver is decorative, not a lock, and anyone can dismiss it. It
-never locks the Mac and does not start when the Mac is idle. Lock the screen with
+never locks the Mac, and it starts by itself only when you turn on
+[idle activation](#start-the-animated-screensaver-when-idle). Lock the screen with
 **Control–Command–Q** when you step away. Macarchy changes no native screensaver,
 lock, password or sleep settings, so the
 [native screensaver](#choose-your-screensaver-image) keeps working as before.
@@ -812,6 +813,84 @@ If Kitty does not name your displays, the screensaver covers the main display on
 and `start` says so. If a display's panel fails to start, `start` closes the panels
 that did start and names the display that failed. Menu launches show the error in an
 alert.
+
+#### Start the animated screensaver when idle
+
+Idle activation is off until you turn it on. Then a Macarchy launch agent starts the
+animated screensaver after a period without keyboard or mouse input:
+
+```sh
+macarchy saver idle on              # After 5 minutes idle
+macarchy saver idle on --after 20m  # Or after 20 minutes; run again to change it
+macarchy saver idle off
+macarchy saver status
+```
+
+`--after` takes minutes, hours, or both, such as `5m`, `30m`, or `1h30m`, from one
+minute up to 4 hours. Running `on` while idle activation is on changes nothing
+unless you pass a new `--after`.
+
+The screensaver starts once per idle period. After you dismiss it, it starts again
+only after you use the Mac and then leave it idle for the whole timeout. It does not
+start while:
+
+- idle activation is paused;
+- keep-awake is on;
+- the screen is locked, or another user's session is active;
+- the macOS screensaver is running;
+- the displays are asleep; or
+- the animated screensaver is already showing, for example after **Start
+  screensaver**.
+
+If you lock the screen, or the macOS screensaver starts, or the displays sleep while
+the animated screensaver shows, Macarchy closes it. When Macarchy cannot tell whether
+the screen is locked, it does not start the screensaver.
+
+Macarchy never changes macOS screensaver, lock, password or sleep settings. If the
+macOS screensaver or display sleep starts no later than Macarchy's timeout, it comes
+first and Macarchy's screensaver does not show. `idle on` and `saver status` warn
+about this and name the **System Settings > Lock Screen** setting to change.
+`saver status` also says when it cannot read either timer. If the **Start Screen
+Saver when inactive** setting has never been saved, macOS may use its own default.
+`saver status` then reports the macOS screensaver as not set and cannot warn, so
+check that setting if Macarchy's screensaver does not show.
+
+To hold idle starts off without turning idle activation off, pause it. Choose
+**Toggle screensaver pause** in the action menu, or run:
+
+```sh
+macarchy saver pause
+macarchy saver resume
+macarchy saver toggle-pause
+```
+
+While idle activation is paused, a pause icon appears left of the bar clock. Hover
+over it to see why, and click it to resume. Pausing does not close a screensaver that
+is already showing. A pause lasts until you resume or turn idle activation off.
+
+Like **Start screensaver**, the idle screensaver is decorative, not a lock. Anyone
+can dismiss it, and dismissing it never unlocks the Mac. Lock the screen with
+**Control–Command–Q** when you step away.
+
+`macarchy saver idle off` removes everything idle activation added: the launch agent
+`~/Library/LaunchAgents/io.github.ramtinj95.macarchy.saver-idle.plist` and its
+record, `~/.config/macarchy/run/saver-idle.json`. `macarchy setup teardown` does not
+remove them, so run `idle off` before teardown. If you remove the launch agent file
+yourself, run `idle off` to remove the rest.
+
+If idle activation does not behave as expected, check these points:
+
+- `macarchy saver status` reports whether idle activation is on, loaded and paused,
+  its timeout, and the macOS timers that come first.
+- The launch agent logs to `~/.config/macarchy/run/saver-idle.stdout.log`. When the
+  screensaver fails to start, the log says why, and an alert appears at most once an
+  hour for the same failure.
+- Macarchy changes or removes the launch agent only while it is exactly the file
+  Macarchy wrote. If another file has that name, `idle on`, `idle off`, `pause` and
+  `resume` stop and say how to remove it.
+- The bar icon is part of the generated bar configuration. After upgrading, use
+  **Review & apply configuration** to activate it. Installing the upgrade alone
+  does not reload the bar. Removing the clock module also removes the icon.
 
 ### Control the microphone
 
@@ -1276,12 +1355,14 @@ fixes its position unless you set `automatic_clock = true` in `[sketchybar]`.
 This enables monitor-dependent placement without changing your module arrays
 (for example, when omitting media). `false` fixes the array position; omission
 preserves the inherited-versus-explicit behavior. Click the clock for a
-four-second ISO-week preview. The clock module also places up to three indicators
+four-second ISO-week preview. The clock module also places up to four indicators
 beside the clock. The circular arrow on its right appears when a newer Macarchy
-release is known. On its left, the cup appears while keep-awake is on, and a slashed
-microphone appears while the default microphone is muted. See
-[Keep the Mac awake](#keep-the-mac-awake) and
-[Control the microphone](#control-the-microphone).
+release is known. On its left, the cup appears while keep-awake is on, a slashed
+microphone appears while the default microphone is muted, and a pause icon appears
+while idle activation of the animated screensaver is paused. See
+[Keep the Mac awake](#keep-the-mac-awake),
+[Control the microphone](#control-the-microphone) and
+[Start the animated screensaver when idle](#start-the-animated-screensaver-when-idle).
 
 Volume supports scrolling (Ctrl for fine steps), a slider, safe output-device
 selection, and right-click Sound settings. Wi-Fi never requests Location access:
@@ -1483,7 +1564,9 @@ macarchy setup teardown
 Teardown reverses recorded configuration changes and preserves unrelated data
 and installed packages. It does not cover clipboard history: if you enabled
 clearing, run `macarchy clipboard disable` first. That removes the hourly
-automatic-clear job, restores Maccy's two settings and keeps its history. For
+automatic-clear job, restores Maccy's two settings and keeps its history. It also
+does not cover the idle screensaver: if you turned it on, run
+`macarchy saver idle off` first. For
 separately recorded legacy theme integrations,
 also inspect `macarchy teardown --dry-run` before running `macarchy teardown`.
 After restoration, remove the CLI separately if wanted:
