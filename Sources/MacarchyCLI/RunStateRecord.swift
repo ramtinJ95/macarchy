@@ -19,6 +19,16 @@ struct RunStateRecord<Value: Codable> {
 
   /// nil when absent, larger than 4 KiB, or not a valid record.
   func read() throws -> Value? {
+    do {
+      return try readStrictly()
+    } catch is InvalidRunStateRecord {
+      return nil
+    }
+  }
+
+  /// nil only when absent. Content larger than 4 KiB or not a valid record throws
+  /// `InvalidRunStateRecord`, for a record whose loss must not pass unnoticed.
+  func readStrictly() throws -> Value? {
     try withDirectory { parent in
       let data: Data
       do {
@@ -29,10 +39,10 @@ struct RunStateRecord<Value: Codable> {
       } catch let error as PinnedFilesystemError where error.code == ENOENT {
         return nil
       } catch BoundedRegularFileError.tooLarge {
-        return nil
+        throw InvalidRunStateRecord(url: url)
       }
       guard let value = try? JSONDecoder().decode(Value.self, from: data), isValid(value) else {
-        return nil
+        throw InvalidRunStateRecord(url: url)
       }
       return value
     }
@@ -60,4 +70,10 @@ struct RunStateRecord<Value: Codable> {
     defer { Darwin.close(parent) }
     return try body(parent)
   }
+}
+
+struct InvalidRunStateRecord: Error, CustomStringConvertible {
+  let url: URL
+
+  var description: String { "\(url.path) is not a valid record" }
 }
