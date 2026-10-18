@@ -73,11 +73,12 @@ struct ClipboardHistoryError: Error, CustomStringConvertible {
   }
 }
 
-/// Opens and fully clears the clipboard history Maccy keeps. Macarchy owns only the two
-/// settings it turns on and its record of their previous values. It deletes Maccy's history
-/// files but never reads them.
+/// Opens and clears the clipboard history Maccy keeps, fully on request and automatically once
+/// 24 hours have passed since the last clear. Macarchy owns only the two settings it turns on,
+/// its record of their previous values, the automatic clear's launch agent and its record. It
+/// deletes Maccy's history files but never reads them.
 struct ClipboardHistory {
-  /// With the live 50 ms pause, about five seconds for Maccy to quit.
+  /// With the live 50 ms pause, about five seconds for Maccy to quit or start.
   static let waitPolls = 100
   private static let lock = ProcessScopedFileLock<ClipboardHistoryError>(
     filename: "clipboard.lock",
@@ -92,8 +93,10 @@ struct ClipboardHistory {
   let maccy: MaccyApp
   let defaults: MaccyDefaults
   let storage: MaccyStorage
+  let agent: ClipboardAutoClearAgent
   let clearPasteboard: () -> Void
   let pause: () -> Void
+  let now: () -> Date
 
   /// `<state root>/run/clipboard-maccy-settings.json`.
   static func settingsRecord(stateRoot: URL) -> RunStateRecord<MaccySettingsRecord> {
@@ -102,56 +105,107 @@ struct ClipboardHistory {
     }
   }
 
+  /// `<state root>/run/clipboard-auto-clear.json`.
+  static func autoClearRecord(stateRoot: URL) -> RunStateRecord<ClipboardAutoClearRecord> {
+    RunStateRecord("clipboard-auto-clear.json", stateRoot: stateRoot) { _ in true }
+  }
+
   private var record: RunStateRecord<MaccySettingsRecord> {
     Self.settingsRecord(stateRoot: stateRoot)
   }
 
-  func status() throws -> ClipboardHistoryStatus {
-    try Self.lock.withLock(root: stateRoot) { try current() }
+  private var autoClearRecord: RunStateRecord<ClipboardAutoClearRecord> {
+    Self.autoClearRecord(stateRoot: stateRoot)
+  }
+
+  func status() throws -> ClipboardStatus {
+    try Self.lock.withLock(root: stateRoot) { () throws -> ClipboardStatus in
+      ClipboardStatus(
+        history: try current(),
+        autoClear: ClipboardAutoClearStatus(
+          agent: try agent.file(), loaded: try agent.isLoaded(), record: try readAutoClearRecord(),
+          checked: now()))
+    }
   }
 
   /// Records both settings' values, then turns both on. An existing record keeps the values
   /// from before the first enable.
   func enable() throws -> ClipboardIntegrationChange {
-    try Self.lock.withLock(root: stateRoot) { () throws -> ClipboardIntegrationChange in
-      _ = try installedVersion()
-      guard try Self.reachingContainer({ try storage.containerExists() }) else {
-        throw ClipboardHistoryError(
-          "Maccy has not run yet, so the settings Macarchy changes would not reach it. Open "
-            + "Maccy once, then run `macarchy clipboard enable` again.")
-      }
-      let recorded = try readRecord() != nil
-      let settings = try readSettings()
-      if !recorded { try record.write(MaccySettingsRecord(previous: settings)) }
-      let off = MaccySetting.allCases.filter { (settings[$0] ?? nil) != true }
-      for setting in off { try defaults.write(setting, true) }
-      return recorded && off.isEmpty ? .alreadyEnabled : .enabled
-    }
+    try Self.lock.withLock(root: stateRoot) { try applyEnable() }
   }
 
   /// Restores each setting that still holds Macarchy's value; one changed in Maccy since keeps
   /// that change. History is never touched.
   func disable() throws -> ClipboardIntegrationChange {
-    try Self.lock.withLock(root: stateRoot) { () throws -> ClipboardIntegrationChange in
-      _ = try installedVersion()
-      guard let saved = try readRecord() else { return .alreadyDisabled }
-      // A denied read would see both settings unset and drop the only record of their values.
-      try Self.reachingContainer { try storage.checkPreferencesAccess() }
-      var kept: [MaccySetting] = []
-      for setting in MaccySetting.allCases {
-        let current = try defaults.read(setting)
-        let previous: Bool? = saved.previous[setting] ?? nil
-        // Already back, for example after a disable that failed partway.
-        if current == previous { continue }
-        guard current == true else {
-          kept.append(setting)
-          continue
-        }
-        try defaults.write(setting, previous)
+    try Self.lock.withLock(root: stateRoot) { try applyDisable() }
+  }
+
+  /// Turns on the settings first, because the automatic clear relies on them, then the
+  /// automatic clear. One lock covers both, so a concurrent disable cannot interleave and leave
+  /// the automatic clear running without the settings. When the automatic clear fails, the
+  /// error still reports the settings change.
+  func enableWithAutoClear() throws -> String {
+    try Self.lock.withLock(root: stateRoot) { () throws -> String in
+      let settings = try applyEnable().message
+      do {
+        return try settings + "\n" + applyAutoClear(.on).message
+      } catch {
+        throw ClipboardHistoryError("\(settings)\n\(error)")
       }
-      try record.remove()
-      return .disabled(kept: kept)
     }
+  }
+
+  /// Turns off the automatic clear first, then restores the settings. When the automatic clear
+  /// cannot be turned off, it may still run, so the settings it relies on stay on.
+  func disableWithAutoClear() throws -> String {
+    try Self.lock.withLock(root: stateRoot) { () throws -> String in
+      let autoClear: String
+      do {
+        autoClear = try applyAutoClear(.off).message
+      } catch {
+        throw ClipboardHistoryError(
+          "\(error)\nMaccy's clearOnQuit and clearSystemClipboard stay on, because the "
+            + "automatic clear relies on them while it may still run. Fix the launch agent, then "
+            + "run `macarchy clipboard disable` again.")
+      }
+      return try autoClear + "\n" + applyDisable().message
+    }
+  }
+
+  private func applyEnable() throws -> ClipboardIntegrationChange {
+    _ = try installedVersion()
+    guard try Self.reachingContainer({ try storage.containerExists() }) else {
+      throw ClipboardHistoryError(
+        "Maccy has not run yet, so the settings Macarchy changes would not reach it. Open "
+          + "Maccy once, then run `macarchy clipboard enable` again.")
+    }
+    let recorded = try readRecord() != nil
+    let settings = try readSettings()
+    if !recorded { try record.write(MaccySettingsRecord(previous: settings)) }
+    let off = MaccySetting.allCases.filter { (settings[$0] ?? nil) != true }
+    for setting in off { try defaults.write(setting, true) }
+    return recorded && off.isEmpty ? .alreadyEnabled : .enabled
+  }
+
+  private func applyDisable() throws -> ClipboardIntegrationChange {
+    _ = try installedVersion()
+    guard let saved = try readRecord() else { return .alreadyDisabled }
+    // A denied read would see both settings unset and drop the only record of their values.
+    try Self.reachingContainer { try storage.checkPreferencesAccess() }
+    var kept: [MaccySetting] = []
+    for setting in MaccySetting.allCases {
+      let current = try defaults.read(setting)
+      let previous: Bool? = saved.previous[setting] ?? nil
+      // Already back, for example after a disable that failed partway.
+      if current == previous { continue }
+      guard current == true else {
+        kept.append(setting)
+        continue
+      }
+      try defaults.write(setting, previous)
+    }
+    try record.remove()
+    return .disabled(kept: kept)
   }
 
   /// Throws the reason a clear cannot run, so the menu can report it before asking to confirm.
@@ -189,8 +243,65 @@ struct ClipboardHistory {
       }
       clearPasteboard()
       if wasRunning { try reopen() }
+      // A clear that emptied only the clipboard left the history, so it does not postpone the
+      // automatic clear.
+      if unknown == nil || wasRunning { try restartAutoClearWindow() }
       guard let unknown else { return .cleared(maccyWasRunning: wasRunning) }
       return .clearedUnpinnedOnly(maccyWasRunning: wasRunning, reason: unknown)
+    }
+  }
+
+  /// Turns the automatic clear on or off without changing Maccy's settings. On needs clearing
+  /// enabled, because the automatic clear relies on Maccy's own clear-on-quit.
+  func setAutoClear(_ request: ClipboardAutoClearSwitch) throws -> ClipboardAutoClearChange {
+    try Self.lock.withLock(root: stateRoot) { try applyAutoClear(request) }
+  }
+
+  private func applyAutoClear(_ request: ClipboardAutoClearSwitch) throws
+    -> ClipboardAutoClearChange
+  {
+    switch request {
+    case .on:
+      _ = try clearableVersion(refusal: "the automatic clear was not turned on")
+      let installed = try agent.install()
+      // A damaged record gets a new window too.
+      let started = try autoClearRecord.read() == nil
+      if started { try autoClearRecord.write(.cleared(at: now())) }
+      let loaded = try agent.load()
+      return installed || started || loaded ? .turnedOn : .alreadyOn
+    case .off:
+      // A job loaded from somebody else's plist under this label is not Macarchy's to stop.
+      if case .conflict = try agent.file() { throw agent.conflict }
+      let unloaded = try agent.unload()
+      let removed = try agent.remove()
+      try autoClearRecord.remove()
+      return unloaded || removed ? .turnedOff : .alreadyOff
+    }
+  }
+
+  /// The launch agent's hourly run. Once 24 hours have passed since the last clear, Maccy's own
+  /// clear-on-quit removes its unpinned history and Macarchy empties the clipboard. It never
+  /// reaches Maccy's container or settings, where macOS would ask for permission with nobody
+  /// there to answer.
+  func runAutoClear() throws -> ClipboardAutoClearRun {
+    try Self.lock.withLock(root: stateRoot) { () throws -> ClipboardAutoClearRun in
+      let date = now()
+      guard let saved = try readAutoClearRecord() else {
+        try autoClearRecord.write(.cleared(at: date))
+        return .windowStarted
+      }
+      guard saved.isDue(at: date) else { return .notDue }
+      let wasRunning: Bool
+      do {
+        wasRunning = try clearWithoutContainer()
+      } catch {
+        let message = String(describing: error)
+        let failed = saved.failing(message, at: date)
+        try autoClearRecord.write(failed.record)
+        return .failed(message: message, alert: failed.alert)
+      }
+      try autoClearRecord.write(.cleared(at: date))
+      return .cleared(maccyWasRunning: wasRunning)
     }
   }
 
@@ -218,18 +329,19 @@ struct ClipboardHistory {
     return version
   }
 
-  private func clearableVersion() throws -> String {
+  /// `refusal` says what did not happen when clearing is not enabled.
+  private func clearableVersion(refusal: String = "nothing was cleared") throws -> String {
     let version = try installedVersion()
     let status = try current()
     guard status.enabled else {
       if status.changed.isEmpty {
         throw ClipboardHistoryError(
-          "Clipboard history clearing is not enabled, so nothing was cleared. Run "
+          "Clipboard history clearing is not enabled, so \(refusal). Run "
             + "`macarchy clipboard enable` first.")
       }
       throw ClipboardHistoryError(
         "\(MaccySetting.list(status.changed)) changed in Maccy after Macarchy enabled clearing, "
-          + "so nothing was cleared. Run `macarchy clipboard enable` to turn clearing back on.")
+          + "so \(refusal). Run `macarchy clipboard enable` to turn clearing back on.")
     }
     return version
   }
@@ -256,6 +368,60 @@ struct ClipboardHistory {
           + "clearSystemClipboard had before it enabled clearing. Set both in Maccy as you want "
           + "them and delete that file, then run `macarchy clipboard enable` to clear again.")
     }
+  }
+
+  private func readAutoClearRecord() throws -> ClipboardAutoClearRecord? {
+    do {
+      return try autoClearRecord.readStrictly()
+    } catch let damaged as InvalidRunStateRecord {
+      throw ClipboardHistoryError(
+        "\(damaged.url.path) is damaged, so Macarchy does not know when clipboard history was "
+          + "last cleared. Run `macarchy clipboard auto-clear on` to start a new 24-hour window.")
+    }
+  }
+
+  /// A clear restarts the automatic clear's window while it is on. A damaged record is
+  /// replaced, since the time of this clear is known.
+  private func restartAutoClearWindow() throws {
+    do {
+      guard try autoClearRecord.readStrictly() != nil else { return }
+    } catch is InvalidRunStateRecord {}
+    try autoClearRecord.write(.cleared(at: now()))
+  }
+
+  /// Clears unpinned history through Maccy's own clear-on-quit and empties the clipboard. A
+  /// closed Maccy starts for its clear and is closed again. Returns whether Maccy was running.
+  private func clearWithoutContainer() throws -> Bool {
+    _ = try installedVersion()
+    let running = try maccy.instances()
+    let instances = running.isEmpty ? try startInBackground() : running
+    guard quit(instances) else {
+      throw ClipboardHistoryError(
+        "Maccy did not quit within five seconds, so its history and the clipboard were not "
+          + "cleared")
+    }
+    clearPasteboard()
+    if running.isEmpty { return false }
+    try reopen()
+    return true
+  }
+
+  /// Opens Maccy without bringing it forward and waits until it runs. Maccy 2.7.1's
+  /// clear-on-quit deletes unpinned items from its store directly, not from the list it loads
+  /// when its window first shows, so quitting right after this still clears them.
+  private func startInBackground() throws -> [RunningMaccy] {
+    try maccy.open(.background)
+    var started: [RunningMaccy] = []
+    let running = try poll {
+      started = try maccy.instances()
+      return !started.isEmpty
+    }
+    guard running else {
+      throw ClipboardHistoryError(
+        "Maccy did not start within five seconds, so its history and the clipboard were not "
+          + "cleared")
+    }
+    return started
   }
 
   /// Asks every instance to quit normally; false when one has not exited after the wait.
@@ -306,11 +472,26 @@ struct ClipboardHistory {
 
 extension ClipboardHistory {
   static func live(stateRoot: URL) -> Self {
-    Self(
-      stateRoot: stateRoot, maccy: .live, defaults: .live,
-      storage: .live(home: FileManager.default.homeDirectoryForCurrentUser),
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    return Self(
+      stateRoot: stateRoot, maccy: .live, defaults: .live, storage: .live(home: home),
+      agent: ClipboardAutoClearAgent(
+        home: home, stateRoot: stateRoot,
+        executable: RuntimeEnvironment.live.persistentCommandURL, userID: getuid(),
+        runner: .live),
       clearPasteboard: { _ = NSPasteboard.general.clearContents() },
-      pause: { Thread.sleep(forTimeInterval: 0.05) })
+      pause: { Self.turnRunLoop(for: 0.05) }, now: Date.init)
+  }
+
+  /// Waits on the run loop instead of sleeping. AppKit updates the running apps that
+  /// `MaccyApp.instances` lists only when the main run loop turns, so waiting for Maccy to start
+  /// must turn it.
+  private static func turnRunLoop(for seconds: TimeInterval) {
+    let deadline = Date(timeIntervalSinceNow: seconds)
+    // Without a timer, a run loop with nothing scheduled returns at once.
+    RunLoop.current.add(
+      Timer(fire: deadline, interval: 0, repeats: false) { _ in }, forMode: .default)
+    while Date() < deadline { _ = RunLoop.current.run(mode: .default, before: deadline) }
   }
 }
 
@@ -419,19 +600,17 @@ extension ClipboardHistoryStatus {
   }
 
   /// Installation, settings and integration state only; never clipboard or history content.
-  func renderJSON() throws -> String {
+  var json: [String: Any] {
     var values: [String: Any] = [:]
     for setting in MaccySetting.allCases {
       values[setting.rawValue] = (settings[setting] ?? nil).map { $0 as Any } ?? NSNull()
     }
     var version: Any = NSNull()
     if case .installed(let installed) = installation { version = installed }
-    let document: [String: Any] = [
+    return [
       "installed": installation != .missing, "version": version,
       "supported": installation.isSupported, "running": running, "enabled": enabled,
       "settings": values,
     ]
-    let data = try JSONSerialization.data(withJSONObject: document, options: [.sortedKeys])
-    return String(decoding: data, as: UTF8.self)
   }
 }
