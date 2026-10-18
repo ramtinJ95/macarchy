@@ -98,7 +98,7 @@ macarchy setup doctor
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding
-viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, keep-awake, microphone controls and maintenance:
+viewer. The action menu offers configuration, themes/backgrounds, keybindings, screenshots, image preparation, keep-awake, microphone controls and maintenance:
 use j/k or arrows to navigate, / to focus search, and Return to open. In search,
 letters type normally; Escape returns to the list without clearing the filter.
 Escape from the list dismisses. A highlighted row and mode hint show keyboard
@@ -354,6 +354,68 @@ history, upload, telemetry or extra OCR application is enabled. Other clipboard
 managers you run can still collect the resulting text.
 Screen Recording permission belongs to the actual launching context, as with
 native screenshots; Macarchy does not grant it or retry automatically.
+
+### Prepare an image
+
+To share a photo or screenshot without its location, camera details, or full size,
+prepare a separate copy. Choose **Prepare an image** in the action menu, pick a
+preset, then choose **Use clipboard image** or **Choose file…**. Macarchy saves the
+result, copies it to the clipboard, and shows it in Finder. **Cancel**, in the
+dialog or in the file panel, writes nothing. Menu failures show in an alert.
+
+You can also run:
+
+```sh
+macarchy image prepare ~/Pictures/beach.heic --preset share
+macarchy image prepare --clipboard --preset small
+macarchy image prepare diagram.png --preset png --no-copy --reveal
+macarchy image prepare photo.jpg --preset small --output ~/Desktop/photo-small.jpg
+macarchy image prepare photo.jpg --preset share --json
+```
+
+The command needs exactly one source, either a path or `--clipboard`, and a
+`--preset`. It copies the result to the clipboard unless you pass `--no-copy`, and
+it shows the result in Finder only when you pass `--reveal`. `--json` reports the
+saved path, the pixel size, the byte count, and whether only the primary frame was
+used. Errors go to stderr with a nonzero exit.
+
+The presets are:
+
+| Preset | Format | Longest edge | Quality |
+| --- | --- | --- | --- |
+| `share` | JPEG | Up to 2048 px | 0.8 |
+| `small` | JPEG | Up to 1280 px | 0.7 |
+| `png` | PNG | Original size | Lossless |
+
+Every preset applies the photo's orientation to the pixels and converts the colors
+to sRGB. Macarchy never enlarges an image, so a source smaller than the limit keeps
+its size. JPEG has no transparency, so `share` and `small` turn transparent areas
+white, while `png` keeps them. For an animated GIF or another image with several
+frames, Macarchy uses the primary frame and says so in its output.
+
+The result holds the pixels, an sRGB color profile, and the three fields the
+encoder writes about the new file itself: color space, width, and height.
+Macarchy copies none of the original's EXIF, GPS, TIFF, XMP, or IPTC metadata, so
+the location, camera, capture date, and captions stay in the original.
+
+Macarchy saves the result beside the original as `<name>-<preset>.<ext>`, such as
+`beach-share.jpg`. A clipboard image goes to `~/Downloads` as
+`clipboard-<yyyyMMdd-HHmmss>-<preset>.<ext>`, named after the local time. Macarchy
+never replaces a file. If the name is taken, it tries `beach-share-2.jpg`,
+`beach-share-3.jpg`, and so on up to `-99`, and then stops with an error. With
+`--output`, Macarchy saves to the path you give. That file must not exist, its
+folder must exist, and its extension must match the preset: `.jpg` or `.jpeg` for
+`share` and `small`, and `.png` for `png`. Macarchy only reads the original, so its
+contents and modification date stay the same.
+
+The clipboard copy is one item that holds the saved file and its image data.
+Macarchy reads only PNG, JPEG, HEIC, and TIFF images from the clipboard. If the
+clipboard has no image, Macarchy reports `The clipboard has no image.` and writes
+nothing. If copying fails after the file is saved, Macarchy keeps the file, reports
+`Saved <path>, but copying it to the clipboard failed`, and exits with an error.
+
+Image preparation does not edit, crop, or enlarge images, and it does not write HEIC
+or WebP. Macarchy refuses source files larger than 256 MiB.
 
 ### Bring an Omarchy theme
 
