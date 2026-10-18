@@ -5,9 +5,9 @@ Tiling windows, a keyboard-first workflow, and one theme across your desktop and
 
 https://github.com/user-attachments/assets/2634deb7-fadb-46f4-995e-3425e18bb98d
 
-> **Early alpha · Apple Silicon · macOS 26**
-> Actively dogfooded, but fresh-Mac setup and first-use permission flows are not yet
-> fully tested. [Releases](https://github.com/ramtinJ95/macarchy/releases) · [Changelog](CHANGELOG.md)
+> **Alpha · Apple Silicon · macOS 26**
+> In daily use on real Macs, but expect rough edges: fresh-Mac setup and first-use
+> permission flows are not yet fully tested. [Releases](https://github.com/ramtinJ95/macarchy/releases) · [Changelog](CHANGELOG.md)
 
 ## The setup
 
