@@ -6,7 +6,7 @@ struct SketchyBarAudioPicker {
   static let prefix = "macarchy.volume.device."
   static let popupOwner = "macarchy.volume.bracket"
   let processRunner: ProcessRunner
-  let read: () throws -> AudioOutputs
+  let read: () throws -> AudioDevices
   let select: (UInt32, String) throws -> Void
 
   static func selector(_ name: String) -> (id: UInt32, identity: String)? {
@@ -92,22 +92,22 @@ struct SketchyBarAudioPicker {
       [text, muted].allSatisfy({
         $0.range(of: #"^0x[0-9a-f]{8}$"#, options: .regularExpression) != nil
       })
-    else { throw AudioOutputError.invalidSelection }
+    else { throw AudioDeviceError.invalidSelection }
     struct Bar: Decodable { let items: [String] }
     let inventory = try JSONDecoder().decode(Bar.self, from: Data(bar(["--query", "bar"]).utf8))
     let rows = inventory.items.filter { $0.hasPrefix(Self.prefix) }
-    guard Set(rows).count == rows.count else { throw AudioOutputError.invalidInventory }
+    guard Set(rows).count == rows.count else { throw AudioDeviceError.invalidInventory }
     for row in rows {
       let value = try JSONDecoder().decode(Row.self, from: Data(bar(["--query", row]).utf8))
       guard value.valid(name: row, pluginPath: pluginPath) else {
-        throw AudioOutputError.invalidInventory
+        throw AudioDeviceError.invalidInventory
       }
     }
     let parent = try JSONDecoder().decode(
       Parent.self, from: Data(bar(["--query", Self.popupOwner]).utf8))
-    guard parent.owns(rows: rows) else { throw AudioOutputError.invalidInventory }
+    guard parent.owns(rows: rows) else { throw AudioDeviceError.invalidInventory }
     if action == "select" {
-      guard let target = Self.selector(name) else { throw AudioOutputError.invalidSelection }
+      guard let target = Self.selector(name) else { throw AudioDeviceError.invalidSelection }
       try select(target.id, target.identity)
     }
     let opening = action == "toggle" && parent.popup.drawing == "off"
@@ -118,7 +118,7 @@ struct SketchyBarAudioPicker {
     if let outputs {
       for device in outputs.devices {
         let row = Self.prefix + String(device.id) + "." + device.identity
-        guard Self.selector(row) != nil else { throw AudioOutputError.invalidInventory }
+        guard Self.selector(row) != nil else { throw AudioDeviceError.invalidInventory }
         args += [
           "--add", "item", row, "popup." + Self.popupOwner, "--set", row,
           "width=250", "icon.drawing=off", "label.drawing=on", "label.align=center",
@@ -137,7 +137,7 @@ struct SketchyBarAudioPicker {
       .init(
         executableURL: URL(filePath: "/opt/homebrew/bin/sketchybar"), arguments: arguments,
         timeout: 1))
-    guard result.terminationStatus == 0 else { throw AudioOutputError.pickerUpdateFailed }
+    guard result.terminationStatus == 0 else { throw AudioDeviceError.pickerUpdateFailed }
     return result.output
   }
 }
@@ -154,7 +154,8 @@ extension Desktop {
 
     mutating func run() throws {
       try SketchyBarAudioPicker(
-        processRunner: .live, read: AudioOutputs.read, select: AudioOutputs.select
+        processRunner: .live, read: { try AudioDevices.read(.output) },
+        select: { try AudioDevices.select(.output, id: $0, identity: $1) }
       )
       .execute(
         action: action, name: name, pluginPath: pluginPath, text: textColor, muted: mutedColor)

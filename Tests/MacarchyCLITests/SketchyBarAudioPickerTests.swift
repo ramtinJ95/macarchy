@@ -7,13 +7,13 @@ import ThemeCore
 
 struct SketchyBarAudioPickerTests {
   private let path = "/tmp/a 'quoted'/volume.sh"
-  private let device = AudioOutput(
+  private let device = AudioDevice(
     id: 7, name: "Speaker '\" $(bad)\n--remove all", identity: String(repeating: "a", count: 64))
 
   @Test func opensWithNamesAsArgumentsAndClosedIdentitySelectors() throws {
     let log = Log()
     let picker = SketchyBarAudioPicker(
-      processRunner: runner(log: log), read: { AudioOutputs(devices: [device], selected: 7) },
+      processRunner: runner(log: log), read: { AudioDevices(devices: [device], selected: 7) },
       select: { _, _ in Issue.record("unexpected selection") })
     try picker.execute(
       action: "toggle", name: "macarchy.volume", pluginPath: path, text: "0xffffffff",
@@ -38,7 +38,7 @@ struct SketchyBarAudioPickerTests {
       processRunner: runner(log: log, row: name, drawing: "on"),
       read: {
         Issue.record("closing must not query hardware")
-        return AudioOutputs(devices: [], selected: 0)
+        return AudioDevices(devices: [], selected: 0)
       },
       select: { id, identity in
         selections += 1
@@ -60,8 +60,8 @@ struct SketchyBarAudioPickerTests {
     for invalid in [true, false] {
       let picker = SketchyBarAudioPicker(
         processRunner: runner(log: log, row: name, valid: !invalid),
-        read: { throw AudioOutputError.coreAudio(-1) }, select: { _, _ in })
-      #expect(throws: invalid ? AudioOutputError.invalidInventory : .coreAudio(-1)) {
+        read: { throw AudioDeviceError.coreAudio(-1) }, select: { _, _ in })
+      #expect(throws: invalid ? AudioDeviceError.invalidInventory : .coreAudio(-1)) {
         try picker.execute(
           action: "toggle", name: "macarchy.volume", pluginPath: path, text: "0xffffffff",
           muted: "0xff888888")

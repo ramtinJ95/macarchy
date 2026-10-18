@@ -251,8 +251,8 @@ struct Desktop: ParsableCommand {
     }
 
     mutating func run() throws {
-      if let id, let identity { try AudioOutputs.select(id: id, identity: identity) }
-      let data = try JSONEncoder().encode(AudioOutputs.read())
+      if let id, let identity { try AudioDevices.select(.output, id: id, identity: identity) }
+      let data = try JSONEncoder().encode(AudioDevices.read(.output))
       print(String(decoding: data, as: UTF8.self))
     }
   }
