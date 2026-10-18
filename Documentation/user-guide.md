@@ -419,8 +419,9 @@ or WebP. Macarchy refuses source files larger than 256 MiB.
 
 ### Clipboard history
 
-Macarchy uses the Maccy app to keep your clipboard history, and adds a
-full clear that also removes pinned items. Maccy is an optional package, and no
+Macarchy uses the Maccy app to keep your clipboard history. It adds a full clear
+that also removes pinned items, and an automatic clear that runs once 24 hours have
+passed since the last clear. Maccy is an optional package, and no
 Macarchy upgrade or setup run installs it. To install it and record it in your
 personal Brewfile, preview and then approve the addition:
 
@@ -430,7 +431,7 @@ macarchy setup add-packages cask:maccy --approve 'digest-from-preview'
 ```
 
 You can also run `brew install --cask maccy`. Open Maccy once, so that it creates
-its settings, then turn on clearing:
+its settings, then turn on clearing and the automatic clear:
 
 ```sh
 macarchy clipboard enable
@@ -442,7 +443,8 @@ Kitty, may access data from other apps. Choose **Allow** once. The action menu r
 its commands under the same app, so one answer covers both. If you refuse, enable,
 status and clear stop with an error that names this permission and change nothing.
 Allowing it lets every command you run in that app read other apps' data, not just
-Macarchy.
+Macarchy. The automatic clear never reaches that folder, so it never raises this
+dialog.
 
 To see your history, choose **Clipboard history** in the action menu, run
 `macarchy clipboard open`, or press Maccy's own shortcut, **Shift–Command–C** by
@@ -452,10 +454,11 @@ in an alert when you use the menu. Macarchy adds no keybinding. Maccy's own
 `macarchy clipboard status` reports whether Maccy is running.
 
 ```sh
-macarchy clipboard status         # Installed version, running, clearing, the two settings
+macarchy clipboard status         # Maccy, clearing, the two settings, the automatic clear
 macarchy clipboard status --json
 macarchy clipboard open
 macarchy clipboard clear          # Deletes everything, including pinned items
+macarchy clipboard auto-clear off # Stops the automatic clear; `on` starts it again
 macarchy clipboard disable
 ```
 
@@ -486,10 +489,11 @@ can call it. Clearing needs `macarchy clipboard enable` first. A clear does this
 4. If Maccy was running, Macarchy starts it again in the background, now with an
    empty history.
 
-Pinned items go too, and a clear cannot be undone. Macarchy deletes only those exact
-files. It never follows a symbolic link or deletes a folder. If anything other than
-an ordinary file has one of those names, Macarchy deletes none of them, restarts
-Maccy if it was running, and reports the path.
+A full clear, with **Clear clipboard history** or `macarchy clipboard clear`, deletes
+pinned items too, and it cannot be undone. The automatic clear keeps pinned items.
+Macarchy deletes only those exact files. It never follows a symbolic link or deletes
+a folder. If anything other than an ordinary file has one of those names, Macarchy
+deletes none of them, restarts Maccy if it was running, and reports the path.
 
 Macarchy knows where Maccy 2.7.1 keeps its history. With any other Maccy version, or
 when that folder is missing from the container, Macarchy deletes no files. Maccy's
@@ -502,10 +506,61 @@ shows it in an alert, for example:
 Cleared Maccy's unpinned history and the clipboard, but pinned items may remain: Maccy 2.8.0 is not the supported 2.7.1, so its storage layout is unknown. Maccy restarted.
 ```
 
+`macarchy clipboard enable` also turns on the automatic clear, which limits how long
+a copied password or token stays in your history. Once 24 hours have passed since the
+last clear, Macarchy asks Maccy to quit, so Maccy clears its unpinned history. Then
+Macarchy empties the clipboard and starts Maccy again in the background. If Maccy is
+not running, Macarchy starts it in the background for its own clear and quits it
+again. Whatever is on the clipboard at that moment is gone too. Every clear of the
+history restarts the 24 hours, so a full clear from the menu or
+`macarchy clipboard clear` also postpones the next automatic clear.
+
+A Macarchy launch agent,
+`~/Library/LaunchAgents/io.github.ramtinj95.macarchy.clipboard-auto-clear.plist`,
+checks once an hour while you are logged in. launchd skips the checks that fall while
+the Mac sleeps, so a due clear runs within about an hour of the Mac being awake. The
+automatic clear differs from a full clear in these ways:
+
+- Pinned items survive it.
+- It never reaches Maccy's protected folder or its settings, so it raises no
+  permission dialog while you are away. It works with any Maccy version.
+- It relies on `clearOnQuit` and `clearSystemClipboard`, which `enable` turned on,
+  and cannot check them in the background. `macarchy clipboard status` reports when
+  either setting changed in Maccy. While `clearOnQuit` is off, an automatic clear
+  still empties the clipboard but leaves the history.
+
+`macarchy clipboard auto-clear off` unloads and deletes the launch agent and its
+record, `~/.config/macarchy/run/clipboard-auto-clear.json`. It does not change
+Maccy's settings. `macarchy clipboard auto-clear on` starts it again, with a new
+24-hour window, and needs clearing enabled. `disable` also turns the automatic clear
+off, and running `enable` again turns it back on. Macarchy installs the launch agent
+only when no file has its name, and it changes or deletes only the exact file it
+wrote. If another file has that name, `auto-clear on` and `auto-clear off` stop with
+an error that names the file and how to remove it, and status reports the conflict.
+`enable` still turns on Maccy's settings and then reports that error. `disable` leaves
+the settings on, because the automatic clear relies on them while it may still run;
+it reports the error and restores them once the launch agent is off.
+
+Status shows whether the automatic clear is on, whether its launch agent is loaded,
+the last clear, the next one, and the last failure. If an automatic clear fails, for
+example because Maccy does not quit within five seconds or is no longer installed,
+Macarchy keeps the time of the last clear and tries again an hour later. It shows an
+alert at most once a day:
+
+```text
+Automatic clipboard clear failed
+Maccy did not quit within five seconds, so its history and the clipboard were not cleared. Run `macarchy clipboard clear` to clear now.
+```
+
+The launch agent logs to `~/.config/macarchy/run/clipboard-auto-clear.stdout.log`
+and `clipboard-auto-clear.stderr.log` in the same folder. The logs never contain
+clipboard content.
+
 Macarchy never reads your clipboard or Maccy's history. Status reports the Maccy
-version, whether it runs, whether clearing is enabled, and the two settings, but no
-items, titles, or counts. Maccy does not record content that an app marks as
-concealed or transient, which is what password managers do with copied passwords.
+version, whether it runs, whether clearing is enabled, the two settings, and the
+automatic clear's state, but no items, titles, or counts. Maccy does not record
+content that an app marks as concealed or transient, which is what password managers
+do with copied passwords.
 Maccy 2.7.1 has no paste stack and cannot select several items at once.
 
 If clipboard history does not behave as expected, check these points:
@@ -519,6 +574,10 @@ If clipboard history does not behave as expected, check these points:
   knows their earlier values. Set `clearOnQuit` and `clearSystemClipboard` in Maccy
   as you want them, delete the file it names, and run `macarchy clipboard enable` if
   you want clearing again.
+- If Macarchy reports that its record of the last clear is damaged, the automatic
+  clear stops and shows an alert. After you dismiss it, the next hourly check shows
+  it again. No automatic clear runs while that alert is open. Run
+  `macarchy clipboard auto-clear on` to start a new 24-hour window.
 - Menu launches show failures in an alert.
 
 ### Bring an Omarchy theme
@@ -1308,7 +1367,10 @@ macarchy setup teardown
 ```
 
 Teardown reverses recorded configuration changes and preserves unrelated data
-and installed packages. For separately recorded legacy theme integrations,
+and installed packages. It does not cover clipboard history: if you enabled
+clearing, run `macarchy clipboard disable` first. That removes the hourly
+automatic-clear job, restores Maccy's two settings and keeps its history. For
+separately recorded legacy theme integrations,
 also inspect `macarchy teardown --dry-run` before running `macarchy teardown`.
 After restoration, remove the CLI separately if wanted:
 
