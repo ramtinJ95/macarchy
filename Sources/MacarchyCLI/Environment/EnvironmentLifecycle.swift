@@ -504,7 +504,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try store.writeTransaction(transaction.rollingBack)
       } catch {
         throw EnvironmentLifecycleError.blocked(
-          "apply failed and rollback direction could not be persisted: \(error)"
+          "apply failed: \(applyError); rollback direction could not be persisted: \(error)"
         )
       }
       do {
@@ -521,7 +521,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try store.removeTransaction()
       } catch {
         throw EnvironmentLifecycleError.blocked(
-          "apply failed and rollback requires recovery: \(error)"
+          "apply failed: \(applyError); rollback requires recovery: \(error)"
         )
       }
       throw applyError
