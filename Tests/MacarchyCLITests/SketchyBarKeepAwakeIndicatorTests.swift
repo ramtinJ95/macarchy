@@ -24,7 +24,7 @@ struct SketchyBarKeepAwakeIndicatorTests {
     #expect(
       run.bar == [
         [
-          "--set", "macarchy.keep-awake", "drawing=on", "icon=☕\u{FE0E}", "icon.color=\(color)",
+          "--set", "macarchy.keep-awake", "drawing=on", "icon=\u{100E19}", "icon.color=\(color)",
           "--set", "macarchy.keep-awake.detail", "label=\(detail)",
         ]
       ])
@@ -54,7 +54,7 @@ struct SketchyBarKeepAwakeIndicatorTests {
       .keepAwake, sender: KeepAwake.barEvent, muted: nil,
       read: { SketchyBarKeepAwakeIndicator.toggle(status) })
     let shown = [
-      "--set", "macarchy.keep-awake", "drawing=on", "icon=☕\u{FE0E}",
+      "--set", "macarchy.keep-awake", "drawing=on", "icon=\u{100E19}",
       "icon.color=\(CompanionToggleHarness.accent)", "--set", "macarchy.keep-awake.detail",
       "label=Keep-awake on until turned off. Idle screensaver and idle lock won't start. "
         + "Click to turn off.",

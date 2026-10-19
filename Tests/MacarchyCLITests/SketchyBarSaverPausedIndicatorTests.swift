@@ -27,7 +27,7 @@ struct SketchyBarSaverPausedIndicatorTests {
       default: "Idle screensaver is off. Click to start it after 5 minutes idle."
       }
     let lit = ["on", "paused"].contains(state)
-    let icon = state == "paused" ? "⏸\u{FE0E}" : "\u{10114B}"
+    let icon = state == "paused" ? "\u{100286}" : "\u{10114B}"
     #expect(
       run.bar == [
         [
@@ -61,7 +61,7 @@ struct SketchyBarSaverPausedIndicatorTests {
       .saverPaused, sender: SaverIdle.barEvent, muted: nil,
       read: { SketchyBarSaverPausedIndicator.toggle(activation) })
     let shown = [
-      "--set", "macarchy.saver-paused", "drawing=on", "icon=⏸\u{FE0E}",
+      "--set", "macarchy.saver-paused", "drawing=on", "icon=\u{100286}",
       "icon.color=\(CompanionToggleHarness.accent)", "--set", "macarchy.saver-paused.detail",
       "label=Idle screensaver paused. Click to resume.",
     ]
