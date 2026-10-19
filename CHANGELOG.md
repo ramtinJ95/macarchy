@@ -7,6 +7,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-10-19
+
 ### Fixed
 
 - A failed environment apply could delete an existing link that already pointed at
