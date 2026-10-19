@@ -1,14 +1,14 @@
 import Foundation
 
 enum SketchyBarBatteryScript {
-  static func render(palettePath: String) -> String {
+  static func render(palettePath: String, macarchyExecutablePath: String) -> String {
     """
     #!/bin/sh
     set -eu
     : "${NAME:?SketchyBar did not provide an item name}"
     SKETCHYBAR=/opt/homebrew/bin/sketchybar
     case "${SENDER-}" in
-      mouse.clicked) "$SKETCHYBAR" --set "$NAME" popup.drawing=toggle; exit ;;
+      mouse.clicked) exec \(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _popup-toggle --popup "$NAME" ;;
       mouse.exited.global) "$SKETCHYBAR" --set "$NAME" popup.drawing=off; exit ;;
     esac
     PALETTE=\(DesktopShellSyntax.literal(palettePath))

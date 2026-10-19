@@ -60,7 +60,10 @@ struct SketchyBarBatteryTests {
     let result = try run("invalid", sender: sender)
     #expect(result.status == 0)
     #expect(
-      result.output.contains("popup.drawing=\(sender == "mouse.clicked" ? "toggle" : "off")\n"))
+      result.output.contains(
+        sender == "mouse.clicked"
+          ? "macarchy:desktop _popup-toggle --popup macarchy.battery\n"
+          : "--set\nmacarchy.battery\npopup.drawing=off\n"))
     #expect(!result.output.contains("label="))
   }
 
@@ -79,10 +82,17 @@ struct SketchyBarBatteryTests {
     let mockBar = root.appending(path: "sketchybar")
     try "#!/bin/sh\nprintf '%s\\n' \"$@\"\n".write(to: mockBar, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: mockBar.path)
+    let mockMacarchy = root.appending(path: "macarchy")
+    try "#!/bin/sh\necho \"macarchy:$*\"\n".write(
+      to: mockMacarchy, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o755], ofItemAtPath: mockMacarchy.path)
     let entry = root.appending(path: "battery.sh")
-    let script = SketchyBarBatteryScript.render(palettePath: palette.path)
-      .replacingOccurrences(of: "/usr/bin/pmset -g batt", with: "/bin/cat \(input.path)")
-      .replacingOccurrences(of: "/opt/homebrew/bin/sketchybar", with: mockBar.path)
+    let script = SketchyBarBatteryScript.render(
+      palettePath: palette.path, macarchyExecutablePath: mockMacarchy.path
+    )
+    .replacingOccurrences(of: "/usr/bin/pmset -g batt", with: "/bin/cat \(input.path)")
+    .replacingOccurrences(of: "/opt/homebrew/bin/sketchybar", with: mockBar.path)
     try script.write(to: entry, atomically: true, encoding: .utf8)
     let process = Process()
     let output = Pipe()
