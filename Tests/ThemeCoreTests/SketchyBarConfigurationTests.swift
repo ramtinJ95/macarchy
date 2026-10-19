@@ -172,7 +172,7 @@ struct SketchyBarConfigurationTests {
       let lines = entry.contents.split(separator: "\n").map(String.init)
       // The toggles are always drawn, dimmed until their script reads the feature's state.
       for (name, event, icon) in [
-        ("keep-awake", "macarchy_keep_awake_changed", "☕\u{FE0E}"),
+        ("keep-awake", "macarchy_keep_awake_changed", "\u{100E19}"),
         ("microphone", "macarchy_microphone_changed", "\u{1002B1}"),
         ("saver-paused", "macarchy_saver_idle_changed", "\u{10114B}"),
       ] {

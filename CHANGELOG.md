@@ -11,7 +11,10 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - A failed environment apply could delete an existing link that already pointed at
   Macarchy's own target, leaving setup stuck in recovery. Macarchy now retains the
-  original before any change and never deletes it unverified.
+  original before any change and never deletes it unverified (#292).
+- The keep-awake cup and the paused screensaver sign left of the bar clock now use SF Symbols,
+  so they match the size of the microphone and screensaver icons instead of rendering smaller
+  from a fallback font (#293).
 
 ## [0.14.2] - 2026-10-19
 

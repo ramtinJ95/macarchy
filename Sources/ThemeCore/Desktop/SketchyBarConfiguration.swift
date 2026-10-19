@@ -111,8 +111,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let readyItem = "macarchy.theme.ready"
   /// Keep-awake changes trigger this event so the indicator refreshes before its timer.
   package static let keepAwakeEvent = "macarchy_keep_awake_changed"
-  /// A monochrome cup: the text variation selector stops emoji presentation.
-  package static let keepAwakeIcon = "☕\u{FE0E}"
+  /// SF Symbols cup.and.saucer.fill, drawn by SF Pro at the size of the other toggle icons.
+  package static let keepAwakeIcon = "\u{100E19}"
   /// Microphone mute changes trigger this event so the indicator refreshes before its timer.
   package static let microphoneEvent = "macarchy_microphone_changed"
   /// SF Symbols mic.slash.fill, drawn by the SF Pro font like the bar's other symbol glyphs.
@@ -121,8 +121,8 @@ package struct SketchyBarConfigurationComposer: Sendable {
   package static let microphoneLiveIcon = "\u{1002B1}"
   /// Idle screensaver changes trigger this event so its toggle refreshes before its timer.
   package static let saverIdleEvent = "macarchy_saver_idle_changed"
-  /// A monochrome pause sign: the text variation selector stops emoji presentation.
-  package static let saverPausedIcon = "⏸\u{FE0E}"
+  /// SF Symbols pause.fill, drawn by SF Pro like the idle screensaver icon it replaces.
+  package static let saverPausedIcon = "\u{100286}"
   /// SF Symbols sparkles.tv: a screen showing decorative sparkles, drawn by SF Pro.
   package static let saverIdleIcon = "\u{10114B}"
   static let paletteSource = ". \"$PALETTE\""
