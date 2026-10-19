@@ -17,6 +17,9 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The keep-awake cup and the paused screensaver sign left of the bar clock now use SF Symbols,
   so they match the size of the microphone and screensaver icons instead of rendering smaller
   from a fallback font (#293).
+- Click-opened bar popups (Wi-Fi, volume, battery, and media controls) now close once the
+  pointer leaves them, instead of staying open until the pointer returns to the bar. The
+  battery popup needs the regenerated bar configuration, so review and apply it to get this.
 
 ## [0.14.2] - 2026-10-19
 
