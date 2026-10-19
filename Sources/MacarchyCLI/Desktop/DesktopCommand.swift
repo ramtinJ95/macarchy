@@ -10,7 +10,7 @@ struct Desktop: ParsableCommand {
       RunSketchyBarHook.self,
       Borders.self, CPULoad.self, WiFi.self, AudioOutputCommand.self, AudioPicker.self,
       Calendar.self, Media.self, Toggle.self, UpdateIndicator.self, KeepAwakeIndicator.self,
-      MicrophoneIndicator.self, SaverPausedIndicator.self,
+      MicrophoneIndicator.self, SaverPausedIndicator.self, PopupToggle.self, PopupWatch.self,
     ]
   )
 
