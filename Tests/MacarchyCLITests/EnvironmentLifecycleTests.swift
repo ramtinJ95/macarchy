@@ -1044,6 +1044,37 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test
+  func interruptedLinkRestoreIsForwardRecoveredExactly() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let originalEntries = try fixture.entryEvidence()
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    let store = EnvironmentStateStore(stateRoot: fixture.state)
+    let ownership = try #require(try store.readOwnership())
+    try store.writeTransaction(
+      EnvironmentTransaction(
+        operation: .teardown,
+        previousOwnership: ownership,
+        proposedOwnership: nil,
+        previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
+          .currentDestination(),
+        btopReplacementName: ".macarchy-environment-btop-test.replacement"
+      )
+    )
+    // As if teardown stopped after removing the managed link but before restoring the original.
+    try FileManager.default.removeItem(at: fixture.zshEntry)
+
+    let teardown = try await fixture.teardown()
+
+    #expect(teardown.succeeded, "\(teardown.output)")
+    #expect(try fixture.entryEvidence() == originalEntries)
+    #expect(!store.transactionExists)
+  }
+
+  @Test
   func failedFreshSessionVerificationRollsBackEveryPublishedEntry() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }

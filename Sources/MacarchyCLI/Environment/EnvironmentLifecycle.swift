@@ -1241,11 +1241,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
-    let removed = entry.url.lastPathComponent.withCString {
-      Darwin.unlinkat(parent, $0, entry.kind == .kittyDirectory ? AT_REMOVEDIR : 0)
-    }
-    guard removed == 0 else {
-      throw EnvironmentLifecycleError.system("remove managed provider entry", entry.url, errno)
+    if publicIsManaged {
+      let removed = entry.url.lastPathComponent.withCString {
+        Darwin.unlinkat(parent, $0, entry.kind == .kittyDirectory ? AT_REMOVEDIR : 0)
+      }
+      guard removed == 0 else {
+        throw EnvironmentLifecycleError.system("remove managed provider entry", entry.url, errno)
+      }
     }
     if let retained = record.retainedPath {
       let retainedName = URL(filePath: retained).lastPathComponent
