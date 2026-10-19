@@ -1490,6 +1490,100 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test
+  func originalAlreadyEqualToTheManagedLinkSurvivesApplyAndTeardown() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.linkZshToManagedTarget()
+    let originalEntries = try fixture.entryEvidence()
+    let plan = try jsonObject(fixture.plan().output)
+    let zsh = (plan["entries"] as? [[String: Any]])?.first { $0["id"] as? String == "zsh" }
+    #expect(zsh?["status"] as? String == "adoption_required")
+    let digest = try #require(plan["adoption_evidence_digest"] as? String)
+
+    let apply = try await fixture.apply(adopt: digest)
+    #expect(apply.succeeded, "\(apply.output)")
+    #expect(try fixture.isManaged())
+    let teardown = try await fixture.teardown()
+
+    #expect(teardown.succeeded, "\(teardown.output)")
+    #expect(try fixture.entryEvidence() == originalEntries)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: fixture.zshEntry.path)
+        == fixture.managedZshTarget
+    )
+  }
+
+  @Test
+  func rollbackKeepsAnOriginalAlreadyEqualToTheManagedLink() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    try fixture.linkZshToManagedTarget()
+    let originalEntries = try fixture.entryEvidence()
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    let verifier = EnvironmentSessionVerifier(
+      { _, _ in
+        [EnvironmentVerification(id: "zsh_fresh_session", status: "failed", message: "injected")]
+      },
+      verifyRestored: { _, _ in
+        [
+          EnvironmentVerification(
+            id: "zsh_fresh_session",
+            status: "verified",
+            message: "restored"
+          )
+        ]
+      }
+    )
+
+    let apply = try await fixture.apply(adopt: digest, verifier: verifier)
+
+    #expect(!apply.succeeded)
+    #expect(apply.output.contains("Environment apply rolled back"), "\(apply.output)")
+    #expect(try fixture.entryEvidence() == originalEntries)
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: fixture.zshEntry.path)
+        == fixture.managedZshTarget
+    )
+    #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
+    #expect(!EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
+  }
+
+  @Test
+  func rollbackWithAMissingRetainedOriginalDeletesNothing() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    let state = fixture.state
+
+    let apply = try await fixture.apply(
+      adopt: digest,
+      faultInjector: { checkpoint in
+        guard checkpoint == .authorityPublished else { return }
+        let zsh = try EnvironmentStateStore(stateRoot: state).readOwnership()?.records
+          .first { $0.id == .zsh }
+        guard let retained = zsh?.retainedPath else {
+          throw EnvironmentLifecycleError.blocked("zsh has no retained original")
+        }
+        try FileManager.default.removeItem(atPath: retained)
+        throw EnvironmentLifecycleError.blocked("injected after publication")
+      }
+    )
+
+    #expect(!apply.succeeded)
+    #expect(apply.output.contains("injected after publication"), "\(apply.output)")
+    #expect(apply.output.contains("retained original for zsh"), "\(apply.output)")
+    #expect(
+      try FileManager.default.destinationOfSymbolicLink(atPath: fixture.zshEntry.path)
+        == fixture.managedZshTarget
+    )
+    #expect(EnvironmentStateStore(stateRoot: fixture.state).transactionExists)
+  }
+
+  @Test
   func teardownRejectsASelectedGenerationWithoutOwnership() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1744,13 +1838,15 @@ struct EnvironmentLifecycleFixture {
     verifier: EnvironmentSessionVerifier = .assumed,
     neovim: EnvironmentNeovimPreparer = .assumed,
     enabledThemeAdapterIDs: [String]? = nil,
-    withinUnifiedSetup: Bool = false
+    withinUnifiedSetup: Bool = false,
+    faultInjector: @escaping @Sendable (EnvironmentTransactionCheckpoint) throws -> Void = { _ in }
   ) async throws -> (output: String, succeeded: Bool) {
     try await EnvironmentApplyCommandRunner(
       prerequisites: prerequisites,
       theme: theme,
       verifier: verifier,
-      neovim: neovim
+      neovim: neovim,
+      transactionFaultInjector: faultInjector
     ).execute(
       resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
       profileURL: profile,
@@ -1881,6 +1977,14 @@ private let pendingUnifiedSetupMessage =
 
 extension EnvironmentLifecycleFixture {
   var unifiedSetupJournal: URL { UnifiedSetupTransactionStore(stateRoot: state).url }
+
+  var managedZshTarget: String { state.appending(path: "environment/current/zsh/.zshrc").path }
+
+  /// Points the unowned zsh entry at Macarchy's own managed target, as an earlier setup can.
+  func linkZshToManagedTarget() throws {
+    try FileManager.default.removeItem(at: zshEntry)
+    try symlink(managedZshTarget, zshEntry.path).requireZero()
+  }
 
   /// Leaves a forward apply journal as if the process stopped before ownership was published.
   func stageInterruptedApply() throws {

@@ -7,6 +7,12 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A failed environment apply could delete an existing link that already pointed at
+  Macarchy's own target, leaving setup stuck in recovery. Macarchy now retains the
+  original before any change and never deletes it unverified.
+
 ## [0.14.2] - 2026-10-19
 
 ### Fixed
