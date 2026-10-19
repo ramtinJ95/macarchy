@@ -1140,7 +1140,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
 
   private func install(_ record: EnvironmentOwnershipRecord) throws {
     let entry = inspector.managedEntry(from: record)
-    if try inspector.managedEntryIsExact(entry) { return }
+    // An original that already equals the managed entry is retained too: the managed entry is
+    // complete only once the retained original exists, so restore never deletes the original.
     if let retained = record.retainedPath {
       let retainedURL = URL(filePath: retained)
       if try itemExists(retainedURL) {
@@ -1149,9 +1150,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
             at: retainedURL,
             matches: record.original,
             directoryLink: record.id.directoryLinkKind
-          ),
-          !(try itemExists(entry.url))
+          )
         else { throw EnvironmentLifecycleError.drift(entry.url.path) }
+        if try inspector.managedEntryIsExact(entry) { return }
+        guard !(try itemExists(entry.url)) else {
+          throw EnvironmentLifecycleError.drift(entry.url.path)
+        }
       } else {
         guard
           try evidence(
@@ -1164,6 +1168,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
         try retainOriginal(record)
       }
+    } else if try inspector.managedEntryIsExact(entry) {
+      return
     } else if try itemExists(entry.url) {
       throw EnvironmentLifecycleError.drift(entry.url.path)
     }
@@ -1185,7 +1191,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
     let emptyKittyResidue =
       try entry.kind == .kittyDirectory
       && kittyDirectoryIsEmpty(entry, parentDescriptor: parent)
-    if !managedExact, !emptyKittyResidue {
+    let publicIsManaged = managedExact || emptyKittyResidue
+    // The managed entry is the original itself only if that original already was the managed link.
+    let publicMayBeOriginal =
+      !publicIsManaged
+      || (entry.kind == .symbolicLink && record.original.kind == .symbolicLink
+        && record.original.linkDestination == entry.target)
+    if publicMayBeOriginal {
       let publicEvidence = try inspector.capturePinned(
         parentDescriptor: parent,
         name: entry.url.lastPathComponent,
@@ -1195,10 +1207,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
       if publicEvidence == record.original {
         return
       }
-      guard publicEvidence.kind == .absent, let retainedPath = record.retainedPath else {
+      guard publicIsManaged || publicEvidence.kind == .absent else {
         throw EnvironmentLifecycleError.drift(entry.url.path)
       }
-      let retainedURL = URL(filePath: retainedPath)
+    }
+    if let retained = record.retainedPath {
+      let retainedURL = URL(filePath: retained)
       let retainedEvidence = try inspector.capturePinned(
         parentDescriptor: parent,
         name: retainedURL.lastPathComponent,
@@ -1234,17 +1248,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       throw EnvironmentLifecycleError.system("remove managed provider entry", entry.url, errno)
     }
     if let retained = record.retainedPath {
-      let retainedURL = URL(filePath: retained)
-      let retainedName = retainedURL.lastPathComponent
-      let retainedEvidence = try inspector.capturePinned(
-        parentDescriptor: parent,
-        name: retainedName,
-        url: retainedURL,
-        directoryLink: record.id.directoryLinkKind
-      )
-      guard retainedEvidence == record.original else {
-        throw EnvironmentLifecycleError.drift("retained original for \(record.id.rawValue)")
-      }
+      let retainedName = URL(filePath: retained).lastPathComponent
       let restored = retainedName.withCString { source in
         entry.url.lastPathComponent.withCString { destination in
           Darwin.renameat(parent, source, parent, destination)
