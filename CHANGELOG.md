@@ -7,6 +7,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-19
+
 ### Fixed
 
 - Setup apply no longer fails and rolls back when the microphone toggle's hover text
