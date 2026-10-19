@@ -386,11 +386,18 @@ struct SketchyBarConfigurationTests {
         "schema_version = 1\n[sketchybar]\nleft = []\nright = []\ncenter = \(enabled ? "[\"battery\"]" : "[]")\n",
         source: root.appending(path: "profile.toml"))
       let composition = try SketchyBarConfigurationComposer().compose(
-        defaultsURL: defaultsURL, profile: profile, stateRoot: root)
+        defaultsURL: defaultsURL, profile: profile, stateRoot: root,
+        macarchyExecutableURL: URL(filePath: "/Applications/Macarchy Tools/macarchy"))
       let entry = try #require(composition.artifacts.first { $0.path == "sketchybarrc" })
       #expect(entry.contents.contains("--add item macarchy.battery center") == enabled)
       #expect(entry.contents.contains("popup.macarchy.battery") == enabled)
       #expect(composition.artifacts.contains { $0.path == "plugins/battery.sh" } == enabled)
+      if enabled {
+        let script = try #require(composition.artifacts.first { $0.path == "plugins/battery.sh" })
+        #expect(
+          script.contents.contains(
+            "exec '/Applications/Macarchy Tools/macarchy' desktop _popup-toggle --popup \"$NAME\""))
+      }
       try requireValidShellSyntax(composition.artifacts, root: root)
     }
   }

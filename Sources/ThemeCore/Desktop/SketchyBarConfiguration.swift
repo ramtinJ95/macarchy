@@ -288,7 +288,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
       .volume, "volume",
       SketchyBarVolumeScript.render(
         palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
-    addPlugin(.battery, "battery", SketchyBarBatteryScript.render(palettePath: palettePath))
+    addPlugin(
+      .battery, "battery",
+      SketchyBarBatteryScript.render(
+        palettePath: palettePath, macarchyExecutablePath: macarchyExecutablePath))
     for module in [SketchyBarModule.cpu, .memory] {
       addPlugin(
         module, module.rawValue,
