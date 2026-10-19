@@ -7,6 +7,12 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Setup apply no longer fails and rolls back when the microphone toggle's hover text
+  names the default microphone. SketchyBar reported the name's quotation marks
+  unescaped, which the bar check could not read (#290).
+
 ## [0.14.1] - 2026-10-19
 
 ### Added

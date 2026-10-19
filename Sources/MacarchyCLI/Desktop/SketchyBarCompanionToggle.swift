@@ -65,9 +65,12 @@ struct SketchyBarCompanionToggle {
       try bar(["--set", companion.item, "drawing=off", "popup.drawing=off"])
       return
     }
+    // SketchyBar's --query output does not escape quotes or backslashes in a label, and the
+    // bar's runtime check decodes every item, so one in the hover text fails setup apply.
+    let detail = toggle.detail.replacing("\"", with: "'").replacing("\\", with: "/")
     try bar([
       "--set", companion.item, "drawing=on", "icon=\(toggle.icon)", "icon.color=\(color)",
-      "--set", companion.detailItem, "label=\(toggle.detail)",
+      "--set", companion.detailItem, "label=\(detail)",
     ])
   }
 
