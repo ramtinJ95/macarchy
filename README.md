@@ -3,7 +3,7 @@
 An opinionated macOS developer setup inspired by [Omarchy](https://omarchy.org/).
 Tiling windows, a keyboard-first workflow, and one theme across your desktop and tools.
 
-https://github.com/user-attachments/assets/2634deb7-fadb-46f4-995e-3425e18bb98d
+https://github.com/user-attachments/assets/b3efc2ce-e763-465a-a928-10628b43b8c0
 
 > **Alpha · Apple Silicon · macOS 26**
 > In daily use on real Macs, but expect rough edges: fresh-Mac setup and first-use
