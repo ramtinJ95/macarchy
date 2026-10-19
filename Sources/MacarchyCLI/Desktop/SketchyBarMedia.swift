@@ -78,6 +78,8 @@ struct SketchyBarMedia {
   let uptime: () -> TimeInterval
   let sleep: (TimeInterval) -> Void
   let withArtwork: (Data, (String) throws -> Void) throws -> Void
+  /// Starts `macarchy` with these arguments without waiting for it.
+  let launch: ([String]) throws -> Void
 
   func execute(name: String, sender: String) throws {
     guard Self.items.contains(name) else { throw MediaError.invalidInvocation }
@@ -86,7 +88,8 @@ struct SketchyBarMedia {
       return
     }
     if sender == "mouse.clicked" {
-      try bar(["--set", "macarchy.media", "popup.drawing=toggle"])
+      try SketchyBarPopupToggle(popup: .media, processRunner: processRunner, launch: launch)
+        .execute()
       return
     }
     if sender == "mouse.entered" || sender == "mouse.exited" {
@@ -232,7 +235,8 @@ extension Desktop {
     mutating func run() throws {
       try SketchyBarMedia(
         processRunner: .live, uptime: { ProcessInfo.processInfo.systemUptime },
-        sleep: Thread.sleep(forTimeInterval:), withArtwork: SketchyBarMedia.temporaryArtwork
+        sleep: Thread.sleep(forTimeInterval:), withArtwork: SketchyBarMedia.temporaryArtwork,
+        launch: SketchyBarCompanionToggle.launchMacarchy
       )
       .execute(name: name, sender: sender)
     }

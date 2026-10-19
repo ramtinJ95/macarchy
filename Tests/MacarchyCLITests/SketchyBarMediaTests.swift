@@ -40,7 +40,7 @@ struct SketchyBarMediaTests {
         artworkCalls += 1
         #expect($0 == Data([0, 1]))
         try $1("/private/tmp/cover.png")
-      })
+      }, launch: { _ in Issue.record("unexpected launch") })
     try media.execute(name: "macarchy.media", sender: "routine")
     let calls = state.value.withLock { $0.calls }
     #expect(artworkCalls == 1)
@@ -60,7 +60,8 @@ struct SketchyBarMediaTests {
     let media = SketchyBarMedia(
       processRunner: runner(state), uptime: { 100 },
       sleep: { _ in Issue.record("hover should not sleep") },
-      withArtwork: { _, use in try use("/tmp/cover") })
+      withArtwork: { _, use in try use("/tmp/cover") },
+      launch: { _ in Issue.record("unexpected launch") })
     try media.execute(name: "macarchy.media", sender: "mouse.entered")
     try media.execute(name: "macarchy.media", sender: "routine")
     for part in ["previous", "playpause", "next"] {
@@ -75,16 +76,37 @@ struct SketchyBarMediaTests {
     #expect(state.value.withLock { $0.calls.last?.contains("popup.drawing=off") } == true)
   }
 
+  @Test(arguments: ["off", "on"])
+  func clickTogglesControlsAndWatchesOnlyAnOpenedPopup(drawing: String) throws {
+    let state = State()
+    var launches: [[String]] = []
+    let media = SketchyBarMedia(
+      processRunner: ProcessRunner { request in
+        #expect(request.executableURL.path == "/opt/homebrew/bin/sketchybar")
+        state.value.withLock { $0.calls.append(request.arguments) }
+        return .init(
+          terminationStatus: 0,
+          output: #"{"popup": {"drawing": "\#(drawing)", "items": ["macarchy.media.next"]}}"#)
+      },
+      uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in }, launch: { launches.append($0) })
+    try media.execute(name: "macarchy.media", sender: "mouse.clicked")
+    let opening = drawing == "off"
+    #expect(
+      state.value.withLock { $0.calls.last }
+        == ["--set", "macarchy.media", "popup.drawing=\(opening ? "on" : "off")"])
+    #expect(launches == (opening ? [BarPopup.media.watchArguments] : []))
+  }
+
   @Test func inactiveMediaHidesAllPresentationAndProviderFailuresPropagate() throws {
     let state = State()
     let media = SketchyBarMedia(
       processRunner: runner(state, output: "(null)"), uptime: { 0 }, sleep: { _ in },
-      withArtwork: { _, _ in Issue.record("unexpected artwork") })
+      withArtwork: { _, _ in Issue.record("unexpected artwork") }, launch: { _ in })
     try media.execute(name: "macarchy.media", sender: "forced")
     #expect(state.value.withLock { $0.calls.last?.contains("label=inactive") } == true)
     let failed = SketchyBarMedia(
       processRunner: ProcessRunner { _ in .init(terminationStatus: 1, output: "failure") },
-      uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in })
+      uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in }, launch: { _ in })
     #expect(throws: MediaError.self) {
       try failed.execute(name: "macarchy.media", sender: "routine")
     }
@@ -97,7 +119,7 @@ struct SketchyBarMediaTests {
         #expect(request.timeout == 5)
         throw ProcessRunnerError.timedOut(request.executableURL, 5)
       },
-      uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in })
+      uptime: { 0 }, sleep: { _ in }, withArtwork: { _, _ in }, launch: { _ in })
     #expect(throws: ProcessRunnerError.self) {
       try media.execute(name: "macarchy.media", sender: "routine")
     }

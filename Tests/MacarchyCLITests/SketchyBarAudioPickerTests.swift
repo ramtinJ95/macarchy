@@ -12,9 +12,11 @@ struct SketchyBarAudioPickerTests {
 
   @Test func opensWithNamesAsArgumentsAndClosedIdentitySelectors() throws {
     let log = Log()
+    var launches: [[String]] = []
     let picker = SketchyBarAudioPicker(
       processRunner: runner(log: log), read: { AudioDevices(devices: [device], selected: 7) },
-      select: { _, _ in Issue.record("unexpected selection") })
+      select: { _, _ in Issue.record("unexpected selection") },
+      launch: { launches.append($0) })
     try picker.execute(
       action: "toggle", name: "macarchy.volume", pluginPath: path, text: "0xffffffff",
       muted: "0xff888888")
@@ -27,6 +29,7 @@ struct SketchyBarAudioPickerTests {
     #expect(args.contains("click_script=\(click)"))
     #expect(!click.contains(device.name))
     #expect(click.contains("'\\''"))
+    #expect(launches == [["desktop", "_popup-watch", "--popup", "macarchy.volume.bracket"]])
   }
 
   @Test(arguments: ["close", "toggle", "select"])
@@ -44,7 +47,7 @@ struct SketchyBarAudioPickerTests {
         selections += 1
         #expect(id == 7)
         #expect(identity == device.identity)
-      })
+      }, launch: { _ in Issue.record("closing must not start a popup watcher") })
     try picker.execute(
       action: action, name: name, pluginPath: path, text: "0xffffffff", muted: "0xff888888")
     #expect(selections == (action == "select" ? 1 : 0))
@@ -60,7 +63,8 @@ struct SketchyBarAudioPickerTests {
     for invalid in [true, false] {
       let picker = SketchyBarAudioPicker(
         processRunner: runner(log: log, row: name, valid: !invalid),
-        read: { throw AudioDeviceError.coreAudio(-1) }, select: { _, _ in })
+        read: { throw AudioDeviceError.coreAudio(-1) }, select: { _, _ in },
+        launch: { _ in Issue.record("a failed picker must not start a popup watcher") })
       #expect(throws: invalid ? AudioDeviceError.invalidInventory : .coreAudio(-1)) {
         try picker.execute(
           action: "toggle", name: "macarchy.volume", pluginPath: path, text: "0xffffffff",

@@ -46,7 +46,8 @@ struct SketchyBarWiFiTests {
           address: condition == "connected" ? "192.0.2.10" : nil,
           received: 0, sent: reads == 1 ? 0 : 2000)
       }, sleep: { time += $0 }, uptime: { time },
-      copy: { _ in Issue.record("unexpected clipboard write") })
+      copy: { _ in Issue.record("unexpected clipboard write") },
+      launch: { _ in Issue.record("unexpected launch") })
     try runner.execute(name: "macarchy.wifi", sender: "routine", colors: colors)
     let arguments = try #require(requests.withLock { $0.last })
     #expect(arguments.contains("label=\(condition == "no_interface" ? "Unavailable" : "002KBps")"))
@@ -67,19 +68,24 @@ struct SketchyBarWiFiTests {
       as: UTF8.self)
     var copied: String?
     var reads = 0
+    var launches: [[String]] = []
     let runner = SketchyBarWiFi(
-      processRunner: recording(requests, output: json),
+      processRunner: recording(requests) { arguments in
+        arguments == ["--query", "macarchy.wifi.bracket"] ? Self.popupQuery(drawing: "off") : json
+      },
       read: {
         reads += 1
         return state()
-      }, sleep: { _ in }, uptime: { 0 }, copy: { copied = $0 })
+      }, sleep: { _ in }, uptime: { 0 }, copy: { copied = $0 }, launch: { launches.append($0) })
     try runner.execute(name: "macarchy.wifi.hostname", sender: "mouse.clicked", colors: colors)
     #expect(copied == value)
     #expect(reads == 0)
     #expect(requests.withLock { $0.last } == ["--set", "macarchy.wifi.hostname", "label=\(value)"])
     try runner.execute(name: "macarchy.wifi.up", sender: "mouse.clicked", colors: colors)
     #expect(reads == 1)
-    #expect(requests.withLock { $0.last?.contains("popup.drawing=toggle") } == true)
+    #expect(requests.withLock { $0.last?.contains("popup.drawing=on") } == true)
+    #expect(requests.withLock { $0.last?.contains("label=test-machine") } == true)
+    #expect(launches == [["desktop", "_popup-watch", "--popup", "macarchy.wifi.bracket"]])
     try runner.execute(name: "macarchy.wifi", sender: "mouse.exited.global", colors: colors)
     #expect(reads == 1)
     #expect(
@@ -90,13 +96,27 @@ struct SketchyBarWiFiTests {
   }
 
   @Test
+  func clickClosesAnOpenPopupWithoutStartingAWatcher() throws {
+    let requests = RequestLog()
+    var launches = 0
+    let runner = SketchyBarWiFi(
+      processRunner: recording(requests) { _ in Self.popupQuery(drawing: "on") },
+      read: { state() }, sleep: { _ in }, uptime: { 0 }, copy: { _ in },
+      launch: { _ in launches += 1 })
+    try runner.execute(name: "macarchy.wifi", sender: "mouse.clicked", colors: colors)
+    let arguments = try #require(requests.withLock { $0.last })
+    #expect(Array(arguments.prefix(3)) == ["--set", "macarchy.wifi.bracket", "popup.drawing=off"])
+    #expect(launches == 0)
+  }
+
+  @Test
   func queryFailuresReplaceStaleRatesAndUnknownItemsAreRejected() throws {
     let requests = RequestLog()
     let runner = SketchyBarWiFi(
       processRunner: recording(requests),
       read: {
         throw WiFiError.queryFailed("fixture failure")
-      }, sleep: { _ in }, uptime: { 0 }, copy: { _ in })
+      }, sleep: { _ in }, uptime: { 0 }, copy: { _ in }, launch: { _ in })
     #expect(throws: WiFiError.self) {
       try runner.execute(name: "macarchy.wifi", sender: "routine", colors: colors)
     }
@@ -123,11 +143,17 @@ struct SketchyBarWiFiTests {
     }
   }
 
-  private func recording(_ requests: RequestLog, output: String = "") -> ProcessRunner {
+  private static func popupQuery(drawing: String) -> String {
+    #"{"popup": {"drawing": "\#(drawing)", "items": ["macarchy.wifi.ssid"]}}"#
+  }
+
+  private func recording(
+    _ requests: RequestLog, output: @escaping @Sendable ([String]) -> String = { _ in "" }
+  ) -> ProcessRunner {
     ProcessRunner { request in
       #expect(request.executableURL.path == "/opt/homebrew/bin/sketchybar")
       requests.withLock { $0.append(request.arguments) }
-      return ProcessResult(terminationStatus: 0, output: output)
+      return ProcessResult(terminationStatus: 0, output: output(request.arguments))
     }
   }
 }
