@@ -19,12 +19,12 @@ struct SketchyBarMicrophoneIndicatorTests {
       read: { SketchyBarMicrophoneIndicator.toggle(status) })
     let detail =
       switch state {
-      case "hardware": "Microphone \"USB Mic\" muted (hardware mute). Click to unmute."
+      case "hardware": "Microphone 'USB Mic' muted (hardware mute). Click to unmute."
       case "level":
-        "Microphone \"USB Mic\" silenced by input level, not a hardware mute. Click to restore."
-      case "live": "Microphone \"USB Mic\" is live. Click to mute."
+        "Microphone 'USB Mic' silenced by input level, not a hardware mute. Click to restore."
+      case "live": "Microphone 'USB Mic' is live. Click to mute."
       case "unsupported":
-        "Microphone \"USB Mic\" has no mute or input-level control, so it cannot be muted."
+        "Microphone 'USB Mic' has no mute or input-level control, so it cannot be muted."
       default: "There is no default microphone, so there is nothing to mute."
       }
     let muted = ["hardware", "level"].contains(state)
