@@ -252,6 +252,16 @@ and explicitly accepted. At that boundary:
 - Do not modify unrelated working-tree changes.
 - Do not commit unless explicitly asked.
 
+## Videos and screen recordings
+
+Record README, release and demo videos with the reusable kit on the Mac mini at
+`~/personal/macarchy-video-kit/`. Read its `README.md` runbook before planning a
+recording. Reuse its scripts, assets and briefs instead of building a new capture
+or editing pipeline. Follow its privacy, state-restoration and stop rules, and
+qualify capture speed with its check before any take. The kit lives only on the
+Mac mini and is not part of this repository. Improve it there when a recording
+teaches something new.
+
 ## Git and pull-request workflow
 
 The initial repository bootstrap commit is the only direct-to-`main` exception.
