@@ -7,7 +7,7 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.14.3] - 2026-10-19
+## [0.14.4] - 2026-10-19
 
 ### Fixed
 
@@ -19,7 +19,8 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from a fallback font (#293).
 - Click-opened bar popups (Wi-Fi, volume, battery, and media controls) now close once the
   pointer leaves them, instead of staying open until the pointer returns to the bar. The
-  battery popup needs the regenerated bar configuration, so review and apply it to get this.
+  battery popup needs the regenerated bar configuration, so review and apply it to get this
+  (#295).
 
 ## [0.14.2] - 2026-10-19
 
