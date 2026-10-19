@@ -20,6 +20,8 @@ struct SketchyBarWiFi {
   let sleep: (TimeInterval) -> Void
   let uptime: () -> TimeInterval
   let copy: (String) throws -> Void
+  /// Starts `macarchy` with these arguments without waiting for it.
+  let launch: ([String]) throws -> Void
 
   func execute(name: String, sender: String, colors: Colors) throws {
     let mainItems = ["macarchy.wifi", "macarchy.wifi.up", "macarchy.wifi.down"]
@@ -44,11 +46,12 @@ struct SketchyBarWiFi {
     do {
       let previous = try read()
       if sender == "mouse.clicked" {
-        var arguments = ["--set", "macarchy.wifi.bracket", "popup.drawing=toggle"]
+        var labels: [String] = []
         for (field, value) in previous.details {
-          arguments += ["--set", "macarchy.wifi.\(field)", "label=\(value)"]
+          labels += ["--set", "macarchy.wifi.\(field)", "label=\(value)"]
         }
-        try bar(arguments)
+        try SketchyBarPopupToggle(popup: .wifi, processRunner: processRunner, launch: launch)
+          .execute(alongside: labels)
         return
       }
       guard mainItems.contains(name) else { throw WiFiError.invalidInvocation }

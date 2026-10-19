@@ -227,7 +227,7 @@ struct Desktop: ParsableCommand {
           guard pasteboard.setString(value, forType: .string) else {
             throw WiFiError.queryFailed("cannot write clipboard")
           }
-        })
+        }, launch: SketchyBarCompanionToggle.launchMacarchy)
       try runner.execute(
         name: name, sender: sender,
         colors: .init(text: textColor, accent: accentColor, muted: mutedColor, error: errorColor))

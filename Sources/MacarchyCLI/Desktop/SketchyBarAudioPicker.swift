@@ -4,10 +4,12 @@ import ThemeCore
 
 struct SketchyBarAudioPicker {
   static let prefix = "macarchy.volume.device."
-  static let popupOwner = "macarchy.volume.bracket"
+  static let popupOwner = BarPopup.volume.rawValue
   let processRunner: ProcessRunner
   let read: () throws -> AudioDevices
   let select: (UInt32, String) throws -> Void
+  /// Starts `macarchy` with these arguments without waiting for it.
+  let launch: ([String]) throws -> Void
 
   static func selector(_ name: String) -> (id: UInt32, identity: String)? {
     guard name.hasPrefix(prefix) else { return nil }
@@ -130,6 +132,7 @@ struct SketchyBarAudioPicker {
       args += ["--set", Self.popupOwner, "popup.drawing=on"]
     }
     try bar(args)
+    if opening { try launch(BarPopup.volume.watchArguments) }
   }
 
   @discardableResult private func bar(_ arguments: [String]) throws -> String {
@@ -155,7 +158,8 @@ extension Desktop {
     mutating func run() throws {
       try SketchyBarAudioPicker(
         processRunner: .live, read: { try AudioDevices.read(.output) },
-        select: { try AudioDevices.select(.output, id: $0, identity: $1) }
+        select: { try AudioDevices.select(.output, id: $0, identity: $1) },
+        launch: SketchyBarCompanionToggle.launchMacarchy
       )
       .execute(
         action: action, name: name, pluginPath: pluginPath, text: textColor, muted: mutedColor)
