@@ -1584,6 +1584,44 @@ struct EnvironmentLifecycleTests {
   }
 
   @Test
+  func failedApplyRollbackStillReportsTheApplyFailure() async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let batDirectory = fixture.home.appending(path: ".config/bat", directoryHint: .isDirectory)
+    let adapterDirectory = fixture.state.appending(
+      path: "state/adapters", directoryHint: .isDirectory)
+    let readOnlyDirectories = [batDirectory, adapterDirectory]
+    for directory in readOnlyDirectories {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    try "original kitty\n".write(
+      to: adapterDirectory.appending(path: "kitty.conf"), atomically: true, encoding: .utf8)
+    // The bat link fails forward; restoring the captured Kitty bridge then fails the rollback.
+    for directory in readOnlyDirectories {
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o500], ofItemAtPath: directory.path)
+    }
+    defer {
+      for directory in readOnlyDirectories {
+        try? FileManager.default.setAttributes(
+          [.posixPermissions: 0o700], ofItemAtPath: directory.path)
+      }
+    }
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+
+    let apply = try await fixture.apply(adopt: digest)
+
+    let report = try jsonObject(apply.output)
+    let message = try #require(report["message"] as? String)
+    #expect(!apply.succeeded)
+    #expect(report["transaction_status"] as? String == "recovery_required")
+    #expect(message.contains(".config/bat/"), "\(message)")
+    #expect(message.contains("rollback requires recovery"), "\(message)")
+  }
+
+  @Test
   func teardownRejectsASelectedGenerationWithoutOwnership() async throws {
     let fixture = try EnvironmentLifecycleFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
