@@ -33,6 +33,10 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   break. The volume popup now works when an output device name contains one, clicking a
   Wi-Fi detail copies it exactly, and the microphone hover text shows quotation marks in a
   device name instead of replacing them.
+- Macarchy no longer reports bat as themed when bat skipped the Macarchy theme. One
+  unreadable file in `~/.config/bat/themes`, such as a broken link, makes bat drop every
+  custom theme and warn "Unknown theme 'Macarchy Current'" on each run. Reconcile now
+  reports bat as drifted and shows bat's message naming the file to fix.
 
 ## [0.14.4] - 2026-10-19
 
