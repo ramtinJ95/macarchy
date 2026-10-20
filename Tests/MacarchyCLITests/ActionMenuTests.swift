@@ -69,6 +69,8 @@ struct ActionMenuTests {
 
   @MainActor
   @Test func editShortcutsReachTheStandardEditingActions() throws {
+    // Menu items dispatch through NSApp, which stays nil until the shared application exists.
+    _ = NSApplication.shared
     let menu = popupMainMenu()
     // The popup targets the responder chain. Retargeting only observes dispatch.
     let recorder = EditActionRecorder()
