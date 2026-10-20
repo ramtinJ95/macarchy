@@ -13,5 +13,5 @@ style, with continuation lines indented by two spaces:
 ```
 
 Sections: Added, Changed, Deprecated, Removed, Fixed, Security, Known
-limitations. `python3 -B Scripts/changelog.py check` validates fragments; its
-`release` command folds them into `CHANGELOG.md` and deletes them.
+limitations. `python3 -B Scripts/changelog.py check` validates fragments, and
+`Scripts/release.py prepare` folds them into `CHANGELOG.md` and deletes them.
