@@ -19,9 +19,9 @@ import guest
 import lab
 
 SOURCE_ROOTS = ("Package.swift", "Package.resolved", "VERSION.txt", "LICENSE",
-                "README.md", "AGENTS.md", "CHANGELOG.md", ".github", "Documentation",
-                "Sources", "Tests", "Scripts", "Keybindings", "Desktop",
-                "Themes", "Environment")
+                "README.md", "AGENTS.md", "CHANGELOG.md", "changelog.d", ".github",
+                "Documentation", "Sources", "Tests", "Scripts", "Keybindings",
+                "Desktop", "Themes", "Environment")
 
 
 def snapshot(root, destination):
