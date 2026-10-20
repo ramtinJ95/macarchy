@@ -52,16 +52,17 @@ package struct EzaAdapter: Sendable {
     guard controlIsAvailable() else {
       throw EzaAdapterError.controlUnavailable(executableURL)
     }
-    try themeLink.validate()
-
-    let shell = try readShellConfiguration()
-    let directive = Self.environmentDirective(configurationDirectoryURL: configurationDirectoryURL)
-    guard
-      try containsExactLine(directive, in: shell)
-        || containsExactLine(Self.managedEnvironmentDirective, in: shell)
-        || inheritsManagedDirective(in: shell)
-    else {
-      throw EzaAdapterError.missingEnvironmentDirective(directive)
+    try CanonicalThemeLink.validate([themeLink]) {
+      let shell = try readShellConfiguration()
+      let directive = Self.environmentDirective(
+        configurationDirectoryURL: configurationDirectoryURL)
+      guard
+        try containsExactLine(directive, in: shell)
+          || containsExactLine(Self.managedEnvironmentDirective, in: shell)
+          || inheritsManagedDirective(in: shell)
+      else {
+        throw EzaAdapterError.missingEnvironmentDirective(directive)
+      }
     }
   }
 

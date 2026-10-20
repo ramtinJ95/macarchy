@@ -116,13 +116,14 @@ package struct SpicetifyAdapter: Sendable {
     _ = try supportedVersion()
     _ = try supportedSpotifyVersion()
     try refreshPreparation()
-    try colorSchemeLink.validate()
-    let selection = try selectedTheme()
-    guard selection.theme == Self.themeName else {
-      throw SpicetifyAdapterError.wrongTheme(Self.themeName)
-    }
-    guard selection.colorScheme == Self.colorSchemeName else {
-      throw SpicetifyAdapterError.wrongColorScheme(Self.colorSchemeName)
+    try CanonicalThemeLink.validate([colorSchemeLink]) {
+      let selection = try selectedTheme()
+      guard selection.theme == Self.themeName else {
+        throw SpicetifyAdapterError.wrongTheme(Self.themeName)
+      }
+      guard selection.colorScheme == Self.colorSchemeName else {
+        throw SpicetifyAdapterError.wrongColorScheme(Self.colorSchemeName)
+      }
     }
   }
 

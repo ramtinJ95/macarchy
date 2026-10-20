@@ -52,21 +52,21 @@ package struct BtopAdapter: Sendable {
     guard controlIsAvailable() else {
       throw BtopAdapterError.controlUnavailable(executableURL)
     }
-    try themeLink.validate()
-
-    let lines = try readConfiguration().split(whereSeparator: \.isNewline)
-    let selections = lines.compactMap { line -> String? in
-      let content = line.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
-        in: .whitespacesAndNewlines)
-      guard let content else { return nil }
-      let parts = content.split(separator: "=", maxSplits: 1).map {
-        $0.trimmingCharacters(in: .whitespaces)
+    try CanonicalThemeLink.validate([themeLink]) {
+      let lines = try readConfiguration().split(whereSeparator: \.isNewline)
+      let selections = lines.compactMap { line -> String? in
+        let content = line.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
+          in: .whitespacesAndNewlines)
+        guard let content else { return nil }
+        let parts = content.split(separator: "=", maxSplits: 1).map {
+          $0.trimmingCharacters(in: .whitespaces)
+        }
+        guard parts.count == 2, parts[0] == "color_theme" else { return nil }
+        return parts[1]
       }
-      guard parts.count == 2, parts[0] == "color_theme" else { return nil }
-      return parts[1]
-    }
-    guard selections == ["\"\(Self.themeName)\""] else {
-      throw BtopAdapterError.wrongThemeSelection(Self.themeName)
+      guard selections == ["\"\(Self.themeName)\""] else {
+        throw BtopAdapterError.wrongThemeSelection(Self.themeName)
+      }
     }
   }
 

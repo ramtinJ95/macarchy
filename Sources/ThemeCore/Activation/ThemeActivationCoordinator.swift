@@ -695,7 +695,14 @@ package struct ThemeActivationCoordinator: Sendable {
       hasSelectedWallpaper: background.selection != nil
     )
     for adapter in configuredAdapters(context: AdapterResolutionContext()) {
-      try adapter.preflight(preflightContext)
+      do {
+        try adapter.preflight(preflightContext)
+      } catch CanonicalThemeLinkError.absent(_) {
+        // Adapters report this only after every other check passed. An unpublished link
+        // cannot break on the pointer swap, unlike a file in its place; reconciliation
+        // still reports the adapter as drifted.
+        continue
+      }
     }
     return background
   }
