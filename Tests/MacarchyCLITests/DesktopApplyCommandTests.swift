@@ -1014,6 +1014,36 @@ struct DesktopApplyCommandTests {
   }
 
   @Test
+  func failedRollbackStillReportsTheApplyFailure() throws {
+    let fixture = try DesktopApplyFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    _ = try fixture.installRegularConfiguration("working original\n")
+    let lifecycle = YabaiLifecycleFixture(
+      running: true, runtimeStatus: .drifted, failingRestart: 2)
+    let digest = try fixture.adoptionDigest()
+
+    let apply = try DesktopApplyCommandRunner(
+      lifecycle: lifecycle.controller,
+      keybindings: nil,
+      prerequisites: .assumed,
+      theme: nil
+    ).execute(
+      resourcesRoot: fixture.resources,
+      profileURL: fixture.profile,
+      profileRequired: false,
+      stateRoot: fixture.state,
+      homeDirectory: fixture.home,
+      adopt: digest,
+      json: true
+    )
+
+    let message = try #require(try jsonObject(apply.output)["message"] as? String)
+    #expect(!apply.succeeded)
+    #expect(message.contains("injected runtime drift"), "\(message)")
+    #expect(message.contains("injected restart failure"), "\(message)")
+  }
+
+  @Test
   func retainedOriginalDriftBlocksStatusAndTeardownWithoutRemovingManagedEntry() throws {
     let fixture = try DesktopApplyFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
