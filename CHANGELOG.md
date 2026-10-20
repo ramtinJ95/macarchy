@@ -7,36 +7,38 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-10-20
+
 ### Fixed
 
 - The lean focus outline could get left behind on one Space and stop appearing on any
   other until its service was restarted. It now notices within a couple of seconds and
-  comes back on the Space you are using.
+  comes back on the Space you are using (#301).
 - Setup apply now reactivates your theme when it predates the current bar palette.
   Before, the plan listed that step but apply rolled back with "the active theme predates
-  the current managed SketchyBar palette contract".
+  the current managed SketchyBar palette contract" (#301).
 - `macarchy theme set` no longer fails with "must be a symbolic link" when a Macarchy
   theme link has not been created yet. The theme activates and the missing link is
   reported as drift until setup creates it; a file of your own at that path still stops
-  activation.
+  activation (#301).
 - Command-A, Command-C, Command-V, Command-X and Command-Z now work in the search fields
   of the action menu, the theme browser and the keybindings viewer. Before, Command-A did
-  not select the query, so typing a new search added to the old one.
+  not select the query, so typing a new search added to the old one (#304).
 - Environment apply no longer refuses to update an unchanged configuration file, such as
   Herdr's `config.toml`, with "changed after setup; refusing to overwrite it". This
   happened when the file lacked the provenance tag macOS adds to files Macarchy writes. A
-  file you edited is still never overwritten.
+  file you edited is still never overwritten (#302).
 - When a desktop or environment apply failed and its rollback also failed, the report
-  named only the rollback failure. It now shows the original error as well.
+  named only the rollback failure. It now shows the original error as well (#302).
 - Setup apply no longer fails and rolls back when the playing song, the Wi-Fi network,
   the computer name or an update error contains a quotation mark, a backslash or a line
   break. The volume popup now works when an output device name contains one, clicking a
   Wi-Fi detail copies it exactly, and the microphone hover text shows quotation marks in a
-  device name instead of replacing them.
+  device name instead of replacing them (#303).
 - Macarchy no longer reports bat as themed when bat skipped the Macarchy theme. One
   unreadable file in `~/.config/bat/themes`, such as a broken link, makes bat drop every
   custom theme and warn "Unknown theme 'Macarchy Current'" on each run. Reconcile now
-  reports bat as drifted and shows bat's message naming the file to fix.
+  reports bat as drifted and shows bat's message naming the file to fix (#305).
 
 ## [0.14.4] - 2026-10-19
 
