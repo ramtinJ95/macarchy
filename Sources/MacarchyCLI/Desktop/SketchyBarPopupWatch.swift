@@ -52,8 +52,8 @@ struct SketchyBarItemFrame: Decodable {
   }
 
   static func query(_ item: String, processRunner: ProcessRunner) throws -> Self {
-    try JSONDecoder().decode(
-      Self.self, from: Data(sketchyBar(["--query", item], processRunner: processRunner).utf8))
+    try SketchyBarQueryReply.decode(
+      Self.self, from: sketchyBar(["--query", item], processRunner: processRunner))
   }
 }
 

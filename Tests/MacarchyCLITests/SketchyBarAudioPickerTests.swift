@@ -57,6 +57,24 @@ struct SketchyBarAudioPickerTests {
       ])
   }
 
+  /// SketchyBar prints a row's label verbatim, so the device name reaches the reply unescaped.
+  @Test func closesRowsWhoseDeviceNamesSketchyBarPrintsVerbatim() throws {
+    let log = Log()
+    let name = SketchyBarAudioPicker.prefix + "7." + device.identity
+    let plainPath = "/tmp/plain/volume.sh"
+    let picker = SketchyBarAudioPicker(
+      processRunner: runner(log: log, row: name, drawing: "on", nativeRowPluginPath: plainPath),
+      read: { AudioDevices(devices: [], selected: 0) },
+      select: { _, _ in Issue.record("unexpected selection") },
+      launch: { _ in Issue.record("closing must not start a popup watcher") })
+    try picker.execute(
+      action: "close", name: name, pluginPath: plainPath, text: "0xffffffff", muted: "0xff888888")
+    #expect(
+      log.values.withLock { $0.last } == [
+        "--set", "macarchy.volume.bracket", "popup.drawing=off", "--remove", name,
+      ])
+  }
+
   @Test func refusesUnownedRowsAndPreservesQueryFailures() throws {
     let log = Log()
     let name = SketchyBarAudioPicker.prefix + "7." + device.identity
@@ -84,12 +102,22 @@ struct SketchyBarAudioPickerTests {
 
   private final class Log: Sendable { let values = Mutex<[[String]]>([]) }
 
-  private func runner(log: Log, row: String? = nil, drawing: String = "off", valid: Bool = true)
-    -> ProcessRunner
-  {
+  private func runner(
+    log: Log, row: String? = nil, drawing: String = "off", valid: Bool = true,
+    nativeRowPluginPath: String? = nil
+  ) -> ProcessRunner {
     let pluginPath = path
+    let deviceName = device.name
     return ProcessRunner { request in
       log.values.withLock { $0.append(request.arguments) }
+      if let row, let nativeRowPluginPath, request.arguments == ["--query", row] {
+        return ProcessResult(
+          terminationStatus: 0,
+          output: SketchyBarNativeQuery.item(
+            name: row, position: "popup", label: deviceName,
+            clickScript: SketchyBarAudioPicker.clickScript(
+              name: row, pluginPath: nativeRowPluginPath)))
+      }
       var object: [String: Any] = [:]
       if request.arguments == ["--query", "bar"] {
         object = ["items": ["macarchy.volume", "unmanaged"] + (row.map { [$0] } ?? [])]

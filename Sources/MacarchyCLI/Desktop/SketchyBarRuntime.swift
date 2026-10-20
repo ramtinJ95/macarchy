@@ -1096,7 +1096,9 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
       throw SketchyBarQueryNoResponse(arguments: arguments)
     }
     do {
-      return try JSONDecoder().decode(Value.self, from: Data(result.output.utf8))
+      return try control == Self.controlURL
+        ? SketchyBarQueryReply.decode(Value.self, from: result.output)
+        : JSONDecoder().decode(Value.self, from: Data(result.output.utf8))
     } catch {
       throw SketchyBarDesktopError.lifecycle(
         "cannot decode \(control.lastPathComponent) \(arguments.joined(separator: " ")) runtime state: \(error)"
@@ -1204,13 +1206,47 @@ private struct SketchyBarItemQuery: Decodable {
   }
 }
 
+/// Decodes `sketchybar --query` output. SketchyBar 2.24 prints icon, label and image values
+/// verbatim, so a quote, backslash or control character in bar text such as a song title, an
+/// SSID or a device name makes its reply invalid JSON. Each such value is closed by the
+/// `drawing` key that SketchyBar prints next at the same indent, which bounds the raw text.
+enum SketchyBarQueryReply {
+  static func decode<Value: Decodable>(_ type: Value.Type, from output: String) throws -> Value {
+    try JSONDecoder().decode(type, from: Data(escapingRawValues(output).utf8))
+  }
+
+  private static func escapingRawValues(_ output: String) -> String {
+    var result = ""
+    var rest = output[...]
+    while let opening = rest.range(of: "\"value\": \"", options: .literal) {
+      let lineStart = rest[..<opening.lowerBound].lastIndex(of: "\n").map { rest.index(after: $0) }
+      let indent = rest[(lineStart ?? rest.startIndex)..<opening.lowerBound]
+      result.append(contentsOf: rest[..<opening.upperBound])
+      rest = rest[opening.upperBound...]
+      guard !indent.isEmpty, indent.allSatisfy({ $0 == "\t" }),
+        let closing = rest.range(of: "\",\n\(indent)\"drawing\": \"", options: .literal)
+      else { continue }
+      for scalar in rest[..<closing.lowerBound].unicodeScalars {
+        switch scalar {
+        case "\"", "\\": result += "\\\(scalar)"
+        case _ where scalar.value < 0x20: result += String(format: "\\u%04x", scalar.value)
+        default: result.unicodeScalars.append(scalar)
+        }
+      }
+      rest = rest[closing.lowerBound...]
+    }
+    result.append(contentsOf: rest)
+    return result
+  }
+}
+
 /// The label of one `sketchybar --query <item>` result, as read by the bar's helper commands.
 struct SketchyBarLabelQuery: Decodable {
   struct Label: Decodable { let value: String }
   let label: Label
 
   static func value(from output: String) throws -> String {
-    try JSONDecoder().decode(Self.self, from: Data(output.utf8)).label.value
+    try SketchyBarQueryReply.decode(Self.self, from: output).label.value
   }
 }
 

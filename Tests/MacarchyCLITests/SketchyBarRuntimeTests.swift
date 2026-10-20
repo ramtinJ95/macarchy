@@ -78,7 +78,7 @@ struct SketchyBarRuntimeTests {
     arguments: [ClockCompanion.keepAwake, .microphone, .saverPaused],
     [
       "hidden", "visible", "position", "script", "frequency", "events", "undeclared-event",
-      "popup",
+      "popup", "hostile-detail",
     ])
   func eventDrivenCompanionRequiresWiringIncludingItsChangeEvent(
     companion: ClockCompanion, condition: String
@@ -110,13 +110,17 @@ struct SketchyBarRuntimeTests {
         output = output.replacingOccurrences(of: "[\"\(companion.detailItem)\"]", with: "[]")
       case (["--query", "events"], "undeclared-event"):
         output = output.replacingOccurrences(of: ",\"\(event)\":{\"bit\":\(bit)}", with: "")
+      case (["--query", companion.detailItem], "hostile-detail"):
+        output = SketchyBarNativeQuery.item(
+          name: companion.detailItem, position: "popup",
+          label: "Microphone \"USB \\ Mic\"\nmuted 🎙")
       default: break
       }
       return .init(terminationStatus: result.terminationStatus, output: output)
     }
     #expect(
       verifier.inspect(fixture.dynamicComposition).status
-        == (["hidden", "visible"].contains(condition) ? .converged : .drifted))
+        == (["hidden", "visible", "hostile-detail"].contains(condition) ? .converged : .drifted))
   }
 
   @Test(
@@ -282,6 +286,7 @@ struct SketchyBarRuntimeTests {
 
   @Test(arguments: [
     "playing", "inactive", "error", "position", "script", "event", "control", "preview",
+    "hostile-title",
   ])
   func mediaVerifiesPresentationControlsAndVolatileEvidence(condition: String) throws {
     let fixture = try SketchyBarRuntimeFixture()
@@ -303,6 +308,11 @@ struct SketchyBarRuntimeTests {
           #"{"mouse.clicked":{"bit":1},"mouse.entered":{"bit":2},"mouse.exited":{"bit":4},"mouse.exited.global":{"bit":8},"system_woke":{"bit":16}}"#
       } else if name == "macarchy.theme.ready" {
         output = Self.itemJSON(name: name, drawing: "off", position: "right")
+      } else if condition == "hostile-title",
+        ["macarchy.media.title", "macarchy.media.artist"].contains(name)
+      {
+        output = SketchyBarNativeQuery.item(
+          name: name, label: "\"Heroes\" \\ AC\\DC\nlive 🎸", script: script, updateMask: 14)
       } else {
         let main = name == "macarchy.media"
         let detail = ["macarchy.media.title", "macarchy.media.artist"].contains(name)
@@ -339,7 +349,7 @@ struct SketchyBarRuntimeTests {
       return .init(terminationStatus: 0, output: output)
     }
     let inspection = verifier.inspect(composition)
-    let valid = ["playing", "inactive"].contains(condition)
+    let valid = ["playing", "inactive", "hostile-title"].contains(condition)
     #expect(inspection.status == (valid ? .converged : .drifted))
     if valid {
       #expect(inspection.mediaStatePresent == true)
