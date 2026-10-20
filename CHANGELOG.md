@@ -19,6 +19,9 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   theme link has not been created yet. The theme activates and the missing link is
   reported as drift until setup creates it; a file of your own at that path still stops
   activation.
+- Command-A, Command-C, Command-V, Command-X and Command-Z now work in the search fields
+  of the action menu, the theme browser and the keybindings viewer. Before, Command-A did
+  not select the query, so typing a new search added to the old one.
 
 ## [0.14.4] - 2026-10-19
 
