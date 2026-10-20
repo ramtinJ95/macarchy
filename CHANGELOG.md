@@ -28,6 +28,11 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   file you edited is still never overwritten.
 - When a desktop or environment apply failed and its rollback also failed, the report
   named only the rollback failure. It now shows the original error as well.
+- Setup apply no longer fails and rolls back when the playing song, the Wi-Fi network,
+  the computer name or an update error contains a quotation mark, a backslash or a line
+  break. The volume popup now works when an output device name contains one, clicking a
+  Wi-Fi detail copies it exactly, and the microphone hover text shows quotation marks in a
+  device name instead of replacing them.
 
 ## [0.14.4] - 2026-10-19
 
