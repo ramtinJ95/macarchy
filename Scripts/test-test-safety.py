@@ -33,9 +33,14 @@ class TestSafetyBoundary(unittest.TestCase):
             self.assertIn("try IsolatedTestEnvironment.makeFIFO(at:", source)
 
     def test_ci_runs_boundary_audit_and_opts_in_without_a_host_bypass(self):
-        for name in ("ci.yml", "release.yml"):
+        # release.yml publishes the archive CI verified and runs no Swift tests.
+        workflows = {path.name: path.read_text()
+                     for path in (ROOT / ".github/workflows").glob("*.yml")}
+        self.assertIn("swift test", workflows["ci.yml"])
+        for name, workflow in workflows.items():
+            if "swift test" not in workflow:
+                continue
             with self.subTest(workflow=name):
-                workflow = (ROOT / ".github/workflows" / name).read_text()
                 self.assertIn("python3 -B Scripts/test-test-safety.py", workflow)
                 self.assertIn('MACARCHY_TEST_VM: "1"', workflow)
         guard = GUARD.read_text()

@@ -59,8 +59,10 @@ to recognize unchanged inputs despite fresh checkout timestamps; real edits
 still require compilation. No source timestamps are rewritten.
 It always invokes the builds and tests after restoring a cache; a cache hit is
 not verification. The job summary reports cache reuse, and Actions step timings
-show its actual benefit. Stable release publication remains an uncached build
-with the full tests, archive validation and provenance checks.
+show its actual benefit. Each `main` push also keeps its validated release
+archive as a 30-day artifact. Stable release publication does not rebuild: it
+requires a successful `main` push run for the tagged commit, revalidates that
+run's archive, then attests and publishes it.
 
 The lightweight change-classification tests run without Swift:
 
