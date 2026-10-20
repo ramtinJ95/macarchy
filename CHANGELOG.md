@@ -7,6 +7,19 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The lean focus outline could get left behind on one Space and stop appearing on any
+  other until its service was restarted. It now notices within a couple of seconds and
+  comes back on the Space you are using.
+- Setup apply now reactivates your theme when it predates the current bar palette.
+  Before, the plan listed that step but apply rolled back with "the active theme predates
+  the current managed SketchyBar palette contract".
+- `macarchy theme set` no longer fails with "must be a symbolic link" when a Macarchy
+  theme link has not been created yet. The theme activates and the missing link is
+  reported as drift until setup creates it; a file of your own at that path still stops
+  activation.
+
 ## [0.14.4] - 2026-10-19
 
 ### Fixed
