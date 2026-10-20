@@ -22,6 +22,12 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Command-A, Command-C, Command-V, Command-X and Command-Z now work in the search fields
   of the action menu, the theme browser and the keybindings viewer. Before, Command-A did
   not select the query, so typing a new search added to the old one.
+- Environment apply no longer refuses to update an unchanged configuration file, such as
+  Herdr's `config.toml`, with "changed after setup; refusing to overwrite it". This
+  happened when the file lacked the provenance tag macOS adds to files Macarchy writes. A
+  file you edited is still never overwritten.
+- When a desktop or environment apply failed and its rollback also failed, the report
+  named only the rollback failure. It now shows the original error as well.
 
 ## [0.14.4] - 2026-10-19
 
