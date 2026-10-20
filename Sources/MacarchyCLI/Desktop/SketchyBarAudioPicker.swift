@@ -96,17 +96,17 @@ struct SketchyBarAudioPicker {
       })
     else { throw AudioDeviceError.invalidSelection }
     struct Bar: Decodable { let items: [String] }
-    let inventory = try JSONDecoder().decode(Bar.self, from: Data(bar(["--query", "bar"]).utf8))
+    let inventory = try SketchyBarQueryReply.decode(Bar.self, from: bar(["--query", "bar"]))
     let rows = inventory.items.filter { $0.hasPrefix(Self.prefix) }
     guard Set(rows).count == rows.count else { throw AudioDeviceError.invalidInventory }
     for row in rows {
-      let value = try JSONDecoder().decode(Row.self, from: Data(bar(["--query", row]).utf8))
+      let value = try SketchyBarQueryReply.decode(Row.self, from: bar(["--query", row]))
       guard value.valid(name: row, pluginPath: pluginPath) else {
         throw AudioDeviceError.invalidInventory
       }
     }
-    let parent = try JSONDecoder().decode(
-      Parent.self, from: Data(bar(["--query", Self.popupOwner]).utf8))
+    let parent = try SketchyBarQueryReply.decode(
+      Parent.self, from: bar(["--query", Self.popupOwner]))
     guard parent.owns(rows: rows) else { throw AudioDeviceError.invalidInventory }
     if action == "select" {
       guard let target = Self.selector(name) else { throw AudioDeviceError.invalidSelection }

@@ -63,15 +63,14 @@ struct SketchyBarWiFiTests {
   func popupAndClipboardNeverEvaluateNetworkValuesAsShell() throws {
     let requests = RequestLog()
     let value = #"host \" $(touch /tmp/never) ${HOME} `id`"#
-    let json = String(
-      decoding: try JSONSerialization.data(withJSONObject: ["label": ["value": value]]),
-      as: UTF8.self)
+    let reply = SketchyBarNativeQuery.item(
+      name: "macarchy.wifi.hostname", position: "popup", label: value)
     var copied: String?
     var reads = 0
     var launches: [[String]] = []
     let runner = SketchyBarWiFi(
       processRunner: recording(requests) { arguments in
-        arguments == ["--query", "macarchy.wifi.bracket"] ? Self.popupQuery(drawing: "off") : json
+        arguments == ["--query", "macarchy.wifi.bracket"] ? Self.popupQuery(drawing: "off") : reply
       },
       read: {
         reads += 1
