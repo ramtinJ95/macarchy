@@ -297,15 +297,24 @@ and refactors follow this workflow:
    mixed commit merely because the work was performed in one session.
 6. Use Conventional Commit subjects (`type(scope): description` when a scope
    adds value). Avoid noisy checkpoint/WIP commits in the final PR history.
-7. Run the relevant verification, update the local handoff, push the branch,
+7. Record a user-facing change as a new `changelog.d/<name>.md` fragment (see
+   `changelog.d/README.md`); never edit `CHANGELOG.md` directly. CI runs
+   `python3 -B Scripts/changelog.py check`.
+8. Run the relevant verification, update the local handoff, push the branch,
    and open a pull request. Direct pushes to `main` are prohibited.
-8. Rebase the branch onto the latest `origin/main` before merge and resolve
-   conflicts on the branch. Never merge `main` into the branch to update it.
-9. Merge pull requests with GitHub's **Rebase and merge** method. Do not create
-   merge commits and do not squash the carefully structured commit series into
-   one oversized commit.
-10. Delete merged branches. Begin the next slice from the newly updated
+9. **Rebase and merge** already rebases onto the latest `main` on GitHub's
+   side, so rebase manually and rerun CI only when GitHub reports a conflict.
+   Resolve it on the branch; never merge `main` into the branch to update it.
+10. Merge pull requests with GitHub's **Rebase and merge** method. Do not create
+    merge commits and do not squash the carefully structured commit series into
+    one oversized commit. `main`'s push CI runs after every merge.
+11. Delete merged branches. Begin the next slice from the newly updated
     `main`, not from a previous feature branch.
+12. Release only through `Scripts/release.py`. Commit `prepare <version>` onto
+    the last PR of a batch instead of opening a separate release PR. After it
+    merges, run `publish <version>` (it requires `main`'s push CI to be green
+    for that commit); a person approves the `stable-release` environment; then
+    run `finish <version>` and `upgrade --expect <version>` on each machine.
 
 PR descriptions must identify the milestone and vertical slice, summarize the
 observable behavior, list verification performed, and call out any ADR or

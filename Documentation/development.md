@@ -64,7 +64,7 @@ archive as a 30-day artifact. Stable release publication does not rebuild: it
 requires a successful `main` push run for the tagged commit, revalidates that
 run's archive, then attests and publishes it.
 
-The lightweight change-classification tests run without Swift:
+The lightweight CI and release script checks run without Swift:
 
 ```sh
 python3 -B Scripts/test-ci-changes.py
@@ -72,3 +72,12 @@ python3 -B Scripts/test-changelog.py
 python3 -B Scripts/changelog.py check
 python3 -B Scripts/test-release.py
 ```
+
+### Changelog and releases
+
+Each user-facing change adds a fragment under `changelog.d/` instead of editing
+`CHANGELOG.md`, so concurrent PRs do not conflict. Releases run through
+`Scripts/release.py`: `prepare` folds the fragments into `CHANGELOG.md` and bumps
+the version on the last PR of a batch, `publish` tags the merged commit once its
+`main` CI is green, and `finish` verifies the published archive and updates the
+Homebrew tap. Run the script with `--help` for each step.
