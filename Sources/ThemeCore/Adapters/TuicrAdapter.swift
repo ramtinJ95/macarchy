@@ -56,10 +56,10 @@ package struct TuicrAdapter: Sendable {
     guard controlIsAvailable() else {
       throw TuicrAdapterError.controlUnavailable(executableURL)
     }
-    try themeLink.validate()
-    try syntaxLink.validate()
-    guard try selectedTheme() == Self.themeName else {
-      throw TuicrAdapterError.wrongThemeSelection(Self.themeName)
+    try CanonicalThemeLink.validate([themeLink, syntaxLink]) {
+      guard try selectedTheme() == Self.themeName else {
+        throw TuicrAdapterError.wrongThemeSelection(Self.themeName)
+      }
     }
   }
 

@@ -77,14 +77,12 @@ package struct YaziAdapter: Sendable {
           ? controlURL : executableURL
       )
     }
-    try flavorLink.validate()
-    try syntaxLink.validate()
-
-    let configuration = try readThemeConfiguration()
-    guard Self.selectsFlavor(in: configuration) else {
-      throw YaziAdapterError.missingFlavorSelection(
-        "[flavor] dark = \"\(Self.flavorName)\""
-      )
+    try CanonicalThemeLink.validate([flavorLink, syntaxLink]) {
+      guard Self.selectsFlavor(in: try readThemeConfiguration()) else {
+        throw YaziAdapterError.missingFlavorSelection(
+          "[flavor] dark = \"\(Self.flavorName)\""
+        )
+      }
     }
   }
 

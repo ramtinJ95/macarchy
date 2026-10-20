@@ -365,6 +365,88 @@ extension AdapterContractTests {
     #expect(try coordinator.inspectAdapters([]).map(\.adapterID) == [KittyAdapter.id])
   }
 
+  @Test(arguments: ["absent", "regular_file"])
+  func onlyAnAbsentCanonicalLinkLetsActivationCommitAsDrift(linkState: String) async throws {
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+      let consumerPaths = try Self.consumerPaths(root: root, adapterIDs: [AtuinAdapter.id])
+      let link = consumerPaths.atuinConfigurationDirectoryURL.appending(
+        path: "themes/\(AtuinAdapter.themeName).toml")
+      try FileManager.default.removeItem(at: link)
+      if linkState == "regular_file" {
+        try "[colors]\n".write(to: link, atomically: true, encoding: .utf8)
+      }
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: consumerPaths,
+        processRunner: ProcessRunner { _ in
+          ProcessResult(terminationStatus: 0, output: AtuinAdapter.themeName)
+        },
+        wallpaperControl: Self.wallpaperControl(),
+        wallpaperSignal: try Self.wallpaperSignal(root: root),
+        enabledAdapterIDs: [AtuinAdapter.id]
+      )
+      let current = {
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path)
+      }
+
+      if linkState == "absent" {
+        let activation = try await coordinator.activate(package: catppuccinPackage())
+        #expect(try current() == "generations/\(activation.manifest.generationID)")
+        #expect(activation.manifest.generationID != previous.generationID)
+        #expect(activation.reconciliation.results.map(\.adapterID) == [AtuinAdapter.id])
+        #expect(activation.reconciliation.results.first?.status == .drifted)
+        #expect(!FileManager.default.fileExists(atPath: link.path))
+      } else {
+        do {
+          _ = try await coordinator.activate(package: catppuccinPackage())
+          Issue.record("A regular file at the theme link must block activation")
+        } catch CanonicalThemeLinkError.notSymbolicLink(_) {}
+        #expect(try current() == "generations/\(previous.generationID)")
+        #expect(try String(contentsOf: link, encoding: .utf8) == "[colors]\n")
+      }
+    }
+  }
+
+  @Test(arguments: ["regular_file_link", "missing_selection"])
+  func anAbsentCanonicalLinkDoesNotSkipLaterBlockingChecks(laterFailure: String) async throws {
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+      let consumerPaths = try Self.consumerPaths(root: root, adapterIDs: [YaziAdapter.id])
+      let flavor = consumerPaths.yaziConfigurationDirectoryURL.appending(
+        path: "flavors/\(YaziAdapter.flavorName).yazi", directoryHint: .isDirectory)
+      try FileManager.default.removeItem(at: flavor.appending(path: "flavor.toml"))
+      if laterFailure == "regular_file_link" {
+        let syntax = flavor.appending(path: "tmtheme.xml")
+        try FileManager.default.removeItem(at: syntax)
+        try "<plist/>\n".write(to: syntax, atomically: true, encoding: .utf8)
+      } else {
+        try "[flavor]\n".write(
+          to: consumerPaths.yaziConfigurationDirectoryURL.appending(path: "theme.toml"),
+          atomically: true, encoding: .utf8)
+      }
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: consumerPaths,
+        processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+        wallpaperControl: Self.wallpaperControl(),
+        wallpaperSignal: try Self.wallpaperSignal(root: root),
+        enabledAdapterIDs: [YaziAdapter.id]
+      )
+
+      do {
+        _ = try await coordinator.activate(package: catppuccinPackage())
+        Issue.record("An absent first link must not let activation skip a later failure")
+      } catch CanonicalThemeLinkError.notSymbolicLink(_) where laterFailure == "regular_file_link" {
+      } catch YaziAdapterError.missingFlavorSelection(_) where laterFailure == "missing_selection" {
+      }
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path) == "generations/\(previous.generationID)")
+    }
+  }
+
   @Test
   func cancellationBeforeActivationDoesNotCommit() async throws {
     try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in

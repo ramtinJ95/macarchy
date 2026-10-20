@@ -57,11 +57,10 @@ package struct BatAdapter: Sendable {
     guard controlIsAvailable() else {
       throw BatAdapterError.controlUnavailable(executableURL)
     }
-    try themeLink.validate()
-
-    let configuration = try readConfiguration()
-    guard containsExactLine(Self.themeDirective, in: configuration) else {
-      throw BatAdapterError.missingThemeDirective(Self.themeDirective)
+    try CanonicalThemeLink.validate([themeLink]) {
+      guard containsExactLine(Self.themeDirective, in: try readConfiguration()) else {
+        throw BatAdapterError.missingThemeDirective(Self.themeDirective)
+      }
     }
   }
 

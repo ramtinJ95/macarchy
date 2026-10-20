@@ -84,9 +84,10 @@ package struct CodexAdapter: Sendable {
   }
 
   private func validateManagedSeams() throws {
-    try themeLink.validate()
-    guard try selectedTheme() == Self.themeName else {
-      throw CodexAdapterError.wrongThemeSelection(Self.themeName)
+    try CanonicalThemeLink.validate([themeLink]) {
+      guard try selectedTheme() == Self.themeName else {
+        throw CodexAdapterError.wrongThemeSelection(Self.themeName)
+      }
     }
   }
 

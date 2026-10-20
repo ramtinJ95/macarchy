@@ -56,11 +56,12 @@ package struct AtuinAdapter: Sendable {
     guard controlIsAvailable() else {
       throw AtuinAdapterError.controlUnavailable(executableURL)
     }
-    try themeLink.validate()
-    guard Self.selectsTheme(in: try readConfiguration()) else {
-      throw AtuinAdapterError.missingThemeSelection(
-        "[theme] name = \"\(Self.themeName)\""
-      )
+    try CanonicalThemeLink.validate([themeLink]) {
+      guard Self.selectsTheme(in: try readConfiguration()) else {
+        throw AtuinAdapterError.missingThemeSelection(
+          "[theme] name = \"\(Self.themeName)\""
+        )
+      }
     }
   }
 
