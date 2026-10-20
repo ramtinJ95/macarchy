@@ -401,7 +401,7 @@ struct DesktopApplyCommandRunner: Sendable {
             "required desktop theme reconciliation failed: \(details)"
           )
         }
-      } catch {
+      } catch let reconcileError {
         do {
           try ActivationLock(root: stateRoot).withLock {
             try coordinator.rollbackApplyLocked(
@@ -413,7 +413,8 @@ struct DesktopApplyCommandRunner: Sendable {
         } catch {
           let report = DesktopAggregateMutationReport.failure(
             outcome: "recovery_required",
-            message: "theme reconciliation failed and provider rollback requires recovery: \(error)"
+            message:
+              "theme reconciliation failed: \(reconcileError); provider rollback requires recovery: \(error)"
           )
           return (try report.render(json: json), false)
         }
@@ -424,7 +425,8 @@ struct DesktopApplyCommandRunner: Sendable {
           keybindings: mutations.keybindings,
           sketchyBar: mutations.sketchyBar,
           theme: themeResult,
-          message: "theme reconciliation failed; provider changes were rolled back: \(error)"
+          message:
+            "theme reconciliation failed; provider changes were rolled back: \(reconcileError)"
         )
         return (try report.render(json: json), false)
       }

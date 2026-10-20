@@ -737,7 +737,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try store.removeTransaction()
       } catch {
         throw EnvironmentLifecycleError.blocked(
-          "Herdr theme transition failed and rollback requires recovery: \(error)"
+          "Herdr theme transition failed: \(transitionError); rollback requires recovery: \(error)"
         )
       }
       throw transitionError
