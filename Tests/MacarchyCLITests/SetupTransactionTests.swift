@@ -281,6 +281,61 @@ extension SetupOwnershipTests {
   }
 
   @Test
+  func replacementProceedsPastAProvenanceStampButNeverOverwritesAUserEdit() throws {
+    let home = FileManager.default.temporaryDirectory.appending(
+      path: "macarchy-provenance-replacement-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    defer { try? FileManager.default.removeItem(at: home) }
+    let directory = home.appending(path: ".config/herdr", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let target = directory.appending(path: "config.toml")
+    let replacement = directory.appending(path: ".config.toml.macarchy-replacement")
+    let original = Data("[theme]\nname = \"tokyo-night\"\n".utf8)
+    let managed = Data("[theme]\nname = \"macarchy\"\n".utf8)
+    // The kernel stamps a file created by a provenance-tagged process; the original has none.
+    let stampReplacement: @Sendable () throws -> Void = {
+      let stamp = Data("tagged creator".utf8)
+      let result = stamp.withUnsafeBytes { bytes in
+        replacement.path.withCString { path in
+          "com.apple.provenance".withCString { name in
+            Darwin.setxattr(path, name, bytes.baseAddress, stamp.count, 0, XATTR_NOFOLLOW)
+          }
+        }
+      }
+      guard result == 0 else { throw SetupOwnershipError.posix("stamp", replacement) }
+    }
+    func replace(atReady edit: @escaping @Sendable () throws -> Void) throws {
+      try original.write(to: target)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: target.path)
+      try SetupOwnershipManager { checkpoint in
+        if checkpoint == .replacementReady { try edit() }
+      }.replaceRegularFile(
+        target: target,
+        replacementName: replacement.lastPathComponent,
+        homeDirectory: home,
+        expectedDigest: sha256Digest(original),
+        data: managed,
+        label: "Herdr theme surface"
+      )
+    }
+
+    try replace(atReady: stampReplacement)
+    #expect(try Data(contentsOf: target) == managed)
+
+    let userEdit = Data("[theme]\nname = \"nord\"\n".utf8)
+    #expect(throws: SetupOwnershipError.ownershipDrift(target)) {
+      try replace(atReady: {
+        try stampReplacement()
+        try userEdit.write(to: target, options: .atomic)
+      })
+    }
+    #expect(try Data(contentsOf: target) == userEdit)
+    #expect(!FileManager.default.fileExists(atPath: replacement.path))
+  }
+
+  @Test
   func parentDirectorySwapCannotRedirectTheTeardownWrite() throws {
     let fixture = try Fixture()
     defer { fixture.remove() }

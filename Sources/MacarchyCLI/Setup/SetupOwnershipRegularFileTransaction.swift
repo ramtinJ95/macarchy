@@ -840,8 +840,14 @@ extension SetupOwnershipManager {
         && flags == other.flags
         && modifiedSeconds == other.modifiedSeconds
         && modifiedNanoseconds == other.modifiedNanoseconds
-        && extendedAttributes == other.extendedAttributes
+        && copyableExtendedAttributes == other.copyableExtendedAttributes
         && accessControlList == other.accessControlList
+    }
+
+    /// macOS stamps `com.apple.provenance` with the creating process's tag and keeps it through
+    /// copyfile, so a fresh copy cannot match an original stamped otherwise or not at all.
+    private var copyableExtendedAttributes: [String: Data] {
+      extendedAttributes.filter { $0.key != "com.apple.provenance" }
     }
 
     func restorableMetadataDigest(
