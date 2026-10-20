@@ -13,6 +13,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     -> SetupComponentExecution
   typealias ThemeApply =
     @Sendable (ThemePackage, URL) async throws -> SetupComponentExecution
+  /// Reactivates the active theme, reconciling only the given adapters. The final
+  /// closure runs under the activation lock right after the pointer swap.
+  typealias ThemeRefresh =
+    @Sendable (
+      UnifiedSetupPlanContext, UnifiedSetupThemePlan, Set<String>, ThemeConsumerPaths,
+      @escaping @Sendable (GenerationManifest) throws -> Void
+    ) async throws -> SetupComponentExecution
 
   let planner: UnifiedSetupPlanCommandRunner
   let themeInspection: UnifiedSetupThemeInspection
@@ -20,6 +27,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let themeApply: ThemeApply
+  let themeRefresh: ThemeRefresh
   let desktopApply: ComponentApply
   let environmentApply: ComponentApply
   let transactionTeardown: UnifiedSetupTeardownCommandRunner
@@ -32,6 +40,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     capabilityIsAvailable: @escaping @Sendable (DependencyCapability) -> Bool,
     writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
     themeApply: @escaping ThemeApply,
+    themeRefresh: @escaping ThemeRefresh = UnifiedSetupApplyCommandRunner.liveThemeRefresh,
     desktopApply: @escaping ComponentApply,
     environmentApply: @escaping ComponentApply,
     transactionTeardown: UnifiedSetupTeardownCommandRunner = .live,
@@ -45,10 +54,47 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     self.capabilityIsAvailable = capabilityIsAvailable
     self.writePreMutationPlan = writePreMutationPlan
     self.themeApply = themeApply
+    self.themeRefresh = themeRefresh
     self.desktopApply = desktopApply
     self.environmentApply = environmentApply
     self.transactionTeardown = transactionTeardown
     self.faultInjector = faultInjector
+  }
+
+  static let liveThemeRefresh: ThemeRefresh = {
+    context, theme, adapterIDs, consumerPaths, onCommittedLocked in
+    let runner = ThemeSetCommandRunner(
+      preflight: { _, _, _, _ in },
+      activate: { package, backgroundID, stateRoot, consumerPaths, expectedGenerationID in
+        try await ThemeRuntimeSelection.activationCoordinator(
+          stateRoot: stateRoot,
+          consumerPaths: consumerPaths,
+          enabledAdapterIDs: adapterIDs
+        ).activate(
+          package: package,
+          expectedActiveGenerationID: expectedGenerationID,
+          requestedBackgroundID: backgroundID,
+          onCommittedLocked: onCommittedLocked
+        )
+      },
+      slackIsEnabled: { _ in false }
+    )
+    let repository = ThemeRepository(
+      builtInRoot: context.themesRoot,
+      userRoot: context.stateRoot.appending(path: "themes", directoryHint: .isDirectory)
+    )
+    return try await SetupComponentExecution(
+      withThemePackageLock(stateRoot: context.stateRoot, unlessDryRun: false) {
+        try await runner.execute(
+          package: repository.package(id: theme.id),
+          stateRoot: context.stateRoot,
+          consumerPaths: consumerPaths,
+          dryRun: false,
+          expectedActiveGenerationID: theme.currentGenerationID,
+          json: true
+        )
+      }
+    )
   }
 
   static var guided: Self {
@@ -409,6 +455,62 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             )
           }
           try faultInjector(.themeApplied)
+        } else if currentPlan.actions.contains(where: {
+          $0.stage == UnifiedSetupTransactionStage.desktop.rawValue
+            && $0.id == DesktopPlanCommandRunner.themePaletteActionID
+        }) {
+          // Theme activation is the only palette publisher (ADR-0189). The desktop and
+          // environment stages reconcile their own consumers after publishing their seams.
+          var adapterIDs: Set<String> = [MacOSAppearanceAdapter.id]
+          if !plannedStages.contains(.environment) {
+            adapterIDs.formUnion(currentModel.profile.environment.selectedThemeAdapterIDs)
+          }
+          // Republishing the bootstrap generation must keep it removable by teardown, so
+          // the receipt follows the pointer swap like the bootstrap write. It is not
+          // journaled: the refresh stays active on rollback, and so must its receipt.
+          let ownershipStore = SetupCoreOwnershipStore(stateRoot: context.stateRoot)
+          let previous = currentModel.theme
+          let followSetupOwnedTheme: @Sendable (GenerationManifest) throws -> Void = {
+            manifest in
+            guard let previousGenerationID = previous.currentGenerationID,
+              manifest.themeID == previous.id
+            else { return }
+            try ownershipStore.transfer(from: previousGenerationID, to: manifest.generationID)
+          }
+          do {
+            theme = try stage(
+              await themeRefresh(
+                context, currentModel.theme, adapterIDs, consumerPaths, followSetupOwnedTheme),
+              mutationField: "committed",
+              successMessage:
+                "Reactivated '\(currentModel.theme.id)' to publish the current SketchyBar palette; it stays active if a later stage rolls back."
+            )
+          } catch {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: mutated,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              message: "Theme reactivation failed before a result was available: \(error)",
+              json: json
+            )
+          }
+          mutated = mutated || theme.mutated
+          guard theme.succeeded else {
+            return try await failureAfterRollback(
+              transaction: transaction,
+              mutated: mutated,
+              context: context,
+              consumerPaths: consumerPaths,
+              plan: currentPlan,
+              packages: packages,
+              theme: theme,
+              message: "Theme reactivation did not converge; later stages were not run.",
+              json: json
+            )
+          }
         } else {
           theme = .noChange("Preserved active theme '\(currentModel.theme.id)'.")
         }

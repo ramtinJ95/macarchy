@@ -224,6 +224,150 @@ struct UnifiedSetupApplyTests {
     )
   }
 
+  @Test(arguments: ["environment_planned", "desktop_only", "refresh_failed"])
+  func outdatedSketchyBarPaletteIsReactivatedBeforeDesktopApply(mode: String) async throws {
+    let fixture = try ApplyFixture()
+    let manifest = try ThemeActivator(root: fixture.state).activate(
+      package: ThemePackageLoader().load(
+        packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha")))
+    defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
+    try "schema_version = 1\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    let calls = Mutex([String]())
+    let refreshedAdapterIDs = Mutex(Set<String>())
+    let desktopAdapterIDs = Mutex(Set<String>())
+    let runner = fixture.runner(
+      available: { _ in true },
+      plannedStages: mode == "environment_planned" ? [.environment] : [],
+      paletteRefresh: true,
+      theme: { _, _ in
+        Issue.record("An active theme must not be replaced by the curated default")
+        return try applyComponent("{}")
+      },
+      themeRefresh: { _, theme, adapterIDs, _, _ in
+        #expect(theme.id == manifest.themeID)
+        #expect(theme.currentGenerationID == manifest.generationID)
+        refreshedAdapterIDs.withLock { $0 = adapterIDs }
+        calls.withLock { $0.append("theme") }
+        return try mode == "refresh_failed"
+          ? applyComponent(
+            #"{"operation":"theme_set","outcome":"precommit_failure","committed":false,"error":"refused"}"#,
+            succeeded: false)
+          : applyComponent(#"{"operation":"theme_set","outcome":"success","committed":true}"#)
+      },
+      desktop: { _, _, _, _, enabledThemeAdapterIDs in
+        desktopAdapterIDs.withLock { $0 = Set(enabledThemeAdapterIDs) }
+        calls.withLock { $0.append("desktop") }
+        return try applyComponent(
+          #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
+        )
+      },
+      environment: { _, _, _, _, _ in
+        calls.withLock { $0.append("environment") }
+        return try applyComponent(
+          #"{"operation":"environment_apply","outcome":"applied","mutated":true,"message":"environment changed"}"#
+        )
+      })
+
+    let plan = try runner.planner.prepare(context: fixture.context).report
+    #expect(plan.outcome == "ready")
+    let execution = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), json: true)
+    let report = try jsonObject(execution.output)
+
+    switch mode {
+    case "refresh_failed":
+      #expect(!execution.succeeded)
+      #expect(report["outcome"] as? String == "failed")
+      #expect(report["mutated"] as? Bool == false)
+      #expect(calls.withLock { $0 } == ["theme"])
+    case "environment_planned":
+      #expect(execution.succeeded, "\(execution.output)")
+      #expect(calls.withLock { $0 } == ["theme", "desktop", "environment"])
+      #expect(refreshedAdapterIDs.withLock { $0 } == [MacOSAppearanceAdapter.id])
+    default:
+      #expect(execution.succeeded, "\(execution.output)")
+      #expect(calls.withLock { $0 } == ["theme", "desktop"])
+      let refreshed = refreshedAdapterIDs.withLock { $0 }
+      #expect(refreshed.contains("atuin"))
+      #expect(
+        refreshed == desktopAdapterIDs.withLock { $0 }.subtracting(["sketchybar", "wallpaper"]))
+    }
+  }
+
+  @Test(arguments: ["setup", "user"])
+  func paletteReactivationMovesOnlyTheSetupOwnedThemeReceipt(activeTheme: String) async throws {
+    let fixture = try ApplyFixture()
+    let bootstrap = try fixture.activateSetupOwnedTheme()
+    let outdated =
+      try activeTheme == "user"
+      ? ThemeActivator(root: fixture.state).activate(
+        package: ThemePackageLoader().load(
+          packageURL: repositoryRoot.appending(path: "Themes/tokyo-night")))
+      : bootstrap
+    let receipt = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    let refreshedGenerationID = Mutex<String?>(nil)
+    defer {
+      fixture.cleanup(
+        expectedThemeGenerationID: refreshedGenerationID.withLock { $0 } ?? outdated.generationID)
+    }
+    try "schema_version = 1\n".write(
+      to: fixture.context.profileURL, atomically: true, encoding: .utf8)
+    let runner = fixture.runner(
+      available: { _ in true },
+      paletteRefresh: true,
+      themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
+      theme: { _, _ in
+        Issue.record("An active theme must not be replaced by the curated default")
+        return try applyComponent("{}")
+      },
+      themeRefresh: { _, theme, _, _, onCommittedLocked in
+        // A different input than the outdated generation, so the refresh publishes a new one.
+        let refreshed = try ThemeActivator(root: fixture.state).activate(
+          package: ThemePackageLoader().load(
+            packageURL: repositoryRoot.appending(path: "Themes/\(theme.id)")),
+          expectedActiveGenerationID: theme.currentGenerationID,
+          preparedBackground: { PreparedThemeBackground(selection: nil, data: nil) },
+          onCommittedLocked: onCommittedLocked
+        )
+        refreshedGenerationID.withLock { $0 = refreshed.generationID }
+        return try applyComponent(
+          #"{"operation":"theme_set","outcome":"success","committed":true}"#)
+      },
+      desktop: { _, _, _, _, _ in
+        try applyComponent(
+          #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
+        )
+      },
+      environment: { _, _, _, _, _ in
+        Issue.record("No environment stage was planned")
+        return try applyComponent("{}")
+      })
+
+    let execution = try await runner.execute(
+      context: fixture.context, consumerPaths: testConsumerPaths(), json: true)
+
+    #expect(execution.succeeded, "\(execution.output)")
+    let refreshed = try #require(refreshedGenerationID.withLock { $0 })
+    #expect(refreshed != outdated.generationID)
+    #expect(
+      try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID == refreshed)
+    let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
+    // Teardown's first check: the receipt must name the active generation it may remove.
+    let replacementCheck = {
+      try ThemeActivator(root: fixture.state).deactivate(
+        expectedGenerationID: ownership.themeGenerationID, dryRun: true)
+    }
+    if activeTheme == "setup" {
+      #expect(ownership.themeGenerationID == refreshed)
+      #expect(ownership.originalAppearance == receipt.originalAppearance)
+      #expect(try replacementCheck() == nil)
+    } else {
+      #expect(ownership == receipt)
+      #expect(throws: ThemeDeactivationError.self) { _ = try replacementCheck() }
+    }
+  }
+
   @Test
   func exactAdoptionApprovalsReachTheExistingComponentOwners() async throws {
     let fixture = try ApplyFixture()
@@ -931,6 +1075,7 @@ final class ApplyFixture: @unchecked Sendable {
     available: @escaping @Sendable (DependencyCapability) -> Bool,
     requiredAdoptions: UnifiedSetupAdoptionApprovals = .none,
     plannedStages: Set<UnifiedSetupTransactionStage> = [],
+    paletteRefresh: Bool = false,
     preferences: PreferencesLifecycle = .live,
     themeInspection: @escaping UnifiedSetupThemeInspection = {
       model, ownership, _ in
@@ -953,6 +1098,10 @@ final class ApplyFixture: @unchecked Sendable {
     }),
     writePlan: @escaping @Sendable (String) throws -> Void = { _ in },
     theme: @escaping UnifiedSetupApplyCommandRunner.ThemeApply,
+    themeRefresh: @escaping UnifiedSetupApplyCommandRunner.ThemeRefresh = { _, _, _, _, _ in
+      Issue.record("No theme reactivation reviewed")
+      return try applyComponent("{}")
+    },
     desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
     environment: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
     transactionTeardown: UnifiedSetupTeardownCommandRunner? = nil,
@@ -964,6 +1113,7 @@ final class ApplyFixture: @unchecked Sendable {
       available: available,
       requiredAdoptions: requiredAdoptions,
       plannedStages: plannedStages,
+      paletteRefresh: paletteRefresh,
       preferences: preferences
     )
     planner.standardBrewfile = { _ in packages }
@@ -975,6 +1125,7 @@ final class ApplyFixture: @unchecked Sendable {
       capabilityIsAvailable: available,
       writePreMutationPlan: writePlan,
       themeApply: theme,
+      themeRefresh: themeRefresh,
       desktopApply: desktop,
       environmentApply: environment,
       transactionTeardown: transactionTeardown
@@ -1000,6 +1151,7 @@ final class ApplyFixture: @unchecked Sendable {
     available: @escaping @Sendable (DependencyCapability) -> Bool = { _ in true },
     requiredAdoptions: UnifiedSetupAdoptionApprovals = .none,
     plannedStages: Set<UnifiedSetupTransactionStage> = [],
+    paletteRefresh: Bool = false,
     preferences: PreferencesLifecycle = .live
   ) -> UnifiedSetupPlanCommandRunner {
     UnifiedSetupPlanCommandRunner(
@@ -1011,6 +1163,10 @@ final class ApplyFixture: @unchecked Sendable {
           requiredAdoptions.yabai == nil ? "install_required" : "adoption_required"
         let sketchybarStatus =
           requiredAdoptions.sketchybar == nil ? "install_required" : "adoption_required"
+        let desktopActions =
+          paletteRefresh
+          ? actionsJSON(true, id: DesktopPlanCommandRunner.themePaletteActionID)
+          : actionsJSON(plannedStages.contains(.desktop), id: "desktop")
         return try planComponent(
           """
           {
@@ -1035,7 +1191,7 @@ final class ApplyFixture: @unchecked Sendable {
                 "adoption_evidence_digest":\(jsonString(requiredAdoptions.sketchybar))
               }
             },
-            "actions":\(actionsJSON(plannedStages.contains(.desktop), id: "desktop"))
+            "actions":\(desktopActions)
           }
           """
         )

@@ -17,6 +17,10 @@ struct DesktopPlanCommandRunner: Sendable {
     service: .live
   )
 
+  /// Planned when the active theme lacks the current SketchyBar shell palette. Desktop
+  /// apply never publishes it (ADR-0189); unified setup apply reactivates the theme first.
+  static let themePaletteActionID = "activate_sketchybar_theme_palette"
+
   func execute(
     resourcesRoot: URL,
     keybindingsResourcesRoot: URL = RuntimeEnvironment.live.builtInKeybindingsURL,
@@ -403,7 +407,7 @@ struct DesktopPlanCommandRunner: Sendable {
     if palette.status == .unavailable || palette.status == .refreshRequired {
       actions.append(
         DesktopPlanAction(
-          id: "activate_sketchybar_theme_palette",
+          id: Self.themePaletteActionID,
           message: palette.status == .unavailable
             ? "Activate a canonical theme to publish the managed SketchyBar shell palette."
             : "Reactivate the current theme to publish the managed SketchyBar shell palette."
