@@ -65,6 +65,23 @@ struct SetupCoreOwnershipStore: Sendable {
 
   func write(_ ownership: SetupCoreOwnership) throws {
     guard try read() == nil else { throw SetupCoreOwnershipError.alreadyExists }
+    try persist(ownership)
+  }
+
+  /// Moves ownership to `generationID` only while it names `previousGenerationID`, so
+  /// setup follows its own republished theme but never adopts a user replacement.
+  func transfer(from previousGenerationID: String, to generationID: String) throws {
+    guard let ownership = try read(), ownership.themeGenerationID == previousGenerationID
+    else { return }
+    try persist(
+      SetupCoreOwnership(
+        themeGenerationID: generationID,
+        originalAppearance: ownership.originalAppearance
+      )
+    )
+  }
+
+  private func persist(_ ownership: SetupCoreOwnership) throws {
     try writeBoundedEvidenceJSON(
       ownership,
       to: url,

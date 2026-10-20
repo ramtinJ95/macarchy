@@ -306,10 +306,12 @@ package struct ThemeActivationCoordinator: Sendable {
     )
   }
 
+  /// `onCommittedLocked` runs under the activation lock right after the pointer swap.
   package func activate(
     package: ThemePackage,
     expectedActiveGenerationID: String? = nil,
-    requestedBackgroundID: String? = nil
+    requestedBackgroundID: String? = nil,
+    onCommittedLocked: (GenerationManifest) throws -> Void = { _ in }
   ) async throws -> ThemeActivationResult {
     try await withTaskExecutorPreference(Self.activationExecutor) {
       try Task.checkCancellation()
@@ -334,6 +336,7 @@ package struct ThemeActivationCoordinator: Sendable {
         onCommittedLocked: { manifest in
           var preferences = try backgroundPreferences.load()
           try rememberBackground(of: manifest, in: &preferences)
+          try onCommittedLocked(manifest)
         }
       )
 
