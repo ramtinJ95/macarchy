@@ -14,10 +14,9 @@ final class FocusRingSession {
   private let focus: SkyLightFocus
   private var palette: PaletteState
   private var retryPolicy = FocusRingRetryPolicy()
-  private let panel = OutlinePanel(
-    contentRect: CGRect(x: 0, y: 0, width: 1, height: 1),
-    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-  private let outline = OutlineView(frame: .zero)
+  private var panel: OutlinePanel
+  private let outline: OutlineView
+  private var placement = OutlinePlacement()
   private var diagnostics = FocusRingDiagnostics()
   private var timer: Timer?
   private var watchdogTimer: Timer?
@@ -74,6 +73,16 @@ final class FocusRingSession {
     self.root = root
     self.focus = focus
     self.palette = palette
+    let outline = OutlineView(frame: .zero)
+    outline.color = palette.color
+    self.outline = outline
+    panel = FocusRingSession.makePanel(showing: outline)
+  }
+
+  private static func makePanel(showing outline: OutlineView) -> OutlinePanel {
+    let panel = OutlinePanel(
+      contentRect: CGRect(x: 0, y: 0, width: 1, height: 1),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isReleasedWhenClosed = false
     panel.hidesOnDeactivate = false
     panel.ignoresMouseEvents = true
@@ -82,7 +91,7 @@ final class FocusRingSession {
     panel.backgroundColor = .clear
     panel.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
     panel.contentView = outline
-    outline.color = palette.color
+    return panel
   }
 
   private func execute() -> Int32 {
@@ -116,7 +125,7 @@ final class FocusRingSession {
         MainActor.assumeIsolated {
           guard let self, self.stopReason == nil else { return }
           self.watchdogRefreshCount += 1
-          self.tick()
+          self.tick(verifyingPlacement: true)
         }
       }
       watchdog.tolerance = 0.2
@@ -144,15 +153,17 @@ final class FocusRingSession {
     return report(elapsed: ProcessInfo.processInfo.systemUptime - start)
   }
 
-  private func tick() {
+  private func tick(verifyingPlacement: Bool = false) {
     guard stopReason == nil else { return }
     autoreleasepool {
-      do { try step() } catch { stop("failure", code: 1, error: "\(error)") }
+      do { try step(verifyingPlacement: verifyingPlacement) } catch {
+        stop("failure", code: 1, error: "\(error)")
+      }
     }
   }
 
   /// Full refresh: topology, selection and subscription are re-read from the window server.
-  private func step() throws {
+  private func step(verifyingPlacement: Bool) throws {
     fullRefreshCount += 1
     let ownID = panel.windowNumber > 0 ? UInt32(panel.windowNumber) : nil
     // Query authoritative Space state rather than infer fullscreen from geometry.
@@ -171,8 +182,31 @@ final class FocusRingSession {
     let target = try focus.firstSuitableWindow(in: context, excluding: ownID)
     try subscribe(focus.observedWindowIDs, excluding: ownID)
     guard let target else { return hide("no-eligible-window") }
+    if verifyingPlacement { try reconcilePlacement(around: target) }
     cachedTarget = target
     try updateGeometry(target)
+  }
+
+  /// Runs before this tick orders anything, so a panel shown by an earlier tick has
+  /// had time to reach the window server.
+  private func reconcilePlacement(around target: WindowCandidate) throws {
+    guard
+      let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
+        as? [[String: Any]]
+    else { throw FocusRingError("cannot read the window server's on-screen windows") }
+    let onScreen = Set(windows.compactMap { $0[kCGWindowNumber as String] as? Int })
+    let action = placement.reconcile(
+      shown: panel.isVisible, onScreen: onScreen.contains(panel.windowNumber),
+      targetOnScreen: onScreen.contains(Int(target.windowID)))
+    guard case .recreate(let log) = action else { return }
+    if log { Self.writeError("outline was not on the active Space; recreating its window") }
+    record(visible: false, reason: "off-active-space")
+    // A relaunch is the only observed recovery, so repeat its step: a new window that
+    // joins all Spaces from creation. The next updateGeometry orders it as a first show.
+    panel.orderOut(nil)
+    panel.close()
+    panel = Self.makePanel(showing: outline)
+    previousOrderedTarget = nil
   }
 
   private func subscribe(_ ids: [UInt32], excluding ownID: UInt32?) throws {

@@ -44,3 +44,24 @@ enum OutlineOrdering {
     !isVisible || previousTarget != target || levelChanged
   }
 }
+
+/// AppKit's `isVisible` only says the panel is ordered in, not that it is on the
+/// active Space, so the watchdog checks it against the window server's on-screen list.
+/// A stranded outline is one that is missing while the window it surrounds is on-screen;
+/// when both are missing (lock screen, another user's session) nothing is repaired.
+struct OutlinePlacement {
+  enum Action: Equatable {
+    case keep
+    /// `log` is true once per divergence, until the outline is seen on-screen again.
+    case recreate(log: Bool)
+  }
+
+  private var diverged = false
+
+  mutating func reconcile(shown: Bool, onScreen: Bool, targetOnScreen: Bool) -> Action {
+    if onScreen { diverged = false }
+    guard shown, !onScreen, targetOnScreen else { return .keep }
+    defer { diverged = true }
+    return .recreate(log: !diverged)
+  }
+}
