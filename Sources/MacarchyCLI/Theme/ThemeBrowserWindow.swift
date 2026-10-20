@@ -331,6 +331,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     else {
       throw ThemeBrowserError.cannotActivateAccessoryApplication
     }
+    application.mainMenu = popupMainMenu()
     application.delegate = self
     application.finishLaunching()
     showWindow(nil)

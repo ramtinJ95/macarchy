@@ -68,6 +68,38 @@ struct ActionMenuTests {
   }
 
   @MainActor
+  @Test func editShortcutsReachTheStandardEditingActions() throws {
+    let menu = popupMainMenu()
+    // The popup targets the responder chain. Retargeting only observes dispatch.
+    let recorder = EditActionRecorder()
+    for item in menu.items.flatMap({ $0.submenu?.items ?? [] }) { item.target = recorder }
+    func key(_ text: String, _ modifiers: NSEvent.ModifierFlags, _ code: UInt16) throws -> NSEvent {
+      try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+          windowNumber: 0, context: nil, characters: text,
+          charactersIgnoringModifiers: text, isARepeat: false, keyCode: code))
+    }
+    for event in try [
+      key("a", .command, 0), key("c", .command, 8), key("v", .command, 9),
+      key("x", .command, 7), key("z", .command, 6), key("Z", [.command, .shift], 6),
+    ] {
+      #expect(menu.performKeyEquivalent(with: event))
+    }
+    #expect(recorder.received == ["selectAll:", "copy:", "paste:", "cut:", "undo:", "redo:"])
+    let plainText = try key("a", [], 0)
+    #expect(!menu.performKeyEquivalent(with: plainText))
+
+    let editor = ActionMenuFieldEditor()
+    editor.isFieldEditor = true
+    editor.string = "old query"
+    editor.setSelectedRange(NSRange(location: 9, length: 0))
+    #expect(
+      NSApplication.shared.sendAction(#selector(NSText.selectAll(_:)), to: editor, from: nil))
+    #expect(editor.selectedRange() == NSRange(location: 0, length: 9))
+  }
+
+  @MainActor
   @Test func cancellationDoesNotLaunchOrReportFailure() throws {
     try ActionMenu.runSession(
       showMenu: { nil },
@@ -256,4 +288,15 @@ struct ActionMenuTests {
     #expect(annotate.binding.command == "macarchy capture annotate --alert-on-error")
     #expect(KeybindingsPopupRow(annotate).category == "Capture")
   }
+}
+
+@MainActor
+private final class EditActionRecorder: NSObject {
+  private(set) var received: [String] = []
+  @objc func undo(_ sender: Any?) { received.append("undo:") }
+  @objc func redo(_ sender: Any?) { received.append("redo:") }
+  @objc func cut(_ sender: Any?) { received.append("cut:") }
+  @objc func copy(_ sender: Any?) { received.append("copy:") }
+  @objc func paste(_ sender: Any?) { received.append("paste:") }
+  @objc func selectAll(_ sender: Any?) { received.append("selectAll:") }
 }

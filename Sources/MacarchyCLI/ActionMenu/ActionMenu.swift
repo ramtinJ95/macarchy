@@ -342,6 +342,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
       throw KeybindingsShowError.cannotActivateAccessoryApplication
     }
     app.delegate = self
+    app.mainMenu = popupMainMenu()
     app.finishLaunching()
     showWindow(nil)
     app.activate(ignoringOtherApps: true)
@@ -479,6 +480,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
     search.wantsLayer = true
     search.layer?.cornerRadius = 6
     fieldEditor.isFieldEditor = true
+    fieldEditor.allowsUndo = true
     fieldEditor.insertionPointColor = theme.semantic.accent.nsColor
     fieldEditor.selectedTextAttributes = [
       .foregroundColor: theme.semantic.background.nsColor,

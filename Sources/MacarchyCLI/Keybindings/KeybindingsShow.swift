@@ -368,6 +368,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
     else {
       throw KeybindingsShowError.cannotActivateAccessoryApplication
     }
+    application.mainMenu = popupMainMenu()
     application.delegate = self
     application.finishLaunching()
     showWindow(nil)
