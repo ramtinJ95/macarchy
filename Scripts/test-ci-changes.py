@@ -119,26 +119,56 @@ class GitDiffTests(unittest.TestCase):
         self.assertTrue(self.full())
         self.assertNotEqual(before, ci_changes.cache_context(cwd=self.root))
 
-    def test_source_test_and_safe_doc_changes_keep_compatible_cache_context(self):
+    def test_root_content_edits_keep_compatible_cache_context(self):
+        for path in ("Tests/example.swift", "AGENTS.md", "CHANGELOG.md",
+                     "VERSION.txt", "Scripts/build.sh", "Documentation/guide.md",
+                     ".github/workflows/ci.yml", "changelog.d/fix.md"):
+            self.write(path, "initial\n")
+        self.commit()
         before = ci_changes.cache_context(cwd=self.root)
         for path in ("Sources/example.swift", "Tests/example.swift",
-                     "README.md", "AGENTS.md"):
+                     "README.md", "AGENTS.md", "CHANGELOG.md", "VERSION.txt",
+                     "Scripts/build.sh", "Scripts/new-helper.py",
+                     "Documentation/guide.md", ".github/workflows/ci.yml",
+                     "changelog.d/fix.md", "changelog.d/another.md"):
             with self.subTest(path=path):
                 self.write(path, "changed input\n")
                 self.commit()
                 self.assertEqual(before, ci_changes.cache_context(cwd=self.root))
+        (self.root / "changelog.d/fix.md").unlink()
+        self.commit()
+        self.assertEqual(before, ci_changes.cache_context(cwd=self.root))
 
-    def test_other_root_inputs_and_directory_contents_invalidate_context(self):
+    def test_package_manifest_and_lockfile_contents_invalidate_context(self):
         before = ci_changes.cache_context(cwd=self.root)
-        for path in ("Package.swift", "Package.resolved", "VERSION.txt",
-                     ".github/workflows/ci.yml", "Environment/Brewfile",
-                     "Environment/Brewfile", "new-root/header.h"):
-            with self.subTest(path=path):
-                self.write(path, before + "\n")
+        for path, contents in (("Package.swift", "// v1\n"),
+                               ("Package.swift", "// v2\n"),
+                               ("Package.resolved", "{}\n"),
+                               ("Package.resolved", "{ }\n")):
+            with self.subTest(path=path, contents=contents):
+                self.write(path, contents)
                 self.commit()
                 after = ci_changes.cache_context(cwd=self.root)
                 self.assertNotEqual(before, after)
                 before = after
+
+    def test_new_root_names_invalidate_context(self):
+        before = ci_changes.cache_context(cwd=self.root)
+        for path in ("version.h", "new-root/header.h", "AGENTS.md"):
+            with self.subTest(path=path):
+                self.write(path, "contents\n")
+                self.commit()
+                after = ci_changes.cache_context(cwd=self.root)
+                self.assertNotEqual(before, after)
+                before = after
+
+    def test_root_mode_change_invalidates_context(self):
+        self.write("tool", "#!/bin/sh\n")
+        self.commit()
+        before = ci_changes.cache_context(cwd=self.root)
+        (self.root / "tool").chmod(0o755)
+        self.commit()
+        self.assertNotEqual(before, ci_changes.cache_context(cwd=self.root))
 
     def test_root_rename_and_deletion_invalidate_context(self):
         self.write("safe-name.txt", "same contents\n")

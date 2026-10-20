@@ -47,11 +47,13 @@ the final `macOS 26 arm64` check. New pushes cancel older runs of the same PR.
 Pushes to `main` always run the full checks and do not cancel each other.
 
 Ordinary CI caches SwiftPM dependency checkouts and debug/release build state,
-matched to the OS, architecture, compiler, SDK, package manifests and workflow.
-Source/test Git trees identify cache entries, so safe documentation commits do not
-upload duplicate build state. Other tracked inputs also constrain cache
-compatibility: changing root files, resources or scripts starts a cold build.
-This prevents cached native dependencies from hiding new header-name collisions.
+matched to the OS, architecture, compiler, SDK and package manifests. Only pushes
+to `main` save a cache; PRs restore the newest compatible `main` entry. Source/test
+Git trees identify cache entries, so safe documentation commits do not upload
+duplicate build state. Adding, removing or renaming a root entry starts a cold
+build, which prevents cached native dependencies from hiding new header-name
+collisions. Editing the contents of other root files, resources or scripts keeps
+the cache restorable.
 Debug builds use Swift's native incremental file hashing
 to recognize unchanged inputs despite fresh checkout timestamps; real edits
 still require compilation. No source timestamps are rewritten.

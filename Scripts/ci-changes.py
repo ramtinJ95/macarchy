@@ -10,6 +10,7 @@ import sys
 # Exact root files only. CHANGELOG, LICENSE and Documentation contain release
 # inputs; Themes, Desktop, Environment and Keybindings are also test inputs.
 LIGHTWEIGHT_PATHS = {b"README.md", b"AGENTS.md"}
+PACKAGE_INPUTS = {b"Package.swift", b"Package.resolved"}
 
 
 def requires_full_checks(paths):
@@ -31,10 +32,13 @@ def classify(base, cwd=None):
 
 
 def cache_context(cwd=None):
-    # New root headers can shadow SDK headers without invalidating cached native
-    # objects (the historical VERSION/<version> collision). Everything outside
-    # the incremental source trees and safe root docs belongs in BOTH cache
-    # prefixes. Directory tree IDs also cover unknown future build-input roots.
+    # A new root entry can shadow an SDK header without invalidating cached
+    # native objects (the historical root VERSION file vs <version> collision),
+    # so the root entry names, modes and kinds belong in BOTH cache prefixes.
+    # Contents of other root files and directories cannot shadow anything and
+    # SwiftPM recompiles what they affect, so they stay out: otherwise every
+    # CHANGELOG, script or resource edit would make nothing restorable. The
+    # package manifest and lockfile select the dependency checkouts.
     result = subprocess.run(
         ["git", "ls-tree", "-z", "HEAD"],
         cwd=cwd, check=True, stdout=subprocess.PIPE,
@@ -44,12 +48,11 @@ def cache_context(cwd=None):
         if not entry:
             continue
         metadata, path = entry.split(b"\t", 1)
-        kind = metadata.split(b" ")[1]
-        if kind == b"tree" and path in {b"Sources", b"Tests"}:
-            continue
-        if kind == b"blob" and path in LIGHTWEIGHT_PATHS:
-            continue
-        digest.update(entry + b"\0")
+        mode, kind, object_id = metadata.split(b" ")
+        identity = [mode, kind, path]
+        if kind == b"blob" and path in PACKAGE_INPUTS:
+            identity.append(object_id)
+        digest.update(b" ".join(identity) + b"\0")
     return digest.hexdigest()
 
 
