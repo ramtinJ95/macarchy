@@ -251,6 +251,11 @@ after refreshing its palette, which may briefly interrupt playback; a closed
 client stays closed. Commands report these limits and failures
 rather than treating every application as live-reloadable.
 
+A running btop picks up a new theme by reloading `btop.conf`, which also resets box
+toggles and presets changed inside btop since it started. btop does not fully redraw
+after that layout change, so old boxes can linger on screen. Restart btop after
+switching themes if you changed its layout.
+
 Use Kitty's config reload for ordinary changes; shell startup changes need a
 fresh login shell. Kitty does not guarantee live reload of window decorations.
 
