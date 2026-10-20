@@ -217,6 +217,21 @@ and explicitly accepted. At that boundary:
 
 ## Verification and repository hygiene
 
+- Disposable test VMs are temporary, not archives. After the test/debugging
+  session, capture the needed evidence, shut down each guest you created, verify
+  it is stopped, and delete it with the pinned Tart binary's `delete <run-id>`
+  command using that checkout's `TART_HOME=artifacts/vm/tart` (use an absolute
+  path). Confirm the guest is absent afterward. Shutdown alone is not cleanup;
+  `verify.py cleanup --shutdown` does not delete the VM disk.
+- This cleanup is required after passing, failing, or interrupted tests. Retain
+  a disposable guest beyond the session only with explicit user approval for a
+  named debugging purpose and removal point. If cleanup is blocked, report the
+  exact guest/store and blocker in the handoff; never silently abandon it.
+- Delete only your exact owned run IDs after confirming no lab/test operation
+  is using them. Preserve installer/desktop/test baselines, their credentials
+  and receipts, source worktrees, and separate screenshots/logs/reports under
+  `runs/`. Never broadly prune another checkout, `~/.tart`, or Docker.
+
 - Treat the project plan's acceptance gate as both the required scope and the
   default ceiling for verification. Before implementation, map each gate item
   to the smallest automated or supported-machine check that can prove it.

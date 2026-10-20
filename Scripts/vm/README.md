@@ -365,10 +365,16 @@ All generated state lives in the already ignored `artifacts/vm/`:
 
 The lab root is private to the host user. **Retained logs from the rejected VNC
 experiment contain passwords; never paste or publish them.** Current runs do not
-start VNC or create its credentials. Clones and evidence are
-retained for inspection; there is no automatic pruning or broad cleanup. Do not
-delete state while a lab operation is active. An interrupted restoration is an
-explicit incomplete baseline, not a successful cached image.
+start VNC or create its credentials. Keep the needed evidence under `runs/`,
+but shut down and delete each owned disposable clone at the end of its test
+session, including failed tests, as required by `AGENTS.md`. Use the pinned Tart
+binary's `delete <run-id>` with this checkout's absolute `TART_HOME`; verify the
+guest is stopped before deletion and absent afterward. Preserve baselines and
+their credentials/receipts. `verify.py cleanup --shutdown` stops the guest but
+does not delete its disk. There is no automatic pruning: agents must perform
+this explicit cleanup. Do not delete state while a lab operation is active.
+An interrupted restoration is an explicit incomplete baseline, not a successful
+cached image.
 
 The lab does not disable SIP/Gatekeeper or grant guest TCC permissions. No host-home mounts, clipboard sharing,
 USB passthrough, SSH-agent forwarding, bridged networking or inherited tracing.
