@@ -835,15 +835,15 @@ struct DesktopApplyCommandRunner: Sendable {
       )
     } catch is YabaiInterruptionError {
       throw YabaiInterruptionError.injected
-    } catch {
+    } catch let applyError {
       do {
         try providerTransaction.recoverApply(transaction, lifecycle: lifecycle)
       } catch {
         throw YabaiDesktopError.invalidState(
-          "apply failed and rollback requires recovery: \(error)"
+          "apply failed: \(applyError); rollback requires recovery: \(error)"
         )
       }
-      throw error
+      throw applyError
     }
   }
 

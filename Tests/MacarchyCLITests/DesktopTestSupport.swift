@@ -87,10 +87,13 @@ final class YabaiLifecycleFixture: Sendable {
   let calls = Mutex<[String]>([])
   private let running: Mutex<Bool>
   private let runtimeStatus: YabaiRuntimeStatus
+  private let failingRestart: Int?
 
-  init(running: Bool, runtimeStatus: YabaiRuntimeStatus = .converged) {
+  /// `failingRestart` is the 1-based restart call that throws instead of starting yabai.
+  init(running: Bool, runtimeStatus: YabaiRuntimeStatus = .converged, failingRestart: Int? = nil) {
     self.running = Mutex(running)
     self.runtimeStatus = runtimeStatus
+    self.failingRestart = failingRestart
   }
 
   var isRunning: Bool { running.withLock { $0 } }
@@ -102,7 +105,13 @@ final class YabaiLifecycleFixture: Sendable {
         return self.running.withLock { $0 }
       },
       restart: {
-        self.calls.withLock { $0.append("restart") }
+        let restarts = self.calls.withLock { calls in
+          calls.append("restart")
+          return calls.filter { $0 == "restart" }.count
+        }
+        if restarts == self.failingRestart {
+          throw YabaiDesktopError.lifecycle("injected restart failure")
+        }
         self.running.withLock { $0 = true }
       },
       stop: {
