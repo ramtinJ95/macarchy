@@ -68,4 +68,5 @@ The lightweight change-classification tests run without Swift:
 python3 -B Scripts/test-ci-changes.py
 python3 -B Scripts/test-changelog.py
 python3 -B Scripts/changelog.py check
+python3 -B Scripts/test-release.py
 ```
