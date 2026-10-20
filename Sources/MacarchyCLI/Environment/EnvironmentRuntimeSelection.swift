@@ -233,7 +233,7 @@ enum ThemeRuntimeSelection {
         }
       } catch {
         throw EnvironmentLifecycleError.blocked(
-          "Herdr theme reload failed and rollback requires recovery: \(error)"
+          "Herdr theme reload failed: \(activationError); rollback requires recovery: \(error)"
         )
       }
       throw EnvironmentLifecycleError.blocked(

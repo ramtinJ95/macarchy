@@ -240,7 +240,7 @@ private func runEnvironmentTeardown(
       )
     } catch {
       throw EnvironmentLifecycleError.blocked(
-        "teardown runtime activation failed and rollback requires recovery: \(error)"
+        "teardown runtime activation failed: \(activationError); rollback requires recovery: \(error)"
       )
     }
     throw EnvironmentLifecycleError.blocked(
