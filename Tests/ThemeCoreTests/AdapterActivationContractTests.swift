@@ -45,9 +45,10 @@ extension AdapterContractTests {
       if request.executableURL == URL(filePath: "/usr/bin/osascript") {
         return ProcessResult(terminationStatus: 0, output: "")
       }
-      if request.executableURL == BatAdapter.liveExecutableURL
-        || request.executableURL == EzaAdapter.liveExecutableURL
-      {
+      if request.executableURL == BatAdapter.liveExecutableURL {
+        return ProcessResult(terminationStatus: 0, output: BatAdapter.themeName)
+      }
+      if request.executableURL == EzaAdapter.liveExecutableURL {
         return ProcessResult(terminationStatus: 0, output: "")
       }
       if request.executableURL == AtuinAdapter.liveExecutableURL {

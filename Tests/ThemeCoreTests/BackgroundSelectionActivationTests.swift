@@ -247,8 +247,10 @@ extension AdapterContractTests {
             output: herdrReloadSuccess
           )
       }
+      if request.executableURL == BatAdapter.liveExecutableURL {
+        return ProcessResult(terminationStatus: 0, output: BatAdapter.themeName)
+      }
       if request.executableURL == URL(filePath: "/usr/bin/osascript")
-        || request.executableURL == BatAdapter.liveExecutableURL
         || request.executableURL == EzaAdapter.liveExecutableURL
         || request.executableURL == SpicetifyAdapter.liveExecutableURL
       {
