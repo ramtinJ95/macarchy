@@ -115,6 +115,58 @@ private typealias Bit = FocusTargetPolicy.Bit
     #expect(needsOrder(previous: nil))
   }
 
+  @Test func outlineThatLeavesTheActiveSpaceIsRecreatedAtTheNextCheck() {
+    var placement = OutlinePlacement()
+    #expect(placement.reconcile(shown: true, onScreen: true, targetOnScreen: true) == .keep)
+    #expect(
+      placement.reconcile(shown: true, onScreen: false, targetOnScreen: true)
+        == .recreate(log: true))
+    #expect(placement.reconcile(shown: true, onScreen: true, targetOnScreen: true) == .keep)
+  }
+
+  @Test func onScreenOutlineIsNeverRecreated() {
+    var placement = OutlinePlacement()
+    for _ in 0..<5 {
+      #expect(placement.reconcile(shown: true, onScreen: true, targetOnScreen: true) == .keep)
+    }
+  }
+
+  @Test func orderedOutOutlineIsNotRecreated() {
+    var placement = OutlinePlacement()
+    for _ in 0..<3 {
+      #expect(placement.reconcile(shown: false, onScreen: false, targetOnScreen: true) == .keep)
+    }
+    #expect(placement.reconcile(shown: true, onScreen: true, targetOnScreen: true) == .keep)
+  }
+
+  @Test func outlineIsNotRecreatedWhileTheWindowItSurroundsIsOffScreenToo() {
+    var placement = OutlinePlacement()
+    for _ in 0..<3 {
+      #expect(placement.reconcile(shown: true, onScreen: false, targetOnScreen: false) == .keep)
+    }
+    #expect(
+      placement.reconcile(shown: true, onScreen: false, targetOnScreen: true)
+        == .recreate(log: true))
+  }
+
+  @Test func repeatedRecreationLogsOnceUntilTheOutlineIsSeenOnScreen() {
+    var placement = OutlinePlacement()
+    #expect(
+      placement.reconcile(shown: true, onScreen: false, targetOnScreen: true)
+        == .recreate(log: true))
+    #expect(
+      placement.reconcile(shown: true, onScreen: false, targetOnScreen: true)
+        == .recreate(log: false))
+    #expect(placement.reconcile(shown: false, onScreen: false, targetOnScreen: true) == .keep)
+    #expect(
+      placement.reconcile(shown: true, onScreen: false, targetOnScreen: true)
+        == .recreate(log: false))
+    #expect(placement.reconcile(shown: true, onScreen: true, targetOnScreen: true) == .keep)
+    #expect(
+      placement.reconcile(shown: true, onScreen: false, targetOnScreen: true)
+        == .recreate(log: true))
+  }
+
   @Test func cornerRadiusUsesNativeValueOrIncumbentFallback() {
     #expect(OutlineGeometry.resolvedCornerRadius(nil) == 9)
     for radius: CGFloat in [0, -4, .nan, .infinity] {
