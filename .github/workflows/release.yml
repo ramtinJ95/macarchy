@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 30
     environment: stable-release
     permissions:
+      actions: read
       contents: write
       id-token: write
       attestations: write
@@ -26,8 +27,6 @@ jobs:
         shell: zsh -euo pipefail {0}
     env:
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
-      # Opt-in is insufficient on its own: TestSafety still verifies the guest.
-      MACARCHY_TEST_VM: "1"
       TAG: ${{ github.ref_name }}
     steps:
       - name: Check out approved tag
@@ -59,35 +58,30 @@ jobs:
             "ARCHIVE_NAME=macarchy-${version}-arm64-apple-darwin.tar.gz" \
             >> "$GITHUB_ENV"
 
-      - name: Check filesystem-test safety boundary
-        run: python3 -B Scripts/test-test-safety.py
-
-      - name: Lint Swift formatting
-        run: swift format lint --strict --recursive Package.swift Sources Tests
-
-      - name: Build tests
-        timeout-minutes: 10
-        run: swift build --build-tests
-
-      - name: List tests
-        timeout-minutes: 2
-        run: swift test --skip-build --disable-xctest list
-
-      - name: Test
-        timeout-minutes: 5
-        run: swift test --skip-build --disable-xctest
-
-      - name: Build release
-        run: swift build -c release
-
-      - name: Build ttfx engine
-        timeout-minutes: 15
-        run: Scripts/build-ttfx.sh "$RUNNER_TEMP/ttfx"
-
-      - name: Build and validate release archive
+      # The main push CI run for this exact commit already ran the full tests
+      # and built and validated the archive; publish that archive, not a rebuild.
+      - name: Download archive verified by main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          Scripts/build-release-archive.sh \
-            .build/release/macarchy "$RUNNER_TEMP/ttfx" dist "$REVISION"
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+            --event push --branch main --commit "$REVISION" --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [[ -z "$run_id" ]]; then
+            print -r -- "::error::No successful ci.yml push run on main for $REVISION. Wait for it, or rerun it if its archive expired."
+            exit 1
+          fi
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+            --name "release-archive-$REVISION" --dir dist
+          print -r -- "Publishing the archive from CI run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate release archive
+        run: |
+          Scripts/smoke-release-archive.sh \
+            "dist/$ARCHIVE_NAME" \
+            "dist/$ARCHIVE_NAME.sha256" \
+            "$REVISION"
           Scripts/test-release-archive-validation.sh \
             "dist/$ARCHIVE_NAME" \
             "dist/$ARCHIVE_NAME.sha256" \

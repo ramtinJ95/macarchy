@@ -191,6 +191,22 @@ jobs:
             "$destination"/*.tar.gz.sha256 \
             "$revision"
 
+      # release.yml publishes this exact validated archive for a tagged main
+      # commit instead of rebuilding it. Only main pushes produce candidates.
+      - name: Upload release candidate archive
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-archive-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/macarchy-dist/*.tar.gz
+            ${{ runner.temp }}/macarchy-dist/*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          # A rerun of the same commit replaces its own earlier candidate.
+          overwrite: true
+
       # Save only from main, after the entire verification path succeeds. PRs
       # restore main's entries; GitHub scopes PR caches to their merge ref, so
       # saving them would only evict main's entries from the shared quota.
