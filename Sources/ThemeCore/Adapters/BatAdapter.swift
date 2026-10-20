@@ -79,27 +79,59 @@ package struct BatAdapter: Sendable {
 
   func reconciliation() -> AdapterReconciliation {
     runtime.reconciliation {
-      let result = try processRunner.run(
-        ProcessRequest(
-          executableURL: executableURL,
-          arguments: ["cache", "--build"],
-          timeout: 5,
-          environmentOverrides: [
-            "BAT_CACHE_PATH": cacheDirectoryURL.path,
-            "BAT_CONFIG_DIR": configurationDirectoryURL.path,
-          ]
-        )
-      )
-      guard result.terminationStatus == 0 else {
+      let build = try runBat(["cache", "--build"])
+      guard build.terminationStatus == 0 else {
         return AdapterOutcome(
           status: .failed,
-          message: result.output.isEmpty ? "bat rejected the generated theme" : result.output
+          message: build.output.isEmpty ? "bat rejected the generated theme" : build.output
+        )
+      }
+      // bat skips every custom theme, and still exits 0, when one file in its
+      // themes directory cannot be read, so only the rebuilt list proves the load.
+      let themes = try runBat(["--no-config", "--color=never", "--paging=never", "--list-themes"])
+      guard themes.terminationStatus == 0 else {
+        return AdapterOutcome(
+          status: .failed,
+          message: themes.output.isEmpty ? "bat could not list its themes" : themes.output
+        )
+      }
+      guard Self.listsTheme(themes.output) else {
+        let themesDirectory = configurationDirectoryURL.appending(path: "themes").path
+        return AdapterOutcome(
+          status: .drifted,
+          message: "bat rebuilt its cache without '\(Self.themeName)', so bat falls back to "
+            + "its default theme. Fix or remove the theme file bat could not load in "
+            + "\(themesDirectory), then run 'macarchy reconcile bat'."
+            + (build.output.isEmpty ? "" : " bat reported: \(build.output)")
         )
       }
       return AdapterOutcome(
         status: .applied,
         message: "bat rebuilt its cache for the active palette"
       )
+    }
+  }
+
+  private func runBat(_ arguments: [String]) throws -> ProcessResult {
+    try processRunner.run(
+      ProcessRequest(
+        executableURL: executableURL,
+        arguments: arguments,
+        timeout: 5,
+        environmentOverrides: [
+          "BAT_CACHE_PATH": cacheDirectoryURL.path,
+          "BAT_CONFIG_DIR": configurationDirectoryURL.path,
+        ]
+      )
+    )
+  }
+
+  /// Captured output lists one theme per line; some modes append a marker
+  /// such as " (default)" to the name.
+  private static func listsTheme(_ output: String) -> Bool {
+    output.split(whereSeparator: \.isNewline).contains { line in
+      let name = line.trimmingCharacters(in: .whitespaces)
+      return name == themeName || name.hasPrefix("\(themeName) (")
     }
   }
 
