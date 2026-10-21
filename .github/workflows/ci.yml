@@ -191,11 +191,17 @@ jobs:
             "$destination"/*.tar.gz \
             "$destination"/*.tar.gz.sha256 \
             "$revision"
+          # Rehearse what release.yml does with a pull request's archive: rebuild it
+          # for another commit ID and require everything but build-info.json unchanged.
+          Scripts/restamp-release-archive.sh \
+            "$destination"/*.tar.gz \
+            "$destination"/*.tar.gz.sha256 \
+            "$(git rev-parse 'HEAD^{tree}')" \
+            "$RUNNER_TEMP/macarchy-restamped"
 
-      # release.yml publishes this exact validated archive for a tagged main
-      # commit instead of rebuilding it. Only main pushes produce candidates.
-      # Pull requests keep theirs under the tree they tested, so it can be
-      # compared with main's archive for the same tree.
+      # release.yml publishes a validated archive instead of rebuilding it. Pull
+      # requests keep theirs under the tree they tested and release.yml prefers it
+      # when main lands exactly that tree; main pushes keep theirs by commit.
       - name: Upload release candidate archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

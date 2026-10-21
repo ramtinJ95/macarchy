@@ -29,3 +29,18 @@ require_release_revision() {
     exit 65
   fi
 }
+
+# Exits unless <checksum> holds exactly one record: the SHA-256 of <archive>, by name.
+require_archive_checksum() {
+  local archive=$1 checksum=$2 expected actual bytes
+  expected=$(cd "${archive:h}" && /usr/bin/shasum -a 256 "${archive:t}")
+  if ! IFS= read -r actual < "$checksum"; then
+    print -u2 "checksum must contain one newline-terminated SHA-256 record"
+    exit 65
+  fi
+  bytes=$(wc -c < "$checksum" | tr -d ' ')
+  if [[ "$actual" != "$expected" || "$bytes" -ne $((${#actual} + 1)) ]]; then
+    print -u2 "release archive checksum does not match"
+    exit 65
+  fi
+}
