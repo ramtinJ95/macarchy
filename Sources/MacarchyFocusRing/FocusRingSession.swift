@@ -14,6 +14,7 @@ final class FocusRingSession {
   private let focus: SkyLightFocus
   private var palette: PaletteState
   private var retryPolicy = FocusRingRetryPolicy()
+  private var frontAbsence = FrontProcessAbsence()
   private var panel: OutlinePanel
   private let outline: OutlineView
   private var placement = OutlinePlacement()
@@ -166,8 +167,15 @@ final class FocusRingSession {
   private func step(verifyingPlacement: Bool) throws {
     fullRefreshCount += 1
     let ownID = panel.windowNumber > 0 ? UInt32(panel.windowNumber) : nil
+    let lookup = try focus.frontContext()
+    let uptime = ProcessInfo.processInfo.systemUptime - start
+    if let transition = frontAbsence.observe(lookup, uptime: uptime) {
+      Self.writeError(transition)
+    }
+    // Subscriptions stay as they are: waiting needs no window-server request while
+    // the display sleeps, and the next refresh with a front process replaces them.
+    guard case .available(let context) = lookup else { return hide("no-front-process") }
     // Query authoritative Space state rather than infer fullscreen from geometry.
-    let context = try focus.frontContext()
     let kind = try focus.spaceKind(in: context)
     let hiddenReason: String? =
       switch kind {
