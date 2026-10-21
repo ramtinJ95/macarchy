@@ -7,6 +7,18 @@ ROOT = Path(__file__).resolve().parent.parent
 GUARD = ROOT / "Tests/TestSafety/IsolatedTestEnvironment.swift"
 
 
+def guarded_scripts():
+    """Shell scripts that run the guard directly or through another such script."""
+    sources = {path.name: path.read_text() for path in (ROOT / "Scripts").glob("*.sh")}
+    guarded = {name for name, text in sources.items() if GUARD.name in text}
+    while True:
+        callers = {name for name, text in sources.items()
+                   if any(script in text for script in guarded)}
+        if callers <= guarded:
+            return guarded
+        guarded |= callers
+
+
 class TestSafetyBoundary(unittest.TestCase):
     def test_special_file_creation_is_centralized(self):
         forbidden = re.compile(r"\b(?:mkfifo|mkfifoat|mkfifox_np|mknod|mknodat)\b")
@@ -33,16 +45,18 @@ class TestSafetyBoundary(unittest.TestCase):
             self.assertIn("try IsolatedTestEnvironment.makeFIFO(at:", source)
 
     def test_ci_runs_boundary_audit_and_opts_in_without_a_host_bypass(self):
-        # release.yml publishes the archive CI verified and runs no Swift tests.
         workflows = {path.name: path.read_text()
                      for path in (ROOT / ".github/workflows").glob("*.yml")}
         self.assertIn("swift test", workflows["ci.yml"])
+        guarded = guarded_scripts()
+        self.assertIn("smoke-release-archive.sh", guarded)
         for name, workflow in workflows.items():
-            if "swift test" not in workflow:
-                continue
-            with self.subTest(workflow=name):
-                self.assertIn("python3 -B Scripts/test-test-safety.py", workflow)
-                self.assertIn('MACARCHY_TEST_VM: "1"', workflow)
+            if "swift test" in workflow:
+                with self.subTest(workflow=name, audit=True):
+                    self.assertIn("python3 -B Scripts/test-test-safety.py", workflow)
+            if "swift test" in workflow or any(script in workflow for script in guarded):
+                with self.subTest(workflow=name):
+                    self.assertIn('MACARCHY_TEST_VM: "1"', workflow)
         guard = GUARD.read_text()
         self.assertIn('sysctlbyname("kern.hv_vmm_present"', guard)
         self.assertNotIn("GITHUB_ACTIONS", guard)
