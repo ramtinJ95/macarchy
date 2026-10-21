@@ -42,7 +42,9 @@ security scanner remains stuck, so passing tests or cleanup do not prove safety.
   wrappers. Host execution is limited to narrowly selected tests whose bodies,
   shared setup, and subprocesses have been inspected and cannot create these
   special files. If that cannot be established, use the guest or report blocked.
-- Known risky entry points include `Scripts/verify-keybindings-portability.sh`,
+- Known risky entry points include `Scripts/verify-keybindings-portability.sh`
+  and the release archive scripts that reach it (`build-release-archive.sh`,
+  `smoke-release-archive.sh`, `restamp-release-archive.sh`, `release.py candidate`),
   `BoundedRegularFileTests`, `KeybindingPortabilityTests`, and
   `OmarchyThemeConverterTests`. This list is not exhaustive; inspect new tests
   and transitive callers rather than relying on a static skip list.
@@ -312,8 +314,9 @@ and refactors follow this workflow:
     `main`, not from a previous feature branch.
 12. Release only through `Scripts/release.py`. Commit `prepare <version>` onto
     the last PR of a batch instead of opening a separate release PR. After it
-    merges, run `publish <version>` (it requires `main`'s push CI to be green
-    for that commit); a person approves the `stable-release` environment; then
+    merges, run `publish <version>`. It releases the archive the PR's CI built
+    when `main` landed exactly the tree that CI tested, and otherwise waits for
+    `main`'s push CI. A person approves the `stable-release` environment; then
     run `finish <version>` and `upgrade --expect <version>` on each machine.
 
 PR descriptions must identify the milestone and vertical slice, summarize the
