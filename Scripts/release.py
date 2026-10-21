@@ -6,16 +6,22 @@ Usage:
     python3 -B Scripts/release.py publish 1.2.3
     python3 -B Scripts/release.py finish 1.2.3
     python3 -B Scripts/release.py upgrade [--expect 1.2.3]
+    python3 -B Scripts/release.py candidate <commit> <directory>   (release.yml only)
 
 prepare   On the last PR branch of a batch: fold changelog.d into CHANGELOG.md,
           bump VERSION.txt and RuntimeEnvironment.sourceVersion, and commit
           "chore(release): prepare v1.2.3".
-publish   After that PR merged: require origin/main at 1.2.3 with a green CI push
-          run, tag v1.2.3 on it and dispatch release.yml. A person approves the
-          protected stable-release environment; this script never does.
+publish   After that PR merged: require origin/main at 1.2.3 with a validated
+          archive, tag v1.2.3 on it and dispatch release.yml. A person approves the
+          protected stable-release environment; this script never does. The
+          archive is the one the PR's CI built when main landed exactly the tree
+          it tested; otherwise publish waits for main's push CI and uses its build.
 finish    Wait for the release run, verify the published archive (checksum,
           attestation, bin/macarchy --version) and land the Homebrew tap update,
           which may change only the formula url and sha256.
+candidate Fetch that archive in release.yml, rebuilt around the tagged commit when
+          it came from a PR. It runs the archive checks that create special
+          files, so it runs only on CI's virtual machines, never on a Mac.
 upgrade   On a machine: upgrade the formula, apply setup only when the plan needs
           no package installs, adoptions or approvals, then run doctor.
 
@@ -244,14 +250,72 @@ def wait_for_run(run_id, timeout):
             "--interval", "30"], timeout)
 
 
+def pr_archive_name(tree):
+    return f"pr-archive-tree-{tree}"
+
+
+def trusted_pr_run(entry, head_tree, base_is_ancestor, tree):
+    """Whether a CI run's pull request archive may stand in for main's build of tree.
+
+    A pull request run builds, with its own workflow, a merge of the head into its
+    base. Only when that base is an ancestor of the head is the merge the head's
+    tree, so the head must hold the released tree and contain the base."""
+    return (entry.get("event") == "pull_request"
+            and entry.get("path") == ".github/workflows/ci.yml"
+            and entry.get("conclusion") == "success"
+            and (entry.get("head_repository") or {}).get("full_name") == REPOSITORY
+            and head_tree == tree and base_is_ancestor)
+
+
+def pull_request_base(pulls):
+    """The base commit of the one same-repository pull request a head belongs to.
+
+    GitHub keeps a pull request's base at the commit its latest head was merged
+    with for CI; a run's own pull_requests list is emptied once it merges."""
+    if len(pulls) != 1:
+        return None
+    pull = pulls[0]
+    if any(((pull.get(side) or {}).get("repo") or {}).get("full_name") != REPOSITORY
+           for side in ("base", "head")):
+        return None
+    return pull["base"]["sha"]
+
+
+def find_pr_archive(tree):
+    """The successful pull request CI run that uploaded tree's archive, or None."""
+    listed = gh_json("api", f"repos/{REPOSITORY}/actions/artifacts"
+                            f"?name={pr_archive_name(tree)}&per_page=100")
+    if listed["total_count"] > len(listed["artifacts"]):
+        raise ReleaseError(f"more than 100 {pr_archive_name(tree)} artifacts; "
+                           "delete expired ones")
+    for artifact in listed["artifacts"]:
+        if artifact["expired"]:
+            continue
+        entry = gh_json("api", f"repos/{REPOSITORY}/actions/runs/"
+                               f"{artifact['workflow_run']['id']}")
+        base = pull_request_base(
+            gh_json("api", f"repos/{REPOSITORY}/commits/{entry['head_sha']}/pulls"))
+        if not base:
+            continue
+        head = gh_json("api", f"repos/{REPOSITORY}/git/commits/{entry['head_sha']}")
+        comparison = gh_json("api", f"repos/{REPOSITORY}/compare/{base}...{entry['head_sha']}")
+        if trusted_pr_run(entry, head["tree"]["sha"],
+                          comparison["status"] in ("ahead", "identical"), tree):
+            return entry
+    return None
+
+
+def main_ci_runs(sha):
+    return gh_json("run", "list", "--repo", REPOSITORY, "--workflow", "ci.yml", "--event",
+                   "push", "--branch", "main", "--commit", sha, "--json", RUN_FIELDS)
+
+
 def require_green_ci(sha):
-    query = ["run", "list", "--repo", REPOSITORY, "--workflow", "ci.yml", "--event",
-             "push", "--commit", sha, "--json", RUN_FIELDS]
-    state, found = ci_state(gh_json(*query), sha)
+    state, found = ci_state(main_ci_runs(sha), sha)
     if state == "pending":
         print(f"Waiting for main CI: {found['url']}")
         wait_for_run(found["databaseId"], 3600)
-        state, found = ci_state(gh_json(*query), sha)
+        state, found = ci_state(main_ci_runs(sha), sha)
     if state != "success":
         detail = f": {found['url']}" if found else ""
         raise ReleaseError(f"no successful CI push run for {sha} ({state}){detail}")
@@ -296,7 +360,12 @@ def publish(version):
     if main_version != version:
         raise ReleaseError(f"origin/main ({sha}) is at {main_version}, not {version}; "
                            "merge the prepare commit first")
-    require_green_ci(sha)
+    found = find_pr_archive(git("rev-parse", f"{sha}^{{tree}}"))
+    if found:
+        print(f"Releasing the archive pull request CI built for this tree: "
+              f"{found['html_url']}")
+    else:
+        require_green_ci(sha)
     ensure_tag(tag, sha)
     if published(tag):
         print(f"{tag} is already published; run finish {version}")
@@ -320,6 +389,28 @@ def publish(version):
     print(f"Release run: {active['url']}\n"
           f"Approve the stable-release environment there, then run: "
           f"Scripts/release.py finish {version}")
+
+
+def candidate(revision, destination):
+    """Put the validated archive for revision into destination, for release.yml."""
+    tree = git("rev-parse", f"{revision}^{{tree}}")
+    found = find_pr_archive(tree)
+    if not found:
+        state, found = ci_state(main_ci_runs(revision), revision)
+        if state != "success":
+            raise ReleaseError(f"no pull request archive for tree {tree} and no "
+                               f"successful main CI run for {revision} ({state})")
+        run(["gh", "run", "download", str(found["databaseId"]), "--repo", REPOSITORY,
+             "--name", f"release-archive-{revision}", "--dir", destination], 600)
+        print(f"Publishing main CI's archive: {found['url']}")
+        return
+    name = archive_name((ROOT / "VERSION.txt").read_text().strip())
+    with tempfile.TemporaryDirectory(prefix="macarchy-candidate-") as temporary:
+        run(["gh", "run", "download", str(found["id"]), "--repo", REPOSITORY,
+             "--name", pr_archive_name(tree), "--dir", temporary], 600)
+        stream([ROOT / "Scripts/restamp-release-archive.sh", Path(temporary) / name,
+                Path(temporary) / f"{name}.sha256", revision, destination], 900)
+    print(f"Publishing pull request CI's archive for {revision}: {found['html_url']}")
 
 
 def verify_archive(version, directory):
@@ -451,6 +542,9 @@ def main(argv=None):
         commands.add_parser(name).add_argument("version", type=parse_version)
     upgrade_parser = commands.add_parser("upgrade")
     upgrade_parser.add_argument("--expect", type=parse_version)
+    candidate_parser = commands.add_parser("candidate")
+    candidate_parser.add_argument("revision")
+    candidate_parser.add_argument("destination", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "prepare":
@@ -459,6 +553,8 @@ def main(argv=None):
             publish(args.version)
         elif args.command == "finish":
             finish(args.version)
+        elif args.command == "candidate":
+            candidate(args.revision, args.destination)
         else:
             upgrade(args.expect)
     except (ReleaseError, OSError) as error:

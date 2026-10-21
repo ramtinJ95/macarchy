@@ -102,6 +102,67 @@ class CiStateTests(unittest.TestCase):
         self.assertEqual(release.ci_state([self.run_entry(sha=OTHER)], SHA)[0], "missing")
 
 
+class PullRequestArchiveTests(unittest.TestCase):
+    def pr_run(self, run_id=1, **changes):
+        return {"id": run_id, "event": "pull_request", "path": ".github/workflows/ci.yml",
+                "conclusion": "success", "head_sha": f"{run_id:040x}",
+                "head_repository": {"full_name": release.REPOSITORY},
+                "html_url": f"https://example.invalid/runs/{run_id}"} | changes
+
+    def pull(self, base_sha=SHA, base_repo=release.REPOSITORY, head_repo=release.REPOSITORY):
+        return {"base": {"sha": base_sha, "repo": {"full_name": base_repo}},
+                "head": {"repo": {"full_name": head_repo} if head_repo else None}}
+
+    def test_only_a_successful_same_repository_ci_run_of_the_tree_is_trusted(self):
+        self.assertTrue(release.trusted_pr_run(self.pr_run(), SHA, True, SHA))
+        for changes in ({"event": "push"}, {"path": ".github/workflows/release.yml"},
+                        {"conclusion": "failure"}, {"conclusion": None},
+                        {"head_repository": {"full_name": "someone/macarchy"}},
+                        {"head_repository": None}):
+            with self.subTest(changes=changes):
+                self.assertFalse(
+                    release.trusted_pr_run(self.pr_run(**changes), SHA, True, SHA))
+        self.assertFalse(release.trusted_pr_run(self.pr_run(), OTHER, True, SHA))
+        self.assertFalse(release.trusted_pr_run(self.pr_run(), SHA, False, SHA))
+
+    def test_the_base_comes_from_exactly_one_same_repository_pull_request(self):
+        self.assertEqual(release.pull_request_base([self.pull()]), SHA)
+        for pulls in ([], [self.pull(), self.pull(OTHER)], [self.pull(base_repo="a/b")],
+                      [self.pull(head_repo="a/b")], [self.pull(head_repo=None)]):
+            with self.subTest(pulls=pulls):
+                self.assertIsNone(release.pull_request_base(pulls))
+
+    def test_lookup_skips_expired_and_untrusted_archives(self):
+        runs = {n: self.pr_run(n) for n in range(1, 7)}
+        runs[2]["conclusion"] = "failure"
+        head_trees = {runs[3]["head_sha"]: OTHER}
+        pulls = {runs[n]["head_sha"]: [self.pull(f"{n + 100:040x}")] for n in runs}
+        pulls[runs[5]["head_sha"]] = []
+        behind = {f"{104:040x}...{runs[4]['head_sha']}"}
+        artifacts = [{"expired": True, "workflow_run": {"id": 1}},
+                     *({"expired": False, "workflow_run": {"id": n}} for n in (2, 3, 4, 5, 6))]
+
+        def gh_json(_, path):
+            if "/artifacts?name=" in path:
+                self.assertIn(f"?name=pr-archive-tree-{SHA}&", path)
+                return {"total_count": len(artifacts), "artifacts": artifacts}
+            if "/actions/runs/" in path:
+                return runs[int(path.rsplit("/", 1)[1])]
+            if path.endswith("/pulls"):
+                return pulls[path.rsplit("/", 2)[1]]
+            if "/compare/" in path:
+                return {"status": "diverged" if path.rsplit("/", 1)[1] in behind
+                        else "ahead"}
+            return {"tree": {"sha": head_trees.get(path.rsplit("/", 1)[1], SHA)}}
+
+        original = release.gh_json
+        release.gh_json = gh_json
+        self.addCleanup(setattr, release, "gh_json", original)
+        self.assertEqual(release.find_pr_archive(SHA)["id"], 6)
+        artifacts.pop()
+        self.assertIsNone(release.find_pr_archive(SHA))
+
+
 class ArchiveAndFormulaTests(TemporaryGit):
     def setUp(self):
         super().setUp()
