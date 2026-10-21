@@ -27,6 +27,9 @@ jobs:
         shell: zsh -euo pipefail {0}
     env:
       DEVELOPER_DIR: /Library/Developer/CommandLineTools
+      # Archive validation reaches the keybinding portability check, which runs the
+      # TestSafety guard. This opts in only; the guard still requires a real VM.
+      MACARCHY_TEST_VM: "1"
       TAG: ${{ github.ref_name }}
     steps:
       - name: Check out approved tag
