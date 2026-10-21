@@ -32,20 +32,7 @@ if [[ ! -f "$archive" || ! -f "$checksum" ]]; then
   exit 66
 fi
 
-expected_checksum=$(
-  cd "${archive:h}"
-  /usr/bin/shasum -a 256 "$archive_name"
-)
-if ! IFS= read -r actual_checksum < "$checksum"; then
-  print -u2 "checksum must contain one newline-terminated SHA-256 record"
-  exit 65
-fi
-checksum_bytes=$(wc -c < "$checksum" | tr -d ' ')
-if [[ "$actual_checksum" != "$expected_checksum" \
-  || "$checksum_bytes" -ne $((${#actual_checksum} + 1)) ]]; then
-  print -u2 "release archive checksum does not match"
-  exit 65
-fi
+require_archive_checksum "$archive" "$checksum"
 
 /usr/bin/tar -tzf "$archive" > "$temporary_directory/archive-members.txt"
 if [[ ! -s "$temporary_directory/archive-members.txt" ]]; then
