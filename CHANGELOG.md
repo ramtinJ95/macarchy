@@ -7,6 +7,15 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.6] - 2026-10-21
+
+### Fixed
+
+- The lean focus outline no longer disappears for good when the display sleeps or the
+  screen locks. While no app is in front it stays hidden, and it comes back once one
+  is. Before, its helper quit with "_SLPSGetFrontProcess failed (-600)" and stayed
+  stopped until its service was restarted (#309).
+
 ## [0.14.5] - 2026-10-20
 
 ### Fixed
