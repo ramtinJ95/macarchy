@@ -29,6 +29,33 @@ private typealias Bit = FocusTargetPolicy.Bit
     #expect(FocusRingRetryPolicy.session(ready: true, elapsed: 0, managed: false) == .ready)
   }
 
+  @Test func missingFrontProcessIsAStateAndOtherLookupFailuresStayFatal() throws {
+    #expect(try FrontLookup.frontProcessExists(status: 0, serialNumberIsZero: false))
+    #expect(try !FrontLookup.frontProcessExists(status: 0, serialNumberIsZero: true))
+    #expect(try !FrontLookup.frontProcessExists(status: -600, serialNumberIsZero: true))
+    #expect(try !FrontLookup.frontProcessExists(status: -600, serialNumberIsZero: false))
+    for status: Int32 in [-50, -1, 1, -609] {
+      #expect(throws: FocusRingError.self) {
+        try FrontLookup.frontProcessExists(status: status, serialNumberIsZero: false)
+      }
+    }
+  }
+
+  @Test func frontProcessAbsenceLogsOnlyWhenItStartsAndEnds() {
+    let context = FrontContext(
+      ownConnection: 1, frontConnection: 2, displayIdentifier: "Main", spaceID: 7)
+    var absence = FrontProcessAbsence()
+    #expect(absence.observe(.available(context), uptime: 1) == nil)
+    let entered = absence.observe(.unavailable(status: -600), uptime: 10)
+    #expect(entered?.contains("-600") == true)
+    #expect(absence.observe(.unavailable(status: -600), uptime: 12) == nil)
+    #expect(absence.observe(.unavailable(status: 0), uptime: 14) == nil)
+    let left = absence.observe(.available(context), uptime: 41.5)
+    #expect(left?.contains("31s") == true)
+    #expect(absence.observe(.available(context), uptime: 43) == nil)
+    #expect(absence.observe(.unavailable(status: 0), uptime: 50) != nil)
+  }
+
   @Test func managedModeIsExplicitAndCannotOverridePreviewDuration() throws {
     let preview = try FocusRingOptions.parse(["--state-root", "/x"])
     #expect(!preview.managed && preview.previewDuration == 30)
