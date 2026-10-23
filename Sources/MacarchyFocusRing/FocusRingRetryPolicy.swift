@@ -22,22 +22,37 @@ struct FocusRingRetryPolicy {
     if ready { return .ready }
     return managed && elapsed < 60 ? .wait : .refuse
   }
+
+  enum RefreshDecision: Equatable {
+    case waitOut, stop
+  }
+
+  /// A missing front process is always a state. Other refresh failures are passing
+  /// window-server states once a refresh has worked, or during a managed helper's
+  /// first minute (it may start mid-wake); otherwise they report an unusable system.
+  static func refreshFailed(
+    noFrontProcess: Bool, hasRefreshed: Bool, elapsed: Double, managed: Bool
+  ) -> RefreshDecision {
+    noFrontProcess || hasRefreshed || (managed && elapsed < 60) ? .waitOut : .stop
+  }
 }
 
-/// Remembers when the front process went missing so stderr gets one line on entering
-/// and one on leaving that state, never one per refresh. There is no give-up: exiting
-/// would leave the outline gone, because launchd restarts the helper only after a crash.
-struct FrontProcessAbsence {
+/// Remembers when full refreshes started failing so stderr gets one line when an
+/// outage starts and one when it ends, never one per retry. There is no give-up:
+/// exiting would leave the outline gone, because launchd restarts the helper only
+/// after a crash.
+struct RefreshOutage {
   private var since: Double?
 
-  mutating func observe(_ lookup: FrontLookup, uptime: Double) -> String? {
-    switch (lookup, since) {
-    case (.unavailable(let status), nil):
+  /// `failure` is nil for a refresh that succeeded.
+  mutating func observe(_ failure: String?, uptime: Double) -> String? {
+    switch (failure, since) {
+    case (let failure?, nil):
       since = uptime
-      return "no front process (status \(status)); outline hidden until one returns"
-    case (.available, let start?):
+      return "outline hidden: \(failure); retrying"
+    case (nil, let start?):
       since = nil
-      return "front process is back after \(Int(uptime - start))s; refreshing the outline"
+      return "refreshes succeed again after \(Int(uptime - start))s"
     default:
       return nil
     }

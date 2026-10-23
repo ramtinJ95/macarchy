@@ -30,30 +30,45 @@ private typealias Bit = FocusTargetPolicy.Bit
   }
 
   @Test func missingFrontProcessIsAStateAndOtherLookupFailuresStayFatal() throws {
-    #expect(try FrontLookup.frontProcessExists(status: 0, serialNumberIsZero: false))
-    #expect(try !FrontLookup.frontProcessExists(status: 0, serialNumberIsZero: true))
-    #expect(try !FrontLookup.frontProcessExists(status: -600, serialNumberIsZero: true))
-    #expect(try !FrontLookup.frontProcessExists(status: -600, serialNumberIsZero: false))
+    #expect(try NoFrontProcess.frontProcessExists(status: 0, serialNumberIsZero: false))
+    #expect(try !NoFrontProcess.frontProcessExists(status: 0, serialNumberIsZero: true))
+    #expect(try !NoFrontProcess.frontProcessExists(status: -600, serialNumberIsZero: true))
+    #expect(try !NoFrontProcess.frontProcessExists(status: -600, serialNumberIsZero: false))
     for status: Int32 in [-50, -1, 1, -609] {
       #expect(throws: FocusRingError.self) {
-        try FrontLookup.frontProcessExists(status: status, serialNumberIsZero: false)
+        try NoFrontProcess.frontProcessExists(status: status, serialNumberIsZero: false)
       }
     }
   }
 
-  @Test func frontProcessAbsenceLogsOnlyWhenItStartsAndEnds() {
-    let context = FrontContext(
-      ownConnection: 1, frontConnection: 2, displayIdentifier: "Main", spaceID: 7)
-    var absence = FrontProcessAbsence()
-    #expect(absence.observe(.available(context), uptime: 1) == nil)
-    let entered = absence.observe(.unavailable(status: -600), uptime: 10)
-    #expect(entered?.contains("-600") == true)
-    #expect(absence.observe(.unavailable(status: -600), uptime: 12) == nil)
-    #expect(absence.observe(.unavailable(status: 0), uptime: 14) == nil)
-    let left = absence.observe(.available(context), uptime: 41.5)
+  @Test func refreshFailuresWaitUnlessTheSystemNeverAnswered() {
+    func decide(_ noFront: Bool, _ refreshed: Bool, _ elapsed: Double, _ managed: Bool)
+      -> FocusRingRetryPolicy.RefreshDecision
+    {
+      FocusRingRetryPolicy.refreshFailed(
+        noFrontProcess: noFront, hasRefreshed: refreshed, elapsed: elapsed, managed: managed)
+    }
+    #expect(decide(true, false, 600, false) == .waitOut)
+    #expect(decide(false, true, 600, false) == .waitOut)
+    #expect(decide(false, true, 600, true) == .waitOut)
+    #expect(decide(false, false, 59, true) == .waitOut)
+    #expect(decide(false, false, 60, true) == .stop)
+    #expect(decide(false, false, 0, false) == .stop)
+  }
+
+  @Test func refreshOutageLogsOnlyWhenItStartsAndEnds() {
+    var outage = RefreshOutage()
+    #expect(outage.observe(nil, uptime: 1) == nil)
+    let display = "the active menu-bar display is absent from the managed display Spaces"
+    let entered = outage.observe(display, uptime: 10)
+    #expect(entered?.contains(display) == true)
+    #expect(outage.observe(display, uptime: 12) == nil)
+    #expect(outage.observe("\(NoFrontProcess(status: -600))", uptime: 14) == nil)
+    let left = outage.observe(nil, uptime: 41.5)
     #expect(left?.contains("31s") == true)
-    #expect(absence.observe(.available(context), uptime: 43) == nil)
-    #expect(absence.observe(.unavailable(status: 0), uptime: 50) != nil)
+    #expect(outage.observe(nil, uptime: 43) == nil)
+    let again = outage.observe("\(NoFrontProcess(status: 0))", uptime: 50)
+    #expect(again?.contains("status 0") == true)
   }
 
   @Test func managedModeIsExplicitAndCannotOverridePreviewDuration() throws {

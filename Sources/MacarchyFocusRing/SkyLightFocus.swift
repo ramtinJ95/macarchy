@@ -17,19 +17,19 @@ struct FrontContext: Equatable, Sendable {
 }
 
 /// No process is frontmost for a while when the console locks or its display sleeps,
-/// and briefly during app switches. That is a state to wait out, not a failure.
-enum FrontLookup: Equatable, Sendable {
-  case available(FrontContext)
-  case unavailable(status: Int32)
+/// and briefly during app switches. That is a state to wait out, even at startup.
+struct NoFrontProcess: Error, CustomStringConvertible {
+  var status: Int32
+  var description: String { "no front process (status \(status))" }
 
   /// The Process Manager's procNotFound.
-  static let noProcessStatus: Int32 = -600
+  static let procNotFound: Int32 = -600
 
   /// Any status other than success or procNotFound is a failed lookup.
   static func frontProcessExists(status: Int32, serialNumberIsZero: Bool) throws -> Bool {
     switch status {
     case 0: return !serialNumberIsZero
-    case noProcessStatus: return false
+    case procNotFound: return false
     default: throw FocusRingError("_SLPSGetFrontProcess failed (\(status))")
     }
   }
@@ -97,7 +97,7 @@ final class SkyLightLibrary {
 
 /// Read-only window-server queries for the focus ring. Requests no TCC
 /// permission and mutates no window-server state. Failed or empty queries throw;
-/// only a missing front process or an empty window list is a normal "no target" result.
+/// only an empty window list is a normal "no target" result.
 final class SkyLightFocus {
   static let frameworkPath = "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight"
 
@@ -157,14 +157,16 @@ final class SkyLightFocus {
       bounds: { try self.bounds(of: $0) })
   }
 
-  func frontContext() throws -> FrontLookup {
+  func frontContext() throws -> FrontContext {
     let own = mainConnection()
     guard own != 0 else { throw FocusRingError("SLSMainConnectionID returned no connection") }
     var psn = ProcessSerialNumber(highLongOfPSN: 0, lowLongOfPSN: 0)
     let status = frontProcess(&psn)
     let serialNumberIsZero = psn.highLongOfPSN == 0 && psn.lowLongOfPSN == 0
-    guard try FrontLookup.frontProcessExists(status: status, serialNumberIsZero: serialNumberIsZero)
-    else { return .unavailable(status: status) }
+    guard
+      try NoFrontProcess.frontProcessExists(
+        status: status, serialNumberIsZero: serialNumberIsZero)
+    else { throw NoFrontProcess(status: status) }
     var front: Int32 = 0
     let lookup = connectionForPSN(own, &psn, &front)
     guard lookup == 0, front != 0 else {
@@ -175,10 +177,9 @@ final class SkyLightFocus {
     }
     let space = currentSpace(own, display)
     guard space != 0 else { throw FocusRingError("display \(display) reports no current Space") }
-    return .available(
-      FrontContext(
-        ownConnection: own, frontConnection: front,
-        displayIdentifier: display as String, spaceID: space))
+    return FrontContext(
+      ownConnection: own, frontConnection: front,
+      displayIdentifier: display as String, spaceID: space)
   }
 
   func spaceKind(in context: FrontContext) throws -> SpaceKind {
