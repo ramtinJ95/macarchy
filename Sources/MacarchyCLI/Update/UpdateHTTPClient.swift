@@ -157,7 +157,9 @@ private final class BoundedHTTPResponseDelegate: NSObject, URLSessionDataDelegat
     if let error {
       state.withLock { state in
         if state.error == nil {
-          state.error = .requestFailed(String(describing: error))
+          let error = error as NSError
+          state.error = .requestFailed(
+            "\(error.localizedDescription) (\(error.domain) \(error.code))")
         }
       }
     }
