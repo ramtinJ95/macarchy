@@ -6,11 +6,14 @@ struct SketchyBarUpdateIndicator: Sendable {
   static let item = "macarchy.update"
   static let detailItem = "macarchy.update.detail"
   static let checkInterval: TimeInterval = 6 * 60 * 60
+  /// Failures are usually transient, such as being offline right after wake.
+  static let failedRetryInterval: TimeInterval = 15 * 60
 
   let processRunner: ProcessRunner
   let buildInformation: @Sendable () throws -> MacarchyBuildInformation
   let readCache: @Sendable (URL) -> UpdateCacheRead
   let checkIfDue: @Sendable (URL) -> UpdateCheckExecution
+  let checkNow: @Sendable (URL) -> UpdateCheckExecution
   let launchReview: @Sendable (URL) throws -> Void
 
   static let live = Self(
@@ -19,7 +22,12 @@ struct SketchyBarUpdateIndicator: Sendable {
     readCache: { UpdateCacheStore(root: $0).read() },
     checkIfDue: {
       UpdateChecker(root: $0, httpClient: .live, now: Date.init)
-        .check(ifStaleOnly: true, freshnessInterval: checkInterval)
+        .check(
+          ifStaleOnly: true, freshnessInterval: checkInterval,
+          failureRetryInterval: failedRetryInterval)
+    },
+    checkNow: {
+      UpdateChecker(root: $0, httpClient: .live, now: Date.init).check(ifStaleOnly: false)
     },
     launchReview: { root in
       let runtime = RuntimeEnvironment.live
@@ -34,7 +42,16 @@ struct SketchyBarUpdateIndicator: Sendable {
     switch sender {
     case "mouse.clicked":
       try bar(["--set", Self.item, "popup.drawing=off"])
-      try launchReview(stateRoot)
+      if let installed = try installedVersion(),
+        Self.newerRelease(in: readCache(stateRoot), than: installed) == nil
+      {
+        // Without a release to review, a click retries the failed check behind the warning.
+        try render(
+          installed: installed, cache: .available(checkNow(stateRoot).cache),
+          accent: accent, warning: warning)
+      } else {
+        try launchReview(stateRoot)
+      }
       return
     case "mouse.entered":
       try bar(["--set", Self.item, "popup.drawing=on"])
@@ -46,38 +63,50 @@ struct SketchyBarUpdateIndicator: Sendable {
       break
     }
 
+    let installed = try installedVersion()
+    let cache =
+      installed != nil && automaticChecksEnabled
+      ? UpdateCacheRead.available(checkIfDue(stateRoot).cache) : readCache(stateRoot)
+    try render(installed: installed, cache: cache, accent: accent, warning: warning)
+  }
+
+  private func installedVersion() throws -> StableVersion? {
     let build = try buildInformation()
-    guard build.installation == .homebrew, let installed = StableVersion(build.version) else {
+    return build.installation == .homebrew ? StableVersion(build.version) : nil
+  }
+
+  private static func newerRelease(in cache: UpdateCacheRead, than installed: StableVersion)
+    -> String?
+  {
+    guard case .available(let document) = cache, let release = document.lastSuccess?.release,
+      let upstream = StableVersion(release.version), upstream > installed
+    else { return nil }
+    return release.version
+  }
+
+  private func render(
+    installed: StableVersion?, cache: UpdateCacheRead, accent: String, warning: String
+  ) throws {
+    guard let installed else {
       try present(
         available: nil, error: "Update checks require a stable Homebrew installation.",
         accent: accent, warning: warning)
       return
     }
-    let cache =
-      automaticChecksEnabled
-      ? UpdateCacheRead.available(checkIfDue(stateRoot).cache) : readCache(stateRoot)
-    let available: String?
     let error: String?
     switch cache {
     case .missing:
-      available = nil
       error = nil
     case .invalid(let message):
-      available = nil
       error = "Update cache invalid: \(message)"
     case .available(let document):
-      if let release = document.lastSuccess?.release,
-        let upstream = StableVersion(release.version), upstream > installed
-      {
-        available = release.version
-      } else {
-        available = nil
-      }
       error =
         document.lastAttempt.outcome == .failure
         ? "Last update check failed: \(document.lastAttempt.error ?? "unknown error")" : nil
     }
-    try present(available: available, error: error, accent: accent, warning: warning)
+    try present(
+      available: Self.newerRelease(in: cache, than: installed), error: error,
+      accent: accent, warning: warning)
   }
 
   private func present(available: String?, error: String?, accent: String, warning: String) throws {

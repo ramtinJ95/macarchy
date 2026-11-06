@@ -129,11 +129,13 @@ declining update also leaves its cache and Homebrew metadata untouched. These ac
 retain their results in the same window. Updates do not apply profiles or restart providers.
 The managed SketchyBar clock includes a circular-arrow indicator when a newer stable
 Macarchy release is known. Hover for details; click to open **Review & update**.
-Its minute-by-minute cache refresh checks GitHub only when the last attempt is at
-least six hours old, including after failed attempts. Failed checks show a warning
-without discarding a previously known update. It never refreshes Homebrew metadata
+When it shows only a failed check, a click retries the check instead. Its
+minute-by-minute cache refresh checks GitHub when the last attempt is at least six
+hours old, or 15 minutes old if it failed. Failed checks show a warning without
+discarding a previously known update. It never refreshes Homebrew metadata
 or installs packages in the background. `MACARCHY_DISABLE_UPDATE_CHECKS=1` in
-SketchyBar's environment disables network checks while retaining cached indicators.
+SketchyBar's environment disables automatic network checks while retaining cached
+indicators; clicking a failed-check warning still checks at once.
 Disabling the clock also removes this companion and its polling. After upgrading,
 use **Review & apply** to activate changed generated bar configuration; installation
 alone does not reload it. Personal native bar configurations can override defaults.

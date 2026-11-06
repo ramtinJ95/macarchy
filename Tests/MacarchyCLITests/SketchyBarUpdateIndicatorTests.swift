@@ -26,6 +26,10 @@ struct SketchyBarUpdateIndicatorTests {
         Issue.record("Opt-out must not check the network")
         return Self.execution
       },
+      checkNow: { _ in
+        Issue.record("Rendering must not force a check")
+        return Self.execution
+      },
       launchReview: { _ in Issue.record("Rendering must not launch an updater") })
     try indicator.execute(
       sender: "routine", stateRoot: URL(filePath: "/unused"), automaticChecksEnabled: false,
@@ -48,6 +52,10 @@ struct SketchyBarUpdateIndicatorTests {
         checks.withLock { $0 += 1 }
         return Self.execution
       },
+      checkNow: { _ in
+        Issue.record("Not a click")
+        return Self.execution
+      },
       launchReview: { _ in Issue.record("Not a click") })
     try indicator.execute(
       sender: "system_woke", stateRoot: URL(filePath: "/unused"),
@@ -55,35 +63,92 @@ struct SketchyBarUpdateIndicatorTests {
     #expect(checks.withLock { $0 } == (enabled ? 1 : 0))
   }
 
-  @Test(arguments: ["mouse.clicked", "mouse.entered", "mouse.exited.global"])
-  func interactionNeverChecksOrInstallsAndClicksOnlyLaunchReview(sender: String) throws {
-    let launched = Mutex(false)
+  @Test(arguments: ["mouse.entered", "mouse.exited.global"])
+  func hoverNeverChecksOrLaunchesReview(sender: String) throws {
     let indicator = SketchyBarUpdateIndicator(
       processRunner: .init { _ in .init(terminationStatus: 0, output: "") },
       buildInformation: {
-        Issue.record("Interaction must not inspect installations")
+        Issue.record("Hover must not inspect installations")
         return Self.build
       },
       readCache: { _ in
-        Issue.record("Interaction must not read cache")
+        Issue.record("Hover must not read cache")
         return .missing
       },
       checkIfDue: { _ in
-        Issue.record("Interaction must not check network")
+        Issue.record("Hover must not check network")
+        return Self.execution
+      },
+      checkNow: { _ in
+        Issue.record("Hover must not check network")
+        return Self.execution
+      },
+      launchReview: { _ in Issue.record("Hover must not launch review") })
+    try indicator.execute(
+      sender: sender, stateRoot: URL(filePath: "/unused"), automaticChecksEnabled: true,
+      accent: "accent", warning: "warning")
+  }
+
+  @Test func clickOnAnAvailableReleaseLaunchesReviewWithoutChecking() throws {
+    let launched = Mutex(false)
+    let indicator = SketchyBarUpdateIndicator(
+      processRunner: .init { _ in .init(terminationStatus: 0, output: "") },
+      buildInformation: { Self.build },
+      readCache: { _ in .available(Self.cache(version: "0.2.0", failed: true)) },
+      checkIfDue: { _ in
+        Issue.record("A click must not run the routine check")
+        return Self.execution
+      },
+      checkNow: { _ in
+        Issue.record("Review fetches its own release evidence")
         return Self.execution
       },
       launchReview: { _ in launched.withLock { $0 = true } })
     try indicator.execute(
-      sender: sender, stateRoot: URL(filePath: "/unused"), automaticChecksEnabled: true,
+      sender: "mouse.clicked", stateRoot: URL(filePath: "/unused"), automaticChecksEnabled: true,
       accent: "accent", warning: "warning")
-    #expect(launched.withLock { $0 } == (sender == "mouse.clicked"))
+    #expect(launched.withLock { $0 })
+  }
+
+  @Test(arguments: [false, true])
+  func clickOnAFailedCheckRetriesItAndShowsTheOutcome(retrySucceeds: Bool) throws {
+    let calls = Mutex([[String]]())
+    let checks = Mutex(0)
+    let indicator = SketchyBarUpdateIndicator(
+      processRunner: .init { request in
+        calls.withLock { $0.append(request.arguments) }
+        return .init(terminationStatus: 0, output: "")
+      },
+      buildInformation: { Self.build },
+      readCache: { _ in .available(Self.cache(version: "0.1.0", failed: true)) },
+      checkIfDue: { _ in
+        Issue.record("A click must not run the routine check")
+        return Self.execution
+      },
+      checkNow: { _ in
+        checks.withLock { $0 += 1 }
+        return .init(
+          cache: Self.cache(version: "0.1.0", failed: !retrySucceeds), refreshed: true,
+          succeeded: retrySucceeds)
+      },
+      launchReview: { _ in Issue.record("Nothing to review") })
+    try indicator.execute(
+      sender: "mouse.clicked", stateRoot: URL(filePath: "/unused"), automaticChecksEnabled: false,
+      accent: "accent", warning: "warning")
+    #expect(checks.withLock { $0 } == 1)
+    let args = try #require(calls.withLock { $0.last })
+    #expect(args.contains("drawing=\(retrySucceeds ? "off" : "on")"))
+    if !retrySucceeds {
+      #expect(args.contains { $0.contains("Last update check failed: offline") })
+    }
   }
 
   @Test func failedReviewLaunchPropagatesForVisibleScriptErrorPresentation() throws {
     let indicator = SketchyBarUpdateIndicator(
       processRunner: .init { _ in .init(terminationStatus: 0, output: "") },
-      buildInformation: { Self.build }, readCache: { _ in .missing },
-      checkIfDue: { _ in Self.execution },
+      buildInformation: { Self.build },
+      readCache: { _ in .available(Self.cache(version: "0.2.0", failed: false)) },
+      checkIfDue: { _ in Self.execution }, checkNow: { _ in Self.execution },
       launchReview: { _ in throw CocoaError(.fileNoSuchFile) })
     #expect(throws: CocoaError.self) {
       try indicator.execute(
@@ -93,12 +158,15 @@ struct SketchyBarUpdateIndicatorTests {
   }
 
   @Test(arguments: [false, true])
-  func sixHourPollingReusesTheSharedCacheAndBoundsFailedRetries(failed: Bool) throws {
+  func pollingReusesTheSharedCacheAndRetriesFailuresSooner(failed: Bool) throws {
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let cache = Self.cache(version: "0.2.0", failed: failed)
     try UpdateCacheStore(root: root).write(cache)
-    let now = Mutex(cache.lastAttempt.checkedAt.addingTimeInterval(6 * 3600 - 1))
+    let interval =
+      failed
+      ? SketchyBarUpdateIndicator.failedRetryInterval : SketchyBarUpdateIndicator.checkInterval
+    let now = Mutex(cache.lastAttempt.checkedAt.addingTimeInterval(interval - 1))
     let requests = Mutex(0)
     let checker = UpdateChecker(
       root: root,
@@ -106,18 +174,18 @@ struct SketchyBarUpdateIndicatorTests {
         requests.withLock { $0 += 1 }
         return .init(statusCode: 304, headers: [:], body: Data())
       }, now: { now.withLock { $0 } })
-    #expect(
-      !checker.check(ifStaleOnly: true, freshnessInterval: SketchyBarUpdateIndicator.checkInterval)
-        .refreshed)
+    let check = {
+      checker.check(
+        ifStaleOnly: true, freshnessInterval: SketchyBarUpdateIndicator.checkInterval,
+        failureRetryInterval: SketchyBarUpdateIndicator.failedRetryInterval)
+    }
+    #expect(!check().refreshed)
     #expect(requests.withLock { $0 } == 0)
     now.withLock { $0 = $0.addingTimeInterval(1) }
-    #expect(
-      checker.check(ifStaleOnly: true, freshnessInterval: SketchyBarUpdateIndicator.checkInterval)
-        .succeeded)
+    #expect(check().succeeded)
     #expect(requests.withLock { $0 } == 1)
-    #expect(
-      !checker.check(ifStaleOnly: true, freshnessInterval: SketchyBarUpdateIndicator.checkInterval)
-        .refreshed)
+    now.withLock { $0 = $0.addingTimeInterval(SketchyBarUpdateIndicator.failedRetryInterval) }
+    #expect(!check().refreshed)
     #expect(requests.withLock { $0 } == 1)
   }
 
