@@ -182,28 +182,31 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     return transaction
   }
 
-  /// The ownership snapshots a runtime target moves between in this direction.
-  private var runtimeTransition: (from: EnvironmentOwnership?, to: EnvironmentOwnership?) {
-    direction == .forward
-      ? (from: previousOwnership, to: proposedOwnership)
-      : (from: proposedOwnership, to: previousOwnership)
+  /// The ownership this direction moves away from.
+  var sourceOwnership: EnvironmentOwnership? {
+    direction == .forward ? previousOwnership : proposedOwnership
+  }
+
+  /// The ownership this direction settles on.
+  var destinationOwnership: EnvironmentOwnership? {
+    direction == .forward ? proposedOwnership : previousOwnership
   }
 
   var expectedHerdrRuntimeTarget: EnvironmentHerdrRuntimeTarget? {
     if direction == .rollback && herdrLegacyMigration == true { return .managed }
-    return .required(from: runtimeTransition.from, to: runtimeTransition.to)
+    return .required(from: sourceOwnership, to: destinationOwnership)
   }
 
   var expectedSpicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget? {
     if operation.isScopedConnection { return nil }
-    return .required(from: runtimeTransition.from, to: runtimeTransition.to)
+    return .required(from: sourceOwnership, to: destinationOwnership)
   }
 
   var expectedBordersRuntimeTarget: EnvironmentBordersRuntimeTarget? {
     if operation == .herdrTheme || operation.isNativeMigration || operation.isScopedConnection {
       return nil
     }
-    return .required(from: runtimeTransition.from, to: runtimeTransition.to)
+    return .required(from: sourceOwnership, to: destinationOwnership)
   }
 
   /// Whether an apply adopts legacy Herdr ownership that the previous snapshot did not hold.
