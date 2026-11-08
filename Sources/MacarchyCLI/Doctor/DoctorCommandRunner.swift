@@ -5,9 +5,7 @@ struct DoctorCommandRunner: Sendable {
   let read: @Sendable (URL) throws -> ThemeStatusSnapshot
   let inspect: @Sendable (URL, ThemeConsumerPaths) throws -> [AdapterInspection]
   var enabledAdapterIDs: @Sendable (URL, ThemeConsumerPaths) throws -> Set<String> = { _, _ in
-    Set(ThemeActivationCoordinator.adapterRequirements.keys).subtracting([
-      BordersAdapter.id, BordersAdapter.leanID,
-    ])
+    ConsumerCatalog.shared.defaultEnabledAdapterIDs
   }
 
   static let live = DoctorCommandRunner(

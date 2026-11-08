@@ -31,9 +31,7 @@ enum ThemeRuntimeSelection {
     if let ownership {
       enabled = appliedAdapterIDs(for: ownership)
     } else {
-      enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
-      enabled.remove(BordersAdapter.id)
-      enabled.remove(BordersAdapter.leanID)
+      enabled = ConsumerCatalog.shared.defaultEnabledAdapterIDs
       enabled.remove(CodexAdapter.id)
       enabled.remove(HerdrAdapter.id)
       enabled.remove(PiAdapter.id)
@@ -60,9 +58,7 @@ enum ThemeRuntimeSelection {
     if let explicit = ownership.enabledThemeAdapterIDs {
       return Set(explicit)
     }
-    var enabled = Set(ThemeActivationCoordinator.adapterRequirements.keys)
-    enabled.remove(BordersAdapter.id)
-    enabled.remove(BordersAdapter.leanID)
+    var enabled = ConsumerCatalog.shared.defaultEnabledAdapterIDs
     if let borders = ownership.borders { enabled.insert(borders.adapterID) }
     enabled.remove(SpicetifyAdapter.id)
     enabled.remove(TuicrAdapter.id)
