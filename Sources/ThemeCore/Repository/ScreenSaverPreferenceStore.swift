@@ -109,12 +109,8 @@ package struct ScreenSaverPreferenceStore: Sendable {
         parentDescriptor: images, name: temporaryName,
         url: imagesURL.appending(path: temporaryName),
         data: data, mode: 0o400)
-      let result = temporaryName.withCString { source in
-        preference.imageName.withCString { destination in
-          Darwin.renameatx_np(images, source, images, destination, UInt32(RENAME_EXCL))
-        }
-      }
-      guard result == 0 else {
+      guard PinnedFilesystem.renameExclusively(temporaryName, to: preference.imageName, in: images)
+      else {
         throw PinnedFilesystemError(
           operation: "publish screensaver selection image", url: url, code: errno)
       }

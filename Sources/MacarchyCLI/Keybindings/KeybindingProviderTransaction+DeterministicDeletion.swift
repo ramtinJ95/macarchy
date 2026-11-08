@@ -323,18 +323,9 @@ extension KeybindingProviderTransaction {
         throw SetupOwnershipError.ownershipDrift(url)
       }
     }
-    let result = first.withCString { firstPath in
-      second.withCString { secondPath in
-        Darwin.renameatx_np(
-          descriptor,
-          firstPath,
-          descriptor,
-          secondPath,
-          UInt32(RENAME_SWAP)
-        )
-      }
+    guard PinnedFilesystem.swap(first, with: second, in: descriptor) else {
+      throw SetupOwnershipError.posix("swap keybinding provider item", url)
     }
-    guard result == 0 else { throw SetupOwnershipError.posix("swap keybinding provider item", url) }
     try sync(descriptor, url: url.deletingLastPathComponent())
     for name in [first, second] {
       let metadata = try PinnedFilesystem.metadata(

@@ -133,7 +133,7 @@ public struct OmarchyThemeConverter: Sendable {
     staged: StagedOmarchyTheme,
     to destination: URL
   ) throws -> ConvertedOmarchyTheme {
-    guard !Self.entryExists(destination) else {
+    guard PinnedFilesystem.entryExists(at: destination) == false else {
       throw OmarchyThemeConversionError.destinationExists(destination.path)
     }
 
@@ -553,10 +553,5 @@ public struct OmarchyThemeConverter: Sendable {
       )
     }
     try data.write(to: url)
-  }
-
-  private static func entryExists(_ url: URL) -> Bool {
-    var metadata = stat()
-    return lstat(url.path, &metadata) == 0 || errno != ENOENT
   }
 }

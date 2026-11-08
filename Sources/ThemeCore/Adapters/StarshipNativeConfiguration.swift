@@ -99,9 +99,7 @@ package struct StarshipNativeConfiguration {
       throw PinnedFilesystemError(operation: "preserve native metadata", url: url, code: errno)
     }
     guard try read() == expected else { throw StarshipAdapterError.bridgeDoesNotMatch(url) }
-    guard
-      Darwin.renameatx_np(parent, residue, parent, url.lastPathComponent, UInt32(RENAME_SWAP)) == 0
-    else {
+    guard PinnedFilesystem.swap(residue, with: url.lastPathComponent, in: parent) else {
       throw PinnedFilesystemError(operation: "exchange native palette", url: url, code: errno)
     }
     disposable = false

@@ -620,18 +620,13 @@ public struct ThemeActivator: Sendable {
         code: ESTALE
       )
     }
-    let moved = generationURL.lastPathComponent.withCString { source in
-      trashURL.lastPathComponent.withCString { destination in
-        Darwin.renameatx_np(
-          generationsDescriptor,
-          source,
-          generationsDescriptor,
-          destination,
-          UInt32(RENAME_EXCL)
-        )
-      }
-    }
-    guard moved == 0 else {
+    guard
+      PinnedFilesystem.renameExclusively(
+        generationURL.lastPathComponent,
+        to: trashURL.lastPathComponent,
+        in: generationsDescriptor
+      )
+    else {
       throw PinnedFilesystemError(
         operation: "publish collectible generation trash",
         url: trashURL,

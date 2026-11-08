@@ -323,9 +323,9 @@ struct EnvironmentStandardMigration: Sendable {
     let b = try PinnedFilesystem.openDirectory(at: second.deletingLastPathComponent())
     defer { Darwin.close(b) }
     guard
-      Darwin.renameatx_np(
-        a, first.lastPathComponent, b, second.lastPathComponent,
-        UInt32(RENAME_SWAP)) == 0, fsync(a) == 0, fsync(b) == 0
+      PinnedFilesystem.swap(
+        first.lastPathComponent, in: a, with: second.lastPathComponent, in: b),
+      fsync(a) == 0, fsync(b) == 0
     else { throw EnvironmentLifecycleError.system("swap standard configuration", first, errno) }
   }
 

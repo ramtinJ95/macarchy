@@ -167,18 +167,7 @@ package enum PinnedFilesystem {
       )
     }
 
-    let published = sourceName.withCString { sourcePath in
-      destinationName.withCString { destinationPath in
-        Darwin.renameatx_np(
-          parentDescriptor,
-          sourcePath,
-          parentDescriptor,
-          destinationPath,
-          UInt32(RENAME_EXCL)
-        )
-      }
-    }
-    guard published == 0 else {
+    guard renameExclusively(sourceName, to: destinationName, in: parentDescriptor) else {
       throw PinnedFilesystemError(
         operation: "publish prepared directory",
         url: destinationURL,
@@ -392,6 +381,57 @@ package enum PinnedFilesystem {
           parentDescriptor, source, parentDescriptor, destination, UInt32(RENAME_EXCL)) == 0
       }
     }
+  }
+
+  /// Path form of `renameExclusively`: resolves both paths at call time rather than through a
+  /// pinned directory. Returns false with `errno` set.
+  package static func renameExclusively(_ source: URL, to destination: URL) -> Bool {
+    source.path.withCString { source in
+      destination.path.withCString { destination in
+        Darwin.renamex_np(source, destination, UInt32(RENAME_EXCL)) == 0
+      }
+    }
+  }
+
+  /// Atomically exchanges `first` in `firstParent` with `second` in `secondParent`. Returns
+  /// false with `errno` set.
+  package static func swap(
+    _ first: String,
+    in firstParent: Int32,
+    with second: String,
+    in secondParent: Int32
+  ) -> Bool {
+    first.withCString { first in
+      second.withCString { second in
+        Darwin.renameatx_np(firstParent, first, secondParent, second, UInt32(RENAME_SWAP)) == 0
+      }
+    }
+  }
+
+  /// Atomically exchanges two entries inside one pinned directory. Returns false with `errno`
+  /// set.
+  package static func swap(_ first: String, with second: String, in parentDescriptor: Int32)
+    -> Bool
+  {
+    Self.swap(first, in: parentDescriptor, with: second, in: parentDescriptor)
+  }
+
+  /// Path form of `swap`: resolves both paths at call time rather than through a pinned
+  /// directory. Returns false with `errno` set.
+  package static func swap(_ first: URL, with second: URL) -> Bool {
+    first.path.withCString { first in
+      second.path.withCString { second in
+        Darwin.renamex_np(first, second, UInt32(RENAME_SWAP)) == 0
+      }
+    }
+  }
+
+  /// Whether `url` names an entry, without following a final symlink. Returns nil with
+  /// `errno` set when `lstat` fails for any reason other than `ENOENT`.
+  package static func entryExists(at url: URL) -> Bool? {
+    var metadata = stat()
+    if lstat(url.path, &metadata) == 0 { return true }
+    return errno == ENOENT ? false : nil
   }
 
   package enum PublicationStep: Sendable {
