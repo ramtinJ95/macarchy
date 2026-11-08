@@ -106,20 +106,6 @@ public struct OmarchyThemeConverter: Sendable {
     self.stager = stager
   }
 
-  public func withConvertedPackage<Output>(
-    from source: String,
-    _ operation: (ConvertedOmarchyTheme) throws -> Output
-  ) throws -> Output {
-    try stager.withStagedCheckout(from: source) { staged in
-      let destination = staged.checkoutURL.deletingLastPathComponent().appending(
-        path: "converted-package",
-        directoryHint: .isDirectory
-      )
-      let converted = try convert(staged: staged, to: destination)
-      return try operation(converted)
-    }
-  }
-
   package func convert(
     from source: String,
     to destination: URL
