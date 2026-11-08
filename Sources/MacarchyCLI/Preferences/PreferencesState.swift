@@ -110,7 +110,7 @@ struct PreferencesStore: Sendable {
       decoder.keyDecodingStrategy = .convertFromSnakeCase
       let state = try decoder.decode(PreferencesState.self, from: data)
       try state.validate(target: context.targetIdentity)
-      let canonical = Data(try renderJSON(state).utf8)
+      let canonical = try encodeBoundedEvidenceJSON(state)
       guard let actual = try JSONSerialization.jsonObject(with: data) as? NSDictionary,
         let expected = try JSONSerialization.jsonObject(with: canonical) as? NSDictionary,
         actual == expected
