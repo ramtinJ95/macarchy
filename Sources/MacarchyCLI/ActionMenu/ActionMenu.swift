@@ -3,25 +3,20 @@ import ArgumentParser
 import Foundation
 import ThemeCore
 
-enum ActionMenuAction: CaseIterable, Equatable, Sendable {
-  case appearance
-  case keybindings
-  case screenshot
-  case annotate
-  case ocr
-  case prepareImage
-  case clipboardHistory
-  case clearClipboardHistory
-  case keepAwake
-  case startScreensaver
-  case toggleIdleScreensaver
-  case toggleScreensaverPause
-  case chooseMicrophone
-  case toggleMicrophone
-  case profile(ProfileEditAction)
-  case neovim
-  case configuration(MenuConfigurationAction)
-  case maintenance(MaintenanceAction)
+/// One menu row: its group, what it is called and searched by, and the command it starts.
+/// Adding an action is one declaration here plus its place in `allCases`, the menu order.
+struct ActionMenuAction: CaseIterable, Equatable, Sendable {
+  enum Command: Equatable, Sendable {
+    /// A standalone viewer, launched detached with its keyboard shortcut's arguments.
+    case viewer([String])
+    /// A hidden menu command, run in a menu terminal with the selected profiles appended.
+    case terminal(MenuTerminal.Kind, [String])
+  }
+
+  let category: String
+  let title: String
+  let searchText: String
+  let command: Command
 
   static var allCases: [Self] {
     ProfileEditAction.allCases.map(Self.profile)
@@ -34,69 +29,104 @@ enum ActionMenuAction: CaseIterable, Equatable, Sendable {
       + MaintenanceAction.allCases.map(Self.maintenance)
   }
 
-  var category: String {
-    switch self {
-    case .profile, .neovim, .configuration: "Configure"
-    case .appearance, .keybindings: "Appearance"
-    case .screenshot, .annotate, .ocr, .prepareImage: "Capture"
-    case .clipboardHistory, .clearClipboardHistory: "Clipboard"
-    case .keepAwake, .startScreensaver, .toggleIdleScreensaver, .toggleScreensaverPause,
-      .chooseMicrophone, .toggleMicrophone:
-      "Controls"
-    case .maintenance: "Maintenance"
-    }
+  static func profile(_ action: ProfileEditAction) -> Self {
+    Self(
+      category: "Configure", title: action.title,
+      searchText: "configure \(action.title) edit".lowercased(),
+      command: .terminal(.profile, [MenuProfileEditor.commandName, action.rawValue]))
   }
 
-  var title: String {
-    switch self {
-    case .appearance: "Themes & backgrounds"
-    case .keybindings: "Keybindings"
-    case .screenshot: "Screenshot to clipboard"
-    case .annotate: "Annotate screenshot"
-    case .ocr: "Copy text from region"
-    case .prepareImage: "Prepare an image"
-    case .clipboardHistory: "Clipboard history"
-    case .clearClipboardHistory: "Clear clipboard history"
-    case .keepAwake: "Toggle keep-awake"
-    case .startScreensaver: "Start screensaver"
-    case .toggleIdleScreensaver: "Toggle idle screensaver"
-    case .toggleScreensaverPause: "Toggle screensaver pause"
-    case .chooseMicrophone: "Choose microphone"
-    case .toggleMicrophone: "Toggle microphone mute"
-    case .profile(let action): action.title
-    case .neovim: "Neovim"
-    case .configuration(let action): action.title
-    case .maintenance(let action): action.title
-    }
+  static let neovim = Self(
+    category: "Configure", title: "Neovim",
+    searchText: "configure neovim nvim editor lua native",
+    command: .terminal(.profile, [MenuNeovimEditor.commandName]))
+
+  static func configuration(_ action: MenuConfigurationAction) -> Self {
+    Self(
+      category: "Configure", title: action.title,
+      searchText: "configure \(action.title) \(action.rawValue) settings edit".lowercased(),
+      command: .terminal(.profile, [MenuConfigurationEditor.commandName, action.rawValue]))
   }
 
-  var searchText: String {
-    switch self {
-    case .appearance: "appearance themes backgrounds wallpaper colors picker"
-    case .keybindings: "appearance keybindings shortcuts bindings help"
-    case .screenshot: "capture screenshot clipboard region window image"
-    case .annotate: "capture screenshot clipboard annotate annotation flameshot draw arrow"
-    case .ocr: "capture text region ocr recognize clipboard english"
-    case .prepareImage:
-      "capture image prepare convert compress resize jpeg png share small metadata strip"
-    case .clipboardHistory: "clipboard history maccy paste copy open recall"
-    case .clearClipboardHistory:
-      "clipboard clear history maccy paste copy wipe delete pinned secret password"
-    case .keepAwake:
-      "controls toggle keep awake keep-awake caffeinate sleep display idle always on screensaver lock"
-    case .startScreensaver:
-      "controls start screensaver saver ttfx animation animated text fullscreen idle away"
-    case .toggleIdleScreensaver: "controls toggle idle screensaver saver away activation timeout"
-    case .toggleScreensaverPause: "controls toggle screensaver saver pause resume idle away lock"
-    case .chooseMicrophone: "controls choose select microphone mic input device default audio"
-    case .toggleMicrophone: "controls toggle microphone mic mute unmute silence input privacy"
-    case .profile(let action): "configure \(action.title) edit".lowercased()
-    case .neovim: "configure neovim nvim editor lua native"
-    case .configuration(let action):
-      "configure \(action.title) \(action.rawValue) settings edit".lowercased()
-    case .maintenance(let action):
-      "maintenance \(action.title) \(action.arguments.joined(separator: " "))".lowercased()
-    }
+  static let appearance = Self(
+    category: "Appearance", title: "Themes & backgrounds",
+    searchText: "appearance themes backgrounds wallpaper colors picker",
+    command: .viewer(["theme", "browse"]))
+
+  static let keybindings = Self(
+    category: "Appearance", title: "Keybindings",
+    searchText: "appearance keybindings shortcuts bindings help",
+    command: .viewer(["keybindings", "show", "--effective"]))
+
+  static let screenshot = Self(
+    category: "Capture", title: "Screenshot to clipboard",
+    searchText: "capture screenshot clipboard region window image",
+    command: .viewer(["capture", "screenshot", "--alert-on-error"]))
+
+  static let annotate = Self(
+    category: "Capture", title: "Annotate screenshot",
+    searchText: "capture screenshot clipboard annotate annotation flameshot draw arrow",
+    command: .viewer(["capture", "annotate", "--alert-on-error"]))
+
+  static let ocr = Self(
+    category: "Capture", title: "Copy text from region",
+    searchText: "capture text region ocr recognize clipboard english",
+    command: .viewer(["capture", "ocr", "--alert-on-error"]))
+
+  static let prepareImage = Self(
+    category: "Capture", title: "Prepare an image",
+    searchText:
+      "capture image prepare convert compress resize jpeg png share small metadata strip",
+    command: .viewer(["image", "choose", "--alert-on-error"]))
+
+  static let clipboardHistory = Self(
+    category: "Clipboard", title: "Clipboard history",
+    searchText: "clipboard history maccy paste copy open recall",
+    command: .viewer(["clipboard", "open", "--alert-on-error"]))
+
+  static let clearClipboardHistory = Self(
+    category: "Clipboard", title: "Clear clipboard history",
+    searchText: "clipboard clear history maccy paste copy wipe delete pinned secret password",
+    command: .viewer(["clipboard", "clear", "--confirm", "--alert-on-error"]))
+
+  static let keepAwake = Self(
+    category: "Controls", title: "Toggle keep-awake",
+    searchText:
+      "controls toggle keep awake keep-awake caffeinate sleep display idle always on screensaver lock",
+    command: .viewer(["keep-awake", "toggle", "--alert-on-error"]))
+
+  static let startScreensaver = Self(
+    category: "Controls", title: "Start screensaver",
+    searchText:
+      "controls start screensaver saver ttfx animation animated text fullscreen idle away",
+    command: .viewer(["saver", "start", "--alert-on-error"]))
+
+  static let toggleIdleScreensaver = Self(
+    category: "Controls", title: "Toggle idle screensaver",
+    searchText: "controls toggle idle screensaver saver away activation timeout",
+    command: .viewer(["saver", "idle", "toggle", "--alert-on-error"]))
+
+  static let toggleScreensaverPause = Self(
+    category: "Controls", title: "Toggle screensaver pause",
+    searchText: "controls toggle screensaver saver pause resume idle away lock",
+    command: .viewer(["saver", "toggle-pause", "--alert-on-error"]))
+
+  static let chooseMicrophone = Self(
+    category: "Controls", title: "Choose microphone",
+    searchText: "controls choose select microphone mic input device default audio",
+    command: .viewer(["mic", "choose", "--alert-on-error"]))
+
+  static let toggleMicrophone = Self(
+    category: "Controls", title: "Toggle microphone mute",
+    searchText: "controls toggle microphone mic mute unmute silence input privacy",
+    command: .viewer(["mic", "toggle", "--alert-on-error"]))
+
+  static func maintenance(_ action: MaintenanceAction) -> Self {
+    Self(
+      category: "Maintenance", title: action.title,
+      searchText:
+        "maintenance \(action.title) \(action.arguments.joined(separator: " "))".lowercased(),
+      command: .terminal(.maintenance, [MenuMaintenance.commandName, action.rawValue]))
   }
 }
 
@@ -152,26 +182,12 @@ struct ActionMenu: AsyncParsableCommand {
     try Self.runSession(
       showMenu: { try controller.run() },
       openViewer: { action in
-        switch action {
-        case .configuration(let operation):
+        switch action.command {
+        case .terminal(let kind, let arguments):
           _ = try MenuTerminal.launch(
-            .profile, arguments: ["_menu-config-edit", operation.rawValue] + profileArguments,
-            theme: theme, executableURL: runtime.executableURL)
-        case .neovim:
-          _ = try MenuTerminal.launch(
-            .profile, arguments: ["_menu-neovim-edit"] + profileArguments,
-            theme: theme, executableURL: runtime.executableURL)
-        case .profile(let operation):
-          _ = try MenuTerminal.launch(
-            .profile, arguments: ["_menu-profile-edit", operation.rawValue] + profileArguments,
-            theme: theme, executableURL: runtime.executableURL)
-        case .maintenance(let operation):
-          _ = try MenuMaintenance.launch(
-            operation, theme: theme, executableURL: runtime.executableURL,
-            profileArguments: profileArguments)
-        case .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage,
-          .clipboardHistory, .clearClipboardHistory, .keepAwake, .startScreensaver,
-          .toggleIdleScreensaver, .toggleScreensaverPause, .chooseMicrophone, .toggleMicrophone:
+            kind, arguments: arguments + profileArguments, theme: theme,
+            executableURL: runtime.executableURL)
+        case .viewer:
           _ = try Self.launchViewer(action, executableURL: runtime.executableURL)
         }
       },
@@ -206,24 +222,7 @@ struct ActionMenu: AsyncParsableCommand {
   static func launchViewer(_ action: ActionMenuAction, executableURL: URL) throws -> Process {
     // Match the standalone viewer shortcuts. Use this exact binary rather than
     // PATH so development and installed menus launch their own matching version.
-    let arguments: [String]
-    switch action {
-    case .appearance: arguments = ["theme", "browse"]
-    case .keybindings: arguments = ["keybindings", "show", "--effective"]
-    case .screenshot: arguments = ["capture", "screenshot", "--alert-on-error"]
-    case .annotate: arguments = ["capture", "annotate", "--alert-on-error"]
-    case .ocr: arguments = ["capture", "ocr", "--alert-on-error"]
-    case .prepareImage: arguments = ["image", "choose", "--alert-on-error"]
-    case .clipboardHistory: arguments = ["clipboard", "open", "--alert-on-error"]
-    case .clearClipboardHistory:
-      arguments = ["clipboard", "clear", "--confirm", "--alert-on-error"]
-    case .keepAwake: arguments = ["keep-awake", "toggle", "--alert-on-error"]
-    case .startScreensaver: arguments = ["saver", "start", "--alert-on-error"]
-    case .toggleIdleScreensaver: arguments = ["saver", "idle", "toggle", "--alert-on-error"]
-    case .toggleScreensaverPause: arguments = ["saver", "toggle-pause", "--alert-on-error"]
-    case .chooseMicrophone: arguments = ["mic", "choose", "--alert-on-error"]
-    case .toggleMicrophone: arguments = ["mic", "toggle", "--alert-on-error"]
-    case .maintenance, .profile, .neovim, .configuration:
+    guard case .viewer(let arguments) = action.command else {
       throw ValidationError(
         "Configuration and maintenance actions must launch through their menu terminal")
     }

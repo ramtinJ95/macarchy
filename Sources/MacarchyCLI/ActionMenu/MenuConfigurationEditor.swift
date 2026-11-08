@@ -52,8 +52,10 @@ enum MenuConfigurationAction: String, CaseIterable, ExpressibleByArgument, Senda
 }
 
 struct MenuConfigurationEditor: ParsableCommand {
+  /// Hidden and stable: the menu, its editor callbacks and existing callers invoke this name.
+  static let commandName = "_menu-config-edit"
   static let configuration = CommandConfiguration(
-    commandName: "_menu-config-edit", shouldDisplay: false)
+    commandName: Self.commandName, shouldDisplay: false)
   @Argument var action: MenuConfigurationAction
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
 
@@ -93,7 +95,7 @@ struct MenuConfigurationEditor: ParsableCommand {
         section: try Self.usesManagedProfile(action, context: context) ? action.rawValue : nil,
         executableURL: RuntimeEnvironment.live.executableURL,
         notice: notice,
-        saveArguments: ["_menu-config-validate", action.rawValue, target.path]
+        saveArguments: [MenuConfigurationValidate.commandName, action.rawValue, target.path]
           + profiles.menuArguments
       ).write(to: script, atomically: true, encoding: .utf8)
       let editor = Process()

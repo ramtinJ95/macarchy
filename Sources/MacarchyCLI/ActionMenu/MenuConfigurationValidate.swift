@@ -6,8 +6,10 @@ import ThemeCore
 /// Read-only feedback, not an apply capability. Native consumers can observe a
 /// save immediately; validation cannot promise rollback of their behavior.
 struct MenuConfigurationValidate: ParsableCommand {
+  /// Hidden and stable: the menu, its editor callbacks and existing callers invoke this name.
+  static let commandName = "_menu-config-validate"
   static let configuration = CommandConfiguration(
-    commandName: "_menu-config-validate", shouldDisplay: false)
+    commandName: Self.commandName, shouldDisplay: false)
   @Argument var action: MenuConfigurationAction
   @Argument var target: String
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
