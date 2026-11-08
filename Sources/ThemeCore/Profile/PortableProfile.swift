@@ -104,6 +104,18 @@ extension SketchyBarProfileOptions: PortableProfileSection {
       .init("configuration", \.configurationURL, \.configurationRootURL),
     ]
   }
+
+  /// A native configuration replaces the legacy hook, so only one may be selected.
+  package var sourceConflict: String? {
+    configurationURL != nil && hookURL != nil
+      ? "select configuration or legacy hook, not both" : nil
+  }
+
+  /// An explicit automatic clock needs a clock module in the resolved layout.
+  package func automaticClockConflict(clockEnabled: Bool) -> String? {
+    automaticClock == true && !clockEnabled
+      ? "automatic_clock requires an enabled clock module" : nil
+  }
 }
 
 package struct YabaiProfileOptions: Equatable, Sendable {
@@ -136,6 +148,17 @@ extension YabaiProfileOptions: PortableProfileSection {
       .init("configuration", \.configurationURL),
     ]
   }
+
+  /// Bounds shared by the profile and the bundled yabai defaults.
+  package static let supportedLayouts = ["bsp", "stack", "float"]
+  package static let splitRatioRange = 0.1...0.9
+  package static let spacingRange = 0...256
+
+  /// A native configuration replaces the legacy hook, so only one may be selected.
+  package var sourceConflict: String? {
+    configurationURL != nil && hookURL != nil
+      ? "select configuration or legacy hook, not both" : nil
+  }
 }
 
 package struct DesktopProfile: Equatable, Sendable {
@@ -165,6 +188,12 @@ extension KittyProfileOptions: PortableProfileSection {
       .init("configuration", \.configurationURL),
     ]
   }
+
+  /// A native configuration replaces the copied override directory, so only one may be set.
+  package var sourceConflict: String? {
+    configurationURL != nil && overrideDirectoryURL != nil
+      ? "kitty.configuration and kitty.override are mutually exclusive" : nil
+  }
 }
 
 package struct ZshProfileOptions: Equatable, Sendable {
@@ -183,6 +212,12 @@ extension ZshProfileOptions: PortableProfileSection {
       .init("configuration", \.configurationURL),
     ]
   }
+
+  /// A native configuration replaces the copied hook, so only one may be set.
+  package var sourceConflict: String? {
+    configurationURL != nil && hookURL != nil
+      ? "zsh.configuration and zsh.hook are mutually exclusive" : nil
+  }
 }
 
 package struct StarshipProfileOptions: Equatable, Sendable {
@@ -198,6 +233,12 @@ extension StarshipProfileOptions: PortableProfileSection {
       .init("behavior", \.behaviorURL),
       .init("native_configuration", \.nativeConfigurationURL),
     ]
+  }
+
+  /// A native configuration replaces the copied behavior file, so only one may be set.
+  package var sourceConflict: String? {
+    nativeConfigurationURL != nil && behaviorURL != nil
+      ? "starship.native_configuration cannot be combined with starship.behavior" : nil
   }
 }
 
@@ -222,6 +263,15 @@ extension AtuinProfileOptions: PortableProfileSection {
       .init("configuration", \.configurationURL),
       .init("native_configuration", \.nativeConfigurationURL),
     ]
+  }
+
+  /// A native configuration owns every Atuin setting, so copied behavior cannot join it.
+  package var sourceConflict: String? {
+    let copiesBehavior =
+      configurationURL != nil || searchMode != nil || keymapMode != nil
+      || enterAccept != nil || daemon != nil
+    return nativeConfigurationURL != nil && copiesBehavior
+      ? "atuin.native_configuration cannot be combined with copied Atuin behavior options" : nil
   }
 }
 
@@ -580,13 +630,13 @@ package struct PortableProfileLoader: Sendable {
     base: URL
   ) throws -> DesktopProfile {
     let provider: DesktopProviderSelection = try self.provider(document, source: source)
-    if let layout = options?.layout, !["bsp", "stack", "float"].contains(layout) {
+    if let layout = options?.layout, !YabaiProfileOptions.supportedLayouts.contains(layout) {
       throw PortableProfileError.invalid(
         source,
         "yabai.layout must be bsp, stack, or float"
       )
     }
-    if let ratio = options?.splitRatio, !(0.1...0.9).contains(ratio) {
+    if let ratio = options?.splitRatio, !YabaiProfileOptions.splitRatioRange.contains(ratio) {
       throw PortableProfileError.invalid(
         source,
         "yabai.split_ratio must be between 0.1 and 0.9"
@@ -599,7 +649,7 @@ package struct PortableProfileLoader: Sendable {
       ("right_padding", options?.rightPadding),
       ("window_gap", options?.windowGap),
     ] {
-      if let value, !(0...256).contains(value) {
+      if let value, !YabaiProfileOptions.spacingRange.contains(value) {
         throw PortableProfileError.invalid(
           source,
           "yabai.\(field) must be between 0 and 256"
