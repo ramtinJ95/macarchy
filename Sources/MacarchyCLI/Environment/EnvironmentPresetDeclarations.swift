@@ -324,3 +324,144 @@ enum EnvironmentKeyOwnedFile: String, CaseIterable, Sendable {
 
   func isOwned(by ownership: EnvironmentOwnership?) -> Bool { ownedPath(in: ownership) != nil }
 }
+
+/// What the inspection of a linked preset's selector file reports. Each preset keeps its wording.
+struct EnvironmentLinkedSelectorWording: Sendable {
+  let legacyDrift: String
+  let legacyPreserved: String
+  /// Names the theme links in a legacy setup-owned link's inspection.
+  let legacyLink: String
+  let managed: String
+  let restored: String
+  let drifted: String
+  let externalTupleExact: String
+}
+
+extension EnvironmentLinkedPreset {
+  var inspectionWording: EnvironmentLinkedSelectorWording {
+    switch self {
+    case .codex:
+      EnvironmentLinkedSelectorWording(
+        legacyDrift: "legacy setup-owned Codex selector",
+        legacyPreserved: "The working legacy setup-owned Codex integration is preserved.",
+        legacyLink: "Codex theme link",
+        managed: "The Codex [tui].theme key is managed.",
+        restored: "The disabled Codex [tui].theme key will be restored.",
+        drifted: "The owned Codex [tui].theme key drifted.",
+        externalTupleExact: "The exact Codex tuple remains externally owned until disablement.")
+    case .pi:
+      EnvironmentLinkedSelectorWording(
+        legacyDrift: "legacy setup-owned Pi selector",
+        legacyPreserved: "The working legacy setup-owned Pi integration is preserved.",
+        legacyLink: "Pi link",
+        managed: "The Pi theme member is managed.",
+        restored: "The disabled Pi theme member will be restored.",
+        drifted: "The owned Pi theme member drifted.",
+        externalTupleExact: "The exact Pi tuple remains externally owned until disablement.")
+    case .spicetify:
+      EnvironmentLinkedSelectorWording(
+        legacyDrift: "legacy setup-owned Spicetify selectors",
+        legacyPreserved: "The working legacy setup-owned Spicetify selector tuple is preserved.",
+        legacyLink: "Spicetify color link",
+        managed: "The Spicetify current_theme and color_scheme selectors are managed.",
+        restored: "The disabled Spicetify selectors will be restored exactly.",
+        drifted: "The owned Spicetify selectors drifted.",
+        externalTupleExact:
+          "The exact Spicetify selector and color-link tuple remains externally owned.")
+    case .tuicr:
+      EnvironmentLinkedSelectorWording(
+        legacyDrift: "legacy setup-owned tuicr selector",
+        legacyPreserved: "The working legacy setup-owned tuicr integration is preserved.",
+        legacyLink: "tuicr link",
+        managed: "The tuicr theme key is managed.",
+        restored: "The disabled tuicr theme key will be restored.",
+        drifted: "The owned tuicr theme key drifted.",
+        externalTupleExact: "The exact tuicr tuple remains externally owned until disablement.")
+    }
+  }
+}
+
+/// How inspection reads, judges and adopts a Codex, Pi or tuicr selector file Macarchy does not
+/// own yet. Spicetify adopts only an ordinary file and never installs one, so it keeps its own
+/// rule in `inspectSpicetify`.
+struct EnvironmentSelectorDocument<Ownership: EnvironmentPresetFileOwnership> {
+  /// Text selectors must decode as UTF-8 before their document rules apply.
+  let isText: Bool
+  let linksRequired: String
+  let linkedExact: String
+  let selectorExact: String
+  let adoption: String
+  let installation: String
+  let unsupported: String
+  let adopting: (Data, URL) throws -> Ownership
+  let installing: (URL) -> Ownership
+}
+
+extension EnvironmentSelectorDocument where Ownership == EnvironmentCodexOwnership {
+  static var codex: Self {
+    Self(
+      isText: true,
+      linksRequired: "The externally owned Codex selector requires the exact theme link.",
+      linkedExact: "The exact Codex selector and theme link remain externally owned.",
+      selectorExact: "The exact Codex [tui].theme key remains externally owned.",
+      adoption: "The existing Codex [tui].theme key requires reviewed adoption.",
+      installation: "Minimal Codex [tui].theme configuration will be installed.",
+      unsupported: "The Codex configuration cannot be safely adopted.",
+      adopting: { data, url in
+        try EnvironmentCodexDocument.ownership(
+          for: Ownership.filesystem.utf8(data, at: url), source: url)
+      },
+      installing: { url in
+        EnvironmentCodexOwnership(
+          path: url.path,
+          originalFileExisted: false,
+          originalSelector: nil,
+          introducedTable: true,
+          insertedSeparatorBeforeTable: false,
+          insertedSeparatorAfterTable: false
+        )
+      })
+  }
+}
+
+extension EnvironmentSelectorDocument where Ownership == EnvironmentPiOwnership {
+  static var pi: Self {
+    Self(
+      isText: false,
+      linksRequired: "The externally owned Pi selector requires the exact watched theme link.",
+      linkedExact: "The exact Pi selector and watched theme link remain externally owned.",
+      selectorExact: "The exact Pi theme member remains externally owned.",
+      adoption: "The existing Pi theme member requires reviewed adoption.",
+      installation: "Minimal Pi settings containing only the theme member will be installed.",
+      unsupported: "Pi settings cannot be safely adopted.",
+      adopting: { data, url in try EnvironmentPiDocument.ownership(for: data, source: url) },
+      installing: { url in
+        EnvironmentPiOwnership(path: url.path, originalFileExisted: false, originalMember: nil)
+      })
+  }
+}
+
+extension EnvironmentSelectorDocument where Ownership == EnvironmentTuicrOwnership {
+  static var tuicr: Self {
+    Self(
+      isText: true,
+      linksRequired: "The externally owned tuicr selector requires both exact canonical links.",
+      linkedExact: "The exact tuicr selector and canonical links remain externally owned.",
+      selectorExact: "The exact tuicr theme key remains externally owned.",
+      adoption: "The existing tuicr theme key requires reviewed adoption.",
+      installation: "The minimal tuicr theme selector will be installed.",
+      unsupported: "The tuicr configuration cannot be safely adopted.",
+      adopting: { data, url in
+        try EnvironmentTuicrDocument.ownership(
+          for: Ownership.filesystem.utf8(data, at: url), source: url)
+      },
+      installing: { url in
+        EnvironmentTuicrOwnership(
+          path: url.path,
+          originalFileExisted: false,
+          originalSelector: nil,
+          insertedSeparatorBefore: false
+        )
+      })
+  }
+}
