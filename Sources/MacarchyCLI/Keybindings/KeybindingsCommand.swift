@@ -132,7 +132,8 @@ struct Keybindings: ParsableCommand {
 
     func catalogURL(homeDirectory: URL) -> URL {
       catalog.map { URL(filePath: $0).standardizedFileURL }
-        ?? homeDirectory.appending(path: ".config/macarchy/keybindings.toml").standardizedFileURL
+        ?? homeDirectory.appending(path: "\(StateLayout.defaultRootRelativePath)/keybindings.toml")
+        .standardizedFileURL
     }
 
     func inspect(homeDirectory: URL) -> KeybindingEffectiveBehavior {

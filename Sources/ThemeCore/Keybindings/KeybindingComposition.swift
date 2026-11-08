@@ -96,7 +96,7 @@ package struct KeybindingComposer: Sendable {
     let overrideSource = profile.overrideURL
     let profileSource =
       profile.sourceURL
-      ?? URL(filePath: "~/.config/macarchy/profile.toml")
+      ?? URL(filePath: "~/\(StateLayout.defaultRootRelativePath)/profile.toml")
     var diagnostics = parserDiagnostics(defaults.diagnostics, source: defaultsSource)
     if let user, let overrideSource {
       diagnostics.append(contentsOf: parserDiagnostics(user.diagnostics, source: overrideSource))

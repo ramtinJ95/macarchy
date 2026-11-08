@@ -76,12 +76,9 @@ struct KeepAwakeCommand: ParsableCommand {
     var json = false
 
     mutating func run() throws {
-      let status = try KeepAwake.live(stateRoot: stateRootURL(stateRoot)).status()
+      let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+      let status = try KeepAwake.live(stateRoot: root).status()
       print(try json ? status.renderJSON() : status.message)
     }
   }
-}
-
-private func stateRootURL(_ path: String) -> URL {
-  URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL
 }

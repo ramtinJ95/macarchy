@@ -13,7 +13,7 @@ enum BarPopup: String, CaseIterable, ExpressibleByArgument, Sendable {
   case media = "macarchy.media"
 
   /// The `macarchy` command that watches this popup.
-  var watchArguments: [String] { ["desktop", "_popup-watch", "--popup", rawValue] }
+  var watchArguments: [String] { ["desktop", Desktop.PopupWatch.commandName, "--popup", rawValue] }
 }
 
 /// The part of one `sketchybar --query <item>` result the popup watcher reads.
@@ -246,8 +246,9 @@ extension Desktop {
   }
 
   struct PopupWatch: ParsableCommand {
+    static let commandName = "_popup-watch"
     static let configuration = CommandConfiguration(
-      commandName: "_popup-watch", shouldDisplay: false)
+      commandName: Self.commandName, shouldDisplay: false)
     @Option var popup: BarPopup
 
     mutating func run() throws {

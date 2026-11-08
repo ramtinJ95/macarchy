@@ -24,9 +24,9 @@ enum MacarchyInvocation {
   static let saverTogglePause = ["saver", "toggle-pause"]
   static let saverResume = ["saver", "resume"]
   /// The idle screensaver's launch agent.
-  static let saverIdle = ["saver", "_idle"]
+  static let saverIdle = ["saver", SaverCommand.Observe.commandName]
   /// The program inside each screensaver panel.
-  static let saverRun = ["saver", "_run"]
+  static let saverRun = ["saver", SaverCommand.Run.commandName]
   static let microphoneChoose = ["mic", "choose"]
   static let microphoneToggle = ["mic", "toggle"]
   static let microphoneUnmute = ["mic", "unmute"]
