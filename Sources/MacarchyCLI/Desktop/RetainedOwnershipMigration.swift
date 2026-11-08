@@ -213,10 +213,8 @@ struct RetainedOwnershipMigration {
         : "Legacy evidence did not record a volume UUID. Historical volume identity cannot be proven. Approval binds the matching surviving original to this observed volume; it does not regenerate configuration or restart services.",
       evidenceDigest: ""
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    var data = try encoder.encode(report)
-    data.append(try encoder.encode(evidence))
+    var data = try sortedKeysJSON(report)
+    data.append(try sortedKeysJSON(evidence))
     report.evidenceDigest = sha256Digest(data)
     return Candidate(report: report, persist: persist)
   }

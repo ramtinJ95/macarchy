@@ -23,6 +23,14 @@ package func canonicalJSONDigest<Value: Encodable>(_ value: Value) throws -> Str
   return sha256Digest(try encoder.encode(value))
 }
 
+/// Compact, key-sorted JSON with Foundation's default escaping, so slashes stay escaped. Review
+/// approval and evidence digests hash these bytes; they differ from `canonicalJSONDigest`'s.
+package func sortedKeysJSON<Value: Encodable>(_ value: Value) throws -> Data {
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  return try encoder.encode(value)
+}
+
 package func isSHA256Digest(_ value: String) -> Bool {
   let digest = value.dropFirst("sha256:".count)
   return value.hasPrefix("sha256:")

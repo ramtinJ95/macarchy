@@ -120,13 +120,11 @@ struct EnvironmentNativeSeed: Sendable {
             behavior: artifact.data, palette: palette), as: UTF8.self)
       }
     }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
     let approval = sha256Digest(
-      try encoder.encode([
+      try sortedKeysJSON([
         provider.rawValue, destination.path, stateRoot.standardizedFileURL.path, contents,
         createParentDirectory ? destination.deletingLastPathComponent().path : "",
-      ]) + encoder.encode(files))
+      ]) + sortedKeysJSON(files))
     return Plan(
       provider: provider.rawValue, destination: destination.path, contents: contents,
       approval: approval,
