@@ -377,12 +377,11 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     }
 
-    let stages: [UnifiedSetupTransactionStage] = [
-      preferencesPreview.outcome == "planned" ? .preferences : nil,
-      environmentPreview.outcome == "planned" ? .environment : nil,
-      desktopPreview.outcome == "planned" ? .desktop : nil,
-      themePreview.outcome == "planned" ? .theme : nil,
-    ].compactMap { $0 }
+    let previews: [SetupStage: UnifiedSetupTeardownStage] = [
+      .theme: themePreview, .desktop: desktopPreview, .environment: environmentPreview,
+      .preferences: preferencesPreview,
+    ]
+    let stages = SetupStage.teardownOrder.filter { previews[$0]?.outcome == "planned" }
     if dryRun || stages.isEmpty {
       return try result(
         outcome: stages.isEmpty ? "no_change" : "planned",
@@ -529,12 +528,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         )
       }
       result.record(execution, for: stageID)
-      switch stageID {
-      case .preferences: try faultInjector(.preferencesTornDown)
-      case .environment: try faultInjector(.environmentTornDown)
-      case .desktop: try faultInjector(.desktopTornDown)
-      case .theme: try faultInjector(.themeTornDown)
-      }
+      try faultInjector(stageID.tornDownCheckpoint)
       remaining.removeAll { $0 == stageID }
       try store.write(transaction.replacing(stages: remaining))
     }
@@ -544,7 +538,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   }
 
   private func finishApply(
-    _ stageID: UnifiedSetupTransactionStage,
+    _ stageID: SetupStage,
     context: UnifiedSetupPlanContext,
     desiredAppearance: ThemeAppearance,
     commit: Bool
@@ -578,7 +572,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   }
 
   private func run(
-    _ stageID: UnifiedSetupTransactionStage,
+    _ stageID: SetupStage,
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
     desiredAppearance: ThemeAppearance,

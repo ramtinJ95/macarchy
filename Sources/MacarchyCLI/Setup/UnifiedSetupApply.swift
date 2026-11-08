@@ -372,12 +372,12 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             json: json)
         }
         let plannedStages = Set(
-          currentPlan.actions.compactMap { UnifiedSetupTransactionStage(rawValue: $0.stage) }
+          currentPlan.actions.compactMap { SetupStage(rawValue: $0.stage) }
         )
         var transaction: UnifiedSetupTransaction?
         let contextDigest = unifiedSetupContextDigest(
           context: context, consumerPaths: consumerPaths)
-        func start(_ stage: UnifiedSetupTransactionStage) throws {
+        func start(_ stage: SetupStage) throws {
           let next = UnifiedSetupTransaction(
             operation: .apply,
             stages: (transaction?.stages ?? []) + [stage],
@@ -426,7 +426,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           }
           try faultInjector(.themeApplied)
         } else if currentPlan.actions.contains(where: {
-          $0.stage == UnifiedSetupTransactionStage.desktop.rawValue
+          $0.stage == SetupStage.desktop.rawValue
             && $0.id == DesktopPlanCommandRunner.themePaletteActionID
         }) {
           // Theme activation is the only palette publisher (ADR-0189). The desktop and
