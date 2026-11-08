@@ -478,7 +478,7 @@ struct GuidedSetupTests {
       })
     // Ordinary planning transports the typed blocker but cannot request consent.
     let blocked = try planner.prepare(context: context).report
-    #expect(try blocked.preferencesAutomationPermission != nil)
+    #expect(blocked.preferencesAutomationPermission != nil)
     #expect(requests.withLock { $0.isEmpty })
     let result = try await runner.execute(
       context: context, consumerPaths: testConsumerPaths(), resume: true)

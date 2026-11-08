@@ -140,50 +140,38 @@ final class ApplyFixture: @unchecked Sendable {
     UnifiedSetupPlanCommandRunner(
       capabilityIsAvailable: available,
       desktopPlanner: { context, _ in
-        let keybindingsStatus =
-          requiredAdoptions.keybindings == nil ? "install_required" : "adoption_required"
-        let yabaiStatus =
-          requiredAdoptions.yabai == nil ? "install_required" : "adoption_required"
-        let sketchybarStatus =
-          requiredAdoptions.sketchybar == nil ? "install_required" : "adoption_required"
+        func status(_ adoption: String?) -> DesktopProviderPlanStatus {
+          adoption == nil ? .installRequired : .adoptionRequired
+        }
         let desktopActions =
           paletteRefresh
-          ? actionsJSON(true, id: DesktopPlanCommandRunner.themePaletteActionID)
-          : actionsJSON(plannedStages.contains(.desktop), id: "desktop")
-        return try planComponent(
-          """
-          {
-            "outcome":"ready",
-            "keybindings":{
-              "outcome":"ready",
-              "provider_status":"\(keybindingsStatus)",
-              "ownership":"absent",
-              "adoption_evidence_digest":\(jsonString(requiredAdoptions.keybindings))
-            },
-            "provider":{
-              "entry_point":"\(context.homeDirectory.path)/.config/yabai/yabairc",
-              "status":"\(yabaiStatus)",
-              "ownership":"absent",
-              "adoption_evidence_digest":\(jsonString(requiredAdoptions.yabai))
-            },
-            "sketchybar":{
-              "provider":{
-                "entry_point":"\(context.homeDirectory.path)/.config/sketchybar/sketchybarrc",
-                "status":"\(sketchybarStatus)",
-                "ownership":"absent",
-                "adoption_evidence_digest":\(jsonString(requiredAdoptions.sketchybar))
-              }
-            },
-            "actions":\(desktopActions)
-          }
-          """
+          ? plannedActions(true, id: DesktopPlanCommandRunner.themePaletteActionID)
+          : plannedActions(plannedStages.contains(.desktop), id: "desktop")
+        return desktopPlanStub(
+          keybindings: keybindingPlanStub(
+            providerStatus: status(requiredAdoptions.keybindings).rawValue,
+            ownership: "absent",
+            adoptionEvidenceDigest: requiredAdoptions.keybindings
+          ),
+          provider: providerPlanStub(
+            "\(context.homeDirectory.path)/.config/yabai/yabairc",
+            status: status(requiredAdoptions.yabai),
+            ownership: .absent,
+            adoptionEvidenceDigest: requiredAdoptions.yabai
+          ),
+          sketchyBar: providerPlanStub(
+            "\(context.homeDirectory.path)/.config/sketchybar/sketchybarrc",
+            status: status(requiredAdoptions.sketchybar),
+            ownership: .absent,
+            adoptionEvidenceDigest: requiredAdoptions.sketchybar
+          ),
+          actions: desktopActions
         )
       },
       environmentPlanner: { _, _, _ in
-        try planComponent(
-          """
-          {"outcome":"ready","adoption_evidence_digest":\(jsonString(requiredAdoptions.environment)),"entries":[],"actions":\(actionsJSON(plannedStages.contains(.environment), id: "environment"))}
-          """
+        environmentPlanStub(
+          adoptionEvidenceDigest: requiredAdoptions.environment,
+          actions: plannedActions(plannedStages.contains(.environment), id: "environment")
         )
       },
       packageInventoryReader: { HomebrewPackageObservation(packages: [], issues: []) },
@@ -205,16 +193,141 @@ final class ApplyFixture: @unchecked Sendable {
   }
 }
 
-private func jsonString(_ value: String?) -> String {
-  value.map { "\"\($0)\"" } ?? "null"
+private func plannedActions(_ planned: Bool, id: String) -> [PlanAction] {
+  planned ? [PlanAction(id: id, message: "planned")] : []
 }
 
-private func actionsJSON(_ planned: Bool, id: String) -> String {
-  planned ? #"[{"id":"\#(id)","message":"planned"}]"# : "[]"
+/// A desktop plan whose projected fields are given; every other field is a placeholder.
+func desktopPlanStub(
+  outcome: String = "ready",
+  keybindings: DesktopKeybindingPlan? = keybindingPlanStub(),
+  provider: DesktopProviderPlanInspection = providerPlanStub("/yabai"),
+  sketchyBar: DesktopProviderPlanInspection? = nil,
+  actions: [PlanAction] = [],
+  diagnostics: [PlanDiagnostic] = []
+) -> SetupComponentPlan<DesktopPlanReport> {
+  SetupComponentPlan(
+    DesktopPlanReport(
+      outcome: outcome,
+      profile: "/profile.toml",
+      profileStatus: "loaded",
+      desktopProvider: nil,
+      topBarProvider: nil,
+      packagedDefaults: "/Desktop",
+      hook: nil,
+      hookDigest: nil,
+      behaviorAuthority: "managed",
+      settings: nil,
+      renderedYabairc: nil,
+      renderedDigest: nil,
+      proposedInputDigest: nil,
+      currentGenerationID: nil,
+      currentGenerationStatus: "missing",
+      provider: provider,
+      sketchyBar: sketchyBar.map {
+        DesktopSketchyBarPlanReport(
+          packagedDefaults: "/Desktop",
+          settings: nil,
+          layout: nil,
+          automaticClock: nil,
+          spaceModule: nil,
+          moduleCapabilities: nil,
+          hook: nil,
+          hookDigest: nil,
+          behaviorAuthority: "managed",
+          renderedArtifacts: nil,
+          renderedDigest: nil,
+          proposedInputDigest: nil,
+          currentGenerationID: nil,
+          currentGenerationStatus: "missing",
+          provider: $0,
+          themePalette: SketchyBarPalettePlanInspection(
+            status: .current, generationID: nil, message: "palette")
+        )
+      },
+      prerequisites: [],
+      keybindings: keybindings,
+      actions: actions,
+      diagnostics: diagnostics
+    ))
 }
 
-func planComponent(_ json: String) throws -> SetupComponentExecution {
-  try SetupComponentExecution((output: json, succeeded: true))
+func keybindingPlanStub(
+  providerStatus: String = "managed",
+  ownership: String = "managed",
+  adoptionEvidenceDigest: String? = nil
+) -> DesktopKeybindingPlan {
+  DesktopKeybindingPlan(
+    outcome: "ready",
+    effectiveStatus: "current",
+    message: "keybindings",
+    generationID: nil,
+    providerStatus: providerStatus,
+    ownership: ownership,
+    adoptionEvidenceDigest: adoptionEvidenceDigest,
+    transactionStatus: "clear"
+  )
+}
+
+func providerPlanStub(
+  _ entryPoint: String,
+  status: DesktopProviderPlanStatus = .managed,
+  ownership: DesktopProviderOwnership = .managed,
+  adoptionEvidenceDigest: String? = nil
+) -> DesktopProviderPlanInspection {
+  DesktopProviderPlanInspection(
+    status: status,
+    ownership: ownership,
+    entryPoint: entryPoint,
+    originalTarget: nil,
+    source: nil,
+    message: "provider",
+    adoptionEvidenceDigest: adoptionEvidenceDigest
+  )
+}
+
+/// An environment plan whose projected fields are given; every other field is a placeholder.
+func environmentPlanStub(
+  outcome: String = "ready",
+  adoptionEvidenceDigest: String? = nil,
+  entries: [EnvironmentEntryInspection] = [],
+  actions: [PlanAction] = [],
+  diagnostics: [PlanDiagnostic] = []
+) -> SetupComponentPlan<EnvironmentPlanReport> {
+  SetupComponentPlan(
+    EnvironmentPlanReport(
+      outcome: outcome,
+      profile: "/profile.toml",
+      profileStatus: "loaded",
+      terminalProvider: nil,
+      focusRingProvider: nil,
+      shellProvider: nil,
+      promptProvider: nil,
+      historyProvider: nil,
+      editorProvider: nil,
+      dailyTools: [:],
+      presets: [:],
+      packagedDefaults: "/Environment",
+      kittyOverride: nil,
+      kittyConfiguration: nil,
+      zshHook: nil,
+      zshHookDigest: nil,
+      zshConfiguration: nil,
+      starshipBehavior: nil,
+      atuinConfiguration: nil,
+      neovimConfiguration: nil,
+      renderedArtifacts: [:],
+      renderedArtifactDigests: [:],
+      renderedDigest: nil,
+      proposedInputDigest: nil,
+      generation: EnvironmentGenerationReport(status: "missing", message: "environment"),
+      transactionStatus: "clear",
+      adoptionEvidenceDigest: adoptionEvidenceDigest,
+      prerequisites: [],
+      entries: entries,
+      actions: actions,
+      diagnostics: diagnostics
+    ))
 }
 
 func applyComponent(

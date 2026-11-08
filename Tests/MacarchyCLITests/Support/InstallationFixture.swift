@@ -66,15 +66,15 @@ final class InstallationFixture: Sendable {
     ).read()
   }
   func runner(status: Int32 = 0, install: Bool = true) -> SetupPackageInstallationCommandRunner {
-    let unrelated: UnifiedSetupPlanCommandRunner.ComponentPlanner = { _, _ in
+    let unrelated: @Sendable () -> any Error = {
       Issue.record("Package installation must not plan unrelated providers")
-      throw SetupPackageAdoptionError("unrelated provider planning")
+      return SetupPackageAdoptionError("unrelated provider planning")
     }
     return .init(
       planner: .init(
         capabilityIsAvailable: { _ in false },
-        desktopPlanner: unrelated,
-        environmentPlanner: { context, profile, _ in try unrelated(context, profile) },
+        desktopPlanner: { _, _ in throw unrelated() },
+        environmentPlanner: { _, _, _ in throw unrelated() },
         packageInventoryReader: { self.observation() },
         standardBrewfile: { _ in
           try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))

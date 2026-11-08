@@ -315,7 +315,7 @@ struct GuidedSetupCommandRunner: Sendable {
     var context = context
     var preparation = try planner.prepare(context: context)
     var requested = Set<MacOSPreference>()
-    while let key = try preparation.report.preferencesAutomationPermission,
+    while let key = preparation.report.preferencesAutomationPermission,
       requested.insert(key).inserted
     {
       io.write("\(try preparation.report.render(json: false))\n")
@@ -423,7 +423,7 @@ struct GuidedSetupCommandRunner: Sendable {
     }
     let adoptions = UnifiedSetupAdoptionApprovals(digests: approved)
     let packageApproval = plan.packageInstallation?.approvalDigest
-    let preferencesApproval = try plan.preferencesApprovalDigest
+    let preferencesApproval = plan.preferencesApprovalDigest
     if let packageApproval {
       io.write("Homebrew installation approval: \(packageApproval)\n")
     }
