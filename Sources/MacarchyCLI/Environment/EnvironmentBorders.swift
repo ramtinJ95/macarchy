@@ -267,12 +267,7 @@ extension EnvironmentTransaction {
   }
 
   var bordersRuntimeIsValid: Bool {
-    let expected: EnvironmentBordersRuntimeTarget? =
-      operation == .herdrTheme || operation.isNativeMigration || operation.isScopedConnection
-      ? nil
-      : direction == .forward
-        ? .required(from: previousOwnership, to: proposedOwnership)
-        : .required(from: proposedOwnership, to: previousOwnership)
+    let expected = expectedBordersRuntimeTarget
     guard bordersRuntimeTarget == expected,
       bordersRuntimeAttempted != false, bordersRuntimeVerified != false,
       bordersRuntimeVerified != true || bordersRuntimeAttempted == true

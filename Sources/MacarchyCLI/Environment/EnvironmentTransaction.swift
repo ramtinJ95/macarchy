@@ -165,23 +165,59 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     if direction == .rollback { return self }
     var transaction = self
     transaction.direction = .rollback
-    transaction.herdrRuntimeTarget =
-      herdrLegacyMigration == true
-      ? .managed
-      : EnvironmentHerdrRuntimeTarget.required(from: proposedOwnership, to: previousOwnership)
+    transaction = transaction.withExpectedRuntimeTargets
     transaction.herdrRuntimeVerified = nil
-    transaction.spicetifyRuntimeTarget =
-      operation.isScopedConnection
-      ? nil
-      : EnvironmentSpicetifyRuntimeTarget.required(from: proposedOwnership, to: previousOwnership)
     transaction.spicetifyRuntimeVerified = nil
     transaction.spicetifyRuntimeDeferred = nil
-    transaction.bordersRuntimeTarget =
-      operation == .herdrTheme || operation.isNativeMigration || operation.isScopedConnection
-      ? nil
-      : EnvironmentBordersRuntimeTarget.required(from: proposedOwnership, to: previousOwnership)
     transaction.bordersRuntimeVerified = nil
     return transaction
+  }
+
+  /// Sets every provider runtime target to the one its operation and direction require.
+  var withExpectedRuntimeTargets: Self {
+    var transaction = self
+    transaction.herdrRuntimeTarget = expectedHerdrRuntimeTarget
+    transaction.spicetifyRuntimeTarget = expectedSpicetifyRuntimeTarget
+    transaction.bordersRuntimeTarget = expectedBordersRuntimeTarget
+    return transaction
+  }
+
+  /// The ownership snapshots a runtime target moves between in this direction.
+  private var runtimeTransition: (from: EnvironmentOwnership?, to: EnvironmentOwnership?) {
+    direction == .forward
+      ? (from: previousOwnership, to: proposedOwnership)
+      : (from: proposedOwnership, to: previousOwnership)
+  }
+
+  var expectedHerdrRuntimeTarget: EnvironmentHerdrRuntimeTarget? {
+    if direction == .rollback && herdrLegacyMigration == true { return .managed }
+    return .required(from: runtimeTransition.from, to: runtimeTransition.to)
+  }
+
+  var expectedSpicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget? {
+    if operation.isScopedConnection { return nil }
+    return .required(from: runtimeTransition.from, to: runtimeTransition.to)
+  }
+
+  var expectedBordersRuntimeTarget: EnvironmentBordersRuntimeTarget? {
+    if operation == .herdrTheme || operation.isNativeMigration || operation.isScopedConnection {
+      return nil
+    }
+    return .required(from: runtimeTransition.from, to: runtimeTransition.to)
+  }
+
+  /// Whether an apply adopts legacy Herdr ownership that the previous snapshot did not hold.
+  static func adoptsLegacyHerdr(
+    from previous: EnvironmentOwnership?, to proposed: EnvironmentOwnership?
+  ) -> Bool {
+    previous?.herdr == nil && proposed?.herdr?.migratedLegacy == true
+  }
+
+  /// A journaled legacy Herdr adoption for an apply that leaves Herdr enabled.
+  var isEnabledHerdrLegacyMigration: Bool {
+    herdrLegacyMigration == true && operation == .apply
+      && Self.adoptsLegacyHerdr(from: previousOwnership, to: proposedOwnership)
+      && proposedOwnership?.herdrEnabled == true
   }
 
   var withHerdrRuntimeVerified: Self {

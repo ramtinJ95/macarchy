@@ -470,14 +470,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: themeBridges.entries,
       replacementNames: replacementNames,
-      herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget.required(from: previous, to: proposed),
       herdrLegacyMigration:
-        previous?.herdr == nil && proposed.herdr?.migratedLegacy == true ? true : nil,
-      spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(
-        from: previous, to: proposed),
-      bordersPreviousRuntime: inspection.bordersServiceInspection,
-      bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: previous, to: proposed)
-    )
+        EnvironmentTransaction.adoptsLegacyHerdr(from: previous, to: proposed) ? true : nil,
+      bordersPreviousRuntime: inspection.bordersServiceInspection
+    ).withExpectedRuntimeTargets
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     // finishApplyLocked or rollbackApplyLocked settles the journal after runtime work.
     return try store.runJournaled(
@@ -645,11 +641,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         stateRoot: stateRoot
       ).entries,
       replacementNames: EnvironmentReplacementNames(from: ownership, to: nil),
-      herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget.required(from: ownership, to: nil),
-      spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(from: ownership, to: nil),
-      bordersPreviousRuntime: bordersService,
-      bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: ownership, to: nil)
-    )
+      bordersPreviousRuntime: bordersService
+    ).withExpectedRuntimeTargets
     try store.writeTransaction(transaction)
     try transition(
       from: ownership,
@@ -854,12 +847,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   private func shouldPreserveLegacyHerdr(_ transaction: EnvironmentTransaction) throws -> Bool {
-    guard transaction.herdrLegacyMigration == true,
-      transaction.operation == .apply,
-      transaction.previousOwnership?.herdr == nil,
-      transaction.proposedOwnership?.herdrEnabled == true,
-      transaction.proposedOwnership?.herdr?.migratedLegacy == true
-    else { return false }
+    guard transaction.isEnabledHerdrLegacyMigration else { return false }
     return try HerdrAdapter.environment(stateRoot: stateRoot, homeDirectory: homeDirectory)
       .authenticatedLegacyOwnershipMatchesCurrentGeneration()
   }
