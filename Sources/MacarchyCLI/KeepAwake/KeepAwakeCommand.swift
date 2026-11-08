@@ -15,22 +15,12 @@ struct KeepAwakeCommand: ParsableCommand {
     subcommands: [On.self, Off.self, Toggle.self, Status.self])
 
   struct Options: ParsableArguments {
-    @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = StateLayout.defaultRootPath
-
-    @Flag(help: .hidden)
-    var alertOnError = false
+    @OptionGroup var launch: MenuLaunchOptions
 
     @MainActor
     func apply(_ request: KeepAwakeRequest) throws {
-      do {
-        let engine = KeepAwake.live(stateRoot: stateRootURL(stateRoot))
-        print(try engine.apply(request).message)
-      } catch {
-        if alertOnError {
-          showNativeAlert(title: "Keep-awake not changed", message: String(describing: error))
-        }
-        throw error
+      try launch.run("Keep-awake not changed") {
+        try KeepAwake.live(stateRoot: $0).apply(request).message
       }
     }
   }

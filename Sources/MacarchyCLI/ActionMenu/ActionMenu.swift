@@ -11,6 +11,11 @@ struct ActionMenuAction: CaseIterable, Equatable, Sendable {
     case viewer([String])
     /// A hidden menu command, run in a menu terminal with the selected profiles appended.
     case terminal(MenuTerminal.Kind, [String])
+
+    /// A viewer that shows its failure in an alert, since a menu launch has no terminal.
+    static func alertingViewer(_ arguments: [String]) -> Self {
+      .viewer(arguments + [MacarchyInvocation.alertOnError])
+    }
   }
 
   let category: String
@@ -51,75 +56,75 @@ struct ActionMenuAction: CaseIterable, Equatable, Sendable {
   static let appearance = Self(
     category: "Appearance", title: "Themes & backgrounds",
     searchText: "appearance themes backgrounds wallpaper colors picker",
-    command: .viewer(["theme", "browse"]))
+    command: .viewer(MacarchyInvocation.themeBrowse))
 
   static let keybindings = Self(
     category: "Appearance", title: "Keybindings",
     searchText: "appearance keybindings shortcuts bindings help",
-    command: .viewer(["keybindings", "show", "--effective"]))
+    command: .viewer(MacarchyInvocation.keybindingsShowEffective))
 
   static let screenshot = Self(
     category: "Capture", title: "Screenshot to clipboard",
     searchText: "capture screenshot clipboard region window image",
-    command: .viewer(["capture", "screenshot", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.captureScreenshot))
 
   static let annotate = Self(
     category: "Capture", title: "Annotate screenshot",
     searchText: "capture screenshot clipboard annotate annotation flameshot draw arrow",
-    command: .viewer(["capture", "annotate", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.captureAnnotate))
 
   static let ocr = Self(
     category: "Capture", title: "Copy text from region",
     searchText: "capture text region ocr recognize clipboard english",
-    command: .viewer(["capture", "ocr", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.captureOCR))
 
   static let prepareImage = Self(
     category: "Capture", title: "Prepare an image",
     searchText:
       "capture image prepare convert compress resize jpeg png share small metadata strip",
-    command: .viewer(["image", "choose", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.imageChoose))
 
   static let clipboardHistory = Self(
     category: "Clipboard", title: "Clipboard history",
     searchText: "clipboard history maccy paste copy open recall",
-    command: .viewer(["clipboard", "open", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.clipboardOpen))
 
   static let clearClipboardHistory = Self(
     category: "Clipboard", title: "Clear clipboard history",
     searchText: "clipboard clear history maccy paste copy wipe delete pinned secret password",
-    command: .viewer(["clipboard", "clear", "--confirm", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.clipboardClearConfirmed))
 
   static let keepAwake = Self(
     category: "Controls", title: "Toggle keep-awake",
     searchText:
       "controls toggle keep awake keep-awake caffeinate sleep display idle always on screensaver lock",
-    command: .viewer(["keep-awake", "toggle", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.keepAwakeToggle))
 
   static let startScreensaver = Self(
     category: "Controls", title: "Start screensaver",
     searchText:
       "controls start screensaver saver ttfx animation animated text fullscreen idle away",
-    command: .viewer(["saver", "start", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.saverStart))
 
   static let toggleIdleScreensaver = Self(
     category: "Controls", title: "Toggle idle screensaver",
     searchText: "controls toggle idle screensaver saver away activation timeout",
-    command: .viewer(["saver", "idle", "toggle", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.saverIdleToggle))
 
   static let toggleScreensaverPause = Self(
     category: "Controls", title: "Toggle screensaver pause",
     searchText: "controls toggle screensaver saver pause resume idle away lock",
-    command: .viewer(["saver", "toggle-pause", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.saverTogglePause))
 
   static let chooseMicrophone = Self(
     category: "Controls", title: "Choose microphone",
     searchText: "controls choose select microphone mic input device default audio",
-    command: .viewer(["mic", "choose", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.microphoneChoose))
 
   static let toggleMicrophone = Self(
     category: "Controls", title: "Toggle microphone mute",
     searchText: "controls toggle microphone mic mute unmute silence input privacy",
-    command: .viewer(["mic", "toggle", "--alert-on-error"]))
+    command: .alertingViewer(MacarchyInvocation.microphoneToggle))
 
   static func maintenance(_ action: MaintenanceAction) -> Self {
     Self(

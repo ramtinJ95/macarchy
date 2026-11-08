@@ -37,9 +37,9 @@ enum SaverHost {
       "-o", "macos_use_physical_screen_frame=yes", "-o", "background=\(palette.background)",
       "-o", "foreground=\(palette.foreground)", "-o", "font_size=18",
       "-o", "window_padding_width=0", "-o", "mouse_hide_wait=0.25",
-      "-o", "macos_quit_when_last_window_closed=yes", "--config", "NONE",
-      command.path, "saver", "_run", "--state-root", stateRoot.path, "--launch", token,
+      "-o", "macos_quit_when_last_window_closed=yes", "--config", "NONE", command.path,
     ]
+    arguments += MacarchyInvocation.saverRun + ["--state-root", stateRoot.path, "--launch", token]
     if let name = display.outputName { arguments += ["--display", name] }
     return arguments
   }

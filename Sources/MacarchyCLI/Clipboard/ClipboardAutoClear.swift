@@ -75,8 +75,8 @@ extension OwnedLaunchAgent {
     Self(
       label: "io.github.ramtinj95.macarchy.clipboard-auto-clear", purpose: "the automatic clear",
       home: home, stateRoot: stateRoot, userID: userID, runner: runner,
-      programArguments: [
-        executable.path, "clipboard", "_auto-clear", "--state-root", stateRoot.path,
+      programArguments: [executable.path] + MacarchyInvocation.clipboardAutoClear + [
+        "--state-root", stateRoot.path,
       ],
       logName: "clipboard-auto-clear",
       keys: [

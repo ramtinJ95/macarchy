@@ -10,7 +10,7 @@ enum SketchyBarSaverPausedIndicator {
   /// launch agent Macarchy did not write with its own error alert.
   static func toggle(_ activation: SaverIdleActivation) -> CompanionToggle {
     let icon = SketchyBarClockCompanion.saverIdleIcon
-    let click = ["saver", "idle", "toggle"]
+    let click = MacarchyInvocation.saverIdleToggle
     if case .conflict(let plist) = activation.agent {
       return CompanionToggle(
         lit: false, olderBarClick: nil, icon: icon,
@@ -27,9 +27,9 @@ enum SketchyBarSaverPausedIndicator {
     }
     if enabled.paused {
       return CompanionToggle(
-        lit: true, olderBarClick: ["saver", "resume"],
+        lit: true, olderBarClick: MacarchyInvocation.saverResume,
         icon: SketchyBarClockCompanion.saverPausedIcon,
-        detail: "Idle screensaver paused. Click to resume.", click: ["saver", "resume"])
+        detail: "Idle screensaver paused. Click to resume.", click: MacarchyInvocation.saverResume)
     }
     return CompanionToggle(
       lit: true, olderBarClick: nil, icon: icon,

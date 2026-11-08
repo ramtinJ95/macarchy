@@ -17,28 +17,13 @@ struct MicrophoneCommand: ParsableCommand {
     ])
 
   struct Options: ParsableArguments {
-    @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = StateLayout.defaultRootPath
+    @OptionGroup var launch: MenuLaunchOptions
 
-    @Flag(help: .hidden)
-    var alertOnError = false
+    var engine: Microphone { Microphone.live(stateRoot: launch.stateRootURL) }
 
-    var engine: Microphone {
-      Microphone.live(
-        stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL)
-    }
-
-    /// Prints the outcome. Menu launches have no terminal, so they also show failures in an alert.
     @MainActor
     func run(_ failureTitle: String, _ body: (Microphone) throws -> String?) throws {
-      do {
-        if let message = try body(engine) { print(message) }
-      } catch {
-        if alertOnError {
-          showNativeAlert(title: failureTitle, message: String(describing: error))
-        }
-        throw error
-      }
+      try launch.run(failureTitle) { try body(Microphone.live(stateRoot: $0)) }
     }
   }
 

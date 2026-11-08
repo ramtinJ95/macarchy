@@ -6,7 +6,7 @@ import ThemeCore
 enum SketchyBarKeepAwakeIndicator {
   /// A click runs the menu's toggle: off starts a session until turned off, on stops it.
   static func toggle(_ status: KeepAwakeStatus) -> CompanionToggle {
-    let click = ["keep-awake", "toggle"]
+    let click = MacarchyInvocation.keepAwakeToggle
     let icon = SketchyBarClockCompanion.keepAwakeIcon
     switch status {
     case .off:
@@ -15,7 +15,7 @@ enum SketchyBarKeepAwakeIndicator {
         detail: "Keep-awake is off. Click to keep the display awake.", click: click)
     case .on(let session):
       return CompanionToggle(
-        lit: true, olderBarClick: ["keep-awake", "off"], icon: icon,
+        lit: true, olderBarClick: MacarchyInvocation.keepAwakeOff, icon: icon,
         detail: "Keep-awake on \(session.until). Idle screensaver and idle lock won't start. "
           + "Click to turn off.",
         click: click)

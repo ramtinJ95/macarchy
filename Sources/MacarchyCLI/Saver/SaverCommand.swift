@@ -19,37 +19,11 @@ struct SaverCommand: ParsableCommand {
       Run.self, Observe.self,
     ])
 
-  struct Options: ParsableArguments {
-    @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = StateLayout.defaultRootPath
-
-    @Flag(help: .hidden)
-    var alertOnError = false
-
-    var stateRootURL: URL {
-      URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
-    }
-
-    /// Prints the outcome of `body`, which gets the state root. Menu and bar launches have no
-    /// terminal, so they also show failures in an alert.
-    @MainActor
-    func run(_ failureTitle: String, _ body: (URL) throws -> String) throws {
-      do {
-        print(try body(stateRootURL))
-      } catch {
-        if alertOnError {
-          showNativeAlert(title: failureTitle, message: String(describing: error))
-        }
-        throw error
-      }
-    }
-  }
-
   struct Start: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Start the screensaver on every display; it ends on any key or mouse movement.")
 
-    @OptionGroup var options: Options
+    @OptionGroup var options: MenuLaunchOptions
 
     @MainActor
     mutating func run() async throws {
@@ -64,7 +38,7 @@ struct SaverCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Stop Macarchy's screensaver on every display.")
 
-    @OptionGroup var options: Options
+    @OptionGroup var options: MenuLaunchOptions
 
     @MainActor
     mutating func run() async throws {
@@ -76,7 +50,7 @@ struct SaverCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Show the engine, Kitty, the text, where the screensaver runs and idle activation.")
 
-    @OptionGroup var options: Options
+    @OptionGroup var options: MenuLaunchOptions
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
@@ -114,7 +88,7 @@ struct SaverCommand: ParsableCommand {
         transform: { try SaverIdle.timeout.parse($0) })
       var timeout: Duration?
 
-      @OptionGroup var options: Options
+      @OptionGroup var options: MenuLaunchOptions
 
       @MainActor
       mutating func run() async throws {
@@ -131,7 +105,7 @@ struct SaverCommand: ParsableCommand {
       static let configuration = CommandConfiguration(
         abstract: "Turn idle activation off and remove its launch agent and record.")
 
-      @OptionGroup var options: Options
+      @OptionGroup var options: MenuLaunchOptions
 
       @MainActor
       mutating func run() async throws {
@@ -145,7 +119,7 @@ struct SaverCommand: ParsableCommand {
       static let configuration = CommandConfiguration(
         abstract: "Turn idle activation off when on, otherwise on with the default timeout.")
 
-      @OptionGroup var options: Options
+      @OptionGroup var options: MenuLaunchOptions
 
       @MainActor
       mutating func run() async throws {
@@ -175,7 +149,7 @@ struct SaverCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Hold off idle starts until you resume them.")
 
-    @OptionGroup var options: Options
+    @OptionGroup var options: MenuLaunchOptions
 
     @MainActor
     mutating func run() async throws {
@@ -188,7 +162,7 @@ struct SaverCommand: ParsableCommand {
   struct Resume: AsyncParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Resume paused idle starts.")
 
-    @OptionGroup var options: Options
+    @OptionGroup var options: MenuLaunchOptions
 
     @MainActor
     mutating func run() async throws {
@@ -202,7 +176,7 @@ struct SaverCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
       abstract: "Resume idle starts when paused, otherwise pause them.")
 
-    @OptionGroup var options: Options
+    @OptionGroup var options: MenuLaunchOptions
 
     @MainActor
     mutating func run() async throws {
@@ -263,7 +237,9 @@ struct SaverCommand: ParsableCommand {
             do {
               try launchDetachedProcess(
                 RuntimeEnvironment.live.executableURL,
-                arguments: ["saver", "_idle", "--state-root", root, "--alert=\(failure)"])
+                arguments: MacarchyInvocation.saverIdle + [
+                  "--state-root", root, "--alert=\(failure)",
+                ])
             } catch {
               let line = "Could not show the alert for this failure: \(error)\n"
               try? FileHandle.standardError.write(contentsOf: Data(line.utf8))

@@ -494,9 +494,9 @@ struct ClipboardHistoryTests {
   @Test func menuLaunchesParse() throws {
     let clear = try ClipboardCommand.Clear.parse(["--confirm", "--alert-on-error"])
     #expect(clear.confirm)
-    #expect(clear.options.alertOnError)
+    #expect(clear.options.launch.alertOnError)
     #expect(try ClipboardCommand.Clear.parse([]).confirm == false)
-    #expect(try ClipboardCommand.Open.parse(["--alert-on-error"]).options.alertOnError)
+    #expect(try ClipboardCommand.Open.parse(["--alert-on-error"]).options.launch.alertOnError)
     #expect(try ClipboardCommand.Status.parse(["--json"]).json)
   }
 
@@ -505,7 +505,7 @@ struct ClipboardHistoryTests {
     #expect(try ClipboardCommand.AutoClear.parse(["off"]).state == .off)
     #expect(throws: (any Error).self) { try ClipboardCommand.AutoClear.parse(["toggle"]) }
     let run = try ClipboardCommand.RunAutoClear.parse(["--state-root", "/Users/test/state"])
-    #expect(run.options.stateRoot == "/Users/test/state")
+    #expect(run.options.launch.stateRoot == "/Users/test/state")
     let alert = try ClipboardCommand.RunAutoClear.parse([
       "--state-root", "/Users/test/state", "--alert=-Maccy did not quit",
     ])

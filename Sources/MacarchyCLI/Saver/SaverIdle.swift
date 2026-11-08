@@ -195,7 +195,9 @@ extension OwnedLaunchAgent {
     Self(
       label: "io.github.ramtinj95.macarchy.saver-idle", purpose: "the idle screensaver",
       home: home, stateRoot: stateRoot, userID: userID, runner: runner,
-      programArguments: [executable.path, "saver", "_idle", "--state-root", stateRoot.path],
+      programArguments: [executable.path] + MacarchyInvocation.saverIdle + [
+        "--state-root", stateRoot.path,
+      ],
       logName: "saver-idle",
       keys: [
         "KeepAlive": ["SuccessfulExit": false],

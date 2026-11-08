@@ -173,7 +173,7 @@ struct KeepAwakeTests {
     #expect(try KeepAwakeCommand.On.parse(["--for", "1h30m"]).duration == .seconds(5_400))
     #expect(try KeepAwakeCommand.On.parse([]).duration == nil)
     #expect(throws: (any Error).self) { try KeepAwakeCommand.On.parse(["--for", "0m"]) }
-    #expect(try KeepAwakeCommand.Toggle.parse(["--alert-on-error"]).options.alertOnError)
+    #expect(try KeepAwakeCommand.Toggle.parse(["--alert-on-error"]).options.launch.alertOnError)
     #expect(try KeepAwakeCommand.Status.parse(["--json"]).json)
   }
 

@@ -47,7 +47,7 @@ struct SketchyBarCompanionToggle {
         click = revert
       }
       // The command hints the bar once the feature changes, and that refresh shows the result.
-      try launch(click + ["--state-root", stateRoot.path, "--alert-on-error"])
+      try launch(click + ["--state-root", stateRoot.path, MacarchyInvocation.alertOnError])
     case "mouse.entered":
       try bar(["--set", companion.item, "popup.drawing=on"])
     case "mouse.exited", "mouse.exited.global":
