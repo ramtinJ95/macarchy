@@ -407,6 +407,8 @@ package struct EnvironmentGenerationStore: Sendable {
     return destination
   }
 
+  /// Deliberately accepts a UUID in any letter case, unlike the lowercase-only
+  /// `isPrefixedLowercaseUUID` the other generation stores use (ADR-0297 keeps it as policy).
   package static func isGenerationID(_ value: String) -> Bool {
     guard value.hasPrefix("e-") else { return false }
     return UUID(uuidString: String(value.dropFirst(2))) != nil
