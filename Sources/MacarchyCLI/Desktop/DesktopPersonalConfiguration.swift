@@ -21,18 +21,18 @@ enum DesktopPersonalProvider: String, Sendable {
   ) throws
     -> DesktopPersonalComposition
   {
-    let defaults = context.desktopResourcesRoot.appending(path: "\(rawValue)/defaults.toml")
     switch self {
     case .yabai:
       return .yabai(
-        try YabaiConfigurationComposer().compose(
-          defaultsURL: defaults, profile: profile,
+        try DesktopDesiredState.composeYabai(
+          resourcesRoot: context.desktopResourcesRoot, profile: profile,
           macarchyExecutableURL: RuntimeEnvironment.live.persistentCommandURL,
           includePersonalConfiguration: includePersonalConfiguration))
     case .sketchybar:
       return .sketchybar(
-        try SketchyBarConfigurationComposer().compose(
-          defaultsURL: defaults, profile: profile, stateRoot: context.stateRoot,
+        try DesktopDesiredState.composeSketchyBar(
+          resourcesRoot: context.desktopResourcesRoot, profile: profile,
+          stateRoot: context.stateRoot,
           macarchyExecutableURL: RuntimeEnvironment.live.persistentCommandURL,
           includePersonalConfiguration: includePersonalConfiguration))
     }

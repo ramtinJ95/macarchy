@@ -65,10 +65,8 @@ struct DesktopApplyCommandRunner: Sendable {
         composition: value, adoptionEvidenceDigest: nil, lifecycle: lifecycle,
         faultInjector: faultInjector)
     case .sketchybar(let value):
-      let palette = SketchyBarPalettePlanInspector().inspect(
-        stateRoot: context.stateRoot, enabled: true)
-      guard palette.status == .current else {
-        throw DesktopApplyBlockedError(reason: palette.message)
+      if let reason = SketchyBarPalettePlanInspector().applyBlocker(stateRoot: context.stateRoot) {
+        throw DesktopApplyBlockedError(reason: reason)
       }
       result = try coordinator.sketchyBarTransaction(
         stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
@@ -127,14 +125,10 @@ struct DesktopApplyCommandRunner: Sendable {
             reason: "complete the pending desktop/setup transaction before a yabai-only apply"
           )
         }
-        if desired.sketchyBarComposition != nil {
-          let palette = SketchyBarPalettePlanInspector().inspect(
-            stateRoot: stateRoot,
-            enabled: true
-          )
-          guard palette.status == .current else {
-            throw DesktopApplyBlockedError(reason: palette.message)
-          }
+        if desired.sketchyBarComposition != nil,
+          let reason = SketchyBarPalettePlanInspector().applyBlocker(stateRoot: stateRoot)
+        {
+          throw DesktopApplyBlockedError(reason: reason)
         }
         let yabai =
           if let composition = desired.yabaiComposition {
@@ -549,7 +543,7 @@ struct DesktopApplyCommandRunner: Sendable {
         stateRoot: stateRoot,
         enabled: true
       )
-      guard [.managed, .installRequired, .adoptionRequired].contains(provider.status) else {
+      guard provider.status.permitsApply else {
         throw DesktopAggregateError.invalidState(provider.message)
       }
       if provider.status == .adoptionRequired {
@@ -588,12 +582,8 @@ struct DesktopApplyCommandRunner: Sendable {
       )
     }
     if desired.profile.topBar == .sketchybar {
-      let palette = SketchyBarPalettePlanInspector().inspect(
-        stateRoot: stateRoot,
-        enabled: true
-      )
-      guard palette.status == .current else {
-        throw DesktopAggregateError.invalidState(palette.message)
+      if let reason = SketchyBarPalettePlanInspector().applyBlocker(stateRoot: stateRoot) {
+        throw DesktopAggregateError.invalidState(reason)
       }
       let generation = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
       guard generation.status != .invalid else {
@@ -605,7 +595,7 @@ struct DesktopApplyCommandRunner: Sendable {
         enabled: true,
         generation: generation
       )
-      guard [.managed, .installRequired, .adoptionRequired].contains(provider.status) else {
+      guard provider.status.permitsApply else {
         throw DesktopAggregateError.invalidState(provider.message)
       }
       if provider.status == .adoptionRequired {
@@ -923,52 +913,6 @@ struct DesktopTeardownCommandRunner: Sendable {
 
 struct DesktopApplyBlockedError: Error {
   let reason: String
-}
-
-struct DesktopDesiredState: Sendable {
-  let profile: PortableProfile
-  let yabaiComposition: YabaiComposition?
-  let sketchyBarComposition: SketchyBarComposition?
-
-  static func load(
-    resourcesRoot: URL,
-    profileURL: URL,
-    profileRequired: Bool,
-    stateRoot: URL,
-    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
-    profile suppliedProfile: PortableProfile? = nil,
-    scope: DesktopProviderScope = .allProviders
-  ) throws -> Self {
-    let profile =
-      try suppliedProfile
-      ?? PortableProfileLoader().load(at: profileURL, required: profileRequired)
-    let yabaiComposition: YabaiComposition? =
-      if profile.desktop.provider == .yabaiSkhd {
-        try YabaiConfigurationComposer().compose(
-          defaultsURL: resourcesRoot.appending(path: "yabai/defaults.toml"),
-          profile: profile,
-          macarchyExecutableURL: macarchyExecutableURL
-        )
-      } else {
-        nil
-      }
-    let sketchyBarComposition: SketchyBarComposition? =
-      if scope == .allProviders, profile.topBar == .sketchybar {
-        try SketchyBarConfigurationComposer().compose(
-          defaultsURL: resourcesRoot.appending(path: "sketchybar/defaults.toml"),
-          profile: profile,
-          stateRoot: stateRoot,
-          macarchyExecutableURL: macarchyExecutableURL
-        )
-      } else {
-        nil
-      }
-    return Self(
-      profile: profile,
-      yabaiComposition: yabaiComposition,
-      sketchyBarComposition: sketchyBarComposition
-    )
-  }
 }
 
 struct ApplyResult: Encodable {
