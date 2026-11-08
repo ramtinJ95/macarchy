@@ -329,7 +329,7 @@ struct DependencyProfile: Sendable {
           probes: [
             .appleMenuHelper(
               RuntimeEnvironment.live.executableURL.deletingLastPathComponent().appending(
-                path: "macarchy-menu"))
+                path: AppleMenuHelper.executableName))
           ],
           remediation: .external(
             "Enable Accessibility manually for the packaged macarchy-menu executable in System Settings > Privacy & Security > Accessibility. Run its --check command for the exact failure. Recheck after upgrades; no permission is granted automatically."

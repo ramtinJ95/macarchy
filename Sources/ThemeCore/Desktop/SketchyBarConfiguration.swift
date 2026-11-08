@@ -281,7 +281,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       SketchyBarAppleScript.render(
         palettePath: palettePath,
         helperPath: macarchyExecutableURL.deletingLastPathComponent().appending(
-          path: "macarchy-menu"
+          path: AppleMenuHelper.executableName
         ).standardizedFileURL.path))
     addModulePlugin(
       .media,

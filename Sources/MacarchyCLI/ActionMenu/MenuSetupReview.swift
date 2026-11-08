@@ -15,7 +15,7 @@ struct MenuSetupReview: Sendable {
         false
       )
     }
-    try SetupPackageInstallationStore(context: context).requireResolved()
+    try SetupPendingWork.requireNone(.packageAttempt, context: context)
     guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
       return ("Interrupted setup requires explicit setup recover before menu apply.", false)
     }
