@@ -380,9 +380,7 @@ extension EnvironmentTransactionCoordinator {
       sourceURL: URL(filePath: intent.source))
     try migration.transition(transaction)
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    try store.writeOwnership(
-      transaction.direction == .forward
-        ? transaction.proposedOwnership : transaction.previousOwnership)
+    try store.writeOwnership(transaction.destinationOwnership)
     try migration.cleanup(transaction)
   }
 }

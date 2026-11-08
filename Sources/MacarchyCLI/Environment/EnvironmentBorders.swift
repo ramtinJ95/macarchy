@@ -358,12 +358,8 @@ func verifyPendingBordersRuntime(
   }
   let originalServiceUnchanged =
     transaction.direction == .rollback && transaction.bordersRuntimeAttempted != true
-  let destination =
-    transaction.direction == .forward
-    ? transaction.proposedOwnership : transaction.previousOwnership
-  let source =
-    transaction.direction == .forward
-    ? transaction.previousOwnership : transaction.proposedOwnership
+  let destination = transaction.destinationOwnership
+  let source = transaction.sourceOwnership
   if target == .managed {
     try coordinator.verifyManagedBordersConfiguration()
   } else if let baseline = source?.borders {
@@ -420,21 +416,33 @@ func verifyPendingBordersRuntime(
   }
   try lock.withLock {
     if let manifest {
-      var results: [AdapterResult] = []
-      if case .current(let record) = try statusStore.reconciliationState(for: manifest) {
-        results = record.results.filter { $0.adapterID != BordersAdapter.id }
-      }
-      results.append(
-        AdapterResult(
-          adapterID: BordersAdapter.id, requirement: RuntimeAdapterKind.borders.requirement,
-          status: .applied, message: message))
-      _ = try statusStore.persist(manifest: manifest, results: results)
+      try recordAppliedFocusResult(
+        statusStore: statusStore, manifest: manifest, replacing: [BordersAdapter.id],
+        adapterID: BordersAdapter.id, requirement: RuntimeAdapterKind.borders.requirement,
+        message: message)
     }
     try coordinator.markBordersRuntimeVerifiedLocked(target)
   }
   return DesktopThemeAdapterStatus(
     adapterID: BordersAdapter.id, requirement: RuntimeAdapterKind.borders.requirement.rawValue,
     status: "applied", message: message)
+}
+
+/// Replaces the focus renderers' results in the generation's reconciliation record with the
+/// one applied result, keeping every other adapter's result.
+func recordAppliedFocusResult(
+  statusStore: ReconciliationStatusStore, manifest: GenerationManifest,
+  replacing excludedAdapterIDs: [String], adapterID: String,
+  requirement: AdapterRequirement, message: String
+) throws {
+  var results: [AdapterResult] = []
+  if case .current(let record) = try statusStore.reconciliationState(for: manifest) {
+    results = record.results.filter { !excludedAdapterIDs.contains($0.adapterID) }
+  }
+  results.append(
+    AdapterResult(
+      adapterID: adapterID, requirement: requirement, status: .applied, message: message))
+  _ = try statusStore.persist(manifest: manifest, results: results)
 }
 
 func observedBordersService(

@@ -149,12 +149,8 @@ func verifyPendingLeanHandoff(
   let home = coordinator.homeDirectory
   let lock = ActivationLock(root: root)
   let store = EnvironmentStateStore(stateRoot: root)
-  let source =
-    transaction.direction == .forward
-    ? transaction.previousOwnership?.borders : transaction.proposedOwnership?.borders
-  let destination =
-    transaction.direction == .forward
-    ? transaction.proposedOwnership?.borders : transaction.previousOwnership?.borders
+  let source = transaction.sourceOwnership?.borders
+  let destination = transaction.destinationOwnership?.borders
   let sourceLean = source?.leanService
   let destinationLean = destination?.leanService
   let attempted = transaction.bordersRuntimeAttempted == true
@@ -259,18 +255,11 @@ func verifyPendingLeanHandoff(
     if let destination {
       let status = ReconciliationStatusStore(root: root)
       let manifest = try ThemeGenerationReader(root: root).activeManifest()
-      var results: [AdapterResult] = []
-      if case .current(let record) = try status.reconciliationState(for: manifest) {
-        results = record.results.filter {
-          ![BordersAdapter.id, BordersAdapter.leanID].contains($0.adapterID)
-        }
-      }
-      results.append(
-        AdapterResult(
-          adapterID: destination.adapterID, requirement: destination.consumer.requirement,
-          status: .applied,
-          message: message))
-      _ = try status.persist(manifest: manifest, results: results)
+      try recordAppliedFocusResult(
+        statusStore: status, manifest: manifest,
+        replacing: [BordersAdapter.id, BordersAdapter.leanID],
+        adapterID: destination.adapterID, requirement: destination.consumer.requirement,
+        message: message)
     }
     try coordinator.markBordersRuntimeVerifiedLocked(target)
   }
