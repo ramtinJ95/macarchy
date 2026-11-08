@@ -724,7 +724,7 @@ struct SketchyBarProviderTransaction: Sendable {
 
   func retainedOriginalURL(nonce: UUID = UUID()) -> URL {
     stateRoot.appending(
-      path: "\(StateLayout.sketchyBarDirectory)/retained-\(nonce.uuidString.lowercased())"
+      path: "\(StateLayout.sketchyBarDirectory)/\(RetainedOriginalName.make(nonce: nonce))"
     )
   }
 

@@ -113,12 +113,10 @@ struct RetainedOwnershipMigration {
       }
       let entry = homeDirectory.appending(path: ConsumerHomePath.yabaiConfiguration)
       let retained = URL(filePath: path)
-      let prefix = "retained-"
       guard
         retained.deletingLastPathComponent().path
           == stateRoot.appending(path: StateLayout.yabaiDirectory).path,
-        retained.lastPathComponent.hasPrefix(prefix),
-        UUID(uuidString: String(retained.lastPathComponent.dropFirst(prefix.count))) != nil,
+        RetainedOriginalName.isValid(retained.lastPathComponent, nonceCase: .any),
         record.original.publicPath
           == (record.original.kind == .directorySymlink
             ? entry.deletingLastPathComponent().path : entry.path),
