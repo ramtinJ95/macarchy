@@ -536,13 +536,11 @@ private struct PaletteState {
   let color: CGColor
 
   static func pointerStamp(root: URL) throws -> String {
-    let path = StateLayout(root: root).currentTheme.path
-    var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
-    let count = readlink(path, &buffer, buffer.count)
-    guard count >= 0, count < buffer.count else {
-      throw FocusRingError("cannot read theme pointer \(path) (errno \(errno))")
+    let pointer = StateLayout(root: root).currentTheme
+    guard let target = SymbolicLink.target(of: pointer) else {
+      throw FocusRingError("cannot read theme pointer \(pointer.path) (errno \(errno))")
     }
-    return String(decoding: buffer.prefix(count).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    return target
   }
 
   /// Stamped before the read so a concurrent swap is seen at the next check.
