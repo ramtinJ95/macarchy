@@ -155,10 +155,10 @@ struct EnvironmentLifecycleFixture {
     )
   }
 
-  func status() throws -> (output: String, succeeded: Bool) {
+  func status(theme: DesktopThemeController? = nil) throws -> (output: String, succeeded: Bool) {
     try EnvironmentStatusCommandRunner(
       prerequisites: prerequisites,
-      theme: nil
+      theme: theme
     ).execute(
       resourcesRoot: repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory),
       profileURL: profile,
