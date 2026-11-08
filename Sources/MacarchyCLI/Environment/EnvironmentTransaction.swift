@@ -105,18 +105,13 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
   let previousCurrentDestination: String?
   let previousThemeGenerationID: String?
   let rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry]
-  let btopReplacementName: String?
-  let codexReplacementName: String?
-  let herdrReplacementName: String?
+  let replacementNames: EnvironmentReplacementNames
   var herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget?
   var herdrRuntimeVerified: Bool?
   let herdrLegacyMigration: Bool?
-  let piReplacementName: String?
-  let spicetifyReplacementName: String?
   var spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?
   var spicetifyRuntimeVerified: Bool?
   var spicetifyRuntimeDeferred: Bool?
-  let tuicrReplacementName: String?
   let bordersPreviousRuntime: BordersServiceInspection?
   var bordersRuntimeTarget: EnvironmentBordersRuntimeTarget?
   var bordersRuntimeAttempted: Bool?
@@ -131,18 +126,13 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     previousCurrentDestination: String?,
     previousThemeGenerationID: String? = nil,
     rollbackThemeBridges: [EnvironmentThemeBridgeState.Entry] = [],
-    btopReplacementName: String? = nil,
-    codexReplacementName: String? = nil,
-    herdrReplacementName: String? = nil,
+    replacementNames: EnvironmentReplacementNames = EnvironmentReplacementNames(),
     herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget? = nil,
     herdrRuntimeVerified: Bool? = nil,
     herdrLegacyMigration: Bool? = nil,
-    piReplacementName: String? = nil,
-    spicetifyReplacementName: String? = nil,
     spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget? = nil,
     spicetifyRuntimeVerified: Bool? = nil,
     spicetifyRuntimeDeferred: Bool? = nil,
-    tuicrReplacementName: String? = nil,
     bordersPreviousRuntime: BordersServiceInspection? = nil,
     bordersRuntimeTarget: EnvironmentBordersRuntimeTarget? = nil,
     bordersRuntimeAttempted: Bool? = nil,
@@ -157,18 +147,13 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     self.previousCurrentDestination = previousCurrentDestination
     self.previousThemeGenerationID = previousThemeGenerationID
     self.rollbackThemeBridges = rollbackThemeBridges
-    self.btopReplacementName = btopReplacementName
-    self.codexReplacementName = codexReplacementName
-    self.herdrReplacementName = herdrReplacementName
+    self.replacementNames = replacementNames
     self.herdrRuntimeTarget = herdrRuntimeTarget
     self.herdrRuntimeVerified = herdrRuntimeVerified
     self.herdrLegacyMigration = herdrLegacyMigration
-    self.piReplacementName = piReplacementName
-    self.spicetifyReplacementName = spicetifyReplacementName
     self.spicetifyRuntimeTarget = spicetifyRuntimeTarget
     self.spicetifyRuntimeVerified = spicetifyRuntimeVerified
     self.spicetifyRuntimeDeferred = spicetifyRuntimeDeferred
-    self.tuicrReplacementName = tuicrReplacementName
     self.bordersPreviousRuntime = bordersPreviousRuntime
     self.bordersRuntimeTarget = bordersRuntimeTarget
     self.bordersRuntimeAttempted = bordersRuntimeAttempted
@@ -199,17 +184,6 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     return transaction
   }
 
-  var replacementNames: EnvironmentReplacementNames {
-    EnvironmentReplacementNames(
-      btop: btopReplacementName,
-      codex: codexReplacementName,
-      herdr: herdrReplacementName,
-      pi: piReplacementName,
-      spicetify: spicetifyReplacementName,
-      tuicr: tuicrReplacementName
-    )
-  }
-
   var withHerdrRuntimeVerified: Self {
     var transaction = self
     transaction.herdrRuntimeVerified = true
@@ -224,75 +198,156 @@ struct EnvironmentTransaction: Codable, Equatable, Sendable {
     return transaction
   }
 
-  enum CodingKeys: String, CodingKey {
-    case schemaVersion = "schema_version"
-    case operation, direction
-    case standardMigration = "standard_migration"
-    case previousOwnership = "previous_ownership"
-    case proposedOwnership = "proposed_ownership"
-    case previousCurrentDestination = "previous_current_destination"
-    case previousThemeGenerationID = "previous_theme_generation_id"
-    case rollbackThemeBridges = "rollback_theme_bridges"
-    case btopReplacementName = "btop_replacement_name"
-    case codexReplacementName = "codex_replacement_name"
-    case herdrReplacementName = "herdr_replacement_name"
-    case herdrRuntimeTarget = "herdr_runtime_target"
-    case herdrRuntimeVerified = "herdr_runtime_verified"
-    case herdrLegacyMigration = "herdr_legacy_migration"
-    case piReplacementName = "pi_replacement_name"
-    case spicetifyReplacementName = "spicetify_replacement_name"
-    case spicetifyRuntimeTarget = "spicetify_runtime_target"
-    case spicetifyRuntimeVerified = "spicetify_runtime_verified"
-    case spicetifyRuntimeDeferred = "spicetify_runtime_deferred"
-    case tuicrReplacementName = "tuicr_replacement_name"
-    case bordersPreviousRuntime = "borders_previous_runtime"
-    case bordersRuntimeTarget = "borders_runtime_target"
-    case bordersRuntimeAttempted = "borders_runtime_attempted"
-    case bordersRuntimeVerified = "borders_runtime_verified"
+  /// The journal keeps one `<file>_replacement_name` member per key-owned file, so those keys
+  /// are built from `EnvironmentKeyOwnedFile` rather than enumerated.
+  private struct CodingKeys: CodingKey, Sendable {
+    let stringValue: String
+    var intValue: Int? { nil }
+
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+
+    static let schemaVersion = CodingKeys(stringValue: "schema_version")
+    static let operation = CodingKeys(stringValue: "operation")
+    static let direction = CodingKeys(stringValue: "direction")
+    static let standardMigration = CodingKeys(stringValue: "standard_migration")
+    static let previousOwnership = CodingKeys(stringValue: "previous_ownership")
+    static let proposedOwnership = CodingKeys(stringValue: "proposed_ownership")
+    static let previousCurrentDestination = CodingKeys(stringValue: "previous_current_destination")
+    static let previousThemeGenerationID = CodingKeys(stringValue: "previous_theme_generation_id")
+    static let rollbackThemeBridges = CodingKeys(stringValue: "rollback_theme_bridges")
+    static let herdrRuntimeTarget = CodingKeys(stringValue: "herdr_runtime_target")
+    static let herdrRuntimeVerified = CodingKeys(stringValue: "herdr_runtime_verified")
+    static let herdrLegacyMigration = CodingKeys(stringValue: "herdr_legacy_migration")
+    static let spicetifyRuntimeTarget = CodingKeys(stringValue: "spicetify_runtime_target")
+    static let spicetifyRuntimeVerified = CodingKeys(stringValue: "spicetify_runtime_verified")
+    static let spicetifyRuntimeDeferred = CodingKeys(stringValue: "spicetify_runtime_deferred")
+    static let bordersPreviousRuntime = CodingKeys(stringValue: "borders_previous_runtime")
+    static let bordersRuntimeTarget = CodingKeys(stringValue: "borders_runtime_target")
+    static let bordersRuntimeAttempted = CodingKeys(stringValue: "borders_runtime_attempted")
+    static let bordersRuntimeVerified = CodingKeys(stringValue: "borders_runtime_verified")
+
+    static func replacementName(_ file: EnvironmentKeyOwnedFile) -> CodingKeys {
+      CodingKeys(stringValue: "\(file.rawValue)_replacement_name")
+    }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    operation = try container.decode(EnvironmentTransactionOperation.self, forKey: .operation)
+    direction = try container.decode(EnvironmentTransactionDirection.self, forKey: .direction)
+    standardMigration = try container.decodeIfPresent(
+      EnvironmentStandardMigration.Intent.self, forKey: .standardMigration)
+    previousOwnership = try container.decodeIfPresent(
+      EnvironmentOwnership.self, forKey: .previousOwnership)
+    proposedOwnership = try container.decodeIfPresent(
+      EnvironmentOwnership.self, forKey: .proposedOwnership)
+    previousCurrentDestination = try container.decodeIfPresent(
+      String.self, forKey: .previousCurrentDestination)
+    previousThemeGenerationID = try container.decodeIfPresent(
+      String.self, forKey: .previousThemeGenerationID)
+    rollbackThemeBridges = try container.decode(
+      [EnvironmentThemeBridgeState.Entry].self, forKey: .rollbackThemeBridges)
+    // Decode in the journal's historical field order: the first malformed field is the
+    // reported recovery error.
+    var names = [EnvironmentKeyOwnedFile: String]()
+    func decodeName(_ file: EnvironmentKeyOwnedFile) throws {
+      names[file] = try container.decodeIfPresent(String.self, forKey: .replacementName(file))
+    }
+    try decodeName(.btop)
+    try decodeName(.codex)
+    try decodeName(.herdr)
+    herdrRuntimeTarget = try container.decodeIfPresent(
+      EnvironmentHerdrRuntimeTarget.self, forKey: .herdrRuntimeTarget)
+    herdrRuntimeVerified = try container.decodeIfPresent(Bool.self, forKey: .herdrRuntimeVerified)
+    herdrLegacyMigration = try container.decodeIfPresent(Bool.self, forKey: .herdrLegacyMigration)
+    try decodeName(.pi)
+    try decodeName(.spicetify)
+    spicetifyRuntimeTarget = try container.decodeIfPresent(
+      EnvironmentSpicetifyRuntimeTarget.self, forKey: .spicetifyRuntimeTarget)
+    spicetifyRuntimeVerified = try container.decodeIfPresent(
+      Bool.self, forKey: .spicetifyRuntimeVerified)
+    spicetifyRuntimeDeferred = try container.decodeIfPresent(
+      Bool.self, forKey: .spicetifyRuntimeDeferred)
+    try decodeName(.tuicr)
+    replacementNames = EnvironmentReplacementNames(names)
+    bordersPreviousRuntime = try container.decodeIfPresent(
+      BordersServiceInspection.self, forKey: .bordersPreviousRuntime)
+    bordersRuntimeTarget = try container.decodeIfPresent(
+      EnvironmentBordersRuntimeTarget.self, forKey: .bordersRuntimeTarget)
+    bordersRuntimeAttempted = try container.decodeIfPresent(
+      Bool.self, forKey: .bordersRuntimeAttempted)
+    bordersRuntimeVerified = try container.decodeIfPresent(
+      Bool.self, forKey: .bordersRuntimeVerified)
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(schemaVersion, forKey: .schemaVersion)
+    try container.encode(operation, forKey: .operation)
+    try container.encode(direction, forKey: .direction)
+    try container.encodeIfPresent(standardMigration, forKey: .standardMigration)
+    try container.encodeIfPresent(previousOwnership, forKey: .previousOwnership)
+    try container.encodeIfPresent(proposedOwnership, forKey: .proposedOwnership)
+    try container.encodeIfPresent(previousCurrentDestination, forKey: .previousCurrentDestination)
+    try container.encodeIfPresent(previousThemeGenerationID, forKey: .previousThemeGenerationID)
+    try container.encode(rollbackThemeBridges, forKey: .rollbackThemeBridges)
+    func encodeName(_ file: EnvironmentKeyOwnedFile) throws {
+      try container.encodeIfPresent(replacementNames[file], forKey: .replacementName(file))
+    }
+    try encodeName(.btop)
+    try encodeName(.codex)
+    try encodeName(.herdr)
+    try container.encodeIfPresent(herdrRuntimeTarget, forKey: .herdrRuntimeTarget)
+    try container.encodeIfPresent(herdrRuntimeVerified, forKey: .herdrRuntimeVerified)
+    try container.encodeIfPresent(herdrLegacyMigration, forKey: .herdrLegacyMigration)
+    try encodeName(.pi)
+    try encodeName(.spicetify)
+    try container.encodeIfPresent(spicetifyRuntimeTarget, forKey: .spicetifyRuntimeTarget)
+    try container.encodeIfPresent(spicetifyRuntimeVerified, forKey: .spicetifyRuntimeVerified)
+    try container.encodeIfPresent(spicetifyRuntimeDeferred, forKey: .spicetifyRuntimeDeferred)
+    try encodeName(.tuicr)
+    try container.encodeIfPresent(bordersPreviousRuntime, forKey: .bordersPreviousRuntime)
+    try container.encodeIfPresent(bordersRuntimeTarget, forKey: .bordersRuntimeTarget)
+    try container.encodeIfPresent(bordersRuntimeAttempted, forKey: .bordersRuntimeAttempted)
+    try container.encodeIfPresent(bordersRuntimeVerified, forKey: .bordersRuntimeVerified)
   }
 }
 
-/// The replacement file names a transaction reserves for the presets' key-owned files.
+/// The replacement file names a transaction reserves for the key-owned configuration files.
 struct EnvironmentReplacementNames: Equatable, Sendable {
-  var btop: String? = nil
-  var codex: String? = nil
-  var herdr: String? = nil
-  var pi: String? = nil
-  var spicetify: String? = nil
-  var tuicr: String? = nil
+  private(set) var names: [EnvironmentKeyOwnedFile: String]
+
+  init(_ names: [EnvironmentKeyOwnedFile: String] = [:]) {
+    self.names = names
+  }
+
+  subscript(file: EnvironmentKeyOwnedFile) -> String? { names[file] }
 }
 
 extension EnvironmentReplacementNames {
-  /// Reserves a fresh name for each preset file that either ownership snapshot owns.
+  /// Reserves a fresh name for each key-owned file that either ownership snapshot owns.
   init(from old: EnvironmentOwnership?, to new: EnvironmentOwnership?) {
-    func reserve(_ preset: String, _ owned: Bool) -> String? {
-      owned ? Self.reserve(preset) : nil
-    }
     self.init(
-      btop: reserve("btop", old?.btop != nil || new?.btop != nil),
-      codex: reserve("codex", old?.codex != nil || new?.codex != nil),
-      herdr: reserve("herdr", old?.herdr != nil || new?.herdr != nil),
-      pi: reserve("pi", old?.pi != nil || new?.pi != nil),
-      spicetify: reserve("spicetify", old?.spicetify != nil || new?.spicetify != nil),
-      tuicr: reserve("tuicr", old?.tuicr != nil || new?.tuicr != nil)
-    )
+      Dictionary(
+        uniqueKeysWithValues: EnvironmentKeyOwnedFile.allCases
+          .filter { $0.isOwned(by: old) || $0.isOwned(by: new) }
+          .map { ($0, Self.reserve($0.rawValue)) }))
   }
 
-  var isEmpty: Bool { self == Self() }
+  var isEmpty: Bool { names.isEmpty }
 
   static func reserve(_ preset: String) -> String {
     ".macarchy-environment-\(preset)-\(UUID().uuidString.lowercased()).replacement"
   }
 
-  /// Whether each preset has a well-formed name exactly when either snapshot owns its file.
+  /// Whether each key-owned file has a well-formed name exactly when either snapshot owns it.
   func areValid(from old: EnvironmentOwnership?, to new: EnvironmentOwnership?) -> Bool {
-    Self.isValid(btop, preset: "btop", required: old?.btop != nil || new?.btop != nil)
-      && Self.isValid(codex, preset: "codex", required: old?.codex != nil || new?.codex != nil)
-      && Self.isValid(herdr, preset: "herdr", required: old?.herdr != nil || new?.herdr != nil)
-      && Self.isValid(pi, preset: "pi", required: old?.pi != nil || new?.pi != nil)
-      && Self.isValid(
-        spicetify, preset: "spicetify", required: old?.spicetify != nil || new?.spicetify != nil)
-      && Self.isValid(tuicr, preset: "tuicr", required: old?.tuicr != nil || new?.tuicr != nil)
+    EnvironmentKeyOwnedFile.allCases.allSatisfy {
+      Self.isValid(
+        names[$0], preset: $0.rawValue, required: $0.isOwned(by: old) || $0.isOwned(by: new))
+    }
   }
 
   static func isValid(_ name: String?, preset: String, required: Bool) -> Bool {

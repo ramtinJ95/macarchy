@@ -250,8 +250,9 @@ struct HerdrPresetLifecycleTests {
         operation: .herdrTheme, direction: direction,
         previousOwnership: previous, proposedOwnership: proposed,
         previousCurrentDestination: "generations/\(previous.generationID)",
-        herdrReplacementName:
-          ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement",
+        replacementNames: EnvironmentReplacementNames([
+          .herdr: ".macarchy-environment-herdr-\(UUID().uuidString.lowercased()).replacement"
+        ]),
         herdrRuntimeTarget: .managed)
       // Reproduce a journal published before any provider file was changed.
       try store.writeTransaction(transaction)

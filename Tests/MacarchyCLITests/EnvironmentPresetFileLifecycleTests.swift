@@ -267,15 +267,18 @@ enum PresetFileCase: String, CaseIterable, Sendable {
     case .tuicr:
       return EnvironmentTransaction(
         operation: .teardown, previousOwnership: previous, proposedOwnership: nil,
-        previousCurrentDestination: destination, tuicrReplacementName: replacementName)
+        previousCurrentDestination: destination,
+        replacementNames: EnvironmentReplacementNames([.tuicr: replacementName]))
     case .pi:
       return EnvironmentTransaction(
         operation: .teardown, previousOwnership: previous, proposedOwnership: nil,
-        previousCurrentDestination: destination, piReplacementName: replacementName)
+        previousCurrentDestination: destination,
+        replacementNames: EnvironmentReplacementNames([.pi: replacementName]))
     case .codex:
       return EnvironmentTransaction(
         operation: .teardown, previousOwnership: previous, proposedOwnership: nil,
-        previousCurrentDestination: destination, codexReplacementName: replacementName)
+        previousCurrentDestination: destination,
+        replacementNames: EnvironmentReplacementNames([.codex: replacementName]))
     }
   }
 }

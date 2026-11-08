@@ -237,10 +237,9 @@ struct EnvironmentStateStore: Sendable {
         && transaction.previousThemeGenerationID == nil
         && transaction.rollbackThemeBridges.isEmpty
         // A theme transaction reserves only Herdr's replacement.
-        && transaction.replacementNames
-          == EnvironmentReplacementNames(herdr: transaction.herdrReplacementName)
+        && Set(transaction.replacementNames.names.keys) == [.herdr]
         && EnvironmentReplacementNames.isValid(
-          transaction.herdrReplacementName, preset: "herdr", required: true)
+          transaction.replacementNames[.herdr], preset: "herdr", required: true)
     }
     return transaction.replacementNames.areValid(
       from: transaction.previousOwnership, to: transaction.proposedOwnership)

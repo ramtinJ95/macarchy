@@ -17,26 +17,16 @@ enum ThemeRuntimeSelection {
   ) throws -> Set<String> {
     let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
     let setupIDs = Set(try SetupOwnershipManager().readRecords(context: context).map(\.id))
-    let legacyCodex = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-      named: "Codex", requiredIDs: EnvironmentLegacyIntegration.codexIDs, setupIDs: setupIDs)
-    let legacyPi = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-      named: "Pi", requiredIDs: EnvironmentLegacyIntegration.piIDs, setupIDs: setupIDs)
-    let legacySpicetify = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-      named: "Spicetify", requiredIDs: EnvironmentLegacyIntegration.spicetifyIDs, setupIDs: setupIDs
-    )
-    let legacyTuicr = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-      named: "tuicr", requiredIDs: EnvironmentLegacyIntegration.tuicrIDs, setupIDs: setupIDs)
+    let legacyAdapterIDs = try EnvironmentLinkedPreset.allCases.compactMap { linked in
+      try linked.hasCompleteLegacyIntegration(setupIDs: setupIDs) ? linked.preset.adapterID : nil
+    }
 
     var enabled: Set<String>
     if let ownership {
       enabled = appliedAdapterIDs(for: ownership)
     } else {
       enabled = ConsumerCatalog.shared.defaultEnabledAdapterIDs
-      enabled.remove(CodexAdapter.id)
-      enabled.remove(HerdrAdapter.id)
-      enabled.remove(PiAdapter.id)
-      enabled.remove(SpicetifyAdapter.id)
-      enabled.remove(TuicrAdapter.id)
+      enabled.subtract(EnvironmentPreset.allCases.compactMap(\.adapterID))
       let herdr = HerdrAdapter(
         root: stateRoot,
         configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
@@ -47,10 +37,7 @@ enum ThemeRuntimeSelection {
         enabled.insert(HerdrAdapter.id)
       }
     }
-    if legacyCodex { enabled.insert(CodexAdapter.id) }
-    if legacyPi { enabled.insert(PiAdapter.id) }
-    if legacySpicetify { enabled.insert(SpicetifyAdapter.id) }
-    if legacyTuicr { enabled.insert(TuicrAdapter.id) }
+    enabled.formUnion(legacyAdapterIDs)
     return enabled
   }
 
@@ -293,8 +280,7 @@ enum ThemeRuntimeSelection {
         .readRecords(context: SetupOwnershipManager.Context(homeDirectory: home))
         .map(\.id)
     )
-    let legacyPi = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-      named: "Pi", requiredIDs: EnvironmentLegacyIntegration.piIDs, setupIDs: setupIDs)
+    let legacyPi = try EnvironmentLinkedPreset.pi.hasCompleteLegacyIntegration(setupIDs: setupIDs)
     return ownership?.records.contains(where: { $0.id == .piTheme }) == true
       || legacyPi
   }

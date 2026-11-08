@@ -3,23 +3,17 @@ import ThemeCore
 
 extension EnvironmentProfile {
   var dailyToolPresentation: [String: String] {
-    [
-      "bat": tools.bat ? "enabled" : "disabled",
-      "btop": tools.btop ? "enabled" : "disabled",
-      "eza": tools.eza ? "enabled" : "disabled",
-      "yazi": tools.yazi ? "enabled" : "disabled",
-    ]
+    Dictionary(
+      uniqueKeysWithValues: EnvironmentDailyTool.allCases.map {
+        ($0.rawValue, $0.isEnabled(in: tools) ? "enabled" : "disabled")
+      })
   }
 
   var presetPresentation: [String: String] {
-    [
-      "codex": presets.codex ? "enabled" : "disabled",
-      "herdr": presets.herdr ? "enabled" : "disabled",
-      "pi": presets.pi ? "enabled" : "disabled",
-      "slack": presets.slack ? "enabled" : "disabled",
-      "spicetify": presets.spicetify ? "enabled" : "disabled",
-      "tuicr": presets.tuicr ? "enabled" : "disabled",
-    ]
+    Dictionary(
+      uniqueKeysWithValues: EnvironmentPreset.allCases.map {
+        ($0.rawValue, $0.isEnabled(in: presets) ? "enabled" : "disabled")
+      })
   }
 }
 
@@ -317,88 +311,13 @@ struct EnvironmentPlanCommandRunner: Sendable {
         )
       }
     }
-    if profile.tools.bat {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_bat",
-          message: "Configure bat behavior and its canonical theme seam."
-        )
-      )
+    for tool in EnvironmentDailyTool.allCases where tool.isEnabled(in: profile.tools) {
+      actions.append(tool.planAction)
     }
-    if profile.tools.eza {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_eza",
-          message: "Configure eza shell behavior and its canonical theme seam."
-        )
-      )
-    }
-    if profile.tools.btop {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_btop",
-          message: "Configure btop while preserving its provider-writable state."
-        )
-      )
-    }
-    if profile.tools.yazi {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_yazi",
-          message: "Configure Yazi behavior and its generated flavor seams."
-        )
-      )
-    }
-    if profile.presets.tuicr {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_tuicr",
-          message: "Configure tuicr's root theme selector and canonical palette and syntax links."
-        )
-      )
-    }
-    if profile.presets.codex {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_codex",
-          message: "Configure Codex CLI's [tui].theme selector and canonical TextMate theme link."
-        )
-      )
-    }
-    if profile.presets.herdr {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_herdr",
-          message:
-            "Configure Herdr's [theme] selector and 19-key [theme.custom] surface."
-        )
-      )
-    }
-    if profile.presets.pi {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_pi",
-          message: "Configure Pi's root theme member and watched canonical theme link."
-        )
-      )
-    }
-    if profile.presets.spicetify {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "configure_spicetify",
-          message:
-            "Own only ordinary current_theme/color_scheme selectors or accept a complete exact Stow tuple, create only an absent color.ini link, and run an awaited --no-restart refresh."
-        )
-      )
-    }
-    if profile.presets.slack {
-      actions.append(
-        EnvironmentPlanAction(
-          id: "publish_slack_manual_import",
-          message:
-            "Publish Slack manual-import authority and the exact per-workspace action: \(SlackAdapter.importInstructions)"
-        )
-      )
+    // Plan JSON lists preset actions in this order.
+    for preset in [EnvironmentPreset.tuicr, .codex, .herdr, .pi, .spicetify, .slack]
+    where preset.isEnabled(in: profile.presets) {
+      actions.append(preset.planAction)
     }
     if !actions.isEmpty {
       actions.insert(
@@ -588,7 +507,7 @@ private struct EnvironmentPlanReport: Encodable {
   }
 }
 
-private struct EnvironmentPlanAction: Encodable {
+struct EnvironmentPlanAction: Encodable {
   let id: String
   let message: String
 }

@@ -481,6 +481,21 @@ struct OwnershipFormatCompatibilityTests {
     #expect(try EnvironmentStateStore(stateRoot: fixture.stateRoot).readOwnership() != nil)
   }
 
+  @Test func environmentJournalReportsTheFirstMalformedFieldInHistoricalOrder() throws {
+    // Herdr's runtime fields precede the Pi replacement name in the journal's field order.
+    let journal = Data(
+      """
+      {"schema_version": 1, "operation": "apply", "direction": "forward",
+       "rollback_theme_bridges": [], "herdr_runtime_target": 7, "pi_replacement_name": 7}
+      """.utf8)
+    do {
+      _ = try JSONDecoder().decode(EnvironmentTransaction.self, from: journal)
+      Issue.record("A malformed journal decoded")
+    } catch let DecodingError.typeMismatch(_, context) {
+      #expect(context.codingPath.last?.stringValue == "herdr_runtime_target")
+    }
+  }
+
   @Test func environmentJournalRoundTripsBothDirectionsOfWork() throws {
     let fixture = try OwnershipFormatFixture()
     defer { fixture.remove() }

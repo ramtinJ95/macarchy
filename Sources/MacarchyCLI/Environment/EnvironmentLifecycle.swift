@@ -339,37 +339,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
       }
     }
-    try revalidate(
-      inspection.btopExternalEvidence, at: ConsumerHomePath.btopConfiguration, "btop configuration")
-    try revalidate(
-      inspection.codexExternalEvidence, at: ConsumerHomePath.codexConfiguration,
-      "Codex external tuple"
-    ) {
-      try inspection.proposedCodexOwnership != nil
-        || inspector.codexExternalTupleIsExact(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot,
-          configurationEvidence: $0
-        )
+    for file in EnvironmentKeyOwnedFile.allCases {
+      try revalidate(
+        inspection.keyOwnedExternalEvidence[file], at: file.configurationPath,
+        file.revalidationLabel
+      ) { evidence in
+        guard file.revalidatesExternalTuple, let linked = file.linkedPreset else { return true }
+        return try inspection.proposesOwnership(of: file)
+          || inspector.externalTupleIsExact(
+            linked, homeDirectory: homeDirectory, stateRoot: stateRoot,
+            configurationEvidence: evidence)
+      }
     }
-    try revalidate(
-      inspection.herdrExternalEvidence, at: ConsumerHomePath.herdrConfiguration,
-      "Herdr configuration")
-    try revalidate(inspection.piExternalEvidence, at: ConsumerHomePath.piSettings, "Pi settings")
-    try revalidate(
-      inspection.spicetifyExternalEvidence, at: ConsumerHomePath.spicetifyConfiguration,
-      "Spicetify external tuple"
-    ) {
-      try inspection.proposedSpicetifyOwnership != nil
-        || inspector.spicetifyExternalTupleIsExact(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot,
-          configurationEvidence: $0
-        )
-    }
-    try revalidate(
-      inspection.tuicrExternalEvidence, at: ConsumerHomePath.tuicrConfiguration,
-      "tuicr configuration")
 
     let generationStore = EnvironmentGenerationStore(stateRoot: stateRoot)
     let previousCurrent = try generationStore.currentDestination()
@@ -477,17 +458,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
       previousCurrentDestination: previousCurrent,
       previousThemeGenerationID: previousThemeGenerationID,
       rollbackThemeBridges: themeBridges.entries,
-      btopReplacementName: replacementNames.btop,
-      codexReplacementName: replacementNames.codex,
-      herdrReplacementName: replacementNames.herdr,
+      replacementNames: replacementNames,
       herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget.required(from: previous, to: proposed),
       herdrLegacyMigration:
         previous?.herdr == nil && proposed.herdr?.migratedLegacy == true ? true : nil,
-      piReplacementName: replacementNames.pi,
-      spicetifyReplacementName: replacementNames.spicetify,
       spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(
         from: previous, to: proposed),
-      tuicrReplacementName: replacementNames.tuicr,
       bordersPreviousRuntime: inspection.bordersServiceInspection,
       bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: previous, to: proposed)
     )
@@ -532,7 +508,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     _ expected: EnvironmentEntryEvidence?,
     at relativePath: String,
     _ label: String,
-    tupleIsExact: (EnvironmentEntryEvidence) throws -> Bool = { _ in true }
+    tupleIsExact: (EnvironmentEntryEvidence) throws -> Bool
   ) throws {
     guard let expected else { return }
     let url = homeDirectory.appending(path: relativePath)
@@ -647,7 +623,6 @@ struct EnvironmentTransactionCoordinator: Sendable {
     if ownership.borders != nil, bordersService == nil {
       throw EnvironmentLifecycleError.blocked("Borders teardown requires observed service evidence")
     }
-    let replacementNames = EnvironmentReplacementNames(from: ownership, to: nil)
     let transaction = EnvironmentTransaction(
       operation: .teardown,
       previousOwnership: ownership,
@@ -658,14 +633,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
         ids: Set(ownership.records.map(\.id)),
         stateRoot: stateRoot
       ).entries,
-      btopReplacementName: replacementNames.btop,
-      codexReplacementName: replacementNames.codex,
-      herdrReplacementName: replacementNames.herdr,
+      replacementNames: EnvironmentReplacementNames(from: ownership, to: nil),
       herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget.required(from: ownership, to: nil),
-      piReplacementName: replacementNames.pi,
-      spicetifyReplacementName: replacementNames.spicetify,
       spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget.required(from: ownership, to: nil),
-      tuicrReplacementName: replacementNames.tuicr,
       bordersPreviousRuntime: bordersService,
       bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: ownership, to: nil)
     )
@@ -708,7 +678,9 @@ struct EnvironmentTransactionCoordinator: Sendable {
       proposedOwnership: proposed,
       previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: stateRoot)
         .currentDestination(),
-      herdrReplacementName: EnvironmentReplacementNames.reserve("herdr"),
+      replacementNames: EnvironmentReplacementNames([
+        .herdr: EnvironmentReplacementNames.reserve(EnvironmentKeyOwnedFile.herdr.rawValue)
+      ]),
       herdrRuntimeTarget: .managed
     )
     // The caller settles the journal once Herdr's runtime reload is verified or rolled back.
@@ -774,7 +746,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       guard let old, let new, old.herdrEnabled, new.herdrEnabled,
         let previous = old.herdr, let proposed = new.herdr,
         old.replacingHerdr(previous.replacingManagedTheme(proposed.managedTheme)) == new,
-        let herdrReplacementName = replacementNames.herdr
+        let herdrReplacementName = replacementNames[.herdr]
       else {
         throw EnvironmentLifecycleError.blocked(
           "Herdr theme transaction changes unrelated ownership")
@@ -786,49 +758,15 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     let oldByID = Dictionary(uniqueKeysWithValues: (old?.records ?? []).map { ($0.id, $0) })
     let newByID = Dictionary(uniqueKeysWithValues: (new?.records ?? []).map { ($0.id, $0) })
-    let codexTransaction = EnvironmentCodexFileTransaction(homeDirectory: homeDirectory)
-    let herdrTransaction = EnvironmentHerdrFileTransaction(
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot
-    )
-    let piTransaction = EnvironmentPiFileTransaction(homeDirectory: homeDirectory)
-    let spicetifyTransaction = EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory)
-    let tuicrTransaction = EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
-    let transitionedPiBeforeLinks = old?.pi != nil
-    let transitionedSpicetifyBeforeLinks = old?.spicetify != nil
-    let transitionedCodexBeforeLinks = old?.codex != nil
-    let transitionedHerdrBeforeLinks = old?.herdr != nil
-    if transitionedCodexBeforeLinks {
-      let codexReplacementName = try requiredReplacementName(replacementNames.codex, "Codex")
-      try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
+    // A previously owned preset file moves before the provider links change; every other
+    // key-owned file moves after them.
+    let beforeLinks = EnvironmentKeyOwnedFile.allCases.filter {
+      $0.transitionsBeforeLinks && $0.isOwned(by: old)
     }
-    if transitionedHerdrBeforeLinks {
-      let herdrReplacementName = try requiredReplacementName(replacementNames.herdr, "Herdr")
-      try herdrTransaction.transition(
-        from: old,
-        to: new,
-        replacementName: herdrReplacementName,
-        preserveLegacyManagedOnRemoval: preserveLegacyHerdrOnRemoval
-      )
-    }
-    if transitionedPiBeforeLinks {
-      let piReplacementName = try requiredReplacementName(replacementNames.pi, "Pi")
-      try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
-    }
-    if transitionedSpicetifyBeforeLinks {
-      let spicetifyReplacementName = try requiredReplacementName(
-        replacementNames.spicetify, "Spicetify")
-      try spicetifyTransaction.transition(
-        from: old, to: new, replacementName: spicetifyReplacementName)
-    }
-    let transitionedTuicrBeforeLinks = old?.tuicr != nil
-    if transitionedTuicrBeforeLinks {
-      let tuicrReplacementName = try requiredReplacementName(replacementNames.tuicr, "tuicr")
-      try tuicrTransaction.transition(
-        from: old,
-        to: new,
-        replacementName: tuicrReplacementName
-      )
+    for file in beforeLinks {
+      try transition(
+        file, from: old, to: new, replacementNames: replacementNames,
+        preserveLegacyHerdrOnRemoval: preserveLegacyHerdrOnRemoval)
     }
 
     for record in old?.records.reversed() ?? [] where newByID[record.id] == nil {
@@ -860,53 +798,49 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
       }
     }
-    if old?.btop != nil || new?.btop != nil {
-      let btopReplacementName = try requiredReplacementName(replacementNames.btop, "btop")
-      try EnvironmentBtopFileTransaction(
-        homeDirectory: homeDirectory,
-        stateRoot: stateRoot
-      ).transition(from: old, to: new, replacementName: btopReplacementName)
-    }
-    if !transitionedCodexBeforeLinks, new?.codex != nil {
-      let codexReplacementName = try requiredReplacementName(replacementNames.codex, "Codex")
-      try codexTransaction.transition(from: old, to: new, replacementName: codexReplacementName)
-    }
-    if !transitionedHerdrBeforeLinks, new?.herdr != nil {
-      let herdrReplacementName = try requiredReplacementName(replacementNames.herdr, "Herdr")
-      try herdrTransaction.transition(
-        from: old,
-        to: new,
-        replacementName: herdrReplacementName
-      )
-    }
-    if !transitionedPiBeforeLinks, new?.pi != nil {
-      let piReplacementName = try requiredReplacementName(replacementNames.pi, "Pi")
-      try piTransaction.transition(from: old, to: new, replacementName: piReplacementName)
-    }
-    if !transitionedSpicetifyBeforeLinks, new?.spicetify != nil {
-      let spicetifyReplacementName = try requiredReplacementName(
-        replacementNames.spicetify, "Spicetify")
-      try spicetifyTransaction.transition(
-        from: old, to: new, replacementName: spicetifyReplacementName)
-    }
-    if !transitionedTuicrBeforeLinks, new?.tuicr != nil {
-      let tuicrReplacementName = try requiredReplacementName(replacementNames.tuicr, "tuicr")
-      try tuicrTransaction.transition(
-        from: old,
-        to: new,
-        replacementName: tuicrReplacementName
-      )
+    for file in EnvironmentKeyOwnedFile.allCases
+    where !beforeLinks.contains(file) && (file.isOwned(by: old) || file.isOwned(by: new)) {
+      try transition(file, from: old, to: new, replacementNames: replacementNames)
     }
     let obsoleteDirectories = Set(old?.createdDirectories ?? [])
       .subtracting(new?.createdDirectories ?? [])
     try providerEntries.removeCreatedDirectories(Array(obsoleteDirectories))
   }
 
-  private func requiredReplacementName(_ name: String?, _ label: String) throws -> String {
-    guard let name else {
-      throw EnvironmentLifecycleError.blocked("\(label) transaction has no replacement identity")
+  /// Moves one key-owned configuration file between the ownership snapshots.
+  private func transition(
+    _ file: EnvironmentKeyOwnedFile,
+    from old: EnvironmentOwnership?,
+    to new: EnvironmentOwnership?,
+    replacementNames: EnvironmentReplacementNames,
+    preserveLegacyHerdrOnRemoval: Bool = false
+  ) throws {
+    guard let replacementName = replacementNames[file] else {
+      throw EnvironmentLifecycleError.blocked(
+        "\(file.label) transaction has no replacement identity")
     }
-    return name
+    switch file {
+    case .btop:
+      try EnvironmentBtopFileTransaction(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        .transition(from: old, to: new, replacementName: replacementName)
+    case .codex:
+      try EnvironmentCodexFileTransaction(homeDirectory: homeDirectory)
+        .transition(from: old, to: new, replacementName: replacementName)
+    case .herdr:
+      try EnvironmentHerdrFileTransaction(homeDirectory: homeDirectory, stateRoot: stateRoot)
+        .transition(
+          from: old, to: new, replacementName: replacementName,
+          preserveLegacyManagedOnRemoval: preserveLegacyHerdrOnRemoval)
+    case .pi:
+      try EnvironmentPiFileTransaction(homeDirectory: homeDirectory)
+        .transition(from: old, to: new, replacementName: replacementName)
+    case .spicetify:
+      try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory)
+        .transition(from: old, to: new, replacementName: replacementName)
+    case .tuicr:
+      try EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory)
+        .transition(from: old, to: new, replacementName: replacementName)
+    }
   }
 
   private func shouldPreserveLegacyHerdr(_ transaction: EnvironmentTransaction) throws -> Bool {
@@ -992,16 +926,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
       }
     }
-    for (path, relativePath, label) in [
-      (ownership.btop?.path, ConsumerHomePath.btopConfiguration, "btop"),
-      (ownership.codex?.path, ConsumerHomePath.codexConfiguration, "Codex"),
-      (ownership.herdr?.path, ConsumerHomePath.herdrConfiguration, "Herdr"),
-      (ownership.pi?.path, ConsumerHomePath.piSettings, "Pi"),
-      (ownership.spicetify?.path, ConsumerHomePath.spicetifyConfiguration, "Spicetify"),
-      (ownership.tuicr?.path, ConsumerHomePath.tuicrConfiguration, "tuicr"),
-    ] {
-      if let path, path != homeDirectory.appending(path: relativePath).path {
-        throw EnvironmentLifecycleError.blocked("ownership contains an unexpected \(label) path")
+    for file in EnvironmentKeyOwnedFile.allCases {
+      if let path = file.ownedPath(in: ownership),
+        path != homeDirectory.appending(path: file.configurationPath).path
+      {
+        throw EnvironmentLifecycleError.blocked(
+          "ownership contains an unexpected \(file.label) path")
       }
     }
     let allowedDirectories = Set(
@@ -1074,13 +1004,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     if let codex = ownership.codex {
       try EnvironmentCodexFileTransaction(homeDirectory: homeDirectory).preflight(codex)
-    } else if ownership.codexEnabled,
-      !ownership.records.contains(where: { $0.id == .codexTheme })
-    {
-      guard
-        try inspector.codexExternalTupleIsExact(
-          homeDirectory: homeDirectory, stateRoot: stateRoot)
-      else { throw EnvironmentLifecycleError.drift("externally owned Codex tuple") }
+    } else {
+      try preflightExternalTuple(.codex, in: ownership)
     }
     if let herdr = ownership.herdr {
       let transaction = EnvironmentHerdrFileTransaction(
@@ -1095,41 +1020,35 @@ struct EnvironmentTransactionCoordinator: Sendable {
     }
     if let pi = ownership.pi {
       try EnvironmentPiFileTransaction(homeDirectory: homeDirectory).preflight(pi)
-    } else if ownership.piEnabled,
-      !ownership.records.contains(where: { $0.id == .piTheme })
-    {
-      guard
-        try inspector.piExternalTupleIsExact(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot
-        )
-      else { throw EnvironmentLifecycleError.drift("externally owned Pi tuple") }
+    } else {
+      try preflightExternalTuple(.pi, in: ownership)
     }
     if let spicetify = ownership.spicetify {
       try EnvironmentSpicetifyFileTransaction(homeDirectory: homeDirectory).preflight(spicetify)
-    } else if ownership.spicetifyEnabled,
-      !ownership.records.contains(where: { $0.id == .spicetifyColor })
-    {
-      guard
-        try inspector.spicetifyExternalTupleIsExact(
-          homeDirectory: homeDirectory, stateRoot: stateRoot)
-      else { throw EnvironmentLifecycleError.drift("externally owned Spicetify tuple") }
+    } else {
+      try preflightExternalTuple(.spicetify, in: ownership)
     }
     if let tuicr = ownership.tuicr {
       try EnvironmentTuicrFileTransaction(homeDirectory: homeDirectory).preflight(tuicr)
-    } else if ownership.tuicrEnabled,
-      !ownership.records.contains(where: {
-        $0.id == .tuicrTheme || $0.id == .tuicrSyntax
-      })
-    {
-      guard
-        try inspector.tuicrExternalTupleIsExact(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot
-        )
-      else {
-        throw EnvironmentLifecycleError.drift("externally owned tuicr tuple")
-      }
+    } else {
+      try preflightExternalTuple(.tuicr, in: ownership)
+    }
+  }
+
+  /// An enabled linked preset that owns neither its file nor its theme links must still find its
+  /// exact external tuple.
+  private func preflightExternalTuple(
+    _ linked: EnvironmentLinkedPreset,
+    in ownership: EnvironmentOwnership
+  ) throws {
+    guard linked.preset.isEnabled(in: ownership),
+      !ownership.records.contains(where: { linked.themeLinks.contains($0.id) })
+    else { return }
+    guard
+      try inspector.externalTupleIsExact(
+        linked, homeDirectory: homeDirectory, stateRoot: stateRoot)
+    else {
+      throw EnvironmentLifecycleError.drift("externally owned \(linked.file.label) tuple")
     }
   }
 }

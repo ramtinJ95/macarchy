@@ -265,11 +265,7 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
         adapterIDs == adapterIDs.sorted()
           && Set(adapterIDs).count == adapterIDs.count
           && Set(adapterIDs).isSubset(of: knownThemeAdapterIDs)
-          && adapterIDs.contains(CodexAdapter.id) == codexEnabled
-          && adapterIDs.contains(HerdrAdapter.id) == herdrEnabled
-          && adapterIDs.contains(PiAdapter.id) == piEnabled
-          && adapterIDs.contains(SpicetifyAdapter.id) == spicetifyEnabled
-          && adapterIDs.contains(TuicrAdapter.id) == tuicrEnabled
+          && presetAdaptersMatch(adapterIDs)
           && adapterIDs.contains(BordersAdapter.id)
             == (borders != nil && borders?.leanService == nil)
           && adapterIDs.contains(BordersAdapter.leanID) == (borders?.leanService != nil)
@@ -320,6 +316,14 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
           && evidence.linkDestination != nil && evidence.contentDigest == nil
           && (record.id.directoryLinkKind != nil || evidence.inventory.isEmpty)
       }
+    }
+  }
+
+  /// Whether `adapterIDs` holds each preset's adapter exactly when the preset is enabled.
+  private func presetAdaptersMatch(_ adapterIDs: [String]) -> Bool {
+    EnvironmentPreset.allCases.allSatisfy { preset in
+      guard let adapterID = preset.adapterID else { return true }
+      return adapterIDs.contains(adapterID) == preset.isEnabled(in: self)
     }
   }
 
