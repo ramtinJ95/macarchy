@@ -119,7 +119,7 @@ struct YabaiProviderTransaction: Sendable {
 
   func retainedOriginalURL(nonce: UUID = UUID()) -> URL {
     stateRoot.appending(
-      path: "\(StateLayout.yabaiDirectory)/retained-\(nonce.uuidString.lowercased())")
+      path: "\(StateLayout.yabaiDirectory)/\(RetainedOriginalName.make(nonce: nonce))")
   }
 
   /// Settles an interrupted transaction: rolls back an apply or completes a teardown.

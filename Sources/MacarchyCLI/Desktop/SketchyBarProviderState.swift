@@ -197,13 +197,9 @@ struct SketchyBarOwnershipStore: Sendable {
     guard let retainedPath = record.retainedOriginalPath else { return false }
     let retained = URL(filePath: retainedPath).standardizedFileURL
     let provider = StateLayout(root: stateRoot.standardizedFileURL).sketchyBar
-    let name = retained.lastPathComponent
-    let nonce = String(name.dropFirst("retained-".count))
     return retained.path == retainedPath
       && retained.deletingLastPathComponent().path == provider.path
-      && name.hasPrefix("retained-")
-      && nonce == nonce.lowercased()
-      && UUID(uuidString: nonce) != nil
+      && RetainedOriginalName.isValid(retained.lastPathComponent, nonceCase: .lowercaseOnly)
   }
 
   func write(_ record: SketchyBarOwnershipRecord) throws {
