@@ -83,7 +83,7 @@ final class ApplyFixture: @unchecked Sendable {
     theme: @escaping UnifiedSetupApplyCommandRunner.ThemeApply,
     themeRefresh: @escaping UnifiedSetupApplyCommandRunner.ThemeRefresh = { _, _, _, _, _ in
       Issue.record("No theme reactivation reviewed")
-      return try applyComponent("{}")
+      throw UnexpectedComponentCall()
     },
     desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
     environment: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
@@ -328,6 +328,18 @@ func environmentPlanStub(
       actions: actions,
       diagnostics: diagnostics
     ))
+}
+
+/// Thrown by a component stub that a scenario must not reach.
+struct UnexpectedComponentCall: Error {}
+
+func themeReportStub(
+  _ outcome: ThemeSetReport.Outcome = .success,
+  committed: Bool = true,
+  error: String? = nil
+) -> ThemeSetJSONReport {
+  ThemeSetJSONReport(
+    themeID: "catppuccin-mocha", outcome: outcome, committed: committed, error: error)
 }
 
 func applyComponent(

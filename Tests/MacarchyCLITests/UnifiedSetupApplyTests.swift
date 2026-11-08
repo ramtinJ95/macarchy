@@ -36,15 +36,15 @@ struct UnifiedSetupApplyTests {
       }),
       theme: { _, _ in
         Issue.record("No theme change reviewed")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         Issue.record("No desktop change reviewed")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         Issue.record("No environment change reviewed")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       })
     let plan = try runner.planner.prepare(context: fixture.context).report
     #expect(plan.packageInstallation?.approvalDigest != nil)
@@ -74,8 +74,7 @@ struct UnifiedSetupApplyTests {
       plannedStages: [.desktop],
       theme: { _, _ in
         calls.withLock { $0.append("theme") }
-        return try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#)
+        return themeReportStub()
       },
       desktop: { _, _, _, approvals, _ in
         #expect(approvals.yabai == "reviewed-yabai")
@@ -87,7 +86,7 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, _, _, _, _ in
         Issue.record("Unreviewed environment mutation")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       })
     let review = MenuSetupReview(
       runner: runner,
@@ -146,11 +145,11 @@ struct UnifiedSetupApplyTests {
       planner: fixture.planner(plannedStages: [.desktop, .environment]),
       environmentTeardown: { _, _, _ in
         Issue.record("Commit must not invoke environment teardown")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktopTeardown: { _, _, _ in
         Issue.record("Commit must not invoke desktop teardown")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       themeTeardown: { _, _, _, _ in
         Issue.record("Commit must not invoke theme teardown")
@@ -177,9 +176,7 @@ struct UnifiedSetupApplyTests {
       theme: { package, _ in
         #expect(package.id == "catppuccin-mocha")
         calls.withLock { $0.append("theme") }
-        return try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#
-        )
+        return themeReportStub()
       },
       desktop: { _, profile, _, _, enabledThemeAdapterIDs in
         #expect(profile.environment.kitty.fontSize == 15)
@@ -243,18 +240,16 @@ struct UnifiedSetupApplyTests {
       paletteRefresh: true,
       theme: { _, _ in
         Issue.record("An active theme must not be replaced by the curated default")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       themeRefresh: { _, theme, adapterIDs, _, _ in
         #expect(theme.id == manifest.themeID)
         #expect(theme.currentGenerationID == manifest.generationID)
         refreshedAdapterIDs.withLock { $0 = adapterIDs }
         calls.withLock { $0.append("theme") }
-        return try mode == "refresh_failed"
-          ? applyComponent(
-            #"{"operation":"theme_set","outcome":"precommit_failure","committed":false,"error":"refused"}"#,
-            succeeded: false)
-          : applyComponent(#"{"operation":"theme_set","outcome":"success","committed":true}"#)
+        return mode == "refresh_failed"
+          ? themeReportStub(.precommitFailure, committed: false, error: "refused")
+          : themeReportStub()
       },
       desktop: { _, _, _, _, enabledThemeAdapterIDs in
         desktopAdapterIDs.withLock { $0 = Set(enabledThemeAdapterIDs) }
@@ -320,7 +315,7 @@ struct UnifiedSetupApplyTests {
       themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
       theme: { _, _ in
         Issue.record("An active theme must not be replaced by the curated default")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       themeRefresh: { _, theme, _, _, onCommittedLocked in
         // A different input than the outdated generation, so the refresh publishes a new one.
@@ -332,8 +327,7 @@ struct UnifiedSetupApplyTests {
           onCommittedLocked: onCommittedLocked
         )
         refreshedGenerationID.withLock { $0 = refreshed.generationID }
-        return try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#)
+        return themeReportStub()
       },
       desktop: { _, _, _, _, _ in
         try applyComponent(
@@ -342,7 +336,7 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, _, _, _, _ in
         Issue.record("No environment stage was planned")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       })
 
     let execution = try await runner.execute(
@@ -387,9 +381,7 @@ struct UnifiedSetupApplyTests {
       writePlan: { _ in calls.withLock { $0.append("plan") } },
       theme: { _, _ in
         calls.withLock { $0.append("theme") }
-        return try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#
-        )
+        return themeReportStub()
       },
       desktop: { _, _, _, received, _ in
         #expect(received == approvals)
@@ -430,15 +422,15 @@ struct UnifiedSetupApplyTests {
       writePlan: { _ in calls.withLock { $0 += 1 } },
       theme: { _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       }
     )
     let invalid = [
@@ -524,15 +516,15 @@ struct UnifiedSetupApplyTests {
       writePlan: { _ in calls.withLock { $0 += 1 } },
       theme: { _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       }
     )
 
@@ -587,8 +579,7 @@ struct UnifiedSetupApplyTests {
       writePlan: { _ in calls.withLock { $0.append("plan") } },
       theme: { _, _ in
         calls.withLock { $0.append("theme") }
-        return try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#)
+        return themeReportStub()
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop") }
@@ -677,9 +668,7 @@ struct UnifiedSetupApplyTests {
       available: { _ in true },
       plannedStages: [.desktop],
       theme: { _, _ in
-        try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#
-        )
+        themeReportStub()
       },
       desktop: { _, _, _, _, _ in
         try applyComponent(
@@ -689,7 +678,7 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, _, _, _, _ in
         environmentCalls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       transactionTeardown: teardown
     )
@@ -764,9 +753,7 @@ struct UnifiedSetupApplyTests {
       available: { _ in true },
       plannedStages: [.desktop, .environment],
       theme: { _, _ in
-        try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#
-        )
+        themeReportStub()
       },
       desktop: { _, _, _, _, _ in
         try applyComponent(
@@ -847,9 +834,7 @@ struct UnifiedSetupApplyTests {
       plannedStages: [.desktop],
       theme: { _, _ in
         calls.withLock { $0.append("theme:apply") }
-        return try applyComponent(
-          #"{"operation":"theme_set","outcome":"success","committed":true}"#
-        )
+        return themeReportStub()
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop:apply") }
@@ -859,7 +844,7 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, _, _, _, _ in
         Issue.record("Environment must not run before the injected interruption")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       transactionTeardown: teardown,
       faultInjector: { checkpoint in
@@ -884,15 +869,15 @@ struct UnifiedSetupApplyTests {
       plannedStages: [.desktop],
       theme: { _, _ in
         Issue.record("Recovery must finish before a replacement apply starts")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         Issue.record("Recovery must finish before a replacement apply starts")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         Issue.record("Recovery must finish before a replacement apply starts")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       transactionTeardown: teardown
     )
@@ -929,15 +914,15 @@ struct UnifiedSetupApplyTests {
       },
       theme: { _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       }
     )
 
@@ -971,15 +956,15 @@ struct UnifiedSetupApplyTests {
       themeInspection: UnifiedSetupThemeLifecycleStatus.preflightApply,
       theme: { _, _ in
         Issue.record("A repeated apply must preserve the active canonical theme")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         Issue.record("A no-change plan must not invoke desktop mutation")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         Issue.record("A no-change plan must not invoke environment mutation")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       }
     )
 

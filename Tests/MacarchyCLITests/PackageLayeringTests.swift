@@ -254,15 +254,15 @@ struct PackageLayeringTests {
       },
       theme: { _, _ in
         Issue.record("Stale package intent must block theme mutation")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         Issue.record("Stale package intent must block desktop mutation")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         Issue.record("Stale package intent must block environment mutation")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       })
     let result = try await runner.execute(
       context: fixture.context, consumerPaths: testConsumerPaths(),

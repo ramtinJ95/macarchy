@@ -254,7 +254,7 @@ struct NativeGuidedSetupTests {
         let manifest = try ThemeActivator(root: state).activate(package: package)
         try SetupCoreOwnershipStore(stateRoot: state).write(
           SetupCoreOwnership(themeGenerationID: manifest.generationID, originalAppearance: .light))
-        return try component(#"{"outcome":"applied","committed":true}"#)
+        return themeReportStub()
       },
       desktopApply: { _, _, _, _, _ in
         Issue.record("Disabled desktop must not apply")

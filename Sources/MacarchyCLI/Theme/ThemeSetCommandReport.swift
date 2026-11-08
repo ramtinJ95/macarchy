@@ -2,7 +2,7 @@ import Foundation
 import ThemeCore
 
 enum ThemeSetReport {
-  enum Outcome: String, Encodable {
+  enum Outcome: String, Encodable, Sendable {
     case dryRun = "dry_run"
     case success
     case precommitFailure = "precommit_failure"
@@ -21,15 +21,7 @@ enum ThemeSetReport {
   )
   case committedError(manifest: GenerationManifest, cause: String, slackTheme: String?)
 
-  var succeeded: Bool {
-    switch self {
-    case .dryRun, .committed(_, requiredFailure: false, _):
-      true
-    case .precommitFailure, .committed(_, requiredFailure: true, _), .committedActivationError,
-      .committedError:
-      false
-    }
-  }
+  var succeeded: Bool { jsonReport.succeeded }
 
   /// Whether canonical state changed. A committed activation keeps its package (ADR-0052).
   var isCommitted: Bool {
@@ -152,7 +144,7 @@ enum ThemeSetReport {
 
 }
 
-struct ThemeSetJSONReport: Encodable {
+struct ThemeSetJSONReport: Encodable, Sendable {
   let schemaVersion = 1
   let operation = "theme_set"
   let themeID: String
@@ -163,6 +155,9 @@ struct ThemeSetJSONReport: Encodable {
   var notice: String? = nil
   var slackTheme: String? = nil
   var error: String? = nil
+
+  /// Only a dry run and an activation whose required reconciliation completed succeed.
+  var succeeded: Bool { outcome == .dryRun || outcome == .success }
 
   enum CodingKeys: String, CodingKey {
     case schemaVersion = "schema_version"
