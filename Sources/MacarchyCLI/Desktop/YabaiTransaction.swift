@@ -158,7 +158,7 @@ struct YabaiProviderTransaction: Sendable {
       stateRoot: stateRoot,
       enabled: true
     )
-    guard [.managed, .installRequired, .adoptionRequired].contains(provider.status) else {
+    guard provider.status.permitsApply else {
       throw YabaiDesktopError.invalidState(provider.message)
     }
 

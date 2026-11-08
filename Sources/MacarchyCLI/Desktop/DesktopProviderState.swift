@@ -10,6 +10,9 @@ enum DesktopProviderPlanStatus: String, Codable, Sendable {
   case adoptionRequired = "adoption_required"
   case recoveryRequired = "recovery_required"
   case blocked
+
+  /// Whether apply may converge the provider: managed, or awaiting install or approved adoption.
+  var permitsApply: Bool { [.managed, .installRequired, .adoptionRequired].contains(self) }
 }
 
 struct DesktopProviderPlanInspection: Encodable, Sendable {

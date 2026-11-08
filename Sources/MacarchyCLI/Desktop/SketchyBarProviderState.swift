@@ -22,6 +22,12 @@ struct SketchyBarPalettePlanInspection: Encodable, Sendable {
 }
 
 struct SketchyBarPalettePlanInspector: Sendable {
+  /// Why a SketchyBar apply must not start, or nil once the active theme's palette is current.
+  func applyBlocker(stateRoot: URL) -> String? {
+    let palette = inspect(stateRoot: stateRoot, enabled: true)
+    return palette.status == .current ? nil : palette.message
+  }
+
   func inspect(stateRoot: URL, enabled: Bool) -> SketchyBarPalettePlanInspection {
     guard enabled else {
       return SketchyBarPalettePlanInspection(

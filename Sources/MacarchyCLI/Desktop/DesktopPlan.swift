@@ -130,15 +130,15 @@ struct DesktopPlanCommandRunner: Sendable {
     var yabaiComposition: YabaiComposition?
     if let profile, yabaiEnabled {
       do {
-        yabaiComposition = try YabaiConfigurationComposer().compose(
-          defaultsURL: resourcesRoot.appending(path: "yabai/defaults.toml"),
+        yabaiComposition = try DesktopDesiredState.composeYabai(
+          resourcesRoot: resourcesRoot,
           profile: profile,
           macarchyExecutableURL: macarchyExecutableURL
         )
       } catch {
         let source =
           (error as? YabaiConfigurationError)?.sourceURL
-          ?? resourcesRoot.appending(path: "yabai/defaults.toml")
+          ?? DesktopDesiredState.yabaiDefaultsURL(resourcesRoot: resourcesRoot)
         diagnostics.append(
           DesktopPlanDiagnostic(
             code: "yabai_configuration_invalid",
@@ -151,8 +151,8 @@ struct DesktopPlanCommandRunner: Sendable {
     var sketchyBarComposition: SketchyBarComposition?
     if let profile, sketchyBarEnabled {
       do {
-        sketchyBarComposition = try SketchyBarConfigurationComposer().compose(
-          defaultsURL: resourcesRoot.appending(path: "sketchybar/defaults.toml"),
+        sketchyBarComposition = try DesktopDesiredState.composeSketchyBar(
+          resourcesRoot: resourcesRoot,
           profile: profile,
           stateRoot: stateRoot,
           macarchyExecutableURL: macarchyExecutableURL
@@ -160,7 +160,7 @@ struct DesktopPlanCommandRunner: Sendable {
       } catch {
         let source =
           (error as? SketchyBarConfigurationError)?.sourceURL
-          ?? resourcesRoot.appending(path: "sketchybar/defaults.toml")
+          ?? DesktopDesiredState.sketchyBarDefaultsURL(resourcesRoot: resourcesRoot)
         diagnostics.append(
           DesktopPlanDiagnostic(
             code: "sketchybar_configuration_invalid",
@@ -287,7 +287,8 @@ struct DesktopPlanCommandRunner: Sendable {
     let sketchyBarReport =
       scope == .allProviders
       ? DesktopSketchyBarPlanReport(
-        packagedDefaults: resourcesRoot.appending(path: "sketchybar/defaults.toml").path,
+        packagedDefaults: DesktopDesiredState.sketchyBarDefaultsURL(resourcesRoot: resourcesRoot)
+          .path,
         settings: sketchyBarComposition?.settings,
         layout: sketchyBarComposition?.layout,
         automaticClock: sketchyBarComposition?.automaticClock,
@@ -314,7 +315,7 @@ struct DesktopPlanCommandRunner: Sendable {
         ? "invalid" : profile?.sourceURL == nil ? "absent_default" : "loaded",
       desktopProvider: profile?.desktop.provider.rawValue,
       topBarProvider: profile?.topBar.rawValue,
-      packagedDefaults: resourcesRoot.appending(path: "yabai/defaults.toml").path,
+      packagedDefaults: DesktopDesiredState.yabaiDefaultsURL(resourcesRoot: resourcesRoot).path,
       hook: yabaiComposition?.hookURL?.path,
       hookDigest: yabaiComposition?.hookDigest,
       behaviorAuthority: yabaiComposition?.nativeConfigurationDigest != nil

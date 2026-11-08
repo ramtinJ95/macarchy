@@ -207,7 +207,7 @@ struct SketchyBarProviderTransaction: Sendable {
       enabled: true,
       generation: previousGeneration
     )
-    guard [.managed, .installRequired, .adoptionRequired].contains(provider.status) else {
+    guard provider.status.permitsApply else {
       throw SketchyBarDesktopError.invalidState(provider.message)
     }
 
