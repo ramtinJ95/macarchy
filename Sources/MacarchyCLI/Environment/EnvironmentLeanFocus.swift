@@ -254,6 +254,7 @@ func verifyPendingLeanHandoff(
   }
 
   let adapterID = destination?.adapterID ?? source?.adapterID ?? BordersAdapter.leanID
+  let consumer = destination?.consumer ?? source?.consumer ?? .leanFocus
   try lock.withLock {
     if let destination {
       let status = ReconciliationStatusStore(root: root)
@@ -266,12 +267,14 @@ func verifyPendingLeanHandoff(
       }
       results.append(
         AdapterResult(
-          adapterID: destination.adapterID, requirement: .required, status: .applied,
+          adapterID: destination.adapterID, requirement: destination.consumer.requirement,
+          status: .applied,
           message: message))
       _ = try status.persist(manifest: manifest, results: results)
     }
     try coordinator.markBordersRuntimeVerifiedLocked(target)
   }
   return DesktopThemeAdapterStatus(
-    adapterID: adapterID, requirement: "required", status: "applied", message: message)
+    adapterID: adapterID, requirement: consumer.requirement.rawValue, status: "applied",
+    message: message)
 }

@@ -109,7 +109,7 @@ private func verifyPendingHerdrRuntime(
   }
   return DesktopThemeAdapterStatus(
     adapterID: HerdrAdapter.id,
-    requirement: "required",
+    requirement: RuntimeAdapterKind.herdr.requirement.rawValue,
     status: "applied",
     message: message
   )
@@ -169,7 +169,7 @@ private func verifyPendingSpicetifyRuntime(
   }
   return DesktopThemeAdapterStatus(
     adapterID: SpicetifyAdapter.id,
-    requirement: "required",
+    requirement: RuntimeAdapterKind.spicetify.requirement.rawValue,
     status: "applied",
     message: message
   )

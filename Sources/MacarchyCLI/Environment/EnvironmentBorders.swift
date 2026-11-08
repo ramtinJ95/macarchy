@@ -12,6 +12,7 @@ struct EnvironmentBordersOwnership: Codable, Equatable, Sendable {
   var retainedBordersConfiguration: Bool? = nil
 
   var retainsBorders: Bool { retainedBordersConfiguration != false }
+  var consumer: RuntimeAdapterKind { leanService == nil ? .borders : .leanFocus }
   var adapterID: String { leanService == nil ? BordersAdapter.id : BordersAdapter.leanID }
 
   func selectingLean(_ configuration: LeanFocusServiceConfiguration?) -> Self {
@@ -434,13 +435,15 @@ func verifyPendingBordersRuntime(
       }
       results.append(
         AdapterResult(
-          adapterID: BordersAdapter.id, requirement: .required, status: .applied, message: message))
+          adapterID: BordersAdapter.id, requirement: RuntimeAdapterKind.borders.requirement,
+          status: .applied, message: message))
       _ = try statusStore.persist(manifest: manifest, results: results)
     }
     try coordinator.markBordersRuntimeVerifiedLocked(target)
   }
   return DesktopThemeAdapterStatus(
-    adapterID: BordersAdapter.id, requirement: "required", status: "applied", message: message)
+    adapterID: BordersAdapter.id, requirement: RuntimeAdapterKind.borders.requirement.rawValue,
+    status: "applied", message: message)
 }
 
 func observedBordersService(
