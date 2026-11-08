@@ -1,47 +1,28 @@
-import Darwin
-import Dispatch
 import Foundation
 import ThemeCore
 
+/// Lock order (ADR-0105) is this lock first, then the canonical activation lock; never the reverse.
 struct EnvironmentLifecycleLock: Sendable {
-  private static let processSemaphore = DispatchSemaphore(value: 1)
+  private static let lock = ProcessScopedFileLock<EnvironmentLifecycleError>(
+    filename: "environment.lock",
+    cannotCreateRunDirectory: nil,
+    lockFileError: { operation, lockURL, code in
+      .system("\(operation) environment lifecycle lock", lockURL, code)
+    })
 
   let stateRoot: URL
 
-  func acquire() throws -> Int32 {
-    Self.processSemaphore.wait()
-    do {
-      let runDirectory = stateRoot.appending(path: "run", directoryHint: .isDirectory)
-      try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
-      let lockURL = runDirectory.appending(path: "environment.lock")
-      let descriptor = lockURL.path.withCString {
-        Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-      }
-      guard descriptor >= 0 else {
-        throw EnvironmentLifecycleError.system("open environment lifecycle lock", lockURL, errno)
-      }
-      while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
-        if errno == EINTR { continue }
-        let code = errno
-        Darwin.close(descriptor)
-        throw EnvironmentLifecycleError.system("acquire environment lifecycle lock", lockURL, code)
-      }
-      return descriptor
-    } catch {
-      Self.processSemaphore.signal()
-      throw error
-    }
+  func withLock<Value>(_ body: () throws -> Value) throws -> Value {
+    try Self.lock.withLock(root: stateRoot, body)
   }
 
-  func release(_ descriptor: Int32) {
-    Darwin.close(descriptor)
-    Self.processSemaphore.signal()
+  /// Holds the lock across the transaction's asynchronous provider reload and verification.
+  func withAsyncLock<Value>(_ body: () async throws -> Value) async throws -> Value {
+    try await Self.lock.withLockBlockingCaller(root: stateRoot, body)
   }
 
   /// Runs `body` under this lock and then the activation lock, the order theme reconciliation uses.
   func withActivationLock<Value>(_ body: () throws -> Value) throws -> Value {
-    let descriptor = try acquire()
-    defer { release(descriptor) }
-    return try ActivationLock(root: stateRoot).withLock(body)
+    try withLock { try ActivationLock(root: stateRoot).withLock(body) }
   }
 }

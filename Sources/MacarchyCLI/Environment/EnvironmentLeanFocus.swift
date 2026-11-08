@@ -20,23 +20,22 @@ extension ThemeRuntimeSelection {
         return try runtime.acknowledge(homeDirectory, configuration, false)
       },
       reconcile: {
-        let lock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-        let descriptor = try lock.acquire()
-        defer { lock.release(descriptor) }
-        guard try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil else {
-          throw EnvironmentLifecycleError.blocked(
-            "Focus handoff recovery must finish before lean theme reconciliation")
+        return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
+          guard try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil else {
+            throw EnvironmentLifecycleError.blocked(
+              "Focus handoff recovery must finish before lean theme reconciliation")
+          }
+          let configuration = try coordinator.managedLeanConfiguration()
+          // The helper observes the canonical pointer itself. This verifies the
+          // startup/palette acknowledgement; it never writes a competing palette.
+          let (service, _) = try runtime.inspect(homeDirectory, [configuration])
+          let stoppedOwned = service.registered && !service.isRunning
+          if stoppedOwned || (service.isRunning && !service.executableIsCurrent) {
+            try runtime.start(homeDirectory, configuration)
+          }
+          let acknowledgement = try runtime.acknowledge(homeDirectory, configuration, true)
+          return (stoppedOwned ? "Started stopped owned lean service. " : "") + acknowledgement
         }
-        let configuration = try coordinator.managedLeanConfiguration()
-        // The helper observes the canonical pointer itself. This verifies the
-        // startup/palette acknowledgement; it never writes a competing palette.
-        let (service, _) = try runtime.inspect(homeDirectory, [configuration])
-        let stoppedOwned = service.registered && !service.isRunning
-        if stoppedOwned || (service.isRunning && !service.executableIsCurrent) {
-          try runtime.start(homeDirectory, configuration)
-        }
-        let acknowledgement = try runtime.acknowledge(homeDirectory, configuration, true)
-        return (stoppedOwned ? "Started stopped owned lean service. " : "") + acknowledgement
       }
     )
   }

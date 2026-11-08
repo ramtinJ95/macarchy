@@ -35,14 +35,13 @@ struct EnvironmentCommand: ParsableCommand {
       let source = URL(filePath: source).standardizedFileURL
       if let approve {
         guard !json else { throw ValidationError("--json is a preview option") }
-        let lock = EnvironmentLifecycleLock(stateRoot: root)
-        let descriptor = try lock.acquire()
-        defer { lock.release(descriptor) }
-        print(
-          try ActivationLock(root: root).withLock {
-            try EnvironmentTransactionCoordinator(homeDirectory: home, stateRoot: root)
-              .migrateStandardLocked(provider: provider, sourceURL: source, approval: approve)
-          })
+        try EnvironmentLifecycleLock(stateRoot: root).withLock {
+          print(
+            try ActivationLock(root: root).withLock {
+              try EnvironmentTransactionCoordinator(homeDirectory: home, stateRoot: root)
+                .migrateStandardLocked(provider: provider, sourceURL: source, approval: approve)
+            })
+        }
       } else {
         let (plan, _) = try EnvironmentStandardMigration(
           provider: provider, homeDirectory: home, stateRoot: root, sourceURL: source
