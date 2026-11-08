@@ -183,16 +183,7 @@ struct EnvironmentNeovimMigration: Sendable {
     else {
       throw EnvironmentLifecycleError.blocked("the active generation has no complete Neovim seed")
     }
-    let parent = try PinnedFilesystem.openDirectory(at: nativeRoot.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    var metadata = stat()
-    guard lstat(nativeRoot.path, &metadata) != 0 else {
-      throw EnvironmentLifecycleError.blocked(
-        "destination already exists; it will not be overwritten: \(nativeRoot.path)")
-    }
-    guard errno == ENOENT else {
-      throw EnvironmentLifecycleError.system("inspect native destination", nativeRoot, errno)
-    }
+    try EnvironmentNativeSource.requireAbsentDestination(nativeRoot)
     let digest = sha256Digest(
       try sortedKeysJSON(ownership) + Data(nativeRoot.path.utf8)
         + Data(manifest.renderedDigest.utf8))
@@ -212,12 +203,9 @@ struct EnvironmentNeovimMigration: Sendable {
   func seed(_ ownership: EnvironmentOwnership) throws {
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
     let manifest = try generations.manifest(generationID: ownership.generationID)
-    let paths = manifest.artifacts.keys.filter { $0.hasPrefix("neovim/") }.sorted()
-    let artifacts = try paths.map {
-      EnvironmentConfigurationArtifact(
-        path: $0,
-        data: try generations.validatedArtifact(generationID: ownership.generationID, path: $0))
-    }
+    let artifacts = try generations.validatedArtifacts(
+      generationID: ownership.generationID,
+      paths: manifest.artifacts.keys.filter { $0.hasPrefix("neovim/") }.sorted())
     try Self.seedArtifacts(artifacts, destination: nativeRoot, stateRoot: stateRoot)
     try validateNativeTree()
   }

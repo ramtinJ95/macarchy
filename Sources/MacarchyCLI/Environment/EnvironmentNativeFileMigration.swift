@@ -152,18 +152,7 @@ struct EnvironmentNativeFileMigration: Sendable {
     let data =
       try sourceURL.map { try BoundedRegularFile.read(at: $0.resolvingSymlinksInPath()).data }
       ?? seedData(ownership)
-    if sourceURL == nil {
-      let parent = try PinnedFilesystem.openDirectory(at: nativeURL.deletingLastPathComponent())
-      defer { Darwin.close(parent) }
-      var metadata = stat()
-      guard lstat(nativeURL.path, &metadata) != 0 else {
-        throw EnvironmentLifecycleError.blocked(
-          "destination already exists; it will not be overwritten: \(nativeURL.path)")
-      }
-      guard errno == ENOENT else {
-        throw EnvironmentLifecycleError.system("inspect native destination", nativeURL, errno)
-      }
-    }
+    if sourceURL == nil { try EnvironmentNativeSource.requireAbsentDestination(nativeURL) }
     let digest = sha256Digest(try sortedKeysJSON(ownership) + Data(nativeURL.path.utf8) + data)
     return (
       Plan(
@@ -210,6 +199,58 @@ struct EnvironmentNativeFileMigration: Sendable {
 
 /// Shared exclusion boundary for explicit external native provider connections.
 enum EnvironmentNativeSource {
+  /// Refuses an existing native destination, so a seed never overwrites user files.
+  static func requireAbsentDestination(_ url: URL) throws {
+    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
+    defer { Darwin.close(parent) }
+    var metadata = stat()
+    guard lstat(url.path, &metadata) != 0 else {
+      throw EnvironmentLifecycleError.blocked(
+        "destination already exists; it will not be overwritten: \(url.path)")
+    }
+    guard errno == ENOENT else {
+      throw EnvironmentLifecycleError.system("inspect native destination", url, errno)
+    }
+  }
+
+  /// Creates or removes an initial connection's public link to `target`. A link already in the
+  /// requested state is kept; any other entry is drift.
+  static func transitionConnectionLink(
+    at url: URL, target: String, connect: Bool, label: String, connectOperation: String
+  ) throws {
+    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
+    defer { Darwin.close(parent) }
+    var metadata = stat()
+    let rc = url.lastPathComponent.withCString {
+      fstatat(parent, $0, &metadata, AT_SYMLINK_NOFOLLOW)
+    }
+    if rc == 0 {
+      guard metadata.st_mode & S_IFMT == S_IFLNK,
+        try PinnedFilesystem.symlinkDestination(
+          parentDescriptor: parent, name: url.lastPathComponent, url: url)
+          == target
+      else { throw EnvironmentLifecycleError.drift(url.path) }
+      if !connect, url.lastPathComponent.withCString({ unlinkat(parent, $0, 0) }) != 0 {
+        throw EnvironmentLifecycleError.system("remove \(label) connection", url, errno)
+      }
+    } else {
+      guard errno == ENOENT else {
+        throw EnvironmentLifecycleError.system("inspect \(label) connection", url, errno)
+      }
+      if connect {
+        let created = target.withCString { target in
+          url.lastPathComponent.withCString { symlinkat(target, parent, $0) }
+        }
+        guard created == 0 else {
+          throw EnvironmentLifecycleError.system(connectOperation, url, errno)
+        }
+      }
+    }
+    guard fsync(parent) == 0 else {
+      throw EnvironmentLifecycleError.system("sync \(label) connection", url, errno)
+    }
+  }
+
   /// Atomically repoints a provider's public entry link from `before` to `after` through a staged
   /// sibling link; a link that already points to `after` is left alone.
   static func switchPublicLink(
@@ -335,5 +376,17 @@ extension EnvironmentTransactionCoordinator {
         )
       }
     )
+  }
+}
+
+extension EnvironmentGenerationStore {
+  /// Reads and validates the named artifacts of a published generation, in the given order.
+  func validatedArtifacts(
+    generationID: String, paths: [String]
+  ) throws -> [EnvironmentConfigurationArtifact] {
+    try paths.map {
+      EnvironmentConfigurationArtifact(
+        path: $0, data: try validatedArtifact(generationID: generationID, path: $0))
+    }
   }
 }
