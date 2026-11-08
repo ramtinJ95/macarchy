@@ -23,7 +23,8 @@ package enum ConsumerHomePath {
   package static let shellConfiguration = ".zshrc"
   package static let sketchyBarDirectory = ".config/sketchybar"
   package static let sketchyBarConfiguration = ".config/sketchybar/sketchybarrc"
-  package static let skhdConfiguration = ".config/skhd/skhdrc"
+  package static let skhdConfiguration =
+    ".config/\(SkhdLayout.directoryName)/\(SkhdLayout.configurationName)"
   package static let spicetifyDirectory = ".config/spicetify"
   package static let spicetifyConfiguration = ".config/spicetify/config-xpui.ini"
   package static let starshipConfiguration = ".config/starship.toml"

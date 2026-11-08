@@ -188,7 +188,9 @@ struct SaverCommand: ParsableCommand {
 
   /// The program inside each panel. Its failures can only be read on the panel itself.
   struct Run: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "_run", shouldDisplay: false)
+    static let commandName = "_run"
+    static let configuration = CommandConfiguration(
+      commandName: Self.commandName, shouldDisplay: false)
 
     @Option var stateRoot: String
     @Option var launch: String
@@ -212,7 +214,9 @@ struct SaverCommand: ParsableCommand {
 
   /// The idle launch agent's observer. It exits once idle activation is turned off.
   struct Observe: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "_idle", shouldDisplay: false)
+    static let commandName = "_idle"
+    static let configuration = CommandConfiguration(
+      commandName: Self.commandName, shouldDisplay: false)
 
     @Option var stateRoot: String
 
