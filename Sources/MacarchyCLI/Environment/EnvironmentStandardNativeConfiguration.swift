@@ -12,7 +12,7 @@ enum EnvironmentStandardNativeConfiguration {
     switch provider {
     case .atuin, .starship:
       try EnvironmentNativeFileMigration(
-        provider: provider == .atuin ? .atuin : .starship,
+        provider: provider.nativeFileProvider!,
         homeDirectory: homeDirectory, stateRoot: stateRoot
       ).validateNativeFile(at: source, userOwnedPublicEntry: true)
     case .neovim:
