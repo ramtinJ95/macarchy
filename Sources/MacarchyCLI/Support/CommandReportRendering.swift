@@ -72,6 +72,34 @@ extension CommandReport {
   }
 }
 
+struct PlanAction: Encodable, Sendable {
+  let id: String
+  let message: String
+
+  static func renderLines(_ actions: [Self]) -> [String] {
+    [actions.isEmpty ? "Actions: none" : "Actions:"]
+      + actions.map { "- \($0.id): \($0.message)" }
+  }
+}
+
+struct PlanDiagnostic: Encodable, Sendable {
+  let severity = "error"
+  let code: String
+  let source: String
+  let message: String
+
+  static func renderLines(_ diagnostics: [Self]) -> [String] {
+    guard !diagnostics.isEmpty else { return [] }
+    return ["Diagnostics:"]
+      + diagnostics.map { "- \($0.source): error [\($0.code)]: \($0.message)" }
+  }
+}
+
+/// A rendered artifact shown verbatim in plan text.
+func renderExactBytes(_ name: String, _ contents: String) -> String {
+  "Rendered \(name):\n--- begin exact bytes ---\n\(contents)--- end exact bytes ---"
+}
+
 func emitExecution(_ execution: CommandExecution) throws {
   print(execution.output)
   if !execution.succeeded {

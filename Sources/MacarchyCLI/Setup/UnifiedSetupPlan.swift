@@ -292,10 +292,10 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         context: context.preferencesContext, desired: profile.macOSPreferences
       ).componentExecution()
     )
-    var diagnostics = [UnifiedSetupPlanDiagnostic]()
+    var diagnostics = [PlanDiagnostic]()
     for (stage, component) in components.all where !component.succeeded {
       diagnostics.append(
-        UnifiedSetupPlanDiagnostic(
+        PlanDiagnostic(
           code: "\(stage.rawValue)_plan_blocked",
           source: stage.rawValue,
           message: componentFailureMessage(id: stage.rawValue, component: component)
@@ -820,13 +820,6 @@ struct UnifiedSetupAction: Encodable, Sendable {
   let message: String
 }
 
-struct UnifiedSetupPlanDiagnostic: Encodable, Sendable {
-  let severity = "error"
-  let code: String
-  let source: String
-  let message: String
-}
-
 struct UnifiedSetupPlanReport: CommandReport {
   let schemaVersion = 1
   let operation = "setup_plan"
@@ -845,7 +838,7 @@ struct UnifiedSetupPlanReport: CommandReport {
   let manualBoundaries: [UnifiedSetupManualBoundary]
   let actions: [UnifiedSetupAction]
   let components: SetupComponentPlans?
-  let diagnostics: [UnifiedSetupPlanDiagnostic]
+  let diagnostics: [PlanDiagnostic]
   var packageDeclarations: SetupPackageDeclarations? = nil
   var packageInventory: SetupPackageInventory? = nil
   var packageInstallation: HomebrewBundleInstaller.Preview? = nil
@@ -905,7 +898,7 @@ struct UnifiedSetupPlanReport: CommandReport {
       actions: [],
       components: nil,
       diagnostics: [
-        UnifiedSetupPlanDiagnostic(
+        PlanDiagnostic(
           code: code,
           source: "setup",
           message: error
@@ -979,10 +972,7 @@ struct UnifiedSetupPlanReport: CommandReport {
         lines.append("Approve native preference changes with --approve-preferences \(digest).")
       }
     }
-    if !diagnostics.isEmpty {
-      lines.append("Diagnostics:")
-      lines += diagnostics.map { "- \($0.source): error [\($0.code)]: \($0.message)" }
-    }
+    lines += PlanDiagnostic.renderLines(diagnostics)
     lines.append("No changes made.")
     return lines.joined(separator: "\n")
   }

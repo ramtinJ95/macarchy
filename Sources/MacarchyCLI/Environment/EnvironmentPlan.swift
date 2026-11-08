@@ -58,7 +58,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
         let report = EnvironmentPlanReport.blocked(
           profile: profileURL,
           resourcesRoot: resourcesRoot,
-          diagnostic: EnvironmentPlanDiagnostic(
+          diagnostic: PlanDiagnostic(
             code: "profile_invalid",
             source: profileURL.path,
             message: String(describing: error)
@@ -85,7 +85,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
         profileStatus: profile.sourceURL == nil ? "absent_default" : "loaded",
         environment: profile.environment,
         resourcesRoot: resourcesRoot,
-        diagnostic: EnvironmentPlanDiagnostic(
+        diagnostic: PlanDiagnostic(
           code: "environment_configuration_invalid",
           source: source.path,
           message: String(describing: error)
@@ -117,7 +117,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
           remediation: "Repair Spicetify manually before enabling the preset."))
     }
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
-    let themeDiagnostic: EnvironmentPlanDiagnostic?
+    let themeDiagnostic: PlanDiagnostic?
     if requiresActiveTheme,
       !composition.profile.selectedThemeAdapterIDs.isEmpty || composition.profile.presets.slack
     {
@@ -125,7 +125,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
         _ = try ThemeGenerationReader(root: stateRoot).activeManifest()
         themeDiagnostic = nil
       } catch {
-        themeDiagnostic = EnvironmentPlanDiagnostic(
+        themeDiagnostic = PlanDiagnostic(
           code: "active_theme_required",
           source: stateRoot.path,
           message: "An active canonical theme is required before environment apply: \(error)"
@@ -141,13 +141,13 @@ struct EnvironmentPlanCommandRunner: Sendable {
       || themeDiagnostic != nil
     var diagnostics =
       provider?.blockedMessage.map {
-        [EnvironmentPlanDiagnostic(code: "provider_blocked", source: stateRoot.path, message: $0)]
+        [PlanDiagnostic(code: "provider_blocked", source: stateRoot.path, message: $0)]
       } ?? []
     if let themeDiagnostic { diagnostics.append(themeDiagnostic) }
     for prerequisite in prerequisiteState
     where prerequisite.id == "spicetify_preparation" && prerequisite.status == "missing" {
       diagnostics.append(
-        EnvironmentPlanDiagnostic(
+        PlanDiagnostic(
           code: "spicetify_unprepared", source: "spicetify",
           message: prerequisite.requirement))
     }
@@ -235,11 +235,11 @@ struct EnvironmentPlanCommandRunner: Sendable {
     freshNativeNeovim: Bool,
     adoptionRequired: Bool,
     restorationRequired: Bool
-  ) -> [EnvironmentPlanAction] {
-    var actions: [EnvironmentPlanAction] = []
+  ) -> [PlanAction] {
+    var actions: [PlanAction] = []
     if profile.focusRing == .lean {
       actions.append(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "configure_lean_focus",
           message:
             "Run the opt-in Macarchy-owned focus service with live canonical palette acknowledgement. Suspend only already-owned Borders; selecting borders switches back. Physical/display/Spaces/app/soak limits remain."
@@ -247,7 +247,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if profile.focusRing == .borders {
       actions.append(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "configure_borders",
           message:
             "Own the native Borders entry and Homebrew service; request the canonical palette live. Adoption and restoration of running native configuration require restart; settings have no readback."
@@ -255,7 +255,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if profile.terminal == .kitty {
       actions.append(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "configure_kitty",
           message: "Configure Kitty through the managed environment generation."
         )
@@ -263,7 +263,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if profile.shell == .zsh {
       actions.append(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "configure_zsh",
           message: "Configure zsh through the managed environment generation."
         )
@@ -271,7 +271,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if profile.prompt == .starship {
       actions.append(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "configure_starship",
           message: "Configure Starship behavior while retaining Macarchy palette ownership."
         )
@@ -279,7 +279,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if profile.history == .atuin {
       actions.append(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "configure_atuin",
           message: "Configure Atuin behavior while retaining Macarchy theme ownership."
         )
@@ -287,7 +287,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if profile.editor == .neovim {
       actions.append(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "configure_neovim",
           message: nativeNeovim
             ? "Preserve writable Neovim behavior and Lazy lock; update only canonical theme integration."
@@ -296,7 +296,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       )
       if freshNativeNeovim {
         actions.append(
-          EnvironmentPlanAction(
+          PlanAction(
             id: "prepare_fresh_neovim_plugins",
             message:
               "First connection of the unchanged curated Neovim starter: download/build and verify its locked plugins with a 180-second limit using a temporary config copy. Preserve user files and lock; plugin/cache changes survive rollback. Existing native configurations and ordinary reapply skip this step."
@@ -304,7 +304,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
         )
       } else if !nativeNeovim {
         actions.append(
-          EnvironmentPlanAction(
+          PlanAction(
             id: "restore_neovim_plugins",
             message: "Restore the selected Neovim plugin graph from its lock using Lazy."
           )
@@ -321,7 +321,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if !actions.isEmpty {
       actions.insert(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "publish_environment_generation",
           message: "Publish the deterministic daily tool generation."
         ),
@@ -330,7 +330,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if adoptionRequired {
       actions.insert(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "adopt_provider_entries",
           message: "Adopt every reviewed external provider entry as one aggregate transaction."
         ),
@@ -339,7 +339,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     }
     if restorationRequired {
       actions.insert(
-        EnvironmentPlanAction(
+        PlanAction(
           id: "restore_disabled_provider_entries",
           message: "Restore adopted entries for roles that are now disabled."
         ),
@@ -383,15 +383,15 @@ private struct EnvironmentPlanReport: CommandReport {
   let adoptionEvidenceDigest: String?
   let prerequisites: [EnvironmentPrerequisiteStatus]
   let entries: [EnvironmentEntryInspection]
-  let actions: [EnvironmentPlanAction]
-  let diagnostics: [EnvironmentPlanDiagnostic]
+  let actions: [PlanAction]
+  let diagnostics: [PlanDiagnostic]
 
   static func blocked(
     profile: URL,
     profileStatus: String = "invalid",
     environment: EnvironmentProfile? = nil,
     resourcesRoot: URL,
-    diagnostic: EnvironmentPlanDiagnostic
+    diagnostic: PlanDiagnostic
   ) -> EnvironmentPlanReport {
     EnvironmentPlanReport(
       outcome: "blocked",
@@ -489,31 +489,12 @@ private struct EnvironmentPlanReport: CommandReport {
         lines.append(evidenceParts.joined())
       }
     }
-    lines.append(actions.isEmpty ? "Actions: none" : "Actions:")
-    lines += actions.map { "- \($0.id): \($0.message)" }
-    if !diagnostics.isEmpty {
-      lines.append("Diagnostics:")
-      lines += diagnostics.map { "- \($0.source): error [\($0.code)]: \($0.message)" }
-    }
+    lines += PlanAction.renderLines(actions)
+    lines += PlanDiagnostic.renderLines(diagnostics)
     for (path, contents) in renderedArtifacts.sorted(by: { $0.key < $1.key }) {
-      lines.append(
-        "Rendered \(path):\n" + "--- begin exact bytes ---\n" + contents
-          + "--- end exact bytes ---"
-      )
+      lines.append(renderExactBytes(path, contents))
     }
     lines.append("No changes made.")
     return lines.joined(separator: "\n")
   }
-}
-
-struct EnvironmentPlanAction: Encodable {
-  let id: String
-  let message: String
-}
-
-private struct EnvironmentPlanDiagnostic: Encodable {
-  let severity = "error"
-  let code: String
-  let source: String
-  let message: String
 }

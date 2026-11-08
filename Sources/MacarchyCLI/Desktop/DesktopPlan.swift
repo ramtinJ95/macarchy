@@ -34,7 +34,7 @@ struct DesktopPlanCommandRunner: Sendable {
     profile suppliedProfile: PortableProfile? = nil,
     requireRunningKeybindingProcess: Bool = true
   ) throws -> CommandExecution {
-    var diagnostics: [DesktopPlanDiagnostic] = []
+    var diagnostics: [PlanDiagnostic] = []
     let profile: PortableProfile?
     if let suppliedProfile {
       profile = suppliedProfile
@@ -44,7 +44,7 @@ struct DesktopPlanCommandRunner: Sendable {
       } catch {
         profile = nil
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "profile_invalid",
             source: profileURL.path,
             message: String(describing: error)
@@ -62,7 +62,7 @@ struct DesktopPlanCommandRunner: Sendable {
         }
       } catch {
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "parent_transaction_pending", source: stateRoot.path,
             message: (error as? DesktopApplyBlockedError)?.reason ?? String(describing: error)
           )
@@ -77,7 +77,7 @@ struct DesktopPlanCommandRunner: Sendable {
         serviceChange = try service.prepare(home: homeDirectory, stateRoot: stateRoot)
       } catch {
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "yabai_service_prerequisite", source: service.propertyList(homeDirectory).path,
             message: String(describing: error)))
       }
@@ -89,7 +89,7 @@ struct DesktopPlanCommandRunner: Sendable {
       : []
     for prerequisite in prerequisiteStatuses where prerequisite.status == .missing {
       diagnostics.append(
-        DesktopPlanDiagnostic(
+        PlanDiagnostic(
           code: "desktop_prerequisite_missing",
           source: prerequisite.id,
           message: "\(prerequisite.requirement); \(prerequisite.remediation)"
@@ -110,7 +110,7 @@ struct DesktopPlanCommandRunner: Sendable {
         )
         if yabaiEnabled, keybindingPlan?.succeeded == false {
           diagnostics.append(
-            DesktopPlanDiagnostic(
+            PlanDiagnostic(
               code: "keybindings_blocked",
               source: homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration).path,
               message: keybindingPlan?.message ?? "keybinding state is blocked"
@@ -119,7 +119,7 @@ struct DesktopPlanCommandRunner: Sendable {
         }
       } catch {
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "keybindings_invalid",
             source: homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration).path,
             message: String(describing: error)
@@ -140,7 +140,7 @@ struct DesktopPlanCommandRunner: Sendable {
           (error as? YabaiConfigurationError)?.sourceURL
           ?? DesktopDesiredState.yabaiDefaultsURL(resourcesRoot: resourcesRoot)
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "yabai_configuration_invalid",
             source: source.path,
             message: String(describing: error)
@@ -162,7 +162,7 @@ struct DesktopPlanCommandRunner: Sendable {
           (error as? SketchyBarConfigurationError)?.sourceURL
           ?? DesktopDesiredState.sketchyBarDefaultsURL(resourcesRoot: resourcesRoot)
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "sketchybar_configuration_invalid",
             source: source.path,
             message: String(describing: error)
@@ -174,7 +174,7 @@ struct DesktopPlanCommandRunner: Sendable {
     let yabaiGeneration = YabaiGenerationInspector(stateRoot: stateRoot).inspect()
     if yabaiEnabled, yabaiGeneration.status == .invalid {
       diagnostics.append(
-        DesktopPlanDiagnostic(
+        PlanDiagnostic(
           code: "yabai_generation_invalid",
           source: stateRoot.appending(path: "\(StateLayout.yabaiDirectory)/current").path,
           message: yabaiGeneration.message
@@ -191,7 +191,7 @@ struct DesktopPlanCommandRunner: Sendable {
       yabaiProvider.status == .blocked || yabaiProvider.status == .recoveryRequired
     {
       diagnostics.append(
-        DesktopPlanDiagnostic(
+        PlanDiagnostic(
           code: "yabai_provider_blocked",
           source: yabaiProvider.entryPoint,
           message: yabaiProvider.message
@@ -205,7 +205,7 @@ struct DesktopPlanCommandRunner: Sendable {
       sketchyBarGeneration = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
       if sketchyBarEnabled, sketchyBarGeneration.status == .invalid {
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "sketchybar_generation_invalid",
             source: stateRoot.appending(path: "\(StateLayout.sketchyBarDirectory)/current").path,
             message: sketchyBarGeneration.message
@@ -223,7 +223,7 @@ struct DesktopPlanCommandRunner: Sendable {
         || sketchyBarProvider.status == .recoveryRequired
       {
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "sketchybar_provider_blocked",
             source: sketchyBarProvider.entryPoint,
             message: sketchyBarProvider.message
@@ -236,7 +236,7 @@ struct DesktopPlanCommandRunner: Sendable {
       )
       if sketchyBarPalette.status == .invalid {
         diagnostics.append(
-          DesktopPlanDiagnostic(
+          PlanDiagnostic(
             code: "sketchybar_theme_palette_invalid",
             source: StateLayout(root: stateRoot).currentTheme.path,
             message: sketchyBarPalette.message
@@ -343,12 +343,12 @@ struct DesktopPlanCommandRunner: Sendable {
     generation: YabaiGenerationInspection,
     blocked: Bool,
     serviceChange: UserServiceChange?
-  ) -> [DesktopPlanAction] {
+  ) -> [PlanAction] {
     guard !blocked else { return [] }
     if !enabled {
       return provider.status == .managed
         ? [
-          DesktopPlanAction(
+          PlanAction(
             id: "teardown_yabai_provider",
             message: "Restore the exact prior yabai provider and service state."
           )
@@ -360,10 +360,10 @@ struct DesktopPlanCommandRunner: Sendable {
     if provider.status == .managed, generationAgrees, serviceChange?.previous.running != false {
       return []
     }
-    var actions: [DesktopPlanAction] = []
+    var actions: [PlanAction] = []
     if !generationAgrees {
       actions.append(
-        DesktopPlanAction(
+        PlanAction(
           id: "publish_yabai_generation",
           message: "Publish deterministic managed yabai configuration."
         )
@@ -371,7 +371,7 @@ struct DesktopPlanCommandRunner: Sendable {
     }
     actions += Self.entryActions(provider: provider, name: "yabai", entryName: "yabairc")
     actions.append(
-      DesktopPlanAction(
+      PlanAction(
         id: serviceChange?.previous.running == false
           ? "start_yabai_service" : "restart_yabai_service",
         message: serviceChange?.previous.running == false
@@ -389,12 +389,12 @@ struct DesktopPlanCommandRunner: Sendable {
     generation: SketchyBarGenerationInspection,
     palette: SketchyBarPalettePlanInspection,
     blocked: Bool
-  ) -> [DesktopPlanAction] {
+  ) -> [PlanAction] {
     guard !blocked else { return [] }
     if !enabled {
       return provider.status == .managed
         ? [
-          DesktopPlanAction(
+          PlanAction(
             id: "teardown_sketchybar_provider",
             message: "Restore the exact prior SketchyBar provider entry and service state."
           )
@@ -404,10 +404,10 @@ struct DesktopPlanCommandRunner: Sendable {
     let generationAgrees = generation.isCurrent(
       inputDigest: composition.inputDigest, renderedDigest: composition.renderedDigest)
     if provider.status == .managed, generationAgrees, palette.status == .current { return [] }
-    var actions: [DesktopPlanAction] = []
+    var actions: [PlanAction] = []
     if palette.status == .unavailable || palette.status == .refreshRequired {
       actions.append(
-        DesktopPlanAction(
+        PlanAction(
           id: Self.themePaletteActionID,
           message: palette.status == .unavailable
             ? "Activate a canonical theme to publish the managed SketchyBar shell palette."
@@ -417,7 +417,7 @@ struct DesktopPlanCommandRunner: Sendable {
     }
     if !generationAgrees {
       actions.append(
-        DesktopPlanAction(
+        PlanAction(
           id: "publish_sketchybar_generation",
           message: "Publish deterministic managed SketchyBar configuration."
         )
@@ -425,7 +425,7 @@ struct DesktopPlanCommandRunner: Sendable {
     }
     actions += Self.entryActions(provider: provider, name: "sketchybar", entryName: "sketchybarrc")
     actions.append(
-      DesktopPlanAction(
+      PlanAction(
         id: "reload_sketchybar_service",
         message: "Reload SketchyBar and verify its palette, items, and ready marker."
       )
@@ -436,18 +436,18 @@ struct DesktopPlanCommandRunner: Sendable {
   /// The install or adopt step for a provider entry such as `yabairc`.
   private static func entryActions(
     provider: DesktopProviderPlanInspection, name: String, entryName: String
-  ) -> [DesktopPlanAction] {
+  ) -> [PlanAction] {
     switch provider.status {
     case .installRequired:
       [
-        DesktopPlanAction(
+        PlanAction(
           id: "install_\(name)_entry",
           message: "Install the managed \(entryName) provider entry."
         )
       ]
     case .adoptionRequired:
       [
-        DesktopPlanAction(
+        PlanAction(
           id: provider.ownership == "directory_symlink"
             ? "adopt_\(name)_directory_symlink"
             : "adopt_\(entryName)_entry",
@@ -482,12 +482,12 @@ struct DesktopPlanCommandRunner: Sendable {
     enabled: Bool,
     plan: DesktopKeybindingPlan?,
     blocked: Bool
-  ) -> [DesktopPlanAction] {
+  ) -> [PlanAction] {
     guard !blocked, let plan else { return [] }
     if enabled {
       return plan.outcome == "ready"
         ? [
-          DesktopPlanAction(
+          PlanAction(
             id: "converge_skhd_provider",
             message: "Publish and activate the authoritative managed skhd configuration."
           )
@@ -495,7 +495,7 @@ struct DesktopPlanCommandRunner: Sendable {
     }
     return plan.providerStatus == "managed"
       ? [
-        DesktopPlanAction(
+        PlanAction(
           id: "teardown_skhd_provider",
           message: "Restore the exact prior skhd provider entry."
         )
@@ -526,8 +526,8 @@ private struct DesktopPlanReport: CommandReport {
   let sketchyBar: DesktopSketchyBarPlanReport?
   let prerequisites: [DesktopPrerequisiteStatus]
   let keybindings: DesktopKeybindingPlan?
-  let actions: [DesktopPlanAction]
-  let diagnostics: [DesktopPlanDiagnostic]
+  let actions: [PlanAction]
+  let diagnostics: [PlanDiagnostic]
 
   func renderText() throws -> String {
     var lines = [
@@ -566,25 +566,15 @@ private struct DesktopPlanReport: CommandReport {
           + keybindings.message
       )
     }
-    lines.append(actions.isEmpty ? "Actions: none" : "Actions:")
-    lines += actions.map { "- \($0.id): \($0.message)" }
-    if !diagnostics.isEmpty {
-      lines.append("Diagnostics:")
-      lines += diagnostics.map { "- \($0.source): error [\($0.code)]: \($0.message)" }
-    }
+    lines += PlanAction.renderLines(actions)
+    lines += PlanDiagnostic.renderLines(diagnostics)
     if let renderedYabairc {
-      lines.append(
-        "Rendered yabairc:\n--- begin exact bytes ---\n\(renderedYabairc)"
-          + "--- end exact bytes ---"
-      )
+      lines.append(renderExactBytes("yabairc", renderedYabairc))
     }
     for (path, contents) in (sketchyBar?.renderedArtifacts ?? [:]).sorted(by: {
       $0.key < $1.key
     }) {
-      lines.append(
-        "Rendered SketchyBar \(path):\n--- begin exact bytes ---\n\(contents)"
-          + "--- end exact bytes ---"
-      )
+      lines.append(renderExactBytes("SketchyBar \(path)", contents))
     }
     lines.append("No changes made.")
     return lines.joined(separator: "\n")
@@ -693,16 +683,4 @@ private struct DesktopSketchyBarPlanReport: Encodable {
     case provider
     case themePalette = "theme_palette"
   }
-}
-
-private struct DesktopPlanAction: Encodable {
-  let id: String
-  let message: String
-}
-
-private struct DesktopPlanDiagnostic: Encodable {
-  let severity = "error"
-  let code: String
-  let source: String
-  let message: String
 }
