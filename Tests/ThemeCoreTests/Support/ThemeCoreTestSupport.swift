@@ -25,3 +25,25 @@ enum BuiltInThemePackages {
       packageURL: repositoryRoot.appending(path: "Themes/\(id)", directoryHint: .isDirectory))
   }
 }
+
+extension ThemePackage {
+  /// The default background's bytes; the package must have one.
+  var defaultBackgroundData: Data {
+    guard let data = firstBackgroundData else {
+      preconditionFailure("Theme package has no default background")
+    }
+    return data
+  }
+}
+
+extension RenderedArtifactSizePolicy {
+  /// The policy whose limit is exactly `maximumSize`, or nil when none has it.
+  init?(maximumSize: Int) {
+    guard
+      let policy = [Self.ordinary, .wallpaper].first(where: { $0.maximumSize == maximumSize })
+    else {
+      return nil
+    }
+    self = policy
+  }
+}
