@@ -48,12 +48,16 @@ package struct EnvironmentGenerationInspection: Equatable, Sendable {
 
 package enum EnvironmentGenerationError: Error, CustomStringConvertible, Sendable {
   case invalid(String)
+  /// A generation whose files no longer match its manifest; `stage` replaces it.
+  case artifactsDrifted(String)
   case system(String, URL, Int32)
 
   package var description: String {
     switch self {
     case .invalid(let reason):
       "invalid environment generation: \(reason)"
+    case .artifactsDrifted(let detail):
+      "invalid environment generation: artifact inventory or bytes drifted (\(detail))"
     case .system(let operation, let url, let code):
       "cannot \(operation) \(url.path): \(errnoDescription(code))"
     }
@@ -140,9 +144,8 @@ package struct EnvironmentGenerationStore: Sendable {
       let changed = expected.intersection(actual).filter {
         manifest.artifacts[$0] != files[$0]
       }.sorted()
-      throw EnvironmentGenerationError.invalid(
-        "artifact inventory or bytes drifted (missing: \(missing), unexpected: \(unexpected), changed: \(changed))"
-      )
+      throw EnvironmentGenerationError.artifactsDrifted(
+        "missing: \(missing), unexpected: \(unexpected), changed: \(changed)")
     }
     return manifest
   }
@@ -209,9 +212,7 @@ package struct EnvironmentGenerationStore: Sendable {
     let current: EnvironmentGenerationManifest?
     do {
       current = try currentManifest()
-    } catch EnvironmentGenerationError.invalid(let reason)
-      where reason.hasPrefix("artifact inventory or bytes drifted")
-    {
+    } catch EnvironmentGenerationError.artifactsDrifted {
       current = nil
     }
     if let manifest = current,
@@ -461,9 +462,7 @@ package struct EnvironmentGenerationStore: Sendable {
       throw EnvironmentGenerationError.invalid("generation root is not a directory")
     }
     guard rootMetadata.st_mode & 0o222 == 0 else {
-      throw EnvironmentGenerationError.invalid(
-        "artifact inventory or bytes drifted (writable entry: generation root)"
-      )
+      throw EnvironmentGenerationError.artifactsDrifted("writable entry: generation root")
     }
     guard
       let enumerator = FileManager.default.enumerator(
@@ -485,9 +484,7 @@ package struct EnvironmentGenerationStore: Sendable {
         throw EnvironmentGenerationError.system("inspect generation entry", file, errno)
       }
       guard metadata.st_mode & 0o222 == 0 else {
-        throw EnvironmentGenerationError.invalid(
-          "artifact inventory or bytes drifted (writable entry: \(relative))"
-        )
+        throw EnvironmentGenerationError.artifactsDrifted("writable entry: \(relative)")
       }
       let values = try file.resourceValues(forKeys: [
         .isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey,
