@@ -48,6 +48,29 @@ struct EnvironmentPlanCommandRunner: Sendable {
     bootstrapTheme: ThemePackage? = nil,
     nativeStarters: [EnvironmentNativeSeed] = []
   ) throws -> CommandExecution {
+    let plan = try report(
+      resourcesRoot: resourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      profile: suppliedProfile,
+      bootstrapTheme: bootstrapTheme,
+      nativeStarters: nativeStarters
+    )
+    return (try plan.render(json: json), plan.succeeded)
+  }
+
+  func report(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL? = nil,
+    profile suppliedProfile: PortableProfile? = nil,
+    bootstrapTheme: ThemePackage? = nil,
+    nativeStarters: [EnvironmentNativeSeed] = []
+  ) throws -> EnvironmentPlanReport {
     let profile: PortableProfile
     if let suppliedProfile {
       profile = suppliedProfile
@@ -55,7 +78,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       do {
         profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
       } catch {
-        let report = EnvironmentPlanReport.blocked(
+        return EnvironmentPlanReport.blocked(
           profile: profileURL,
           resourcesRoot: resourcesRoot,
           diagnostic: PlanDiagnostic(
@@ -64,7 +87,6 @@ struct EnvironmentPlanCommandRunner: Sendable {
             message: String(describing: error)
           )
         )
-        return (try report.render(json: json), false)
       }
     }
 
@@ -80,7 +102,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       )
     } catch {
       let source = (error as? EnvironmentConfigurationError)?.sourceURL ?? resourcesRoot
-      let report = EnvironmentPlanReport.blocked(
+      return EnvironmentPlanReport.blocked(
         profile: profileURL,
         profileStatus: profile.sourceURL == nil ? "absent_default" : "loaded",
         environment: profile.environment,
@@ -91,7 +113,6 @@ struct EnvironmentPlanCommandRunner: Sendable {
           message: String(describing: error)
         )
       )
-      return (try report.render(json: json), false)
     }
 
     let provider = homeDirectory.map {
@@ -174,7 +195,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
           homeDirectory: $0, stateRoot: stateRoot, resourcesRoot: resourcesRoot,
           proposedStarters: starterPlans)
       } ?? false
-    let report = EnvironmentPlanReport(
+    return EnvironmentPlanReport(
       outcome: blocked ? "blocked" : "ready",
       profile: profileURL.path,
       profileStatus: profile.sourceURL == nil ? "absent_default" : "loaded",
@@ -226,7 +247,6 @@ struct EnvironmentPlanCommandRunner: Sendable {
       ),
       diagnostics: diagnostics
     )
-    return (try report.render(json: json), !blocked)
   }
 
   private static func actions(
@@ -350,7 +370,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
   }
 }
 
-private struct EnvironmentPlanReport: CommandReport {
+struct EnvironmentPlanReport: CommandReport, Sendable {
   let schemaVersion = 1
   let operation = "environment_plan"
   let outcome: String
@@ -385,6 +405,9 @@ private struct EnvironmentPlanReport: CommandReport {
   let entries: [EnvironmentEntryInspection]
   let actions: [PlanAction]
   let diagnostics: [PlanDiagnostic]
+
+  /// A blocked plan is the only failed outcome.
+  var succeeded: Bool { outcome != "blocked" }
 
   static func blocked(
     profile: URL,
