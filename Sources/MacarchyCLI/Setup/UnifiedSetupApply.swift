@@ -117,9 +117,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       guard try store.read() == nil else { throw SetupCoreOwnershipError.alreadyExists }
       let appearance = MacOSAppearanceAdapter.live(root: stateRoot)
       let originalAppearance = try appearance.preflight()
-      let manifest: GenerationManifest
-      do {
-        manifest = try ThemeActivator(root: stateRoot).activate(
+      // The bootstrap reconciles only macOS appearance; a failed or drifted result fails it.
+      let outcome = try await ThemeActivationOutcome.classify(
+        requiredFailure: { results in
+          results.contains { $0.status == .failed || $0.status == .drifted }
+        }
+      ) {
+        let manifest = try ThemeActivator(root: stateRoot).activate(
           package: package,
           onCommittedLocked: { manifest in
             try store.write(
@@ -130,46 +134,24 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             )
           }
         )
-      } catch let error as ThemeCommittedActivationError {
-        let report = ThemeSetReport.committedActivationError(
-          manifest: error.manifest,
-          cause: error.cause,
-          slackTheme: nil
-        )
-        return try SetupComponentExecution(
-          (output: report.render(json: true), succeeded: false)
-        )
-      } catch {
-        let report = ThemeSetReport.precommitFailure(themeID: package.id, error: error)
-        return try SetupComponentExecution(
-          (output: report.render(json: true), succeeded: false)
-        )
-      }
-      let report: ThemeSetReport
-      do {
-        let appearanceResult = try await appearance.apply(package.appearance)
-        let reconciliation = try ReconciliationStatusStore(root: stateRoot).persist(
-          manifest: manifest,
-          results: [appearanceResult]
-        )
-        report = .committed(
-          result: ThemeActivationResult(
+        do {
+          let appearanceResult = try await appearance.apply(package.appearance)
+          return ThemeActivationResult(
             manifest: manifest,
-            reconciliation: reconciliation
-          ),
-          requiredFailure: appearanceResult.status == .failed
-            || appearanceResult.status == .drifted,
-          slackTheme: nil
-        )
-      } catch {
-        report = .committedError(
-          manifest: manifest,
-          cause: String(describing: error),
-          slackTheme: nil
-        )
+            reconciliation: try ReconciliationStatusStore(root: stateRoot).persist(
+              manifest: manifest,
+              results: [appearanceResult]
+            )
+          )
+        } catch {
+          throw ThemeCommittedWithReconciliationError(
+            manifest: manifest,
+            cause: String(describing: error)
+          )
+        }
       }
       return try SetupComponentExecution(
-        (output: report.render(json: true), succeeded: report.succeeded)
+        ThemeSetReport(outcome, themeID: package.id, slackTheme: nil).execution(json: true)
       )
     },
     desktopApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in

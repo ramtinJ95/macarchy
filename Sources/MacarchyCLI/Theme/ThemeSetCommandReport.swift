@@ -31,17 +31,25 @@ enum ThemeSetReport {
     }
   }
 
-  static func committed(_ result: ThemeActivationResult, slackTheme: String?) -> Self {
-    let requiredFailure = hasRequiredReconciliationFailure(result.reconciliation.results)
-    return .committed(
-      result: result,
-      requiredFailure: requiredFailure,
-      slackTheme: slackTheme
-    )
+  init(_ outcome: ThemeActivationOutcome, themeID: String, slackTheme: String?) {
+    switch outcome {
+    case .committed(let result, let requiredFailure):
+      self = .committed(result: result, requiredFailure: requiredFailure, slackTheme: slackTheme)
+    case .committedActivationError(let manifest, let cause):
+      self = .committedActivationError(manifest: manifest, cause: cause, slackTheme: slackTheme)
+    case .committedReconciliationError(let manifest, let cause):
+      self = .committedError(manifest: manifest, cause: cause, slackTheme: slackTheme)
+    case .precommitFailure(let error):
+      self = .precommitFailure(themeID: themeID, error: error)
+    }
   }
 
   static func precommitFailure(themeID: String, error: any Error) -> Self {
     .precommitFailure(themeID: themeID, error: String(describing: error))
+  }
+
+  func execution(json: Bool) throws -> (output: String, succeeded: Bool) {
+    (try render(json: json), succeeded)
   }
 
   func render(json: Bool) throws -> String {
