@@ -448,10 +448,7 @@ struct ManagedBordersFixture {
       profile: PortableProfileLoader().load(at: profile, required: true), stateRoot: root)
     let inspection = EnvironmentProviderInspector().inspectIncludingBordersRuntime(
       composition: composition, homeDirectory: home, stateRoot: root, runtime: runtime)
-    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: root)
-    let descriptor = try lifecycleLock.acquire()
-    defer { lifecycleLock.release(descriptor) }
-    _ = try ActivationLock(root: root).withLock {
+    _ = try EnvironmentLifecycleLock(stateRoot: root).withActivationLock {
       try EnvironmentTransactionCoordinator(homeDirectory: home, stateRoot: root).applyLocked(
         composition: composition, inspection: inspection,
         adoptionDigest: inspection.adoptionEvidenceDigest, themeBridges: .init(entries: []))

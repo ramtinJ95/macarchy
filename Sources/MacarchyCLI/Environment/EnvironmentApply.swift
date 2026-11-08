@@ -618,75 +618,74 @@ struct EnvironmentApplyCommandRunner: Sendable {
             profile: profile
           )
         }
-        let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-        let lifecycleLockDescriptor = try lifecycleLock.acquire()
-        defer { lifecycleLock.release(lifecycleLockDescriptor) }
-        if let refusal = try unifiedSetupRefusal(
-          stateRoot: stateRoot, profileURL: profileURL, json: json,
-          withinUnifiedSetup: withinUnifiedSetup)
-        {
-          return refusal
-        }
-        let result = try runEnvironmentTeardown(
-          coordinator: coordinator,
-          dryRun: false,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
-          bordersRuntime: bordersRuntime
-        )
-        let restored: EnvironmentRestoredThemeState
-        do {
-          restored = try await reconcileRestoredDefaultConsumers(
+        return try await EnvironmentLifecycleLock(stateRoot: stateRoot).withAsyncLock {
+          if let refusal = try unifiedSetupRefusal(
+            stateRoot: stateRoot, profileURL: profileURL, json: json,
+            withinUnifiedSetup: withinUnifiedSetup)
+          {
+            return refusal
+          }
+          let result = try runEnvironmentTeardown(
+            coordinator: coordinator,
+            dryRun: false,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+            bordersRuntime: bordersRuntime
+          )
+          let restored: EnvironmentRestoredThemeState
+          do {
+            restored = try await reconcileRestoredDefaultConsumers(
+              theme: theme,
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              consumerPaths: consumerPaths,
+              restored: result.restored,
+              restorationMessage: result.message
+            )
+          } catch {
+            return try failure(
+              profileURL: profileURL,
+              profile: profile.environment,
+              prerequisites: prerequisiteState,
+              theme: result.restored,
+              message: defaultConsumerReconciliationFailureMessage(result.message, error),
+              mutated: result.changed,
+              json: json
+            )
+          }
+          guard restored.succeeded else {
+            return try failure(
+              profileURL: profileURL,
+              profile: profile.environment,
+              prerequisites: prerequisiteState,
+              theme: restored.theme,
+              message: restored.message,
+              mutated: result.changed,
+              json: json
+            )
+          }
+          return try EnvironmentStatusCommandRunner(
+            prerequisites: prerequisites,
             theme: theme,
+            verifier: verifier
+          ).execute(
+            operation: "environment_apply",
+            resourcesRoot: resourcesRoot,
+            profileURL: profileURL,
+            profileRequired: profileRequired,
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
             consumerPaths: consumerPaths,
-            restored: result.restored,
-            restorationMessage: result.message
-          )
-        } catch {
-          return try failure(
-            profileURL: profileURL,
-            profile: profile.environment,
-            prerequisites: prerequisiteState,
-            theme: result.restored,
-            message: defaultConsumerReconciliationFailureMessage(result.message, error),
+            includeVerification: true,
+            observedTheme: restored.theme,
+            successfulOutcome: result.changed ? "applied" : "no_change",
             mutated: result.changed,
-            json: json
+            successMessage: restored.message,
+            json: json,
+            profile: profile
           )
         }
-        guard restored.succeeded else {
-          return try failure(
-            profileURL: profileURL,
-            profile: profile.environment,
-            prerequisites: prerequisiteState,
-            theme: restored.theme,
-            message: restored.message,
-            mutated: result.changed,
-            json: json
-          )
-        }
-        return try EnvironmentStatusCommandRunner(
-          prerequisites: prerequisites,
-          theme: theme,
-          verifier: verifier
-        ).execute(
-          operation: "environment_apply",
-          resourcesRoot: resourcesRoot,
-          profileURL: profileURL,
-          profileRequired: profileRequired,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          consumerPaths: consumerPaths,
-          includeVerification: true,
-          observedTheme: restored.theme,
-          successfulOutcome: result.changed ? "applied" : "no_change",
-          mutated: result.changed,
-          successMessage: restored.message,
-          json: json,
-          profile: profile
-        )
       } catch {
         return try failure(
           profileURL: profileURL,
@@ -702,344 +701,344 @@ struct EnvironmentApplyCommandRunner: Sendable {
     }
 
     try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: true)
-    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-    let lifecycleLockDescriptor = try lifecycleLock.acquire()
-    defer { lifecycleLock.release(lifecycleLockDescriptor) }
-    if let refusal = try unifiedSetupRefusal(
-      stateRoot: stateRoot, profileURL: profileURL, json: json,
-      withinUnifiedSetup: withinUnifiedSetup)
-    {
-      return refusal
-    }
-
-    do {
-      let recovered = try recoverEnvironmentTransaction(
-        coordinator: coordinator,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory,
-        runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
-        bordersRuntime: bordersRuntime
-      )
-      if recovered {
-        return try failure(
-          profileURL: profileURL,
-          profile: profile.environment,
-          prerequisites: prerequisiteState,
-          message: "Interrupted environment state was recovered; review plan and apply again.",
-          mutated: true,
-          json: json
-        )
+    return try await EnvironmentLifecycleLock(stateRoot: stateRoot).withAsyncLock {
+      if let refusal = try unifiedSetupRefusal(
+        stateRoot: stateRoot, profileURL: profileURL, json: json,
+        withinUnifiedSetup: withinUnifiedSetup)
+      {
+        return refusal
       }
-    } catch {
-      return try failure(
-        profileURL: profileURL,
-        profile: profile.environment,
-        prerequisites: prerequisiteState,
-        message: String(describing: error),
-        mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
-        transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
-          ? "recovery_required" : "clear",
-        json: json
-      )
-    }
 
-    // Standalone apply replaces its own selection, not the other domains' applied authority.
-    // Read only after lifecycle recovery while holding the ownership lock.
-    if suppliedThemeAdapterIDs == nil {
       do {
-        let previous = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
-        let otherDomains: Set<String> = ["macos-appearance", "wallpaper", "sketchybar"]
-        enabledThemeAdapterIDs = Set(enabledThemeAdapterIDs)
-          .union(Set(previous?.enabledThemeAdapterIDs ?? []).intersection(otherDomains))
-          .sorted()
-      } catch {
-        return try failure(
-          profileURL: profileURL, profile: profile.environment,
-          message: "Cannot preserve applied theme inventory: \(error)",
-          mutated: false, json: json)
-      }
-    }
-
-    var themeAdapterIDs = profile.environment.selectedThemeAdapterIDs
-    if theme != nil, !themeAdapterIDs.isEmpty {
-      do {
-        let statusStore = ReconciliationStatusStore(root: stateRoot)
-        if case .current(let record) = try statusStore.read() {
-          let recorded = Set(record.results.map(\.adapterID))
-          themeAdapterIDs = Set(themeAdapterIDs)
-            .union(Set(enabledThemeAdapterIDs).subtracting(recorded))
-            .sorted()
-        }
-      } catch {
-        return try failure(
-          profileURL: profileURL,
-          profile: profile.environment,
-          prerequisites: prerequisiteState,
-          message: "An active canonical theme is required before environment apply: \(error)",
-          mutated: false,
-          json: json
-        )
-      }
-    }
-
-    let bordersService: BordersServiceInspection?
-    let leanService: EnvironmentLeanObservation?
-    do {
-      bordersService = try observedBordersService(
-        desiredEnabled: profile.environment.focusRing == .borders,
-        stateRoot: stateRoot, homeDirectory: homeDirectory,
-        runtime: bordersRuntime, preflight: true,
-        leanEnabled: profile.environment.focusRing == .lean)
-      leanService = try observedLeanService(
-        desiredEnabled: profile.environment.focusRing == .lean,
-        stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime.lean)
-    } catch {
-      return try failure(
-        profileURL: profileURL, profile: profile.environment,
-        message: String(describing: error), mutated: false, json: json)
-    }
-    let inspection = EnvironmentProviderInspector().inspect(
-      composition: composition,
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot,
-      bordersService: bordersService,
-      leanService: leanService
-    )
-    guard !inspection.isBlocked else {
-      return try failure(
-        profileURL: profileURL,
-        profile: profile.environment,
-        prerequisites: prerequisiteState,
-        entries: inspection.entries,
-        adoptionEvidenceDigest: inspection.adoptionEvidenceDigest,
-        message: inspection.blockedMessage ?? "Provider ownership drifted.",
-        mutated: false,
-        json: json
-      )
-    }
-    let applyResult: (changed: Bool, generationID: String)
-    var prepareFreshNativeNeovim = false
-    do {
-      applyResult = try ActivationLock(root: stateRoot).withLock {
-        let lockedInspection = EnvironmentProviderInspector().inspect(
-          composition: composition,
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot,
-          bordersService: bordersService,
-          leanService: leanService
-        )
-        prepareFreshNativeNeovim = try EnvironmentNeovimPreparer.requiresFreshNativePreparation(
-          profile: profile.environment, ownership: lockedInspection.ownership,
-          homeDirectory: homeDirectory, stateRoot: stateRoot, resourcesRoot: resourcesRoot)
-        let previousThemeGenerationID: String?
-        if theme != nil, !profile.environment.selectedThemeAdapterIDs.isEmpty {
-          previousThemeGenerationID = try ReconciliationStatusStore(root: stateRoot)
-            .activeManifest().generationID
-        } else {
-          previousThemeGenerationID = nil
-        }
-        let themeBridgeSnapshot = try EnvironmentThemeBridgeState.capture(
-          ids: Set(
-            lockedInspection.desiredEntries.map(\.id)
-              + (lockedInspection.ownership?.records.map(\.id) ?? [])
-          ),
-          stateRoot: stateRoot
-        )
-        return try coordinator.applyLocked(
-          composition: composition,
-          inspection: lockedInspection,
-          adoptionDigest: adopt,
-          previousThemeGenerationID: previousThemeGenerationID,
-          themeBridges: themeBridgeSnapshot,
-          enabledThemeAdapterIDs: enabledThemeAdapterIDs
-        )
-      }
-    } catch {
-      return try failure(
-        profileURL: profileURL,
-        profile: profile.environment,
-        prerequisites: prerequisiteState,
-        entries: inspection.entries,
-        adoptionEvidenceDigest: inspection.adoptionEvidenceDigest,
-        message: String(describing: error),
-        mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
-        transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
-          ? "recovery_required" : "clear",
-        json: json
-      )
-    }
-
-    let appliedTheme: [DesktopThemeAdapterStatus]
-    let verification: [EnvironmentVerification]
-    var neovimPluginPreparationRan = false
-    var herdrActivation: DesktopThemeAdapterStatus?
-    var bordersActivation: DesktopThemeAdapterStatus?
-    do {
-      herdrActivation = try verifyPendingHerdrRuntime(
-        coordinator: coordinator,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory,
-        runtime: herdrRuntime
-      )
-      // Only the first connection of an unchanged standard curated starter may
-      // prepare plugins. Existing native owners and edited sources retain Lazy
-      // ownership; ordinary reapply must never restore their plugin graph.
-      let appliedOwnership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
-      let nativeNeovim = EnvironmentNeovimMigration(
-        homeDirectory: homeDirectory, stateRoot: stateRoot
-      )
-      .isNative(appliedOwnership)
-      let neovimVerification: EnvironmentVerification? =
-        nativeNeovim && !prepareFreshNativeNeovim && profile.environment.editor == .neovim
-        ? EnvironmentVerification(
-          id: "neovim_plugin_ownership", status: "verified",
-          message: "Neovim plugin management is user-owned; no install, update or restore was run.")
-        : neovim.prepare(profile.environment, homeDirectory)
-      neovimPluginPreparationRan =
-        (!nativeNeovim || prepareFreshNativeNeovim)
-        && neovimVerification != nil
-      if let neovimVerification, neovimVerification.status != "verified" {
-        throw EnvironmentLifecycleError.blocked(neovimVerification.message)
-      }
-      let nonHerdrAdapterIDs = themeAdapterIDs.filter {
-        ![HerdrAdapter.id, BordersAdapter.id, BordersAdapter.leanID].contains($0)
-      }
-      let reconciledTheme: [DesktopThemeAdapterStatus]
-      if let theme, !nonHerdrAdapterIDs.isEmpty {
-        let reconciliation = try await theme.reconcile(
-          nonHerdrAdapterIDs,
-          stateRoot,
-          consumerPaths.managedEnvironmentPaths(
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            ownership: appliedOwnership
-          )
-        )
-        guard reconciliation.succeeded else {
-          let details = reconciliation.results.map {
-            "\($0.adapterID) [\($0.requirement), \($0.status)]: \($0.message ?? "no detail reported")"
-          }.joined(separator: "; ")
-          throw EnvironmentLifecycleError.blocked(
-            "required theme reconciliation failed for environment generation \(applyResult.generationID): \(details)"
-          )
-        }
-        reconciledTheme = reconciliation.results
-      } else {
-        reconciledTheme = []
-      }
-      bordersActivation = try verifyPendingBordersRuntime(
-        coordinator: coordinator, runtime: bordersRuntime)
-      appliedTheme = (reconciledTheme + [herdrActivation, bordersActivation].compactMap { $0 })
-        .sorted { $0.adapterID < $1.adapterID }
-      _ = try verifyPendingSpicetifyRuntime(
-        coordinator: coordinator,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory,
-        runtime: spicetifyRuntime,
-        adapterWasReconciled: appliedTheme.contains {
-          $0.adapterID == SpicetifyAdapter.id && $0.status != "failed"
-        }
-      )
-      verification =
-        (neovimVerification.map { [$0] } ?? [])
-        + verifier.verify(profile.environment, homeDirectory)
-        + (profile.environment.presets.slack
-          ? [
-            EnvironmentVerification(
-              id: SlackAdapter.id,
-              status: "manual_required",
-              message:
-                "Manual import is required for each Slack workspace. \(SlackAdapter.importInstructions)"
-            )
-          ] : [])
-      guard
-        verification.allSatisfy({
-          $0.status == "verified" || $0.status == "manual_required"
-        })
-      else {
-        let failures = verification.filter {
-          $0.status != "verified" && $0.status != "manual_required"
-        }.map(\.message)
-        throw EnvironmentLifecycleError.blocked(failures.joined(separator: "; "))
-      }
-      if !deferFinalization {
-        try ActivationLock(root: stateRoot).withLock {
-          try coordinator.finishApplyLocked(composition: composition)
-        }
-      }
-    } catch {
-      let applyError = error
-      do {
-        try rollbackEnvironmentTransaction(
+        let recovered = try recoverEnvironmentTransaction(
           coordinator: coordinator,
           stateRoot: stateRoot,
           homeDirectory: homeDirectory,
           runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
           bordersRuntime: bordersRuntime
         )
+        if recovered {
+          return try failure(
+            profileURL: profileURL,
+            profile: profile.environment,
+            prerequisites: prerequisiteState,
+            message: "Interrupted environment state was recovered; review plan and apply again.",
+            mutated: true,
+            json: json
+          )
+        }
       } catch {
         return try failure(
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
-          message: neovimPluginPreparationRan
-            ? "Environment configuration ownership rollback requires recovery; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). Rollback failed: \(error)"
-            : "Provider verification failed: \(applyError). Rollback requires recovery: \(error)",
-          mutated: true,
-          transactionStatus: "recovery_required",
+          message: String(describing: error),
+          mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
+          transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
+            ? "recovery_required" : "clear",
           json: json
         )
       }
-      let restorationVerification = verifier.verifyRestored(profile.environment, homeDirectory)
-      if let failed = restorationVerification.first(where: { $0.status != "verified" }) {
+
+      // Standalone apply replaces its own selection, not the other domains' applied authority.
+      // Read only after lifecycle recovery while holding the ownership lock.
+      if suppliedThemeAdapterIDs == nil {
+        do {
+          let previous = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+          let otherDomains: Set<String> = ["macos-appearance", "wallpaper", "sketchybar"]
+          enabledThemeAdapterIDs = Set(enabledThemeAdapterIDs)
+            .union(Set(previous?.enabledThemeAdapterIDs ?? []).intersection(otherDomains))
+            .sorted()
+        } catch {
+          return try failure(
+            profileURL: profileURL, profile: profile.environment,
+            message: "Cannot preserve applied theme inventory: \(error)",
+            mutated: false, json: json)
+        }
+      }
+
+      var themeAdapterIDs = profile.environment.selectedThemeAdapterIDs
+      if theme != nil, !themeAdapterIDs.isEmpty {
+        do {
+          let statusStore = ReconciliationStatusStore(root: stateRoot)
+          if case .current(let record) = try statusStore.read() {
+            let recorded = Set(record.results.map(\.adapterID))
+            themeAdapterIDs = Set(themeAdapterIDs)
+              .union(Set(enabledThemeAdapterIDs).subtracting(recorded))
+              .sorted()
+          }
+        } catch {
+          return try failure(
+            profileURL: profileURL,
+            profile: profile.environment,
+            prerequisites: prerequisiteState,
+            message: "An active canonical theme is required before environment apply: \(error)",
+            mutated: false,
+            json: json
+          )
+        }
+      }
+
+      let bordersService: BordersServiceInspection?
+      let leanService: EnvironmentLeanObservation?
+      do {
+        bordersService = try observedBordersService(
+          desiredEnabled: profile.environment.focusRing == .borders,
+          stateRoot: stateRoot, homeDirectory: homeDirectory,
+          runtime: bordersRuntime, preflight: true,
+          leanEnabled: profile.environment.focusRing == .lean)
+        leanService = try observedLeanService(
+          desiredEnabled: profile.environment.focusRing == .lean,
+          stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: bordersRuntime.lean)
+      } catch {
+        return try failure(
+          profileURL: profileURL, profile: profile.environment,
+          message: String(describing: error), mutated: false, json: json)
+      }
+      let inspection = EnvironmentProviderInspector().inspect(
+        composition: composition,
+        homeDirectory: homeDirectory,
+        stateRoot: stateRoot,
+        bordersService: bordersService,
+        leanService: leanService
+      )
+      guard !inspection.isBlocked else {
         return try failure(
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
-          message:
-            neovimPluginPreparationRan
-            ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). The restored fresh session also failed: \(failed.message)"
-            : "Environment apply rolled back. Apply failed: \(applyError). The restored fresh session failed: \(failed.message)",
+          entries: inspection.entries,
+          adoptionEvidenceDigest: inspection.adoptionEvidenceDigest,
+          message: inspection.blockedMessage ?? "Provider ownership drifted.",
+          mutated: false,
+          json: json
+        )
+      }
+      let applyResult: (changed: Bool, generationID: String)
+      var prepareFreshNativeNeovim = false
+      do {
+        applyResult = try ActivationLock(root: stateRoot).withLock {
+          let lockedInspection = EnvironmentProviderInspector().inspect(
+            composition: composition,
+            homeDirectory: homeDirectory,
+            stateRoot: stateRoot,
+            bordersService: bordersService,
+            leanService: leanService
+          )
+          prepareFreshNativeNeovim = try EnvironmentNeovimPreparer.requiresFreshNativePreparation(
+            profile: profile.environment, ownership: lockedInspection.ownership,
+            homeDirectory: homeDirectory, stateRoot: stateRoot, resourcesRoot: resourcesRoot)
+          let previousThemeGenerationID: String?
+          if theme != nil, !profile.environment.selectedThemeAdapterIDs.isEmpty {
+            previousThemeGenerationID = try ReconciliationStatusStore(root: stateRoot)
+              .activeManifest().generationID
+          } else {
+            previousThemeGenerationID = nil
+          }
+          let themeBridgeSnapshot = try EnvironmentThemeBridgeState.capture(
+            ids: Set(
+              lockedInspection.desiredEntries.map(\.id)
+                + (lockedInspection.ownership?.records.map(\.id) ?? [])
+            ),
+            stateRoot: stateRoot
+          )
+          return try coordinator.applyLocked(
+            composition: composition,
+            inspection: lockedInspection,
+            adoptionDigest: adopt,
+            previousThemeGenerationID: previousThemeGenerationID,
+            themeBridges: themeBridgeSnapshot,
+            enabledThemeAdapterIDs: enabledThemeAdapterIDs
+          )
+        }
+      } catch {
+        return try failure(
+          profileURL: profileURL,
+          profile: profile.environment,
+          prerequisites: prerequisiteState,
+          entries: inspection.entries,
+          adoptionEvidenceDigest: inspection.adoptionEvidenceDigest,
+          message: String(describing: error),
+          mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
+          transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
+            ? "recovery_required" : "clear",
+          json: json
+        )
+      }
+
+      let appliedTheme: [DesktopThemeAdapterStatus]
+      let verification: [EnvironmentVerification]
+      var neovimPluginPreparationRan = false
+      var herdrActivation: DesktopThemeAdapterStatus?
+      var bordersActivation: DesktopThemeAdapterStatus?
+      do {
+        herdrActivation = try verifyPendingHerdrRuntime(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: herdrRuntime
+        )
+        // Only the first connection of an unchanged standard curated starter may
+        // prepare plugins. Existing native owners and edited sources retain Lazy
+        // ownership; ordinary reapply must never restore their plugin graph.
+        let appliedOwnership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
+        let nativeNeovim = EnvironmentNeovimMigration(
+          homeDirectory: homeDirectory, stateRoot: stateRoot
+        )
+        .isNative(appliedOwnership)
+        let neovimVerification: EnvironmentVerification? =
+          nativeNeovim && !prepareFreshNativeNeovim && profile.environment.editor == .neovim
+          ? EnvironmentVerification(
+            id: "neovim_plugin_ownership", status: "verified",
+            message:
+              "Neovim plugin management is user-owned; no install, update or restore was run.")
+          : neovim.prepare(profile.environment, homeDirectory)
+        neovimPluginPreparationRan =
+          (!nativeNeovim || prepareFreshNativeNeovim)
+          && neovimVerification != nil
+        if let neovimVerification, neovimVerification.status != "verified" {
+          throw EnvironmentLifecycleError.blocked(neovimVerification.message)
+        }
+        let nonHerdrAdapterIDs = themeAdapterIDs.filter {
+          ![HerdrAdapter.id, BordersAdapter.id, BordersAdapter.leanID].contains($0)
+        }
+        let reconciledTheme: [DesktopThemeAdapterStatus]
+        if let theme, !nonHerdrAdapterIDs.isEmpty {
+          let reconciliation = try await theme.reconcile(
+            nonHerdrAdapterIDs,
+            stateRoot,
+            consumerPaths.managedEnvironmentPaths(
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              ownership: appliedOwnership
+            )
+          )
+          guard reconciliation.succeeded else {
+            let details = reconciliation.results.map {
+              "\($0.adapterID) [\($0.requirement), \($0.status)]: \($0.message ?? "no detail reported")"
+            }.joined(separator: "; ")
+            throw EnvironmentLifecycleError.blocked(
+              "required theme reconciliation failed for environment generation \(applyResult.generationID): \(details)"
+            )
+          }
+          reconciledTheme = reconciliation.results
+        } else {
+          reconciledTheme = []
+        }
+        bordersActivation = try verifyPendingBordersRuntime(
+          coordinator: coordinator, runtime: bordersRuntime)
+        appliedTheme = (reconciledTheme + [herdrActivation, bordersActivation].compactMap { $0 })
+          .sorted { $0.adapterID < $1.adapterID }
+        _ = try verifyPendingSpicetifyRuntime(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: spicetifyRuntime,
+          adapterWasReconciled: appliedTheme.contains {
+            $0.adapterID == SpicetifyAdapter.id && $0.status != "failed"
+          }
+        )
+        verification =
+          (neovimVerification.map { [$0] } ?? [])
+          + verifier.verify(profile.environment, homeDirectory)
+          + (profile.environment.presets.slack
+            ? [
+              EnvironmentVerification(
+                id: SlackAdapter.id,
+                status: "manual_required",
+                message:
+                  "Manual import is required for each Slack workspace. \(SlackAdapter.importInstructions)"
+              )
+            ] : [])
+        guard
+          verification.allSatisfy({
+            $0.status == "verified" || $0.status == "manual_required"
+          })
+        else {
+          let failures = verification.filter {
+            $0.status != "verified" && $0.status != "manual_required"
+          }.map(\.message)
+          throw EnvironmentLifecycleError.blocked(failures.joined(separator: "; "))
+        }
+        if !deferFinalization {
+          try ActivationLock(root: stateRoot).withLock {
+            try coordinator.finishApplyLocked(composition: composition)
+          }
+        }
+      } catch {
+        let applyError = error
+        do {
+          try rollbackEnvironmentTransaction(
+            coordinator: coordinator,
+            stateRoot: stateRoot,
+            homeDirectory: homeDirectory,
+            runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+            bordersRuntime: bordersRuntime
+          )
+        } catch {
+          return try failure(
+            profileURL: profileURL,
+            profile: profile.environment,
+            prerequisites: prerequisiteState,
+            message: neovimPluginPreparationRan
+              ? "Environment configuration ownership rollback requires recovery; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). Rollback failed: \(error)"
+              : "Provider verification failed: \(applyError). Rollback requires recovery: \(error)",
+            mutated: true,
+            transactionStatus: "recovery_required",
+            json: json
+          )
+        }
+        let restorationVerification = verifier.verifyRestored(profile.environment, homeDirectory)
+        if let failed = restorationVerification.first(where: { $0.status != "verified" }) {
+          return try failure(
+            profileURL: profileURL,
+            profile: profile.environment,
+            prerequisites: prerequisiteState,
+            message:
+              neovimPluginPreparationRan
+              ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). The restored fresh session also failed: \(failed.message)"
+              : "Environment apply rolled back. Apply failed: \(applyError). The restored fresh session failed: \(failed.message)",
+            mutated: applyResult.changed,
+            json: json
+          )
+        }
+        return try failure(
+          profileURL: profileURL,
+          profile: profile.environment,
+          prerequisites: prerequisiteState,
+          message: neovimPluginPreparationRan
+            ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(error)"
+            : "Environment apply rolled back: \(error)",
           mutated: applyResult.changed,
           json: json
         )
       }
-      return try failure(
+
+      return try EnvironmentStatusCommandRunner(
+        prerequisites: prerequisites,
+        theme: theme,
+        verifier: verifier,
+        bordersRuntime: bordersRuntime
+      ).execute(
+        operation: "environment_apply",
+        resourcesRoot: resourcesRoot,
         profileURL: profileURL,
-        profile: profile.environment,
-        prerequisites: prerequisiteState,
-        message: neovimPluginPreparationRan
-          ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(error)"
-          : "Environment apply rolled back: \(error)",
+        profileRequired: profileRequired,
+        stateRoot: stateRoot,
+        homeDirectory: homeDirectory,
+        consumerPaths: consumerPaths,
+        observedTheme: appliedTheme,
+        observedVerification: verification,
+        successfulOutcome: applyResult.changed ? "applied" : "no_change",
         mutated: applyResult.changed,
-        json: json
+        successMessage: applyResult.changed
+          ? "The daily tool environment was published and verified."
+          : "The daily tool environment was already converged.",
+        json: json,
+        deferredApplyTransaction: deferFinalization,
+        profile: profile
       )
     }
-
-    return try EnvironmentStatusCommandRunner(
-      prerequisites: prerequisites,
-      theme: theme,
-      verifier: verifier,
-      bordersRuntime: bordersRuntime
-    ).execute(
-      operation: "environment_apply",
-      resourcesRoot: resourcesRoot,
-      profileURL: profileURL,
-      profileRequired: profileRequired,
-      stateRoot: stateRoot,
-      homeDirectory: homeDirectory,
-      consumerPaths: consumerPaths,
-      observedTheme: appliedTheme,
-      observedVerification: verification,
-      successfulOutcome: applyResult.changed ? "applied" : "no_change",
-      mutated: applyResult.changed,
-      successMessage: applyResult.changed
-        ? "The daily tool environment was published and verified."
-        : "The daily tool environment was already converged.",
-      json: json,
-      deferredApplyTransaction: deferFinalization,
-      profile: profile
-    )
   }
 
   func finishDeferredApply(
@@ -1049,50 +1048,49 @@ struct EnvironmentApplyCommandRunner: Sendable {
     homeDirectory: URL,
     commit: Bool
   ) throws -> Bool {
-    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-    let descriptor = try lifecycleLock.acquire()
-    defer { lifecycleLock.release(descriptor) }
-    let store = EnvironmentStateStore(stateRoot: stateRoot)
-    guard let transaction = try store.readTransaction() else { return false }
-    guard transaction.operation == .apply else {
-      throw EnvironmentLifecycleError.blocked(
-        "the pending environment operation is not apply"
-      )
-    }
-    let coordinator = EnvironmentTransactionCoordinator(
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot
-    )
-    if commit {
-      guard transaction.direction == .forward else {
+    return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
+      let store = EnvironmentStateStore(stateRoot: stateRoot)
+      guard let transaction = try store.readTransaction() else { return false }
+      guard transaction.operation == .apply else {
         throw EnvironmentLifecycleError.blocked(
-          "environment apply already entered rollback"
+          "the pending environment operation is not apply"
         )
       }
-      guard let resourcesRoot, let profile else {
-        throw EnvironmentLifecycleError.blocked(
-          "deferred environment commit requires the reviewed profile"
-        )
-      }
-      let composition = try EnvironmentConfigurationComposer().compose(
-        resourcesRoot: resourcesRoot,
-        profile: profile,
+      let coordinator = EnvironmentTransactionCoordinator(
+        homeDirectory: homeDirectory,
         stateRoot: stateRoot
       )
-      try ActivationLock(root: stateRoot).withLock {
-        try coordinator.finishApplyLocked(composition: composition)
+      if commit {
+        guard transaction.direction == .forward else {
+          throw EnvironmentLifecycleError.blocked(
+            "environment apply already entered rollback"
+          )
+        }
+        guard let resourcesRoot, let profile else {
+          throw EnvironmentLifecycleError.blocked(
+            "deferred environment commit requires the reviewed profile"
+          )
+        }
+        let composition = try EnvironmentConfigurationComposer().compose(
+          resourcesRoot: resourcesRoot,
+          profile: profile,
+          stateRoot: stateRoot
+        )
+        try ActivationLock(root: stateRoot).withLock {
+          try coordinator.finishApplyLocked(composition: composition)
+        }
+      } else {
+        try rollbackEnvironmentTransaction(
+          coordinator: coordinator,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: herdrRuntime,
+          spicetifyRuntime: spicetifyRuntime,
+          bordersRuntime: bordersRuntime
+        )
       }
-    } else {
-      try rollbackEnvironmentTransaction(
-        coordinator: coordinator,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory,
-        runtime: herdrRuntime,
-        spicetifyRuntime: spicetifyRuntime,
-        bordersRuntime: bordersRuntime
-      )
+      return true
     }
-    return true
   }
 
   private func failure(
@@ -1201,85 +1199,84 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           return (try report.render(json: json), false)
         }
       }
-      let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-      let lifecycleLockDescriptor = try lifecycleLock.acquire()
-      defer { lifecycleLock.release(lifecycleLockDescriptor) }
-      if !dryRun,
-        let refusal = pendingUnifiedSetupRefusal(
-          stateRoot: stateRoot, withinUnifiedSetup: withinUnifiedSetup)
-      {
-        let report = Self.report(
-          outcome: "blocked",
-          mutated: false,
-          generationStatus: "unknown",
-          transactionStatus: store.transactionExists ? "recovery_required" : "clear",
-          prerequisites: [],
-          theme: [],
-          message: refusal
+      return try await EnvironmentLifecycleLock(stateRoot: stateRoot).withAsyncLock {
+        if !dryRun,
+          let refusal = pendingUnifiedSetupRefusal(
+            stateRoot: stateRoot, withinUnifiedSetup: withinUnifiedSetup)
+        {
+          let report = Self.report(
+            outcome: "blocked",
+            mutated: false,
+            generationStatus: "unknown",
+            transactionStatus: store.transactionExists ? "recovery_required" : "clear",
+            prerequisites: [],
+            theme: [],
+            message: refusal
+          )
+          return (try report.render(json: json), false)
+        }
+        let coordinator = EnvironmentTransactionCoordinator(
+          homeDirectory: homeDirectory,
+          stateRoot: stateRoot
         )
-        return (try report.render(json: json), false)
-      }
-      let coordinator = EnvironmentTransactionCoordinator(
-        homeDirectory: homeDirectory,
-        stateRoot: stateRoot
-      )
-      let result = try runEnvironmentTeardown(
-        coordinator: coordinator,
-        dryRun: dryRun,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory,
-        runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
-        bordersRuntime: bordersRuntime
-      )
-      var themeState = result.restored
-      var message = result.message
-      if !dryRun {
-        let restored: EnvironmentRestoredThemeState
-        do {
-          restored = try await reconcileRestoredDefaultConsumers(
-            theme: theme,
-            stateRoot: stateRoot,
-            homeDirectory: homeDirectory,
-            consumerPaths: consumerPaths,
-            restored: themeState,
-            restorationMessage: result.message
-          )
-        } catch {
-          return (
-            try Self.report(
-              outcome: "blocked",
-              mutated: true,
-              generationStatus: "absent",
-              prerequisites: prerequisiteState,
-              theme: themeState,
-              message: defaultConsumerReconciliationFailureMessage(result.message, error)
-            ).render(json: json), false
-          )
+        let result = try runEnvironmentTeardown(
+          coordinator: coordinator,
+          dryRun: dryRun,
+          stateRoot: stateRoot,
+          homeDirectory: homeDirectory,
+          runtime: herdrRuntime, spicetifyRuntime: spicetifyRuntime,
+          bordersRuntime: bordersRuntime
+        )
+        var themeState = result.restored
+        var message = result.message
+        if !dryRun {
+          let restored: EnvironmentRestoredThemeState
+          do {
+            restored = try await reconcileRestoredDefaultConsumers(
+              theme: theme,
+              stateRoot: stateRoot,
+              homeDirectory: homeDirectory,
+              consumerPaths: consumerPaths,
+              restored: themeState,
+              restorationMessage: result.message
+            )
+          } catch {
+            return (
+              try Self.report(
+                outcome: "blocked",
+                mutated: true,
+                generationStatus: "absent",
+                prerequisites: prerequisiteState,
+                theme: themeState,
+                message: defaultConsumerReconciliationFailureMessage(result.message, error)
+              ).render(json: json), false
+            )
+          }
+          themeState = restored.theme
+          message = restored.message
+          guard restored.succeeded else {
+            return (
+              try Self.report(
+                outcome: "blocked",
+                mutated: true,
+                generationStatus: "absent",
+                prerequisites: prerequisiteState,
+                theme: themeState,
+                message: message
+              ).render(json: json), false
+            )
+          }
         }
-        themeState = restored.theme
-        message = restored.message
-        guard restored.succeeded else {
-          return (
-            try Self.report(
-              outcome: "blocked",
-              mutated: true,
-              generationStatus: "absent",
-              prerequisites: prerequisiteState,
-              theme: themeState,
-              message: message
-            ).render(json: json), false
-          )
-        }
+        let report = Self.report(
+          outcome: dryRun ? "ready" : result.changed ? "restored" : "absent",
+          mutated: !dryRun && result.changed,
+          generationStatus: dryRun ? "unchanged" : "absent",
+          prerequisites: prerequisiteState,
+          theme: themeState,
+          message: message
+        )
+        return (try report.render(json: json), true)
       }
-      let report = Self.report(
-        outcome: dryRun ? "ready" : result.changed ? "restored" : "absent",
-        mutated: !dryRun && result.changed,
-        generationStatus: dryRun ? "unchanged" : "absent",
-        prerequisites: prerequisiteState,
-        theme: themeState,
-        message: message
-      )
-      return (try report.render(json: json), true)
     } catch {
       let report = Self.report(
         outcome: "blocked",

@@ -119,53 +119,52 @@ struct LeanFocusLifecycleTests {
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: fixture.home, stateRoot: fixture.root)
     let lock = ActivationLock(root: fixture.root)
-    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: fixture.root)
-    let descriptor = try lifecycleLock.acquire()
-    defer { lifecycleLock.release(descriptor) }
-    // Disabled apply and explicit teardown share this removal transaction.
-    _ = try lock.withLock {
-      try coordinator.teardownLocked(dryRun: false, bordersService: .stopped)
-    }
-    if attempted {
-      var journal = try #require(try store.readTransaction())
-      journal.bordersRuntimeAttempted = true
-      try lock.withLock { try store.writeTransaction(journal) }
-      try fixture.runtime.lean.stop(fixture.home, #require(original.borders?.leanService))
-    }
-    fixture.state.withLock { $0.running = true }
-    let nativeInspector = fixture.runtime.inspectIncumbent
-    if !registered {
-      fixture.runtime.inspectIncumbent = { _ in
-        if !attempted { Issue.record("pre-native rollback inspected unrelated Borders") }
-        throw BordersServiceError.blocked("process and Homebrew job disagree")
+    try EnvironmentLifecycleLock(stateRoot: fixture.root).withLock {
+      // Disabled apply and explicit teardown share this removal transaction.
+      _ = try lock.withLock {
+        try coordinator.teardownLocked(dryRun: false, bordersService: .stopped)
       }
-    }
-    try lock.withLock { try coordinator.rollbackApplyLocked() }
-    if attempted {
-      do {
-        _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: fixture.runtime)
-        Issue.record("rollback started lean alongside unmanaged Borders")
-      } catch {
-        let message = String(describing: error)
-        #expect(message.contains("JankyBorders"))
-        #expect(message.contains("unregister"))
-        #expect(message.contains("retry environment apply"))
+      if attempted {
+        var journal = try #require(try store.readTransaction())
+        journal.bordersRuntimeAttempted = true
+        try lock.withLock { try store.writeTransaction(journal) }
+        try fixture.runtime.lean.stop(fixture.home, #require(original.borders?.leanService))
       }
-      #expect(try store.readTransaction()?.direction == .rollback)
-      #expect(state.withLock { $0.configuration } == nil)
-      #expect(fixture.state.withLock { $0.actions.isEmpty && $0.running })
-      // The user removes the external renderer; the retained journal can finish.
-      fixture.state.withLock { $0.running = false }
-      fixture.runtime.inspectIncumbent = nativeInspector
+      fixture.state.withLock { $0.running = true }
+      let nativeInspector = fixture.runtime.inspectIncumbent
+      if !registered {
+        fixture.runtime.inspectIncumbent = { _ in
+          if !attempted { Issue.record("pre-native rollback inspected unrelated Borders") }
+          throw BordersServiceError.blocked("process and Homebrew job disagree")
+        }
+      }
+      try lock.withLock { try coordinator.rollbackApplyLocked() }
+      if attempted {
+        do {
+          _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: fixture.runtime)
+          Issue.record("rollback started lean alongside unmanaged Borders")
+        } catch {
+          let message = String(describing: error)
+          #expect(message.contains("JankyBorders"))
+          #expect(message.contains("unregister"))
+          #expect(message.contains("retry environment apply"))
+        }
+        #expect(try store.readTransaction()?.direction == .rollback)
+        #expect(state.withLock { $0.configuration } == nil)
+        #expect(fixture.state.withLock { $0.actions.isEmpty && $0.running })
+        // The user removes the external renderer; the retained journal can finish.
+        fixture.state.withLock { $0.running = false }
+        fixture.runtime.inspectIncumbent = nativeInspector
+      }
+      _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: fixture.runtime)
+      _ = try lock.withLock { try coordinator.prepareRecoveryLocked() }
+      #expect(try store.readTransaction() == nil)
+      #expect(try store.readOwnership() == original)
+      #expect(fixture.state.withLock { $0.actions.isEmpty })
+      #expect(
+        state.withLock { $0.actions }
+          == (attempted ? ["start", "ack", "stop", "start", "ack"] : ["start", "ack"]))
     }
-    _ = try verifyPendingBordersRuntime(coordinator: coordinator, runtime: fixture.runtime)
-    _ = try lock.withLock { try coordinator.prepareRecoveryLocked() }
-    #expect(try store.readTransaction() == nil)
-    #expect(try store.readOwnership() == original)
-    #expect(fixture.state.withLock { $0.actions.isEmpty })
-    #expect(
-      state.withLock { $0.actions }
-        == (attempted ? ["start", "ack", "stop", "start", "ack"] : ["start", "ack"]))
   }
 
   @Test func frozenPreSchemaThreeBordersOwnershipRetainsLegacySemantics() throws {

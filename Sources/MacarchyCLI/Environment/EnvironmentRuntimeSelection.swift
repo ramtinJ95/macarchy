@@ -143,18 +143,17 @@ enum ThemeRuntimeSelection {
           "Managed Borders configuration and Homebrew service are present; native appearance settings and pixels have no readback."
       },
       reconcile: {
-        let lock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-        let descriptor = try lock.acquire()
-        defer { lock.release(descriptor) }
-        guard try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil else {
-          throw EnvironmentLifecycleError.blocked(
-            "Borders environment recovery must finish before theme reconciliation")
+        return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
+          guard try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil else {
+            throw EnvironmentLifecycleError.blocked(
+              "Borders environment recovery must finish before theme reconciliation")
+          }
+          try coordinator.verifySelectedBordersConfiguration()
+          guard try runtime.preflight(homeDirectory).isRunning else {
+            throw EnvironmentLifecycleError.drift("the applied Borders service is stopped")
+          }
+          return try runtime.request(stateRoot, homeDirectory)
         }
-        try coordinator.verifySelectedBordersConfiguration()
-        guard try runtime.preflight(homeDirectory).isRunning else {
-          throw EnvironmentLifecycleError.drift("the applied Borders service is stopped")
-        }
-        return try runtime.request(stateRoot, homeDirectory)
       }
     )
   }
@@ -199,46 +198,45 @@ enum ThemeRuntimeSelection {
       homeDirectory: homeDirectory,
       stateRoot: stateRoot
     )
-    let lifecycleLock = EnvironmentLifecycleLock(stateRoot: stateRoot)
-    let descriptor = try lifecycleLock.acquire()
-    defer { lifecycleLock.release(descriptor) }
-    let changed = try ActivationLock(root: stateRoot).withLock {
-      try coordinator.beginHerdrThemeTransitionLocked(desired)
-    }
-    guard changed else {
-      return "Herdr's aggregate-managed theme surface was already current"
-    }
-    do {
-      let message = try runtime.reload(stateRoot, homeDirectory)
-      try ActivationLock(root: stateRoot).withLock {
-        try coordinator.markHerdrRuntimeVerifiedLocked(.managed)
-        _ = try coordinator.prepareRecoveryLocked()
+    return try EnvironmentLifecycleLock(stateRoot: stateRoot).withLock {
+      let changed = try ActivationLock(root: stateRoot).withLock {
+        try coordinator.beginHerdrThemeTransitionLocked(desired)
       }
-      return message
-    } catch {
-      let activationError = error
+      guard changed else {
+        return "Herdr's aggregate-managed theme surface was already current"
+      }
       do {
+        let message = try runtime.reload(stateRoot, homeDirectory)
         try ActivationLock(root: stateRoot).withLock {
-          try coordinator.rollbackApplyLocked()
+          try coordinator.markHerdrRuntimeVerifiedLocked(.managed)
+          _ = try coordinator.prepareRecoveryLocked()
         }
-        let target = try ActivationLock(root: stateRoot).withLock {
-          try coordinator.pendingHerdrRuntimeTargetLocked()
-        }
-        if let target {
-          _ = try runtime.reload(stateRoot, homeDirectory)
-          try ActivationLock(root: stateRoot).withLock {
-            try coordinator.markHerdrRuntimeVerifiedLocked(target)
-            _ = try coordinator.prepareRecoveryLocked()
-          }
-        }
+        return message
       } catch {
+        let activationError = error
+        do {
+          try ActivationLock(root: stateRoot).withLock {
+            try coordinator.rollbackApplyLocked()
+          }
+          let target = try ActivationLock(root: stateRoot).withLock {
+            try coordinator.pendingHerdrRuntimeTargetLocked()
+          }
+          if let target {
+            _ = try runtime.reload(stateRoot, homeDirectory)
+            try ActivationLock(root: stateRoot).withLock {
+              try coordinator.markHerdrRuntimeVerifiedLocked(target)
+              _ = try coordinator.prepareRecoveryLocked()
+            }
+          }
+        } catch {
+          throw EnvironmentLifecycleError.blocked(
+            "Herdr theme reload failed: \(activationError); rollback requires recovery: \(error)"
+          )
+        }
         throw EnvironmentLifecycleError.blocked(
-          "Herdr theme reload failed: \(activationError); rollback requires recovery: \(error)"
+          "Herdr theme reload failed and was rolled back: \(activationError)"
         )
       }
-      throw EnvironmentLifecycleError.blocked(
-        "Herdr theme reload failed and was rolled back: \(activationError)"
-      )
     }
   }
 
