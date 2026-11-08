@@ -74,7 +74,7 @@ struct MenuNeovimSetup {
       guard try confirm("Create this starter without changing any existing configuration?") else {
         return nil
       }
-      try withMutationLock {
+      try MenuMutationLock.environmentLifecycle.withLock(stateRoot: context.stateRoot) {
         try profileEdit.validateBefore()
         _ = try seed.seed(approval: plan.approval)
       }
@@ -95,7 +95,7 @@ struct MenuNeovimSetup {
       )
       guard try confirm("Does this configuration use that seam, and may Macarchy add these links?")
       else { return nil }
-      try withMutationLock {
+      try MenuMutationLock.environmentLifecycle.withLock(stateRoot: context.stateRoot) {
         try profileEdit.validateBefore()
         try preparation.prepare(approval: theme.approval)
       }
@@ -190,10 +190,6 @@ struct MenuNeovimSetup {
     }
   }
 
-  private func withMutationLock<T>(_ body: () throws -> T) throws -> T {
-    try EnvironmentLifecycleLock(stateRoot: context.stateRoot).withActivationLock(body)
-  }
-
   private func confirm(_ question: String) throws -> Bool {
     let approved = try io.confirm(question)
     if !approved {
@@ -215,7 +211,7 @@ struct MenuNeovimSetup {
     guard try confirm("Preserve this owned legacy configuration as writable files?") else {
       return false
     }
-    try withMutationLock {
+    try MenuMutationLock.environmentLifecycle.withLock(stateRoot: context.stateRoot) {
       try edit.validateBefore()
       io.write(
         try EnvironmentTransactionCoordinator(

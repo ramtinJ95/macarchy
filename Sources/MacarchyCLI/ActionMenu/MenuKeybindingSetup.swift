@@ -45,7 +45,7 @@ struct MenuKeybindingSetup {
       guard try confirm("Create this absent file? It remains if connection is cancelled.") else {
         return nil
       }
-      try ActivationLock(root: context.stateRoot).withLock {
+      try MenuMutationLock.activation.withLock(stateRoot: context.stateRoot) {
         try edit.validateBefore()
         guard
           try MenuProfileSource.prepare(

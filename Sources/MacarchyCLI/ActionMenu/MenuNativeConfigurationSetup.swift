@@ -134,7 +134,7 @@ struct MenuNativeConfigurationSetup {
         io.write("Atuin's theme connection needs personal directory: \(directory.path)\n")
         guard try confirm("Create this absent directory? It remains if connection is cancelled.")
         else { return false }
-        try withMutationLock {
+        try MenuMutationLock.environmentLifecycle.withLock(stateRoot: context.stateRoot) {
           try edit.validateBefore()
           let parent = try PinnedFilesystem.openDirectory(at: directory.deletingLastPathComponent())
           defer { Darwin.close(parent) }
@@ -149,7 +149,7 @@ struct MenuNativeConfigurationSetup {
         "Prepare the canonical Kitty theme bridge without signaling Kitty. The cache remains on cancellation.\n"
       )
       guard try confirm("Prepare Kitty's theme bridge for this connection?") else { return false }
-      try withMutationLock {
+      try MenuMutationLock.environmentLifecycle.withLock(stateRoot: context.stateRoot) {
         try edit.validateBefore()
         try KittyAdapter.prepareBridge(root: context.stateRoot)
       }
@@ -184,7 +184,7 @@ struct MenuNativeConfigurationSetup {
     guard try confirm("Create this personal starter? Connection is reviewed separately.") else {
       return false
     }
-    try withMutationLock {
+    try MenuMutationLock.environmentLifecycle.withLock(stateRoot: context.stateRoot) {
       try edit.validateBefore()
       _ = try seed.seed(approval: starter.approval)
     }
@@ -220,9 +220,5 @@ struct MenuNativeConfigurationSetup {
       io.write("Cancelled. No editor opened. Earlier approved personal files remain.\n")
     }
     return approved
-  }
-
-  private func withMutationLock<T>(_ body: () throws -> T) throws -> T {
-    try EnvironmentLifecycleLock(stateRoot: context.stateRoot).withActivationLock(body)
   }
 }
