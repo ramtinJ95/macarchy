@@ -92,10 +92,14 @@ macarchy theme list
 macarchy theme set kanagawa-wave
 macarchy theme next
 macarchy theme background next
+macarchy theme undo                   # Return to the previous theme or background
 macarchy keybindings show --effective # Search the managed shortcut list
 macarchy setup status
 macarchy setup doctor
 ```
+
+`macarchy theme undo` steps back through the last 50 theme and background changes;
+there is no redo.
 
 The default shortcuts include **Control–Option–Space** for the action menu,
 **Command–Shift–T** for the theme browser and **Command–K** for the keybinding

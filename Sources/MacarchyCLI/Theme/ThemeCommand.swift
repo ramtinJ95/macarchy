@@ -1,3 +1,4 @@
+import AppKit
 import ArgumentParser
 import Foundation
 import ThemeCore
@@ -6,8 +7,8 @@ struct Theme: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     abstract: "Inspect or select themes.",
     subcommands: [
-      List.self, Set.self, Install.self, Next.self, Status.self, Get.self, Background.self,
-      Browse.self, Screensaver.self,
+      List.self, Set.self, Install.self, Next.self, Undo.self, Status.self, Get.self,
+      Background.self, Browse.self, Screensaver.self,
     ]
   )
 }
@@ -149,6 +150,47 @@ extension Theme {
         dryRun: options.dryRun
       )
       try emitExecution(execution)
+    }
+  }
+
+  struct Undo: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+      abstract: "Return to the theme and background that were active before the last change.",
+      discussion: """
+        Each committed theme or background change is recorded in the theme history. Undo
+        activates the newest earlier selection and drops the undone entries; there is no redo.
+        """
+    )
+
+    @OptionGroup var options: ActivationOptions
+
+    @Flag(help: .hidden)
+    var alertOnError = false
+
+    @MainActor
+    mutating func run() async throws {
+      let execution: ThemeUndoExecution
+      do {
+        execution = try await ThemeUndoCommandRunner.live.execute(
+          repository: options.repository,
+          stateRoot: options.stateRootURL,
+          consumerPaths: options.consumerPaths,
+          dryRun: options.dryRun
+        )
+      } catch {
+        if alertOnError {
+          showNativeAlert(title: "Theme not undone", message: String(describing: error))
+        }
+        throw error
+      }
+      if alertOnError {
+        if !execution.succeeded {
+          showNativeAlert(title: "Theme undo did not complete", message: execution.output)
+        } else if let notice = execution.notice {
+          showNativeAlert(title: "Theme undone", message: notice, style: .informational)
+        }
+      }
+      try emitExecution(execution.command)
     }
   }
 
