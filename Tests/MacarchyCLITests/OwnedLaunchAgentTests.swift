@@ -62,7 +62,7 @@ struct OwnedLaunchAgentTests {
 
       let command = try Macarchy.parseAsRoot(Array(arguments.dropFirst()))
       let run = try #require(command as? ClipboardCommand.RunAutoClear)
-      #expect(run.options.stateRoot == state.path)
+      #expect(run.options.launch.stateRoot == state.path)
       #expect(run.alert == nil)
     }
   }

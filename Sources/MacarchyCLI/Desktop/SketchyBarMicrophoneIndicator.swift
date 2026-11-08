@@ -9,11 +9,11 @@ enum SketchyBarMicrophoneIndicator {
   static func toggle(_ status: MicrophoneStatus) -> CompanionToggle {
     func make(muted: Bool, _ detail: String) -> CompanionToggle {
       CompanionToggle(
-        lit: muted, olderBarClick: muted ? ["mic", "unmute"] : nil,
+        lit: muted, olderBarClick: muted ? MacarchyInvocation.microphoneUnmute : nil,
         icon: muted
           ? SketchyBarClockCompanion.microphoneMutedIcon
           : SketchyBarClockCompanion.microphoneLiveIcon,
-        detail: detail, click: ["mic", "toggle"])
+        detail: detail, click: MacarchyInvocation.microphoneToggle)
     }
     switch status {
     case .noInput:

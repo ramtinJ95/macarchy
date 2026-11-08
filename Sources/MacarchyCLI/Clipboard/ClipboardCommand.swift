@@ -21,28 +21,13 @@ struct ClipboardCommand: ParsableCommand {
     ])
 
   struct Options: ParsableArguments {
-    @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = StateLayout.defaultRootPath
+    @OptionGroup var launch: MenuLaunchOptions
 
-    @Flag(help: .hidden)
-    var alertOnError = false
+    var engine: ClipboardHistory { ClipboardHistory.live(stateRoot: launch.stateRootURL) }
 
-    var engine: ClipboardHistory {
-      ClipboardHistory.live(
-        stateRoot: URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL)
-    }
-
-    /// Prints the outcome. Menu launches have no terminal, so they also show failures in an alert.
     @MainActor
     func run(_ failureTitle: String, _ body: (ClipboardHistory) throws -> String) throws {
-      do {
-        print(try body(engine))
-      } catch {
-        if alertOnError {
-          showNativeAlert(title: failureTitle, message: String(describing: error))
-        }
-        throw error
-      }
+      try launch.run(failureTitle) { try body(ClipboardHistory.live(stateRoot: $0)) }
     }
   }
 
@@ -182,8 +167,8 @@ struct ClipboardCommand: ParsableCommand {
       do {
         try launchDetachedProcess(
           RuntimeEnvironment.live.executableURL,
-          arguments: [
-            "clipboard", "_auto-clear", "--state-root", options.stateRoot, "--alert=\(failure)",
+          arguments: MacarchyInvocation.clipboardAutoClear + [
+            "--state-root", options.launch.stateRoot, "--alert=\(failure)",
           ])
       } catch {
         Self.show(failure)
@@ -207,7 +192,7 @@ struct ClipboardCommand: ParsableCommand {
 
     @MainActor
     mutating func run() async throws {
-      let menu = options.alertOnError
+      let menu = options.launch.alertOnError
       try options.run("Clipboard history not opened") { engine in
         let opening = try engine.open()
         if menu, opening == .started {

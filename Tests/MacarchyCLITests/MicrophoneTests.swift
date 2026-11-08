@@ -476,9 +476,9 @@ struct MicrophoneTests {
   @Test func commandLineParsesSelectorsJSONAndTheMenuAlertFlag() throws {
     #expect(try MicrophoneCommand.Select.parse(["USB Mic"]).input == "USB Mic")
     #expect(throws: (any Error).self) { try MicrophoneCommand.Select.parse([]) }
-    #expect(try MicrophoneCommand.Toggle.parse(["--alert-on-error"]).options.alertOnError)
-    #expect(try MicrophoneCommand.Choose.parse(["--alert-on-error"]).options.alertOnError)
-    #expect(try !MicrophoneCommand.Mute.parse([]).options.alertOnError)
+    #expect(try MicrophoneCommand.Toggle.parse(["--alert-on-error"]).options.launch.alertOnError)
+    #expect(try MicrophoneCommand.Choose.parse(["--alert-on-error"]).options.launch.alertOnError)
+    #expect(try !MicrophoneCommand.Mute.parse([]).options.launch.alertOnError)
     #expect(try MicrophoneCommand.Status.parse(["--json"]).json)
     #expect(try MicrophoneCommand.List.parse(["--json"]).json)
   }
