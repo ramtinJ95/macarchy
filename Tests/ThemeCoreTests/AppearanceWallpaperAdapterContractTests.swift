@@ -233,18 +233,10 @@ extension AdapterContractTests {
         "action": "\(executable.path) reconcile wallpaper",
       ]
     ])
-    let requests = Mutex([ProcessRequest]())
-    try signal.runtimePreflight(
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return ProcessResult(
-          terminationStatus: 0,
-          output: String(decoding: runtime, as: UTF8.self)
-        )
-      }
-    )
+    let processes = ProcessRunnerFake(output: String(decoding: runtime, as: UTF8.self))
+    try signal.runtimePreflight(processRunner: processes.runner)
     #expect(
-      requests.withLock { $0 }
+      processes.requests
         == [
           ProcessRequest(
             executableURL: executable,

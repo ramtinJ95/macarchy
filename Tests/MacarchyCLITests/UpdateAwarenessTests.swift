@@ -324,23 +324,17 @@ struct UpdateAwarenessTests {
 
   @Test
   func homebrewReaderUsesReadOnlyLocalMetadataQuery() {
-    let requests = Mutex([ProcessRequest]())
-    let reader = HomebrewTapVersionReader(
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return ProcessResult(
-          terminationStatus: 0,
-          output:
-            #"{"formulae":[{"full_name":"ramtinj95/tap/macarchy","versions":{"stable":"0.1.0"}}],"casks":[]}"#
-        )
-      },
-      executableIsAvailable: { true }
+    let processes = ProcessRunnerFake(
+      output:
+        #"{"formulae":[{"full_name":"ramtinj95/tap/macarchy","versions":{"stable":"0.1.0"}}],"casks":[]}"#
     )
+    let reader = HomebrewTapVersionReader(
+      processRunner: processes.runner, executableIsAvailable: { true })
 
     let version = reader.read()
 
     #expect(version == .available("0.1.0"))
-    #expect(requests.withLock { $0.only } == HomebrewTapVersionReader.request)
+    #expect(processes.requests.only == HomebrewTapVersionReader.request)
     #expect(
       HomebrewTapVersionReader.request.environmentOverrides["HOMEBREW_NO_AUTO_UPDATE"] == "1"
     )

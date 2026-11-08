@@ -72,21 +72,14 @@ extension AdapterContractTests {
 
       """
     try originalHerdr.write(to: herdrConfiguration, atomically: true, encoding: .utf8)
-    let requests = Mutex([ProcessRequest]())
+    let processes = ProcessRunnerFake(
+      output: herdrReloadSuccess, replies: [.init(arguments: ["--version"], output: "herdr 0.8.2")])
     let herdr = HerdrAdapter(
       root: root,
       configurationURL: herdrConfiguration,
       executableURL: HerdrAdapter.liveExecutableURL,
       controlIsAvailable: { true },
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return request.arguments == ["--version"]
-          ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
-          : ProcessResult(
-            terminationStatus: 0,
-            output: herdrReloadSuccess
-          )
-      }
+      processRunner: processes.runner
     )
     let herdrOutcome = try await herdr.reconciliation().run()
     #expect(herdrOutcome.status == .applied)
@@ -99,7 +92,7 @@ extension AdapterContractTests {
         encoding: .utf8) == originalHerdr
     )
     #expect(
-      requests.withLock { $0 }
+      processes.requests
         == [
           ProcessRequest(
             executableURL: HerdrAdapter.liveExecutableURL,
@@ -485,12 +478,7 @@ extension AdapterContractTests {
 }
 
 private func successfulHerdrProcessRunner() -> ProcessRunner {
-  ProcessRunner { request in
-    request.arguments == ["--version"]
-      ? ProcessResult(terminationStatus: 0, output: "herdr 0.8.2")
-      : ProcessResult(
-        terminationStatus: 0,
-        output: herdrReloadSuccess
-      )
-  }
+  ProcessRunnerFake(
+    output: herdrReloadSuccess, replies: [.init(arguments: ["--version"], output: "herdr 0.8.2")]
+  ).runner
 }

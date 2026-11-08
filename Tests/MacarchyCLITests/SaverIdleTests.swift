@@ -334,14 +334,10 @@ struct SaverIdleTests {
       (0, "soon", .unreadable("defaults did not report a whole number of seconds")),
     ]
     for (status, output, expected) in replies {
-      let requests = Mutex([ProcessRequest]())
-      let timer = SaverNativeTimers.screensaver(
-        processRunner: ProcessRunner { request in
-          requests.withLock { $0.append(request) }
-          return ProcessResult(terminationStatus: status, output: output)
-        })
+      let processes = ProcessRunnerFake(status: status, output: output)
+      let timer = SaverNativeTimers.screensaver(processRunner: processes.runner)
       #expect(timer == expected)
-      let request = requests.withLock { $0.first }
+      let request = processes.requests.first
       #expect(request?.executableURL.path == "/usr/bin/defaults")
       #expect(request?.arguments == ["-currentHost", "read", "com.apple.screensaver", "idleTime"])
       #expect(request?.timeout == 5)
@@ -375,15 +371,10 @@ struct SaverIdleTests {
       ),
     ]
     for (output, expected) in replies {
-      let requests = Mutex([ProcessRequest]())
-      let timer = SaverNativeTimers.displaySleep(
-        processRunner: ProcessRunner { request in
-          requests.withLock { $0.append(request) }
-          return ProcessResult(
-            terminationStatus: 0, output: "System-wide power settings:\n" + output)
-        })
+      let processes = ProcessRunnerFake(output: "System-wide power settings:\n" + output)
+      let timer = SaverNativeTimers.displaySleep(processRunner: processes.runner)
       #expect(timer == expected)
-      let request = requests.withLock { $0.first }
+      let request = processes.requests.first
       #expect(request?.executableURL.path == "/usr/bin/pmset")
       #expect(request?.arguments == ["-g"])
       #expect(request?.timeout == 5)

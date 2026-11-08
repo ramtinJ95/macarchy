@@ -1095,12 +1095,9 @@ private struct HerdrFixture {
       return ThemeActivationCoordinator(
         root: state,
         consumerPaths: consumerPaths,
-        processRunner: ProcessRunner { request in
-          ProcessResult(
-            terminationStatus: 0,
-            output: request.arguments == ["--version"] ? "herdr 0.8.2" : ""
-          )
-        },
+        processRunner: ProcessRunnerFake(
+          replies: [.init(arguments: ["--version"], output: "herdr 0.8.2")]
+        ).runner,
         wallpaperControl: WallpaperControl(inspect: { [] }, set: { _, _ in }),
         wallpaperSignal: .personal(homeDirectory: home),
         enabledAdapterIDs: [HerdrAdapter.id],

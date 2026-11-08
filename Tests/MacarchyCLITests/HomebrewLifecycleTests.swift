@@ -532,24 +532,16 @@ struct HomebrewLifecycleTests {
     ] {
       try Data("{}\n".utf8).write(to: prefix.appending(path: file))
     }
-    let requests = Mutex([ProcessRequest]())
-    let verifier = HomebrewInstallationVerifier(
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        if request.arguments == ["--prefix", "ramtinj95/tap/macarchy"] {
-          return ProcessResult(terminationStatus: 0, output: prefix.path)
-        }
-        return ProcessResult(
-          terminationStatus: 0,
-          output:
-            #"{"schema_version":1,"version":"0.2.0","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","platform":"macos-arm64","installation":"homebrew"}"#
-        )
-      }
+    let processes = ProcessRunnerFake(
+      output:
+        #"{"schema_version":1,"version":"0.2.0","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","platform":"macos-arm64","installation":"homebrew"}"#,
+      replies: [.init(arguments: ["--prefix", "ramtinj95/tap/macarchy"], output: prefix.path)]
     )
+    let verifier = HomebrewInstallationVerifier(processRunner: processes.runner)
 
     try verifier.verify(expectedVersion: "0.2.0")
     #expect(
-      requests.withLock { $0.map(\.arguments) }
+      processes.requests.map(\.arguments)
         == [
           ["--prefix", "ramtinj95/tap/macarchy"],
           ["version", "--json"],
