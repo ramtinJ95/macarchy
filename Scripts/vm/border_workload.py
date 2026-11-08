@@ -85,16 +85,6 @@ def satisfied(action, index, seq, before, st):
             'close': w['closed'] is True}[action]
 
 
-class OwnedTart:
-    """Run-record Tart identity for lab helpers; poll() reports exit once ownership no longer matches."""
-
-    def __init__(self, record):
-        self.record, self.pid = record, int(record['pid'])
-
-    def poll(self):
-        return None if v.owned_tart(self.record) else 1
-
-
 class Session:
     def __init__(self, client, evidence, report, context, run_id, controller=None):
         self.c, self.ev, self.report, self.ctx, self.run_id = client, Path(evidence), report, context, run_id
@@ -299,7 +289,7 @@ class Session:
         record = json.loads((guest.run_directory(self.run_id) / 'verify-tart.json').read_text())
         if not v.owned_tart(record):
             raise v.Blocked(f'Tart pid {record.get("pid")} does not match its run record')
-        self.inputs, self.tart = v.read_pins(), OwnedTart(record)
+        self.inputs, self.tart = v.read_pins(), v.OwnedTart(record)
         pre = lab.control(self.controller, 'preflight')
         self.save('host-preflight', pre)
         if missing := [k for k in ('accessibility', 'screen_recording') if pre.get(k) is not True]:

@@ -74,7 +74,7 @@ class WorkloadTests(unittest.TestCase):
                 self.assertIs(w.satisfied(action, 0, 3, before, after), want)
 
     def test_owned_tart_poll_tracks_ownership(self):
-        t = w.OwnedTart({'pid': 42})
+        t = verify_common.OwnedTart({'pid': 42})
         self.assertEqual(t.pid, 42)
         for owned, want in ((True, None), (False, 1)):
             with self.subTest(owned=owned), mock.patch.object(verify_common, 'owned_tart', return_value=owned) as m:
