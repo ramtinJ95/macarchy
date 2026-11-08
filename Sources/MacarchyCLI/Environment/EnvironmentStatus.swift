@@ -463,6 +463,16 @@ struct EnvironmentGenerationReport: Encodable {
   }
 }
 
+/// What an apply already observed, and how its converged result is reported.
+struct EnvironmentApplyObservation: Sendable {
+  var theme: [DesktopThemeAdapterStatus]? = nil
+  var verification: [EnvironmentVerification]? = nil
+  let outcome: String
+  let mutated: Bool
+  let message: String
+  var pendingCommit = false
+}
+
 struct EnvironmentStatusCommandRunner: Sendable {
   let prerequisites: EnvironmentPrerequisiteInspector
   let theme: DesktopThemeController?
@@ -492,14 +502,47 @@ struct EnvironmentStatusCommandRunner: Sendable {
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
     includeVerification: Bool = false,
-    observedTheme: [DesktopThemeAdapterStatus]? = nil,
-    observedVerification: [EnvironmentVerification]? = nil,
-    successfulOutcome: String? = nil,
-    mutated: Bool = false,
-    successMessage: String? = nil,
     json: Bool,
-    deferredApplyTransaction: Bool = false,
-    profile suppliedProfile: PortableProfile? = nil
+    profile: PortableProfile? = nil
+  ) throws -> (output: String, succeeded: Bool) {
+    try run(
+      operation: operation, resourcesRoot: resourcesRoot, profileURL: profileURL,
+      profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths, includeVerification: includeVerification, applied: nil,
+      json: json, profile: profile)
+  }
+
+  /// Reports apply's result through the status path, reusing what apply already observed.
+  func executeAfterApply(
+    _ applied: EnvironmentApplyObservation,
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    json: Bool,
+    profile: PortableProfile
+  ) throws -> (output: String, succeeded: Bool) {
+    try run(
+      operation: "environment_apply", resourcesRoot: resourcesRoot, profileURL: profileURL,
+      profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths, includeVerification: true, applied: applied, json: json,
+      profile: profile)
+  }
+
+  private func run(
+    operation: String,
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    includeVerification: Bool,
+    applied: EnvironmentApplyObservation?,
+    json: Bool,
+    profile suppliedProfile: PortableProfile?
   ) throws -> (output: String, succeeded: Bool) {
     let profile: PortableProfile
     let composition: EnvironmentComposition
@@ -531,15 +574,15 @@ struct EnvironmentStatusCommandRunner: Sendable {
       if try EnvironmentStateStore(stateRoot: stateRoot).readTransaction() == nil {
         transactionStatus = "clear"
       } else {
-        transactionStatus = deferredApplyTransaction ? "pending_commit" : "recovery_required"
+        transactionStatus = applied?.pendingCommit == true ? "pending_commit" : "recovery_required"
       }
     } catch {
       transactionStatus = "invalid"
     }
 
-    var themeState = observedTheme ?? []
+    var themeState = applied?.theme ?? []
     var themeFailure: String?
-    if observedTheme == nil,
+    if applied?.theme == nil,
       !profile.environment.selectedThemeAdapterIDs.isEmpty,
       generation.status == .current,
       !provider.isBlocked,
@@ -560,7 +603,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       }
     }
     var verification =
-      observedVerification
+      applied?.verification
       ?? (includeVerification && !provider.isBlocked
         ? verifier.verify(profile.environment, homeDirectory) : [])
     do {
@@ -598,12 +641,12 @@ struct EnvironmentStatusCommandRunner: Sendable {
       && (transactionStatus == "clear" || transactionStatus == "pending_commit")
     let outcome =
       converged
-      ? (successfulOutcome ?? "converged")
+      ? (applied?.outcome ?? "converged")
       : transactionStatus == "clear" ? "drifted" : "blocked"
     let report = EnvironmentLifecycleReport(
       operation: operation,
       outcome: outcome,
-      mutated: mutated,
+      mutated: applied?.mutated ?? false,
       profile: profileURL.path,
       providers: Self.providers(profile.environment),
       generation: EnvironmentGenerationReport(generation),
@@ -615,7 +658,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       verification: verification,
       message: themeFailure ?? provider.blockedMessage
         ?? (converged
-          ? (successMessage ?? "The managed daily tool environment is converged.")
+          ? (applied?.message ?? "The managed daily tool environment is converged.")
           : "The managed daily tool environment requires attention.")
     )
     return (try report.render(json: json), report.succeeded)
