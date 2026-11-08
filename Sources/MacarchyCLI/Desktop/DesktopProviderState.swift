@@ -212,4 +212,58 @@ extension PortableProfile {
     if topBar == .sketchybar { ids.append("sketchybar") }
     return ids.sorted()
   }
+
+  /// The services the selected desktop roles register, start or reload, in setup plan order.
+  var desktopSetupServices: [UnifiedSetupService] {
+    var services = [UnifiedSetupService]()
+    if desktop.provider == .yabaiSkhd {
+      services.append(
+        UnifiedSetupService(
+          id: "yabai", ownership: "native_user_service",
+          lifecycle:
+            "register_and_start_if_missing; restart_and_verify; restore_prior_state_on_rollback_and_teardown; manual_accessibility"
+        )
+      )
+      services.append(
+        UnifiedSetupService(
+          id: "skhd", ownership: "native_user_service",
+          lifecycle:
+            "register_and_start_if_missing; restart_or_reload; restore_prior_state_on_rollback_and_teardown; manual_accessibility"
+        )
+      )
+    }
+    if topBar == .sketchybar {
+      services.append(
+        UnifiedSetupService(
+          id: "sketchybar",
+          ownership: "homebrew_service",
+          lifecycle: "start_or_reload_and_verify"
+        )
+      )
+    }
+    return services
+  }
+
+  var desktopSetupPermissions: [UnifiedSetupPermission] {
+    guard desktop.provider == .yabaiSkhd else { return [] }
+    return [
+      UnifiedSetupPermission(
+        id: "yabai_accessibility",
+        status: "manual_required",
+        message:
+          "yabai requires user-granted Accessibility access before apply can verify Spaces."
+      )
+    ]
+  }
+
+  var desktopSetupManualBoundaries: [UnifiedSetupManualBoundary] {
+    guard desktop.provider == .yabaiSkhd else { return [] }
+    return [
+      UnifiedSetupManualBoundary(
+        id: "yabai_accessibility",
+        kind: "permission",
+        instruction: "Grant yabai Accessibility access in System Settings before apply."
+      )
+    ]
+  }
 }

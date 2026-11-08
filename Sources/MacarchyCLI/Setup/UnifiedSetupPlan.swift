@@ -453,80 +453,27 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   private func enabledThemeAdapterIDs(_ profile: PortableProfile) -> [String] {
     var result = Set(profile.environment.selectedThemeAdapterIDs)
     result.insert(MacOSAppearanceAdapter.id)
-    if profile.desktop.provider == .yabaiSkhd { result.insert("wallpaper") }
-    if profile.topBar == .sketchybar { result.insert("sketchybar") }
+    result.formUnion(profile.desktopThemeAdapterIDs)
     return result.sorted()
   }
 
+  private func enabledPresets(_ profile: PortableProfile) -> [EnvironmentPreset] {
+    EnvironmentPreset.allCases.filter { $0.isEnabled(in: profile.environment.presets) }
+  }
+
   private func services(_ profile: PortableProfile) -> [UnifiedSetupService] {
-    var result = [UnifiedSetupService]()
-    if profile.environment.focusRing == .lean {
-      result.append(
-        UnifiedSetupService(
-          id: BordersAdapter.leanID, ownership: "macarchy_user_service",
-          lifecycle:
-            "own_absent_only; suspend_retained_borders; live_palette_acknowledgement; unregister_on_disable; borders_selection_is_rollback; known_platform_limits"
-        ))
-    }
-    if profile.environment.focusRing == .borders {
-      result.append(
-        UnifiedSetupService(
-          id: BordersAdapter.id, ownership: "homebrew_service",
-          lifecycle:
-            "start_or_request_palette; restart_on_adoption_and_restore; no_settings_readback"))
-    }
-    if profile.desktop.provider == .yabaiSkhd {
-      result.append(
-        UnifiedSetupService(
-          id: "yabai", ownership: "native_user_service",
-          lifecycle:
-            "register_and_start_if_missing; restart_and_verify; restore_prior_state_on_rollback_and_teardown; manual_accessibility"
-        )
-      )
-      result.append(
-        UnifiedSetupService(
-          id: "skhd", ownership: "native_user_service",
-          lifecycle:
-            "register_and_start_if_missing; restart_or_reload; restore_prior_state_on_rollback_and_teardown; manual_accessibility"
-        )
-      )
-    }
-    if profile.topBar == .sketchybar {
-      result.append(
-        UnifiedSetupService(
-          id: "sketchybar",
-          ownership: "homebrew_service",
-          lifecycle: "start_or_reload_and_verify"
-        )
-      )
-    }
-    if profile.environment.presets.herdr {
-      result.append(
-        UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
-      )
-    }
-    return result
+    profile.environment.focusRing.setupServices + profile.desktopSetupServices
+      + enabledPresets(profile).compactMap(\.setupService)
   }
 
   private func permissions(_ profile: PortableProfile) -> [UnifiedSetupPermission] {
-    var result = [
+    [
       UnifiedSetupPermission(
         id: "system_events_automation",
         status: "manual_boundary",
         message: "macOS may request Automation access when applying system appearance."
       )
-    ]
-    if profile.desktop.provider == .yabaiSkhd {
-      result.append(
-        UnifiedSetupPermission(
-          id: "yabai_accessibility",
-          status: "manual_required",
-          message:
-            "yabai requires user-granted Accessibility access before apply can verify Spaces."
-        )
-      )
-    }
-    return result
+    ] + profile.desktopSetupPermissions
   }
 
   private func manualBoundaries(
@@ -547,24 +494,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
           id: "spicetify_runtime_restoration", kind: "unverified",
           instruction: EnvironmentStateStore.spicetifyRecoveryMessage))
     }
-    if profile.desktop.provider == .yabaiSkhd {
-      result.append(
-        UnifiedSetupManualBoundary(
-          id: "yabai_accessibility",
-          kind: "permission",
-          instruction: "Grant yabai Accessibility access in System Settings before apply."
-        )
-      )
-    }
-    if profile.environment.presets.slack {
-      result.append(
-        UnifiedSetupManualBoundary(
-          id: "slack_theme_import",
-          kind: "application_ui",
-          instruction: "Import the generated four-color theme in each Slack workspace."
-        )
-      )
-    }
+    result += profile.desktopSetupManualBoundaries
+    result += enabledPresets(profile).compactMap(\.setupManualBoundary)
     return result
   }
 
@@ -614,35 +545,37 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     _ components: SetupComponentPlans, profile: PortableProfile
   ) throws -> [UnifiedSetupAdoptionEvidence] {
     var result = [UnifiedSetupAdoptionEvidence]()
-    func append(_ id: String, status: String, digest: String?) {
+    func append(_ target: UnifiedSetupAdoptionTarget, status: String, digest: String?) {
       guard status == "adoption_required", let digest else { return }
-      result.append(UnifiedSetupAdoptionEvidence(id: id, digest: digest))
+      result.append(UnifiedSetupAdoptionEvidence(id: target.rawValue, digest: digest))
     }
     let keybindings = try components.desktop.keybindingPlan
     let keybindingStatus = try keybindings.providerStatus
     let keybindingDigest = try keybindings.adoptionEvidenceDigest
     if profile.desktop.provider == .yabaiSkhd {
       append(
-        "keybindings",
+        .keybindings,
         status: keybindingStatus,
         digest: keybindingDigest
       )
     }
     let yabaiProvider = try components.desktop.yabaiPlan
     append(
-      "yabai",
+      .yabai,
       status: try yabaiProvider.status,
       digest: try yabaiProvider.adoptionEvidenceDigest
     )
     if let provider = try components.desktop.sketchyBarPlan {
       append(
-        "sketchybar",
+        .sketchybar,
         status: try provider.status,
         digest: try provider.adoptionEvidenceDigest
       )
     }
     if let digest = try components.environment.environmentAdoptionEvidenceDigest {
-      result.append(UnifiedSetupAdoptionEvidence(id: "environment", digest: digest))
+      result.append(
+        UnifiedSetupAdoptionEvidence(
+          id: UnifiedSetupAdoptionTarget.environment.rawValue, digest: digest))
     }
     return result
   }
