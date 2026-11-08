@@ -91,7 +91,7 @@ class SSHTests(unittest.TestCase):
         client.boot_session = Mock(side_effect=["old", "old", "new"])
         client.command = Mock(side_effect=[Mock(stdout="marker"), Mock(returncode=255),
                                           Mock(stdout="marker")])
-        with patch.object(guest.time, "sleep"):
+        with patch.object(lab.time, "sleep"):
             result = client.reboot()
         self.assertEqual(result["before"], "old")
         self.assertEqual(result["after"], "new")
@@ -110,7 +110,7 @@ class SSHTests(unittest.TestCase):
         client = guest.Guest.__new__(guest.Guest)
         client.boot_session = Mock(side_effect=["old", "new"])
         client.command = Mock(side_effect=[Mock(stdout="marker"), Mock(returncode=0), Mock(stdout="")])
-        with patch.object(guest.time, "sleep"), self.assertRaises(lab.LabError):
+        with patch.object(lab.time, "sleep"), self.assertRaises(lab.LabError):
             client.reboot()
 
     def test_mark_is_exclusive_not_overwrite(self):
