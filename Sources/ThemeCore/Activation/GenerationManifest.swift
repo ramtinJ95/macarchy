@@ -1,4 +1,3 @@
-import CryptoKit
 import Darwin
 import Foundation
 
@@ -233,66 +232,4 @@ extension GenerationManifest {
   private func requireIntegrity(_ condition: @autoclosure () -> Bool, _ reason: String) throws {
     guard condition() else { throw GenerationIntegrityError(reason: reason) }
   }
-}
-
-package func sha256Digest(_ data: Data) -> String {
-  "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-}
-
-/// Digest of each value's UTF-8 bytes framed as `<byte count>:<bytes>`, in order.
-package func lengthPrefixedSHA256Digest(_ values: some Sequence<String>) -> String {
-  var data = Data()
-  for value in values {
-    let bytes = Data(value.utf8)
-    data.append(Data("\(bytes.count):".utf8))
-    data.append(bytes)
-  }
-  return sha256Digest(data)
-}
-
-/// Digest of the compact, key-sorted JSON encoding used for composition input identities.
-package func canonicalJSONDigest<Value: Encodable>(_ value: Value) throws -> String {
-  let encoder = JSONEncoder()
-  encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-  return sha256Digest(try encoder.encode(value))
-}
-
-/// Pretty-printed, key-sorted, newline-terminated JSON for persisted documents.
-func prettyJSONDocument<Value: Encodable>(_ value: Value) throws -> Data {
-  let encoder = JSONEncoder()
-  encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-  var data = try encoder.encode(value)
-  data.append(0x0a)
-  return data
-}
-
-package func isSHA256Digest(_ value: String) -> Bool {
-  let digest = value.dropFirst("sha256:".count)
-  return value.hasPrefix("sha256:")
-    && digest.count == 64
-    && digest.allSatisfy { $0.isASCII && $0.isHexDigit && !$0.isUppercase }
-}
-
-package func isGenerationID(_ value: String) -> Bool {
-  isPrefixedLowercaseUUID(value, prefix: "g-")
-}
-
-/// `<prefix><lowercase UUID>`, the identifier shape shared by the generation stores.
-func isPrefixedLowercaseUUID(_ value: String, prefix: String) -> Bool {
-  guard value.hasPrefix(prefix) else { return false }
-  let nonce = String(value.dropFirst(prefix.count))
-  return nonce == nonce.lowercased() && UUID(uuidString: nonce) != nil
-}
-
-/// `<prefix><generation ID>-<lowercase UUID>` for 38-character generation IDs.
-func isGenerationScopedTemporaryName(
-  _ name: String, prefix: String, isGenerationID: (String) -> Bool
-) -> Bool {
-  guard name.hasPrefix(prefix) else { return false }
-  let value = name.dropFirst(prefix.count)
-  guard value.count == 75 else { return false }
-  let separator = value.index(value.startIndex, offsetBy: 38)
-  guard value[separator] == "-" else { return false }
-  return isGenerationID(String(value[..<separator]))
-    && isPrefixedLowercaseUUID(String(value[value.index(after: separator)...]), prefix: "")
 }
