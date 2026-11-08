@@ -29,17 +29,6 @@ final class LifecycleFixture: Sendable {
   }
 }
 
-#if MACARCHY_ACCEPTANCE_TESTING
-  struct AcceptanceCheckpointObservation: Sendable {
-    let selectedGenerationID: String
-    let currentGenerationID: String?
-    let transactionGenerationID: String?
-    let transactionPhase: KeybindingApplyPhase?
-    let lifecycleEvidenceExists: Bool
-    let lifecycleStatus: KeybindingLifecycleEvidenceStatus
-  }
-#endif
-
 struct KeybindingsApplyFixture {
   let root: URL
   let home: URL
