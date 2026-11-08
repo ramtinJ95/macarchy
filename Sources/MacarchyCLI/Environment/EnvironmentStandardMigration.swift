@@ -218,8 +218,7 @@ struct EnvironmentStandardMigration: Sendable {
   }
 
   private func validateRecord(_ record: EnvironmentOwnershipRecord) throws {
-    let inspector = EnvironmentProviderInspector()
-    let expected = inspector.allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+    let expected = EnvironmentManagedEntry.all(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .first { $0.id == provider.entryID }!
     let native =
       provider == .neovim
@@ -256,7 +255,7 @@ struct EnvironmentStandardMigration: Sendable {
     else { return false }
     let protected =
       [stateRoot]
-      + EnvironmentProviderInspector().allManagedEntries(
+      + EnvironmentManagedEntry.all(
         homeDirectory: homeDirectory, stateRoot: stateRoot
       ).map(\.url)
     return protected.allSatisfy { entry in

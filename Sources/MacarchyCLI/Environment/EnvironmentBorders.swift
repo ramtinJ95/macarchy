@@ -315,7 +315,7 @@ extension EnvironmentTransactionCoordinator {
       [.bordersDirectory, .bordersConfiguration].contains($0.id)
     }
     guard entries.count == 1, let entry = entries.first,
-      let allowed = inspector.allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      let allowed = EnvironmentManagedEntry.all(homeDirectory: homeDirectory, stateRoot: stateRoot)
         .first(where: { $0.id == entry.id }),
       entry.publicPath == allowed.url.path, entry.managedTarget == allowed.target,
       entry.managedKind == allowed.kind.rawValue,

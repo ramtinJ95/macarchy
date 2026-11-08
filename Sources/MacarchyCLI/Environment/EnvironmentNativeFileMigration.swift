@@ -253,7 +253,7 @@ enum EnvironmentNativeSource {
     guard path != lexicalState, !path.hasPrefix(lexicalState + "/"),
       resolved != state, !resolved.hasPrefix(state + "/")
     else { return false }
-    for entry in EnvironmentProviderInspector().allManagedEntries(
+    for entry in EnvironmentManagedEntry.all(
       homeDirectory: homeDirectory, stateRoot: stateRoot)
     {
       // Only explicit native profile authority may exempt its exact standard path.

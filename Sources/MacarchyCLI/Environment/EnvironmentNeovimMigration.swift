@@ -38,7 +38,7 @@ struct EnvironmentNeovimMigration: Sendable {
     // an external native configuration tree.
     let protected =
       [stateRoot]
-      + EnvironmentProviderInspector().allManagedEntries(
+      + EnvironmentManagedEntry.all(
         homeDirectory: homeDirectory, stateRoot: stateRoot
       ).map(\.url)
     return !protected.contains {

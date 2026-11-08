@@ -49,12 +49,12 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
       )
     }
     if provider == .atuin {
-      let inspector = EnvironmentProviderInspector()
-      let theme = inspector.allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      let theme = EnvironmentManagedEntry.all(homeDirectory: homeDirectory, stateRoot: stateRoot)
         .first { $0.id == .atuinTheme }!
       guard let record = ownership.records.first(where: { $0.id == .atuinTheme }),
         record.publicPath == theme.url.path, record.managedKind == theme.kind.rawValue,
-        record.managedTarget == theme.target, try inspector.managedEntryIsExact(theme)
+        record.managedTarget == theme.target,
+        try EnvironmentProviderInspector().managedEntryIsExact(theme)
       else {
         throw EnvironmentLifecycleError.drift(
           "Atuin's owned theme link is missing or changed; review environment status before editing."
@@ -121,8 +121,7 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
         throw EnvironmentLifecycleError.drift(
           "Environment ownership and its active generation disagree.")
       }
-      let inspector = EnvironmentProviderInspector()
-      let entry = inspector.allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+      let entry = EnvironmentManagedEntry.all(homeDirectory: homeDirectory, stateRoot: stateRoot)
         .first { $0.id == provider.entryID }!
       let record = ownership?.records.first { $0.id == provider.entryID }
       let native: URL?
@@ -143,7 +142,7 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
       if let record {
         guard record.publicPath == entry.url.path, record.managedKind == entry.kind.rawValue,
           record.managedTarget == (native?.path ?? entry.target),
-          try inspector.managedEntryIsExact(
+          try EnvironmentProviderInspector().managedEntryIsExact(
             .init(
               id: entry.id, url: entry.url, kind: entry.kind, target: record.managedTarget))
         else {

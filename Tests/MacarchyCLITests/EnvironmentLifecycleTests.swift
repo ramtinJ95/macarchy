@@ -1708,7 +1708,7 @@ struct EnvironmentLifecycleTests {
     #expect(!FileManager.default.fileExists(atPath: fixture.atuinThemeEntry.path))
     #expect(
       try EnvironmentProviderInspector().managedEntryIsExact(
-        EnvironmentProviderInspector().allManagedEntries(
+        EnvironmentManagedEntry.all(
           homeDirectory: fixture.home,
           stateRoot: fixture.state
         ).first { $0.id == .kitty }!
