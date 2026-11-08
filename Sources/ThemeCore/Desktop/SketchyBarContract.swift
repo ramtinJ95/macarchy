@@ -1,10 +1,12 @@
 import Foundation
 
-/// The managed bar Macarchy generates, declared once: its item names, plugin scripts and the
-/// hidden `macarchy desktop` helpers those scripts run. The generator renders these names, and
-/// the CLI's runtime verifier, bar helpers and generation inspector check against them, so a new
-/// item is one entry here plus the generator lines that draw it. Bars already on disk still call
-/// the helper names and flags, so none of them may change.
+/// Names the managed bar's generator and the CLI must agree on: each module's top-level items
+/// and the sub-items listed below, the plugin scripts, and the hidden `macarchy desktop`
+/// helpers those scripts run. The generator,
+/// the CLI's runtime verifier, its bar helpers and the generation inspector use these entries.
+/// It is not an inventory of the whole bar: other sub-items, popup rows and many CLI-side item
+/// names are still spelled where they are used. Bars already on disk still call the helper
+/// names and flags, so none of them may change.
 package enum SketchyBarContract {
   package static let readyItem = "macarchy.theme.ready"
   package static let clockItem = "macarchy.clock"

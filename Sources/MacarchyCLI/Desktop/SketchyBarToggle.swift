@@ -71,7 +71,8 @@ struct SketchyBarToggle {
       guard try foreignToggleAbsent() else { throw ToggleError.foreignProcess }
       try bar([
         "--bar", "hidden=off", "y_offset=0",
-        "--set", "macarchy.toggle", "drawing=off", "icon.drawing=off", "label.drawing=off",
+        "--set", SketchyBarContract.toggleItem, "drawing=off", "icon.drawing=off",
+        "label.drawing=off",
       ])
       var state = NativeMenuToggleState()
       var heartbeat = -Double.infinity
@@ -81,7 +82,7 @@ struct SketchyBarToggle {
         if now - heartbeat >= 1 {
           guard try owns(token) else { return }
           try bar([
-            "--set", "macarchy.toggle", "drawing=off",
+            "--set", SketchyBarContract.toggleItem, "drawing=off",
             "label=\(token)|\(pid)|\(UInt64(now * 1000))|\(started)",
           ])
           heartbeat = now
@@ -108,7 +109,8 @@ struct SketchyBarToggle {
       }
       if try owns(token) {
         try bar([
-          "--bar", "hidden=off", "y_offset=0", "--set", "macarchy.toggle", "label=\(token)|stopped",
+          "--bar", "hidden=off", "y_offset=0", "--set", SketchyBarContract.toggleItem,
+          "label=\(token)|stopped",
         ])
       }
     } catch {
@@ -119,8 +121,9 @@ struct SketchyBarToggle {
           // interpolating an error here can poison readback and prevent recovery.
           // The original error is rethrown below for the CLI's service stderr.
           try bar([
-            "--bar", "hidden=off", "y_offset=0", "--set", "macarchy.toggle", "drawing=on",
-            "icon.drawing=on", "icon=Toggle ERR", "label.drawing=off", "label=\(token)|failed",
+            "--bar", "hidden=off", "y_offset=0", "--set", SketchyBarContract.toggleItem,
+            "drawing=on", "icon.drawing=on", "icon=Toggle ERR", "label.drawing=off",
+            "label=\(token)|failed",
           ])
         }
       } catch let presentation {
@@ -134,8 +137,9 @@ struct SketchyBarToggle {
   private func owns(_ token: String) throws -> Bool {
     struct Bar: Decodable { let items: [String] }
     let inventory = try SketchyBarQueryReply.decode(Bar.self, from: bar(["--query", "bar"]))
-    guard inventory.items.contains("macarchy.toggle") else { return false }
-    let label = try SketchyBarLabelQuery.value(from: bar(["--query", "macarchy.toggle"]))
+    guard inventory.items.contains(SketchyBarContract.toggleItem) else { return false }
+    let label = try SketchyBarLabelQuery.value(
+      from: bar(["--query", SketchyBarContract.toggleItem]))
     return label.hasPrefix(token + "|")
   }
 
