@@ -112,6 +112,8 @@ package struct MacarchyConfigurationStore: Sendable {
     configurationURL = root.appending(path: "config.toml")
   }
 
+  /// `package` with the user's personal backgrounds appended. Activation appends them itself, so
+  /// an effective package must never be passed where a base package is expected (ADR-0072).
   package func addingPersonalBackgrounds(to package: ThemePackage) throws -> ThemePackage {
     let configuration = try load()
     return try package.addingPersonalBackgrounds(
