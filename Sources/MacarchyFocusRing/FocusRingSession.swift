@@ -489,7 +489,6 @@ final class FocusRingSession {
     }
   }
 
-  /// Exact `p_comm` matches for this user; pgrep exits 1 for a clean absence.
   private static func processIDs(command: String) throws -> [pid_t] {
     let result = try ProcessRunner.live.run(
       .processLookup(command, owner: .realUser, timeout: 2))

@@ -3,8 +3,8 @@ import Carbon
 import Darwin
 import Foundation
 
-// This executable alone crosses the approved private SkyLight boundary. Neither
-// ThemeCore nor the main CLI links or loads SkyLight. Permission is manual.
+// This executable and macarchy-focus-ring alone cross the approved private SkyLight
+// boundary. Neither ThemeCore nor the main CLI links or loads SkyLight. Permission is manual.
 enum MenuFailure: Error, CustomStringConvertible {
   case permission, unsupported, frontApplication
   case accessibility(AXError)
