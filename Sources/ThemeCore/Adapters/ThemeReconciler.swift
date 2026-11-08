@@ -66,26 +66,6 @@ struct AdapterReconciliation: Sendable {
   let run: @Sendable () async throws -> AdapterOutcome
 }
 
-final class BlockingTaskExecutor: TaskExecutor {
-  private let queue: DispatchQueue
-
-  init(label: String) {
-    queue = DispatchQueue(
-      label: label,
-      qos: .utility,
-      attributes: .concurrent
-    )
-  }
-
-  func enqueue(_ job: consuming ExecutorJob) {
-    let job = UnownedJob(job)
-    let executor = asUnownedTaskExecutor()
-    queue.async {
-      job.runSynchronously(on: executor)
-    }
-  }
-}
-
 enum ReconciliationCheckpoint: Sendable {
   case adaptersCompleted
   case statusPersisted
