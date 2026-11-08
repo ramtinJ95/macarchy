@@ -60,17 +60,24 @@ extension RuntimeAdapterKind {
 }
 
 package enum ConsumerMode: Sendable {
-  case runtime(RuntimeAdapterKind, requirement: AdapterRequirement)
+  case runtime(
+    RuntimeAdapterKind, requirement: AdapterRequirement, enabledByDefault: Bool = true)
   case manual
 
   package var requirement: AdapterRequirement? {
-    guard case .runtime(_, let requirement) = self else { return nil }
+    guard case .runtime(_, let requirement, _) = self else { return nil }
     return requirement
   }
 
   package var runtimeKind: RuntimeAdapterKind? {
-    guard case .runtime(let kind, _) = self else { return nil }
+    guard case .runtime(let kind, _, _) = self else { return nil }
     return kind
+  }
+
+  /// Whether the consumer is enabled when no applied environment selects adapters.
+  package var isEnabledByDefault: Bool {
+    guard case .runtime(_, _, let enabledByDefault) = self else { return false }
+    return enabledByDefault
   }
 
   fileprivate var isManual: Bool {
@@ -274,7 +281,7 @@ package struct ConsumerCatalog: Sendable {
         throw ConsumerCatalogError.duplicateConsumerID(entry.id.rawValue)
       }
 
-      if case .runtime(let kind, let requirement) = entry.mode {
+      if case .runtime(let kind, let requirement, _) = entry.mode {
         guard runtimeIdentities[kind] == nil else {
           throw ConsumerCatalogError.duplicateRuntimeKind
         }
@@ -346,6 +353,11 @@ package struct ConsumerCatalog: Sendable {
 
   package var runtimeEntries: [ConsumerCatalogEntry] {
     entries.filter { $0.mode.runtimeKind != nil }
+  }
+
+  /// Runtime consumers enabled when no applied environment selects adapters.
+  package var defaultEnabledAdapterIDs: Set<String> {
+    Set(runtimeEntries.filter(\.mode.isEnabledByDefault).map(\.id.rawValue))
   }
 
   /// The shared catalog covers every kind; see `shared`.
@@ -428,12 +440,12 @@ package struct ConsumerCatalog: Sendable {
     ),
     ConsumerCatalogEntry(
       id: .borders,
-      mode: .runtime(.borders, requirement: .required),
+      mode: .runtime(.borders, requirement: .required, enabledByDefault: false),
       dependencies: [.init(id: BordersAdapter.id, role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(
       id: .leanFocus,
-      mode: .runtime(.leanFocus, requirement: .required),
+      mode: .runtime(.leanFocus, requirement: .required, enabledByDefault: false),
       dependencies: [.init(id: BordersAdapter.leanID, role: .requiredAdapter)]
     ),
     ConsumerCatalogEntry(

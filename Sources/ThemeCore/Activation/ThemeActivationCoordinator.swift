@@ -146,9 +146,7 @@ package struct ThemeActivationCoordinator: Sendable {
     )
     backgroundPreferences = BackgroundPreferenceStore(root: root)
     configurationStore = MacarchyConfigurationStore(root: root)
-    self.enabledAdapterIDs =
-      enabledAdapterIDs
-      ?? Set(Self.adapterRequirements.keys).subtracting([BordersAdapter.id, BordersAdapter.leanID])
+    self.enabledAdapterIDs = enabledAdapterIDs ?? ConsumerCatalog.shared.defaultEnabledAdapterIDs
     reconciler = ThemeReconciler(statusStore: statusStore)
     self.statusStore = statusStore
     self.themeGenerations = themeGenerations
