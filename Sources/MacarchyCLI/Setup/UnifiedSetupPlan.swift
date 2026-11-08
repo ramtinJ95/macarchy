@@ -451,10 +451,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   }
 
   private func enabledThemeAdapterIDs(_ profile: PortableProfile) -> [String] {
-    var result = Set(profile.environment.selectedThemeAdapterIDs)
-    result.insert(MacOSAppearanceAdapter.id)
-    result.formUnion(profile.desktopThemeAdapterIDs)
-    return result.sorted()
+    Set(profile.environment.selectedThemeAdapterIDs)
+      .union(profile.nonEnvironmentThemeAdapterIDs).sorted()
   }
 
   private func enabledPresets(_ profile: PortableProfile) -> [EnvironmentPreset] {
