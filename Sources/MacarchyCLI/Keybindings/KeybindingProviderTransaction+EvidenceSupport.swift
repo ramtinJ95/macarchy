@@ -668,17 +668,16 @@ extension KeybindingProviderTransaction {
     record: SetupOwnershipRecord,
     url: URL
   ) throws -> Bool {
+    // The transaction reads markers only for records that claim with a nonce.
     guard let nonce = record.claimNonce else {
       throw SetupOwnershipError.invalidManifest("keybinding claim nonce is missing")
     }
-    do {
-      return try KeybindingProviderPrimitives.claimMarkerMatches(
-        descriptor: descriptor,
-        nonce: nonce
-      )
-    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw SetupOwnershipError.posix("read keybinding claim marker", url, code: failure.code)
-    }
+    return try KeybindingProviderPrimitives.readClaimMarker(
+      .matches(nonce: nonce),
+      descriptor: descriptor,
+      failure: "read keybinding claim marker",
+      url: url
+    )
   }
 
   private func markClaim(

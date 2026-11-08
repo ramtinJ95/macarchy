@@ -170,7 +170,7 @@ struct KeybindingProviderTransaction: Sendable {
       return
     }
     let manager = SetupOwnershipManager()
-    try requireLegacyClaimAbsent(for: record)
+    try requireLegacyClaimAbsent(level(record))
     switch originalKind(record) {
     case .directorySymbolicLink:
       let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
@@ -262,7 +262,7 @@ struct KeybindingProviderTransaction: Sendable {
       try preflightOriginalRestoration()
       return
     }
-    try requireLegacyClaimAbsent(for: record)
+    try requireLegacyClaimAbsent(level(record))
     try verifyOriginal(record, context: context)
     let isDirectory = originalKind(record) == .directorySymbolicLink
     let parentURL = layout.parent(level(record))
@@ -674,7 +674,7 @@ struct KeybindingProviderTransaction: Sendable {
     guard try backupExists() == false else {
       throw SetupOwnershipError.orphanedBackup(backup)
     }
-    try requireInstallClaimAbsent(for: original)
+    try requireLegacyClaimAbsent(original.kind == .directorySymbolicLink ? .directory : .leaf)
     returned = true
     return original
   }
@@ -717,38 +717,13 @@ struct KeybindingProviderTransaction: Sendable {
     else { throw SetupOwnershipError.ownershipDrift(entry) }
   }
 
-  private func requireInstallClaimAbsent(for original: OriginalEntry) throws {
-    let parent: Int32
-    let name: String
-    let url: URL
-    if original.kind == .directorySymbolicLink {
-      parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-      name = SkhdLayout.claimPrefix(.directory)
-      url = configurationDirectory.appending(path: name)
-    } else {
-      parent = try PinnedFilesystem.openDirectory(at: directory)
-      name = SkhdLayout.claimPrefix(.leaf)
-      url = directory.appending(path: name)
-    }
+  /// Requires the claim name without a nonce to be absent at `level`.
+  private func requireLegacyClaimAbsent(_ level: SkhdLayout.Level) throws {
+    let parentURL = layout.parent(level)
+    let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
-    try requireAbsent(parentDescriptor: parent, name: name, url: url)
-  }
-
-  private func requireLegacyClaimAbsent(for record: SetupOwnershipRecord) throws {
-    let parent: Int32
-    let name: String
-    let url: URL
-    if originalKind(record) == .directorySymbolicLink {
-      parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-      name = SkhdLayout.claimPrefix(.directory)
-      url = configurationDirectory.appending(path: name)
-    } else {
-      parent = try PinnedFilesystem.openDirectory(at: directory)
-      name = SkhdLayout.claimPrefix(.leaf)
-      url = directory.appending(path: name)
-    }
-    defer { Darwin.close(parent) }
-    try requireAbsent(parentDescriptor: parent, name: name, url: url)
+    let name = SkhdLayout.claimPrefix(level)
+    try requireAbsent(parentDescriptor: parent, name: name, url: parentURL.appending(path: name))
   }
 
   func requireAbsent(parentDescriptor: Int32, name: String, url: URL) throws {

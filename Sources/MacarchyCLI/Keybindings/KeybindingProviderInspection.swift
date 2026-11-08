@@ -882,34 +882,26 @@ struct KeybindingProviderInspector: Sendable {
       record: record
     )
     defer { Darwin.close(descriptor) }
-    do {
-      return try !KeybindingProviderPrimitives.claimMarkerExists(descriptor: descriptor)
-    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw SetupOwnershipError.posix(
-        "inspect legacy keybinding ownership marker",
-        URL(filePath: record.targetPath),
-        code: failure.code
-      )
-    }
+    return try !KeybindingProviderPrimitives.readClaimMarker(
+      .present,
+      descriptor: descriptor,
+      failure: "inspect legacy keybinding ownership marker",
+      url: URL(filePath: record.targetPath)
+    )
   }
 
   private static func markerMatches(
     descriptor: Int32,
     record: SetupOwnershipRecord
   ) throws -> Bool {
+    // Inspection also sees legacy records, which have no nonce and so cannot match a marker.
     guard let nonce = record.claimNonce else { return false }
-    do {
-      return try KeybindingProviderPrimitives.claimMarkerMatches(
-        descriptor: descriptor,
-        nonce: nonce
-      )
-    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw SetupOwnershipError.posix(
-        "read keybinding ownership marker",
-        URL(filePath: record.targetPath),
-        code: failure.code
-      )
-    }
+    return try KeybindingProviderPrimitives.readClaimMarker(
+      .matches(nonce: nonce),
+      descriptor: descriptor,
+      failure: "read keybinding ownership marker",
+      url: URL(filePath: record.targetPath)
+    )
   }
 
   static func requireAdoptableSymlink(
@@ -938,18 +930,16 @@ struct KeybindingProviderInspector: Sendable {
       pinned.st_mode & S_IFMT == S_IFLNK,
       pinned.st_nlink == 1
     else { throw SetupOwnershipError.ownershipDrift(url) }
-    do {
-      guard try KeybindingProviderPrimitives.claimMarkerExists(descriptor: descriptor) else {
-        return
-      }
+    guard
+      try !KeybindingProviderPrimitives.readClaimMarker(
+        .present,
+        descriptor: descriptor,
+        failure: "inspect adopted keybinding symlink claim marker",
+        url: url
+      )
+    else {
       throw KeybindingsApplyError.blocked(
         "symlink uses Macarchy's reserved claim-marker extended attribute"
-      )
-    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw SetupOwnershipError.posix(
-        "inspect adopted keybinding symlink claim marker",
-        url,
-        code: failure.code
       )
     }
   }
