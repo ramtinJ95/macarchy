@@ -309,15 +309,7 @@ package struct PiAdapter: Sendable {
       return nil
     }
     let value = token.first == "v" ? token.dropFirst() : token[...]
-    let components = value.split(separator: ".", omittingEmptySubsequences: false)
-    guard components.count == 3,
-      components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) })
-    else { return nil }
-    var parsed: [Int] = []
-    for component in components {
-      guard let number = Int(component) else { return nil }
-      parsed.append(number)
-    }
+    guard let parsed = parseDottedVersion(value), parsed.count == 3 else { return nil }
     return parsed
   }
 

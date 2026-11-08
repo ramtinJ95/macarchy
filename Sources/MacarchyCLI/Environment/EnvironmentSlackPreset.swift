@@ -82,12 +82,7 @@ struct EnvironmentSlackPreset: Sendable {
     let components: [Int]
 
     init?(_ value: String) {
-      let parts = value.split(separator: ".", omittingEmptySubsequences: false)
-      let parsed = parts.compactMap { Int($0) }
-      guard parts.count == 3,
-        parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }),
-        parsed.count == parts.count
-      else { return nil }
+      guard let parsed = parseDottedVersion(value), parsed.count == 3 else { return nil }
       components = parsed
     }
 
