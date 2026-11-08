@@ -243,15 +243,12 @@ extension AdapterContractTests {
     )
     #expect(try store.read() == .current(activation.reconciliation))
 
-    let retryRequests = Mutex([ProcessRequest]())
+    let retryProcesses = ProcessRunnerFake(status: 1, output: "no matching process")
     let retryKitty = KittyAdapter(
       root: root,
       configurationURL: configurationURL,
       includeDirective: includeDirective,
-      processRunner: ProcessRunner { request in
-        retryRequests.withLock { $0.append(request) }
-        return ProcessResult(terminationStatus: 1, output: "no matching process")
-      }
+      processRunner: retryProcesses.runner
     )
     try Data("stale bridge\n".utf8).write(to: kittyBridge, options: .atomic)
     #expect(retryKitty.inspection().status == .drifted)
@@ -264,7 +261,7 @@ extension AdapterContractTests {
         == [AdapterResult(adapterID: "kitty", requirement: .required, status: .applied)]
     )
     #expect(
-      retryRequests.withLock { $0 }.map(\.arguments)
+      retryProcesses.requests.map(\.arguments)
         == [["-USR1", "kitty"], ["-0", "kitty"]]
     )
     #expect(retryKitty.inspection().status == .ready)
@@ -355,14 +352,11 @@ extension AdapterContractTests {
       at: consumerPaths.batConfigurationDirectoryURL, withIntermediateDirectories: true)
     let invalidBytes = Data("--theme=\"other\"\n".utf8)
     try invalidBytes.write(to: disabledConfiguration)
-    let requests = Mutex([ProcessRequest]())
+    let processes = ProcessRunnerFake(status: 1, output: "no matching process")
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: consumerPaths,
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return ProcessResult(terminationStatus: 1, output: "no matching process")
-      },
+      processRunner: processes.runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root),
       enabledAdapterIDs: [KittyAdapter.id]
@@ -380,7 +374,7 @@ extension AdapterContractTests {
     )
     #expect(try store.read() == .current(activation.reconciliation))
     #expect(
-      requests.withLock { $0 }
+      processes.requests
         == [
           ProcessRequest(
             executableURL: URL(filePath: "/usr/bin/killall"),
@@ -580,16 +574,13 @@ extension AdapterContractTests {
         atomically: true,
         encoding: .utf8
       )
-      let processCalls = Mutex(0)
+      let processes = ProcessRunnerFake()
       let coordinator = ThemeActivationCoordinator(
         root: root,
         consumerPaths: try Self.consumerPaths(
           root: root, kittyConfigurationURL: configurationURL,
           sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-        processRunner: ProcessRunner { _ in
-          processCalls.withLock { $0 += 1 }
-          return ProcessResult(terminationStatus: 0, output: "")
-        },
+        processRunner: processes.runner,
         wallpaperControl: Self.wallpaperControl(),
         wallpaperSignal: try Self.wallpaperSignal(root: root),
         enabledAdapterIDs: Set(ThemeActivationCoordinator.adapterRequirements.keys)
@@ -606,7 +597,7 @@ extension AdapterContractTests {
         _ = try await coordinator.reconcile(adapterIDs: [TuicrAdapter.id])
       }
 
-      #expect(processCalls.withLock { $0 } == 0)
+      #expect(processes.requests.isEmpty)
       #expect(!FileManager.default.fileExists(atPath: root.appending(path: "state").path))
     }
   }
@@ -692,16 +683,13 @@ extension AdapterContractTests {
       atomically: true,
       encoding: .utf8
     )
-    let processCalls = Mutex(0)
+    let processes = ProcessRunnerFake()
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: try Self.consumerPaths(
         root: root, kittyConfigurationURL: configurationURL,
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { _ in
-        processCalls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
+      processRunner: processes.runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
@@ -725,7 +713,7 @@ extension AdapterContractTests {
     #expect(appearanceInspection.status == .ready)
     #expect(kittyInspection.status == .drifted)
     #expect(kittyInspection.message?.contains("must contain") == true)
-    #expect(processCalls.withLock { $0 } == 0)
+    #expect(processes.requests.isEmpty)
     #expect(!FileManager.default.fileExists(atPath: root.appending(path: "state").path))
 
     try FileManager.default.removeItem(at: configurationURL)
@@ -775,16 +763,13 @@ extension AdapterContractTests {
         ),
       ]
     )
-    let requests = Mutex([ProcessRequest]())
+    let processes = ProcessRunnerFake(status: 1, output: "no matching process")
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: try Self.consumerPaths(
         root: root, kittyConfigurationURL: configurationURL,
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return ProcessResult(terminationStatus: 1, output: "no matching process")
-      },
+      processRunner: processes.runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
@@ -799,7 +784,7 @@ extension AdapterContractTests {
     #expect(first.record.results[1].message == "apply failed")
     #expect(try Data(contentsOf: statusURL) == firstData)
     #expect(
-      requests.withLock { $0 }.map(\.arguments)
+      processes.requests.map(\.arguments)
         == [
           ["-USR1", "kitty"], ["-0", "kitty"],
           ["-USR1", "kitty"], ["-0", "kitty"],
@@ -826,16 +811,13 @@ extension AdapterContractTests {
     try "corrupt\n".write(to: artifactURL, atomically: false, encoding: .utf8)
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o444], ofItemAtPath: artifactURL.path)
-    let processCalls = Mutex(0)
+    let processes = ProcessRunnerFake()
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: try Self.consumerPaths(
         root: root, kittyConfigurationURL: configurationURL,
         sketchyBarConfigurationURL: try Self.sketchyBarConfiguration(root: root)),
-      processRunner: ProcessRunner { _ in
-        processCalls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
+      processRunner: processes.runner,
       wallpaperControl: Self.wallpaperControl(),
       wallpaperSignal: try Self.wallpaperSignal(root: root)
     )
@@ -843,7 +825,7 @@ extension AdapterContractTests {
     await #expect(throws: ReconciliationStatusError.self) {
       _ = try await coordinator.reconcile(adapterIDs: [])
     }
-    #expect(processCalls.withLock { $0 } == 0)
+    #expect(processes.requests.isEmpty)
   }
 
 }

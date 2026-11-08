@@ -77,6 +77,7 @@ let package = Package(
     ),
     .target(
       name: "TestSupport",
+      dependencies: ["ThemeCore"],
       path: "Tests/TestSupport",
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),

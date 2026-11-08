@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -173,33 +174,23 @@ struct BordersServiceTests {
 
   @Test
   func failedHomebrewStartDoesNotGrantTrustOrFallBackToLaunchctl() {
-    let requests = Mutex<[ProcessRequest]>([])
+    let processes = ProcessRunnerFake(status: 1, output: "Formula is not trusted")
     let service = BordersService(
-      homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
-      runner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return ProcessResult(terminationStatus: 1, output: "Formula is not trusted")
-      })
+      homeDirectory: FileManager.default.homeDirectoryForCurrentUser, runner: processes.runner)
     #expect(throws: (any Error).self) { try service.start() }
-    #expect(requests.withLock { $0.count } == 1)
-    #expect(requests.withLock { $0.first?.executableURL.path } == "/opt/homebrew/bin/brew")
-    #expect(
-      requests.withLock { $0.first?.arguments } == ["services", "start", BordersService.formula])
+    #expect(processes.requests.count == 1)
+    #expect(processes.requests.first?.executableURL.path == "/opt/homebrew/bin/brew")
+    #expect(processes.requests.first?.arguments == ["services", "start", BordersService.formula])
   }
 
   @Test
   func alternateHomeCannotMutateTheRealUsersService() throws {
     let root = try temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    let calls = Mutex(0)
-    let service = BordersService(
-      homeDirectory: root,
-      runner: ProcessRunner { _ in
-        calls.withLock { $0 += 1 }
-        return ProcessResult(terminationStatus: 0, output: "")
-      })
+    let processes = ProcessRunnerFake()
+    let service = BordersService(homeDirectory: root, runner: processes.runner)
     #expect(throws: (any Error).self) { try service.start() }
-    #expect(calls.withLock { $0 } == 0)
+    #expect(processes.requests.isEmpty)
   }
 
   private func temporaryRoot() throws -> URL {

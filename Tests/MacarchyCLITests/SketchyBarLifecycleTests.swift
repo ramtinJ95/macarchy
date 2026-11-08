@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -62,12 +63,9 @@ struct SketchyBarLifecycleTests {
 
   @Test
   func unsupportedVersionBlocksBeforeRuntimeInspection() {
-    let requests = Mutex([ProcessRequest]())
+    let processes = ProcessRunnerFake(output: "sketchybar-v3.0.0")
     let service = SketchyBarHomebrewService(
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return ProcessResult(terminationStatus: 0, output: "sketchybar-v3.0.0")
-      },
+      processRunner: processes.runner,
       serviceInspection: {
         Issue.record("runtime inspection must not run for an unsupported version")
         return Self.runtime
@@ -78,7 +76,7 @@ struct SketchyBarLifecycleTests {
 
     #expect(throws: SketchyBarDesktopError.self) { try service.preflight() }
     #expect(
-      requests.withLock { $0 }
+      processes.requests
         == [
           ProcessRequest(
             executableURL: SketchyBarHomebrewService.controlURL,
@@ -91,12 +89,9 @@ struct SketchyBarLifecycleTests {
 
   @Test
   func reloadUsesTheExactReviewedConfigurationPath() throws {
-    let requests = Mutex([ProcessRequest]())
+    let processes = ProcessRunnerFake()
     let service = SketchyBarHomebrewService(
-      processRunner: ProcessRunner { request in
-        requests.withLock { $0.append(request) }
-        return ProcessResult(terminationStatus: 0, output: "")
-      },
+      processRunner: processes.runner,
       serviceInspection: { Self.runtime },
       controlIsAvailable: { true },
       wait: {}
@@ -106,9 +101,9 @@ struct SketchyBarLifecycleTests {
     let runtime = try service.reload(configurationURL: configuration)
 
     #expect(runtime == Self.runtime)
-    #expect(requests.withLock { $0.count } == 1)
+    #expect(processes.requests.count == 1)
     #expect(
-      requests.withLock { $0.first?.arguments }
+      processes.requests.first?.arguments
         == ["--reload", "/tmp/home/.config/sketchybar/sketchybarrc"]
     )
   }
