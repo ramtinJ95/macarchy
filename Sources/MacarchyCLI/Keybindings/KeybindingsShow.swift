@@ -2,8 +2,6 @@ import AppKit
 import Foundation
 import ThemeCore
 
-private let keybindingSearchLocale = Locale(identifier: "en_US_POSIX")
-
 struct KeybindingsPopupRow: Sendable {
   let identity: String
   let chord: String
@@ -37,11 +35,7 @@ struct KeybindingsPopupRow: Sendable {
   }
 
   fileprivate func matches(_ terms: [String]) -> Bool {
-    guard !terms.isEmpty else { return true }
-    let searchable = ([identity, chord, label, category, command] + aliases)
-      .joined(separator: "\n")
-      .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: keybindingSearchLocale)
-    return terms.allSatisfy(searchable.contains)
+    PopupSearch.matches(terms, fields: [identity, chord, label, category, command] + aliases)
   }
 }
 
@@ -54,14 +48,7 @@ struct KeybindingsPopupContent: Sendable {
   let commandDescription: String
 
   func filteredRows(query: String) -> [KeybindingsPopupRow] {
-    let terms =
-      query
-      .folding(
-        options: [.caseInsensitive, .diacriticInsensitive],
-        locale: keybindingSearchLocale
-      )
-      .split(whereSeparator: \Character.isWhitespace)
-      .map(String.init)
+    let terms = PopupSearch.terms(query)
     return rows.filter { $0.matches(terms) }
   }
 }
@@ -246,63 +233,10 @@ struct KeybindingsShowCommandLoader: Sendable {
   }
 }
 
-func loadPopupTheme(
-  stateRoot: URL,
-  bundledThemesRoot: URL
-) throws -> NormalizedTheme {
-  do {
-    return try ThemeGenerationReader(root: stateRoot).activeManifest()
-      .normalizedTheme(root: stateRoot)
-  } catch ReconciliationStatusError.noActiveGeneration {
-    let package = try ThemePackageLoader().load(
-      packageURL: bundledThemesRoot.appending(
-        path: "catppuccin-mocha",
-        directoryHint: .isDirectory
-      )
-    )
-    return NormalizedTheme(package: package, generationID: "popup-default")
-  }
-}
-
 @MainActor
 private final class KeybindingsPopupWindow: NSWindow {
   override func cancelOperation(_ sender: Any?) {
     close()
-  }
-}
-
-@MainActor
-final class PopupTableRowView: NSTableRowView {
-  private let normalTextColor: NSColor
-  private let selectedTextColor: NSColor
-  private let selectedBackgroundColor: NSColor
-
-  init(normalTextColor: NSColor, selectedTextColor: NSColor, selectedBackgroundColor: NSColor) {
-    self.normalTextColor = normalTextColor
-    self.selectedTextColor = selectedTextColor
-    self.selectedBackgroundColor = selectedBackgroundColor
-    super.init(frame: .zero)
-  }
-
-  @available(*, unavailable)
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) is unavailable")
-  }
-
-  override var isSelected: Bool {
-    didSet { updateTextColors() }
-  }
-
-  override func drawSelection(in dirtyRect: NSRect) {
-    selectedBackgroundColor.setFill()
-    dirtyRect.fill()
-  }
-
-  private func updateTextColors() {
-    let color = isSelected ? selectedTextColor : normalTextColor
-    for case let cell as NSTableCellView in subviews {
-      cell.textField?.textColor = color
-    }
   }
 }
 
@@ -323,7 +257,7 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
     self.content = content
     visibleRows = content.rows
 
-    guard let visibleFrame = Self.activeScreen()?.visibleFrame else {
+    guard let visibleFrame = popupActiveScreen()?.visibleFrame else {
       throw KeybindingsShowError.noActiveDisplay
     }
     let width = min(760, visibleFrame.width - 48)
@@ -361,21 +295,9 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
   }
 
   func run() throws {
-    let application = NSApplication.shared
-    guard
-      application.activationPolicy() == .accessory
-        || application.setActivationPolicy(.accessory)
-    else {
-      throw KeybindingsShowError.cannotActivateAccessoryApplication
-    }
-    application.mainMenu = popupMainMenu()
-    application.delegate = self
-    application.finishLaunching()
-    showWindow(nil)
-    application.activate(ignoringOtherApps: true)
-    window?.makeKeyAndOrderFront(nil)
-    window?.makeFirstResponder(searchField)
-    application.run()
+    try runAccessoryPopup(
+      self, focusing: searchField,
+      cannotActivate: KeybindingsShowError.cannotActivateAccessoryApplication)
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -638,18 +560,5 @@ final class KeybindingsPopupWindowController: NSWindowController, NSApplicationD
     let source = sources.isEmpty ? "" : " [\(sources.joined(separator: ", "))]"
     commandLabel.stringValue = "\(content.commandDescription)\(source): \(command)"
     commandLabel.toolTip = command
-  }
-
-  private static func activeScreen() -> NSScreen? {
-    let pointer = NSEvent.mouseLocation
-    return NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main
-  }
-}
-
-extension SRGBColor {
-  @MainActor
-  var nsColor: NSColor {
-    let (red, green, blue) = components
-    return NSColor(srgbRed: red, green: green, blue: blue, alpha: 1)
   }
 }

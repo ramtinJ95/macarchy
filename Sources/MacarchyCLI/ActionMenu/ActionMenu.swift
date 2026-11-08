@@ -307,11 +307,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
 
   init(theme: NormalizedTheme) throws {
     self.theme = theme
-    let pointer = NSEvent.mouseLocation
-    guard
-      let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) })
-        ?? NSScreen.main
-    else { throw KeybindingsShowError.noActiveDisplay }
+    guard let screen = popupActiveScreen() else { throw KeybindingsShowError.noActiveDisplay }
     let visible = screen.visibleFrame
     let width = min(560, visible.width - 48)
     let height = min(510, visible.height - 48)
