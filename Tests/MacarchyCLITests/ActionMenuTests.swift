@@ -147,6 +147,15 @@ struct ActionMenuTests {
     }
   }
 
+  @Test func errorsNameTheActionMenu() {
+    #expect(
+      ActionMenuError.noActiveDisplay.description
+        == "Cannot show the action menu without an active display")
+    #expect(
+      ActionMenuError.cannotActivateAccessoryApplication.description
+        == "Cannot run the action menu as an accessory application")
+  }
+
   @Test func searchSelectionAndEmptyDispatch() throws {
     var state = ActionMenuState()
     #expect(state.notice == "Configure · Appearance · Capture · Clipboard · Controls · Maintenance")

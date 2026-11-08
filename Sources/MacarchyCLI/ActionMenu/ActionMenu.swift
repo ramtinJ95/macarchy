@@ -197,12 +197,7 @@ struct ActionMenu: AsyncParsableCommand {
         }
       },
       showFailure: { action, error in
-        let alert = NSAlert()
-        alert.messageText = "Could not open \(action.title)"
-        alert.informativeText = String(describing: error)
-        alert.alertStyle = .critical
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        alert.runModal()
+        showNativeAlert(title: "Could not open \(action.title)", message: String(describing: error))
       })
   }
 
@@ -232,6 +227,20 @@ struct ActionMenu: AsyncParsableCommand {
         "Configuration and maintenance actions must launch through their menu terminal")
     }
     return try launchDetachedProcess(executableURL, arguments: arguments)
+  }
+}
+
+enum ActionMenuError: Error, CustomStringConvertible, Sendable {
+  case cannotActivateAccessoryApplication
+  case noActiveDisplay
+
+  var description: String {
+    switch self {
+    case .cannotActivateAccessoryApplication:
+      "Cannot run the action menu as an accessory application"
+    case .noActiveDisplay:
+      "Cannot show the action menu without an active display"
+    }
   }
 }
 
@@ -307,7 +316,7 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
 
   init(theme: NormalizedTheme) throws {
     self.theme = theme
-    guard let screen = popupActiveScreen() else { throw KeybindingsShowError.noActiveDisplay }
+    guard let screen = popupActiveScreen() else { throw ActionMenuError.noActiveDisplay }
     let visible = screen.visibleFrame
     let width = min(560, visible.width - 48)
     let height = min(510, visible.height - 48)
@@ -333,20 +342,10 @@ final class ActionMenuWindowController: NSWindowController, NSApplicationDelegat
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
   func run() throws -> ActionMenuAction? {
-    let app = NSApplication.shared
-    guard app.activationPolicy() == .accessory || app.setActivationPolicy(.accessory) else {
-      throw KeybindingsShowError.cannotActivateAccessoryApplication
-    }
-    app.delegate = self
-    app.mainMenu = popupMainMenu()
-    app.finishLaunching()
-    showWindow(nil)
-    app.activate(ignoringOtherApps: true)
-    window?.makeKeyAndOrderFront(nil)
-    window?.makeFirstResponder(table)
-    NSCursor.setHiddenUntilMouseMoves(false)
-    app.run()
-    app.delegate = nil
+    try runAccessoryPopup(
+      self, focusing: table, cannotActivate: ActionMenuError.cannotActivateAccessoryApplication,
+      beforeRun: { NSCursor.setHiddenUntilMouseMoves(false) })
+    NSApplication.shared.delegate = nil
     return dispatched
   }
 

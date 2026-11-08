@@ -1,12 +1,13 @@
 import AppKit
 
 /// Shows `controller`'s window as the key window of an accessory application, which has no Dock
-/// icon, and runs the application until it stops.
+/// icon, and runs the application until it stops. `beforeRun` runs just before the event loop.
 @MainActor
 func runAccessoryPopup(
   _ controller: NSWindowController & NSApplicationDelegate,
   focusing firstResponder: NSResponder,
-  cannotActivate: any Error
+  cannotActivate: any Error,
+  beforeRun: () -> Void = {}
 ) throws {
   let application = NSApplication.shared
   guard
@@ -22,6 +23,7 @@ func runAccessoryPopup(
   application.activate(ignoringOtherApps: true)
   controller.window?.makeKeyAndOrderFront(nil)
   controller.window?.makeFirstResponder(firstResponder)
+  beforeRun()
   application.run()
 }
 
