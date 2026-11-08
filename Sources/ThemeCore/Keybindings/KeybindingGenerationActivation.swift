@@ -59,7 +59,7 @@ package struct KeybindingGenerationActivator: Sendable {
       path: "generations",
       directoryHint: .isDirectory
     )
-    let stagingName = ".staging-\(generationID)"
+    let stagingName = GenerationStore.stagingName(generationID)
     let stagingURL = generationsRoot.appending(path: stagingName, directoryHint: .isDirectory)
     let generationURL = generationsRoot.appending(path: generationID, directoryHint: .isDirectory)
 
@@ -278,7 +278,10 @@ package struct KeybindingGenerationActivator: Sendable {
     guard !generations.truncated else {
       throw KeybindingGenerationActivationError.invalidGenerationInventory
     }
-    for name in generations.entries where Self.isStagingName(name) {
+    for name in generations.entries
+    where GenerationStore.isStagingName(
+      name, isGenerationID: KeybindingGenerationInspector.isGenerationID)
+    {
       try removeDirectory(
         parentDescriptor: generationsDescriptor,
         name: name,
@@ -363,11 +366,6 @@ package struct KeybindingGenerationActivator: Sendable {
     guard removed == 0 else {
       throw KeybindingGenerationActivationError.system("remove generation", url, errno)
     }
-  }
-
-  private static func isStagingName(_ value: String) -> Bool {
-    value.hasPrefix(".staging-")
-      && KeybindingGenerationInspector.isGenerationID(String(value.dropFirst(9)))
   }
 
   private static func isTemporaryPointer(_ value: String) -> Bool {

@@ -286,7 +286,7 @@ package struct SketchyBarGenerationActivator: Sendable {
     )
     defer { Darwin.close(generationsDescriptor) }
 
-    let stagingName = Self.stagingName(generationID)
+    let stagingName = GenerationStore.stagingName(generationID)
     let staging = generations.appending(path: stagingName, directoryHint: .isDirectory)
     let destination = generationURL(generationID)
     let stagingDescriptor = try PinnedFilesystem.createDirectory(
@@ -372,7 +372,7 @@ package struct SketchyBarGenerationActivator: Sendable {
     guard SketchyBarGenerationInspector.isGenerationID(generationID) else {
       throw SketchyBarGenerationError.invalid("cannot recover an invalid generation identity")
     }
-    try removeNamedGeneration(Self.stagingName(generationID))
+    try removeNamedGeneration(GenerationStore.stagingName(generationID))
     try removeNamedGeneration(generationID)
   }
 
@@ -713,10 +713,6 @@ package struct SketchyBarGenerationActivator: Sendable {
     guard fsync(parentDescriptor) == 0 else {
       throw SketchyBarGenerationError.system("sync generation removal", url, errno)
     }
-  }
-
-  private static func stagingName(_ generationID: String) -> String {
-    ".staging-\(generationID)"
   }
 
   private static func currentSelectionName(_ generationID: String) -> String {

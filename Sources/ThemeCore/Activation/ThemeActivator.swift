@@ -380,7 +380,7 @@ public struct ThemeActivator: Sendable {
     try FileManager.default.createDirectory(at: generationsRoot, withIntermediateDirectories: true)
 
     let stagingURL = generationsRoot.appending(
-      path: ".staging-\(generationID)", directoryHint: .isDirectory)
+      path: GenerationStore.stagingName(generationID), directoryHint: .isDirectory)
     let generationURL = generationsRoot.appending(path: generationID, directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: false)
 
@@ -458,7 +458,8 @@ public struct ThemeActivator: Sendable {
         at: generationsRoot,
         includingPropertiesForKeys: nil
       ) {
-        if (isStagingName(item.lastPathComponent) && isRealDirectory(item))
+        if (GenerationStore.isStagingName(item.lastPathComponent, isGenerationID: isGenerationID)
+          && isRealDirectory(item))
           || (item.lastPathComponent != activeGenerationID
             && isRecoverablePublishedGeneration(item))
         {
@@ -653,10 +654,6 @@ public struct ThemeActivator: Sendable {
         code: errno
       )
     }
-  }
-
-  private func isStagingName(_ name: String) -> Bool {
-    name.hasPrefix(".staging-") && isGenerationID(String(name.dropFirst(9)))
   }
 
   private func isTrashName(_ name: String) -> Bool {

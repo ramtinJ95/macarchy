@@ -197,7 +197,7 @@ package struct YabaiGenerationActivator: Sendable {
     let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: generations, withIntermediateDirectories: true)
     let staging = generations.appending(
-      path: ".staging-\(generationID)",
+      path: GenerationStore.stagingName(generationID),
       directoryHint: .isDirectory
     )
     let destination = generationURL(generationID)
