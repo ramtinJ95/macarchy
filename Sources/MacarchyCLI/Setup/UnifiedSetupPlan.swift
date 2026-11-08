@@ -293,12 +293,12 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       ).componentExecution()
     )
     var diagnostics = [UnifiedSetupPlanDiagnostic]()
-    for (id, component) in components.all where !component.succeeded {
+    for (stage, component) in components.all where !component.succeeded {
       diagnostics.append(
         UnifiedSetupPlanDiagnostic(
-          code: "\(id)_plan_blocked",
-          source: id,
-          message: componentFailureMessage(id: id, component: component)
+          code: "\(stage.rawValue)_plan_blocked",
+          source: stage.rawValue,
+          message: componentFailureMessage(id: stage.rawValue, component: component)
         )
       )
     }
@@ -675,14 +675,14 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     if theme.status == "activation_required" {
       result.append(
         UnifiedSetupAction(
-          stage: "theme",
+          stage: SetupStage.theme.rawValue,
           id: "activate_curated_theme",
           message: "Activate the curated default theme '\(theme.id)'."
         )
       )
     }
-    for (componentID, component) in components.all {
-      result += try component.plannedActions(in: componentID)
+    for (stage, component) in components.all {
+      result += try component.plannedActions(in: stage.rawValue)
     }
     return result
   }
@@ -710,8 +710,9 @@ struct SetupComponentPlans: Encodable, Sendable {
   let environment: SetupComponentExecution
   let preferences: SetupComponentExecution
 
-  var all: [(String, SetupComponentExecution)] {
-    [("desktop", desktop), ("environment", environment), ("preferences", preferences)]
+  /// The planned component stages, in apply order; the theme stage is planned by setup itself.
+  var all: [(SetupStage, SetupComponentExecution)] {
+    [(.desktop, desktop), (.environment, environment), (.preferences, preferences)]
   }
 }
 

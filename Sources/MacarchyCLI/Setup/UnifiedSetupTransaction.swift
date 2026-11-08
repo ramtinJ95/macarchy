@@ -12,11 +12,25 @@ enum UnifiedSetupTransactionPhase: String, Codable, Sendable {
   case committing
 }
 
-enum UnifiedSetupTransactionStage: String, Codable, Hashable, Sendable {
+/// The four unified setup stages, declared in apply order; teardown runs them in reverse.
+/// A closed list, not a provider registry (ADR-0099).
+enum SetupStage: String, Codable, CaseIterable, Hashable, Sendable {
   case theme
   case desktop
   case environment
   case preferences
+
+  static let applyOrder = allCases
+  static let teardownOrder = Array(allCases.reversed())
+
+  var tornDownCheckpoint: UnifiedSetupTransactionCheckpoint {
+    switch self {
+    case .theme: .themeTornDown
+    case .desktop: .desktopTornDown
+    case .environment: .environmentTornDown
+    case .preferences: .preferencesTornDown
+    }
+  }
 }
 
 struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
@@ -25,14 +39,14 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
   let schemaVersion: Int
   let operation: UnifiedSetupTransactionOperation
   let phase: UnifiedSetupTransactionPhase
-  let stages: [UnifiedSetupTransactionStage]
+  let stages: [SetupStage]
   let desiredAppearance: ThemeAppearance
   let contextDigest: String
 
   init(
     operation: UnifiedSetupTransactionOperation,
     phase: UnifiedSetupTransactionPhase = .mutating,
-    stages: [UnifiedSetupTransactionStage],
+    stages: [SetupStage],
     desiredAppearance: ThemeAppearance,
     contextDigest: String
   ) {
@@ -46,7 +60,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
 
   func replacing(
     phase: UnifiedSetupTransactionPhase? = nil,
-    stages: [UnifiedSetupTransactionStage]? = nil
+    stages: [SetupStage]? = nil
   ) -> Self {
     Self(
       operation: operation,
@@ -63,10 +77,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
       isSHA256Digest(contextDigest),
       Set(stages).count == stages.count
     else { return false }
-    let order: [UnifiedSetupTransactionStage] =
-      operation == .apply
-      ? [.theme, .desktop, .environment, .preferences]
-      : [.preferences, .environment, .desktop, .theme]
+    let order = operation == .apply ? SetupStage.applyOrder : SetupStage.teardownOrder
     return stages == order.filter { stages.contains($0) }
   }
 
@@ -189,7 +200,7 @@ struct UnifiedSetupRecoveryResult: Sendable {
 
   mutating func record(
     _ result: UnifiedSetupTeardownStage,
-    for stage: UnifiedSetupTransactionStage
+    for stage: SetupStage
   ) {
     switch stage {
     case .preferences: preferences = result

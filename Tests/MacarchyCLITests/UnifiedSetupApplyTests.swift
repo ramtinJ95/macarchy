@@ -1074,7 +1074,7 @@ final class ApplyFixture: @unchecked Sendable {
   func runner(
     available: @escaping @Sendable (DependencyCapability) -> Bool,
     requiredAdoptions: UnifiedSetupAdoptionApprovals = .none,
-    plannedStages: Set<UnifiedSetupTransactionStage> = [],
+    plannedStages: Set<SetupStage> = [],
     paletteRefresh: Bool = false,
     preferences: PreferencesLifecycle = .live,
     themeInspection: @escaping UnifiedSetupThemeInspection = {
@@ -1150,7 +1150,7 @@ final class ApplyFixture: @unchecked Sendable {
   func planner(
     available: @escaping @Sendable (DependencyCapability) -> Bool = { _ in true },
     requiredAdoptions: UnifiedSetupAdoptionApprovals = .none,
-    plannedStages: Set<UnifiedSetupTransactionStage> = [],
+    plannedStages: Set<SetupStage> = [],
     paletteRefresh: Bool = false,
     preferences: PreferencesLifecycle = .live
   ) -> UnifiedSetupPlanCommandRunner {
