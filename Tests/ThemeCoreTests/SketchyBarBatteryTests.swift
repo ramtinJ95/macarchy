@@ -88,11 +88,11 @@ struct SketchyBarBatteryTests {
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o755], ofItemAtPath: mockMacarchy.path)
     let entry = root.appending(path: "battery.sh")
-    let script = SketchyBarBatteryScript.render(
+    let script = try SketchyBarBatteryScript.render(
       palettePath: palette.path, macarchyExecutablePath: mockMacarchy.path
     )
-    .replacingOccurrences(of: "/usr/bin/pmset -g batt", with: "/bin/cat \(input.path)")
-    .replacingOccurrences(of: "/opt/homebrew/bin/sketchybar", with: mockBar.path)
+    .replacingRequired("/usr/bin/pmset -g batt", with: "/bin/cat \(input.path)")
+    .replacingRequired("/opt/homebrew/bin/sketchybar", with: mockBar.path)
     try script.write(to: entry, atomically: true, encoding: .utf8)
     let process = Process()
     let output = Pipe()
