@@ -140,12 +140,7 @@ struct KeybindingProviderTransaction: Sendable {
       try faultInjector(.originalRestored)
       return
     }
-    switch originalKind(record) {
-    case .directorySymbolicLink:
-      try restoreOriginalDirectory(record)
-    case .absent, .regularFile, .symbolicLink:
-      try restoreOriginalLeaf(record, context: context)
-    }
+    try restoreOriginal(record, context: context)
     try faultInjector(.originalRestored)
   }
 
@@ -155,12 +150,7 @@ struct KeybindingProviderTransaction: Sendable {
       try restoreLegacyManagedEntry(record)
       return
     }
-    switch originalKind(record) {
-    case .directorySymbolicLink:
-      try replaceOriginalDirectoryWithManaged(record)
-    case .absent, .regularFile, .symbolicLink:
-      try replaceOriginalLeafWithManaged(record)
-    }
+    try replaceOriginalWithManaged(record)
   }
 
   func preflightOriginalRestoration() throws {
@@ -170,88 +160,55 @@ struct KeybindingProviderTransaction: Sendable {
       return
     }
     let manager = SetupOwnershipManager()
-    try requireLegacyClaimAbsent(level(record))
-    switch originalKind(record) {
-    case .directorySymbolicLink:
-      let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-      defer { Darwin.close(descriptor) }
-      let state = try directoryState(
-        descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
-      let claim = try directoryState(
-        descriptor: descriptor,
-        name: claimName(record, .directory),
-        record: record,
-        recognizeIncompleteClaim: true
-      )
-      let retainedStateIsRecoverable =
-        !retainsOriginalSymlink(record)
-        || (state == .managed && claim == .original)
-        || (state == .original && claim == .managed)
-      guard
-        [.managed, .original].contains(state), claim != .other,
-        retainedStateIsRecoverable
-      else {
-        throw SetupOwnershipError.ownershipDrift(directory)
+    let level = claimLevel(record)
+    try requireLegacyClaimAbsent(level)
+    let liveName = SkhdLayout.liveName(level)
+    let live = layout.live(level)
+    let descriptor = try PinnedFilesystem.openDirectory(at: layout.parent(level))
+    defer { Darwin.close(descriptor) }
+    let state = try itemState(level, descriptor: descriptor, name: liveName, record: record)
+    let claim = try itemState(
+      level,
+      descriptor: descriptor,
+      name: claimName(record, level),
+      record: record,
+      recognizeIncompleteClaim: true
+    )
+    let stateIsRecoverable =
+      state == .managed || state == .original
+      || (state == .missing && originalKind(record) == .absent)
+    let retainedStateIsRecoverable =
+      !retainsOriginalSymlink(record)
+      || (state == .managed && claim == .original)
+      || (state == .original && claim == .managed)
+    guard stateIsRecoverable, claim != .other, retainedStateIsRecoverable else {
+      throw SetupOwnershipError.ownershipDrift(live)
+    }
+    if retainsOriginalSymlink(record) {
+      if state == .managed {
+        try preflightRetainedOriginalClaim(record)
+      } else {
+        try authenticateOriginalSymlinkAtPath(
+          record,
+          parentDescriptor: descriptor,
+          name: liveName,
+          url: live
+        )
       }
-      if retainsOriginalSymlink(record) {
-        if state == .managed {
-          try preflightRetainedOriginalClaim(record)
-        } else {
-          try authenticateOriginalSymlinkAtPath(
-            record,
-            parentDescriptor: descriptor,
-            name: SkhdLayout.directoryName,
-            url: directory
-          )
+    }
+    if originalKind(record) == .regularFile {
+      _ = try validateBackupPublicationResidue(record, manager: manager)
+      if try backupExists() {
+        _ = try readOriginalBackup(record, manager: manager)
+      } else {
+        guard
+          [.prepared, .teardownPrepared].contains(record.phase),
+          state == .original,
+          claim == .missing
+        else {
+          throw SetupOwnershipError.corruptBackup(backup)
         }
-      }
-    case .absent, .regularFile, .symbolicLink:
-      let descriptor = try PinnedFilesystem.openDirectory(at: directory)
-      defer { Darwin.close(descriptor) }
-      let state = try leafState(
-        descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
-      let claim = try leafState(
-        descriptor: descriptor,
-        name: claimName(record, .leaf),
-        record: record,
-        recognizeIncompleteClaim: true
-      )
-      let stateIsRecoverable =
-        state == .managed || state == .original
-        || (state == .missing && originalKind(record) == .absent)
-      let retainedStateIsRecoverable =
-        !retainsOriginalSymlink(record)
-        || (state == .managed && claim == .original)
-        || (state == .original && claim == .managed)
-      guard stateIsRecoverable, claim != .other, retainedStateIsRecoverable else {
-        throw SetupOwnershipError.ownershipDrift(entry)
-      }
-      if retainsOriginalSymlink(record) {
-        if state == .managed {
-          try preflightRetainedOriginalClaim(record)
-        } else {
-          try authenticateOriginalSymlinkAtPath(
-            record,
-            parentDescriptor: descriptor,
-            name: SkhdLayout.configurationName,
-            url: entry
-          )
-        }
-      }
-      if originalKind(record) == .regularFile {
-        _ = try validateBackupPublicationResidue(record, manager: manager)
-        if try backupExists() {
-          _ = try readOriginalBackup(record, manager: manager)
-        } else {
-          guard
-            [.prepared, .teardownPrepared].contains(record.phase),
-            state == .original,
-            claim == .missing
-          else {
-            throw SetupOwnershipError.corruptBackup(backup)
-          }
-          try verifyPinnedUntouchedOriginal(record, manager: manager)
-        }
+        try verifyPinnedUntouchedOriginal(record, manager: manager)
       }
     }
   }
@@ -262,25 +219,20 @@ struct KeybindingProviderTransaction: Sendable {
       try preflightOriginalRestoration()
       return
     }
-    try requireLegacyClaimAbsent(level(record))
+    let level = claimLevel(record)
+    try requireLegacyClaimAbsent(level)
     try verifyOriginal(record, context: context)
-    let isDirectory = originalKind(record) == .directorySymbolicLink
-    let parentURL = layout.parent(level(record))
+    let parentURL = layout.parent(level)
     let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
-    let claim = claimName(record, level(record))
-    let claimState =
-      if isDirectory {
-        try directoryState(descriptor: parent, name: claim, record: record)
-      } else {
-        try leafState(descriptor: parent, name: claim, record: record)
-      }
+    let claim = claimName(record, level)
+    let claimState = try itemState(level, descriptor: parent, name: claim, record: record)
     let deletionResidueExists = try preflightProviderDeletionResidue(
       parentDescriptor: parent,
       name: claim,
       record: record,
       url: parentURL.appending(path: claim),
-      directory: isDirectory
+      directory: level == .directory
     )
     guard
       (claimState == .managed && !deletionResidueExists)
@@ -296,10 +248,11 @@ struct KeybindingProviderTransaction: Sendable {
 
   func preflightRetainedOriginalClaim(_ record: SetupOwnershipRecord) throws {
     guard retainsOriginalSymlink(record) else { return }
-    let parentURL = layout.parent(level(record))
+    let level = claimLevel(record)
+    let parentURL = layout.parent(level)
     let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
-    let name = claimName(record, level(record))
+    let name = claimName(record, level)
     let url = parentURL.appending(path: name)
     guard record.retainedOriginalPath == url.path else {
       throw SetupOwnershipError.invalidManifest(
