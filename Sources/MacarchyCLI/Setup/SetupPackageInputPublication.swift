@@ -26,15 +26,9 @@ struct SetupPackageInputPublicationStore: Sendable {
   func read() throws -> SetupPackageInputPublication? {
     guard let data = try BoundedRegularFile.readIfPresent(at: url)?.data else { return nil }
     _ = try StrictJSONObjectDocument(data: data, id: "package_input_publication", target: url)
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    let record = try decoder.decode(SetupPackageInputPublication.self, from: data)
-    let encoder = JSONEncoder()
-    encoder.keyEncodingStrategy = .convertToSnakeCase
-    guard
-      try JSONSerialization.jsonObject(with: data) as? NSDictionary
-        == JSONSerialization.jsonObject(with: encoder.encode(record)) as? NSDictionary
-    else { throw SetupPackageAdoptionError("Unknown source publication evidence fields.") }
+    let record = try decodeCanonicalEvidenceJSON(
+      SetupPackageInputPublication.self, from: data,
+      mismatch: SetupPackageAdoptionError("Unknown source publication evidence fields."))
     try validate(record)
     return record
   }
@@ -115,10 +109,7 @@ struct SetupPackageInputPublicationStore: Sendable {
 
   private func write(_ record: SetupPackageInputPublication) throws {
     try validate(record)
-    let encoder = JSONEncoder()
-    encoder.keyEncodingStrategy = .convertToSnakeCase
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    let data = try encoder.encode(record)
+    let data = try encodeBoundedEvidenceJSON(record)
     guard data.count <= BoundedRegularFile.maximumSize else {
       throw SetupPackageAdoptionError("Input publication evidence exceeds 1 MiB.")
     }

@@ -106,16 +106,10 @@ struct PreferencesStore: Sendable {
     }
     do {
       _ = try StrictJSONObjectDocument(data: data, id: "macos_preferences", target: url)
-      let decoder = JSONDecoder()
-      decoder.keyDecodingStrategy = .convertFromSnakeCase
-      let state = try decoder.decode(PreferencesState.self, from: data)
-      try state.validate(target: context.targetIdentity)
-      let canonical = try encodeBoundedEvidenceJSON(state)
-      guard let actual = try JSONSerialization.jsonObject(with: data) as? NSDictionary,
-        let expected = try JSONSerialization.jsonObject(with: canonical) as? NSDictionary,
-        actual == expected
-      else { throw PreferencesError.invalid("Unknown, missing, or noncanonical receipt fields.") }
-      return state
+      return try decodeCanonicalEvidenceJSON(
+        PreferencesState.self, from: data,
+        mismatch: PreferencesError.invalid("Unknown, missing, or noncanonical receipt fields."),
+        validateBeforeComparison: { try $0.validate(target: context.targetIdentity) })
     } catch { throw PreferencesError.invalid("Cannot read \(url.path): \(error)") }
   }
 

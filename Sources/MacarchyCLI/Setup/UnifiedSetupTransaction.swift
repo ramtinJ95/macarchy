@@ -81,7 +81,7 @@ struct UnifiedSetupTransaction: Codable, Equatable, Sendable {
     return stages == order.filter { stages.contains($0) }
   }
 
-  enum CodingKeys: String, CodingKey {
+  enum CodingKeys: String, CodingKey, CaseIterable {
     case schemaVersion = "schema_version"
     case operation, phase, stages
     case desiredAppearance = "desired_appearance"
@@ -109,11 +109,7 @@ struct UnifiedSetupTransactionStore: Sendable {
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
       guard
         let object,
-        Set(object.keys)
-          == [
-            "schema_version", "operation", "phase", "stages", "desired_appearance",
-            "context_digest",
-          ]
+        Set(object.keys) == Set(UnifiedSetupTransaction.CodingKeys.allCases.map(\.rawValue))
       else {
         throw UnifiedSetupTransactionError.invalid("contains unknown or missing fields")
       }

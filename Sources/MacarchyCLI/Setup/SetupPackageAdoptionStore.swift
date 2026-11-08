@@ -93,25 +93,19 @@ struct SetupPackageAdoptionStore: Sendable {
     guard let data = file?.data else { return nil }
     do {
       _ = try StrictJSONObjectDocument(data: data, id: "package_adoption", target: url)
-      let decoder = JSONDecoder()
-      decoder.keyDecodingStrategy = .convertFromSnakeCase
-      let ledger = try decoder.decode(SetupPackageAdoptionLedger.self, from: data)
+      let invalid = SetupPackageAdoptionError(
+        "Invalid package adoption schema, context or evidence.")
       // Round-trip the closed schema to reject unknown fields at every level,
       // not just at the top of the ownership document.
-      let encoder = JSONEncoder()
-      encoder.keyEncodingStrategy = .convertToSnakeCase
-      let original = try JSONSerialization.jsonObject(with: data) as? NSDictionary
-      let canonical =
-        try JSONSerialization.jsonObject(with: encoder.encode(ledger)) as? NSDictionary
+      let ledger = try decodeCanonicalEvidenceJSON(
+        SetupPackageAdoptionLedger.self, from: data, mismatch: invalid)
       let keys = ledger.entries.map(\.identity.key)
-      guard original == canonical, ledger.schemaVersion == 1,
+      guard ledger.schemaVersion == 1,
         ledger.contextDigest == contextDigest, !ledger.entries.isEmpty,
         ledger.entries.count <= 1024,
         keys == keys.sorted(), Set(keys).count == keys.count,
         ledger.entries.allSatisfy(validEntry)
-      else {
-        throw SetupPackageAdoptionError("Invalid package adoption schema, context or evidence.")
-      }
+      else { throw invalid }
       return ledger
     } catch let error as SetupPackageAdoptionError {
       throw error
