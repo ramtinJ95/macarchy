@@ -147,35 +147,15 @@ public struct ReconciliationStatusStore: Sendable {
     let record = try ReconciliationRecord(manifest: manifest, results: results)
     try requireActiveGeneration(manifest.generationID)
 
-    let stateDirectory = root.appending(path: "state", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(
-      at: stateDirectory,
-      withIntermediateDirectories: true
+    try StateFile.replaceByRename(
+      at: StateLayout(root: root).reconciliationStatus,
+      temporaryName: ".reconciliation-\(UUID().uuidString.lowercased()).json",
+      temporaryWriteOptions: [],
+      encode: { try prettyJSONDocument(record) },
+      tooLargeError: ReconciliationStatusError.invalidStatus("exceeds the 1 MiB file limit"),
+      beforeRename: { try requireActiveGeneration(manifest.generationID) },
+      renameError: ReconciliationStatusError.cannotReplace
     )
-    let statusURL = stateDirectory.appending(path: "reconciliation.json")
-    let temporaryURL = stateDirectory.appending(
-      path: ".reconciliation-\(UUID().uuidString.lowercased()).json")
-    defer { try? FileManager.default.removeItem(at: temporaryURL) }
-
-    let data = try prettyJSONDocument(record)
-    guard data.count <= BoundedRegularFile.maximumSize else {
-      throw ReconciliationStatusError.invalidStatus("exceeds the 1 MiB file limit")
-    }
-    try data.write(to: temporaryURL)
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o600],
-      ofItemAtPath: temporaryURL.path
-    )
-    try requireActiveGeneration(manifest.generationID)
-
-    let result = temporaryURL.path.withCString { source in
-      statusURL.path.withCString { destination in
-        Darwin.rename(source, destination)
-      }
-    }
-    guard result == 0 else {
-      throw ReconciliationStatusError.cannotReplace(errno)
-    }
     return record
   }
 
