@@ -301,7 +301,7 @@ extension AdapterContractTests {
 
   private func backgroundConsumerPaths(root: URL) throws -> ThemeConsumerPaths {
     let kittyConfiguration = root.appending(path: "kitty.conf")
-    try "\(ThemeActivationCoordinator.kittyIncludeDirective(root: root))\n".write(
+    try "\(KittyAdapter.includeDirective(stateRoot: root))\n".write(
       to: kittyConfiguration,
       atomically: true,
       encoding: .utf8

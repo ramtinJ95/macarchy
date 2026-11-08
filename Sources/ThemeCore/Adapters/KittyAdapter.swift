@@ -28,6 +28,12 @@ package struct KittyAdapter: Sendable {
   private static let killallURL = URL(filePath: "/usr/bin/killall")
   static let id = "kitty"
   package static let bridgePath = "state/adapters/kitty.conf"
+
+  /// The Kitty directive that includes the theme bridge under `stateRoot`.
+  package static func includeDirective(stateRoot: URL) -> String {
+    "include \(stateRoot.appending(path: bridgePath).path)"
+  }
+
   /// Explicit first-connection preparation; never signals an application.
   /// Existing noncanonical bridges are drift, not permission to replace them.
   package static func prepareBridge(root: URL) throws {
