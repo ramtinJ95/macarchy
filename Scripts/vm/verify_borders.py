@@ -24,12 +24,7 @@ INCUMBENT_COMMIT = 'a7297ca7d1933f3a30b12e8f10750e8d84eeee1e'  # tag 1.9.0
 RECIPE = 'borders-prepare-v1'  # reuse guard for future reports; legacy reports lack it
 PRODUCTS = ('macarchy', 'macarchy-focus-ring')
 DISABLED = ('desktop', 'top_bar', 'focus_ring', 'terminal', 'prompt', 'history', 'editor')
-PROFILE = '\n'.join(
-    ['schema_version = 1', '', '[shell]', 'provider = "zsh"', '']
-    + [line for name in DISABLED for line in ('[%s]' % name, 'provider = "disabled"', '')]
-    + ['[tools]', 'bat = false', 'eza = false', 'btop = false', 'yazi = false', '',
-       ]
-)
+PROFILE = v.profile_toml([('shell', 'zsh')] + [(name, 'disabled') for name in DISABLED])
 
 
 def _section(report):

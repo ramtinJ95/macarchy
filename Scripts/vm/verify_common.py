@@ -38,6 +38,15 @@ def verdict(error):
     return "failed" if isinstance(error, Failed) else "blocked"
 
 
+def profile_toml(providers):
+    """Profile TOML selecting each (role, provider) pair in order, with every tool off."""
+    return "\n".join(
+        ["schema_version = 1", ""]
+        + [line for role, provider in providers
+           for line in ("[" + role + "]", 'provider = "' + provider + '"', "")]
+        + ["[tools]", "bat = false", "eza = false", "btop = false", "yazi = false", ""])
+
+
 def step_command(binary, arguments):
     return f"cd {GUEST_HOME} && " + shlex.join(["/usr/bin/env", "-i", *STEP_ENV, binary, *arguments])
 
