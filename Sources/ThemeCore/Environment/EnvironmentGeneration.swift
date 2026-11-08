@@ -223,7 +223,7 @@ package struct EnvironmentGenerationStore: Sendable {
 
     let generationID = "e-\(UUID().uuidString.lowercased())"
     let staging = generationsRoot.appending(
-      path: ".staging-\(generationID)",
+      path: GenerationStore.stagingName(generationID),
       directoryHint: .isDirectory
     )
     let destination = generationsRoot.appending(path: generationID, directoryHint: .isDirectory)
