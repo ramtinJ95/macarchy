@@ -175,10 +175,11 @@ package struct SketchyBarConfigurationComposer: Sendable {
     {
       throw SketchyBarConfigurationError.invalid(source, conflict)
     }
-    let configurationURL = includePersonalConfiguration ? profile.sketchyBar.configurationURL : nil
-    let native = configurationURL != nil
+    let personal = profile.sketchyBar.personalSource(
+      includingPersonalConfiguration: includePersonalConfiguration)
+    let native = personal.native
     let hook: (text: String, digest: String)?
-    if let hookURL = configurationURL ?? profile.sketchyBar.hookURL {
+    if let hookURL = personal.url {
       guard
         let hookRootURL = native
           ? profile.sketchyBar.configurationRootURL : profile.sketchyBar.hookRootURL
@@ -305,7 +306,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       layout: layout,
       automaticClock: automaticClock,
       spaceModule: spaceModule,
-      hookDigest: native ? hook.map { "native:" + $0.digest } : hook?.digest,
+      hookDigest: personal.identityDigest(hook?.digest),
       macarchyExecutablePath: macarchyExecutablePath,
       palettePath: palettePath,
       pluginPath: pluginPath
@@ -317,7 +318,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
       layout: layout,
       automaticClock: automaticClock,
       spaceModule: spaceModule,
-      hookURL: configurationURL ?? profile.sketchyBar.hookURL,
+      hookURL: personal.url,
       hookDigest: hook?.digest,
       artifacts: artifacts,
       renderedDigest: renderedDigest,
