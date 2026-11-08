@@ -133,6 +133,17 @@ def owned_tart(record):
     return bool(record.get("identity")) and process_identity(record["pid"]) == record["identity"]
 
 
+class OwnedTart:
+    """lab.control's process view of the exact Tart process recorded by verify.py start;
+    poll() reports exit once ownership no longer matches."""
+
+    def __init__(self, record):
+        self.record, self.pid = record, int(record["pid"])
+
+    def poll(self):
+        return None if owned_tart(self.record) else 1
+
+
 def _text(value):
     if isinstance(value, bytes):
         return value.decode('utf-8', 'replace')

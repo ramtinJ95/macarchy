@@ -29,8 +29,8 @@ import uuid
 import guest
 import lab
 from verify_common import (
-    DEVELOPER_DIR, GUEST_HOME, GUEST_USER, Blocked, Failed, guest_directory, guest_identity,
-    load_session, owned_tart, parse_json, process_identity, read_pins, recorded_binary,
+    DEVELOPER_DIR, GUEST_HOME, GUEST_USER, Blocked, Failed, OwnedTart, guest_directory,
+    guest_identity, load_session, owned_tart, parse_json, process_identity, read_pins, recorded_binary,
     require_session_directory, session_name, session_ready, step_command, verdict)
 
 _spec = importlib.util.spec_from_file_location("run_tests", lab.HERE / "run-tests.py")
@@ -538,16 +538,6 @@ def drive(inputs, run, session, journey, border_count=None, candidate_session=No
 
 
 describe = lab.describe
-
-
-class OwnedTart:
-    """lab.control's process view of the exact Tart process recorded by verify.py start."""
-
-    def __init__(self, record):
-        self.record, self.pid = record, record["pid"]
-
-    def poll(self):
-        return None if owned_tart(self.record) else 1
 
 
 def wait_for_console(client, seconds):

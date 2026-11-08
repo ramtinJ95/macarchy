@@ -8,6 +8,7 @@ from unittest import mock
 
 import lab
 import verify
+import verify_common
 from test_verify import FakeGuest, RECORD, RUN, SESSION, result
 
 WINDOW = {"bounds": [0, 0, 1440, 900], "window_id": 7, "pid": 42}
@@ -39,7 +40,7 @@ class LoginTests(unittest.TestCase):
             return call
 
         patch(verify, "test_clone", return_value=self.dir)
-        patch(verify, "owned_tart", return_value=True)
+        patch(verify_common, "owned_tart", return_value=True)
         patch(verify, "guest_baseline")
         patch(verify, "guest_identity")
         patch(verify, "LOGIN_WAIT", new=0)
