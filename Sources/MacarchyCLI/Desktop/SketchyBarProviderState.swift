@@ -91,7 +91,7 @@ struct SketchyBarAdoptionEvidence: DesktopAdoptionEvidence, Codable, Equatable {
       permissions.map { (0...0o777).contains($0) } == true
       && device != nil
       && inode != nil
-      && contentDigest.map(Self.isDigest) == true
+      && contentDigest.map(isSHA256Digest) == true
     switch kind {
     case .absent:
       return linkTarget == nil && contentDigest == nil && permissions == nil
@@ -109,11 +109,6 @@ struct SketchyBarAdoptionEvidence: DesktopAdoptionEvidence, Codable, Equatable {
     linkTarget.map {
       !$0.isEmpty && $0.utf8.count <= Int(PATH_MAX) && !$0.contains("\0")
     } == true
-  }
-
-  private static func isDigest(_ value: String) -> Bool {
-    guard value.count == 71, value.hasPrefix("sha256:") else { return false }
-    return value.dropFirst(7).allSatisfy { $0.isHexDigit && !$0.isUppercase }
   }
 
   enum CodingKeys: String, CodingKey {
