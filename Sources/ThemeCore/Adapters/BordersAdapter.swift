@@ -22,11 +22,11 @@ package struct BordersAdapter: Sendable {
   package static let id = "borders"
   package static let leanID = "lean-focus-ring"
   let managedMode: BordersManagedMode?
-  let adapterID: String
+  let consumer: RuntimeAdapterKind
 
-  init(managedMode: BordersManagedMode?, adapterID: String = Self.id) {
+  init(managedMode: BordersManagedMode?, consumer: RuntimeAdapterKind = .borders) {
     self.managedMode = managedMode
-    self.adapterID = adapterID
+    self.consumer = consumer
   }
 
   private func mode() throws -> BordersManagedMode {
@@ -41,17 +41,14 @@ package struct BordersAdapter: Sendable {
 
   func inspection() -> AdapterInspection {
     do {
-      return AdapterInspection(
-        adapterID: adapterID, requirement: .required, message: try mode().inspect())
+      return AdapterInspection(consumer, message: try mode().inspect())
     } catch {
-      return AdapterInspection(
-        adapterID: adapterID, requirement: .required, status: .failed,
-        message: String(describing: error))
+      return AdapterInspection(consumer, status: .failed, message: String(describing: error))
     }
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: adapterID, requirement: .required) {
+    AdapterReconciliation(consumer) {
       do {
         return AdapterOutcome(status: .applied, message: try mode().reconcile())
       } catch {

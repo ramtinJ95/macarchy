@@ -56,32 +56,13 @@ package struct ThemeActivationCoordinator: Sendable {
 
   private let root: URL
   private let activator: ThemeActivator
-  private let appearance: MacOSAppearanceAdapter
-  private let atuin: AtuinAdapter
-  private let bat: BatAdapter
-  private let btop: BtopAdapter
-  private let borders: BordersAdapter
-  private let leanFocus: BordersAdapter
   private let backgroundPreferences: BackgroundPreferenceStore
-  private let codex: CodexAdapter
   private let configurationStore: MacarchyConfigurationStore
-  private let eza: EzaAdapter
   private let enabledAdapterIDs: Set<String>
-  private let herdr: HerdrAdapter
-  private let kitty: KittyAdapter
-  private let neovim: NeovimAdapter
-  private let pi: PiAdapter
-  private let processRunner: ProcessRunner
   private let reconciler: ThemeReconciler
-  private let sketchyBar: SketchyBarAdapter
-  private let spicetify: SpicetifyAdapter
-  private let starship: StarshipAdapter
+  private let runtimeConsumers: [RuntimeAdapterKind: RuntimeConsumer]
   private let statusStore: ReconciliationStatusStore
   private let themeGenerations: ThemeGenerationReader
-  private let wallpaper: WallpaperAdapter
-  private let wallpaperSignal: YabaiWallpaperSignal
-  private let yazi: YaziAdapter
-  private let tuicr: TuicrAdapter
 
   package init(
     root: URL,
@@ -155,10 +136,8 @@ package struct ThemeActivationCoordinator: Sendable {
   ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
+    let themeGenerations = ThemeGenerationReader(root: root)
     self.root = root
-    borders = BordersAdapter(managedMode: bordersManagedMode)
-    leanFocus = BordersAdapter(
-      managedMode: leanFocusManagedMode, adapterID: BordersAdapter.leanID)
     activator = ThemeActivator(
       root: root,
       faultInjector: faultInjector,
@@ -166,130 +145,219 @@ package struct ThemeActivationCoordinator: Sendable {
       postDarwinNotification: postDarwinNotification
     )
     backgroundPreferences = BackgroundPreferenceStore(root: root)
-    appearance = MacOSAppearanceAdapter(
-      root: root,
-      controlIsAvailable: appearanceControlIsAvailable,
-      currentAppearance: currentAppearance,
-      processRunner: processRunner
-    )
-    atuin = AtuinAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
-      executableURL: AtuinAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(AtuinAdapter.liveExecutableURL) },
-      processRunner: processRunner
-    )
-    bat = BatAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
-      cacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
-      executableURL: BatAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(BatAdapter.liveExecutableURL) },
-      processRunner: processRunner
-    )
-    btop = BtopAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.btopConfigurationDirectoryURL,
-      executableURL: BtopAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(BtopAdapter.liveExecutableURL) },
-      processRunner: processRunner
-    )
-    codex = CodexAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
-      executableURL: CodexAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(CodexAdapter.liveExecutableURL) },
-      processRunner: processRunner
-    )
     configurationStore = MacarchyConfigurationStore(root: root)
     self.enabledAdapterIDs =
       enabledAdapterIDs
       ?? Set(Self.adapterRequirements.keys).subtracting([BordersAdapter.id, BordersAdapter.leanID])
-    eza = EzaAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
-      shellConfigurationURL: consumerPaths.shellConfigurationURL,
-      executableURL: EzaAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(EzaAdapter.liveExecutableURL) },
-      processRunner: processRunner
-    )
-    herdr = HerdrAdapter(
-      root: root,
-      configurationURL: consumerPaths.herdrConfigurationURL,
-      executableURL: HerdrAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(HerdrAdapter.liveExecutableURL) },
-      processRunner: processRunner,
-      managedMode: herdrManagedMode
-    )
-    kitty = KittyAdapter(
-      root: root,
-      configurationURL: consumerPaths.kittyConfigurationURL,
-      includeDirective: Self.kittyIncludeDirective(root: root),
-      processRunner: processRunner
-    )
-    neovim = NeovimAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
-      executableURL: NeovimAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(NeovimAdapter.liveExecutableURL) },
-      processRunner: processRunner
-    )
-    pi = PiAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
-      executableURL: PiAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(PiAdapter.liveExecutableURL) },
-      processRunner: processRunner,
-      selectionIsApplied: piSelectionIsApplied,
-      themeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed
-    )
-    self.processRunner = processRunner
     reconciler = ThemeReconciler(statusStore: statusStore)
-    sketchyBar = SketchyBarAdapter(
-      root: root,
-      configurationURL: consumerPaths.sketchyBarConfigurationURL,
-      executableURL: SketchyBarAdapter.liveExecutableURL,
-      controlIsAvailable: sketchyBarControlIsAvailable,
-      processRunner: processRunner
-    )
-    spicetify = SpicetifyAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL,
-      executableURL: SpicetifyAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(SpicetifyAdapter.liveExecutableURL) },
-      processRunner: processRunner,
-      spicetifyVersionProvider: spicetifyVersionProvider,
-      spotifyVersionProvider: spotifyVersionProvider
-    )
-    starship = StarshipAdapter(
-      root: root,
-      configurationURL: consumerPaths.starshipConfigurationURL,
-      behaviorURL: consumerPaths.starshipBehaviorURL,
-      executableURL: StarshipAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(StarshipAdapter.liveExecutableURL) },
-      processRunner: processRunner
-    )
     self.statusStore = statusStore
-    themeGenerations = ThemeGenerationReader(root: root)
-    tuicr = TuicrAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
-      executableURL: TuicrAdapter.liveExecutableURL,
-      controlIsAvailable: { controlIsAvailable(TuicrAdapter.liveExecutableURL) }
-    )
-    wallpaper = WallpaperAdapter(root: root, control: wallpaperControl)
-    self.wallpaperSignal = wallpaperSignal
-    yazi = YaziAdapter(
-      root: root,
-      configurationDirectoryURL: consumerPaths.yaziConfigurationDirectoryURL,
-      executableURL: YaziAdapter.liveExecutableURL,
-      controlURL: YaziAdapter.liveControlURL,
-      controlsAreAvailable: {
-        controlIsAvailable(YaziAdapter.liveExecutableURL)
-          && controlIsAvailable(YaziAdapter.liveControlURL)
-      },
-      processRunner: processRunner
-    )
+    self.themeGenerations = themeGenerations
+
+    func consumer(_ kind: RuntimeAdapterKind) -> RuntimeConsumer {
+      switch kind {
+      case .macOSAppearance:
+        let appearance = MacOSAppearanceAdapter(
+          root: root,
+          controlIsAvailable: appearanceControlIsAvailable,
+          currentAppearance: currentAppearance,
+          processRunner: processRunner
+        )
+        return RuntimeConsumer(
+          preflight: { _ in _ = try appearance.preflight() },
+          inspection: { context in
+            context.appearanceInspectionOverride
+              ?? appearance.inspection(desiredAppearance: context.desiredAppearance)
+          },
+          reconciliation: {
+            appearance.reconciliation {
+              let manifest = try themeGenerations.activeManifest()
+              return try Self.activeAppearance(manifest: manifest, root: root)
+            }
+          }
+        )
+      case .atuin:
+        return RuntimeConsumer(
+          AtuinAdapter(
+            root: root,
+            configurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
+            executableURL: AtuinAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(AtuinAdapter.liveExecutableURL) },
+            processRunner: processRunner
+          ))
+      case .bat:
+        return RuntimeConsumer(
+          BatAdapter(
+            root: root,
+            configurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
+            cacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
+            executableURL: BatAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(BatAdapter.liveExecutableURL) },
+            processRunner: processRunner
+          ))
+      case .btop:
+        return RuntimeConsumer(
+          BtopAdapter(
+            root: root,
+            configurationDirectoryURL: consumerPaths.btopConfigurationDirectoryURL,
+            executableURL: BtopAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(BtopAdapter.liveExecutableURL) },
+            processRunner: processRunner
+          ))
+      case .borders:
+        return RuntimeConsumer(BordersAdapter(managedMode: bordersManagedMode))
+      case .leanFocus:
+        return RuntimeConsumer(
+          BordersAdapter(managedMode: leanFocusManagedMode, consumer: .leanFocus))
+      case .codex:
+        let codex = CodexAdapter(
+          root: root,
+          configurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
+          executableURL: CodexAdapter.liveExecutableURL,
+          controlIsAvailable: { controlIsAvailable(CodexAdapter.liveExecutableURL) },
+          processRunner: processRunner
+        )
+        return RuntimeConsumer(
+          preflight: { _ in try codex.preflight() },
+          inspection: { context in
+            codex.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+          },
+          reconciliation: codex.reconciliation
+        )
+      case .eza:
+        return RuntimeConsumer(
+          EzaAdapter(
+            root: root,
+            configurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
+            shellConfigurationURL: consumerPaths.shellConfigurationURL,
+            executableURL: EzaAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(EzaAdapter.liveExecutableURL) },
+            processRunner: processRunner
+          ))
+      case .herdr:
+        let herdr = HerdrAdapter(
+          root: root,
+          configurationURL: consumerPaths.herdrConfigurationURL,
+          executableURL: HerdrAdapter.liveExecutableURL,
+          controlIsAvailable: { controlIsAvailable(HerdrAdapter.liveExecutableURL) },
+          processRunner: processRunner,
+          managedMode: herdrManagedMode
+        )
+        return RuntimeConsumer(
+          preflight: { context in try herdr.preflight(package: context.package) },
+          inspection: { context in
+            herdr.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+          },
+          reconciliation: herdr.reconciliation
+        )
+      case .kitty:
+        return RuntimeConsumer(
+          KittyAdapter(
+            root: root,
+            configurationURL: consumerPaths.kittyConfigurationURL,
+            includeDirective: Self.kittyIncludeDirective(root: root),
+            processRunner: processRunner
+          ))
+      case .neovim:
+        let neovim = NeovimAdapter(
+          root: root,
+          configurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
+          executableURL: NeovimAdapter.liveExecutableURL,
+          controlIsAvailable: { controlIsAvailable(NeovimAdapter.liveExecutableURL) },
+          processRunner: processRunner
+        )
+        return RuntimeConsumer(
+          preflight: { context in try neovim.preflight(package: context.package) },
+          inspection: { context in
+            neovim.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+          },
+          reconciliation: neovim.reconciliation
+        )
+      case .pi:
+        let pi = PiAdapter(
+          root: root,
+          configurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
+          executableURL: PiAdapter.liveExecutableURL,
+          controlIsAvailable: { controlIsAvailable(PiAdapter.liveExecutableURL) },
+          processRunner: processRunner,
+          selectionIsApplied: piSelectionIsApplied,
+          themeLinkRefreshIsAllowed: piThemeLinkRefreshIsAllowed
+        )
+        return RuntimeConsumer(
+          preflight: { _ in try pi.preflight() },
+          inspection: { context in
+            pi.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+          },
+          reconciliation: pi.reconciliation
+        )
+      case .sketchyBar:
+        let sketchyBar = SketchyBarAdapter(
+          root: root,
+          configurationURL: consumerPaths.sketchyBarConfigurationURL,
+          executableURL: SketchyBarAdapter.liveExecutableURL,
+          controlIsAvailable: sketchyBarControlIsAvailable,
+          processRunner: processRunner
+        )
+        return RuntimeConsumer(
+          preflight: { _ in try sketchyBar.preflight() },
+          inspection: { context in
+            sketchyBar.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
+          },
+          reconciliation: sketchyBar.reconciliation
+        )
+      case .spicetify:
+        return RuntimeConsumer(
+          SpicetifyAdapter(
+            root: root,
+            configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL,
+            executableURL: SpicetifyAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(SpicetifyAdapter.liveExecutableURL) },
+            processRunner: processRunner,
+            spicetifyVersionProvider: spicetifyVersionProvider,
+            spotifyVersionProvider: spotifyVersionProvider
+          ))
+      case .starship:
+        return RuntimeConsumer(
+          StarshipAdapter(
+            root: root,
+            configurationURL: consumerPaths.starshipConfigurationURL,
+            behaviorURL: consumerPaths.starshipBehaviorURL,
+            executableURL: StarshipAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(StarshipAdapter.liveExecutableURL) },
+            processRunner: processRunner
+          ))
+      case .tuicr:
+        return RuntimeConsumer(
+          TuicrAdapter(
+            root: root,
+            configurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
+            executableURL: TuicrAdapter.liveExecutableURL,
+            controlIsAvailable: { controlIsAvailable(TuicrAdapter.liveExecutableURL) }
+          ))
+      case .wallpaper:
+        return Self.wallpaperConsumer(
+          WallpaperAdapter(root: root, control: wallpaperControl),
+          signal: wallpaperSignal,
+          processRunner: processRunner,
+          themeGenerations: themeGenerations,
+          root: root
+        )
+      case .yazi:
+        return RuntimeConsumer(
+          YaziAdapter(
+            root: root,
+            configurationDirectoryURL: consumerPaths.yaziConfigurationDirectoryURL,
+            executableURL: YaziAdapter.liveExecutableURL,
+            controlURL: YaziAdapter.liveControlURL,
+            controlsAreAvailable: {
+              controlIsAvailable(YaziAdapter.liveExecutableURL)
+                && controlIsAvailable(YaziAdapter.liveControlURL)
+            },
+            processRunner: processRunner
+          ))
+      }
+    }
+    runtimeConsumers = Dictionary(
+      uniqueKeysWithValues: RuntimeAdapterKind.allCases.map { ($0, consumer($0)) })
   }
 
   package func preflight(
@@ -346,7 +414,7 @@ package struct ThemeActivationCoordinator: Sendable {
         let adapters = configuredAdapters(
           context: AdapterResolutionContext(
             desiredAppearance: package.appearance,
-            desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+            desiredWallpaperURL: Self.activeWallpaperURL(manifest: manifest, root: root),
             unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
           )
         )
@@ -382,8 +450,8 @@ package struct ThemeActivationCoordinator: Sendable {
     let manifest = try themeGenerations.activeManifest()
     let adapters = configuredAdapters(
       context: AdapterResolutionContext(
-        desiredAppearance: try activeAppearance(manifest: manifest),
-        desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+        desiredAppearance: try Self.activeAppearance(manifest: manifest, root: root),
+        desiredWallpaperURL: Self.activeWallpaperURL(manifest: manifest, root: root),
         unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
       )
     )
@@ -407,8 +475,7 @@ package struct ThemeActivationCoordinator: Sendable {
     try validateSelection(adapterIDs)
     func appearanceFailure(_ error: any Error) -> AdapterInspection {
       AdapterInspection(
-        adapterID: MacOSAppearanceAdapter.id,
-        requirement: .required,
+        .macOSAppearance,
         status: .failed,
         message: "Cannot inspect active theme appearance: \(error)"
       )
@@ -418,11 +485,11 @@ package struct ThemeActivationCoordinator: Sendable {
       let manifest = try themeGenerations.activeManifest()
       context.unsupportedAdapterIDs = try unsupportedNamedThemeAdapterIDs(manifest: manifest)
       do {
-        context.desiredAppearance = try activeAppearance(manifest: manifest)
+        context.desiredAppearance = try Self.activeAppearance(manifest: manifest, root: root)
       } catch {
         context.appearanceInspectionOverride = appearanceFailure(error)
       }
-      let wallpaperURL = activeWallpaperURL(manifest: manifest)
+      let wallpaperURL = Self.activeWallpaperURL(manifest: manifest, root: root)
       context.desiredWallpaperURL = wallpaperURL
       context.wallpaperIntentionallyUnmanaged = wallpaperURL == nil
     } catch ReconciliationStatusError.noActiveGeneration {
@@ -430,8 +497,7 @@ package struct ThemeActivationCoordinator: Sendable {
     } catch {
       context.appearanceInspectionOverride = appearanceFailure(error)
       context.wallpaperInspectionOverride = AdapterInspection(
-        adapterID: WallpaperAdapter.id,
-        requirement: .required,
+        .wallpaper,
         status: .failed,
         message: "Cannot inspect active theme wallpaper: \(error)"
       )
@@ -450,7 +516,7 @@ package struct ThemeActivationCoordinator: Sendable {
     let manifest = try themeGenerations.activeManifest()
     let adapters = configuredAdapters(
       context: AdapterResolutionContext(
-        desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
+        desiredWallpaperURL: Self.activeWallpaperURL(manifest: manifest, root: root),
         unsupportedAdapterIDs: try unsupportedNamedThemeAdapterIDs(manifest: manifest)
       )
     )
@@ -517,157 +583,27 @@ package struct ThemeActivationCoordinator: Sendable {
   private func configuredAdapters(context: AdapterResolutionContext) -> [ConfiguredAdapter] {
     ConsumerCatalog.shared.runtimeEntries.filter { entry in
       enabledAdapterIDs.contains(entry.id.rawValue)
-    }.map { entry in
-      configuredAdapter(entry, context: context)
+    }.map { entry -> ConfiguredAdapter in
+      // The initializer builds the table from `RuntimeAdapterKind.allCases`.
+      let consumer = runtimeConsumers[entry.mode.runtimeKind!]!
+      if entry.supportsNamedThemeFallback,
+        context.unsupportedAdapterIDs.contains(entry.id.rawValue)
+      {
+        return unsupportedNamedThemeAdapter(entry, preflight: consumer.preflight)
+      }
+      return ConfiguredAdapter(
+        entry: entry,
+        preflight: consumer.preflight,
+        inspection: { consumer.inspection(context) },
+        reconciliation: consumer.reconciliation
+      )
     }
   }
 
-  private func configuredAdapter(
-    _ entry: ConsumerCatalogEntry,
-    context: AdapterResolutionContext
-  ) -> ConfiguredAdapter {
-    switch entry.mode.runtimeKind! {
-    case .macOSAppearance:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in _ = try appearance.preflight() },
-        inspection: {
-          context.appearanceInspectionOverride
-            ?? appearance.inspection(desiredAppearance: context.desiredAppearance)
-        },
-        reconciliation: {
-          appearance.reconciliation {
-            let manifest = try themeGenerations.activeManifest()
-            return try activeAppearance(manifest: manifest)
-          }
-        }
-      )
-    case .atuin:
-      return ConfiguredAdapter(entry: entry, adapter: atuin)
-    case .bat:
-      return ConfiguredAdapter(entry: entry, adapter: bat)
-    case .btop:
-      return ConfiguredAdapter(entry: entry, adapter: btop)
-    case .borders:
-      return ConfiguredAdapter(entry: entry, adapter: borders)
-    case .leanFocus:
-      return ConfiguredAdapter(entry: entry, adapter: leanFocus)
-    case .codex:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try codex.preflight() },
-        inspection: { codex.inspection(includeRuntimeChecks: context.includeRuntimeChecks) },
-        reconciliation: codex.reconciliation
-      )
-    case .eza:
-      return ConfiguredAdapter(entry: entry, adapter: eza)
-    case .herdr:
-      return configuredNamedThemeAdapter(
-        entry: entry,
-        unsupportedAdapterIDs: context.unsupportedAdapterIDs,
-        preflight: { context in try herdr.preflight(package: context.package) },
-        inspection: {
-          herdr.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
-        },
-        reconciliation: herdr.reconciliation
-      )
-    case .kitty:
-      return ConfiguredAdapter(entry: entry, adapter: kitty)
-    case .neovim:
-      return configuredNamedThemeAdapter(
-        entry: entry,
-        unsupportedAdapterIDs: context.unsupportedAdapterIDs,
-        preflight: { context in try neovim.preflight(package: context.package) },
-        inspection: {
-          neovim.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
-        },
-        reconciliation: neovim.reconciliation
-      )
-    case .pi:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try pi.preflight() },
-        inspection: {
-          pi.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
-        },
-        reconciliation: pi.reconciliation
-      )
-    case .sketchyBar:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { _ in try sketchyBar.preflight() },
-        inspection: {
-          sketchyBar.inspection(includeRuntimeChecks: context.includeRuntimeChecks)
-        },
-        reconciliation: sketchyBar.reconciliation
-      )
-    case .spicetify:
-      return ConfiguredAdapter(entry: entry, adapter: spicetify)
-    case .starship:
-      return ConfiguredAdapter(entry: entry, adapter: starship)
-    case .tuicr:
-      return ConfiguredAdapter(entry: entry, adapter: tuicr)
-    case .wallpaper:
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: { preflightContext in
-          guard preflightContext.hasSelectedWallpaper else { return }
-          _ = try wallpaper.preflight()
-        },
-        inspection: {
-          if let inspection = context.wallpaperInspectionOverride {
-            return inspection
-          }
-          return inspectWallpaper(
-            desiredWallpaperURL: context.desiredWallpaperURL,
-            intentionallyUnmanaged: context.wallpaperIntentionallyUnmanaged
-              ?? ((try? themeGenerations.activeManifest()).map {
-                activeWallpaperURL(manifest: $0) == nil
-              } ?? false),
-            includeRuntimeChecks: context.includeRuntimeChecks
-          )
-        },
-        reconciliation: {
-          AdapterReconciliation(id: WallpaperAdapter.id, requirement: .required) {
-            let wallpaperOutcome = try await wallpaper.reconciliation {
-              let manifest = try themeGenerations.activeManifest()
-              return activeWallpaperURL(manifest: manifest)
-            }.run()
-            // The Photos folder is a projection of this same wallpaper consumer,
-            // not another environment role or a native screensaver settings owner.
-            // Prepare it only after the native desktop repaint path has finished.
-            var messages = [wallpaperOutcome.message].compactMap { $0 }
-            do {
-              messages.append(try ScreenSaverImageStore(root: root).reconcile())
-            } catch {
-              messages.append("Photos source failed: \(error)")
-              return AdapterOutcome(
-                status: .failed,
-                message: "Desktop wallpaper: \(wallpaperOutcome.status.rawValue); "
-                  + messages.joined(separator: "; ")
-              )
-            }
-            guard wallpaperOutcome.status == .applied else {
-              return AdapterOutcome(
-                status: wallpaperOutcome.status, message: messages.joined(separator: "; "))
-            }
-            do {
-              try wallpaperSignal.preflight()
-              return AdapterOutcome(status: .applied, message: messages.joined(separator: "; "))
-            } catch {
-              let status: AdapterStatus = Self.isSignalDrift(error) ? .drifted : .failed
-              messages.append(String(describing: error))
-              return AdapterOutcome(status: status, message: messages.joined(separator: "; "))
-            }
-          }
-        }
-      )
-    case .yazi:
-      return ConfiguredAdapter(entry: entry, adapter: yazi)
-    }
-  }
-
-  private func activeAppearance(manifest: GenerationManifest) throws -> ThemeAppearance {
+  private static func activeAppearance(
+    manifest: GenerationManifest,
+    root: URL
+  ) throws -> ThemeAppearance {
     try manifest.normalizedTheme(root: root).appearance
   }
 
@@ -709,20 +645,89 @@ package struct ThemeActivationCoordinator: Sendable {
     return background
   }
 
-  private func activeWallpaperURL(manifest: GenerationManifest) -> URL? {
+  private static func activeWallpaperURL(manifest: GenerationManifest, root: URL) -> URL? {
     guard manifest.artifacts[WallpaperAdapter.outputPath] != nil else { return nil }
     return manifest.artifactURL(root: root, path: WallpaperAdapter.outputPath)
   }
 
-  private func inspectWallpaper(
+  private static func wallpaperConsumer(
+    _ wallpaper: WallpaperAdapter,
+    signal wallpaperSignal: YabaiWallpaperSignal,
+    processRunner: ProcessRunner,
+    themeGenerations: ThemeGenerationReader,
+    root: URL
+  ) -> RuntimeConsumer {
+    RuntimeConsumer(
+      preflight: { preflightContext in
+        guard preflightContext.hasSelectedWallpaper else { return }
+        _ = try wallpaper.preflight()
+      },
+      inspection: { context in
+        if let inspection = context.wallpaperInspectionOverride {
+          return inspection
+        }
+        return Self.inspectWallpaper(
+          wallpaper,
+          signal: wallpaperSignal,
+          processRunner: processRunner,
+          root: root,
+          desiredWallpaperURL: context.desiredWallpaperURL,
+          intentionallyUnmanaged: context.wallpaperIntentionallyUnmanaged
+            ?? ((try? themeGenerations.activeManifest()).map {
+              Self.activeWallpaperURL(manifest: $0, root: root) == nil
+            } ?? false),
+          includeRuntimeChecks: context.includeRuntimeChecks
+        )
+      },
+      reconciliation: {
+        AdapterReconciliation(.wallpaper) {
+          let wallpaperOutcome = try await wallpaper.reconciliation {
+            let manifest = try themeGenerations.activeManifest()
+            return Self.activeWallpaperURL(manifest: manifest, root: root)
+          }.run()
+          // The Photos folder is a projection of this same wallpaper consumer,
+          // not another environment role or a native screensaver settings owner.
+          // Prepare it only after the native desktop repaint path has finished.
+          var messages = [wallpaperOutcome.message].compactMap { $0 }
+          do {
+            messages.append(try ScreenSaverImageStore(root: root).reconcile())
+          } catch {
+            messages.append("Photos source failed: \(error)")
+            return AdapterOutcome(
+              status: .failed,
+              message: "Desktop wallpaper: \(wallpaperOutcome.status.rawValue); "
+                + messages.joined(separator: "; ")
+            )
+          }
+          guard wallpaperOutcome.status == .applied else {
+            return AdapterOutcome(
+              status: wallpaperOutcome.status, message: messages.joined(separator: "; "))
+          }
+          do {
+            try wallpaperSignal.preflight()
+            return AdapterOutcome(status: .applied, message: messages.joined(separator: "; "))
+          } catch {
+            let status: AdapterStatus = Self.isSignalDrift(error) ? .drifted : .failed
+            messages.append(String(describing: error))
+            return AdapterOutcome(status: status, message: messages.joined(separator: "; "))
+          }
+        }
+      }
+    )
+  }
+
+  private static func inspectWallpaper(
+    _ wallpaper: WallpaperAdapter,
+    signal wallpaperSignal: YabaiWallpaperSignal,
+    processRunner: ProcessRunner,
+    root: URL,
     desiredWallpaperURL: URL?,
     intentionallyUnmanaged: Bool,
     includeRuntimeChecks: Bool
   ) -> AdapterInspection {
     guard !intentionallyUnmanaged else {
       return AdapterInspection(
-        adapterID: WallpaperAdapter.id,
-        requirement: .required,
+        .wallpaper,
         message:
           "The active theme has no backgrounds; desktop wallpaper and the Photos source retain their previous images"
       )
@@ -732,8 +737,7 @@ package struct ThemeActivationCoordinator: Sendable {
     )
     let photosInspection = ScreenSaverImageStore(root: root).inspection()
     let wallpaperInspection = AdapterInspection(
-      adapterID: WallpaperAdapter.id,
-      requirement: .required,
+      .wallpaper,
       status: Self.mostSevere(desktopInspection.status, photosInspection.status),
       message: [desktopInspection.message, photosInspection.message].compactMap { $0 }.joined(
         separator: "; ")
@@ -748,15 +752,13 @@ package struct ThemeActivationCoordinator: Sendable {
         messages.append("the yabai signal is loaded")
       }
       return AdapterInspection(
-        adapterID: WallpaperAdapter.id,
-        requirement: .required,
+        .wallpaper,
         status: wallpaperInspection.status,
         message: messages.joined(separator: "; ")
       )
     } catch {
       return AdapterInspection(
-        adapterID: WallpaperAdapter.id,
-        requirement: .required,
+        .wallpaper,
         status: Self.mostSevere(
           wallpaperInspection.status, Self.isSignalDrift(error) ? .drifted : .failed),
         message: [wallpaperInspection.message, String(describing: error)]
@@ -885,46 +887,21 @@ package struct ThemeActivationCoordinator: Sendable {
     }
   }
 
-  private func configuredNamedThemeAdapter(
-    entry: ConsumerCatalogEntry,
-    unsupportedAdapterIDs: Set<String>,
-    preflight: @escaping @Sendable (AdapterPreflightContext) throws -> Void,
-    inspection: @escaping @Sendable () -> AdapterInspection,
-    reconciliation: @escaping @Sendable () -> AdapterReconciliation
+  private func unsupportedNamedThemeAdapter(
+    _ entry: ConsumerCatalogEntry,
+    preflight: @escaping @Sendable (AdapterPreflightContext) throws -> Void
   ) -> ConfiguredAdapter {
-    let id = entry.id.rawValue
-    guard unsupportedAdapterIDs.contains(id) else {
-      return ConfiguredAdapter(
-        entry: entry,
-        preflight: preflight,
-        inspection: inspection,
-        reconciliation: reconciliation
-      )
-    }
+    let kind = entry.mode.runtimeKind!
+    let message =
+      "The active theme has no safe \(entry.id.rawValue) named-theme mapping; its prior appearance is retained"
     return ConfiguredAdapter(
       entry: entry,
       preflight: preflight,
-      inspection: {
-        AdapterInspection(
-          adapterID: id,
-          requirement: entry.mode.requirement!,
-          status: .unsupported,
-          message: unsupportedNamedThemeMessage(adapterID: id)
-        )
-      },
+      inspection: { AdapterInspection(kind, status: .unsupported, message: message) },
       reconciliation: {
-        AdapterReconciliation(id: id, requirement: entry.mode.requirement!) {
-          AdapterOutcome(
-            status: .unsupported,
-            message: unsupportedNamedThemeMessage(adapterID: id)
-          )
-        }
+        AdapterReconciliation(kind) { AdapterOutcome(status: .unsupported, message: message) }
       }
     )
-  }
-
-  private func unsupportedNamedThemeMessage(adapterID: String) -> String {
-    "The active theme has no safe \(adapterID) named-theme mapping; its prior appearance is retained"
   }
 
   package static func kittyIncludeDirective(root: URL) -> String {
@@ -970,6 +947,23 @@ extension StarshipAdapter: ContextFreeThemeAdapter {}
 extension TuicrAdapter: ContextFreeThemeAdapter {}
 extension YaziAdapter: ContextFreeThemeAdapter {}
 
+/// One runtime consumer's adapter, built once per coordinator.
+private struct RuntimeConsumer: Sendable {
+  let preflight: @Sendable (AdapterPreflightContext) throws -> Void
+  let inspection: @Sendable (AdapterResolutionContext) -> AdapterInspection
+  let reconciliation: @Sendable () -> AdapterReconciliation
+}
+
+extension RuntimeConsumer {
+  init(_ adapter: some ContextFreeThemeAdapter) {
+    self.init(
+      preflight: { _ in try adapter.preflight() },
+      inspection: { _ in adapter.inspection() },
+      reconciliation: { adapter.reconciliation() }
+    )
+  }
+}
+
 private struct ConfiguredAdapter: Sendable {
   let entry: ConsumerCatalogEntry
   private let runPreflight: @Sendable (AdapterPreflightContext) throws -> Void
@@ -988,25 +982,18 @@ private struct ConfiguredAdapter: Sendable {
     reconcile = reconciliation
   }
 
-  init(entry: ConsumerCatalogEntry, adapter: some ContextFreeThemeAdapter) {
-    self.init(
-      entry: entry,
-      preflight: { _ in try adapter.preflight() },
-      inspection: { adapter.inspection() },
-      reconciliation: { adapter.reconciliation() }
-    )
-  }
-
   var id: String { entry.id.rawValue }
 
   func preflight(_ context: AdapterPreflightContext) throws {
     try runPreflight(context)
   }
 
+  // Adapters take their requirement from the catalog entry for the kind they name, so only
+  // the kind itself can disagree with the entry this adapter is wired to.
   func inspection() -> AdapterInspection {
     let inspection = inspect()
     precondition(
-      inspection.adapterID == id && inspection.requirement == entry.mode.requirement,
+      inspection.adapterID == id,
       "Runtime inspection disagrees with the consumer catalog for '\(id)'"
     )
     return inspection
@@ -1015,7 +1002,7 @@ private struct ConfiguredAdapter: Sendable {
   func reconciliation() -> AdapterReconciliation {
     let reconciliation = reconcile()
     precondition(
-      reconciliation.id == id && reconciliation.requirement == entry.mode.requirement,
+      reconciliation.id == id,
       "Runtime reconciliation disagrees with the consumer catalog for '\(id)'"
     )
     return reconciliation
