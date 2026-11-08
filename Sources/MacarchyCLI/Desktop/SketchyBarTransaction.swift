@@ -154,7 +154,7 @@ enum SketchyBarTransactionCheckpoint: Sendable {
   case generationDeselected
 }
 
-enum SketchyBarInterruptionError: Error, Sendable {
+enum SketchyBarInterruptionError: DesktopTestInterruption, Sendable {
   case injected
 }
 
@@ -355,8 +355,8 @@ struct SketchyBarProviderTransaction: Sendable {
         try transactionStore.remove()
       }
       return SketchyBarFilesystemConvergenceResult(generationID: generationID, changed: true)
-    } catch is SketchyBarInterruptionError {
-      throw SketchyBarInterruptionError.injected
+    } catch let interruption as any DesktopTestInterruption {
+      throw interruption
     } catch {
       let convergenceError = error
       if let persisted = try transactionStore.read() {
@@ -745,8 +745,8 @@ struct SketchyBarProviderTransaction: Sendable {
       do {
         try faultInjector(.originalRetained)
         try Self.authenticateRetained(ownership)
-      } catch is SketchyBarInterruptionError {
-        throw SketchyBarInterruptionError.injected
+      } catch let interruption as any DesktopTestInterruption {
+        throw interruption
       } catch {
         let authenticationError = error
         if !pathExistsNoFollow(ownership.original.publicPath) {

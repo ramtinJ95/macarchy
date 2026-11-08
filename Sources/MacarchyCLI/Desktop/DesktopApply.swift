@@ -192,10 +192,8 @@ struct DesktopApplyCommandRunner: Sendable {
         json: json,
         succeeded: false
       )
-    } catch is YabaiInterruptionError {
-      throw YabaiInterruptionError.injected
-    } catch is SketchyBarInterruptionError {
-      throw SketchyBarInterruptionError.injected
+    } catch let interruption as any DesktopTestInterruption {
+      throw interruption
     } catch {
       return try result(
         outcome: "failed",
@@ -351,10 +349,8 @@ struct DesktopApplyCommandRunner: Sendable {
             keybindings: keybinding,
             sketchyBar: sketchyBar
           )
-        } catch is YabaiInterruptionError {
-          throw YabaiInterruptionError.injected
-        } catch is SketchyBarInterruptionError {
-          throw SketchyBarInterruptionError.injected
+        } catch let interruption as any DesktopTestInterruption {
+          throw interruption
         } catch {
           do {
             try coordinator.rollbackApplyLocked(
@@ -368,10 +364,8 @@ struct DesktopApplyCommandRunner: Sendable {
           throw DesktopAggregateError.rolledBack(String(describing: error))
         }
       }
-    } catch is YabaiInterruptionError {
-      throw YabaiInterruptionError.injected
-    } catch is SketchyBarInterruptionError {
-      throw SketchyBarInterruptionError.injected
+    } catch let interruption as any DesktopTestInterruption {
+      throw interruption
     } catch {
       let outcome: String
       if case .recoveryRequired = error as? DesktopAggregateError {
@@ -766,10 +760,8 @@ struct DesktopTeardownCommandRunner: Sendable {
             keybindings: keybinding,
             sketchyBar: sketchyBar
           )
-        } catch is YabaiInterruptionError {
-          throw YabaiInterruptionError.injected
-        } catch is SketchyBarInterruptionError {
-          throw SketchyBarInterruptionError.injected
+        } catch let interruption as any DesktopTestInterruption {
+          throw interruption
         } catch {
           do {
             try coordinator.rollbackTeardownLocked(
@@ -783,10 +775,8 @@ struct DesktopTeardownCommandRunner: Sendable {
           throw DesktopAggregateError.rolledBack(String(describing: error))
         }
       }
-    } catch is YabaiInterruptionError {
-      throw YabaiInterruptionError.injected
-    } catch is SketchyBarInterruptionError {
-      throw SketchyBarInterruptionError.injected
+    } catch let interruption as any DesktopTestInterruption {
+      throw interruption
     } catch {
       let outcome: String
       if case .recoveryRequired = error as? DesktopAggregateError {
@@ -888,10 +878,8 @@ struct DesktopTeardownCommandRunner: Sendable {
           : changed ? "desktop provider teardown changed state" : "no managed providers exist"
       )
       return (try report.render(json: json), !recovered)
-    } catch is YabaiInterruptionError {
-      throw YabaiInterruptionError.injected
-    } catch is SketchyBarInterruptionError {
-      throw SketchyBarInterruptionError.injected
+    } catch let interruption as any DesktopTestInterruption {
+      throw interruption
     } catch {
       let report = DesktopMutationReport(
         operation: "desktop_teardown",

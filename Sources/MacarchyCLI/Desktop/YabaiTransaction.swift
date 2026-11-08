@@ -103,7 +103,7 @@ enum YabaiTransactionCheckpoint: Sendable {
   case providerRestored
 }
 
-enum YabaiInterruptionError: Error, Sendable {
+enum YabaiInterruptionError: DesktopTestInterruption, Sendable {
   case injected
 }
 
@@ -304,8 +304,8 @@ struct YabaiProviderTransaction: Sendable {
         lifecycle: serviceChange?.previous.running == false ? "start" : "restart",
         message: runtime.message
       )
-    } catch is YabaiInterruptionError {
-      throw YabaiInterruptionError.injected
+    } catch let interruption as any DesktopTestInterruption {
+      throw interruption
     } catch let applyError {
       do {
         try recoverApply(transaction, lifecycle: lifecycle)
