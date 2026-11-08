@@ -1,5 +1,6 @@
 import Foundation
 
+/// A theme generation ID, `g-<lowercase UUID>`; the other stores use their own prefixes.
 package func isGenerationID(_ value: String) -> Bool {
   isPrefixedLowercaseUUID(value, prefix: "g-")
 }
