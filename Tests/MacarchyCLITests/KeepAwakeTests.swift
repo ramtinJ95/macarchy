@@ -97,10 +97,12 @@ struct KeepAwakeTests {
       default: try record.write(stale)
       }
       switch kind {
-      case "reused": machine.processes[777] = .init(started: 2_000, executablePath: Self.caffeinate)
-      case "foreign": machine.processes[777] = .init(started: 1_000, executablePath: "/bin/sleep")
+      case "reused":
+        machine.processes[777] = .init(pid: 777, started: 2_000, executablePath: Self.caffeinate)
+      case "foreign":
+        machine.processes[777] = .init(pid: 777, started: 1_000, executablePath: "/bin/sleep")
       case "invalid-pid":
-        machine.processes[-1] = .init(started: 1_000, executablePath: Self.caffeinate)
+        machine.processes[-1] = .init(pid: -1, started: 1_000, executablePath: Self.caffeinate)
       default: break
       }
 
@@ -212,7 +214,7 @@ struct KeepAwakeTests {
 
   /// The processes and side effects the engine can observe or cause.
   private final class Machine {
-    var processes: [Int32: KeepAwakeProcess] = [:]
+    var processes: [Int32: ProcessIdentity] = [:]
     var spawned: [[String]] = []
     var terminated: [Int32] = []
     var notifications = 0
@@ -236,7 +238,8 @@ struct KeepAwakeTests {
         machine.lastPID += 1
         if machine.spawnedIdentityVisible {
           machine.processes[machine.lastPID] = .init(
-            started: UInt64(machine.lastPID) * 1_000, executablePath: Self.caffeinate)
+            pid: machine.lastPID, started: UInt64(machine.lastPID) * 1_000,
+            executablePath: Self.caffeinate)
         }
         return machine.lastPID
       },

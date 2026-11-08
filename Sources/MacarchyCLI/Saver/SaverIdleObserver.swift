@@ -375,7 +375,7 @@ extension SaverIdleObserver {
     var info = proc_bsdinfo()
     let size = Int32(MemoryLayout<proc_bsdinfo>.size)
     guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else {
-      return kill(pid, 0) != 0 && errno == ESRCH
+      return processHasExited(pid)
     }
     return info.pbi_status == UInt32(SZOMB)
   }

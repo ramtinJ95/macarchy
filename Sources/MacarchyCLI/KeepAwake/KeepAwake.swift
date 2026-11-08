@@ -31,11 +31,6 @@ enum KeepAwakeChange: Equatable, Sendable {
   case alreadyOff
 }
 
-struct KeepAwakeProcess: Equatable, Sendable {
-  let started: UInt64
-  let executablePath: String
-}
-
 /// Owns at most one `caffeinate -d -i` process per state root. A record is Macarchy's only while
 /// its PID still has the recorded start time and the caffeinate executable. Any other record is
 /// stale: it is removed and that PID is never signalled.
@@ -51,7 +46,7 @@ struct KeepAwake {
 
   let stateRoot: URL
   let spawn: ([String]) throws -> Int32
-  let process: (Int32) -> KeepAwakeProcess?
+  let process: (Int32) -> ProcessIdentity?
   let terminate: (Int32) throws -> Void
   let pause: () -> Void
   let now: () -> Date
@@ -103,7 +98,8 @@ struct KeepAwake {
 
   private func owns(_ session: KeepAwakeSession) -> Bool {
     process(session.pid)
-      == KeepAwakeProcess(started: session.started, executablePath: Self.caffeinatePath)
+      == ProcessIdentity(
+        pid: session.pid, started: session.started, executablePath: Self.caffeinatePath)
   }
 
   private func start(_ duration: Duration?) throws -> KeepAwakeSession {
@@ -152,16 +148,10 @@ extension KeepAwake {
     Self(
       stateRoot: stateRoot,
       spawn: spawnCaffeinate,
-      process: { pid in
-        ProcessIdentity.observe(pid).map {
-          KeepAwakeProcess(started: $0.started, executablePath: $0.executablePath)
-        }
-      },
+      process: ProcessIdentity.observe,
       terminate: { pid in
-        guard kill(pid, SIGTERM) != 0 else { return }
-        let code = errno
-        guard code == ESRCH else {
-          throw MessageError("cannot signal caffeinate \(pid) (errno \(code))")
+        try terminateVerifiedProcess(pid) {
+          MessageError("cannot signal caffeinate \(pid) (errno \($0))")
         }
       },
       pause: { Thread.sleep(forTimeInterval: 0.05) },

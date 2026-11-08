@@ -156,7 +156,7 @@ extension MaccyApp {
               return RunningMaccy(pid: pid, started: started)
             }
             // A live Maccy that cannot be identified must not have its store deleted beneath it.
-            guard kill(pid, 0) != 0, errno == ESRCH else {
+            guard processHasExited(pid) else {
               throw MessageError("cannot identify the running Maccy (pid \(pid))")
             }
             return nil
