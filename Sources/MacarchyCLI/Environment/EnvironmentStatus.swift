@@ -680,14 +680,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
   }
 
   static func providers(_ profile: EnvironmentProfile) -> [String: String] {
-    var providers = [
-      "focus_ring": profile.focusRing.rawValue,
-      "terminal": profile.terminal.rawValue,
-      "shell": profile.shell.rawValue,
-      "prompt": profile.prompt.rawValue,
-      "history": profile.history.rawValue,
-      "editor": profile.editor.rawValue,
-    ]
+    var providers = profile.roleProviders
     for (id, selection) in profile.dailyToolPresentation { providers[id] = selection }
     for (id, selection) in profile.presetPresentation { providers[id] = selection }
     return providers
@@ -711,5 +704,19 @@ struct EnvironmentStatusCommandRunner: Sendable {
       verification: [],
       message: message
     )
+  }
+}
+
+extension EnvironmentProfile {
+  /// The provider selected for each environment role, keyed by the role's report name.
+  var roleProviders: [String: String] {
+    [
+      "focus_ring": focusRing.rawValue,
+      "terminal": terminal.rawValue,
+      "shell": shell.rawValue,
+      "prompt": prompt.rawValue,
+      "history": history.rawValue,
+      "editor": editor.rawValue,
+    ]
   }
 }
