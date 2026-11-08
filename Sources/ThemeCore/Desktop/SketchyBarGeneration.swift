@@ -518,24 +518,22 @@ package struct SketchyBarGenerationActivator: Sendable {
     let descriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
     defer { Darwin.close(descriptor) }
     let temporaryName = Self.currentSelectionName(generationID)
-    let temporary = providerRoot.appending(
-      path: temporaryName
+    try GenerationStore.replaceCurrent(
+      in: descriptor,
+      with: generationID,
+      through: temporaryName,
+      syncs: true,
+      failure: { step, code in
+        switch step {
+        case .create:
+          return SketchyBarGenerationError.system(
+            "create current pointer", providerRoot.appending(path: temporaryName), code)
+        case .replace:
+          return SketchyBarGenerationError.system(
+            "replace current pointer", providerRoot.appending(path: "current"), code)
+        }
+      }
     )
-    let destination = "generations/\(generationID)"
-    let created = destination.withCString { target in
-      temporaryName.withCString { Darwin.symlinkat(target, descriptor, $0) }
-    }
-    guard created == 0 else {
-      throw SketchyBarGenerationError.system("create current pointer", temporary, errno)
-    }
-    defer { temporaryName.withCString { _ = Darwin.unlinkat(descriptor, $0, 0) } }
-    let current = providerRoot.appending(path: "current")
-    let replaced = temporaryName.withCString { source in
-      "current".withCString { Darwin.renameat(descriptor, source, descriptor, $0) }
-    }
-    guard replaced == 0, fsync(descriptor) == 0 else {
-      throw SketchyBarGenerationError.system("replace current pointer", current, errno)
-    }
   }
 
   private func authenticateSelectableGeneration(_ generationID: String) throws {
