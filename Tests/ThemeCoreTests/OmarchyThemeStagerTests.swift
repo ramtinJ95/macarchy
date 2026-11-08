@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -101,7 +102,7 @@ struct OmarchyThemeStagerTests {
 
   @Test
   func fetchFailureIsBoundedAndRemovesPartialCheckout() throws {
-    let root = try temporaryDirectory(named: "failure")
+    let root = try makeTemporaryDirectory(named: "macarchy-omarchy-stager-failure")
     defer { try? FileManager.default.removeItem(at: root) }
     let runner = ProcessRunner { request in
       let destination = URL(
@@ -139,7 +140,7 @@ struct OmarchyThemeStagerTests {
 
   @Test
   func callbackFailurePreservesTheErrorAndCleansUp() throws {
-    let root = try temporaryDirectory(named: "callback")
+    let root = try makeTemporaryDirectory(named: "macarchy-omarchy-stager-callback")
     defer { try? FileManager.default.removeItem(at: root) }
     // A scripted clone and commit reach the callback without a real repository.
     let runner = ProcessRunner { request in
@@ -168,7 +169,7 @@ struct OmarchyThemeStagerTests {
 
   @Test
   func invalidResolvedCommitIsTypedAndCleansUp() throws {
-    let root = try temporaryDirectory(named: "commit")
+    let root = try makeTemporaryDirectory(named: "macarchy-omarchy-stager-commit")
     defer { try? FileManager.default.removeItem(at: root) }
     let calls = Mutex(0)
     let runner = ProcessRunner { request in
@@ -197,7 +198,7 @@ struct OmarchyThemeStagerTests {
 
   @Test
   func oversizedCheckoutFailsBeforeCommitResolutionAndCleansUp() throws {
-    let root = try temporaryDirectory(named: "size-limit")
+    let root = try makeTemporaryDirectory(named: "macarchy-omarchy-stager-size-limit")
     defer { try? FileManager.default.removeItem(at: root) }
     let calls = Mutex(0)
     let runner = ProcessRunner { request in
@@ -228,7 +229,7 @@ struct OmarchyThemeStagerTests {
 
   @Test
   func cancellationIsNotMappedToAStagingFailure() throws {
-    let root = try temporaryDirectory(named: "cancellation")
+    let root = try makeTemporaryDirectory(named: "macarchy-omarchy-stager-cancellation")
     defer { try? FileManager.default.removeItem(at: root) }
     let stager = OmarchyThemeStager(
       temporaryRoot: root,
@@ -257,7 +258,7 @@ private final class GitFixture {
   let defaultBranchCommit: String
 
   init() throws {
-    root = try temporaryDirectory(named: "git")
+    root = try makeTemporaryDirectory(named: "macarchy-omarchy-stager-git")
     repository = root.appending(path: "repository", directoryHint: .isDirectory)
     stagingRoot = root.appending(path: "staging", directoryHint: .isDirectory)
     let submodule = root.appending(path: "submodule", directoryHint: .isDirectory)
@@ -358,15 +359,6 @@ private func gitOutput(_ arguments: [String]) throws -> String {
     throw GitFixtureError.commandFailed(result.output)
   }
   return result.output
-}
-
-private func temporaryDirectory(named name: String) throws -> URL {
-  let root = FileManager.default.temporaryDirectory.appending(
-    path: "macarchy-omarchy-stager-\(name)-\(UUID().uuidString)",
-    directoryHint: .isDirectory
-  )
-  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-  return root
 }
 
 private enum GitFixtureError: Error {

@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -311,10 +312,7 @@ extension AdapterContractTests {
   @Test
   func selectedPersonalWallpaperBytesFlowThroughActivationIntoTheGeneration() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let package = try catppuccinPackage()
     var override = try Data(
       contentsOf: repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png")
@@ -373,10 +371,7 @@ extension AdapterContractTests {
   @Test
   func selectedMacOSAppearanceReconciliationPreservesKittyEvidence() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
     try "include \(root.path)/state/adapters/kitty.conf\n".write(
@@ -438,10 +433,7 @@ extension AdapterContractTests {
   @Test
   func overlappingActivationsLeaveAppearanceMatchingCanonicalState() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let configurationURL = root.appending(path: "kitty.conf")
     try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,

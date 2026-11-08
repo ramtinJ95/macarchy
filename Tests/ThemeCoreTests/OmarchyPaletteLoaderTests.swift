@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -169,7 +170,7 @@ struct OmarchyPaletteLoaderTests {
 
   @Test
   func paletteInputIsBoundedAndDoesNotFollowSymlinks() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-omarchy-palette-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let target = root.appending(path: "target.toml")
     let link = root.appending(path: "colors.toml")
@@ -211,19 +212,10 @@ struct OmarchyPaletteLoaderTests {
   }
 
   private func writePalette(_ text: String) throws -> URL {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-omarchy-palette-tests")
     let file = root.appending(path: "colors.toml")
     try text.write(to: file, atomically: true, encoding: .utf8)
     return file
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-omarchy-palette-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 
   private func diagnostic(_ operation: () throws -> Void) throws -> ThemeDiagnostic {

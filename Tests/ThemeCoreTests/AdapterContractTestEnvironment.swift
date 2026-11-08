@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -36,12 +37,7 @@ extension AdapterContractTests {
   }
 
   func temporaryDirectory() throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-adapter-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
+    try makeTemporaryDirectory(named: "macarchy-adapter-tests")
   }
 
   static func appearanceScript(dark: Bool) -> String {

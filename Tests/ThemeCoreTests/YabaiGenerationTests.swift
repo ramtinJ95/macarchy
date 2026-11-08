@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -67,10 +68,6 @@ struct YabaiGenerationTests {
   }
 
   private var defaultsURL: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Desktop/yabai/defaults.toml")
+    repositoryRoot.appending(path: "Desktop/yabai/defaults.toml")
   }
 }

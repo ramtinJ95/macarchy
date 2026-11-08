@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 import ThemeCore
 
@@ -22,7 +23,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test(arguments: [false, true])
   func textPlanPreservesInspectionStatusWireSpelling(existing: Bool) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home")
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -47,7 +48,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func absentProfilePlansCompleteDefaultSessionWithoutMutation() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = root.appending(path: "missing-profile.toml")
     let state = root.appending(path: "state", directoryHint: .isDirectory)
@@ -98,7 +99,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func textPlanPrintsSortedNeovimArtifactIdentitiesWithoutContents() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = root.appending(path: "missing-profile.toml")
     let state = root.appending(path: "state", directoryHint: .isDirectory)
@@ -138,7 +139,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func disabledSessionHasNoArtifactsSourcesOrActions() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = root.appending(path: "profile.toml")
     try """
@@ -176,7 +177,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func exactExternalDailyToolSeamsRemainUnowned() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = root.appending(path: "state", directoryHint: .isDirectory)
@@ -262,7 +263,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func differingSeamBelowExternalProviderRootIsUnsupported() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let dotfiles = root.appending(path: "dotfiles-eza", directoryHint: .isDirectory)
@@ -297,7 +298,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func malformedToolConfigurationsBlockProviderAdoption() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let configuration = home.appending(path: ".config/yazi/theme.toml")
@@ -347,7 +348,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func ezaRequiresAnExternalConfigurationDirectoryWhenZshIsDisabled() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = root.appending(path: "state", directoryHint: .isDirectory)
@@ -403,7 +404,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func aggregateLifecycleRejectsLegacyToolOwnership() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let context = SetupOwnershipManager.Context(homeDirectory: home)
@@ -431,7 +432,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func invalidNativeBehaviorBlocksBeforeActionsOrMutation() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     try "palette = \"personal\"\n".write(
       to: root.appending(path: "starship.toml"),
@@ -467,7 +468,7 @@ struct EnvironmentPlanCommandTests {
 
   @Test
   func livePlanRequiresTheCanonicalThemeNeededByApply() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = root.appending(path: "state", directoryHint: .isDirectory)
@@ -498,14 +499,5 @@ struct EnvironmentPlanCommandTests {
 
   private var resourcesRoot: URL {
     repositoryRoot.appending(path: "Environment", directoryHint: .isDirectory)
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-environment-plan-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

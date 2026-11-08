@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -265,9 +266,7 @@ private enum DeletionTestError: Error {
 private struct DeletionFixture: Sendable {
   let root: URL
   let themeID = "delete-test"
-  let builtInRoot = URL(filePath: #filePath)
-    .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    .appending(path: "Themes")
+  let builtInRoot = repositoryRoot.appending(path: "Themes")
 
   var userRoot: URL { root.appending(path: "themes") }
   var packageURL: URL { userRoot.appending(path: themeID) }

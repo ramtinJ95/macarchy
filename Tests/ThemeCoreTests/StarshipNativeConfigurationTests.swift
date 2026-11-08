@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -7,10 +8,7 @@ extension AdapterContractTests {
   @Test
   func nativeStarshipRepaintsOnlyReservedColorsAndReadsPersonalEdits() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let url = root.appending(path: "starship-native.toml")
     let personal = #"""
@@ -107,10 +105,7 @@ extension AdapterContractTests {
     arguments: [false, true])
   func installedStarshipReadsWritableNativeConfiguration(external: Bool) async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let state = root.appending(path: "state-root")
     _ = try testActivator(root: state).activate(package: catppuccinPackage())
     let url = root.appending(path: external ? "personal-prompt.toml" : "starship-native.toml")

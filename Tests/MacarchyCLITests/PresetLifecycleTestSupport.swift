@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import TestSupport
 
 @testable import MacarchyCLI
 @testable import ThemeCore

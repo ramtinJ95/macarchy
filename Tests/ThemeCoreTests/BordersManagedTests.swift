@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -25,8 +26,7 @@ struct BordersManagedTests {
   func startupArtifactReadsCanonicalStateAndIsSealedExecutable() throws {
     let root = try temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    let resources = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent().appending(path: "Environment")
+    let resources = repositoryRoot.appending(path: "Environment")
     let composition = try EnvironmentConfigurationComposer().compose(
       resourcesRoot: resources, profile: .defaults, stateRoot: root)
     let store = EnvironmentGenerationStore(stateRoot: root)

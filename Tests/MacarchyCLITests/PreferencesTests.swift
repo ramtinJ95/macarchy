@@ -2,6 +2,7 @@ import ArgumentParser
 import CoreServices
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI

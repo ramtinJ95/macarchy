@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -251,10 +252,6 @@ private struct InstallationFixture {
   }
 
   private static var authoredPackage: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Themes/catppuccin-mocha", directoryHint: .isDirectory)
+    repositoryRoot.appending(path: "Themes/catppuccin-mocha", directoryHint: .isDirectory)
   }
 }

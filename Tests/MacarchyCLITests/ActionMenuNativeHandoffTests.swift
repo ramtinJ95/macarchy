@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -15,8 +16,7 @@ struct ActionMenuNativeHandoffTests {
     .enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_ACTION_MENU_NATIVE"] == "1"),
     arguments: [ActionMenuAction.appearance, .keybindings])
   func nativeMenuClosesBeforeLaunchingStandaloneCommand(action: ActionMenuAction) throws {
-    let root = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent()
+    let root = repositoryRoot
     let package = try ThemePackageLoader().load(
       packageURL: root.appending(path: "Themes/catppuccin-mocha"))
     let theme = NormalizedTheme(package: package, generationID: "native-menu-test")

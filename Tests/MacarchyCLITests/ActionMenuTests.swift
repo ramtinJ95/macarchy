@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -7,18 +8,9 @@ import Testing
 
 struct ActionMenuTests {
   @Test func eachOpeningLoadsTheCurrentCanonicalPalette() throws {
-    let themes = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent().appending(path: "Themes")
+    let themes = repositoryRoot.appending(path: "Themes")
     let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-    defer {
-      if let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) {
-        for case let file as URL in files {
-          try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o700], ofItemAtPath: file.path)
-        }
-      }
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     // Real generation/manifest publication, isolated from live consumers and
     // Darwin notifications. The popup must not cache the previous palette.
     let activator = ThemeActivator(root: root, faultInjector: { _ in })
@@ -270,8 +262,7 @@ struct ActionMenuTests {
   }
 
   @Test func curatedMenuShortcutPreservesViewersAndMetadata() throws {
-    let root = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent()
+    let root = repositoryRoot
     let temporary = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let state = KeybindingEffectiveStateInspector().inspect(
       resourcesRoot: root.appending(path: "Keybindings"),

@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -20,7 +21,7 @@ struct KeybindingProfileTests {
 
   @Test
   func relativeInputsResolveBesideTheResolvedProfileSource() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let sourceDirectory = root.appending(path: "dotfiles", directoryHint: .isDirectory)
     let exposedDirectory = root.appending(
@@ -157,7 +158,7 @@ struct KeybindingProfileTests {
 
   @Test
   func environmentInputsCannotEscapeThroughAnIntermediateSymbolicLink() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profileDirectory = root.appending(path: "profile", directoryHint: .isDirectory)
     let outside = root.appending(path: "outside", directoryHint: .isDirectory)
@@ -358,7 +359,7 @@ struct KeybindingProfileTests {
 
   @Test
   func machineProfileOverlaysFieldsAndResolvesItsPathsBesideItself() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portableDirectory = root.appending(path: "portable", directoryHint: .isDirectory)
     let machineDirectory = root.appending(path: "machine", directoryHint: .isDirectory)
@@ -433,7 +434,7 @@ struct KeybindingProfileTests {
 
   @Test
   func layeredProfileRejectsAnEffectiveCrossLayerContradiction() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "profile.toml")
     let machine = root.appending(path: "machine.toml")
@@ -460,7 +461,7 @@ struct KeybindingProfileTests {
 
   @Test
   func machineReenablingShellRestoresUndeclaredPromptAndHistoryDefaults() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "profile.toml")
     let machine = root.appending(path: "machine.toml")
@@ -490,7 +491,7 @@ struct KeybindingProfileTests {
 
   @Test
   func absentOptionalLayersUseDefaultsButAnExplicitMissingMachineProfileFails() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "profile.toml")
     let machine = root.appending(path: "machine.toml")
@@ -516,7 +517,7 @@ struct KeybindingProfileTests {
 
   @Test
   func machineReenablingShellPreservesDeclaredPromptAndHistoryDisablement() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "profile.toml")
     let machine = root.appending(path: "machine.toml")
@@ -550,7 +551,7 @@ struct KeybindingProfileTests {
   func layeredBarReplacesArraysAndKeepsHookRootWithItsDeclaringSource(
     machineDeclaresHook: Bool
   ) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "profile.toml")
     let machineDirectory = root.appending(path: "machine", directoryHint: .isDirectory)
@@ -601,7 +602,7 @@ struct KeybindingProfileTests {
   func layeredValidationKeepsIndependentLayerAndCrossRoleErrorOrder(
     invalidPortable: Bool
   ) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-profile-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "profile.toml")
     let machine = root.appending(path: "machine.toml")
@@ -630,14 +631,5 @@ struct KeybindingProfileTests {
           == "\(source.path): invalid Macarchy profile: [kitty] cannot customize a disabled terminal provider"
       )
     }
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-keybinding-profile-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

@@ -3,6 +3,7 @@ import Darwin
 import Dispatch
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -176,11 +177,8 @@ struct ActivationSliceTests {
 
   @Test
   func sealedGenerationArtifactValidationEnforcesInventoryAcrossVersionGates() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let base = try testActivator(root: root).activate(package: catppuccinPackage())
     let generationURL = root.appending(
       path: "generations/\(base.generationID)",
@@ -296,11 +294,8 @@ struct ActivationSliceTests {
 
   @Test
   func preparedBackgroundValidationPreservesOversizeErrorAndRejectsFormatMismatch() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let reachedOutputCheckpoint = Mutex(false)
     let activator = ThemeActivator(root: root) { checkpoint in
       if checkpoint == .outputsRendered {
@@ -345,11 +340,8 @@ struct ActivationSliceTests {
 
   @Test
   func activationCreatesCompleteGenerationAndReplacesCurrentWithRelativeSymlink() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let previousMarker = try installPreviousGeneration(at: root)
     let package = try catppuccinPackage()
 
@@ -463,11 +455,8 @@ struct ActivationSliceTests {
 
   @Test
   func committedThemeIsPublishedAfterUnlockAndCanBeReopened() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let publication = Mutex<Result<ThemePublication, PublicationTestError>?>(nil)
     let darwinHint = Mutex<Result<DarwinHint, PublicationTestError>?>(nil)
     let activator = ThemeActivator(
@@ -536,11 +525,8 @@ struct ActivationSliceTests {
       .currentPointerReady,
     ]
     for checkpoint in checkpoints {
-      let root = try temporaryDirectory()
-      defer {
-        makeWritableForRemoval(root)
-        try? FileManager.default.removeItem(at: root)
-      }
+      let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+      defer { removeTemporaryRoot(root) }
       let previousMarker = try installPreviousGeneration(at: root)
       let publicationCounts = Mutex((typed: 0, darwin: 0))
       let activator = ThemeActivator(
@@ -587,11 +573,8 @@ struct ActivationSliceTests {
       .generationsCleaned,
       .changePublished,
     ] {
-      let root = try temporaryDirectory()
-      defer {
-        makeWritableForRemoval(root)
-        try? FileManager.default.removeItem(at: root)
-      }
+      let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+      defer { removeTemporaryRoot(root) }
       let previous = try testActivator(root: root).activate(package: catppuccinPackage())
       let store = ReconciliationStatusStore(root: root)
       _ = try store.persist(
@@ -643,13 +626,11 @@ struct ActivationSliceTests {
 
   @Test
   func recoveryAndCleanupDoNotFollowPrefixMatchingSymlinks() throws {
-    let root = try temporaryDirectory()
-    let external = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    let external = try makeTemporaryDirectory(named: "macarchy-activation-tests")
     defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-      makeWritableForRemoval(external)
-      try? FileManager.default.removeItem(at: external)
+      removeTemporaryRoot(root)
+      removeTemporaryRoot(external)
     }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     try FileManager.default.setAttributes([.posixPermissions: 0o711], ofItemAtPath: external.path)
@@ -686,11 +667,8 @@ struct ActivationSliceTests {
 
   @Test
   func processDeathBeforeAndAfterPointerReplacementLeavesRecoverableState() async throws {
-    let precommitRoot = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(precommitRoot)
-      try? FileManager.default.removeItem(at: precommitRoot)
-    }
+    let precommitRoot = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(precommitRoot) }
     let original = try testActivator(root: precommitRoot).activate(package: catppuccinPackage())
 
     try runCrashProbe(root: precommitRoot, checkpoint: "generationWritten")
@@ -738,11 +716,8 @@ struct ActivationSliceTests {
       try ThemeGenerationReader(root: precommitRoot).activeManifest().generationID
         == recoveredActivation.generationID)
 
-    let postcommitRoot = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(postcommitRoot)
-      try? FileManager.default.removeItem(at: postcommitRoot)
-    }
+    let postcommitRoot = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(postcommitRoot) }
     let previous = try testActivator(root: postcommitRoot).activate(package: catppuccinPackage())
     let store = ReconciliationStatusStore(root: postcommitRoot)
     _ = try store.persist(
@@ -775,11 +750,8 @@ struct ActivationSliceTests {
 
   @Test
   func generationCleanupRetainsOnlyCurrentAndPreviousReusableEvidence() throws {
-    let fixtureRoot = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(fixtureRoot)
-      try? FileManager.default.removeItem(at: fixtureRoot)
-    }
+    let fixtureRoot = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(fixtureRoot) }
     let packages = try distinctCatppuccinPackages(at: fixtureRoot)
     let stateRoot = fixtureRoot.appending(path: "state", directoryHint: .isDirectory)
     let first = try testActivator(root: stateRoot).activate(package: packages[0])
@@ -806,11 +778,8 @@ struct ActivationSliceTests {
 
   @Test
   func cleanupFailureIsReportedAfterCommitAndPublication() throws {
-    let fixtureRoot = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(fixtureRoot)
-      try? FileManager.default.removeItem(at: fixtureRoot)
-    }
+    let fixtureRoot = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(fixtureRoot) }
     let packages = try distinctCatppuccinPackages(at: fixtureRoot)
     let stateRoot = fixtureRoot.appending(path: "state", directoryHint: .isDirectory)
     let first = try testActivator(root: stateRoot).activate(package: packages[0])
@@ -859,11 +828,8 @@ struct ActivationSliceTests {
 
   @Test
   func concurrentEquivalentActivationsRenderOneGeneration() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let package = try catppuccinPackage()
     let firstActivationEntered = DispatchSemaphore(value: 0)
     let secondActivationEntered = DispatchSemaphore(value: 0)
@@ -970,11 +936,8 @@ struct ActivationSliceTests {
 
   @Test
   func crossProcessLockIsHeldAcrossActivationAndReleasedAfterFailure() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let activationEntered = DispatchSemaphore(value: 0)
     let releaseActivation = DispatchSemaphore(value: 0)
     defer { releaseActivation.signal() }
@@ -1018,11 +981,8 @@ struct ActivationSliceTests {
 
   @Test
   func activationContinuesAfterLockHolderIsTerminated() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
     let lockPath = runDirectory.appending(path: "activation.lock").path
@@ -1080,11 +1040,8 @@ struct ActivationSliceTests {
 
   @Test
   func inputDigestUsesValidatedContentRatherThanSourceFormatting() throws {
-    let fixtureRoot = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(fixtureRoot)
-      try? FileManager.default.removeItem(at: fixtureRoot)
-    }
+    let fixtureRoot = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(fixtureRoot) }
     let source = repositoryRoot.appending(
       path: "Themes/catppuccin-mocha", directoryHint: .isDirectory)
     let equivalentURL = fixtureRoot.appending(path: "equivalent", directoryHint: .isDirectory)
@@ -1145,11 +1102,8 @@ struct ActivationSliceTests {
 
   @Test
   func repeatedActivationAndRoundTripsReuseWithoutRendering() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let catppuccin = try catppuccinPackage()
     let tokyoNight = try tokyoNightPackage()
 
@@ -1239,11 +1193,8 @@ struct ActivationSliceTests {
 
   @Test
   func unknownMatchingManifestFieldFailsWithoutRendering() throws {
-    let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    let root = try makeTemporaryDirectory(named: "macarchy-activation-tests")
+    defer { removeTemporaryRoot(root) }
     let catppuccin = try catppuccinPackage()
     let catppuccinGeneration = try testActivator(root: root).activate(package: catppuccin)
     let tokyoGeneration = try testActivator(root: root).activate(package: tokyoNightPackage())
@@ -1435,14 +1386,6 @@ struct ActivationSliceTests {
     try process.run()
     process.waitUntilExit()
     #expect(process.terminationStatus == 86)
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let url = FileManager.default.temporaryDirectory
-      .appending(
-        path: "macarchy-activation-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
   }
 
   private enum InjectedFault: Error {

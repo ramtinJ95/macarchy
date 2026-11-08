@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -465,11 +466,7 @@ struct UpdateAwarenessTests {
   }
 
   private func temporaryRoot() throws -> URL {
-    let root = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: ".build/update-awareness-tests/\(UUID().uuidString)")
+    let root = repositoryRoot.appending(path: ".build/update-awareness-tests/\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     return root
   }

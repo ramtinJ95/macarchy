@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -8,7 +9,7 @@ import Testing
 struct UnifiedSetupPlanTests {
   @Test
   func firstInstallPreviewsHerdrWithoutPublishingThemeAndPreservesAdoptionAfterBootstrap() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = root.appending(path: "profile.toml")
     try "schema_version = 1\n[presets]\nherdr = true\n".write(
@@ -58,7 +59,7 @@ struct UnifiedSetupPlanTests {
 
   @Test
   func sparsePortableProfileProducesTheSameDelegatedIntentAcrossMachineRoots() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profileText = """
       schema_version = 1
@@ -132,7 +133,7 @@ struct UnifiedSetupPlanTests {
 
   @Test
   func machineProfileChangesOnlyItsDeclaredProviderExceptions() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = root.appending(path: "profile.toml")
     try "schema_version = 1\n[tools]\nbtop = false\n".write(
@@ -189,7 +190,7 @@ struct UnifiedSetupPlanTests {
 
   @Test
   func liveUnifiedPlanUsesTheMachineOverlayAndRemainsReadOnly() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
@@ -247,7 +248,7 @@ struct UnifiedSetupPlanTests {
 
   @Test
   func unifiedPlanLayersProfilesDelegatesEverySelectedDomainAndDoesNotMutate() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
@@ -389,7 +390,7 @@ struct UnifiedSetupPlanTests {
 
   @Test
   func invalidMachineProfileBlocksBeforeAnyDelegatedPlanOrAction() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
@@ -440,7 +441,7 @@ struct UnifiedSetupPlanTests {
 
   @Test
   func blockedComponentSuppressesEveryActionAndReportsItsDiagnostic() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-unified-setup-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let state = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
@@ -611,15 +612,6 @@ struct UnifiedSetupPlanTests {
       ($0 as? URL)?.path.replacingOccurrences(of: root.path, with: "")
     }
     .sorted()
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-unified-setup-plan-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }
 

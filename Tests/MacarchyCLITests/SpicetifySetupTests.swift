@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -533,6 +534,6 @@ private final class SpicetifySetupFixture: LegacySetupOwnershipFixture, @uncheck
   }
 
   func remove() {
-    removeSpicetifyTestRoot(root)
+    removeTemporaryRoot(root)
   }
 }

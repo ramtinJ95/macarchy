@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -111,13 +112,6 @@ struct YabaiConfigurationTests {
 
   private var defaultsURL: URL {
     repositoryRoot.appending(path: "Desktop/yabai/defaults.toml")
-  }
-
-  private var repositoryRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
   }
 
   private func temporaryDirectory() throws -> URL {

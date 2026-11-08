@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -233,8 +234,7 @@ struct MenuMaintenanceTests {
   }
 
   private func theme() throws -> NormalizedTheme {
-    let root = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent()
+    let root = repositoryRoot
     let package = try ThemePackageLoader().load(
       packageURL: root.appending(path: "Themes/catppuccin-mocha"))
     return NormalizedTheme(package: package, generationID: "maintenance-test")

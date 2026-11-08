@@ -1,17 +1,8 @@
 import Darwin
 import Foundation
-import Testing
+import TestSupport
 
 @testable import ThemeCore
-
-let repositoryRoot = URL(filePath: #filePath)
-  .deletingLastPathComponent()
-  .deletingLastPathComponent()
-  .deletingLastPathComponent()
-
-func jsonObject(_ output: String) throws -> [String: Any] {
-  try #require(JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-}
 
 /// Activates the bundled Catppuccin Mocha theme and returns the generation ID.
 @discardableResult

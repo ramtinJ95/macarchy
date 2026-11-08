@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -8,10 +9,7 @@ extension AdapterContractTests {
   @Test
   func independentAdaptersReconcileConcurrentlyAndPersistDeterministically() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let store = ReconciliationStatusStore(root: root)
     let reconciler = ThemeReconciler(statusStore: store)
@@ -83,10 +81,7 @@ extension AdapterContractTests {
       .statusPersisted,
     ] {
       let root = try temporaryDirectory()
-      defer {
-        makeWritableForRemoval(root)
-        try? FileManager.default.removeItem(at: root)
-      }
+      defer { removeTemporaryRoot(root) }
       let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
       let store = ReconciliationStatusStore(root: root)
       let calls = Mutex(0)
@@ -132,10 +127,7 @@ extension AdapterContractTests {
     }
 
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let cancelled = ThemeReconciler(
       statusStore: ReconciliationStatusStore(root: root),
@@ -156,10 +148,7 @@ extension AdapterContractTests {
   @Test
   func typedResultsArePersistedDeterministicallyForTheActiveGeneration() throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let store = ReconciliationStatusStore(root: root)
 
@@ -239,10 +228,7 @@ extension AdapterContractTests {
   @Test
   func missingAndMalformedStatusAreExplicit() throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let store = ReconciliationStatusStore(root: root)
 
@@ -304,10 +290,7 @@ extension AdapterContractTests {
   @Test
   func activeManifestRejectsBrokenPointerAndManifestIdentity() throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let store = ThemeGenerationReader(root: root)
     let missingGenerationID = "g-00000000-0000-0000-0000-000000000000"
     try FileManager.default.createSymbolicLink(
