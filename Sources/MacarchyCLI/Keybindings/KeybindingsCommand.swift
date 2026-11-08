@@ -127,7 +127,7 @@ struct Keybindings: ParsableCommand {
 
     func skhdConfigurationURL(homeDirectory: URL) -> URL {
       skhdConfig.map { URL(filePath: $0).standardizedFileURL }
-        ?? homeDirectory.appending(path: ".config/skhd/skhdrc").standardizedFileURL
+        ?? homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration).standardizedFileURL
     }
 
     func catalogURL(homeDirectory: URL) -> URL {

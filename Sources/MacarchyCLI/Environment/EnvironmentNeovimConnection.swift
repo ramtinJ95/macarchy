@@ -17,7 +17,7 @@ struct EnvironmentNeovimConnection {
     let standard: Bool
   }
 
-  var publicURL: URL { homeDirectory.appending(path: ".config/nvim") }
+  var publicURL: URL { homeDirectory.appending(path: ConsumerHomePath.neovimDirectory) }
 
   func plan() throws -> Plan {
     do {
@@ -275,7 +275,7 @@ extension EnvironmentTransactionCoordinator {
   func finishNeovimConnectionLocked(_ transaction: EnvironmentTransaction) throws {
     let source =
       transaction.proposedOwnership?.records.first { $0.id == .neovim }?.managedTarget
-      ?? homeDirectory.appending(path: ".config/nvim").path
+      ?? homeDirectory.appending(path: ConsumerHomePath.neovimDirectory).path
     try EnvironmentNeovimConnection(
       homeDirectory: homeDirectory, stateRoot: stateRoot,
       source: URL(filePath: source)

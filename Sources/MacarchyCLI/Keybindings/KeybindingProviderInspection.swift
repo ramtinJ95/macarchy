@@ -957,7 +957,7 @@ struct KeybindingProviderInspector: Sendable {
     _ record: SetupOwnershipRecord,
     context: SetupOwnershipManager.Context
   ) throws {
-    let target = context.homeDirectory.appending(path: ".config/skhd/skhdrc")
+    let target = context.homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration)
     let expectedTarget = Self.managedTarget
     guard
       record.originalVolumeUUID.map({ UUID(uuidString: $0)?.uuidString == $0 }) ?? true,

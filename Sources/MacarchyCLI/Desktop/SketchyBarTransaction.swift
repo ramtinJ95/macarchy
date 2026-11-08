@@ -876,7 +876,7 @@ struct SketchyBarProviderTransaction: Sendable {
   }
 
   private var configurationDirectory: URL {
-    homeDirectory.appending(path: ".config/sketchybar", directoryHint: .isDirectory)
+    homeDirectory.appending(path: ConsumerHomePath.sketchyBarDirectory, directoryHint: .isDirectory)
   }
 
   private var entry: URL { configurationDirectory.appending(path: "sketchybarrc") }

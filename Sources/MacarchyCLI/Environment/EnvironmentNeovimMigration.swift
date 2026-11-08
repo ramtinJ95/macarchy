@@ -11,7 +11,7 @@ struct EnvironmentNeovimMigration: Sendable {
   var sourceURL: URL? = nil
 
   var nativeRoot: URL { sourceURL ?? homeDirectory.appending(path: ".config/nvim-native") }
-  var publicURL: URL { homeDirectory.appending(path: ".config/nvim") }
+  var publicURL: URL { homeDirectory.appending(path: ConsumerHomePath.neovimDirectory) }
   var legacyTarget: String { StateLayout(root: stateRoot).environmentArtifact("neovim").path }
 
   func isNative(_ ownership: EnvironmentOwnership?) -> Bool {

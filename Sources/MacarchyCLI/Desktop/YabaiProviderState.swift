@@ -89,7 +89,8 @@ struct YabaiProviderPlanInspector: Sendable {
     enabled: Bool,
     transactionPending: Bool = false
   ) -> DesktopProviderPlanInspection {
-    let directory = homeDirectory.appending(path: ".config/yabai", directoryHint: .isDirectory)
+    let directory = homeDirectory.appending(
+      path: ConsumerHomePath.yabaiDirectory, directoryHint: .isDirectory)
     let entry = directory.appending(path: "yabairc")
     if transactionPending {
       return .result(

@@ -111,7 +111,7 @@ struct MenuNativeConfigurationSetup {
     // These are personal application directories, not adopted configuration.
     // Retain explicitly approved empty directories on cancellation, like starters.
     if provider == .atuin {
-      for path in [".config/atuin", ".config/atuin/themes"] {
+      for path in [ConsumerHomePath.atuinDirectory, "\(ConsumerHomePath.atuinDirectory)/themes"] {
         let directory = context.homeDirectory.appending(path: path)
         var metadata = stat()
         if lstat(directory.path, &metadata) == 0 {

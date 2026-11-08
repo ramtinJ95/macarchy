@@ -449,7 +449,7 @@ struct EnvironmentProviderInspector: Sendable {
         inspections.append(
           try inspectExternalEzaEnvironment(
             homeDirectory: homeDirectory,
-            configurationDirectory: homeDirectory.appending(path: ".config/eza")
+            configurationDirectory: homeDirectory.appending(path: ConsumerHomePath.ezaDirectory)
           )
         )
       }
@@ -463,7 +463,8 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = btop.entry { inspections.append(entry) }
       if btop.proposedOwnership != nil {
-        try recordMissingParents(of: homeDirectory.appending(path: ".config/btop/btop.conf"))
+        try recordMissingParents(
+          of: homeDirectory.appending(path: ConsumerHomePath.btopConfiguration))
       }
 
       let codex = try inspectCodex(
@@ -481,7 +482,8 @@ struct EnvironmentProviderInspector: Sendable {
         externallyAuthoritative: externallyAuthoritativeCodex && !composition.profile.presets.codex,
         composition: composition)
       if codex.proposedOwnership != nil {
-        try recordMissingParents(of: homeDirectory.appending(path: ".codex/config.toml"))
+        try recordMissingParents(
+          of: homeDirectory.appending(path: ConsumerHomePath.codexConfiguration))
       }
 
       let herdr = try inspectHerdr(
@@ -493,7 +495,8 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = herdr.entry { inspections.append(entry) }
       if herdr.proposedOwnership != nil, herdr.proposedOwnership?.directoryLink == nil {
-        try recordMissingParents(of: homeDirectory.appending(path: ".config/herdr/config.toml"))
+        try recordMissingParents(
+          of: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration))
       }
 
       let pi = try inspectPi(
@@ -510,7 +513,7 @@ struct EnvironmentProviderInspector: Sendable {
         externallyAuthoritative: externallyAuthoritativePi && !composition.profile.presets.pi,
         composition: composition)
       if pi.proposedOwnership != nil {
-        try recordMissingParents(of: homeDirectory.appending(path: ".pi/agent/settings.json"))
+        try recordMissingParents(of: homeDirectory.appending(path: ConsumerHomePath.piSettings))
       }
 
       let spicetify = try inspectSpicetify(
@@ -565,7 +568,8 @@ struct EnvironmentProviderInspector: Sendable {
         externallyAuthoritative: externallyAuthoritativeTuicr && !composition.profile.presets.tuicr,
         composition: composition)
       if tuicr.proposedOwnership != nil {
-        try recordMissingParents(of: homeDirectory.appending(path: ".config/tuicr/config.toml"))
+        try recordMissingParents(
+          of: homeDirectory.appending(path: ConsumerHomePath.tuicrConfiguration))
       }
 
       for record in ownership?.records ?? [] where !entries.contains(where: { $0.id == record.id })
@@ -693,79 +697,84 @@ struct EnvironmentProviderInspector: Sendable {
       ),
       EnvironmentManagedEntry(
         id: .bordersConfiguration,
-        url: home.appending(path: ".config/borders/bordersrc"),
+        url: home.appending(path: ConsumerHomePath.bordersConfiguration),
         kind: .symbolicLink,
         target: layout.environmentArtifact("borders/bordersrc").path
       ),
       EnvironmentManagedEntry(
         id: .kitty,
-        url: home.appending(path: ".config/kitty", directoryHint: .isDirectory),
+        url: home.appending(path: ConsumerHomePath.kittyDirectory, directoryHint: .isDirectory),
         kind: .kittyDirectory,
         target: layout.environmentArtifact("kitty/kitty.conf").path
       ),
       EnvironmentManagedEntry(
         id: .zsh,
-        url: home.appending(path: ".zshrc"),
+        url: home.appending(path: ConsumerHomePath.shellConfiguration),
         kind: .symbolicLink,
         target: layout.environmentArtifact("zsh/.zshrc").path
       ),
       EnvironmentManagedEntry(
         id: .starship,
-        url: home.appending(path: ".config/starship.toml"),
+        url: home.appending(path: ConsumerHomePath.starshipConfiguration),
         kind: .symbolicLink,
         target: state.appending(path: StarshipAdapter.bridgePath).path
       ),
       EnvironmentManagedEntry(
         id: .neovim,
-        url: home.appending(path: ".config/nvim", directoryHint: .isDirectory),
+        url: home.appending(path: ConsumerHomePath.neovimDirectory, directoryHint: .isDirectory),
         kind: .symbolicLink,
         target: layout.environmentArtifact("neovim").path
       ),
       EnvironmentManagedEntry(
         id: .atuinConfiguration,
-        url: home.appending(path: ".config/atuin/config.toml"),
+        url: home.appending(path: ConsumerHomePath.atuinConfiguration),
         kind: .symbolicLink,
         target: layout.environmentArtifact("atuin/config.toml").path
       ),
       EnvironmentManagedEntry(
         id: .atuinTheme,
-        url: home.appending(path: ".config/atuin/themes/\(AtuinAdapter.themeName).toml"),
+        url: home.appending(
+          path: "\(ConsumerHomePath.atuinDirectory)/themes/\(AtuinAdapter.themeName).toml"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(AtuinAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .batConfiguration,
-        url: home.appending(path: ".config/bat/config"),
+        url: home.appending(path: ConsumerHomePath.batConfiguration),
         kind: .symbolicLink,
         target: state.appending(path: BatAdapter.managedConfigurationPath).path
       ),
       EnvironmentManagedEntry(
         id: .batTheme,
-        url: home.appending(path: ".config/bat/themes/\(BatAdapter.themeFileName)"),
+        url: home.appending(
+          path: "\(ConsumerHomePath.batDirectory)/themes/\(BatAdapter.themeFileName)"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .ezaTheme,
-        url: home.appending(path: ".config/eza/\(EzaAdapter.themeFileName)"),
+        url: home.appending(path: "\(ConsumerHomePath.ezaDirectory)/\(EzaAdapter.themeFileName)"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(EzaAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .btopTheme,
-        url: home.appending(path: ".config/btop/themes/\(BtopAdapter.themeFileName)"),
+        url: home.appending(
+          path: "\(ConsumerHomePath.btopDirectory)/themes/\(BtopAdapter.themeFileName)"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(BtopAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .codexTheme,
-        url: home.appending(path: ".codex/themes/\(CodexAdapter.themeName).tmTheme"),
+        url: home.appending(
+          path: "\(ConsumerHomePath.codexDirectory)/themes/\(CodexAdapter.themeName).tmTheme"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .piTheme,
-        url: home.appending(path: ".pi/agent/themes/\(PiAdapter.themeName).json"),
+        url: home.appending(
+          path: "\(ConsumerHomePath.piDirectory)/themes/\(PiAdapter.themeName).json"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(PiAdapter.outputPath).path
       ),
@@ -777,13 +786,15 @@ struct EnvironmentProviderInspector: Sendable {
       ),
       EnvironmentManagedEntry(
         id: .tuicrTheme,
-        url: home.appending(path: ".config/tuicr/themes/\(TuicrAdapter.themeName).toml"),
+        url: home.appending(
+          path: "\(ConsumerHomePath.tuicrDirectory)/themes/\(TuicrAdapter.themeName).toml"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(TuicrAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .tuicrSyntax,
-        url: home.appending(path: ".config/tuicr/themes/\(TuicrAdapter.themeName).tmTheme"),
+        url: home.appending(
+          path: "\(ConsumerHomePath.tuicrDirectory)/themes/\(TuicrAdapter.themeName).tmTheme"),
         kind: .symbolicLink,
         target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
       ),
@@ -795,7 +806,7 @@ struct EnvironmentProviderInspector: Sendable {
       ),
       EnvironmentManagedEntry(
         id: .yaziThemeSelection,
-        url: home.appending(path: ".config/yazi/theme.toml"),
+        url: home.appending(path: ConsumerHomePath.yaziTheme),
         kind: .symbolicLink,
         target: state.appending(path: YaziAdapter.managedThemeConfigurationPath).path
       ),
@@ -1236,7 +1247,7 @@ struct EnvironmentProviderInspector: Sendable {
       composition.profile.presets.codex || ownership != nil || legacyOwned
         || externallyAuthoritative
     else { return (nil, nil, nil) }
-    let url = homeDirectory.appending(path: ".codex/config.toml")
+    let url = homeDirectory.appending(path: ConsumerHomePath.codexConfiguration)
     if legacyOwned {
       let evidence = try capture(url, directoryLink: nil)
       guard evidence.kind == .regularFile,
@@ -1427,7 +1438,7 @@ struct EnvironmentProviderInspector: Sendable {
     stateRoot: URL,
     configurationEvidence: EnvironmentEntryEvidence? = nil
   ) throws -> Bool {
-    let configuration = homeDirectory.appending(path: ".codex/config.toml")
+    let configuration = homeDirectory.appending(path: ConsumerHomePath.codexConfiguration)
     return try externalTupleIsExact(
       configuration: configuration,
       links: [.codexTheme],
@@ -1489,7 +1500,7 @@ struct EnvironmentProviderInspector: Sendable {
     homeDirectory: URL,
     configurationDirectory: URL
   ) throws -> EnvironmentEntryInspection {
-    let shell = homeDirectory.appending(path: ".zshrc")
+    let shell = homeDirectory.appending(path: ConsumerHomePath.shellConfiguration)
     let evidence = try capture(shell, directoryLink: nil)
     let text: String
     switch evidence.kind {
@@ -1545,7 +1556,7 @@ struct EnvironmentProviderInspector: Sendable {
     externalEvidence: EnvironmentEntryEvidence?
   ) {
     guard composition.profile.tools.btop || ownership != nil else { return (nil, nil, nil) }
-    let url = homeDirectory.appending(path: ".config/btop/btop.conf")
+    let url = homeDirectory.appending(path: ConsumerHomePath.btopConfiguration)
     if let ownership {
       guard let ownershipGenerationID else {
         throw EnvironmentLifecycleError.blocked("btop ownership has no generation")
@@ -1695,7 +1706,7 @@ struct EnvironmentProviderInspector: Sendable {
       composition.profile.presets.pi || ownership != nil || legacyOwned
         || externallyAuthoritative
     else { return (nil, nil, nil) }
-    let url = homeDirectory.appending(path: ".pi/agent/settings.json")
+    let url = homeDirectory.appending(path: ConsumerHomePath.piSettings)
     if legacyOwned {
       let evidence = try capture(url, directoryLink: nil)
       guard evidence.kind == .regularFile,
@@ -1884,7 +1895,7 @@ struct EnvironmentProviderInspector: Sendable {
     stateRoot: URL,
     configurationEvidence: EnvironmentEntryEvidence? = nil
   ) throws -> Bool {
-    let configuration = homeDirectory.appending(path: ".pi/agent/settings.json")
+    let configuration = homeDirectory.appending(path: ConsumerHomePath.piSettings)
     return try externalTupleIsExact(
       configuration: configuration,
       links: [.piTheme],
@@ -1922,7 +1933,7 @@ struct EnvironmentProviderInspector: Sendable {
     else {
       return (nil, nil, nil)
     }
-    let url = homeDirectory.appending(path: ".config/tuicr/config.toml")
+    let url = homeDirectory.appending(path: ConsumerHomePath.tuicrConfiguration)
     if legacyOwned {
       let evidence = try capture(url, directoryLink: nil)
       guard evidence.kind == .regularFile,
@@ -2136,7 +2147,7 @@ struct EnvironmentProviderInspector: Sendable {
     stateRoot: URL,
     configurationEvidence: EnvironmentEntryEvidence? = nil
   ) throws -> Bool {
-    let configuration = homeDirectory.appending(path: ".config/tuicr/config.toml")
+    let configuration = homeDirectory.appending(path: ConsumerHomePath.tuicrConfiguration)
     return try externalTupleIsExact(
       configuration: configuration,
       links: [.tuicrTheme, .tuicrSyntax],

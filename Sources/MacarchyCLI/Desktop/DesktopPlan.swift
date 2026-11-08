@@ -112,7 +112,7 @@ struct DesktopPlanCommandRunner: Sendable {
           diagnostics.append(
             DesktopPlanDiagnostic(
               code: "keybindings_blocked",
-              source: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
+              source: homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration).path,
               message: keybindingPlan?.message ?? "keybinding state is blocked"
             )
           )
@@ -121,7 +121,7 @@ struct DesktopPlanCommandRunner: Sendable {
         diagnostics.append(
           DesktopPlanDiagnostic(
             code: "keybindings_invalid",
-            source: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
+            source: homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration).path,
             message: String(describing: error)
           )
         )
@@ -248,7 +248,7 @@ struct DesktopPlanCommandRunner: Sendable {
       sketchyBarProvider = DesktopProviderPlanInspection(
         status: .disabled,
         ownership: "not_inspected",
-        entryPoint: homeDirectory.appending(path: ".config/sketchybar/sketchybarrc").path,
+        entryPoint: homeDirectory.appending(path: ConsumerHomePath.sketchyBarConfiguration).path,
         originalTarget: nil,
         source: nil,
         message: "SketchyBar is outside this plan scope",

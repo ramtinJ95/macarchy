@@ -336,9 +336,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
       }
     }
     try revalidate(
-      inspection.btopExternalEvidence, at: ".config/btop/btop.conf", "btop configuration")
+      inspection.btopExternalEvidence, at: ConsumerHomePath.btopConfiguration, "btop configuration")
     try revalidate(
-      inspection.codexExternalEvidence, at: ".codex/config.toml", "Codex external tuple"
+      inspection.codexExternalEvidence, at: ConsumerHomePath.codexConfiguration,
+      "Codex external tuple"
     ) {
       try inspection.proposedCodexOwnership != nil
         || inspector.codexExternalTupleIsExact(
@@ -348,10 +349,11 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
     }
     try revalidate(
-      inspection.herdrExternalEvidence, at: ".config/herdr/config.toml", "Herdr configuration")
-    try revalidate(inspection.piExternalEvidence, at: ".pi/agent/settings.json", "Pi settings")
+      inspection.herdrExternalEvidence, at: ConsumerHomePath.herdrConfiguration,
+      "Herdr configuration")
+    try revalidate(inspection.piExternalEvidence, at: ConsumerHomePath.piSettings, "Pi settings")
     try revalidate(
-      inspection.spicetifyExternalEvidence, at: ".config/spicetify/config-xpui.ini",
+      inspection.spicetifyExternalEvidence, at: ConsumerHomePath.spicetifyConfiguration,
       "Spicetify external tuple"
     ) {
       try inspection.proposedSpicetifyOwnership != nil
@@ -362,7 +364,8 @@ struct EnvironmentTransactionCoordinator: Sendable {
         )
     }
     try revalidate(
-      inspection.tuicrExternalEvidence, at: ".config/tuicr/config.toml", "tuicr configuration")
+      inspection.tuicrExternalEvidence, at: ConsumerHomePath.tuicrConfiguration,
+      "tuicr configuration")
 
     let generationStore = EnvironmentGenerationStore(stateRoot: stateRoot)
     let previousCurrent = try generationStore.currentDestination()
@@ -923,7 +926,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
     else { return false }
     return try HerdrAdapter(
       root: stateRoot,
-      configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+      configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
       executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
       controlIsAvailable: { true }
     ).authenticatedLegacyOwnershipMatchesCurrentGeneration()
@@ -932,7 +935,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
   private func discardHerdrLegacyEvidence() throws {
     try HerdrAdapter(
       root: stateRoot,
-      configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+      configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
       executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
       controlIsAvailable: { true }
     ).discardLegacyOwnershipEvidence()
@@ -998,12 +1001,12 @@ struct EnvironmentTransactionCoordinator: Sendable {
       }
     }
     for (path, relativePath, label) in [
-      (ownership.btop?.path, ".config/btop/btop.conf", "btop"),
-      (ownership.codex?.path, ".codex/config.toml", "Codex"),
-      (ownership.herdr?.path, ".config/herdr/config.toml", "Herdr"),
-      (ownership.pi?.path, ".pi/agent/settings.json", "Pi"),
-      (ownership.spicetify?.path, ".config/spicetify/config-xpui.ini", "Spicetify"),
-      (ownership.tuicr?.path, ".config/tuicr/config.toml", "tuicr"),
+      (ownership.btop?.path, ConsumerHomePath.btopConfiguration, "btop"),
+      (ownership.codex?.path, ConsumerHomePath.codexConfiguration, "Codex"),
+      (ownership.herdr?.path, ConsumerHomePath.herdrConfiguration, "Herdr"),
+      (ownership.pi?.path, ConsumerHomePath.piSettings, "Pi"),
+      (ownership.spicetify?.path, ConsumerHomePath.spicetifyConfiguration, "Spicetify"),
+      (ownership.tuicr?.path, ConsumerHomePath.tuicrConfiguration, "tuicr"),
     ] {
       if let path, path != homeDirectory.appending(path: relativePath).path {
         throw EnvironmentLifecycleError.blocked("ownership contains an unexpected \(label) path")
@@ -1022,7 +1025,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
         }
         + [
           homeDirectory.appending(path: ".config").path,
-          homeDirectory.appending(path: ".config/herdr").path,
+          homeDirectory.appending(path: ConsumerHomePath.herdrDirectory).path,
         ]
     )
     guard Set(ownership.createdDirectories).isSubset(of: allowedDirectories) else {

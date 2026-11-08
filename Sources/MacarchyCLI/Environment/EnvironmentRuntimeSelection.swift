@@ -41,7 +41,7 @@ enum ThemeRuntimeSelection {
       enabled.remove(TuicrAdapter.id)
       let herdr = HerdrAdapter(
         root: stateRoot,
-        configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+        configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
         executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
         controlIsAvailable: { true }
       )

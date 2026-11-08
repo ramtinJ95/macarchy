@@ -54,11 +54,11 @@ extension EnvironmentNativeSeed.Provider {
   func standardURL(homeDirectory: URL) -> URL {
     let path: String
     switch self {
-    case .zsh: path = ".zshrc"
-    case .kitty: path = ".config/kitty/kitty.conf"
-    case .atuin: path = ".config/atuin/config.toml"
-    case .starship: path = ".config/starship.toml"
-    case .neovim: path = ".config/nvim"
+    case .zsh: path = ConsumerHomePath.shellConfiguration
+    case .kitty: path = ConsumerHomePath.kittyConfiguration
+    case .atuin: path = ConsumerHomePath.atuinConfiguration
+    case .starship: path = ConsumerHomePath.starshipConfiguration
+    case .neovim: path = ConsumerHomePath.neovimDirectory
     }
     return homeDirectory.appending(path: path).standardizedFileURL
   }

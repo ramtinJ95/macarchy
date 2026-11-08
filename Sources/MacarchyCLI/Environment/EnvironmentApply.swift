@@ -12,7 +12,7 @@ struct EnvironmentHerdrRuntimeReloader: Sendable {
   static let live = Self { stateRoot, homeDirectory in
     let result = try HerdrAdapter(
       root: stateRoot,
-      configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+      configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
       executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
       controlIsAvailable: { true }
     ).reloadCurrentConfiguration()
@@ -32,7 +32,7 @@ struct EnvironmentSpicetifyRuntimeRefresher: Sendable {
   static let live = Self { stateRoot, homeDirectory, clearEvidence in
     try SpicetifyAdapter.live(
       root: stateRoot,
-      configurationDirectoryURL: homeDirectory.appending(path: ".config/spicetify")
+      configurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.spicetifyDirectory)
     ).refreshRestoredConfiguration(clearRuntimeEvidence: clearEvidence).message()
   }
 }
@@ -324,7 +324,7 @@ struct EnvironmentNeovimPreparer: Sendable {
     homeDirectory: URL, stateRoot: URL, resourcesRoot: URL,
     proposedStarters: [EnvironmentNativeSeed.Plan] = []
   ) throws -> Bool {
-    let standard = homeDirectory.appending(path: ".config/nvim")
+    let standard = homeDirectory.appending(path: ConsumerHomePath.neovimDirectory)
     guard profile.editor == .neovim,
       profile.neovim.nativeConfigurationDirectoryURL?.path == standard.path,
       ownership?.standardNativeEntries?.contains(.neovim) != true,
@@ -364,7 +364,8 @@ struct EnvironmentNeovimPreparer: Sendable {
           at: temporaryRoot, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: temporaryRoot) }
         try FileManager.default.copyItem(
-          at: homeDirectory.appending(path: ".config/nvim").resolvingSymlinksInPath(),
+          at: homeDirectory.appending(path: ConsumerHomePath.neovimDirectory)
+            .resolvingSymlinksInPath(),
           to: configurationRoot
         )
         try makeWritable(configurationRoot)

@@ -112,7 +112,7 @@ struct YabaiProviderTransaction: Sendable {
   let stateRoot: URL
 
   private var configurationDirectory: URL {
-    homeDirectory.appending(path: ".config/yabai", directoryHint: .isDirectory)
+    homeDirectory.appending(path: ConsumerHomePath.yabaiDirectory, directoryHint: .isDirectory)
   }
 
   private var entry: URL { configurationDirectory.appending(path: "yabairc") }

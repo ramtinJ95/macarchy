@@ -19,7 +19,7 @@ extension EnvironmentProviderInspector {
         || externallyAuthoritative
     else { return (nil, nil, nil) }
 
-    let url = homeDirectory.appending(path: ".config/spicetify/config-xpui.ini")
+    let url = homeDirectory.appending(path: ConsumerHomePath.spicetifyConfiguration)
     if legacyOwned {
       let evidence = try capture(url, directoryLink: nil)
       guard evidence.kind == .regularFile,
@@ -152,7 +152,7 @@ extension EnvironmentProviderInspector {
     stateRoot: URL,
     configurationEvidence: EnvironmentEntryEvidence? = nil
   ) throws -> Bool {
-    let configuration = homeDirectory.appending(path: ".config/spicetify/config-xpui.ini")
+    let configuration = homeDirectory.appending(path: ConsumerHomePath.spicetifyConfiguration)
     let evidence = try configurationEvidence ?? capture(configuration, directoryLink: nil)
     guard evidence.kind == .regularFile || evidence.kind == .symbolicLink else { return false }
     guard try selectionIsManaged(at: configuration, evidence: evidence) else { return false }

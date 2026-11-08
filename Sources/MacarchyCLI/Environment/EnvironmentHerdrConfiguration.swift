@@ -544,7 +544,7 @@ struct EnvironmentHerdrFileTransaction: Sendable {
   }
 
   private func validateTopology(_ ownership: EnvironmentHerdrOwnership, at url: URL) throws {
-    guard url == homeDirectory.appending(path: ".config/herdr/config.toml"),
+    guard url == homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
       url.resolvingSymlinksInPath().path == ownership.resolvedPath
     else { throw EnvironmentLifecycleError.blocked("Herdr ownership path is invalid") }
     if let expected = ownership.directoryLink {

@@ -24,7 +24,8 @@ struct EnvironmentNativeFileMigration: Sendable {
   }
   var publicURL: URL {
     homeDirectory.appending(
-      path: provider == .atuin ? ".config/atuin/config.toml" : ".config/starship.toml")
+      path: provider == .atuin
+        ? ConsumerHomePath.atuinConfiguration : ConsumerHomePath.starshipConfiguration)
   }
   var legacyTarget: String {
     stateRoot.appending(
