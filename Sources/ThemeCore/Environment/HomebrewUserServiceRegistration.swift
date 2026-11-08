@@ -31,21 +31,14 @@ package struct HomebrewUserServiceRegistration: Sendable {
       guard exists || errno == ENOENT else {
         throw InspectionError(description: "Cannot inspect \(url.path) (errno \(errno))")
       }
-      let job = try runner.run(
-        ProcessRequest(
-          executableURL: URL(filePath: "/bin/launchctl"),
-          arguments: ["print", "gui/\(getuid())/\(label)"], timeout: 2
-        ))
-      guard job.terminationStatus == 0 || job.terminationStatus == 113 else {
-        throw InspectionError(
-          description:
-            "Cannot inspect \(label): launchctl status \(job.terminationStatus): \(job.output)")
-      }
-      if exists || job.terminationStatus == 0 {
-        registrations.append(
-          Self(
-            label: label, propertyListURL: url,
-            loadedJobOutput: job.terminationStatus == 0 ? job.output : nil))
+      let job = try LaunchdUserDomain().printService(label, timeout: 2, runner: runner)
+        .loadedOutput {
+          InspectionError(
+            description:
+              "Cannot inspect \(label): launchctl status \($0.terminationStatus): \($0.output)")
+        }
+      if exists || job != nil {
+        registrations.append(Self(label: label, propertyListURL: url, loadedJobOutput: job))
       }
     }
     guard registrations.count <= 1 else {

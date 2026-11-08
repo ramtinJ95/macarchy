@@ -194,7 +194,8 @@ struct NativeUserService<Policy: NativeUserServicePolicy>: Sendable {
     try requireRegistration(expected, home: home)
     if try isDisabled() {
       let result = try run(
-        URL(filePath: "/bin/launchctl"), ["enable", "gui/\(getuid())/\(Self.label)"])
+        URL(filePath: "/bin/launchctl"),
+        ["enable", LaunchdUserDomain().serviceTarget(Self.label)])
       guard result.terminationStatus == 0 else {
         throw blocked("cannot restore \(name)'s enabled state after native stop: \(result.output)")
       }
@@ -338,12 +339,9 @@ struct NativeUserService<Policy: NativeUserServicePolicy>: Sendable {
   }
 
   private func loadedJob() throws -> String? {
-    let result = try run(
-      URL(filePath: "/bin/launchctl"), ["print", "gui/\(getuid())/\(Self.label)"])
-    guard result.terminationStatus == 0 || result.terminationStatus == 113 else {
-      throw blocked("cannot inspect \(name) launchd state: \(result.output)")
+    try LaunchdUserDomain().printService(Self.label, timeout: 10, runner: runner).loadedOutput {
+      blocked("cannot inspect \(name) launchd state: \($0.output)")
     }
-    return result.terminationStatus == 0 ? result.output : nil
   }
 
   private func requireEnabled() throws {
@@ -353,7 +351,8 @@ struct NativeUserService<Policy: NativeUserServicePolicy>: Sendable {
   }
 
   private func isDisabled() throws -> Bool {
-    let result = try run(URL(filePath: "/bin/launchctl"), ["print-disabled", "gui/\(getuid())"])
+    let result = try run(
+      URL(filePath: "/bin/launchctl"), ["print-disabled", LaunchdUserDomain().target])
     guard result.terminationStatus == 0 else {
       throw blocked("cannot inspect disabled user services: \(result.output)")
     }
