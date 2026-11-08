@@ -1632,10 +1632,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
 
   private func isCanonicalStateRoot(_ stateRoot: URL, homeDirectory: URL) -> Bool {
     stateRoot.standardizedFileURL
-      == homeDirectory.appending(
-        path: ".config/macarchy",
-        directoryHint: .isDirectory
-      ).standardizedFileURL
+      == StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory).standardizedFileURL
   }
 }
 

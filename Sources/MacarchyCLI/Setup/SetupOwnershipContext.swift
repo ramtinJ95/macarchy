@@ -49,8 +49,7 @@ extension SetupOwnershipManager {
 
     init(homeDirectory: URL) {
       let homeDirectory = homeDirectory.standardizedFileURL
-      let stateRoot = homeDirectory.appending(
-        path: ".config/macarchy", directoryHint: .isDirectory)
+      let stateRoot = StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
       self.homeDirectory = homeDirectory
       self.stateRoot = stateRoot
       kittyConfiguration = homeDirectory.appending(path: ".config/kitty/kitty.conf")

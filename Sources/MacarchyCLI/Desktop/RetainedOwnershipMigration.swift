@@ -60,7 +60,7 @@ struct RetainedOwnershipMigration {
   }
 
   let homeDirectory: URL
-  var stateRoot: URL { homeDirectory.appending(path: ".config/macarchy") }
+  var stateRoot: URL { StateLayout.defaultRoot(in: homeDirectory) }
 
   func execute(provider: Provider, approval: String? = nil) throws -> Report {
     guard let approval else { return try candidate(provider).report }

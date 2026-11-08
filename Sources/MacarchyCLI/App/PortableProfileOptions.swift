@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import ThemeCore
 
 struct PortableProfileOptions: ParsableArguments {
   @Option(help: "Portable Macarchy profile. Defaults to ~/.config/macarchy/profile.toml.")
@@ -9,6 +10,6 @@ struct PortableProfileOptions: ParsableArguments {
 
   func url(homeDirectory: URL) -> URL {
     profile.map { URL(filePath: $0).standardizedFileURL }
-      ?? homeDirectory.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+      ?? StateLayout.defaultProfile(in: homeDirectory).standardizedFileURL
   }
 }

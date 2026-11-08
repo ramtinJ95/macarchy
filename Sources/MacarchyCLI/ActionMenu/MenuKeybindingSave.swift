@@ -35,7 +35,7 @@ struct MenuKeybindingSaveSession: Codable {
   var generationID: String
 
   var stateRoot: URL {
-    homeDirectory.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
   }
 
   static func begin(
@@ -71,7 +71,7 @@ struct MenuKeybindingSaveSession: Codable {
     }
     let preparation = try planner.prepare(
       resourcesRoot: resourcesRoot, profileURL: portableURL, profileRequired: false,
-      stateRoot: homeDirectory.appending(path: ".config/macarchy", directoryHint: .isDirectory),
+      stateRoot: StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory),
       homeDirectory: homeDirectory, profile: profile)
     guard preparation.outcome == "no_change", let generation = preparation.generation.generationID
     else {

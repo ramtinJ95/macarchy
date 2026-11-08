@@ -285,7 +285,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
   }
 
   static func managedTarget(homeDirectory: URL, stateRoot: URL) -> String {
-    let canonical = homeDirectory.appending(path: ".config/macarchy").standardizedFileURL
+    let canonical = StateLayout.defaultRoot(in: homeDirectory).standardizedFileURL
     if canonical.path == stateRoot.standardizedFileURL.path {
       return "../macarchy/desktop/sketchybar/current/sketchybarrc"
     }

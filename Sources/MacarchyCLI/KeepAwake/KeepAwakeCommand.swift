@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import ThemeCore
 
 struct KeepAwakeCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
@@ -13,12 +14,9 @@ struct KeepAwakeCommand: ParsableCommand {
       """,
     subcommands: [On.self, Off.self, Toggle.self, Status.self])
 
-  static let defaultStateRoot = FileManager.default.homeDirectoryForCurrentUser
-    .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
-
   struct Options: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = KeepAwakeCommand.defaultStateRoot
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: .hidden)
     var alertOnError = false
@@ -82,7 +80,7 @@ struct KeepAwakeCommand: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Show whether keep-awake is on.")
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = KeepAwakeCommand.defaultStateRoot
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false

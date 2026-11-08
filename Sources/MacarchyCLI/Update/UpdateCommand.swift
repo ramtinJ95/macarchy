@@ -13,8 +13,8 @@ struct Update: ParsableCommand {
   var review = false
 
   mutating func run() throws {
-    let root = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    let root = StateLayout.defaultRoot(
+      in: FileManager.default.homeDirectoryForCurrentUser, directoryHint: .isDirectory)
     var approval: HomebrewUpdateApproval?
     if review {
       approval = try MenuUpdateReview(
@@ -36,8 +36,7 @@ struct Update: ParsableCommand {
 
   struct Options: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false

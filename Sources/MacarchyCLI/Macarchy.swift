@@ -42,7 +42,7 @@ struct Macarchy: AsyncParsableCommand {
 
   struct StateOptions: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = homePath(".config/macarchy", directory: true)
+    var stateRoot = StateLayout.defaultRootPath
 
     @Option(help: "Kitty configuration file.")
     var kittyConfig = homePath(".config/kitty/kitty.conf")

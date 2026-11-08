@@ -70,7 +70,7 @@ struct KeybindingProviderTransaction: Sendable {
     approvedEvidenceDigest: String?
   ) throws {
     if expectedEvidence.kind == .absent, approvedEvidenceDigest == nil {
-      let stateRoot = homeDirectory.appending(path: ".config/macarchy")
+      let stateRoot = StateLayout.defaultRoot(in: homeDirectory)
       let inspection = KeybindingProviderInspector().inspect(
         homeDirectory: homeDirectory, stateRoot: stateRoot,
         generation: KeybindingGenerationInspector().inspect(stateRoot: stateRoot))

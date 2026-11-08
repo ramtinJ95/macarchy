@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import ThemeCore
 
 struct MicrophoneCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
@@ -15,12 +16,9 @@ struct MicrophoneCommand: ParsableCommand {
       List.self, Select.self, Mute.self, Unmute.self, Toggle.self, Status.self, Choose.self,
     ])
 
-  static let defaultStateRoot = FileManager.default.homeDirectoryForCurrentUser
-    .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
-
   struct Options: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = MicrophoneCommand.defaultStateRoot
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: .hidden)
     var alertOnError = false

@@ -179,10 +179,10 @@ extension KeybindingProviderTransaction {
     var parent = try PinnedFilesystem.openDirectory(
       parentDescriptor: configuration,
       name: "macarchy",
-      url: homeDirectory.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+      url: StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
     )
     let components = ["state", "setup", "backups"]
-    var currentURL = homeDirectory.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    var currentURL = StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
     for component in components {
       currentURL.append(path: component, directoryHint: .isDirectory)
       let next: Int32

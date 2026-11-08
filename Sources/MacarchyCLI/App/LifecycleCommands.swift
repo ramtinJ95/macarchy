@@ -147,7 +147,7 @@ extension Macarchy {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let profileURL =
           outputProfile.map { URL(filePath: $0).standardizedFileURL }
-          ?? home.appending(path: ".config/macarchy/profile.toml").standardizedFileURL
+          ?? StateLayout.defaultProfile(in: home).standardizedFileURL
         let execution = try await GuidedSetupCommandRunner.live().execute(
           context: .live(
             profileURL: profileURL,
@@ -171,8 +171,7 @@ extension Macarchy {
       @OptionGroup var profile: ProfileOptions
 
       @Option(help: "Canonical Macarchy state directory.")
-      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+      var stateRoot = StateLayout.defaultRootPath
 
       @Flag(help: "Emit machine-readable output.")
       var json = false
@@ -206,8 +205,7 @@ extension Macarchy {
       @OptionGroup var profile: ProfileOptions
 
       @Option(help: "Canonical Macarchy state directory.")
-      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+      var stateRoot = StateLayout.defaultRootPath
 
       @Flag(help: "Emit machine-readable output.")
       var json = false
@@ -239,8 +237,7 @@ extension Macarchy {
       @OptionGroup var profile: ProfileOptions
 
       @Option(help: "Canonical Macarchy state directory.")
-      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+      var stateRoot = StateLayout.defaultRootPath
 
       @Flag(help: "Emit machine-readable output.")
       var json = false
@@ -277,8 +274,7 @@ extension Macarchy {
       @OptionGroup var profile: ProfileOptions
 
       @Option(help: "Canonical Macarchy state directory.")
-      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+      var stateRoot = StateLayout.defaultRootPath
 
       @Flag(help: "Emit machine-readable output.")
       var json = false
@@ -475,7 +471,7 @@ extension UnifiedSetupPlanContext {
       profileURL: profileURL,
       profileRequired: profileRequired,
       machineProfileURL: machineProfile.map { URL(filePath: $0).standardizedFileURL }
-        ?? home.appending(path: ".config/macarchy/machine.toml").standardizedFileURL,
+        ?? StateLayout.defaultMachineOverlay(in: home).standardizedFileURL,
       machineProfileRequired: machineProfile != nil,
       stateRoot: stateRoot,
       homeDirectory: home

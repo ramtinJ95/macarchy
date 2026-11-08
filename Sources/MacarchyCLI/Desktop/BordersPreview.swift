@@ -16,8 +16,7 @@ struct Borders: ParsableCommand {
     )
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy").path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Option(help: "Preview duration in seconds (1–300).")
     var seconds: Double = 30

@@ -21,8 +21,7 @@ struct EnvironmentCommand: ParsableCommand {
     @Option(help: "Prepared personal file, or writable Neovim directory to move.") var source:
       String
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy").path
+    var stateRoot = StateLayout.defaultRootPath
     @Option(help: "Exact approval digest from the preview.") var approve: String?
     @Flag(help: "Emit the preview as JSON.") var json = false
 
@@ -66,8 +65,7 @@ struct EnvironmentCommand: ParsableCommand {
     var provider: String
     @OptionGroup var profile: Macarchy.Setup.ProfileOptions
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy").path
+    var stateRoot = StateLayout.defaultRootPath
     @Flag(help: "Emit the source resolution as JSON.") var json = false
 
     mutating func run() throws {
@@ -96,8 +94,7 @@ struct EnvironmentCommand: ParsableCommand {
     @Option(help: "Absent starter file or Neovim directory in an existing user-owned directory.")
     var destination: String
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy").path
+    var stateRoot = StateLayout.defaultRootPath
     @Option(help: "Exact approval digest from the starter preview.") var approve: String?
     @Flag(help: "Emit the preview as JSON.") var json = false
 
@@ -134,8 +131,7 @@ struct EnvironmentCommand: ParsableCommand {
     )
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy").path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Option(help: "Exact approval digest from the migration preview.")
     var approve: String?
@@ -193,8 +189,7 @@ struct EnvironmentCommand: ParsableCommand {
 
   struct NativeFileMigrationOptions: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy").path
+    var stateRoot = StateLayout.defaultRootPath
     @Option(help: "Exact approval digest from the migration preview.") var approve: String?
     @Option(help: "Connect an existing prepared native settings file instead of seeding a copy.")
     var source: String?
@@ -235,8 +230,7 @@ struct EnvironmentCommand: ParsableCommand {
     @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
