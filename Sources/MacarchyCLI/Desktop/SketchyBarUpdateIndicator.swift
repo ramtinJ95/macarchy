@@ -4,9 +4,6 @@ import ThemeCore
 
 struct SketchyBarUpdateIndicator: Sendable {
   private static let companion = SketchyBarClockCompanion.update
-  static let checkInterval: TimeInterval = 6 * 60 * 60
-  /// Failures are usually transient, such as being offline right after wake.
-  static let failedRetryInterval: TimeInterval = 15 * 60
 
   let processRunner: ProcessRunner
   let buildInformation: @Sendable () throws -> MacarchyBuildInformation
@@ -22,8 +19,8 @@ struct SketchyBarUpdateIndicator: Sendable {
     checkIfDue: {
       UpdateChecker(root: $0, httpClient: .live, now: Date.init)
         .check(
-          ifStaleOnly: true, freshnessInterval: checkInterval,
-          failureRetryInterval: failedRetryInterval)
+          ifStaleOnly: true, freshnessInterval: UpdateCheckPolicy.indicatorCheckInterval,
+          failureRetryInterval: UpdateCheckPolicy.indicatorFailedRetryInterval)
     },
     checkNow: {
       UpdateChecker(root: $0, httpClient: .live, now: Date.init).check(ifStaleOnly: false)
@@ -42,7 +39,7 @@ struct SketchyBarUpdateIndicator: Sendable {
     case "mouse.clicked":
       try bar(["--set", Self.companion.item, "popup.drawing=off"])
       if let installed = try installedVersion(),
-        Self.newerRelease(in: readCache(stateRoot), than: installed) == nil
+        UpdateCheckPolicy.newerRelease(in: readCache(stateRoot), than: installed) == nil
       {
         // Without a release to review, a click retries the failed check behind the warning.
         try render(
@@ -70,17 +67,7 @@ struct SketchyBarUpdateIndicator: Sendable {
   }
 
   private func installedVersion() throws -> StableVersion? {
-    let build = try buildInformation()
-    return build.installation == .homebrew ? StableVersion(build.version) : nil
-  }
-
-  private static func newerRelease(in cache: UpdateCacheRead, than installed: StableVersion)
-    -> String?
-  {
-    guard case .available(let document) = cache, let release = document.lastSuccess?.release,
-      let upstream = StableVersion(release.version), upstream > installed
-    else { return nil }
-    return release.version
+    try UpdateCheckPolicy.checkableVersion(buildInformation())
   }
 
   private func render(
@@ -104,7 +91,7 @@ struct SketchyBarUpdateIndicator: Sendable {
         ? "Last update check failed: \(document.lastAttempt.error ?? "unknown error")" : nil
     }
     try present(
-      available: Self.newerRelease(in: cache, than: installed), error: error,
+      available: UpdateCheckPolicy.newerRelease(in: cache, than: installed), error: error,
       accent: accent, warning: warning)
   }
 
@@ -145,8 +132,7 @@ extension Desktop {
     mutating func run() throws {
       try SketchyBarUpdateIndicator.live.execute(
         sender: sender, stateRoot: URL(filePath: stateRoot),
-        automaticChecksEnabled: ProcessInfo.processInfo.environment[
-          "MACARCHY_DISABLE_UPDATE_CHECKS"] != "1",
+        automaticChecksEnabled: UpdateCheckPolicy.automaticChecksEnabled,
         accent: accent, warning: warning)
     }
   }

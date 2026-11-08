@@ -433,7 +433,7 @@ struct HomebrewInstallationVerifier: Sendable {
           arguments: ["version", "--json"],
           timeout: 10,
           environmentOverrides: [
-            "MACARCHY_DISABLE_UPDATE_CHECKS": "1"
+            UpdateCheckPolicy.disableVariable: "1"
           ]
         )
       )
