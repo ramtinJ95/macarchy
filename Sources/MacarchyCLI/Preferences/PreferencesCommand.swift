@@ -34,10 +34,7 @@ struct PreferencesCommand: AsyncParsableCommand {
         let desired: MacOSPreferencesProfile
         switch operation {
         case .plan, .apply, .status:
-          desired = try PortableProfileLoader().load(
-            portableAt: setup.profileURL, portableRequired: setup.profileRequired,
-            machineAt: setup.machineProfileURL, machineRequired: setup.machineProfileRequired
-          ).profile.macOSPreferences
+          desired = try setup.loadProfile().profile.macOSPreferences
         case .teardown, .recover: desired = .init()
         }
         switch operation {

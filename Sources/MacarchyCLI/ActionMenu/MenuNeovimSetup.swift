@@ -11,7 +11,7 @@ struct MenuNeovimSetup {
   /// Each prompt authorizes one visible step. Cancellation retains earlier
   /// approved personal files and reports that fact; it never runs full setup.
   func prepareForEditing() throws -> MenuNeovimEditor.Target? {
-    var layered = try MenuNativeProfileEdit.load(context)
+    var layered = try context.loadProfile()
     let resolved = EnvironmentConfigurationSourceResolver(
       homeDirectory: homeDirectory, stateRoot: context.stateRoot
     ).resolve(.neovim, profile: layered.profile)
@@ -31,7 +31,7 @@ struct MenuNeovimSetup {
       active == nil, ownership?.records.contains(where: { $0.id == .neovim }) == true
     {
       guard try migrateLegacyToStandard() else { return nil }
-      layered = try MenuNativeProfileEdit.load(context)
+      layered = try context.loadProfile()
       return try MenuNeovimEditor.editTarget(
         profile: layered.profile,
         homeDirectory: homeDirectory, stateRoot: context.stateRoot)
@@ -54,7 +54,7 @@ struct MenuNeovimSetup {
     if active?.path == source.path {
       guard try publishProfile(profileEdit) else { return nil }
       return try MenuNeovimEditor.editTarget(
-        profile: MenuNativeProfileEdit.load(context).profile,
+        profile: context.loadProfile().profile,
         homeDirectory: homeDirectory, stateRoot: context.stateRoot)
     }
     io.write(
@@ -153,7 +153,7 @@ struct MenuNeovimSetup {
       "Ready to edit. Normal Neovim startup can bootstrap its configured plugins; Macarchy adds no save-time apply or restore hook.\n"
     )
     return try MenuNeovimEditor.editTarget(
-      profile: MenuNativeProfileEdit.load(context).profile,
+      profile: context.loadProfile().profile,
       homeDirectory: homeDirectory, stateRoot: context.stateRoot)
   }
 

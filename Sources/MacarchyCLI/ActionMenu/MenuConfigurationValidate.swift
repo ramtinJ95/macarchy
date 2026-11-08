@@ -23,7 +23,7 @@ struct MenuConfigurationValidate: ParsableCommand {
   static func validate(
     _ action: MenuConfigurationAction, target: URL, context: UnifiedSetupPlanContext
   ) throws -> String {
-    let layered = try MenuNativeProfileEdit.load(context)
+    let layered = try context.loadProfile()
     if let provider = action.desktopProvider,
       let source = provider.source(in: layered.profile)
     {

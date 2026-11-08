@@ -156,14 +156,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     },
     environmentApplyFinalization: { context, commit in
-      let profile =
-        commit
-        ? try PortableProfileLoader().load(
-          portableAt: context.profileURL,
-          portableRequired: context.profileRequired,
-          machineAt: context.machineProfileURL,
-          machineRequired: context.machineProfileRequired
-        ).profile : nil
+      let profile = commit ? try context.loadProfile().profile : nil
       let changed = try EnvironmentApplyCommandRunner.live.finishDeferredApply(
         resourcesRoot: commit ? context.environmentResourcesRoot : nil,
         profile: profile,

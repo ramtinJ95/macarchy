@@ -291,7 +291,7 @@ struct DesktopApplyCommandTests {
     }
     #expect(try String(contentsOf: session.target, encoding: .utf8) == personal)
     #expect(
-      try MenuNativeProfileEdit.load(context).profile.sketchyBar.configurationURL == session.source)
+      try context.loadProfile().profile.sketchyBar.configurationURL == session.source)
     #expect(yabai.calls.withLock { $0.isEmpty })
     let calls = fixture.lifecycle.calls.withLock { $0 }
     #expect(calls.contains("reload"))

@@ -55,7 +55,7 @@ struct MenuNativeProfileEdit {
     context: UnifiedSetupPlanContext, source: URL, table: String, key: String,
     copiedKeys: [String], currentSource: (PortableProfile) -> URL?
   ) throws -> Self {
-    let layered = try load(context)
+    let layered = try context.loadProfile()
     let selected =
       layered.fieldOrigins[table + "." + key]
       ?? copiedKeys.first.flatMap { layered.fieldOrigins[table + "." + $0] } ?? .portable
@@ -113,7 +113,7 @@ struct MenuNativeProfileEdit {
     // An absent, unselected layer stays absent rather than becoming an empty file.
     let proposed = Dictionary(
       uniqueKeysWithValues: files.filter(\.changed).map { ($0.physical, $0.after) })
-    let profile = try load(context, proposed: proposed).profile
+    let profile = try context.loadProfile(proposedSources: proposed).profile
     guard currentSource(profile)?.path == source.path
     else {
       throw EnvironmentLifecycleError.blocked(
@@ -161,14 +161,6 @@ struct MenuNativeProfileEdit {
       try publish()
       return try effect()
     }
-  }
-
-  static func load(_ context: UnifiedSetupPlanContext, proposed: [URL: String] = [:]) throws
-    -> LayeredPortableProfile
-  {
-    try PortableProfileLoader(proposedSources: proposed).load(
-      portableAt: context.profileURL, portableRequired: context.profileRequired,
-      machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired)
   }
 
   private static func inspect(_ declared: URL, stateRoot: URL) throws -> File {

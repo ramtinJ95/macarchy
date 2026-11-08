@@ -71,9 +71,7 @@ struct EnvironmentCommand: ParsableCommand {
         throw ValidationError("provider must be zsh, kitty, atuin, starship or neovim")
       }
       let context = profile.context(stateRoot: URL(filePath: stateRoot).standardizedFileURL)
-      let layered = try PortableProfileLoader().load(
-        portableAt: context.profileURL, portableRequired: context.profileRequired,
-        machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired)
+      let layered = try context.loadProfile()
       let result = EnvironmentConfigurationSourceResolver(
         homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
       ).resolve(provider, profile: layered.profile)
