@@ -136,7 +136,8 @@ struct KeybindingsPlanCommandRunner: Sendable {
         diagnostics.append(
           .error(
             code: "skhd_lifecycle_evidence_invalid",
-            source: stateRoot.appending(path: "\(StateLayout.keybindingsDirectory)/lifecycle.json"),
+            source: stateRoot.appending(
+              path: "\(StateLayout.keybindingsDirectory)/\(SkhdLayout.lifecycleFileName)"),
             message: effectiveState.lifecycleEvidence.message
           )
         )

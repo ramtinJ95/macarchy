@@ -96,12 +96,12 @@ package struct StateLayout: Sendable {
 
   /// The keybinding apply transaction record.
   package var keybindingTransaction: URL {
-    root.appending(path: "\(Self.keybindingsDirectory)/transaction.json")
+    root.appending(path: "\(Self.keybindingsDirectory)/\(SkhdLayout.transactionFileName)")
   }
 
   /// The active keybinding generation's `skhdrc`.
   package var currentSkhdrc: URL {
-    root.appending(path: "\(Self.keybindingsDirectory)/current/skhdrc")
+    root.appending(path: "\(Self.keybindingsDirectory)/current/\(SkhdLayout.configurationName)")
   }
 
   /// The yabai generation store.

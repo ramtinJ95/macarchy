@@ -26,9 +26,13 @@ extension KeybindingProviderTransaction {
     return mode
   }
 
-  func claimName(_ record: SetupOwnershipRecord, directory: Bool) -> String {
-    let prefix = directory ? ".skhd.macarchy-keybindings" : ".skhdrc.macarchy-keybindings"
-    return "\(prefix)-\(record.claimNonce ?? "invalid")"
+  /// The level a record claims: the whole directory for an adopted directory symlink.
+  func level(_ record: SetupOwnershipRecord) -> SkhdLayout.Level {
+    originalKind(record) == .directorySymbolicLink ? .directory : .leaf
+  }
+
+  func claimName(_ record: SetupOwnershipRecord, _ level: SkhdLayout.Level) -> String {
+    SkhdLayout.claimName(level, nonce: record.claimNonce ?? "invalid")
   }
 
   func verifyPinnedUntouchedOriginal(
@@ -39,7 +43,7 @@ extension KeybindingProviderTransaction {
     defer { Darwin.close(parent) }
     let descriptor = try manager.openPinnedRegularFile(
       parentDescriptor: parent,
-      name: "skhdrc",
+      name: SkhdLayout.configurationName,
       url: entry,
       label: "skhd entry"
     )
@@ -78,7 +82,7 @@ extension KeybindingProviderTransaction {
 
   func removeAuthenticatedProviderResidues(_ record: SetupOwnershipRecord) throws {
     let isDirectory = originalKind(record) == .directorySymbolicLink
-    let claim = claimName(record, directory: isDirectory)
+    let claim = claimName(record, level(record))
     let publication = try publishingName(claim, record: record)
     if isDirectory {
       let parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
@@ -179,11 +183,10 @@ extension KeybindingProviderTransaction {
     var parent = try PinnedFilesystem.openDirectory(
       parentDescriptor: configuration,
       name: "macarchy",
-      url: StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
+      url: layout.stateRoot
     )
-    let components = ["state", "setup", "backups"]
-    var currentURL = StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
-    for component in components {
+    var currentURL = layout.stateRoot
+    for component in SkhdLayout.backupDirectoryComponents {
       currentURL.append(path: component, directoryHint: .isDirectory)
       let next: Int32
       if create {
@@ -400,11 +403,11 @@ extension KeybindingProviderTransaction {
       guard fstat(descriptor, &directoryIdentity) == 0 else {
         throw SetupOwnershipError.posix("pin skhd source directory", target)
       }
-      let sourceURL = target.appending(path: "skhdrc")
+      let sourceURL = target.appending(path: SkhdLayout.configurationName)
       let manager = SetupOwnershipManager()
       let source = try manager.openPinnedRegularFile(
         parentDescriptor: descriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: sourceURL,
         label: "adopted directory skhd source"
       )
@@ -439,7 +442,7 @@ extension KeybindingProviderTransaction {
         )
         let path = try PinnedFilesystem.metadata(
           parentDescriptor: descriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           url: sourceURL
         )
         guard lseek(source, 0, SEEK_SET) == 0 else {

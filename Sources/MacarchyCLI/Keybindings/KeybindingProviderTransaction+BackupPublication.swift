@@ -15,7 +15,7 @@ extension KeybindingProviderTransaction {
     defer { Darwin.close(sourceParent) }
     let source = try manager.openPinnedRegularFile(
       parentDescriptor: sourceParent,
-      name: "skhdrc",
+      name: SkhdLayout.configurationName,
       url: entry,
       label: "skhd entry"
     )

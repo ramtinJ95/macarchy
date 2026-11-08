@@ -8,14 +8,14 @@ extension KeybindingProviderTransaction {
     defer { Darwin.close(descriptor) }
     try requireAbsent(
       parentDescriptor: descriptor,
-      name: ".skhdrc.macarchy-keybindings",
-      url: directory.appending(path: ".skhdrc.macarchy-keybindings")
+      name: SkhdLayout.claimPrefix(.leaf),
+      url: directory.appending(path: SkhdLayout.claimPrefix(.leaf))
     )
     _ = try legacyRestorationResidueExists(parentDescriptor: descriptor, record: record)
     do {
       try verifyLegacyManagedLink(
         parentDescriptor: descriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         record: record,
         url: entry
       )
@@ -31,7 +31,7 @@ extension KeybindingProviderTransaction {
     do {
       try removePinnedItem(
         parentDescriptor: descriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: entry,
         record: record
       ) { name, url in
@@ -50,7 +50,7 @@ extension KeybindingProviderTransaction {
   func restoreLegacyManagedEntry(_ record: SetupOwnershipRecord) throws {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
-    let publicationName = legacyRestorationName
+    let publicationName = SkhdLayout.legacyRestorationName
     let publicationURL = directory.appending(path: publicationName)
     let residueExists = try legacyRestorationResidueExists(
       parentDescriptor: descriptor,
@@ -59,7 +59,7 @@ extension KeybindingProviderTransaction {
     do {
       try verifyLegacyManagedLink(
         parentDescriptor: descriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         record: record,
         url: entry
       )
@@ -69,7 +69,7 @@ extension KeybindingProviderTransaction {
       return
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
       if !residueExists {
-        let created = KeybindingProviderInspector.managedTarget.withCString { destination in
+        let created = SkhdLayout.managedTarget.withCString { destination in
           publicationName.withCString { Darwin.symlinkat(destination, descriptor, $0) }
         }
         guard created == 0 else {
@@ -86,7 +86,7 @@ extension KeybindingProviderTransaction {
       try publish(
         parentDescriptor: descriptor,
         from: publicationName,
-        to: "skhdrc",
+        to: SkhdLayout.configurationName,
         url: entry
       )
     }
@@ -96,17 +96,17 @@ extension KeybindingProviderTransaction {
     parentDescriptor: Int32,
     record: SetupOwnershipRecord
   ) throws -> Bool {
-    let url = directory.appending(path: legacyRestorationName)
+    let url = directory.appending(path: SkhdLayout.legacyRestorationName)
     guard
       try itemExists(
         parentDescriptor: parentDescriptor,
-        name: legacyRestorationName,
+        name: SkhdLayout.legacyRestorationName,
         url: url
       )
     else { return false }
     try verifyLegacyManagedLink(
       parentDescriptor: parentDescriptor,
-      name: legacyRestorationName,
+      name: SkhdLayout.legacyRestorationName,
       record: record,
       url: url
     )
@@ -117,10 +117,10 @@ extension KeybindingProviderTransaction {
     parentDescriptor: Int32,
     record: SetupOwnershipRecord
   ) throws {
-    let url = directory.appending(path: legacyRestorationName)
+    let url = directory.appending(path: SkhdLayout.legacyRestorationName)
     try removePinnedItem(
       parentDescriptor: parentDescriptor,
-      name: legacyRestorationName,
+      name: SkhdLayout.legacyRestorationName,
       url: url,
       record: record
     ) { name, candidate in
@@ -155,7 +155,7 @@ extension KeybindingProviderTransaction {
       name: name,
       url: url
     )
-    guard destination == KeybindingProviderInspector.managedTarget else {
+    guard destination == SkhdLayout.managedTarget else {
       throw SetupOwnershipError.ownershipDrift(url)
     }
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
@@ -176,11 +176,11 @@ extension KeybindingProviderTransaction {
   func requireLegacyEntryAbsent() throws {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
-    try requireAbsent(parentDescriptor: descriptor, name: "skhdrc", url: entry)
+    try requireAbsent(parentDescriptor: descriptor, name: SkhdLayout.configurationName, url: entry)
     try requireAbsent(
       parentDescriptor: descriptor,
-      name: legacyRestorationName,
-      url: directory.appending(path: legacyRestorationName)
+      name: SkhdLayout.legacyRestorationName,
+      url: directory.appending(path: SkhdLayout.legacyRestorationName)
     )
   }
 }
