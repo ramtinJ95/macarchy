@@ -63,23 +63,16 @@ struct EnvironmentHerdrOwnershipMigration {
     guard let approval else { return try candidate().report }
     // Match the environment -> activation lock order used by theme reconciliation.
     return try EnvironmentLifecycleLock(stateRoot: stateRoot).withActivationLock {
-      let reviewed = try candidate()
-      guard reviewed.report.evidenceDigest == approval else {
-        throw ValidationError("stale or incorrect approval; review a fresh Herdr ownership preview")
-      }
-      if reviewed.report.status == "already_bound" { return reviewed.report }
-      let current = try candidate()
-      guard current.report == reviewed.report else {
-        throw ValidationError("Herdr ownership evidence changed before publication")
-      }
-      try EnvironmentStateStore(stateRoot: stateRoot).writeOwnership(current.ownership)
-      var report = current.report
-      report.status = "migrated"
-      return report
+      try publishReviewedOwnershipMigration(
+        approval: approval, status: \Report.status, evidenceDigest: \Report.evidenceDigest,
+        stale: ValidationError(
+          "stale or incorrect approval; review a fresh Herdr ownership preview"),
+        changed: ValidationError("Herdr ownership evidence changed before publication")
+      ) { try candidate() }
     }
   }
 
-  private func candidate() throws -> (report: Report, ownership: EnvironmentOwnership) {
+  private func candidate() throws -> (report: Report, persist: () throws -> Void) {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     guard !store.transactionExists,
       try UnifiedSetupTransactionStore(stateRoot: stateRoot).read() == nil,
@@ -117,6 +110,7 @@ struct EnvironmentHerdrOwnershipMigration {
     // Bind review to current configuration too, without copying any of it into the report.
     evidence.append(try BoundedRegularFile.read(at: URL(filePath: herdr.resolvedPath)).data)
     report.evidenceDigest = sha256Digest(evidence)
-    return (report, ownership.replacingHerdr(herdr))
+    let updated = ownership.replacingHerdr(herdr)
+    return (report, { try store.writeOwnership(updated) })
   }
 }
