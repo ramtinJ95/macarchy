@@ -2,9 +2,6 @@ import Darwin
 import Foundation
 
 enum NeovimAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case configurationTooLarge(URL)
-  case controlUnavailable(URL)
   case invalidMapping(String)
   case missingIntegration(String)
   case unexpectedThemeLink(URL, expected: URL)
@@ -12,12 +9,6 @@ enum NeovimAdapterError: Error, CustomStringConvertible, Sendable {
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read Neovim theme configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "Neovim theme configuration at \(url.path) exceeds 1 MiB"
-    case .controlUnavailable(let url):
-      "Neovim is not executable at \(url.path)"
     case .invalidMapping(let mapping):
       "Neovim mapping '\(mapping)' must be a colorscheme name"
     case .missingIntegration(let directive):
@@ -85,7 +76,7 @@ package struct NeovimAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw NeovimAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("Neovim", executableURL)
     }
     let usesManagedThemeLoader = try validateThemeLoader()
     guard Self.containsIntegrationDirective(in: try readConfiguration(at: configurationURL)) else {
@@ -289,14 +280,17 @@ package struct NeovimAdapter: Sendable {
       let managed = StateLayout(root: root).environmentArtifact("neovim/\(path)")
       return try AdapterConfigurationFile.readUTF8(
         at: url, managedDestination: managed,
-        tooLarge: NeovimAdapterError.configurationTooLarge(url),
-        unreadable: NeovimAdapterError.cannotReadConfiguration(url),
+        tooLarge: AdapterConfigurationError.configurationTooLarge(
+          "Neovim theme configuration", url),
+        unreadable: AdapterConfigurationError.cannotReadConfiguration(
+          "Neovim theme configuration", url),
         unexpectedLink: { _ in NeovimAdapterError.unexpectedThemeLink(url, expected: managed) })
     }
     return try AdapterConfigurationFile.readUTF8(
       at: url,
-      tooLarge: NeovimAdapterError.configurationTooLarge(url),
-      unreadable: NeovimAdapterError.cannotReadConfiguration(url)
+      tooLarge: AdapterConfigurationError.configurationTooLarge("Neovim theme configuration", url),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "Neovim theme configuration", url)
     )
   }
 

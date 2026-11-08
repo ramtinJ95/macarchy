@@ -1,29 +1,20 @@
 import Foundation
 
 enum SketchyBarAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case configurationTooLarge(URL)
   case missingInitImport(String)
   case missingPaletteImport(String)
   case missingReadyMarker(String)
-  case controlUnavailable(URL)
   case queryRejected(String)
   case invalidQuery(String)
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read SketchyBar configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "SketchyBar configuration at \(url.path) exceeds 1 MiB"
     case .missingInitImport(let importLine):
       "SketchyBar entry configuration must contain '\(importLine)'"
     case .missingPaletteImport(let importLine):
       "SketchyBar configuration must contain '\(importLine)'"
     case .missingReadyMarker(let declaration):
       "SketchyBar configuration must contain '\(declaration)'"
-    case .controlUnavailable(let url):
-      "SketchyBar control is not executable at \(url.path)"
     case .queryRejected(let message):
       message
     case .invalidQuery(let cause):
@@ -87,7 +78,7 @@ struct SketchyBarAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw SketchyBarAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("SketchyBar control", executableURL)
     }
 
     let entry = try readConfigurationText(configurationURL)
@@ -287,8 +278,9 @@ struct SketchyBarAdapter: Sendable {
   private func readConfigurationText(_ url: URL) throws -> String {
     try AdapterConfigurationFile.readUTF8(
       at: url.resolvingSymlinksInPath(),
-      tooLarge: SketchyBarAdapterError.configurationTooLarge(url),
-      unreadable: SketchyBarAdapterError.cannotReadConfiguration(url))
+      tooLarge: AdapterConfigurationError.configurationTooLarge("SketchyBar configuration", url),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration("SketchyBar configuration", url)
+    )
   }
 
   private func queryState(timeout: TimeInterval) throws -> SketchyBarState {

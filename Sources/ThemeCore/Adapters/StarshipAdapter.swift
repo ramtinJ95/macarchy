@@ -6,10 +6,7 @@ enum StarshipAdapterError: AdapterBridgeFileError, CustomStringConvertible, Send
   case bridgeDoesNotMatch(URL)
   case bridgeIsNotRegularFile(URL)
   case cannotPublishBridge(URL, String)
-  case cannotReadBehavior(URL)
   case cannotReadBridge(URL, String)
-  case configurationTooLarge(URL)
-  case controlUnavailable(URL)
   case invalidBehavior(URL)
 
   var description: String {
@@ -22,14 +19,8 @@ enum StarshipAdapterError: AdapterBridgeFileError, CustomStringConvertible, Send
       "Starship bridge at \(url.path) must be an ordinary regular file"
     case .cannotPublishBridge(let url, let cause):
       "Cannot publish Starship bridge at \(url.path): \(cause)"
-    case .cannotReadBehavior(let url):
-      "Cannot read Starship behavior source at \(url.path)"
     case .cannotReadBridge(let url, let cause):
       "Cannot read Starship bridge at \(url.path): \(cause)"
-    case .configurationTooLarge(let url):
-      "Starship configuration at \(url.path) exceeds 1 MiB"
-    case .controlUnavailable(let url):
-      "Starship is not executable at \(url.path)"
     case .invalidBehavior(let url):
       "Starship behavior source at \(url.path) is not valid TOML"
     }
@@ -77,7 +68,7 @@ package struct StarshipAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw StarshipAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("Starship", executableURL)
     }
     try validateConfigurationLink()
     if let native {
@@ -209,8 +200,10 @@ package struct StarshipAdapter: Sendable {
   private func readBehavior() throws -> String {
     let behavior = try AdapterConfigurationFile.readUTF8(
       at: behaviorURL,
-      tooLarge: StarshipAdapterError.configurationTooLarge(behaviorURL),
-      unreadable: StarshipAdapterError.cannotReadBehavior(behaviorURL))
+      tooLarge: AdapterConfigurationError.configurationTooLarge(
+        "Starship configuration", behaviorURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "Starship behavior source", behaviorURL))
     let ownership: StarshipPaletteOwnership
     do {
       ownership = try TOMLDecoder().decode(StarshipPaletteOwnership.self, from: behavior)

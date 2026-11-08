@@ -2,8 +2,6 @@ import Foundation
 import TOMLDecoder
 
 enum CodexAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case controlUnavailable(URL)
   case invalidVersion(String)
   case invalidConfiguration(URL)
   case unsupportedVersion(String)
@@ -11,10 +9,6 @@ enum CodexAdapterError: Error, CustomStringConvertible, Sendable {
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read Codex configuration at \(url.path)"
-    case .controlUnavailable(let url):
-      "Codex is not executable at \(url.path)"
     case .invalidVersion(let value):
       "Codex returned an unparseable version: \(value)"
     case .invalidConfiguration(let url):
@@ -79,7 +73,7 @@ package struct CodexAdapter: Sendable {
 
   private func requireControl() throws {
     guard controlIsAvailable() else {
-      throw CodexAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("Codex", executableURL)
     }
   }
 
@@ -132,8 +126,10 @@ package struct CodexAdapter: Sendable {
   private func selectedTheme() throws -> String? {
     let configuration = try AdapterConfigurationFile.readUTF8(
       at: configurationURL.resolvingSymlinksInPath(),
-      tooLarge: CodexAdapterError.cannotReadConfiguration(configurationURL),
-      unreadable: CodexAdapterError.cannotReadConfiguration(configurationURL))
+      tooLarge: AdapterConfigurationError.cannotReadConfiguration(
+        "Codex configuration", configurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "Codex configuration", configurationURL))
     do {
       return try TOMLDecoder().decode(Configuration.self, from: configuration).tui?.theme
     } catch {

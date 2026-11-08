@@ -1,19 +1,10 @@
 import Foundation
 
 enum AtuinAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case configurationTooLarge(URL)
-  case controlUnavailable(URL)
   case missingThemeSelection(String)
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read Atuin configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "Atuin configuration at \(url.path) exceeds 1 MiB"
-    case .controlUnavailable(let url):
-      "Atuin is not executable at \(url.path)"
     case .missingThemeSelection(let selection):
       "Atuin configuration must select \(selection)"
     }
@@ -54,7 +45,7 @@ package struct AtuinAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw AtuinAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("Atuin", executableURL)
     }
     try CanonicalThemeLink.validate([themeLink]) {
       guard Self.selectsTheme(in: try readConfiguration()) else {
@@ -132,8 +123,10 @@ package struct AtuinAdapter: Sendable {
     let resolvedURL = configurationURL.resolvingSymlinksInPath()
     return try AdapterConfigurationFile.readUTF8(
       at: resolvedURL,
-      tooLarge: AtuinAdapterError.configurationTooLarge(configurationURL),
-      unreadable: AtuinAdapterError.cannotReadConfiguration(configurationURL)
+      tooLarge: AdapterConfigurationError.configurationTooLarge(
+        "Atuin configuration", configurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "Atuin configuration", configurationURL)
     )
   }
 
