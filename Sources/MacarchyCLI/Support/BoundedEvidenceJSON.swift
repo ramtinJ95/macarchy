@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 import ThemeCore
 
@@ -9,23 +8,14 @@ func writeBoundedEvidenceJSON<Value: Encodable, WriteError: Error>(
   tooLargeError: @autoclosure () -> WriteError,
   replaceError: (Int32) -> WriteError
 ) throws {
-  let directory = destination.deletingLastPathComponent()
-  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-  let data = try encodeBoundedEvidenceJSON(value)
-  guard data.count <= BoundedRegularFile.maximumSize else {
-    throw tooLargeError()
-  }
-
-  let temporary = directory.appending(path: "\(temporaryPrefix)\(UUID().uuidString).tmp")
-  defer { try? FileManager.default.removeItem(at: temporary) }
-  try data.write(to: temporary, options: .withoutOverwriting)
-  try FileManager.default.setAttributes(
-    [.posixPermissions: 0o600],
-    ofItemAtPath: temporary.path
+  try StateFile.replaceByRename(
+    at: destination,
+    temporaryName: "\(temporaryPrefix)\(UUID().uuidString).tmp",
+    temporaryWriteOptions: .withoutOverwriting,
+    encode: { try encodeBoundedEvidenceJSON(value) },
+    tooLargeError: tooLargeError(),
+    renameError: replaceError
   )
-  if rename(temporary.path, destination.path) != 0 {
-    throw replaceError(errno)
-  }
 }
 
 /// The exact bytes `writeBoundedEvidenceJSON` stores; readers use it to check a file is canonical.

@@ -116,7 +116,7 @@ struct OwnedLaunchAgent {
     case .owned: break
     }
     guard
-      let failure = PinnedStateFile.remove(
+      let failure = StateFile.remove(
         plistURL.lastPathComponent, parentDescriptor: parent, syncWhenAbsent: false)
     else { return true }
     throw PinnedFilesystemError(

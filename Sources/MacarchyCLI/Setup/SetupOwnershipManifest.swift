@@ -168,7 +168,7 @@ extension SetupOwnershipManager {
       )
       defer { Darwin.close(setupDescriptor) }
       if records.isEmpty {
-        if let failure = PinnedStateFile.remove(
+        if let failure = StateFile.remove(
           "ownership.json", parentDescriptor: setupDescriptor, syncWhenAbsent: true)
         {
           throw PinnedFilesystemError(
@@ -179,7 +179,7 @@ extension SetupOwnershipManager {
         }
         return
       }
-      try PinnedStateFile.write(
+      try StateFile.write(
         SetupOwnershipManifest(records: records), parentDescriptor: setupDescriptor,
         name: "ownership.json", url: context.manifestURL)
     } catch {

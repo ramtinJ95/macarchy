@@ -126,7 +126,7 @@ struct EnvironmentPresetFilesystem: Sendable {
   func remove(_ url: URL) throws {
     let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
     defer { Darwin.close(parent) }
-    if let failure = PinnedStateFile.remove(
+    if let failure = StateFile.remove(
       url.lastPathComponent, parentDescriptor: parent, syncWhenAbsent: false)
     {
       let operation = failure.step == .unlink ? "remove \(residueLabel)" : "sync \(residueLabel)"

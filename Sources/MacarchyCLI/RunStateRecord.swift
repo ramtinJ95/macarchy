@@ -58,14 +58,14 @@ struct RunStateRecord<Value: Codable> {
 
   func write(_ value: Value) throws {
     try withDirectory {
-      try PinnedStateFile.write(value, parentDescriptor: $0, name: name, url: url)
+      try StateFile.write(value, parentDescriptor: $0, name: name, url: url)
     }
   }
 
   func remove() throws {
     try withDirectory { parent in
       guard
-        let failure = PinnedStateFile.remove(name, parentDescriptor: parent, syncWhenAbsent: false)
+        let failure = StateFile.remove(name, parentDescriptor: parent, syncWhenAbsent: false)
       else { return }
       throw PinnedFilesystemError(
         operation: failure.step == .unlink ? "remove" : "sync the removal of", url: url,

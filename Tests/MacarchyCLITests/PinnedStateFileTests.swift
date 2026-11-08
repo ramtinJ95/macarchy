@@ -19,7 +19,7 @@ struct PinnedStateFileTests {
     defer { Darwin.close(parent) }
     let url = root.appending(path: "state.json")
 
-    try PinnedStateFile.write(
+    try StateFile.write(
       ["b": 2, "a": 1], parentDescriptor: parent, name: "state.json", url: url)
     let text = String(decoding: try Data(contentsOf: url), as: UTF8.self)
     #expect(text == "{\n  \"a\" : 1,\n  \"b\" : 2\n}")
@@ -27,7 +27,7 @@ struct PinnedStateFileTests {
     #expect(mode as? Int == 0o600)
 
     let remove = { (syncWhenAbsent: Bool) in
-      PinnedStateFile.remove("state.json", parentDescriptor: parent, syncWhenAbsent: syncWhenAbsent)
+      StateFile.remove("state.json", parentDescriptor: parent, syncWhenAbsent: syncWhenAbsent)
         .map { $0.code }
     }
     #expect(remove(false) == nil)
