@@ -152,6 +152,31 @@ struct OwnedLaunchAgent {
     return true
   }
 
+  /// Publishes the plist, runs `updateRecord`, then loads the job, so a job never runs before
+  /// its record is written. With `kickstart`, it then runs the loaded job unless it is running.
+  /// `updateRecord` returns its record and whether it changed it. Returns that record and
+  /// whether anything changed.
+  func turnOn<Record>(
+    kickstart: Bool, updateRecord: () throws -> (record: Record, changed: Bool)
+  ) throws -> (record: Record, changed: Bool) {
+    let installed = try install()
+    let (record, recordChanged) = try updateRecord()
+    let loaded = try load()
+    if kickstart { try self.kickstart() }
+    return (record, installed || recordChanged || loaded)
+  }
+
+  /// Refuses a plist Macarchy did not write, since a job loaded from it is not Macarchy's to
+  /// stop. Otherwise boots the job out, deletes the plist, then runs `removeRecord`, which
+  /// returns whether removing the record counts as a change. Returns whether anything changed.
+  func turnOff(removeRecord: () throws -> Bool) throws -> Bool {
+    if case .conflict = try file() { throw conflict }
+    let unloaded = try unload()
+    let removed = try remove()
+    let recordRemoved = try removeRecord()
+    return unloaded || removed || recordRemoved
+  }
+
   private func file(in parent: Int32) throws -> OwnedLaunchAgentFile {
     let data: Data
     do {

@@ -251,19 +251,20 @@ struct ClipboardHistory {
     switch request {
     case .on:
       _ = try clearableVersion(refusal: "the automatic clear was not turned on")
-      let installed = try agent.install()
-      // A damaged record gets a new window too.
-      let started = try autoClearRecord.read() == nil
-      if started { try autoClearRecord.write(.cleared(at: now())) }
-      let loaded = try agent.load()
-      return installed || started || loaded ? .turnedOn : .alreadyOn
+      let changed = try agent.turnOn(kickstart: false) {
+        () throws -> (record: Void, changed: Bool) in
+        // A damaged record gets a new window too.
+        let started = try autoClearRecord.read() == nil
+        if started { try autoClearRecord.write(.cleared(at: now())) }
+        return ((), started)
+      }.changed
+      return changed ? .turnedOn : .alreadyOn
     case .off:
-      // A job loaded from somebody else's plist under this label is not Macarchy's to stop.
-      if case .conflict = try agent.file() { throw agent.conflict }
-      let unloaded = try agent.unload()
-      let removed = try agent.remove()
-      try autoClearRecord.remove()
-      return unloaded || removed ? .turnedOff : .alreadyOff
+      let changed = try agent.turnOff {
+        try autoClearRecord.remove()
+        return false
+      }
+      return changed ? .turnedOff : .alreadyOff
     }
   }
 
