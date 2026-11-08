@@ -134,7 +134,7 @@ struct BackgroundSelectionResolver {
     requestedBackgroundID: String?,
     preferences: [String: String]
   ) throws -> PreparedThemeBackground {
-    guard let first = package.backgrounds.first else {
+    guard let defaultBackground = package.defaultBackground else {
       if requestedBackgroundID != nil {
         throw BackgroundSelectionError.noBackgrounds(themeID: package.id)
       }
@@ -155,12 +155,12 @@ struct BackgroundSelectionResolver {
       if let remembered = package.background(id: rememberedID) {
         selected = remembered
       } else {
-        selected = first
+        selected = defaultBackground
         notice =
           "Remembered background '\(rememberedID)' is no longer available; selected the first background."
       }
     } else {
-      selected = first
+      selected = defaultBackground
     }
 
     return PreparedThemeBackground(

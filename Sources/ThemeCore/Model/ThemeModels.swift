@@ -178,8 +178,13 @@ public struct ThemePackage: Sendable {
     return data
   }
 
+  /// A theme's first background is its default.
+  package var defaultBackground: ThemeBackground? {
+    backgrounds.first
+  }
+
   var firstBackgroundData: Data? {
-    backgrounds.first.map(data(for:))
+    defaultBackground.map(data(for:))
   }
 
   var defaultBackgroundData: Data {
