@@ -14,7 +14,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
     effectiveState: KeybindingEffectiveBehavior,
     stateRoot: URL,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     var findings = effectiveState.configuration.diagnostics.map { diagnostic in
       KeybindingsDoctorFinding(
         id: effectiveFindingID(diagnostic),
@@ -186,7 +186,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
     configurationURL: URL,
     catalogURL: URL,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let parsed: SkhdParseResult
     do {
       parsed = SkhdConfigurationParser().parse(try read(configurationURL))
@@ -285,7 +285,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
   private func renderSourceReport(
     _ findings: [KeybindingsDoctorFinding],
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = KeybindingsDoctorReport(
       schemaVersion: 1,
       operation: "keybindings_doctor",

@@ -19,7 +19,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let preparation = try prepare(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
@@ -354,7 +354,7 @@ struct KeybindingsPlanPreparation {
   fileprivate let report: KeybindingsPlanReport
 }
 
-private struct KeybindingsPlanReport: Encodable {
+private struct KeybindingsPlanReport: CommandReport {
   let schemaVersion = 2
   let operation = "keybindings_plan"
   let outcome: KeybindingsPlanOutcome
@@ -378,8 +378,7 @@ private struct KeybindingsPlanReport: Encodable {
   let actions: [KeybindingsPlanAction]
   let diagnostics: [KeybindingsPlanDiagnostic]
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
 
     var lines = [
       "Macarchy keybindings plan [\(outcome.rawValue)]:",

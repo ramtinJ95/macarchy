@@ -22,7 +22,7 @@ struct UpdateCommandRunner: Sendable {
     stateRoot: URL,
     refresh: Bool,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let cacheRead: UpdateCacheRead
     let checkSucceeded: Bool
     if refresh {

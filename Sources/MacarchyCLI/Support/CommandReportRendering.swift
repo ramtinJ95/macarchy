@@ -57,7 +57,22 @@ func isAcceptedReconciliationResult(_ result: AdapterResult) -> Bool {
     || (result.status == .unsupported && namedThemeOnlyAdapterIDs.contains(result.adapterID))
 }
 
-func emitExecution(_ execution: (output: String, succeeded: Bool)) throws {
+/// A command's rendered output and whether it exits successfully.
+typealias CommandExecution = (output: String, succeeded: Bool)
+
+/// A report whose `--json` form is the report itself.
+protocol CommandReport: Encodable {
+  func renderText() throws -> String
+}
+
+extension CommandReport {
+  func render(json: Bool) throws -> String {
+    if json { return try renderJSON(self) }
+    return try renderText()
+  }
+}
+
+func emitExecution(_ execution: CommandExecution) throws {
   print(execution.output)
   if !execution.succeeded {
     throw ExitCode.failure

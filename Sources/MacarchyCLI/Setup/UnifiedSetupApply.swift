@@ -194,11 +194,11 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     adoptions: UnifiedSetupAdoptionApprovals = .none,
     reviewedPlan: String? = nil,
     json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     @Sendable func blocked(
       _ plan: UnifiedSetupPlanReport?,
       _ message: String
-    ) throws -> (output: String, succeeded: Bool) {
+    ) throws -> CommandExecution {
       try result(outcome: "blocked", mutated: false, plan: plan, message: message, json: json)
     }
     /// Why the core-owned theme blocks setup, or nil when it may proceed.
@@ -711,7 +711,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     environment: UnifiedSetupApplyStage? = nil,
     message: String,
     json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     guard let transaction else {
       return try result(
         outcome: "failed",
@@ -761,7 +761,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
     json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     do {
       let recovered = try await transactionTeardown.recoverPendingLocked(
         context: context,
@@ -837,7 +837,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     preferences: UnifiedSetupApplyStage? = nil,
     message: String,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = UnifiedSetupApplyReport(
       outcome: outcome,
       mutated: mutated,
@@ -893,7 +893,7 @@ struct UnifiedSetupApplyStage: Encodable, Sendable {
   }
 }
 
-private struct UnifiedSetupApplyReport: Encodable {
+private struct UnifiedSetupApplyReport: CommandReport {
   let schemaVersion = 1
   let operation = "setup_apply"
   let outcome: String
@@ -908,8 +908,7 @@ private struct UnifiedSetupApplyReport: Encodable {
 
   var succeeded: Bool { outcome == "applied" || outcome == "no_change" }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy setup apply [\(outcome)]:",
       "- mutated: \(mutated ? "yes" : "no")",

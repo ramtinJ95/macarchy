@@ -362,7 +362,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     adopt: String? = nil,
     json: Bool,
     profile: PortableProfile? = nil
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     do {
       guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
         throw KeybindingsApplyError.blocked(
@@ -464,7 +464,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     homeDirectory: URL,
     adopt: String? = nil,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     guard isCanonicalStateRoot(stateRoot, homeDirectory: homeDirectory) else {
       let report = KeybindingsApplyReport.failure(
         outcome: "blocked",
@@ -1553,7 +1553,7 @@ private struct PreparedKeybindingsTeardown {
   let provider: KeybindingProviderTransaction
 }
 
-private struct KeybindingsApplyReport: Encodable {
+private struct KeybindingsApplyReport: CommandReport {
   let schemaVersion = 1
   let operation = "keybindings_apply"
   let outcome: String
@@ -1579,8 +1579,7 @@ private struct KeybindingsApplyReport: Encodable {
     )
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     return """
       Macarchy keybindings apply [\(outcome)]:
       - mutated: \(mutated)

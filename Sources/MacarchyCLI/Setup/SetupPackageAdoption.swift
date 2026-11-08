@@ -39,7 +39,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
 
   func execute(
     context: UnifiedSetupPlanContext, targets: [String], approval: String?, json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let store = SetupPackageAdoptionStore(
       stateRoot: context.stateRoot, homeDirectory: context.homeDirectory)
     var reviewed: Prepared?
@@ -194,7 +194,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
 
   private func result(
     _ outcome: String, targets: [String], prepared: Prepared?, message: String, json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let preview = outcome == "preview"
     let candidates = prepared?.candidates ?? []
     let report = Report(

@@ -31,8 +31,8 @@ struct ThemeNextCommandRunner: Sendable {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
-    let run: @Sendable () async throws -> (output: String, succeeded: Bool) = {
+  ) async throws -> CommandExecution {
+    let run: @Sendable () async throws -> CommandExecution = {
       let packages = try repository.packages()
       return try await retryingActiveGenerationChanges {
         let active: GenerationManifest

@@ -70,8 +70,8 @@ struct ThemeActivationService: Sendable {
     dryRun: Bool,
     json: Bool,
     requestedBackgroundID: String? = nil
-  ) async throws -> (output: String, succeeded: Bool) {
-    let run: @Sendable () async throws -> (output: String, succeeded: Bool) = {
+  ) async throws -> CommandExecution {
+    let run: @Sendable () async throws -> CommandExecution = {
       let package = try repository.package(id: themeID)
       return try await executeLocked(
         package: package,
@@ -99,7 +99,7 @@ struct ThemeActivationService: Sendable {
     expectedActiveGenerationID: String?,
     json: Bool,
     requestedBackgroundID: String? = nil
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     try await reportLocked(
       package: package,
       stateRoot: stateRoot,

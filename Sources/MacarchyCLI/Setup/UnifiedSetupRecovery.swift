@@ -12,7 +12,7 @@ struct UnifiedSetupRecoveryCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     acknowledgeUnverifiedSpicetify: Bool,
     json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let report: UnifiedSetupRecoveryReport
     do {
       report = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
@@ -81,7 +81,7 @@ struct UnifiedSetupRecoveryCommandRunner: Sendable {
   }
 }
 
-private struct UnifiedSetupRecoveryReport: Encodable {
+private struct UnifiedSetupRecoveryReport: CommandReport {
   let schemaVersion = 1
   let operation = "setup_recover"
   let outcome: String
@@ -92,8 +92,7 @@ private struct UnifiedSetupRecoveryReport: Encodable {
   let theme: UnifiedSetupTeardownStage?
   let preferences: UnifiedSetupTeardownStage?
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     return "Macarchy setup recovery [\(outcome)]:\n- \(message)"
   }
 

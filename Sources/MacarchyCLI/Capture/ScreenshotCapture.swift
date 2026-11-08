@@ -4,15 +4,14 @@ import ImageIO
 import ThemeCore
 import UniformTypeIdentifiers
 
-struct ScreenshotOutcome: Encodable, Equatable {
+struct ScreenshotOutcome: CommandReport, Equatable {
   enum Status: String, Encodable { case copied, cancelled }
   let status: Status
   let savedPath: String?
 
   static let cancelled = Self(status: .cancelled, savedPath: nil)
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     if status == .cancelled { return "Screenshot cancelled." }
     return "Screenshot copied to clipboard."
       + (savedPath.map { " Saved PNG: \($0)" } ?? "")

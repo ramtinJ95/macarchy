@@ -39,7 +39,7 @@ struct DesktopStatusCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths? = nil,
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     var diagnostics: [String] = []
     // Runs `body`, recording its error as a diagnostic and substituting `fallback`.
     func attempt<Value>(_ fallback: Value, _ body: () throws -> Value) -> Value {
@@ -269,7 +269,7 @@ struct DesktopStatusCommandRunner: Sendable {
   }
 }
 
-private struct DesktopStatusReport: Encodable {
+private struct DesktopStatusReport: CommandReport {
   let schemaVersion = 2
   let operation = "desktop_status"
   let outcome: String
@@ -289,8 +289,7 @@ private struct DesktopStatusReport: Encodable {
   let aggregateTransactionPending: Bool
   let diagnostics: [String]
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy desktop status [\(outcome)]:",
       "- desktop provider: \(desktopProvider ?? "unavailable")",

@@ -449,7 +449,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
 
   private func unifiedSetupRefusal(
     stateRoot: URL, profileURL: URL, json: Bool, withinUnifiedSetup: Bool
-  ) throws -> (output: String, succeeded: Bool)? {
+  ) throws -> CommandExecution? {
     guard
       let refusal = pendingUnifiedSetupRefusal(
         stateRoot: stateRoot, withinUnifiedSetup: withinUnifiedSetup)
@@ -478,7 +478,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     withinUnifiedSetup: Bool = false,
     enabledThemeAdapterIDs suppliedThemeAdapterIDs: [String]? = nil,
     profile suppliedProfile: PortableProfile? = nil
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let profile: PortableProfile
     let composition: EnvironmentComposition
     var enabledThemeAdapterIDs: [String]
@@ -1034,7 +1034,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
     mutated: Bool,
     transactionStatus: String = "clear",
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = EnvironmentLifecycleReport(
       operation: "environment_apply",
       outcome: "blocked",
@@ -1087,7 +1087,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
     dryRun: Bool,
     json: Bool,
     withinUnifiedSetup: Bool = false
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     var prerequisiteState = [EnvironmentPrerequisiteStatus]()
     do {
       let store = EnvironmentStateStore(stateRoot: stateRoot)

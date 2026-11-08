@@ -92,7 +92,7 @@ struct DesktopApplyCommandRunner: Sendable {
     adopt: String?,
     json: Bool,
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let desired: DesktopDesiredState
     do {
       desired = try DesktopDesiredState.load(
@@ -195,7 +195,7 @@ struct DesktopApplyCommandRunner: Sendable {
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     deferFinalization: Bool = false,
     profile suppliedProfile: PortableProfile? = nil
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let desired: DesktopDesiredState
     do {
       desired = try DesktopDesiredState.load(
@@ -592,7 +592,7 @@ struct DesktopApplyCommandRunner: Sendable {
     message: String,
     json: Bool,
     succeeded: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = DesktopMutationReport(
       operation: "desktop_apply",
       outcome: outcome,
@@ -651,7 +651,7 @@ struct DesktopTeardownCommandRunner: Sendable {
     homeDirectory: URL,
     dryRun: Bool,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     if dryRun {
       do {
         let sketchyBar = try coordinator.sketchyBarTransaction(
@@ -802,7 +802,7 @@ struct DesktopTeardownCommandRunner: Sendable {
     homeDirectory: URL,
     dryRun: Bool,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     var sketchyBarBeforeFailure: ApplyResult?
     do {
       let outcomes = try ActivationLock(root: stateRoot).withLock {
@@ -906,7 +906,7 @@ private struct DesktopAggregateMutations {
   }
 }
 
-private struct DesktopAggregateMutationReport: Encodable {
+private struct DesktopAggregateMutationReport: CommandReport {
   let schemaVersion = 1
   let operation = "desktop_apply"
   let outcome: String
@@ -933,8 +933,7 @@ private struct DesktopAggregateMutationReport: Encodable {
     )
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy desktop apply [\(outcome)]:",
       "- mutated: \(mutated ? "yes" : "no")",
@@ -969,7 +968,7 @@ private struct DesktopAggregateMutationReport: Encodable {
   }
 }
 
-private struct DesktopAggregateTeardownReport: Encodable {
+private struct DesktopAggregateTeardownReport: CommandReport {
   let schemaVersion = 1
   let operation = "desktop_teardown"
   let outcome: String
@@ -994,8 +993,7 @@ private struct DesktopAggregateTeardownReport: Encodable {
     )
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy desktop teardown [\(outcome)]:",
       "- mutated: \(mutated ? "yes" : "no")",
@@ -1015,7 +1013,7 @@ private struct DesktopAggregateTeardownReport: Encodable {
   }
 }
 
-private struct DesktopMutationReport: Encodable {
+private struct DesktopMutationReport: CommandReport {
   let schemaVersion = 2
   let operation: String
   let outcome: String
@@ -1024,8 +1022,7 @@ private struct DesktopMutationReport: Encodable {
   let sketchyBar: ApplyResult?
   let message: String
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy \(operation.replacingOccurrences(of: "_", with: " ")) [\(outcome)]:",
       "- mutated: \(mutated ? "yes" : "no")",

@@ -202,7 +202,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
     let pendingTransaction: UnifiedSetupTransaction?
     do {
@@ -643,7 +643,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     theme: UnifiedSetupTeardownStage? = nil,
     message: String,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = UnifiedSetupTeardownReport(
       outcome: outcome,
       mutated: mutated,
@@ -672,7 +672,7 @@ struct UnifiedSetupTeardownStage: Encodable, Sendable {
   }
 }
 
-private struct UnifiedSetupTeardownReport: Encodable {
+private struct UnifiedSetupTeardownReport: CommandReport {
   let schemaVersion = 1
   let operation = "setup_teardown"
   let outcome: String
@@ -688,8 +688,7 @@ private struct UnifiedSetupTeardownReport: Encodable {
 
   var succeeded: Bool { ["planned", "restored", "no_change"].contains(outcome) }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy setup teardown [\(outcome)]:",
       "- mutated: \(mutated ? "yes" : "no")",

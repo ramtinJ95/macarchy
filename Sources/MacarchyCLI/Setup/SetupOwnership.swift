@@ -456,7 +456,7 @@ struct TeardownCommandRunner: Sendable {
     homeDirectory: URL,
     dryRun: Bool,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let integrations: [SetupIntegrationResult]
     do {
       integrations = try ownershipManager.teardown(
@@ -471,7 +471,7 @@ struct TeardownCommandRunner: Sendable {
   }
 }
 
-private struct TeardownReport: Encodable {
+private struct TeardownReport: CommandReport {
   static let softwareRemovalCommand =
     HomebrewEnvironment.uninstallCommandPrefix
     + "brew uninstall --formula \(HomebrewTapVersionReader.formula)"
@@ -481,8 +481,7 @@ private struct TeardownReport: Encodable {
   let dryRun: Bool
   let integrations: [SetupIntegrationResult]
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     let mutation =
       integrations.contains(where: \.mutationAttempted)
       ? "Recorded integration mutation attempted." : "No changes made."
