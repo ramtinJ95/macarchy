@@ -488,29 +488,24 @@ struct EnvironmentTransactionCoordinator: Sendable {
       bordersRuntimeTarget: EnvironmentBordersRuntimeTarget.required(from: previous, to: proposed)
     )
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    try store.writeTransaction(transaction)
-    do {
-      if changed {
-        try generationStore.select(proposed.generationID)
-        try transition(
-          from: previous,
-          to: proposed,
-          replacementNames: replacementNames
-        )
-        try restoreReleasedThemeBridges(from: previous, to: proposed)
-        try store.writeOwnership(proposed)
-      }
-      return (changed, proposed.generationID)
-    } catch {
-      let applyError = error
-      do {
-        try store.writeTransaction(transaction.rollingBack)
-      } catch {
-        throw EnvironmentLifecycleError.blocked(
-          "apply failed: \(applyError); rollback direction could not be persisted: \(error)"
-        )
-      }
-      do {
+    // finishApplyLocked or rollbackApplyLocked settles the journal after runtime work.
+    return try store.runJournaled(
+      transaction,
+      commit: .deferred,
+      forward: {
+        if changed {
+          try generationStore.select(proposed.generationID)
+          try transition(
+            from: previous,
+            to: proposed,
+            replacementNames: replacementNames
+          )
+          try restoreReleasedThemeBridges(from: previous, to: proposed)
+          try store.writeOwnership(proposed)
+        }
+        return (changed, proposed.generationID)
+      },
+      reverse: { _ in
         let preserveLegacyHerdr = try shouldPreserveLegacyHerdr(transaction)
         try transition(
           from: proposed,
@@ -521,14 +516,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
         try generationStore.restoreCurrent(previousCurrent)
         try EnvironmentThemeBridgeState(entries: themeBridges.entries).restore()
         try store.writeOwnership(previous)
-        try store.removeTransaction()
-      } catch {
-        throw EnvironmentLifecycleError.blocked(
-          "apply failed: \(applyError); rollback requires recovery: \(error)"
-        )
-      }
-      throw applyError
-    }
+      },
+      rollbackFailure: .requiresRecoveryNamingDirection(failed: "apply failed"),
+      rolledBack: { $0 }
+    )
   }
 
   /// Requires a planned preset file's evidence, and its external tuple when one applies, to be
@@ -716,20 +707,21 @@ struct EnvironmentTransactionCoordinator: Sendable {
       herdrReplacementName: EnvironmentReplacementNames.reserve("herdr"),
       herdrRuntimeTarget: .managed
     )
-    try store.writeTransaction(transaction)
-    do {
-      try transition(
-        from: previous,
-        to: proposed,
-        replacementNames: transaction.replacementNames,
-        herdrThemeOnly: true
-      )
-      try store.writeOwnership(proposed)
-      return true
-    } catch {
-      let transitionError = error
-      do {
-        try store.writeTransaction(transaction.rollingBack)
+    // The caller settles the journal once Herdr's runtime reload is verified or rolled back.
+    return try store.runJournaled(
+      transaction,
+      commit: .deferred,
+      forward: {
+        try transition(
+          from: previous,
+          to: proposed,
+          replacementNames: transaction.replacementNames,
+          herdrThemeOnly: true
+        )
+        try store.writeOwnership(proposed)
+        return true
+      },
+      reverse: { _ in
         try transition(
           from: proposed,
           to: previous,
@@ -737,14 +729,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
           herdrThemeOnly: true
         )
         try store.writeOwnership(previous)
-        try store.removeTransaction()
-      } catch {
-        throw EnvironmentLifecycleError.blocked(
-          "Herdr theme transition failed: \(transitionError); rollback requires recovery: \(error)"
-        )
-      }
-      throw transitionError
-    }
+      },
+      rollbackFailure: .requiresRecovery(failed: "Herdr theme transition failed"),
+      rolledBack: { $0 }
+    )
   }
 
   private func transition(
