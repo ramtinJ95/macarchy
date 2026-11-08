@@ -26,12 +26,16 @@ package struct PackageProfile: Equatable, Sendable {
 
 extension PackageProfile: PortableProfileSection {
   package static let table = "packages"
+  /// Every layer contributes these inputs; they compose by package identity in `layers`.
+  package static let brewfileKey = "brewfile"
+  package static let excludedFormulaeKey = "exclude_formulae"
+  package static let excludedCasksKey = "exclude_casks"
   package static var fields: [PortableProfileField<Self>] {
     [
       .init("baseline", \.baseline),
-      .contributed("brewfile"),
-      .contributed("exclude_formulae"),
-      .contributed("exclude_casks"),
+      .contributed(brewfileKey),
+      .contributed(excludedFormulaeKey),
+      .contributed(excludedCasksKey),
     ]
   }
 }

@@ -45,52 +45,63 @@ struct GuidedSetupAnswers: Sendable {
     func add(_ table: String, _ fields: [String]) {
       if !fields.isEmpty { sections.append(["[\(table)]"] + fields) }
     }
-
-    add("desktop", desktop ? [] : ["provider = \"disabled\""])
-    add("top_bar", topBar ? [] : ["provider = \"disabled\""])
-    add("focus_ring", focusRing ? [] : ["provider = \"disabled\""])
-    add("terminal", terminal ? [] : ["provider = \"disabled\""])
-    add("shell", shell ? [] : ["provider = \"disabled\""])
-    if shell {
-      add("prompt", prompt ? [] : ["provider = \"disabled\""])
-      add("history", history ? [] : ["provider = \"disabled\""])
+    func provider<Provider: PortableProfileProvider>(_: Provider.Type, enabled: Bool) {
+      let key = Provider.key(\.self)
+      add(Provider.table, enabled ? [] : ["\(key) = \"\(Provider.disabled.rawValue)\""])
     }
-    add("editor", editor ? [] : ["provider = \"disabled\""])
+
+    provider(DesktopProviderSelection.self, enabled: desktop)
+    provider(TopBarProviderSelection.self, enabled: topBar)
+    provider(FocusRingProviderSelection.self, enabled: focusRing)
+    provider(TerminalProviderSelection.self, enabled: terminal)
+    provider(ShellProviderSelection.self, enabled: shell)
+    if shell {
+      provider(PromptProviderSelection.self, enabled: prompt)
+      provider(HistoryProviderSelection.self, enabled: history)
+    }
+    provider(EditorProviderSelection.self, enabled: editor)
     add(
-      "tools",
+      DailyToolsProfile.table,
       [
-        bat ? nil : "bat = false",
-        eza ? nil : "eza = false",
-        btop ? nil : "btop = false",
-        yazi ? nil : "yazi = false",
+        bat ? nil : DailyToolsProfile.key(\.bat) + " = false",
+        eza ? nil : DailyToolsProfile.key(\.eza) + " = false",
+        btop ? nil : DailyToolsProfile.key(\.btop) + " = false",
+        yazi ? nil : DailyToolsProfile.key(\.yazi) + " = false",
       ].compactMap { $0 }
     )
     add(
-      "presets",
+      PresetsProfile.table,
       [
-        codex ? "codex = true" : nil,
-        herdr ? "herdr = true" : nil,
-        pi ? "pi = true" : nil,
-        slack ? "slack = true" : nil,
-        spicetify ? "spicetify = true" : nil,
-        tuicr ? "tuicr = true" : nil,
+        codex ? PresetsProfile.key(\.codex) + " = true" : nil,
+        herdr ? PresetsProfile.key(\.herdr) + " = true" : nil,
+        pi ? PresetsProfile.key(\.pi) + " = true" : nil,
+        slack ? PresetsProfile.key(\.slack) + " = true" : nil,
+        spicetify ? PresetsProfile.key(\.spicetify) + " = true" : nil,
+        tuicr ? PresetsProfile.key(\.tuicr) + " = true" : nil,
       ].compactMap { $0 }
     )
 
     let preferences = [
-      dockAutohide.map { "dock_autohide = \($0)" },
-      finderShowExtensions.map { "finder_show_extensions = \($0)" },
+      dockAutohide.map { MacOSPreferencesProfile.key(\.dockAutohide) + " = \($0)" },
+      finderShowExtensions.map {
+        MacOSPreferencesProfile.key(\.finderShowExtensions) + " = \($0)"
+      },
     ].compactMap { $0 }
-    add("macos_preferences", preferences.isEmpty ? [] : ["enabled = true"] + preferences)
+    add(
+      MacOSPreferencesProfile.table,
+      preferences.isEmpty ? [] : [MacOSPreferencesProfile.key(\.enabled) + " = true"] + preferences)
 
     let formulae = packageExclusions.filter { $0.kind == .formula }.map { "\"\($0.name)\"" }
     let casks = packageExclusions.filter { $0.kind == .cask }.map { "\"\($0.name)\"" }
     add(
-      "packages",
+      PackageProfile.table,
       [
-        addingBrewfile.map { "brewfile = \($0)" },
-        formulae.isEmpty ? nil : "exclude_formulae = [\(formulae.joined(separator: ", "))]",
-        casks.isEmpty ? nil : "exclude_casks = [\(casks.joined(separator: ", "))]",
+        addingBrewfile.map { "\(PackageProfile.brewfileKey) = \($0)" },
+        formulae.isEmpty
+          ? nil
+          : "\(PackageProfile.excludedFormulaeKey) = [\(formulae.joined(separator: ", "))]",
+        casks.isEmpty
+          ? nil : "\(PackageProfile.excludedCasksKey) = [\(casks.joined(separator: ", "))]",
       ].compactMap { $0 }
     )
 
