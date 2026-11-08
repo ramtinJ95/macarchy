@@ -86,14 +86,13 @@ struct UnifiedSetupTransactionStore: Sendable {
   }
 
   func read() throws -> UnifiedSetupTransaction? {
-    let data: Data
+    let file: BoundedRegularFile?
     do {
-      data = try BoundedRegularFile.read(at: url).data
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
-      return nil
+      file = try BoundedRegularFile.readIfPresent(at: url)
     } catch {
       throw UnifiedSetupTransactionError.invalid(String(describing: error))
     }
+    guard let data = file?.data else { return nil }
     do {
       _ = try StrictJSONObjectDocument(data: data, id: "setup_transaction", target: url)
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]

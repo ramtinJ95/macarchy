@@ -75,14 +75,13 @@ struct SetupPackageAdoptionStore: Sendable {
   }
 
   func read() throws -> SetupPackageAdoptionLedger? {
-    let data: Data
+    let file: BoundedRegularFile?
     do {
-      data = try BoundedRegularFile.read(at: url).data
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
-      return nil
+      file = try BoundedRegularFile.readIfPresent(at: url)
     } catch {
       throw SetupPackageAdoptionError("Cannot read package adoption ledger: \(error)")
     }
+    guard let data = file?.data else { return nil }
     do {
       _ = try StrictJSONObjectDocument(data: data, id: "package_adoption", target: url)
       let decoder = JSONDecoder()

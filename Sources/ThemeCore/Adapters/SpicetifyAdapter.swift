@@ -521,14 +521,15 @@ package struct SpicetifyAdapter: Sendable {
 
   private func readRuntimeEvidence() throws -> SpicetifyRuntimeEvidence? {
     do {
-      let data = try BoundedRegularFile.read(at: runtimeEvidenceURL, maximumSize: 16_384).data
+      guard
+        let data = try BoundedRegularFile.readIfPresent(at: runtimeEvidenceURL, maximumSize: 16_384)?
+          .data
+      else { return nil }
       let evidence = try JSONDecoder().decode(SpicetifyRuntimeEvidence.self, from: data)
       guard evidence.hasValidShape else {
         throw SpicetifyAdapterError.invalidRuntimeEvidence("receipt has an invalid shape")
       }
       return evidence
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
-      return nil
     } catch let error as SpicetifyAdapterError {
       throw error
     } catch {

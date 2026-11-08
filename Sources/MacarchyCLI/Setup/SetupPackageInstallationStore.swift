@@ -50,12 +50,11 @@ struct SetupPackageInstallationStore: Sendable {
   }
 
   func read() throws -> SetupPackageInstallationAttempt? {
-    let data: Data
-    do { data = try BoundedRegularFile.read(at: url).data } catch BoundedRegularFileError.system(
-      operation: "open", code: ENOENT)
-    { return nil } catch {
+    let file: BoundedRegularFile?
+    do { file = try BoundedRegularFile.readIfPresent(at: url) } catch {
       throw SetupPackageAdoptionError("Cannot read package installation attempt: \(error)")
     }
+    guard let data = file?.data else { return nil }
     do {
       _ = try StrictJSONObjectDocument(data: data, id: "package_installation", target: url)
       let decoder = JSONDecoder()
