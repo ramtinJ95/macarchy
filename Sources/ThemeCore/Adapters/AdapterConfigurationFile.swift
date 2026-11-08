@@ -1,10 +1,10 @@
 import Foundation
 
 enum AdapterConfigurationFile {
-  static func readUTF8<AdapterError: Error>(
+  static func readUTF8(
     at url: URL,
-    tooLarge: @autoclosure () -> AdapterError,
-    unreadable: @autoclosure () -> AdapterError
+    tooLarge: @autoclosure () -> any Error,
+    unreadable: @autoclosure () -> any Error
   ) throws -> String {
     do {
       return try BoundedRegularFile.readUTF8(at: url)
@@ -22,12 +22,12 @@ enum AdapterConfigurationFile {
   /// is followed, and the destination itself is still opened without following
   /// its final component. Every other symbolic link is rejected through
   /// `unexpectedLink` so arbitrary redirection stays visible.
-  static func readUTF8<AdapterError: Error>(
+  static func readUTF8(
     at url: URL,
     managedDestination: URL,
-    tooLarge: @autoclosure () -> AdapterError,
-    unreadable: @autoclosure () -> AdapterError,
-    unexpectedLink: (_ actualDestination: String) -> AdapterError
+    tooLarge: @autoclosure () -> any Error,
+    unreadable: @autoclosure () -> any Error,
+    unexpectedLink: (_ actualDestination: String) -> any Error
   ) throws -> String {
     guard let actual = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)
     else {

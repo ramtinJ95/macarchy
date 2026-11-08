@@ -2,8 +2,6 @@ import Darwin
 import Foundation
 
 enum KittyAdapterError: AdapterBridgeFileError, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case configurationTooLarge(URL)
   case missingInclude(String)
   case bridgeIsNotRegularFile(URL)
   case bridgeDoesNotMatch(URL)
@@ -12,10 +10,6 @@ enum KittyAdapterError: AdapterBridgeFileError, CustomStringConvertible, Sendabl
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read Kitty configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "Kitty configuration at \(url.path) exceeds 1 MiB"
     case .missingInclude(let directive):
       "Kitty configuration must contain '\(directive)'"
     case .bridgeIsNotRegularFile(let url):
@@ -74,8 +68,10 @@ package struct KittyAdapter: Sendable {
     let resolvedConfigurationURL = configurationURL.resolvingSymlinksInPath()
     let configuration = try AdapterConfigurationFile.readUTF8(
       at: resolvedConfigurationURL,
-      tooLarge: KittyAdapterError.configurationTooLarge(configurationURL),
-      unreadable: KittyAdapterError.cannotReadConfiguration(configurationURL)
+      tooLarge: AdapterConfigurationError.configurationTooLarge(
+        "Kitty configuration", configurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "Kitty configuration", configurationURL)
     )
     guard containsExactLine(includeDirective, in: configuration) else {
       throw KittyAdapterError.missingInclude(includeDirective)

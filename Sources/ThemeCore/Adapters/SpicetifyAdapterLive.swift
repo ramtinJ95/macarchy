@@ -32,7 +32,8 @@ extension SpicetifyAdapter {
     let configurationURL = configurationDirectoryURL.appending(path: "config-xpui.ini")
     let data = try BoundedRegularFile.read(at: configurationURL.resolvingSymlinksInPath()).data
     guard let configuration = String(data: data, encoding: .utf8) else {
-      throw SpicetifyAdapterError.cannotReadConfiguration(configurationURL)
+      throw AdapterConfigurationError.cannotReadConfiguration(
+        "Spicetify configuration", configurationURL)
     }
     let selection = try configurationSelection(in: configuration, at: configurationURL)
     guard let spotifyPath = selection.spotifyPath, spotifyPath.hasPrefix("/") else {

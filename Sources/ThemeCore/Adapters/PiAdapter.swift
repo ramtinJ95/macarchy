@@ -3,7 +3,6 @@ import Foundation
 
 enum PiAdapterError: Error, CustomStringConvertible, Sendable {
   case cannotReadSettings(URL)
-  case controlUnavailable(URL)
   case cannotRefreshThemeLink(URL, code: Int32)
   case invalidVersion(String)
   case noLongerSelected
@@ -14,8 +13,6 @@ enum PiAdapterError: Error, CustomStringConvertible, Sendable {
     switch self {
     case .cannotReadSettings(let url):
       "Cannot read Pi settings at \(url.path)"
-    case .controlUnavailable(let url):
-      "Pi is not executable at \(url.path)"
     case .cannotRefreshThemeLink(let url, let code):
       "Cannot refresh Pi theme link at \(url.path) (errno \(code))"
     case .invalidVersion(let value):
@@ -91,7 +88,7 @@ package struct PiAdapter: Sendable {
 
   private func requireControl() throws {
     guard controlIsAvailable() else {
-      throw PiAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("Pi", executableURL)
     }
   }
 

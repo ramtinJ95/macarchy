@@ -1,19 +1,10 @@
 import Foundation
 
 enum BtopAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case configurationTooLarge(URL)
-  case controlUnavailable(URL)
   case wrongThemeSelection(String)
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read btop configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "btop configuration at \(url.path) exceeds 1 MiB"
-    case .controlUnavailable(let url):
-      "btop is not executable at \(url.path)"
     case .wrongThemeSelection(let expected):
       "btop color_theme must be \"\(expected)\""
     }
@@ -50,7 +41,7 @@ package struct BtopAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw BtopAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("btop", executableURL)
     }
     try CanonicalThemeLink.validate([themeLink]) {
       let lines = try readConfiguration().split(whereSeparator: \.isNewline)
@@ -163,8 +154,10 @@ package struct BtopAdapter: Sendable {
   private func readConfiguration() throws -> String {
     try AdapterConfigurationFile.readUTF8(
       at: configurationURL,
-      tooLarge: BtopAdapterError.configurationTooLarge(configurationURL),
-      unreadable: BtopAdapterError.cannotReadConfiguration(configurationURL)
+      tooLarge: AdapterConfigurationError.configurationTooLarge(
+        "btop configuration", configurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "btop configuration", configurationURL)
     )
   }
 

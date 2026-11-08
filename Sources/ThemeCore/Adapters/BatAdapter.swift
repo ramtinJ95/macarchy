@@ -1,20 +1,11 @@
 import Foundation
 
 enum BatAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case configurationTooLarge(URL)
-  case controlUnavailable(URL)
   case missingThemeDirective(String)
   case unexpectedConfigurationLink(URL, actual: String, expected: String)
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read bat configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "bat configuration at \(url.path) exceeds 1 MiB"
-    case .controlUnavailable(let url):
-      "bat is not executable at \(url.path)"
     case .missingThemeDirective(let directive):
       "bat configuration must contain '\(directive)'"
     case .unexpectedConfigurationLink(let url, let actual, let expected):
@@ -55,7 +46,7 @@ package struct BatAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw BatAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("bat", executableURL)
     }
     try CanonicalThemeLink.validate([themeLink]) {
       guard containsExactLine(Self.themeDirective, in: try readConfiguration()) else {
@@ -139,8 +130,10 @@ package struct BatAdapter: Sendable {
     return try AdapterConfigurationFile.readUTF8(
       at: configurationURL,
       managedDestination: managedDestination,
-      tooLarge: BatAdapterError.configurationTooLarge(configurationURL),
-      unreadable: BatAdapterError.cannotReadConfiguration(configurationURL),
+      tooLarge: AdapterConfigurationError.configurationTooLarge(
+        "bat configuration", configurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "bat configuration", configurationURL),
       unexpectedLink: {
         BatAdapterError.unexpectedConfigurationLink(
           configurationURL,

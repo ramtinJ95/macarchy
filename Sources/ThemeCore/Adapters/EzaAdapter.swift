@@ -1,19 +1,10 @@
 import Foundation
 
 enum EzaAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadShellConfiguration(URL)
-  case configurationTooLarge(URL)
-  case controlUnavailable(URL)
   case missingEnvironmentDirective(String)
 
   var description: String {
     switch self {
-    case .cannotReadShellConfiguration(let url):
-      "Cannot read shell configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "Shell configuration at \(url.path) exceeds 1 MiB"
-    case .controlUnavailable(let url):
-      "eza is not executable at \(url.path)"
     case .missingEnvironmentDirective(let directive):
       "Shell configuration must contain '\(directive)'"
     }
@@ -50,7 +41,7 @@ package struct EzaAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw EzaAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("eza", executableURL)
     }
     try CanonicalThemeLink.validate([themeLink]) {
       let shell = try readShellConfiguration()
@@ -219,8 +210,10 @@ package struct EzaAdapter: Sendable {
   private func readShellConfiguration() throws -> String {
     try AdapterConfigurationFile.readUTF8(
       at: shellConfigurationURL.resolvingSymlinksInPath(),
-      tooLarge: EzaAdapterError.configurationTooLarge(shellConfigurationURL),
-      unreadable: EzaAdapterError.cannotReadShellConfiguration(shellConfigurationURL)
+      tooLarge: AdapterConfigurationError.configurationTooLarge(
+        "Shell configuration", shellConfigurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "shell configuration", shellConfigurationURL)
     )
   }
 
@@ -234,8 +227,9 @@ package struct EzaAdapter: Sendable {
     let defaults = StateLayout(root: root).environmentArtifact("zsh/defaults.zsh")
     let text = try AdapterConfigurationFile.readUTF8(
       at: defaults.resolvingSymlinksInPath(),
-      tooLarge: EzaAdapterError.configurationTooLarge(defaults),
-      unreadable: EzaAdapterError.cannotReadShellConfiguration(defaults))
+      tooLarge: AdapterConfigurationError.configurationTooLarge("Shell configuration", defaults),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration("shell configuration", defaults)
+    )
     return containsExactLine(Self.managedEnvironmentDirective, in: text)
       || containsExactLine(
         Self.environmentDirective(configurationDirectoryURL: configurationDirectoryURL), in: text)

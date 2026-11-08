@@ -1,20 +1,11 @@
 import Foundation
 
 enum YaziAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case configurationTooLarge(URL)
-  case controlUnavailable(URL)
   case missingFlavorSelection(String)
   case unexpectedConfigurationLink(URL, actual: String, expected: String)
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read Yazi theme configuration at \(url.path)"
-    case .configurationTooLarge(let url):
-      "Yazi theme configuration at \(url.path) exceeds 1 MiB"
-    case .controlUnavailable(let url):
-      "Yazi control is not executable at \(url.path)"
     case .missingFlavorSelection(let selection):
       "Yazi theme configuration must select \(selection)"
     case .unexpectedConfigurationLink(let url, let actual, let expected):
@@ -74,7 +65,8 @@ package struct YaziAdapter: Sendable {
 
   func preflight() throws {
     guard controlsAreAvailable() else {
-      throw YaziAdapterError.controlUnavailable(
+      throw AdapterConfigurationError.controlUnavailable(
+        "Yazi control",
         FileManager.default.isExecutableFile(atPath: executableURL.path)
           ? controlURL : executableURL
       )
@@ -243,8 +235,10 @@ package struct YaziAdapter: Sendable {
     return try AdapterConfigurationFile.readUTF8(
       at: themeConfigurationURL,
       managedDestination: managedDestination,
-      tooLarge: YaziAdapterError.configurationTooLarge(themeConfigurationURL),
-      unreadable: YaziAdapterError.cannotReadConfiguration(themeConfigurationURL),
+      tooLarge: AdapterConfigurationError.configurationTooLarge(
+        "Yazi theme configuration", themeConfigurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "Yazi theme configuration", themeConfigurationURL),
       unexpectedLink: {
         YaziAdapterError.unexpectedConfigurationLink(
           themeConfigurationURL,

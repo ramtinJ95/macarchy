@@ -2,17 +2,11 @@ import Foundation
 import TOMLDecoder
 
 enum TuicrAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case controlUnavailable(URL)
   case invalidConfiguration(URL)
   case wrongThemeSelection(String)
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read tuicr configuration at \(url.path)"
-    case .controlUnavailable(let url):
-      "tuicr is not executable at \(url.path)"
     case .invalidConfiguration(let url):
       "tuicr configuration at \(url.path) is not valid TOML"
     case .wrongThemeSelection(let expected):
@@ -54,7 +48,7 @@ package struct TuicrAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw TuicrAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("tuicr", executableURL)
     }
     try CanonicalThemeLink.validate([themeLink, syntaxLink]) {
       guard try selectedTheme() == Self.themeName else {
@@ -143,8 +137,10 @@ package struct TuicrAdapter: Sendable {
   private func selectedTheme() throws -> String? {
     let configuration = try AdapterConfigurationFile.readUTF8(
       at: configurationURL.resolvingSymlinksInPath(),
-      tooLarge: TuicrAdapterError.cannotReadConfiguration(configurationURL),
-      unreadable: TuicrAdapterError.cannotReadConfiguration(configurationURL))
+      tooLarge: AdapterConfigurationError.cannotReadConfiguration(
+        "tuicr configuration", configurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "tuicr configuration", configurationURL))
     do {
       return try TOMLDecoder().decode(Configuration.self, from: configuration).theme
     } catch {

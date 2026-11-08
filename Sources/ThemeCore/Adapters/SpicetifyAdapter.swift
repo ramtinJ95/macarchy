@@ -1,8 +1,6 @@
 import Foundation
 
 enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
-  case controlUnavailable(URL)
   case invalidRuntimeEvidence(String)
   case invalidSpotifyVersion(String)
   case invalidVersion(String)
@@ -15,10 +13,6 @@ enum SpicetifyAdapterError: Error, CustomStringConvertible, Sendable {
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read Spicetify configuration at \(url.path)"
-    case .controlUnavailable(let url):
-      "Spicetify is not executable at \(url.path)"
     case .invalidRuntimeEvidence(let reason):
       "Spicetify runtime evidence is invalid: \(reason)"
     case .invalidSpotifyVersion(let value):
@@ -109,7 +103,7 @@ package struct SpicetifyAdapter: Sendable {
 
   func preflight() throws {
     guard controlIsAvailable() else {
-      throw SpicetifyAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("Spicetify", executableURL)
     }
     _ = try supportedVersion()
     _ = try supportedSpotifyVersion()
@@ -197,7 +191,7 @@ package struct SpicetifyAdapter: Sendable {
   ) throws -> SpicetifyRuntimeResult {
     try SpicetifyLock(root: root).withLock {
       guard controlIsAvailable() else {
-        throw SpicetifyAdapterError.controlUnavailable(executableURL)
+        throw AdapterConfigurationError.controlUnavailable("Spicetify", executableURL)
       }
       let spicetifyVersion = try supportedVersion()
       let spotifyVersion = try supportedSpotifyVersion()
@@ -255,8 +249,10 @@ package struct SpicetifyAdapter: Sendable {
   private func selectedTheme() throws -> (theme: String, colorScheme: String) {
     let configuration = try AdapterConfigurationFile.readUTF8(
       at: configurationURL.resolvingSymlinksInPath(),
-      tooLarge: SpicetifyAdapterError.cannotReadConfiguration(configurationURL),
-      unreadable: SpicetifyAdapterError.cannotReadConfiguration(configurationURL))
+      tooLarge: AdapterConfigurationError.cannotReadConfiguration(
+        "Spicetify configuration", configurationURL),
+      unreadable: AdapterConfigurationError.cannotReadConfiguration(
+        "Spicetify configuration", configurationURL))
 
     let selection = try Self.configurationSelection(
       in: configuration,

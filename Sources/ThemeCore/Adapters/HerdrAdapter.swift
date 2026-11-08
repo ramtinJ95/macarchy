@@ -2,10 +2,8 @@ import Foundation
 import TOMLDecoder
 
 enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
-  case cannotReadConfiguration(URL)
   case cannotReadDesiredTheme(URL)
   case cannotReadOwnership(URL)
-  case controlUnavailable(URL)
   case configurationOverrideUnsupported
   case invalidReloadResponse(String)
   case invalidThemeConfiguration
@@ -21,14 +19,10 @@ enum HerdrAdapterError: Error, CustomStringConvertible, Sendable {
 
   var description: String {
     switch self {
-    case .cannotReadConfiguration(let url):
-      "Cannot read Herdr configuration at \(url.path)"
     case .cannotReadDesiredTheme(let url):
       "Cannot read generated Herdr theme at \(url.path)"
     case .cannotReadOwnership(let url):
       "Cannot read Herdr ownership evidence at \(url.path)"
-    case .controlUnavailable(let url):
-      "Herdr is not executable at \(url.path)"
     case .configurationOverrideUnsupported:
       "HERDR_CONFIG_PATH is unsupported; Herdr must use ~/.config/herdr/config.toml"
     case .invalidReloadResponse(let value):
@@ -565,17 +559,19 @@ package struct HerdrAdapter: Sendable {
     do {
       data = try BoundedRegularFile.read(at: configurationURL.resolvingSymlinksInPath()).data
     } catch {
-      throw HerdrAdapterError.cannotReadConfiguration(configurationURL)
+      throw AdapterConfigurationError.cannotReadConfiguration(
+        "Herdr configuration", configurationURL)
     }
     guard let configuration = String(data: data, encoding: .utf8) else {
-      throw HerdrAdapterError.cannotReadConfiguration(configurationURL)
+      throw AdapterConfigurationError.cannotReadConfiguration(
+        "Herdr configuration", configurationURL)
     }
     return (data, configuration)
   }
 
   private func validatedConfiguration() throws -> ParsedConfiguration {
     guard controlIsAvailable() else {
-      throw HerdrAdapterError.controlUnavailable(executableURL)
+      throw AdapterConfigurationError.controlUnavailable("Herdr", executableURL)
     }
     let configuration = try readConfiguration()
     return try Self.parseConfiguration(configuration.text)
