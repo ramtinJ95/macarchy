@@ -1,6 +1,11 @@
 import Foundation
 
 package enum MacarchyCommandPath {
+  /// The running executable as the process reports it, before any symlink resolution.
+  package static var currentExecutableURL: URL {
+    Bundle.main.executableURL ?? URL(filePath: CommandLine.arguments.first ?? "macarchy")
+  }
+
   /// Persist the Homebrew entry point, not the versioned binary that is running now.
   /// Resource discovery and process authentication must still use the physical path.
   package static func persistentURL(for executableURL: URL) -> URL {
