@@ -537,7 +537,7 @@ private struct PaletteState {
   let color: CGColor
 
   static func pointerStamp(root: URL) throws -> String {
-    let path = root.appending(path: "current").path
+    let path = StateLayout(root: root).currentTheme.path
     var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
     let count = readlink(path, &buffer, buffer.count)
     guard count >= 0, count < buffer.count else {

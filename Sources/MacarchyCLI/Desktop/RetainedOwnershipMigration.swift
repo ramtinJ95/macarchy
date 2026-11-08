@@ -128,7 +128,7 @@ struct RetainedOwnershipMigration {
       let prefix = "retained-"
       guard
         retained.deletingLastPathComponent().path
-          == stateRoot.appending(path: "desktop/yabai").path,
+          == stateRoot.appending(path: StateLayout.yabaiDirectory).path,
         retained.lastPathComponent.hasPrefix(prefix),
         UUID(uuidString: String(retained.lastPathComponent.dropFirst(prefix.count))) != nil,
         record.original.publicPath

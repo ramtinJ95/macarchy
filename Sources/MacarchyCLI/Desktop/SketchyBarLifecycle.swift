@@ -372,7 +372,7 @@ struct SketchyBarLifecycleEvidenceStore: Sendable {
 
   private var file: DesktopStateFile {
     DesktopStateFile(
-      stateRoot: stateRoot, directory: "desktop/sketchybar", name: "lifecycle.json",
+      stateRoot: stateRoot, directory: StateLayout.sketchyBarDirectory, name: "lifecycle.json",
       maximumSize: Self.maximumSize)
   }
 

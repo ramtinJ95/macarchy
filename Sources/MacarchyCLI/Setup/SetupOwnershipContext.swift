@@ -52,70 +52,61 @@ extension SetupOwnershipManager {
       let stateRoot = StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
       self.homeDirectory = homeDirectory
       self.stateRoot = stateRoot
+      let layout = StateLayout(root: stateRoot)
       kittyConfiguration = homeDirectory.appending(path: ".config/kitty/kitty.conf")
       batConfiguration = homeDirectory.appending(path: ".config/bat/config")
       batThemeLink = homeDirectory.appending(
         path: ".config/bat/themes/\(BatAdapter.themeFileName)")
-      batThemeDestination = stateRoot.appending(
-        path: "current/\(TextMateThemeArtifact.outputPath)"
-      )
+      batThemeDestination = layout.currentThemeArtifact(TextMateThemeArtifact.outputPath)
       shellConfiguration = homeDirectory.appending(path: ".zshrc")
       ezaThemeLink = homeDirectory.appending(
         path: ".config/eza/\(EzaAdapter.themeFileName)")
-      ezaThemeDestination = stateRoot.appending(path: "current/\(EzaAdapter.outputPath)")
+      ezaThemeDestination = layout.currentThemeArtifact(EzaAdapter.outputPath)
       btopConfiguration = homeDirectory.appending(path: ".config/btop/btop.conf")
       btopThemeLink = homeDirectory.appending(
         path: ".config/btop/themes/\(BtopAdapter.themeFileName)")
-      btopThemeDestination = stateRoot.appending(path: "current/\(BtopAdapter.outputPath)")
+      btopThemeDestination = layout.currentThemeArtifact(BtopAdapter.outputPath)
       yaziConfiguration = homeDirectory.appending(path: ".config/yazi/theme.toml")
       yaziFlavorDirectory = homeDirectory.appending(
         path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi")
       yaziFlavorLink = yaziFlavorDirectory.appending(path: "flavor.toml")
-      yaziFlavorDestination = stateRoot.appending(path: "current/\(YaziAdapter.flavorOutputPath)")
+      yaziFlavorDestination = layout.currentThemeArtifact(YaziAdapter.flavorOutputPath)
       yaziSyntaxLink = yaziFlavorDirectory.appending(path: "tmtheme.xml")
-      yaziSyntaxDestination = stateRoot.appending(
-        path: "current/\(TextMateThemeArtifact.yaziOutputPath)"
-      )
+      yaziSyntaxDestination = layout.currentThemeArtifact(TextMateThemeArtifact.yaziOutputPath)
       atuinConfiguration = homeDirectory.appending(path: ".config/atuin/config.toml")
       atuinThemeLink = homeDirectory.appending(
         path: ".config/atuin/themes/\(AtuinAdapter.themeName).toml")
-      atuinThemeDestination = stateRoot.appending(path: "current/\(AtuinAdapter.outputPath)")
+      atuinThemeDestination = layout.currentThemeArtifact(AtuinAdapter.outputPath)
       neovimWatcherConfiguration = homeDirectory.appending(
         path: ".config/nvim/lua/plugins/colorscheme.lua")
       neovimThemeLink = homeDirectory.appending(
         path: ".config/nvim/lua/macarchy/current.lua")
-      neovimThemeDestination = stateRoot.appending(
-        path: "current/\(NeovimAdapter.outputPath)")
+      neovimThemeDestination = layout.currentThemeArtifact(NeovimAdapter.outputPath)
       starshipBehavior = homeDirectory.appending(path: ".config/starship/behavior.toml")
       starshipConfigurationLink = homeDirectory.appending(path: ".config/starship.toml")
       starshipBridgeDestination = stateRoot.appending(path: StarshipAdapter.bridgePath)
       piConfiguration = homeDirectory.appending(path: ".pi/agent/settings.json")
       piThemeLink = homeDirectory.appending(
         path: ".pi/agent/themes/\(PiAdapter.themeName).json")
-      piThemeDestination = stateRoot.appending(path: "current/\(PiAdapter.outputPath)")
+      piThemeDestination = layout.currentThemeArtifact(PiAdapter.outputPath)
       herdrConfiguration = homeDirectory.appending(path: ".config/herdr/config.toml")
       tuicrConfiguration = homeDirectory.appending(path: ".config/tuicr/config.toml")
       tuicrThemeLink = homeDirectory.appending(
         path: ".config/tuicr/themes/\(TuicrAdapter.themeName).toml")
-      tuicrThemeDestination = stateRoot.appending(path: "current/\(TuicrAdapter.outputPath)")
+      tuicrThemeDestination = layout.currentThemeArtifact(TuicrAdapter.outputPath)
       tuicrSyntaxLink = homeDirectory.appending(
         path: ".config/tuicr/themes/\(TuicrAdapter.themeName).tmTheme")
-      tuicrSyntaxDestination = stateRoot.appending(
-        path: "current/\(TextMateThemeArtifact.outputPath)"
-      )
+      tuicrSyntaxDestination = layout.currentThemeArtifact(TextMateThemeArtifact.outputPath)
       codexConfiguration = homeDirectory.appending(path: ".codex/config.toml")
       codexThemeLink = homeDirectory.appending(
         path: ".codex/themes/\(CodexAdapter.themeName).tmTheme")
-      codexThemeDestination = stateRoot.appending(
-        path: "current/\(TextMateThemeArtifact.outputPath)"
-      )
+      codexThemeDestination = layout.currentThemeArtifact(TextMateThemeArtifact.outputPath)
       let spicetifyDirectory = homeDirectory.appending(
         path: ".config/spicetify", directoryHint: .isDirectory)
       spicetifyConfiguration = spicetifyDirectory.appending(path: "config-xpui.ini")
       spicetifyColorLink = spicetifyDirectory.appending(
         path: "Themes/\(SpicetifyAdapter.themeName)/color.ini")
-      spicetifyColorDestination = stateRoot.appending(
-        path: "current/\(SpicetifyAdapter.outputPath)")
+      spicetifyColorDestination = layout.currentThemeArtifact(SpicetifyAdapter.outputPath)
       manifestURL = stateRoot.appending(path: "state/setup/ownership.json")
     }
 

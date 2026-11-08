@@ -131,7 +131,7 @@ extension EnvironmentTransactionCoordinator {
     guard let ownership, let configuration = ownership.borders?.leanService,
       configuration.isValid, configuration.stateRoot == stateRoot.standardizedFileURL.path,
       try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
-        == "generations/\(ownership.generationID)"
+        == StateLayout.generationPath(ownership.generationID)
     else { throw EnvironmentLifecycleError.blocked("Lean has no matching applied ownership") }
     if ownership.borders?.retainsBorders == true {
       try verifyManagedBordersConfiguration()

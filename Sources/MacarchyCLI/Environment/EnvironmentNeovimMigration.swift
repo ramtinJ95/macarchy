@@ -12,7 +12,7 @@ struct EnvironmentNeovimMigration: Sendable {
 
   var nativeRoot: URL { sourceURL ?? homeDirectory.appending(path: ".config/nvim-native") }
   var publicURL: URL { homeDirectory.appending(path: ".config/nvim") }
-  var legacyTarget: String { stateRoot.appending(path: "environment/current/neovim").path }
+  var legacyTarget: String { StateLayout(root: stateRoot).environmentArtifact("neovim").path }
 
   func isNative(_ ownership: EnvironmentOwnership?) -> Bool {
     nativeTarget(in: ownership) != nil
@@ -101,7 +101,7 @@ struct EnvironmentNeovimMigration: Sendable {
       guard
         try PinnedFilesystem.symlinkDestination(
           parentDescriptor: parent, name: url.lastPathComponent, url: url
-        ) == stateRoot.appending(path: "environment/current/neovim/\(path)").path
+        ) == StateLayout(root: stateRoot).environmentArtifact("neovim/\(path)").path
       else {
         throw EnvironmentLifecycleError.drift("Neovim theme bridge: \(url.path)")
       }
@@ -144,7 +144,8 @@ struct EnvironmentNeovimMigration: Sendable {
       throw EnvironmentLifecycleError.drift(publicURL.path)
     }
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-    guard try generations.currentDestination() == "generations/\(ownership.generationID)" else {
+    guard try generations.currentDestination() == StateLayout.generationPath(ownership.generationID)
+    else {
       throw EnvironmentLifecycleError.drift("environment pointer and ownership disagree")
     }
     if let sourceURL {
@@ -202,8 +203,8 @@ struct EnvironmentNeovimMigration: Sendable {
         + Data(manifest.renderedDigest.utf8))
     return (
       Plan(
-        source: stateRoot.appending(
-          path: "environment/generations/\(ownership.generationID)/neovim"
+        source: StateLayout(root: stateRoot).environmentGenerationArtifact(
+          ownership.generationID, "neovim"
         ).path,
         destination: nativeRoot.path, approval: digest,
         message:
@@ -260,7 +261,7 @@ struct EnvironmentNeovimMigration: Sendable {
       defer { Darwin.close(targetParent) }
       if Self.themePaths.contains(relative) {
         try FileManager.default.createSymbolicLink(
-          at: target, withDestinationURL: stateRoot.appending(path: "environment/current/\(path)"))
+          at: target, withDestinationURL: StateLayout(root: stateRoot).environmentArtifact(path))
       } else {
         try PinnedFilesystem.writeNewRegularFile(
           parentDescriptor: targetParent, name: target.lastPathComponent, url: target,
@@ -295,7 +296,7 @@ struct EnvironmentNeovimMigration: Sendable {
     else { throw EnvironmentLifecycleError.blocked("Neovim migration changes unrelated ownership") }
     guard
       try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
-        == "generations/\(old.generationID)"
+        == StateLayout.generationPath(old.generationID)
     else {
       throw EnvironmentLifecycleError.drift("environment pointer changed during Neovim migration")
     }

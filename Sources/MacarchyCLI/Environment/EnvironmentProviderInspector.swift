@@ -121,7 +121,7 @@ struct EnvironmentProviderInspector: Sendable {
       let currentDestination = try EnvironmentGenerationStore(stateRoot: stateRoot)
         .currentDestination()
       if let ownership {
-        guard currentDestination == "generations/\(ownership.generationID)" else {
+        guard currentDestination == StateLayout.generationPath(ownership.generationID) else {
           throw EnvironmentLifecycleError.drift(
             "environment ownership and the selected generation disagree"
           )
@@ -683,30 +683,31 @@ struct EnvironmentProviderInspector: Sendable {
   func allManagedEntries(homeDirectory: URL, stateRoot: URL) -> [EnvironmentManagedEntry] {
     let home = homeDirectory.standardizedFileURL
     let state = stateRoot.standardizedFileURL
+    let layout = StateLayout(root: state)
     return [
       EnvironmentManagedEntry(
         id: .bordersDirectory,
         url: home.appending(path: ".config/borders"),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/borders").path
+        target: layout.environmentArtifact("borders").path
       ),
       EnvironmentManagedEntry(
         id: .bordersConfiguration,
         url: home.appending(path: ".config/borders/bordersrc"),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/borders/bordersrc").path
+        target: layout.environmentArtifact("borders/bordersrc").path
       ),
       EnvironmentManagedEntry(
         id: .kitty,
         url: home.appending(path: ".config/kitty", directoryHint: .isDirectory),
         kind: .kittyDirectory,
-        target: state.appending(path: "environment/current/kitty/kitty.conf").path
+        target: layout.environmentArtifact("kitty/kitty.conf").path
       ),
       EnvironmentManagedEntry(
         id: .zsh,
         url: home.appending(path: ".zshrc"),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/zsh/.zshrc").path
+        target: layout.environmentArtifact("zsh/.zshrc").path
       ),
       EnvironmentManagedEntry(
         id: .starship,
@@ -718,19 +719,19 @@ struct EnvironmentProviderInspector: Sendable {
         id: .neovim,
         url: home.appending(path: ".config/nvim", directoryHint: .isDirectory),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/neovim").path
+        target: layout.environmentArtifact("neovim").path
       ),
       EnvironmentManagedEntry(
         id: .atuinConfiguration,
         url: home.appending(path: ".config/atuin/config.toml"),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/atuin/config.toml").path
+        target: layout.environmentArtifact("atuin/config.toml").path
       ),
       EnvironmentManagedEntry(
         id: .atuinTheme,
         url: home.appending(path: ".config/atuin/themes/\(AtuinAdapter.themeName).toml"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(AtuinAdapter.outputPath)").path
+        target: layout.currentThemeArtifact(AtuinAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .batConfiguration,
@@ -742,55 +743,55 @@ struct EnvironmentProviderInspector: Sendable {
         id: .batTheme,
         url: home.appending(path: ".config/bat/themes/\(BatAdapter.themeFileName)"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(TextMateThemeArtifact.outputPath)").path
+        target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .ezaTheme,
         url: home.appending(path: ".config/eza/\(EzaAdapter.themeFileName)"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(EzaAdapter.outputPath)").path
+        target: layout.currentThemeArtifact(EzaAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .btopTheme,
         url: home.appending(path: ".config/btop/themes/\(BtopAdapter.themeFileName)"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(BtopAdapter.outputPath)").path
+        target: layout.currentThemeArtifact(BtopAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .codexTheme,
         url: home.appending(path: ".codex/themes/\(CodexAdapter.themeName).tmTheme"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(TextMateThemeArtifact.outputPath)").path
+        target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .piTheme,
         url: home.appending(path: ".pi/agent/themes/\(PiAdapter.themeName).json"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(PiAdapter.outputPath)").path
+        target: layout.currentThemeArtifact(PiAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .spicetifyColor,
         url: home.appending(path: ".config/spicetify/Themes/text/color.ini"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(SpicetifyAdapter.outputPath)").path
+        target: layout.currentThemeArtifact(SpicetifyAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .tuicrTheme,
         url: home.appending(path: ".config/tuicr/themes/\(TuicrAdapter.themeName).toml"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(TuicrAdapter.outputPath)").path
+        target: layout.currentThemeArtifact(TuicrAdapter.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .tuicrSyntax,
         url: home.appending(path: ".config/tuicr/themes/\(TuicrAdapter.themeName).tmTheme"),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(TextMateThemeArtifact.outputPath)").path
+        target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
       ),
       EnvironmentManagedEntry(
         id: .yaziConfiguration,
         url: home.appending(path: ".config/yazi/yazi.toml"),
         kind: .symbolicLink,
-        target: state.appending(path: "environment/current/yazi/yazi.toml").path
+        target: layout.environmentArtifact("yazi/yazi.toml").path
       ),
       EnvironmentManagedEntry(
         id: .yaziThemeSelection,
@@ -804,7 +805,7 @@ struct EnvironmentProviderInspector: Sendable {
           path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/flavor.toml"
         ),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(YaziAdapter.flavorOutputPath)").path
+        target: layout.currentThemeArtifact(YaziAdapter.flavorOutputPath).path
       ),
       EnvironmentManagedEntry(
         id: .yaziSyntax,
@@ -812,7 +813,7 @@ struct EnvironmentProviderInspector: Sendable {
           path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/tmtheme.xml"
         ),
         kind: .symbolicLink,
-        target: state.appending(path: "current/\(TextMateThemeArtifact.yaziOutputPath)").path
+        target: layout.currentThemeArtifact(TextMateThemeArtifact.yaziOutputPath).path
       ),
     ]
   }
@@ -1589,7 +1590,7 @@ struct EnvironmentProviderInspector: Sendable {
     }
 
     guard composition.profile.tools.btop else { return (nil, nil, nil) }
-    let artifactURL = stateRoot.appending(path: "environment/current/btop/btop.conf")
+    let artifactURL = StateLayout(root: stateRoot).environmentArtifact("btop/btop.conf")
     guard let artifact = composition.artifacts.first(where: { $0.path == "btop/btop.conf" }) else {
       throw EnvironmentLifecycleError.blocked("missing rendered btop configuration")
     }

@@ -56,7 +56,8 @@ struct YabaiOwnershipStore: Sendable {
 
   private var file: DesktopStateFile {
     DesktopStateFile(
-      stateRoot: stateRoot, directory: "desktop/yabai", name: "ownership.json", maximumSize: 32_768)
+      stateRoot: stateRoot, directory: StateLayout.yabaiDirectory, name: "ownership.json",
+      maximumSize: 32_768)
   }
 
   func read() throws -> YabaiOwnershipRecord? {
@@ -218,7 +219,7 @@ struct YabaiProviderPlanInspector: Sendable {
     if canonical == stateRoot.standardizedFileURL {
       return "../macarchy/desktop/yabai/current/yabairc"
     }
-    return stateRoot.appending(path: "desktop/yabai/current/yabairc").path
+    return stateRoot.appending(path: "\(StateLayout.yabaiDirectory)/current/yabairc").path
   }
 
   func inspectManaged(

@@ -67,7 +67,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
           diagnostics.append(
             .error(
               code: "keybinding_recovery_required",
-              source: stateRoot.appending(path: "keybindings/transaction.json"),
+              source: StateLayout(root: stateRoot).keybindingTransaction,
               message: "interrupted \(transaction.operation.rawValue) transaction is in "
                 + "phase \(transaction.phase.rawValue)"
             )
@@ -77,7 +77,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
         diagnostics.append(
           .error(
             code: "keybinding_transaction_invalid",
-            source: stateRoot.appending(path: "keybindings/transaction.json"),
+            source: StateLayout(root: stateRoot).keybindingTransaction,
             message: effectiveState.transaction.message
           )
         )
@@ -92,7 +92,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       diagnostics.append(
         .error(
           code: "current_generation_invalid",
-          source: stateRoot.appending(path: "keybindings/current"),
+          source: stateRoot.appending(path: "\(StateLayout.keybindingsDirectory)/current"),
           message: generation.message ?? "current keybinding generation is invalid"
         )
       )
@@ -136,7 +136,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
         diagnostics.append(
           .error(
             code: "skhd_lifecycle_evidence_invalid",
-            source: stateRoot.appending(path: "keybindings/lifecycle.json"),
+            source: stateRoot.appending(path: "\(StateLayout.keybindingsDirectory)/lifecycle.json"),
             message: effectiveState.lifecycleEvidence.message
           )
         )

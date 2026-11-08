@@ -163,7 +163,7 @@ struct SketchyBarOwnershipStore: Sendable {
 
   private var file: DesktopStateFile {
     DesktopStateFile(
-      stateRoot: stateRoot, directory: "desktop/sketchybar", name: "ownership.json",
+      stateRoot: stateRoot, directory: StateLayout.sketchyBarDirectory, name: "ownership.json",
       maximumSize: 32_768)
   }
 
@@ -190,10 +190,7 @@ struct SketchyBarOwnershipStore: Sendable {
     }
     guard let retainedPath = record.retainedOriginalPath else { return false }
     let retained = URL(filePath: retainedPath).standardizedFileURL
-    let provider = stateRoot.standardizedFileURL.appending(
-      path: "desktop/sketchybar",
-      directoryHint: .isDirectory
-    )
+    let provider = StateLayout(root: stateRoot.standardizedFileURL).sketchyBar
     let name = retained.lastPathComponent
     let nonce = String(name.dropFirst("retained-".count))
     return retained.path == retainedPath
@@ -289,7 +286,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     if canonical.path == stateRoot.standardizedFileURL.path {
       return "../macarchy/desktop/sketchybar/current/sketchybarrc"
     }
-    return stateRoot.appending(path: "desktop/sketchybar/current/sketchybarrc").path
+    return stateRoot.appending(path: "\(StateLayout.sketchyBarDirectory)/current/sketchybarrc").path
   }
 
   func captureUnowned(

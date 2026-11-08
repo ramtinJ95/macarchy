@@ -302,8 +302,8 @@ struct EnvironmentBtopFileTransaction: Sendable {
   let stateRoot: URL
 
   func generationState(_ generationID: String) throws -> (values: [String: String], data: Data) {
-    let url = stateRoot.appending(
-      path: "environment/generations/\(generationID)/btop/btop.conf"
+    let url = StateLayout(root: stateRoot).environmentGenerationArtifact(
+      generationID, "btop/btop.conf"
     )
     let data = try EnvironmentGenerationStore(stateRoot: stateRoot).validatedArtifact(
       generationID: generationID,

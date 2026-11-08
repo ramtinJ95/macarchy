@@ -99,7 +99,7 @@ struct EnvironmentStandardMigration: Sendable {
       operation: .standardMigration, standardMigration: intent,
       previousOwnership: previous,
       proposedOwnership: previous.releasingStandardEntry(provider.entryID),
-      previousCurrentDestination: "generations/\(previous.generationID)")
+      previousCurrentDestination: StateLayout.generationPath(previous.generationID))
     try validate(transaction)
     return (
       Plan(
@@ -120,7 +120,7 @@ struct EnvironmentStandardMigration: Sendable {
       let record = old.records.first(where: { $0.id == provider.entryID }),
       try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
         == transaction.previousCurrentDestination,
-      transaction.previousCurrentDestination == "generations/\(old.generationID)"
+      transaction.previousCurrentDestination == StateLayout.generationPath(old.generationID)
     else { throw EnvironmentLifecycleError.blocked("invalid standard migration authority") }
     try validateRecord(record)
     let current = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()

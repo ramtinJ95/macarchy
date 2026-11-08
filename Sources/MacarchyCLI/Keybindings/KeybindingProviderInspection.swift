@@ -520,7 +520,7 @@ struct KeybindingProviderInspector: Sendable {
     return paths.result(
       .adoptionRequired,
       ownership: "matching_unclaimed_symlink",
-      source: paths.stateRoot.appending(path: "keybindings/current/skhdrc"),
+      source: StateLayout(root: paths.stateRoot).currentSkhdrc,
       originalTarget: target,
       message: "entry-point link matches the plan but has no Macarchy ownership evidence",
       sourceConfiguration: configuration,
@@ -1102,7 +1102,7 @@ private struct KeybindingEntryPaths {
     expectedTarget =
       self.stateRoot == canonical
       ? KeybindingProviderInspector.managedTarget
-      : self.stateRoot.appending(path: "keybindings/current/skhdrc").path
+      : StateLayout(root: self.stateRoot).currentSkhdrc.path
   }
 
   var ownershipDrift: KeybindingProviderInspection {

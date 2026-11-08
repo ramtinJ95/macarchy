@@ -6,7 +6,7 @@ enum SkhdServicePolicy: NativeUserServicePolicy {
   static let name = "skhd"
   static let label = "com.koekeishiya.skhd"
   static let supportedVersion = "0.3.9"
-  static let receiptPath = "keybindings/service.json"
+  static let receiptPath = "\(StateLayout.keybindingsDirectory)/service.json"
   static let nativeStopDisablesJob = false
 
   static func lifecycleError(_ message: String) -> any Error {

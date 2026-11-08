@@ -228,7 +228,7 @@ struct BordersPreviewRunner {
       },
       pointer: {
         try FileManager.default.destinationOfSymbolicLink(
-          atPath: root.appending(path: "current").path)
+          atPath: StateLayout(root: root).currentTheme.path)
       },
       palette: { try BordersPalette.read(root: root) },
       start: { arguments in
@@ -272,7 +272,7 @@ struct BordersPreviewRunner {
       guard process.isRunning() else {
         throw BordersPreviewError.exited(process.terminationStatus())
       }
-      if try pointer() != "generations/\(applied.generationID)" {
+      if try pointer() != StateLayout.generationPath(applied.generationID) {
         let selected = try palette()
         if selected.arguments != applied.arguments {
           try update(selected.arguments)
