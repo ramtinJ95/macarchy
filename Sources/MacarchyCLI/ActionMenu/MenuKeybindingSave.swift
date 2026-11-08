@@ -173,11 +173,17 @@ struct MenuKeybindingSaveSession: Codable {
       try BoundedRegularFile.read(at: path.resolvingSymlinksInPath()).data)
   }
 
+  /// Compares whole profiles, so a field added later must match too. Only the disabled
+  /// bindings may differ, and the source locations, which a profile absent before the
+  /// edit lacks because it loads as defaults.
   private static func sameExceptDisabled(_ lhs: PortableProfile, _ rhs: PortableProfile) -> Bool {
-    lhs.keybindings.overrideURL == rhs.keybindings.overrideURL
-      && lhs.keybindings.metadataURL == rhs.keybindings.metadataURL
-      && lhs.desktop == rhs.desktop && lhs.topBar == rhs.topBar
-      && lhs.sketchyBar == rhs.sketchyBar && lhs.environment == rhs.environment
-      && lhs.packages == rhs.packages && lhs.macOSPreferences == rhs.macOSPreferences
+    func withoutDisabled(_ profile: PortableProfile) -> PortableProfile {
+      var profile = profile
+      profile.sourceURL = nil
+      profile.keybindings.sourceURL = nil
+      profile.keybindings.disabledIdentities = []
+      return profile
+    }
+    return withoutDisabled(lhs) == withoutDisabled(rhs)
   }
 }
