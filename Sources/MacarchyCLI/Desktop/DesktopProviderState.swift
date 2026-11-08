@@ -60,6 +60,10 @@ enum DesktopOriginalKind: String, Codable, Sendable {
   case directorySymlink = "directory_symlink"
 }
 
+/// A fault injected by tests at a desktop transaction checkpoint. Catch sites rethrow it
+/// unchanged instead of rolling back or reporting, so tests can recover the interrupted state.
+protocol DesktopTestInterruption: Error {}
+
 /// Whether a provider path names any entry, without following a final symlink.
 func pathExistsNoFollow(_ path: String) -> Bool {
   var metadata = stat()
