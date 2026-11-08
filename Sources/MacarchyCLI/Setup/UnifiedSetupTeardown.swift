@@ -300,8 +300,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     let themePreview: UnifiedSetupTeardownStage
     do {
       preferencesPreview = try stage(
-        planner.preferences.teardown(context: context.preferencesContext, dryRun: true)
-          .componentExecution(),
+        planner.preferences.teardown(context: context.preferencesContext, dryRun: true),
         dryRun: true)
       guard preferencesPreview.succeeded else {
         return try result(
@@ -578,8 +577,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
         try planner.preferences.rollback(context: preferencesContext)
       }
       return try stage(
-        planner.preferences.teardown(context: preferencesContext, dryRun: dryRun)
-          .componentExecution(),
+        planner.preferences.teardown(context: preferencesContext, dryRun: dryRun),
         dryRun: dryRun)
     case .environment:
       return try stage(
@@ -621,7 +619,28 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       mutated: mutated,
       outcome: dryRun && execution.outcome == "ready" ? "planned" : execution.outcome,
       message: execution.report["message"]?.string ?? "Delegated teardown completed.",
-      details: execution.report
+      details: .delegated(execution.report)
+    )
+  }
+
+  private func stage(
+    _ report: PreferencesReport,
+    dryRun: Bool
+  ) throws -> UnifiedSetupTeardownStage {
+    let mutated: Bool
+    if let value = report.mutated {
+      mutated = value
+    } else if dryRun {
+      mutated = false
+    } else {
+      throw SetupComponentReportError(description: "Delegated teardown has no mutation field.")
+    }
+    return UnifiedSetupTeardownStage(
+      succeeded: report.succeeded,
+      mutated: mutated,
+      outcome: dryRun && report.outcome == "ready" ? "planned" : report.outcome,
+      message: report.message ?? "Delegated teardown completed.",
+      details: .preferences(report)
     )
   }
 
@@ -658,7 +677,7 @@ struct UnifiedSetupTeardownStage: Encodable, Sendable {
   let mutated: Bool
   let outcome: String
   let message: String
-  var details: JSONValue? = nil
+  var details: SetupStageDetails? = nil
 
   static func noChange(_ message: String) -> Self {
     Self(succeeded: true, mutated: false, outcome: "no_change", message: message)

@@ -984,3 +984,17 @@ struct SetupComponentExecution: Encodable, Sendable {
     case succeeded, report
   }
 }
+
+/// A setup stage's own report, embedded verbatim under the stage's `details`.
+enum SetupStageDetails: Encodable, Sendable {
+  case delegated(JSONValue)
+  case preferences(PreferencesReport)
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case .delegated(let report): try container.encode(report)
+    case .preferences(let report): try container.encode(report)
+    }
+  }
+}
