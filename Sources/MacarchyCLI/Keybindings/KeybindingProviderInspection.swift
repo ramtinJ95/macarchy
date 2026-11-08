@@ -83,9 +83,7 @@ struct KeybindingProviderInspection: Encodable, Sendable {
 }
 
 struct KeybindingProviderInspector: Sendable {
-  static let managedTarget = SkhdLayout.managedTarget
   static let ownershipID = "keybindings.skhd-entry"
-  static let claimMarkerAttribute = KeybindingProviderPrimitives.claimMarkerAttribute
 
   func inspect(
     homeDirectory: URL,

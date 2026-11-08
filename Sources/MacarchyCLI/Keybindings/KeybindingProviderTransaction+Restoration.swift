@@ -770,7 +770,7 @@ extension KeybindingProviderTransaction {
       descriptor: claim,
       url: publicationURL,
       label: "restored skhd entry",
-      excludingExtendedAttribute: Self.claimMarkerAttribute
+      excludingExtendedAttribute: KeybindingProviderPrimitives.claimMarkerAttribute
     )
     guard
       restoredSnapshot.mode & 0o7777 == UInt32(try originalMode(record)),

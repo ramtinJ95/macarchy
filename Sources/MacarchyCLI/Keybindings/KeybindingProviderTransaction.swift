@@ -35,7 +35,6 @@ enum KeybindingProviderCheckpoint: Equatable, Sendable {
 /// Works on the canonical per-user state root under `homeDirectory`. Keybinding apply refuses any
 /// other `--state-root` before it gets here (`KeybindingsApplyCommandRunner.isCanonicalStateRoot`).
 struct KeybindingProviderTransaction: Sendable {
-  static let claimMarkerAttribute = KeybindingProviderPrimitives.claimMarkerAttribute
   static let unsupportedRestorationFlags =
     UInt32(UF_IMMUTABLE) | UInt32(UF_APPEND) | UInt32(UF_DATAVAULT)
     | UInt32(SF_IMMUTABLE) | UInt32(SF_APPEND) | UInt32(SF_RESTRICTED) | UInt32(SF_NOUNLINK)
@@ -498,7 +497,8 @@ struct KeybindingProviderTransaction: Sendable {
         boundMetadata.st_mode & S_IFMT == S_IFREG,
         boundMetadata.st_nlink == 1
       else { throw SetupOwnershipError.ownershipDrift(entry) }
-      guard snapshot.extendedAttributes[Self.claimMarkerAttribute] == nil else {
+      guard snapshot.extendedAttributes[KeybindingProviderPrimitives.claimMarkerAttribute] == nil
+      else {
         throw KeybindingsApplyError.blocked(
           "regular skhd entry uses Macarchy's reserved claim-marker extended attribute"
         )

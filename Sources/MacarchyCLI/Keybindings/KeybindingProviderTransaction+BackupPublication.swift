@@ -61,7 +61,7 @@ extension KeybindingProviderTransaction {
       descriptor: temporary,
       url: temporaryURL,
       label: "keybinding backup",
-      excludingExtendedAttribute: Self.claimMarkerAttribute
+      excludingExtendedAttribute: KeybindingProviderPrimitives.claimMarkerAttribute
     )
     guard copiedSnapshot.hasCopiedMetadata(from: sourceSnapshot) else {
       throw SetupOwnershipError.ownershipDrift(entry)
@@ -100,7 +100,7 @@ extension KeybindingProviderTransaction {
       descriptor: temporary,
       url: temporaryURL,
       label: "keybinding backup",
-      excludingExtendedAttribute: Self.claimMarkerAttribute
+      excludingExtendedAttribute: KeybindingProviderPrimitives.claimMarkerAttribute
     )
     guard
       snapshot.linkCount == 1,
@@ -192,7 +192,7 @@ extension KeybindingProviderTransaction {
       descriptor: descriptor,
       url: url,
       label: "keybinding backup publication",
-      excludingExtendedAttribute: Self.claimMarkerAttribute
+      excludingExtendedAttribute: KeybindingProviderPrimitives.claimMarkerAttribute
     )
     guard snapshot.linkCount == 1 else { throw SetupOwnershipError.ownershipDrift(url) }
     let mode = try originalMode(record)
@@ -219,7 +219,7 @@ extension KeybindingProviderTransaction {
       descriptor: descriptor,
       url: backup,
       label: "keybinding backup",
-      excludingExtendedAttribute: Self.claimMarkerAttribute
+      excludingExtendedAttribute: KeybindingProviderPrimitives.claimMarkerAttribute
     )
     guard
       try claimMarkerMatches(descriptor: descriptor, record: record, url: backup),

@@ -128,7 +128,7 @@ extension KeybindingProviderTransaction {
         descriptor: descriptor,
         url: deletionURL,
         label: "keybinding backup",
-        excludingExtendedAttribute: Self.claimMarkerAttribute
+        excludingExtendedAttribute: KeybindingProviderPrimitives.claimMarkerAttribute
       )
       guard
         try claimMarkerMatches(descriptor: descriptor, record: record, url: deletionURL),
@@ -297,7 +297,8 @@ extension KeybindingProviderTransaction {
       descriptor: descriptor,
       url: url,
       label: "skhd original",
-      excludingExtendedAttribute: allowMarker ? Self.claimMarkerAttribute : nil
+      excludingExtendedAttribute: allowMarker
+        ? KeybindingProviderPrimitives.claimMarkerAttribute : nil
     )
     let metadataDigest = snapshot.restorableMetadataDigest()
     return sha256Digest(file.data) == record.originalDigest
@@ -598,7 +599,7 @@ extension KeybindingProviderTransaction {
         descriptor: descriptor,
         url: url,
         label: "restored skhd entry",
-        excludingExtendedAttribute: Self.claimMarkerAttribute
+        excludingExtendedAttribute: KeybindingProviderPrimitives.claimMarkerAttribute
       )
       guard
         sha256Digest(file.data) == record.originalDigest,

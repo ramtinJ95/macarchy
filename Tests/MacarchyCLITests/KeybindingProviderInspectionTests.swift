@@ -168,7 +168,7 @@ struct KeybindingProviderInspectionTests {
     )
     try FileManager.default.createSymbolicLink(
       atPath: fixture.skhdDirectory.appending(path: "skhdrc").path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
 
     let inspection = inspect(fixture)
@@ -188,7 +188,7 @@ struct KeybindingProviderInspectionTests {
     let entry = fixture.skhdDirectory.appending(path: "skhdrc")
     try FileManager.default.createSymbolicLink(
       atPath: entry.path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
     let stateRoot = fixture.home.appending(
       path: ".config/macarchy",
@@ -212,7 +212,7 @@ struct KeybindingProviderInspectionTests {
     let entry = fixture.skhdDirectory.appending(path: "skhdrc")
     try FileManager.default.createSymbolicLink(
       atPath: entry.path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
     try writeOwnershipClaim(
       stateRoot: fixture.home.appending(path: ".config/macarchy"),
@@ -253,7 +253,7 @@ struct KeybindingProviderInspectionTests {
     let entry = fixture.skhdDirectory.appending(path: "skhdrc")
     try FileManager.default.createSymbolicLink(
       atPath: entry.path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
     let stateRoot = fixture.home.appending(
       path: ".config/macarchy",
@@ -343,7 +343,7 @@ struct KeybindingProviderInspectionTests {
     )
     try FileManager.default.createSymbolicLink(
       atPath: fixture.skhdDirectory.appending(path: "skhdrc").path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
 
     let inspection = inspector.inspect(
@@ -373,7 +373,7 @@ struct KeybindingProviderInspectionTests {
   ) throws {
     let setup = stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: setup, withIntermediateDirectories: true)
-    let target = KeybindingProviderInspector.managedTarget
+    let target = SkhdLayout.managedTarget
     let record = SetupOwnershipRecord(
       id: KeybindingProviderInspector.ownershipID,
       phase: .applied,
@@ -395,7 +395,7 @@ struct KeybindingProviderInspectionTests {
 
   private func markClaim(_ entry: URL) throws {
     try setSymbolicLinkExtendedAttribute(
-      KeybindingProviderInspector.claimMarkerAttribute,
+      KeybindingProviderPrimitives.claimMarkerAttribute,
       value: "01234567-89ab-cdef-0123-456789abcdef",
       at: entry
     )

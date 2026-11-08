@@ -45,7 +45,7 @@ struct RetainedOriginalIdentityTests {
     case "source": try Data("alt - x : changed\n".utf8).write(to: source)
     case "marker":
       #expect(
-        removexattr(entry.path, KeybindingProviderTransaction.claimMarkerAttribute, XATTR_NOFOLLOW)
+        removexattr(entry.path, KeybindingProviderPrimitives.claimMarkerAttribute, XATTR_NOFOLLOW)
           == 0)
     case "pending":
       try Data("{}".utf8).write(
