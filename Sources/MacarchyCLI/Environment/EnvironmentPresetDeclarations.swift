@@ -52,20 +52,20 @@ enum EnvironmentDailyTool: String, CaseIterable, Sendable {
     }
   }
 
-  var planAction: EnvironmentPlanAction {
+  var planAction: PlanAction {
     switch self {
     case .bat:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_bat", message: "Configure bat behavior and its canonical theme seam.")
     case .eza:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_eza", message: "Configure eza shell behavior and its canonical theme seam.")
     case .btop:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_btop",
         message: "Configure btop while preserving its provider-writable state.")
     case .yazi:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_yazi",
         message: "Configure Yazi behavior and its generated flavor seams.")
     }
@@ -116,37 +116,37 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     }
   }
 
-  var planAction: EnvironmentPlanAction {
+  var planAction: PlanAction {
     switch self {
     case .codex:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_codex",
         message: "Configure Codex CLI's [tui].theme selector and canonical TextMate theme link."
       )
     case .herdr:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_herdr",
         message: "Configure Herdr's [theme] selector and 19-key [theme.custom] surface."
       )
     case .pi:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_pi",
         message: "Configure Pi's root theme member and watched canonical theme link."
       )
     case .slack:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "publish_slack_manual_import",
         message:
           "Publish Slack manual-import authority and the exact per-workspace action: \(SlackAdapter.importInstructions)"
       )
     case .spicetify:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_spicetify",
         message:
           "Own only ordinary current_theme/color_scheme selectors or accept a complete exact Stow tuple, create only an absent color.ini link, and run an awaited --no-restart refresh."
       )
     case .tuicr:
-      EnvironmentPlanAction(
+      PlanAction(
         id: "configure_tuicr",
         message: "Configure tuicr's root theme selector and canonical palette and syntax links."
       )

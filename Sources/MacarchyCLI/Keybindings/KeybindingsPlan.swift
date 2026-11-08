@@ -165,7 +165,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       !diagnostics.contains(where: { $0.severity == .error })
     {
       actions.append(
-        KeybindingsPlanAction(
+        PlanAction(
           id: "start_service",
           message:
             serviceChange.previous.registration == nil
@@ -229,12 +229,12 @@ struct KeybindingsPlanCommandRunner: Sendable {
     renderedDigest: String?,
     inputDigest: String?,
     isBlocked: Bool
-  ) -> [KeybindingsPlanAction] {
+  ) -> [PlanAction] {
     guard !isBlocked, let renderedDigest, let inputDigest else { return [] }
-    var actions: [KeybindingsPlanAction] = []
+    var actions: [PlanAction] = []
     if generation.needsGeneration(inputDigest: inputDigest, renderedDigest: renderedDigest) {
       actions.append(
-        KeybindingsPlanAction(
+        PlanAction(
           id: "publish_generation",
           message: generation.status == .missing
             ? "Publish the first immutable keybinding generation."
@@ -250,7 +250,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
         lifecycleEvidence.status != .matched
       {
         actions.append(
-          KeybindingsPlanAction(
+          PlanAction(
             id: "reload_provider",
             message: "Reload skhd and record lifecycle success for the current generation."
           )
@@ -258,14 +258,14 @@ struct KeybindingsPlanCommandRunner: Sendable {
       }
     case .installRequired:
       actions.append(
-        KeybindingsPlanAction(
+        PlanAction(
           id: "install_provider_entry",
           message: "Install the managed skhd entry-point link."
         )
       )
     case .adoptionRequired:
       actions.append(
-        KeybindingsPlanAction(
+        PlanAction(
           id: provider.ownership == .directorySymlink
             ? "adopt_skhd_directory_symlink"
             : "adopt_provider_entry",
@@ -375,7 +375,7 @@ private struct KeybindingsPlanReport: CommandReport {
   let process: KeybindingProcessInspection
   let lifecycleEvidence: KeybindingLifecycleEvidenceInspection
   let adoptionDelta: KeybindingsAdoptionDelta?
-  let actions: [KeybindingsPlanAction]
+  let actions: [PlanAction]
   let diagnostics: [KeybindingsPlanDiagnostic]
 
   func renderText() throws -> String {
@@ -431,12 +431,7 @@ private struct KeybindingsPlanReport: CommandReport {
       )
       lines.append(contentsOf: adoptionDelta.humanLines)
     }
-    if actions.isEmpty {
-      lines.append("Actions: none")
-    } else {
-      lines.append("Actions:")
-      lines.append(contentsOf: actions.map { "- \($0.id): \($0.message)" })
-    }
+    lines += PlanAction.renderLines(actions)
     if !diagnostics.isEmpty {
       lines.append("Diagnostics:")
       lines.append(
@@ -449,8 +444,7 @@ private struct KeybindingsPlanReport: CommandReport {
         })
     }
     if let renderedSkhdrc {
-      lines.append(
-        "Rendered skhdrc:\n--- begin exact bytes ---\n\(renderedSkhdrc)--- end exact bytes ---")
+      lines.append(renderExactBytes("skhdrc", renderedSkhdrc))
     }
     lines.append("No changes made.")
     return lines.joined(separator: "\n")
@@ -542,11 +536,6 @@ private struct KeybindingsAdoptionChange: Encodable {
   let identity: String
   let existingCommand: String?
   let proposedCommand: String?
-}
-
-private struct KeybindingsPlanAction: Encodable {
-  let id: String
-  let message: String
 }
 
 private struct KeybindingsPlanDiagnostic: Encodable {
