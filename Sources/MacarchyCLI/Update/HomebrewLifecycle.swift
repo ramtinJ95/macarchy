@@ -85,9 +85,7 @@ struct HomebrewUpdateRunner: Sendable {
     } else {
       build = try buildInformation()
     }
-    guard build.installation == .homebrew,
-      let installed = StableVersion(build.version)
-    else {
+    guard let installed = UpdateCheckPolicy.checkableVersion(build) else {
       return failure(
         .refused,
         build: build,

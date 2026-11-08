@@ -11,7 +11,7 @@ struct MenuUpdateReview: Sendable {
         description: "Review & update requires a stable Homebrew installation.")
     }
     let (prefix, build) = try runner.inspectInstallation()
-    guard build.installation == .homebrew, let installed = StableVersion(build.version) else {
+    guard let installed = UpdateCheckPolicy.checkableVersion(build) else {
       throw MenuUpdateReviewError(
         description:
           "Review & update requires a stable Homebrew installation.")
