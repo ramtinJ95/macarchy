@@ -103,9 +103,8 @@ struct MenuKeybindingSetup {
   private func reviewedDigest(_ plan: KeybindingsPlanPreparation, profile: PortableProfile) throws
     -> String
   {
-    guard profile.desktop.provider == .yabaiSkhd, plan.outcome != .blocked,
-      plan.provider.status == .managed, plan.effectiveBehavior.transaction.status == .clear,
-      plan.generation.generationID != nil, let digest = plan.composition?.inputDigest
+    guard profile.desktop.provider == .yabaiSkhd, plan.generation.generationID != nil,
+      let digest = plan.approvableInputDigest
     else {
       throw EnvironmentLifecycleError.blocked(
         "keybindings require an existing managed, recoverable connection: "

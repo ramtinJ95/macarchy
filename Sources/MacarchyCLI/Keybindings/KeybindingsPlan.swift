@@ -352,6 +352,15 @@ struct KeybindingsPlanPreparation {
   let provider: KeybindingProviderInspection
   let blockingMessages: [String]
   fileprivate let report: KeybindingsPlanReport
+
+  /// The input digest a reviewed menu step may approve, or nil unless the plan is unblocked,
+  /// the provider is managed and no keybinding transaction is pending.
+  var approvableInputDigest: String? {
+    guard outcome != .blocked, provider.status == .managed,
+      effectiveBehavior.transaction.status == .clear
+    else { return nil }
+    return composition?.inputDigest
+  }
 }
 
 private struct KeybindingsPlanReport: CommandReport {
