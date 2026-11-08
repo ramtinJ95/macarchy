@@ -514,7 +514,8 @@ package struct SpicetifyAdapter: Sendable {
   private func readRuntimeEvidence() throws -> SpicetifyRuntimeEvidence? {
     do {
       guard
-        let data = try BoundedRegularFile.readIfPresent(at: runtimeEvidenceURL, maximumSize: 16_384)?
+        let data = try BoundedRegularFile.readIfPresent(
+          at: runtimeEvidenceURL, maximumSize: 16_384)?
           .data
       else { return nil }
       let evidence = try JSONDecoder().decode(SpicetifyRuntimeEvidence.self, from: data)
