@@ -13,8 +13,10 @@ package struct BordersPalette: Equatable, Sendable {
   }
 
   package static let width = 6.0
-  /// Shared by the JankyBorders preview and the lean helper it launches.
+  /// The `--seconds` contract shared by the JankyBorders preview and the lean helper it launches.
   package static let previewSeconds: ClosedRange<Double> = 1...300
+  package static let defaultPreviewSeconds: Double = 30
+  package static let previewSecondsRangeMessage = "--seconds must be between 1 and 300."
 
   package static let appearanceArguments = [
     "inactive_color=0x00000000", "background_color=0x00000000", "width=\(width)",
