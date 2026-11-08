@@ -116,10 +116,12 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity],
     store: SetupPackageAdoptionStore
   ) throws -> Prepared {
-    try SetupPackageInstallationStore(context: context).requireResolved()
-    guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
-      throw SetupPackageAdoptionError("Resolve interrupted unified setup before adopting packages.")
-    }
+    try SetupPendingWork.requireNone(
+      .packageAttempt,
+      .unifiedTransaction(
+        refusal: SetupPackageAdoptionError(
+          "Resolve interrupted unified setup before adopting packages.")),
+      context: context)
     let ledger = try store.read()
     let inventory = try planner.packageInventory(
       context: context, adoptionState: .available(ledger))

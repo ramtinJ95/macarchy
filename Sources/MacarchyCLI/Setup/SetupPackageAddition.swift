@@ -173,11 +173,12 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     throws -> Prepared
   {
     let identities = try SetupPackageAdoptionCommandRunner.parseTargets(targets)
-    try SetupPackageInstallationStore(context: context).requireResolved()
-    try SetupPackageInputPublicationStore(context: context).requireResolved()
-    guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
-      throw SetupPackageAdoptionError("Resolve interrupted unified setup before adding packages.")
-    }
+    try SetupPendingWork.requireNone(
+      .packageAttempt, .inputPublication,
+      .unifiedTransaction(
+        refusal: SetupPackageAdoptionError(
+          "Resolve interrupted unified setup before adding packages.")),
+      context: context)
     let layered = try PortableProfileLoader().load(
       portableAt: context.profileURL, portableRequired: machineOnly && context.profileRequired,
       machineAt: context.machineProfileURL,

@@ -16,7 +16,7 @@ struct UnifiedSetupRecoveryCommandRunner: Sendable {
     let report: UnifiedSetupRecoveryReport
     do {
       report = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
-        try SetupPackageInstallationStore(context: context).requireResolved()
+        try SetupPendingWork.requireNone(.packageAttempt, context: context)
         guard
           let transaction = try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read()
         else {
