@@ -92,8 +92,7 @@ package struct BordersService: Sendable {
   package func inspect(allowInterruptedRegistration: Bool = false) throws
     -> BordersServiceInspection
   {
-    let processes = try run(
-      URL(filePath: "/usr/bin/pgrep"), ["-u", String(getuid()), "-x", "borders"])
+    let processes = try runner.run(.processLookup("borders", owner: .effectiveUser, timeout: 2))
     let registration: HomebrewUserServiceRegistration?
     do {
       registration = try HomebrewUserServiceRegistration.inspect(

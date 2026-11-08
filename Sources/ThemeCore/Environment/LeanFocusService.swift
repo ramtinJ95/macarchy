@@ -142,11 +142,10 @@ package struct LeanFocusService: Sendable {
     // Darwin truncates p_comm. The conservative prefix also refuses unknown
     // similarly named processes; it never authorizes killing any of them.
     let processes = try runner.run(
-      ProcessRequest(
-        executableURL: URL(filePath: "/usr/bin/pgrep"),
+      .processLookup(
         // The helper also inspects itself at startup. Darwin pgrep excludes
         // ancestors unless -a is explicit, including its calling helper.
-        arguments: ["-a", "-u", String(getuid()), "-x", "macarchy-focus.*"], timeout: 2))
+        "macarchy-focus.*", owner: .effectiveUser, includeAncestors: true, timeout: 2))
     guard [0, 1].contains(processes.terminationStatus) else {
       throw LeanFocusServiceError("cannot inspect helper processes: \(processes.output)")
     }

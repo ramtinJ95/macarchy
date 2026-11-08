@@ -291,12 +291,7 @@ struct YabaiLifecycleController: Sendable {
 
   private static func processEvidence() throws -> (processID: Int32, executablePath: String)? {
     let result = try ProcessRunner.live.run(
-      ProcessRequest(
-        executableURL: URL(filePath: "/usr/bin/pgrep"),
-        arguments: ["-u", String(getuid()), "-x", "yabai"],
-        timeout: 2
-      )
-    )
+      .processLookup("yabai", owner: .effectiveUser, timeout: 2))
     if result.terminationStatus == 1 { return nil }
     guard result.terminationStatus == 0 else {
       throw YabaiDesktopError.lifecycle("cannot inspect the yabai process identity")

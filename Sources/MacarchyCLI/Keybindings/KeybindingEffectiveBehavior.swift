@@ -99,12 +99,7 @@ struct KeybindingProcessInspector: Sendable {
   static let live = KeybindingProcessInspector {
     do {
       let result = try ProcessRunner.live.run(
-        ProcessRequest(
-          executableURL: URL(filePath: "/usr/bin/pgrep"),
-          arguments: ["-u", String(getuid()), "-x", "skhd"],
-          timeout: 1
-        )
-      )
+        .processLookup("skhd", owner: .effectiveUser, timeout: 1))
       switch result.terminationStatus {
       case 0:
         let processIDs = result.output.split(whereSeparator: \.isNewline).compactMap {

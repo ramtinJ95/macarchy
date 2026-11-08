@@ -149,9 +149,7 @@ struct SketchyBarToggle {
 
   static func noForeignToggle(processRunner: ProcessRunner = .live) throws -> Bool {
     let result = try processRunner.run(
-      .init(
-        executableURL: URL(filePath: "/usr/bin/pgrep"),
-        arguments: ["-u", String(getuid()), "-x", "sketchybar-toggle"], timeout: 1))
+      .processLookup("sketchybar-toggle", owner: .effectiveUser, timeout: 1))
     guard result.terminationStatus == 0 || result.terminationStatus == 1 else {
       throw ToggleError.processQuery
     }

@@ -159,16 +159,12 @@ struct BordersPreviewProcess {
     executableURL: URL, arguments: [String],
     standardOutput: FileHandle = .standardError
   ) throws -> Self {
-    let process = Process()
-    process.executableURL = executableURL
-    process.arguments = arguments
-    process.standardInput = FileHandle.nullDevice
     // Keep native diagnostics visible without mixing them into JSON events or
     // buffering a long-lived child's output in an undrained pipe. Only a child
     // that reports after its own cleanup may share the caller's stdout.
-    process.standardOutput = standardOutput
-    process.standardError = FileHandle.standardError
-    try process.run()
+    let process = try launchDetachedProcess(
+      executableURL, arguments: arguments, standardInput: FileHandle.nullDevice,
+      standardOutput: standardOutput, standardError: FileHandle.standardError)
     return Self(
       processID: process.processIdentifier,
       isRunning: { process.isRunning },
@@ -201,11 +197,7 @@ struct BordersPreviewRunner {
   ) -> Self {
     func requireStopped() throws {
       let result = try processRunner.run(
-        ProcessRequest(
-          executableURL: URL(filePath: "/usr/bin/pgrep"),
-          arguments: ["-u", String(getuid()), "-x", "borders"], timeout: 2
-        )
-      )
+        .processLookup("borders", owner: .effectiveUser, timeout: 2))
       if result.terminationStatus == 0 { throw BordersPreviewError.incumbent(result.output) }
       guard result.terminationStatus == 1 else {
         throw BordersPreviewError.inspectionFailed(result.output)

@@ -1,6 +1,7 @@
 import AppKit
 import ArgumentParser
 import Foundation
+import ThemeCore
 
 struct ClipboardCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
@@ -181,13 +182,12 @@ struct ClipboardCommand: ParsableCommand {
     /// from stopping that process when this run exits.
     @MainActor
     private func showSeparately(_ failure: String) {
-      let process = Process()
-      process.executableURL = RuntimeEnvironment.live.executableURL
-      process.arguments = [
-        "clipboard", "_auto-clear", "--state-root", options.stateRoot, "--alert=\(failure)",
-      ]
       do {
-        try process.run()
+        try launchDetachedProcess(
+          RuntimeEnvironment.live.executableURL,
+          arguments: [
+            "clipboard", "_auto-clear", "--state-root", options.stateRoot, "--alert=\(failure)",
+          ])
       } catch {
         Self.show(failure)
       }
