@@ -54,7 +54,7 @@ struct Microphone {
   /// `<state root>/run/microphone-silence.json`.
   static func silenceRecord(stateRoot: URL) -> RunStateRecord<MicrophoneSilence> {
     RunStateRecord("microphone-silence.json", stateRoot: stateRoot) { silence in
-      silence.identity.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+      isSHA256Hex(silence.identity)
         && !silence.levels.isEmpty && silence.levels.values.allSatisfy { (0...1).contains($0) }
     }
   }
