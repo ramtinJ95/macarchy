@@ -393,15 +393,3 @@ struct UnifiedSetupLifecycleTests {
     #expect(throws: SetupCoreOwnershipError.self) { try store.read() }
   }
 }
-
-func teardownComponent(
-  dryRun: Bool,
-  mutated: Bool,
-  previewOutcome: String = "planned"
-) throws -> SetupComponentExecution {
-  try applyComponent(
-    """
-    {"outcome":"\(dryRun ? previewOutcome : mutated ? "restored" : "no_change")","mutated":\(mutated),"message":"component"}
-    """
-  )
-}
