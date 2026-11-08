@@ -68,8 +68,7 @@ package struct EzaAdapter: Sendable {
 
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .eza,
       preflight: preflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )

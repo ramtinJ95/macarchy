@@ -138,32 +138,29 @@ struct SketchyBarAdapter: Sendable {
     do {
       try preflight()
       guard includeRuntimeChecks else {
-        return AdapterInspection(adapterID: Self.id, requirement: .required)
+        return AdapterInspection(.sketchyBar)
       }
       let expectedColor: String
       do {
         expectedColor = try activeBarColor()
       } catch ReconciliationStatusError.noActiveGeneration {
-        return AdapterInspection(adapterID: Self.id, requirement: .required)
+        return AdapterInspection(.sketchyBar)
       }
       let state = try queryState(timeout: 0.2)
       guard matchesActivePalette(state, expectedColor: expectedColor) else {
         return AdapterInspection(
-          adapterID: Self.id,
-          requirement: .required,
+          .sketchyBar,
           status: .drifted,
           message: "Running SketchyBar does not match the active palette"
         )
       }
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .sketchyBar,
         message: "Running SketchyBar matches the active palette"
       )
     } catch {
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .sketchyBar,
         status: Self.isIntegrationDrift(error) ? .drifted : .failed,
         message: String(describing: error)
       )
@@ -171,7 +168,7 @@ struct SketchyBarAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(.sketchyBar) {
       do {
         try preflight()
       } catch {

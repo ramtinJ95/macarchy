@@ -134,23 +134,20 @@ struct WallpaperAdapter: Sendable {
         displays.contains(where: { !Self.sameFile($0.wallpaperURL, desiredWallpaperURL) })
       {
         return AdapterInspection(
-          adapterID: Self.id,
-          requirement: .required,
+          .wallpaper,
           status: .drifted,
           message:
             "One or more current displays differ from the active wallpaper; reconciliation will update them through NSWorkspace"
         )
       }
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .wallpaper,
         message:
           "Wallpaper and presentation options are readable for \(displays.count) current display(s); inactive Spaces require lazy reconciliation"
       )
     } catch {
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .wallpaper,
         status: .failed,
         message: String(describing: error)
       )
@@ -160,7 +157,7 @@ struct WallpaperAdapter: Sendable {
   func reconciliation(
     desiredWallpaperURL: @escaping @Sendable () throws -> URL?
   ) -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(.wallpaper) {
       let preparation: Preparation = try activationLock.withLock {
         guard let desiredWallpaperURL = try desiredWallpaperURL() else {
           return .finished(

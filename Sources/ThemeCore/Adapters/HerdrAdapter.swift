@@ -213,30 +213,26 @@ package struct HerdrAdapter: Sendable {
       let parsed = try validatedConfiguration()
       guard let desired = try currentDesiredTheme() else {
         return AdapterInspection(
-          adapterID: Self.id,
-          requirement: .required,
+          .herdr,
           message: "Herdr configuration is ready for an active theme"
         )
       }
       if let managedMode {
         return AdapterInspection(
-          adapterID: Self.id,
-          requirement: .required,
+          .herdr,
           message: try managedMode.inspect(desired)
         )
       }
       try verifyCurrentTheme(desired, parsed: parsed)
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .herdr,
         message: desired.custom.isEmpty
           ? "Herdr uses the active mapped theme and supports live config reload"
           : "Herdr uses the complete active custom palette and supports live config reload"
       )
     } catch {
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .herdr,
         status: Self.isIntegrationDrift(error) ? .drifted : .failed,
         message: String(describing: error)
       )
@@ -244,7 +240,7 @@ package struct HerdrAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(.herdr) {
       do {
         try preflight()
       } catch {

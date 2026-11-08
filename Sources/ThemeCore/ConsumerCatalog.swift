@@ -49,6 +49,16 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
   case yazi
 }
 
+extension RuntimeAdapterKind {
+  /// The ID the built-in catalog registers for this consumer.
+  package var adapterID: String { ConsumerCatalog.shared.runtimeIdentity(self).id }
+
+  /// The requirement the built-in catalog registers for this consumer.
+  package var requirement: AdapterRequirement {
+    ConsumerCatalog.shared.runtimeIdentity(self).requirement
+  }
+}
+
 package enum ConsumerMode: Sendable {
   case runtime(RuntimeAdapterKind, requirement: AdapterRequirement)
   case manual
@@ -247,13 +257,14 @@ package struct ConsumerCatalog: Sendable {
   }()
 
   package let entries: [ConsumerCatalogEntry]
+  private let runtimeIdentities: [RuntimeAdapterKind: (id: String, requirement: AdapterRequirement)]
 
   package init(entries: [ConsumerCatalogEntry]) throws {
     var consumerIDs = Set<ConsumerID>()
     var rendererIDs = Set<String>()
     var artifactPaths = Set<String>()
     var dependencyIDs = Set<String>()
-    var runtimeKinds = Set<RuntimeAdapterKind>()
+    var runtimeIdentities = [RuntimeAdapterKind: (id: String, requirement: AdapterRequirement)]()
 
     for entry in entries {
       guard ThemeSchema.isThemeID(entry.id.rawValue) else {
@@ -263,10 +274,11 @@ package struct ConsumerCatalog: Sendable {
         throw ConsumerCatalogError.duplicateConsumerID(entry.id.rawValue)
       }
 
-      if let kind = entry.mode.runtimeKind,
-        !runtimeKinds.insert(kind).inserted
-      {
-        throw ConsumerCatalogError.duplicateRuntimeKind
+      if case .runtime(let kind, let requirement) = entry.mode {
+        guard runtimeIdentities[kind] == nil else {
+          throw ConsumerCatalogError.duplicateRuntimeKind
+        }
+        runtimeIdentities[kind] = (entry.id.rawValue, requirement)
       }
       if entry.setupManaged, entry.mode.runtimeKind == nil {
         throw ConsumerCatalogError.invalidSetupParticipation(entry.id.rawValue)
@@ -329,10 +341,21 @@ package struct ConsumerCatalog: Sendable {
     )
 
     self.entries = entries
+    self.runtimeIdentities = runtimeIdentities
   }
 
   package var runtimeEntries: [ConsumerCatalogEntry] {
     entries.filter { $0.mode.runtimeKind != nil }
+  }
+
+  /// The shared catalog covers every kind; see `shared`.
+  fileprivate func runtimeIdentity(
+    _ kind: RuntimeAdapterKind
+  ) -> (id: String, requirement: AdapterRequirement) {
+    guard let identity = runtimeIdentities[kind] else {
+      preconditionFailure("Consumer catalog does not register runtime adapter kind \(kind)")
+    }
+    return identity
   }
 
   package var rendererVersions: [String: Int] {

@@ -129,15 +129,13 @@ package struct SpicetifyAdapter: Sendable {
     do {
       try preflight()
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .spicetify,
         message:
           "Spicetify and Spotify are compatible and the generated palette seam is exact"
       )
     } catch {
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .spicetify,
         status: Self.isIntegrationDrift(error) ? .drifted : .failed,
         message: String(describing: error)
       )
@@ -145,7 +143,7 @@ package struct SpicetifyAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(.spicetify) {
       try SpicetifyLock(root: root).withLock {
         try reconcile()
       }

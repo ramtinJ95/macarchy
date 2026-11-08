@@ -72,8 +72,7 @@ package struct BtopAdapter: Sendable {
 
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .btop,
       preflight: preflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )

@@ -281,7 +281,6 @@ package struct ScreenSaverImageStore: Sendable {
   }
 
   private func result(_ status: AdapterInspectionStatus, _ message: String) -> AdapterInspection {
-    AdapterInspection(
-      adapterID: WallpaperAdapter.id, requirement: .required, status: status, message: message)
+    AdapterInspection(.wallpaper, status: status, message: message)
   }
 }

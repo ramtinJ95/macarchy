@@ -66,8 +66,7 @@ package struct BatAdapter: Sendable {
 
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .bat,
       preflight: preflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )
