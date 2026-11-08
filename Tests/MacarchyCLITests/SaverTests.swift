@@ -12,7 +12,7 @@ import ThemeCore
 struct SaverInstallationTests {
   @Test(arguments: ["present", "absent", "directory", "not-executable"])
   func engineMustBeARegularExecutableBesideTheBinDirectory(layout: String) throws {
-    try withTemporaryDirectory { root in
+    try withTemporaryRoot(named: "macarchy-saver") { root in
       let prefix = root.appending(path: "Cellar/macarchy/0.14.0", directoryHint: .isDirectory)
       let binary = prefix.appending(path: "bin/macarchy")
       let engine = prefix.appending(path: "libexec/ttfx")
@@ -40,7 +40,7 @@ struct SaverInstallationTests {
   }
 
   @Test func symlinkedEntryPointFindsTheEngineBesideThePhysicalBinary() throws {
-    try withTemporaryDirectory { root in
+    try withTemporaryRoot(named: "macarchy-saver") { root in
       let physical = root.appending(path: "Cellar/macarchy/0.14.0/bin/macarchy")
       let engine = root.appending(path: "Cellar/macarchy/0.14.0/libexec/ttfx")
       try writeFile("", to: physical, permissions: 0o755)
@@ -55,7 +55,7 @@ struct SaverInstallationTests {
   }
 
   @Test func kittyIsPresentOnlyWithItsExecutableAndReportsItsVersion() throws {
-    try withTemporaryDirectory { root in
+    try withTemporaryRoot(named: "macarchy-saver") { root in
       let application = root.appending(path: "kitty.app", directoryHint: .isDirectory)
       #expect(SaverKitty.inspect(application: application) == .missing)
 
@@ -144,7 +144,7 @@ struct SaverInstallationTests {
 
 struct SaverTextTests {
   @Test func missingFileShowsTheBannerWithoutANotice() throws {
-    try withTemporaryDirectory { root in
+    try withTemporaryRoot(named: "macarchy-saver") { root in
       let file = SaverText.fileURL(stateRoot: root)
       #expect(file.path == root.appending(path: "screensaver.txt").path)
       #expect(SaverText.read(file) == .absent)
@@ -158,7 +158,7 @@ struct SaverTextTests {
   }
 
   @Test func customTextKeepsNewlinesAndTabsAndDropsOtherControlCharacters() throws {
-    try withTemporaryDirectory { root in
+    try withTemporaryRoot(named: "macarchy-saver") { root in
       let file = SaverText.fileURL(stateRoot: root)
       let contents = Data("Back at\t3 pm\r\n\u{1B}[31mbye\u{7}".utf8)
       try contents.write(to: file)
@@ -172,7 +172,7 @@ struct SaverTextTests {
   }
 
   @Test func textUpToTheLimitIsUsed() throws {
-    try withTemporaryDirectory { root in
+    try withTemporaryRoot(named: "macarchy-saver") { root in
       let file = SaverText.fileURL(stateRoot: root)
       try Data(repeating: 0x61, count: SaverText.maximumSize).write(to: file)
 
@@ -186,7 +186,7 @@ struct SaverTextTests {
     "symbolic-link", "directory", "too-large", "invalid-utf8", "blank", "unreadable",
   ])
   func unusableFileFallsBackToTheBannerAndSaysWhy(kind: String) throws {
-    try withTemporaryDirectory { root in
+    try withTemporaryRoot(named: "macarchy-saver") { root in
       let file = SaverText.fileURL(stateRoot: root)
       let found: SaverTextFile
       switch kind {
@@ -258,7 +258,7 @@ struct SaverRunnerTests {
   }
 
   @Test func inputEndsTheSessionAfterEffectsThatNeverRepeatBackToBack() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       machine.script(.engineExited(0), at: 4)
       machine.script(.input, at: 6)
@@ -282,7 +282,7 @@ struct SaverRunnerTests {
   }
 
   @Test func inputWhileThePanelSettlesIsIgnored() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       machine.script(.input, at: 0.4)
       machine.script(.timeout, at: 0.8)
@@ -297,7 +297,7 @@ struct SaverRunnerTests {
   }
 
   @Test func signalEndsTheSessionEvenWhileThePanelSettles() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       machine.script(.terminate, at: 0.2)
 
@@ -310,7 +310,7 @@ struct SaverRunnerTests {
   }
 
   @Test func ttfxFailureIsShownThenTheSessionEndsWithAnError() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       machine.script(.engineExited(0), at: 3)
       machine.script(.engineExited(2), at: 5)
@@ -330,7 +330,7 @@ struct SaverRunnerTests {
   }
 
   @Test func ttfxThatCannotStartIsShownThenTheSessionEndsWithAnError() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       machine.startFails = true
       machine.script(.input, at: 2)
@@ -348,7 +348,7 @@ struct SaverRunnerTests {
 
   @Test(arguments: ["another-launch", "no-launch", "display-taken"])
   func runnerOutsideTheCurrentLaunchClosesWithoutPlayingOrSignalling(kind: String) throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root, opensLaunch: kind == "display-taken")
       let records = SaverRecords(stateRoot: root)
       try records.create()
@@ -375,7 +375,7 @@ struct SaverRunnerTests {
   }
 
   @Test func endingRemovesTheDisplayRecordOnlyWhileItNamesThisRunner() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       let records = SaverRecords(stateRoot: root)
       let other = SaverFixture.session(850, "DP-1", macarchy: machine.macarchy)
@@ -389,7 +389,7 @@ struct SaverRunnerTests {
   }
 
   @Test func endingStopsOnlySiblingRunnersThatStillMatchTheirRecords() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       let records = SaverRecords(stateRoot: root)
       try records.create()
@@ -412,7 +412,7 @@ struct SaverRunnerTests {
   }
 
   @Test func runnerWhoseExecutableIsNotARegularFileNeitherRegistersNorPlays() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root)
       try FileManager.default.removeItem(atPath: machine.macarchy)
       try FileManager.default.createDirectory(
@@ -433,7 +433,7 @@ struct SaverRunnerTests {
   }
 
   @Test func runnerThatCannotRegisterNeitherPlaysNorSignals() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try RunnerMachine(root, opensLaunch: false)
       // A regular file where the run directory belongs.
       try Data().write(to: root.appending(path: "run"))
@@ -524,7 +524,7 @@ struct SaverHostTests {
 
 struct SaverSessionTests {
   @Test func startCoversEveryNamedDisplayOnceAndStopEndsEverySession() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       machine.text = .custom("Away until 3 pm")
       let saver = machine.saver()
@@ -574,7 +574,7 @@ struct SaverSessionTests {
   }
 
   @Test func withoutDisplayNamesOnePanelCoversTheMainDisplay() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       machine.coverage = .mainOnly(reason: "Kitty reported no display names")
       let saver = machine.saver()
@@ -593,7 +593,7 @@ struct SaverSessionTests {
   }
 
   @Test func startNamesARejectedTextFile() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       machine.text = .banner(rejected: "it is a symbolic link")
 
@@ -608,7 +608,7 @@ struct SaverSessionTests {
 
   @Test(arguments: ["kitty", "engine"])
   func startNeedsKittyAndTheEngineAndNamesTheRemedy(missing: String) throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       if missing == "kitty" {
         machine.kitty = .missing
@@ -627,7 +627,7 @@ struct SaverSessionTests {
 
   @Test(arguments: ["open-fails", "never-registers"])
   func partialStartStopsTheDisplaysThatStarted(failure: String) throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       if failure == "open-fails" {
         machine.failingDisplays = ["HDMI-1"]
@@ -653,7 +653,7 @@ struct SaverSessionTests {
   }
 
   @Test func runnerOfADisplayWhoseOpenFailedIsStoppedEvenThoughItRegistered() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       machine.lateFailingDisplays = ["HDMI-1"]
       let saver = machine.saver()
@@ -673,7 +673,7 @@ struct SaverSessionTests {
   }
 
   @Test func startWhileAnotherStartWaitsForItsPanelsLeavesThatStartAlone() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let saver = machine.saver()
       var second: SaverStart?
@@ -694,7 +694,7 @@ struct SaverSessionTests {
 
   @Test(arguments: ["crashed", "clock-moved-back", "in-progress"])
   func launchRecordHoldsOffStartsOnlyWithinTheRegistrationWindow(kind: String) throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let records = SaverRecords(stateRoot: root)
       let offset: TimeInterval =
@@ -725,7 +725,7 @@ struct SaverSessionTests {
   }
 
   @Test func runnerThatArrivesAfterStartGaveUpClosesWithoutARecord() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       machine.silentDisplays = ["HDMI-1"]
       let saver = machine.saver()
@@ -745,7 +745,7 @@ struct SaverSessionTests {
   }
 
   @Test func stopClosesAnOpenLaunchSoItsRunnersNeverPlay() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let records = SaverRecords(stateRoot: root)
       // As when a start has opened this panel and still waits for its runner.
@@ -763,7 +763,7 @@ struct SaverSessionTests {
   }
 
   @Test func staleRunnerOfAFailedStartLeavesTheRetriedStartsRecordAlone() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let saver = machine.saver()
       machine.silentDisplays = ["HDMI-1"]
@@ -795,7 +795,7 @@ struct SaverSessionTests {
 
   @Test(arguments: ["dead", "reused", "foreign-panel", "foreign-runner", "corrupt"])
   func staleRecordsAreRemovedAndNeverSignalled(kind: String) throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let records = SaverRecords(stateRoot: root)
       try records.create()
@@ -837,7 +837,7 @@ struct SaverSessionTests {
   }
 
   @Test func sessionStaysOwnedAfterItsRunnersExecutableIsRemoved() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let saver = machine.saver()
       _ = try saver.start()
@@ -855,7 +855,7 @@ struct SaverSessionTests {
   }
 
   @Test func panelThatOutlivesItsRunnerIsStoppedWhileItMatchesItsRecord() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       machine.panelsQuitWithRunner = false
       let saver = machine.saver()
@@ -873,7 +873,7 @@ struct SaverSessionTests {
   }
 
   @Test func orphanPanelOfACrashedRunnerIsStoppedAndItsRecordRemoved() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let records = SaverRecords(stateRoot: root)
       try records.create()
@@ -889,7 +889,7 @@ struct SaverSessionTests {
   }
 
   @Test func stopChecksEachIdentityRightBeforeItsSignal() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let saver = machine.saver()
       _ = try saver.start()
@@ -915,7 +915,7 @@ struct SaverSessionTests {
   }
 
   @Test func runnerThatIgnoresSIGTERMKeepsItsRecordAndFailsTheStop() throws {
-    try withTemporaryDirectory { root throws in
+    try withTemporaryRoot(named: "macarchy-saver") { root throws in
       let machine = try SaverMachine(root)
       let saver = machine.saver()
       _ = try saver.start()
@@ -1173,14 +1173,6 @@ private final class RunnerMachine {
       },
       now: { Date(timeIntervalSince1970: self.time) })
   }
-}
-
-private func withTemporaryDirectory(_ body: (URL) throws -> Void) throws {
-  let root = FileManager.default.temporaryDirectory.appending(
-    path: "macarchy-saver-\(UUID().uuidString.lowercased())", directoryHint: .isDirectory)
-  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-  defer { try? FileManager.default.removeItem(at: root) }
-  try body(root)
 }
 
 private func writeFile(_ contents: String, to url: URL, permissions: Int) throws {

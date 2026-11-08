@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -6,7 +7,7 @@ import Testing
 struct PackageProfileTests {
   @Test(arguments: [false, true])
   func layersKeepTheirOwnPathsAndDecisions(machineSelectsStandard: Bool) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-package-profile")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "dotfiles/profile.toml")
     let exposed = root.appending(path: "profile.toml")
@@ -46,7 +47,7 @@ struct PackageProfileTests {
 
   @Test(arguments: ["", "../Brewfile", "/tmp/Brewfile"])
   func fragmentUsesExistingPortablePathRules(path: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-package-profile")
     defer { try? FileManager.default.removeItem(at: root) }
     #expect(throws: PortableProfileError.self) {
       try PortableProfileLoader().decode(
@@ -57,7 +58,7 @@ struct PackageProfileTests {
 
   @Test
   func escapingFragmentSymlinkIsRejected() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-package-profile")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = root.appending(path: "profile/profile.toml")
     try write("brew \"hello\"\n", at: root.appending(path: "outside.Brewfile"))
@@ -76,13 +77,6 @@ struct PackageProfileTests {
       try PortableProfileLoader().decode(
         "schema_version = 1\n[packages]\n\(field)\n", source: URL(filePath: "/tmp/profile.toml"))
     }
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-package-profile-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 
   private func write(_ text: String, at url: URL) throws {

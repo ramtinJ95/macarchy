@@ -41,7 +41,7 @@ struct YabaiConfigurationTests {
 
   @Test
   func portableOverridesAndTrustedHookProduceSelfContainedBytes() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-yabai-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let hook = root.appending(path: "personal-yabai.sh")
     try """
@@ -81,7 +81,7 @@ struct YabaiConfigurationTests {
 
   @Test
   func invalidPackagedShapeAndMissingHookFailClosed() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-yabai-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let invalidDefaults = root.appending(path: "defaults.toml")
     try """
@@ -112,14 +112,5 @@ struct YabaiConfigurationTests {
 
   private var defaultsURL: URL {
     repositoryRoot.appending(path: "Desktop/yabai/defaults.toml")
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-yabai-configuration-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

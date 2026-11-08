@@ -22,7 +22,7 @@ struct UpdateAwarenessTests {
 
   @Test
   func explicitCheckCachesStableReleaseAndReportsPackagingPending() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "update", under: updateTestsRoot)
     defer { try? FileManager.default.removeItem(at: root) }
     let checkedAt = Date(timeIntervalSince1970: 1_800_000_000)
     let requests = Mutex([UpdateHTTPRequest]())
@@ -76,7 +76,7 @@ struct UpdateAwarenessTests {
 
   @Test
   func staleCacheUsesBothValidatorsAnd304RefreshesWithoutLosingRelease() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "update", under: updateTestsRoot)
     defer { try? FileManager.default.removeItem(at: root) }
     let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
     let newDate = oldDate.addingTimeInterval(UpdateChecker.freshnessInterval + 1)
@@ -136,7 +136,7 @@ struct UpdateAwarenessTests {
 
   @Test
   func failedCheckPreservesLastStableReleaseAndCachesBoundedEvidence() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "update", under: updateTestsRoot)
     defer { try? FileManager.default.removeItem(at: root) }
     let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
     let checkedAt = oldDate.addingTimeInterval(UpdateChecker.freshnessInterval + 1)
@@ -183,7 +183,7 @@ struct UpdateAwarenessTests {
 
   @Test
   func oversizedValidatorPersistsBoundedFailureEvidence() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "update", under: updateTestsRoot)
     defer { try? FileManager.default.removeItem(at: root) }
     let date = Date(timeIntervalSince1970: 1_800_000_000)
     let checker = UpdateChecker(
@@ -212,8 +212,8 @@ struct UpdateAwarenessTests {
 
   @Test
   func noReleaseIsSuccessfulButPrereleasePayloadIsRejected() throws {
-    let noReleaseRoot = try temporaryRoot()
-    let prereleaseRoot = try temporaryRoot()
+    let noReleaseRoot = try makeTemporaryDirectory(named: "update", under: updateTestsRoot)
+    let prereleaseRoot = try makeTemporaryDirectory(named: "update", under: updateTestsRoot)
     defer {
       try? FileManager.default.removeItem(at: noReleaseRoot)
       try? FileManager.default.removeItem(at: prereleaseRoot)
@@ -269,7 +269,7 @@ struct UpdateAwarenessTests {
 
   @Test
   func statusDoesNotRefreshAndMakesInvalidCacheVisible() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "update", under: updateTestsRoot)
     defer { try? FileManager.default.removeItem(at: root) }
     let checks = Mutex(0)
     let cacheStore = UpdateCacheStore(root: root)
@@ -458,13 +458,10 @@ struct UpdateAwarenessTests {
       """.utf8
     )
   }
-
-  private func temporaryRoot() throws -> URL {
-    let root = repositoryRoot.appending(path: ".build/update-awareness-tests/\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
-  }
 }
+
+private let updateTestsRoot = repositoryRoot.appending(
+  path: ".build/update-awareness-tests", directoryHint: .isDirectory)
 
 private enum UpdateTestError: Error, CustomStringConvertible {
   case failure(String)
