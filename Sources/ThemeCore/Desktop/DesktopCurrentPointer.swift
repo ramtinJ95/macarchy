@@ -21,12 +21,12 @@ enum DesktopCurrentPointer {
     guard metadata.st_mode & S_IFMT == S_IFLNK, let target = SymbolicLink.target(of: current) else {
       return .invalid("current is not a readable symbolic link")
     }
-    let prefix = "generations/"
-    guard target.hasPrefix(prefix) else {
+    guard target.hasPrefix(StateLayout.generationPath("")) else {
       return .invalid("current target is outside the \(label) generation inventory")
     }
-    let generationID = String(target.dropFirst(prefix.count))
-    guard isGenerationID(generationID), !generationID.contains("/") else {
+    guard
+      let generationID = StateLayout.generationID(fromPath: target, isGenerationID: isGenerationID)
+    else {
       return .invalid("current target has an invalid generation identity")
     }
     return .generation(generationID)
