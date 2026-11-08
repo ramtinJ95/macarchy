@@ -104,9 +104,7 @@ extension Theme {
     }
 
     var repository: ThemeRepository {
-      roots.repository(
-        userRoot: stateRootURL.appending(path: "themes", directoryHint: .isDirectory)
-      )
+      roots.repository(userRoot: StateLayout(root: stateRootURL).userThemes)
     }
   }
 
@@ -203,9 +201,7 @@ extension Theme {
 
     mutating func run() async throws {
       let stateRoot = state.stateRootURL
-      let repository = roots.repository(
-        userRoot: stateRoot.appending(path: "themes", directoryHint: .isDirectory)
-      )
+      let repository = roots.repository(userRoot: StateLayout(root: stateRoot).userThemes)
       if let request = ThemeBrowserApplyRequest(
         environment: ProcessInfo.processInfo.environment
       ) {
@@ -270,12 +266,10 @@ extension Theme {
       var themeID: String
 
       mutating func run() throws {
-        let userThemes = URL(filePath: stateRoot, directoryHint: .isDirectory)
-          .standardizedFileURL.appending(path: "themes", directoryHint: .isDirectory)
-        let package = try MacarchyConfigurationStore(root: userThemes.deletingLastPathComponent())
-          .addingPersonalBackgrounds(
-            to: roots.repository(userRoot: userThemes).package(id: themeID)
-          )
+        let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
+        let package = try MacarchyConfigurationStore(root: root).addingPersonalBackgrounds(
+          to: roots.repository(userRoot: StateLayout(root: root).userThemes).package(id: themeID)
+        )
         for background in package.backgrounds {
           print("\(background.id)\t\(background.format.rawValue)\t\(background.path)")
         }

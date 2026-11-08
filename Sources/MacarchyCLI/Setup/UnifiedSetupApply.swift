@@ -69,7 +69,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     )
     let repository = ThemeRepository(
       builtInRoot: context.themesRoot,
-      userRoot: context.stateRoot.appending(path: "themes", directoryHint: .isDirectory)
+      userRoot: StateLayout(root: context.stateRoot).userThemes
     )
     return try await SetupComponentExecution(
       withThemePackageLock(stateRoot: context.stateRoot, unlessDryRun: false) {
