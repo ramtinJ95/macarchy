@@ -16,6 +16,14 @@ struct UnifiedSetupPlanContext: Sendable {
   var nativeStarterApprovals: [String: String] = [:]
   /// Prepared by this planner for its environment component, never persisted authority.
   var nativeStarters: [EnvironmentNativeSeed] = []
+
+  /// Loads the portable and machine layers this context names. A proposed source stands in
+  /// for that file's current text.
+  func loadProfile(proposedSources: [URL: String] = [:]) throws -> LayeredPortableProfile {
+    try PortableProfileLoader(proposedSources: proposedSources).load(
+      portableAt: profileURL, portableRequired: profileRequired,
+      machineAt: machineProfileURL, machineRequired: machineProfileRequired)
+  }
 }
 
 struct UnifiedSetupDesiredModel: Sendable {
@@ -136,7 +144,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   func packageInventory(
     context: UnifiedSetupPlanContext, adoptionState: SetupPackageAdoptionState
   ) throws -> SetupPackageInventory {
-    let layered = try loadProfile(context: context)
+    let layered = try context.loadProfile(proposedSources: proposedProfileSources)
     let capabilities = try setupCapabilities(
       profile: layered.profile, homeDirectory: context.homeDirectory,
       desktopResourcesRoot: context.desktopResourcesRoot)
@@ -162,13 +170,6 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     return try SetupPackageDeclarations.compile(
       standard: standard, profile: profile.packages, requirements: capabilities,
       readBrewfile: personalBrewfile)
-  }
-
-  private func loadProfile(context: UnifiedSetupPlanContext) throws -> LayeredPortableProfile {
-    try PortableProfileLoader(proposedSources: proposedProfileSources).load(
-      portableAt: context.profileURL, portableRequired: context.profileRequired,
-      machineAt: context.machineProfileURL, machineRequired: context.machineProfileRequired
-    )
   }
 
   private func setupCapabilities(
@@ -204,7 +205,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
 
     let layered: LayeredPortableProfile
     do {
-      layered = try loadProfile(context: context)
+      layered = try context.loadProfile(proposedSources: proposedProfileSources)
     } catch {
       return .blocked(
         UnifiedSetupPlanReport.blocked(

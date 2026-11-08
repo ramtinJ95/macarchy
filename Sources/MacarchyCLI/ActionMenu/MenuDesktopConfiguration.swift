@@ -8,7 +8,7 @@ struct MenuDesktopConfiguration {
   var io: GuidedSetupIO = .live
 
   func prepareForEditing() throws -> MenuDesktopEditSession? {
-    let layered = try MenuNativeProfileEdit.load(context)
+    let layered = try context.loadProfile()
     let generation = try provider.managedGeneration(profile: layered.profile, context: context)
     let origin = layered.fieldOrigins[provider.profileTable + "." + provider.hookKey] ?? .portable
     let parent = (origin == .machine ? context.machineProfileURL : context.profileURL)

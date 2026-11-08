@@ -10,7 +10,7 @@ struct MenuNativeConfigurationSetup {
   var io: GuidedSetupIO = .live
 
   func prepareForEditing() throws -> URL? {
-    let layered = try MenuNativeProfileEdit.load(context)
+    let layered = try context.loadProfile()
     let resolver = EnvironmentConfigurationSourceResolver(
       homeDirectory: context.homeDirectory, stateRoot: context.stateRoot)
     let resolved = resolver.resolve(provider, profile: layered.profile)
@@ -100,7 +100,7 @@ struct MenuNativeConfigurationSetup {
     {
       guard try prepareInitialConnection(layered: layered.profile) else { return nil }
     }
-    let current = try MenuNativeProfileEdit.load(context)
+    let current = try context.loadProfile()
     let connected = try resolver.connectedSource(provider, profile: current.profile)
     guard connected.kind == "file", let target = connected.resolvedSource else {
       throw EnvironmentLifecycleError.blocked("The native editing target is not a file")

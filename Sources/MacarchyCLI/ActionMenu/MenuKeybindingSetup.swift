@@ -19,7 +19,7 @@ struct MenuKeybindingSetup {
     """
 
   func prepareForEditing() throws -> URL? {
-    let layered = try MenuNativeProfileEdit.load(context)
+    let layered = try context.loadProfile()
     let source =
       layered.profile.keybindings.overrideURL
       ?? context.profileURL.resolvingSymlinksInPath().deletingLastPathComponent()

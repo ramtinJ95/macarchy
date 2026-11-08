@@ -64,7 +64,7 @@ struct MenuKeybindingSetupTests {
       try String(contentsOf: physicalProfile, encoding: .utf8).contains(
         "override = \"overrides/keybindings.skhdrc\""))
     #expect(
-      try MenuNativeProfileEdit.load(context(fixture)).profile.keybindings.overrideURL?.path
+      try context(fixture).loadProfile().profile.keybindings.overrideURL?.path
         == source.path)
     lifecycle.calls.withLock { $0 = [] }
     var reopen = setup

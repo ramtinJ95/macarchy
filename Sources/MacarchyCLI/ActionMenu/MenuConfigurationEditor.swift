@@ -107,7 +107,7 @@ struct MenuConfigurationEditor: ParsableCommand {
         "Managed \(action.title) settings: reviewed environment plan/apply is required. Saving only changes your profile."
     }
     if let provider = action.nativeProvider {
-      let profile = try MenuNativeProfileEdit.load(context).profile
+      let profile = try context.loadProfile().profile
       let source = EnvironmentConfigurationSourceResolver(
         homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
       ).resolve(provider, profile: profile)
@@ -125,7 +125,7 @@ struct MenuConfigurationEditor: ParsableCommand {
     guard action == .zsh || action == .kitty, let provider = action.nativeProvider else {
       return false
     }
-    let profile = try MenuNativeProfileEdit.load(context).profile
+    let profile = try context.loadProfile().profile
     guard provider.source(in: profile.environment) == nil,
       provider.copiedSource(in: profile.environment) == nil
     else { return false }
@@ -141,7 +141,7 @@ struct MenuConfigurationEditor: ParsableCommand {
     guard let provider = action.nativeProvider else {
       throw ValidationError("Desktop configuration requires a reviewed editor session")
     }
-    let layered = try MenuNativeProfileEdit.load(context)
+    let layered = try context.loadProfile()
     if try !usesManagedProfile(action, context: context) {
       let source = try EnvironmentConfigurationSourceResolver(
         homeDirectory: context.homeDirectory,
