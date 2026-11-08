@@ -122,34 +122,34 @@ struct SaverIdle {
   }
 
   private func on(after duration: Duration?) throws -> SaverIdleChange {
-    let installed = try agent.install()
-    let previous = try record.read()
-    let next = SaverIdleRecord(
-      timeout: duration.map { Int($0.components.seconds) } ?? previous?.timeout
-        ?? SaverIdleRecord.defaultTimeout,
-      paused: previous?.paused ?? false)
-    // The observer exits when it finds no record, so the record comes before the job.
-    if next != previous { try record.write(next) }
-    let loaded = try agent.load()
     // launchd keeps an observer that exited cleanly loaded but stopped. A kickstart runs it
     // again and leaves a running one alone.
-    try agent.kickstart()
-    return installed || loaded || next != previous ? .turnedOn(next) : .alreadyOn(next)
+    let (next, changed) = try agent.turnOn(kickstart: true) {
+      () throws -> (record: SaverIdleRecord, changed: Bool) in
+      let previous = try record.read()
+      let updated = SaverIdleRecord(
+        timeout: duration.map { Int($0.components.seconds) } ?? previous?.timeout
+          ?? SaverIdleRecord.defaultTimeout,
+        paused: previous?.paused ?? false)
+      // The observer exits when it finds no record, so the record comes before the job.
+      if updated != previous { try record.write(updated) }
+      return (updated, updated != previous)
+    }
+    return changed ? .turnedOn(next) : .alreadyOn(next)
   }
 
   private func off() throws -> SaverIdleChange {
-    // A job loaded from somebody else's plist under this label is not Macarchy's to stop.
-    if case .conflict = try agent.file() { throw agent.conflict }
-    let unloaded = try agent.unload()
-    let removed = try agent.remove()
-    let recorded: Bool
-    do {
-      recorded = try record.readStrictly() != nil
-    } catch is InvalidRunStateRecord {
-      recorded = true
+    let changed = try agent.turnOff {
+      let recorded: Bool
+      do {
+        recorded = try record.readStrictly() != nil
+      } catch is InvalidRunStateRecord {
+        recorded = true
+      }
+      try record.remove()
+      return recorded
     }
-    try record.remove()
-    return unloaded || removed || recorded ? .turnedOff : .alreadyOff
+    return changed ? .turnedOff : .alreadyOff
   }
 
   /// Pausing holds off idle starts until resumed; it never stops a showing saver.
