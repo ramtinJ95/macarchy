@@ -24,10 +24,7 @@ struct SetupPackageInputPublicationStore: Sendable {
   }
 
   func read() throws -> SetupPackageInputPublication? {
-    let data: Data
-    do { data = try BoundedRegularFile.read(at: url).data } catch BoundedRegularFileError.system(
-      operation: "open", code: ENOENT)
-    { return nil }
+    guard let data = try BoundedRegularFile.readIfPresent(at: url)?.data else { return nil }
     _ = try StrictJSONObjectDocument(data: data, id: "package_input_publication", target: url)
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase

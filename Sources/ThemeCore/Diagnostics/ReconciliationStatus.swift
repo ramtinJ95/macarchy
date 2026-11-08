@@ -188,14 +188,13 @@ public struct ReconciliationStatusStore: Sendable {
     for active: GenerationManifest
   ) throws -> ReconciliationState {
     let statusURL = root.appending(path: "state/reconciliation.json")
-    let data: Data
+    let file: BoundedRegularFile?
     do {
-      data = try BoundedRegularFile.read(at: statusURL).data
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
-      return .missing(activeGenerationID: active.generationID)
+      file = try BoundedRegularFile.readIfPresent(at: statusURL)
     } catch {
       throw ReconciliationStatusError.invalidStatus(String(describing: error))
     }
+    guard let data = file?.data else { return .missing(activeGenerationID: active.generationID) }
 
     let decoded = try JSONDecoder().decode(
       ReconciliationRecord.self,

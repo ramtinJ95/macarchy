@@ -30,14 +30,13 @@ struct SetupCoreOwnershipStore: Sendable {
   }
 
   func read() throws -> SetupCoreOwnership? {
-    let data: Data
+    let file: BoundedRegularFile?
     do {
-      data = try BoundedRegularFile.read(at: url).data
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
-      return nil
+      file = try BoundedRegularFile.readIfPresent(at: url)
     } catch {
       throw SetupCoreOwnershipError.invalid(String(describing: error))
     }
+    guard let data = file?.data else { return nil }
     do {
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
       guard

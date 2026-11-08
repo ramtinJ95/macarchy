@@ -101,10 +101,7 @@ struct PreferencesStore: Sendable {
   var url: URL { context.stateRoot.appending(path: "state/preferences/state.json") }
 
   func read() throws -> PreferencesState {
-    let data: Data
-    do { data = try BoundedRegularFile.read(at: url).data } catch BoundedRegularFileError.system(
-      operation: "open", code: ENOENT)
-    {
+    guard let data = try BoundedRegularFile.readIfPresent(at: url)?.data else {
       return PreferencesState(targetIdentity: context.targetIdentity)
     }
     do {

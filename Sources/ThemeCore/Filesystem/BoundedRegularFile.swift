@@ -19,6 +19,15 @@ package struct BoundedRegularFile {
     return try read(descriptor: descriptor, maximumSize: maximumSize)
   }
 
+  /// Like `read(at:maximumSize:)`, but returns nil when nothing exists at `url`.
+  package static func readIfPresent(at url: URL, maximumSize: Int = maximumSize) throws -> Self? {
+    do {
+      return try read(at: url, maximumSize: maximumSize)
+    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
+      return nil
+    }
+  }
+
   package static func readUTF8(
     at url: URL,
     maximumSize: Int = maximumSize

@@ -60,14 +60,13 @@ package struct BackgroundPreferenceStore: Sendable {
   }
 
   package func load() throws -> [String: String] {
-    let data: Data
+    let file: BoundedRegularFile?
     do {
-      data = try BoundedRegularFile.read(at: preferencesURL).data
-    } catch BoundedRegularFileError.system(operation: "open", code: ENOENT) {
-      return [:]
+      file = try BoundedRegularFile.readIfPresent(at: preferencesURL)
     } catch {
       throw BackgroundPreferenceStoreError.cannotRead(preferencesURL)
     }
+    guard let data = file?.data else { return [:] }
 
     do {
       let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
