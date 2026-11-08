@@ -174,8 +174,10 @@ struct SketchyBarMedia {
     ])
   }
 
-  @discardableResult private func bar(_ arguments: [String]) throws -> String {
-    try run(ExternalTool.sketchybar.path, arguments)
+  private var bar: SketchyBarControl {
+    SketchyBarControl(processRunner: processRunner, timeout: 2) { _, _ in
+      MediaError.providerFailed
+    }
   }
 
   private func run(_ path: String, _ arguments: [String], timeout: TimeInterval = 2) throws

@@ -303,7 +303,7 @@ extension Microphone {
   static func live(stateRoot: URL) -> Self {
     Self(
       stateRoot: stateRoot, hardware: .live,
-      notifyBar: { ClockCompanion.hintRunningBar(event: barEvent) })
+      notifyBar: { SketchyBarControl.hintRunningBar(event: barEvent) })
   }
 }
 

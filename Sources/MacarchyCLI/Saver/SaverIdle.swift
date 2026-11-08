@@ -214,7 +214,7 @@ extension SaverIdle {
         executable: RuntimeEnvironment.live.persistentCommandURL, userID: getuid(),
         runner: .live),
       nativeTimers: { .read(processRunner: .live) },
-      notifyBar: { ClockCompanion.hintRunningBar(event: barEvent) })
+      notifyBar: { SketchyBarControl.hintRunningBar(event: barEvent) })
   }
 }
 

@@ -226,13 +226,10 @@ struct PopupWatchError: Error, CustomStringConvertible {
 
 @discardableResult
 private func sketchyBar(_ arguments: [String], processRunner: ProcessRunner) throws -> String {
-  let result = try processRunner.run(
-    .init(
-      executableURL: SketchyBarCoreRuntimeVerifier.controlURL, arguments: arguments, timeout: 1))
-  guard result.terminationStatus == 0 else {
-    throw PopupWatchError(description: "SketchyBar \(arguments.joined(separator: " ")) failed")
+  let bar = SketchyBarControl(processRunner: processRunner) { arguments, _ in
+    PopupWatchError(description: "SketchyBar \(arguments.joined(separator: " ")) failed")
   }
-  return result.output
+  return try bar(arguments)
 }
 
 extension Desktop {

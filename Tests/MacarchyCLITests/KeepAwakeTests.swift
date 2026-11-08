@@ -181,7 +181,7 @@ struct KeepAwakeTests {
   func barHintSkipsAMissingBarAndOnlyWarnsWhenItFails(outcome: String) {
     let calls = Mutex([[String]]())
     var warnings: [String] = []
-    ClockCompanion.hintBar(
+    SketchyBarControl.hintBar(
       event: KeepAwake.barEvent,
       processRunner: ProcessRunner { request in
         calls.withLock { $0.append(request.arguments) }

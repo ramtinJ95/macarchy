@@ -94,15 +94,9 @@ struct SketchyBarWiFi {
     }
   }
 
-  @discardableResult
-  private func bar(_ arguments: [String]) throws -> String {
-    let result = try processRunner.run(
-      ProcessRequest(
-        executableURL: ExternalTool.sketchybar, arguments: arguments,
-        timeout: 1))
-    guard result.terminationStatus == 0 else {
-      throw WiFiError.queryFailed("SketchyBar rejected Wi-Fi update")
+  private var bar: SketchyBarControl {
+    SketchyBarControl(processRunner: processRunner) { _, _ in
+      WiFiError.queryFailed("SketchyBar rejected Wi-Fi update")
     }
-    return result.output
   }
 }

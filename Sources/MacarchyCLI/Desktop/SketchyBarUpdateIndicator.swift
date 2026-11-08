@@ -123,13 +123,9 @@ struct SketchyBarUpdateIndicator: Sendable {
       ] + (visible ? [] : ["--set", Self.item, "popup.drawing=off"]))
   }
 
-  private func bar(_ arguments: [String]) throws {
-    let result = try processRunner.run(
-      .init(
-        executableURL: SketchyBarCoreRuntimeVerifier.controlURL, arguments: arguments, timeout: 1))
-    guard result.terminationStatus == 0 else {
-      throw UpdateIndicatorError(
-        description: "SketchyBar update indicator failed: \(result.output)")
+  private var bar: SketchyBarControl {
+    SketchyBarControl(processRunner: processRunner) { _, output in
+      UpdateIndicatorError(description: "SketchyBar update indicator failed: \(output)")
     }
   }
 }
