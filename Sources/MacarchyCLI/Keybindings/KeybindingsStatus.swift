@@ -5,13 +5,13 @@ struct KeybindingsStatusCommandRunner: Sendable {
   func execute(
     behavior: KeybindingEffectiveBehavior,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = KeybindingsStatusReport(behavior)
     return (try report.render(json: json), report.succeeded)
   }
 }
 
-private struct KeybindingsStatusReport: Encodable {
+private struct KeybindingsStatusReport: CommandReport {
   let schemaVersion = 1
   let operation = "keybindings_status"
   let outcome: KeybindingEffectiveStatus
@@ -36,8 +36,7 @@ private struct KeybindingsStatusReport: Encodable {
 
   var succeeded: Bool { outcome == .converged }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy keybindings status [\(outcome.rawValue)]:",
       "- \(message)",

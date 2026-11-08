@@ -269,7 +269,7 @@ extension Macarchy {
       var json = false
 
       mutating func run() async throws {
-        let execution: (output: String, succeeded: Bool)
+        let execution: CommandExecution
         if review {
           execution = try await MenuSetupReview(runner: .live, io: .live).execute(
             context: profile.context(stateRoot: state.stateRootURL),

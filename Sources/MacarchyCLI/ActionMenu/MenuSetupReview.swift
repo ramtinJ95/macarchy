@@ -7,7 +7,7 @@ struct MenuSetupReview: Sendable {
   let io: GuidedSetupIO
 
   func execute(context: UnifiedSetupPlanContext, consumerPaths: ThemeConsumerPaths) async throws
-    -> (output: String, succeeded: Bool)
+    -> CommandExecution
   {
     guard FileManager.default.fileExists(atPath: context.profileURL.path) else {
       return (

@@ -50,7 +50,7 @@ struct ThemeInstallCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let parsedSource: OmarchyGitHubThemeSource
     do {
       parsedSource = try OmarchyGitHubThemeSource(source)

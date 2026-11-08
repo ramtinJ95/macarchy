@@ -1,7 +1,7 @@
 import Foundation
 import ThemeCore
 
-struct PreferencesReport: Encodable, Sendable {
+struct PreferencesReport: CommandReport, Sendable {
   struct Row: Encodable, Sendable {
     let key: MacOSPreference
     let title: String
@@ -62,8 +62,7 @@ struct PreferencesReport: Encodable, Sendable {
     return report
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = ["macOS preferences: \(outcome)", target, runtime]
     if mutated == nil {
       lines.append("Mutation outcome is unresolved; follow recovery instructions.")

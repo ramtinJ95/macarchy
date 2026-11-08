@@ -213,7 +213,7 @@ struct GuidedSetupCommandRunner: Sendable {
       String?,
       String?,
       UnifiedSetupAdoptionApprovals
-    ) async throws -> (output: String, succeeded: Bool)
+    ) async throws -> CommandExecution
 
   let packageTrust: GuidedHomebrewTrust
   let planner: UnifiedSetupPlanCommandRunner
@@ -249,7 +249,7 @@ struct GuidedSetupCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
     resume: Bool = false
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     if resume {
       let profile = try PortableProfileLoader().load(
         portableAt: context.profileURL, portableRequired: true,
@@ -286,7 +286,7 @@ struct GuidedSetupCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
     answers: GuidedSetupAnswers
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     var context = context
     context.nativeStarterProviders = answers.nativeStarterProviders
     let encoder = JSONEncoder()
@@ -311,7 +311,7 @@ struct GuidedSetupCommandRunner: Sendable {
   private func reviewAndApply(
     context: UnifiedSetupPlanContext, consumerPaths: ThemeConsumerPaths,
     packageExclusions: [HomebrewPackageIdentity], trustReviewed: Bool = false
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     var context = context
     var preparation = try planner.prepare(context: context)
     var requested = Set<MacOSPreference>()

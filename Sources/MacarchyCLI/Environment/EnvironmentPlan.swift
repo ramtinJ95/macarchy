@@ -47,7 +47,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
     profile suppliedProfile: PortableProfile? = nil,
     bootstrapTheme: ThemePackage? = nil,
     nativeStarters: [EnvironmentNativeSeed] = []
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let profile: PortableProfile
     if let suppliedProfile {
       profile = suppliedProfile
@@ -350,7 +350,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
   }
 }
 
-private struct EnvironmentPlanReport: Encodable {
+private struct EnvironmentPlanReport: CommandReport {
   let schemaVersion = 1
   let operation = "environment_plan"
   let outcome: String
@@ -431,8 +431,7 @@ private struct EnvironmentPlanReport: Encodable {
     )
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines: [String] = [
       "Macarchy environment plan [\(outcome)]:",
       "- profile [\(profileStatus)]: \(profile)",

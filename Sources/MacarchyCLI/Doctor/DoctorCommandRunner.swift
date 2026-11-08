@@ -28,7 +28,7 @@ struct DoctorCommandRunner: Sendable {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let enabled: Set<String>
     do {
       enabled = try enabledAdapterIDs(stateRoot, consumerPaths)

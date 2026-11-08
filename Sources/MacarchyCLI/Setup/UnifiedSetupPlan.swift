@@ -111,7 +111,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   func execute(
     context: UnifiedSetupPlanContext,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let preparation = try prepare(context: context)
     let report = inspectedReport(preparation.report, context: context)
     return (try report.render(json: json), preparation.succeeded)
@@ -626,7 +626,7 @@ struct SetupComponentExecution: Encodable, Sendable {
   let report: JSONValue
   let outcome: String
 
-  init(_ execution: (output: String, succeeded: Bool)) throws {
+  init(_ execution: CommandExecution) throws {
     succeeded = execution.succeeded
     report = try JSONDecoder().decode(JSONValue.self, from: Data(execution.output.utf8))
     _ = try report.requiredObject(at: "component")
@@ -827,7 +827,7 @@ struct UnifiedSetupPlanDiagnostic: Encodable, Sendable {
   let message: String
 }
 
-struct UnifiedSetupPlanReport: Encodable {
+struct UnifiedSetupPlanReport: CommandReport {
   let schemaVersion = 1
   let operation = "setup_plan"
   let outcome: String
@@ -914,8 +914,7 @@ struct UnifiedSetupPlanReport: Encodable {
     )
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = ["Macarchy setup plan [\(outcome)]:", "Profiles:"]
     lines += layers.map {
       "- \($0.kind) [\($0.status)]: \($0.path)"

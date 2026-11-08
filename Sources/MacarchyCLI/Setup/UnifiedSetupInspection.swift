@@ -93,7 +93,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     context: UnifiedSetupPlanContext,
     consumerPaths: ThemeConsumerPaths,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let preparation: UnifiedSetupPreparation
     do {
       preparation = try planner.prepare(context: context)
@@ -240,7 +240,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     preferences: UnifiedSetupInspectionStage? = nil,
     message: String,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = UnifiedSetupInspectionReport(
       operation: operation.rawValue,
       outcome: outcome,
@@ -261,7 +261,7 @@ struct UnifiedSetupInspectionStage: Encodable, Sendable {
   let details: JSONValue
 }
 
-private struct UnifiedSetupInspectionReport: Encodable {
+private struct UnifiedSetupInspectionReport: CommandReport {
   let schemaVersion = 1
   let operation: String
   let outcome: String
@@ -276,8 +276,7 @@ private struct UnifiedSetupInspectionReport: Encodable {
     ["converged", "healthy", "absent"].contains(outcome)
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = ["Macarchy \(operation.replacingOccurrences(of: "_", with: " ")) [\(outcome)]:"]
     lines.append("- \(message)")
     if let theme { lines.append("- theme [\(theme.status)]: \(theme.message)") }

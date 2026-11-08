@@ -44,7 +44,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: dryRun) {
       try await retryingActiveGenerationChanges {
         let active = try currentManifest(stateRoot: stateRoot)
@@ -65,7 +65,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: dryRun) {
       try await retryingActiveGenerationChanges {
         let active = try currentManifest(stateRoot: stateRoot)
@@ -111,7 +111,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     expectedGenerationID: String
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     if dryRun {
       try activation.preflight(package, backgroundID, stateRoot, consumerPaths)
       return (

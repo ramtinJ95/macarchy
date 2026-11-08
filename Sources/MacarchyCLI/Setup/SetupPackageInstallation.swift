@@ -41,7 +41,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
   func execute(
     context: UnifiedSetupPlanContext, targets: [String], approval: String?,
     recover: Bool = false, json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let store = SetupPackageInstallationStore(context: context)
     var reviewed: Inputs?
     var observation: HomebrewPackageObservation?
@@ -206,7 +206,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
   private func finish(
     _ pending: SetupPackageInstallationAttempt, context: UnifiedSetupPlanContext,
     store: SetupPackageInstallationStore, json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     var attempt = pending
     if let session = attempt.processSession,
       try HomebrewPackageInstallProcess.sessionExists(session)
@@ -285,7 +285,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     targets: [SetupPackageInstallationAttempt.Target] = [],
     observation: HomebrewPackageObservation? = nil,
     message: String, json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     struct Report: Encodable {
       let operation = "setup_install_packages"
       let outcome: String

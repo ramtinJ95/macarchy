@@ -21,7 +21,7 @@ struct KeybindingsListCommandRunner: Sendable {
   func execute(
     effectiveState: KeybindingEffectiveBehavior,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report = EffectiveKeybindingsListReport(effectiveState)
     return (try report.render(json: json), report.succeeded)
   }
@@ -30,7 +30,7 @@ struct KeybindingsListCommandRunner: Sendable {
     configurationURL: URL,
     catalogURL: URL,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let parsed: SkhdParseResult
     do {
       parsed = SkhdConfigurationParser().parse(try read(configurationURL))
@@ -82,7 +82,7 @@ struct KeybindingsListCommandRunner: Sendable {
   }
 }
 
-private struct EffectiveKeybindingsListReport: Encodable {
+private struct EffectiveKeybindingsListReport: CommandReport {
   let schemaVersion = 2
   let operation = "keybindings_list_effective"
   let status: KeybindingEffectiveStatus
@@ -120,8 +120,7 @@ private struct EffectiveKeybindingsListReport: Encodable {
       && status != .recoveryRequired
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
 
     var lines = [
       "Macarchy effective keybindings [\(status.rawValue)]:",
@@ -220,7 +219,7 @@ func readSkhdConfiguration(_ source: URL) throws -> String {
   return text
 }
 
-private struct KeybindingsListReport: Encodable {
+private struct KeybindingsListReport: CommandReport {
   let schemaVersion = 1
   let source: String
   let bindings: [KeybindingListRow]
@@ -228,8 +227,7 @@ private struct KeybindingsListReport: Encodable {
 
   var succeeded: Bool { diagnostics.isEmpty }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
 
     var lines = bindings.map { binding in
       var line = "\(binding.chord)\t\(binding.command)"

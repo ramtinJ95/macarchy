@@ -33,7 +33,7 @@ struct DesktopPlanCommandRunner: Sendable {
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil,
     requireRunningKeybindingProcess: Bool = true
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     var diagnostics: [DesktopPlanDiagnostic] = []
     let profile: PortableProfile?
     if let suppliedProfile {
@@ -503,7 +503,7 @@ struct DesktopPlanCommandRunner: Sendable {
   }
 }
 
-private struct DesktopPlanReport: Encodable {
+private struct DesktopPlanReport: CommandReport {
   let schemaVersion = 1
   let operation = "desktop_plan"
   let outcome: String
@@ -529,8 +529,7 @@ private struct DesktopPlanReport: Encodable {
   let actions: [DesktopPlanAction]
   let diagnostics: [DesktopPlanDiagnostic]
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy desktop plan [\(outcome)]:",
       "- profile [\(profileStatus)]: \(profile)",

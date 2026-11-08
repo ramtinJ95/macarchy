@@ -371,7 +371,7 @@ struct EnvironmentSessionVerifier: Sendable {
   }
 }
 
-struct EnvironmentLifecycleReport: Encodable {
+struct EnvironmentLifecycleReport: CommandReport {
   let schemaVersion = 1
   let operation: String
   let outcome: String
@@ -399,8 +399,7 @@ struct EnvironmentLifecycleReport: Encodable {
     ["converged", "applied", "no_change", "ready", "restored", "absent"].contains(outcome)
   }
 
-  func render(json: Bool) throws -> String {
-    if json { return try renderJSON(self) }
+  func renderText() throws -> String {
     var lines = [
       "Macarchy \(operation.replacingOccurrences(of: "_", with: " ")) [\(outcome)]:",
       "- \(message)",
@@ -502,7 +501,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     json: Bool,
     profile: PortableProfile? = nil
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     try run(
       operation: "environment_status", resourcesRoot: resourcesRoot, profileURL: profileURL,
       profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
@@ -520,7 +519,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     json: Bool,
     profile: PortableProfile? = nil
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     try run(
       operation: "environment_doctor", resourcesRoot: resourcesRoot, profileURL: profileURL,
       profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
@@ -539,7 +538,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     json: Bool,
     profile: PortableProfile
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     try run(
       operation: "environment_apply", resourcesRoot: resourcesRoot, profileURL: profileURL,
       profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
@@ -559,7 +558,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
     applied: EnvironmentApplyObservation?,
     json: Bool,
     profile suppliedProfile: PortableProfile?
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let profile: PortableProfile
     let composition: EnvironmentComposition
     do {

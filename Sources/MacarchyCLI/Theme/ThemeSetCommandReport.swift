@@ -58,7 +58,7 @@ enum ThemeSetReport {
     .precommitFailure(themeID: themeID, error: String(describing: error))
   }
 
-  func execution(json: Bool) throws -> (output: String, succeeded: Bool) {
+  func execution(json: Bool) throws -> CommandExecution {
     (try render(json: json), succeeded)
   }
 

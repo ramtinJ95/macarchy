@@ -11,7 +11,7 @@ struct ThemeStatusCommandRunner: Sendable {
   func execute(
     stateRoot: URL,
     json: Bool
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let report: ThemeStatusReport
     do {
       let snapshot = try read(stateRoot)

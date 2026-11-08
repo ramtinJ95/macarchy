@@ -29,7 +29,7 @@ struct DesktopDoctorCommandRunner: Sendable {
     json: Bool,
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil
-  ) throws -> (output: String, succeeded: Bool) {
+  ) throws -> CommandExecution {
     let desired: DesktopDesiredState
     do {
       desired = try DesktopDesiredState.load(

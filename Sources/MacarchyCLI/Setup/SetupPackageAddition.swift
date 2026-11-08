@@ -35,7 +35,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
   func execute(
     context: UnifiedSetupPlanContext, targets: [String], machineOnly: Bool = false,
     approval: String?, recover: Bool = false, json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     var reviewed: Prepared?
     var intent = "unchanged"
     var stages: [SetupComponentExecution] = []
@@ -290,7 +290,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
     _ outcome: String, prepared: Prepared?, intent: String,
     stages: [SetupComponentExecution], message: String, json: Bool
   )
-    throws -> (output: String, succeeded: Bool)
+    throws -> CommandExecution
   {
     struct Report: Encodable {
       let operation = "setup_add_packages"

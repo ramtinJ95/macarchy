@@ -32,7 +32,7 @@ struct ReconcileCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     json: Bool
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     let report: ReconcileReport
     do {
       if dryRun {

@@ -356,10 +356,10 @@ struct ThemeBrowserApplyRunner: Sendable {
   let activeThemeID: @Sendable (URL) throws -> String?
   let setActiveBackground:
     @Sendable (ThemeRepository, String, URL, ThemeConsumerPaths) async throws
-      -> (output: String, succeeded: Bool)
+      -> CommandExecution
   let setThemeAndBackground:
     @Sendable (ThemeRepository, String, String?, URL, ThemeConsumerPaths) async throws
-      -> (output: String, succeeded: Bool)
+      -> CommandExecution
 
   static let live = ThemeBrowserApplyRunner(
     activeThemeID: { try ThemeGenerationReader(root: $0).activeManifestIfPresent()?.themeID },
@@ -391,7 +391,7 @@ struct ThemeBrowserApplyRunner: Sendable {
     backgroundID: String?,
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths
-  ) async throws -> (output: String, succeeded: Bool) {
+  ) async throws -> CommandExecution {
     if try activeThemeID(stateRoot) == themeID, let backgroundID {
       return try await setActiveBackground(
         repository,
