@@ -52,7 +52,7 @@ struct YabaiWallpaperSignal: Sendable {
     macarchyExecutableURL: URL = ExternalTool.macarchy
   ) -> Self {
     Self(
-      configurationURL: homeDirectory.appending(path: ".config/yabai/yabairc"),
+      configurationURL: homeDirectory.appending(path: ConsumerHomePath.yabaiConfiguration),
       macarchyExecutableURL: macarchyExecutableURL,
       yabaiExecutableURL: ExternalTool.yabai,
       compatibleMacarchyExecutableURLs: [

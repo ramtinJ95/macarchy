@@ -685,7 +685,8 @@ struct DesktopApplyCommandRunner: Sendable {
     let ownershipStore = YabaiOwnershipStore(stateRoot: stateRoot)
     let previousOwnership = try ownershipStore.read()
     let providerInspector = YabaiProviderPlanInspector()
-    let directory = homeDirectory.appending(path: ".config/yabai", directoryHint: .isDirectory)
+    let directory = homeDirectory.appending(
+      path: ConsumerHomePath.yabaiDirectory, directoryHint: .isDirectory)
     let entry = directory.appending(path: "yabairc")
     let provider = providerInspector.inspect(
       homeDirectory: homeDirectory,

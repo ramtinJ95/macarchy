@@ -579,7 +579,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       result.append(
         UnifiedSetupFile(
           id: "skhd_entry",
-          path: homeDirectory.appending(path: ".config/skhd/skhdrc").path,
+          path: homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration).path,
           status: try keybindings.providerStatus,
           ownership: try keybindings.ownership
         )

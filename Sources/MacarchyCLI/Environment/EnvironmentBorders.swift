@@ -219,7 +219,7 @@ extension EnvironmentProviderInspector {
 }
 
 func verifyRestoredBordersStartup(homeDirectory: URL) throws {
-  let primary = homeDirectory.appending(path: ".config/borders/bordersrc")
+  let primary = homeDirectory.appending(path: ConsumerHomePath.bordersConfiguration)
   let fallback = homeDirectory.appending(path: ".bordersrc")
   let startup = FileManager.default.fileExists(atPath: primary.path) ? primary : fallback
   if FileManager.default.fileExists(atPath: startup.path),

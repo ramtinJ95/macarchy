@@ -104,7 +104,7 @@ struct RetainedOwnershipMigration {
       if updated.original.volumeUUID == nil { updated.original.volumeUUID = uuid }
       let generation = SketchyBarGenerationInspector(stateRoot: stateRoot).inspect()
       let inspection = try SketchyBarProviderPlanInspector().inspectManaged(
-        updated, entry: homeDirectory.appending(path: ".config/sketchybar/sketchybarrc"),
+        updated, entry: homeDirectory.appending(path: ConsumerHomePath.sketchyBarConfiguration),
         expectedTarget: SketchyBarProviderPlanInspector.managedTarget(
           homeDirectory: homeDirectory, stateRoot: stateRoot), generation: generation
       )
@@ -123,7 +123,7 @@ struct RetainedOwnershipMigration {
       guard let record = try store.read(), let path = record.retainedOriginalPath else {
         throw failure("no retained yabai original to migrate")
       }
-      let entry = homeDirectory.appending(path: ".config/yabai/yabairc")
+      let entry = homeDirectory.appending(path: ConsumerHomePath.yabaiConfiguration)
       let retained = URL(filePath: path)
       let prefix = "retained-"
       guard

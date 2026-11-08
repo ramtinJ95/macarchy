@@ -13,7 +13,7 @@ struct EnvironmentNativeFileConnection {
 
   var publicURL: URL {
     provider == .kitty
-      ? homeDirectory.appending(path: ".config/kitty")
+      ? homeDirectory.appending(path: ConsumerHomePath.kittyDirectory)
       : provider.standardURL(homeDirectory: homeDirectory)
   }
   private var operation: EnvironmentTransactionOperation {
@@ -36,7 +36,10 @@ struct EnvironmentNativeFileConnection {
     }
     return Set((names + ["native-source.txt"]).map { provider.rawValue + "/" + $0 })
   }
-  var themeURL: URL { homeDirectory.appending(path: ".config/atuin/themes/macarchy-current.toml") }
+  var themeURL: URL {
+    homeDirectory.appending(
+      path: "\(ConsumerHomePath.atuinDirectory)/themes/\(AtuinAdapter.themeName).toml")
+  }
 
   struct Plan {
     let approval: String

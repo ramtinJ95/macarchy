@@ -26,7 +26,7 @@ struct MenuNeovimSetup {
       homeDirectory: homeDirectory, stateRoot: context.stateRoot)
     let active = migration.nativeTarget(in: ownership)
     let options = layered.profile.environment.neovim
-    let standard = homeDirectory.appending(path: ".config/nvim")
+    let standard = homeDirectory.appending(path: ConsumerHomePath.neovimDirectory)
     if options.nativeConfigurationDirectoryURL == nil, options.configurationDirectoryURL == nil,
       active == nil, ownership?.records.contains(where: { $0.id == .neovim }) == true
     {
@@ -201,7 +201,7 @@ struct MenuNeovimSetup {
     let migration = EnvironmentNeovimMigration(
       homeDirectory: homeDirectory, stateRoot: context.stateRoot)
     let (plan, _) = try migration.plan()
-    let standard = homeDirectory.appending(path: ".config/nvim")
+    let standard = homeDirectory.appending(path: ConsumerHomePath.neovimDirectory)
     let edit = try MenuNativeProfileEdit.prepare(context: context, source: standard)
     io.write(
       "\(plan.message)\nIntermediate writable tree: \(plan.destination)\nA separately reviewed move to \(standard.path) follows.\n"

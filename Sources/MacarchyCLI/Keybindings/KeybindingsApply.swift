@@ -1505,7 +1505,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
 
   /// The skhd entry point under the caller's home, as passed (not standardized).
   private func skhdEntry(_ homeDirectory: URL) -> URL {
-    homeDirectory.appending(path: ".config/skhd/skhdrc")
+    homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration)
   }
 
   private func entryDrift(_ homeDirectory: URL) -> SetupOwnershipError {

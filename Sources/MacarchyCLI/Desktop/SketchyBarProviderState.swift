@@ -216,7 +216,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     transactionPending: Bool = false
   ) -> DesktopProviderPlanInspection {
     let directory = homeDirectory.appending(
-      path: ".config/sketchybar",
+      path: ConsumerHomePath.sketchyBarDirectory,
       directoryHint: .isDirectory
     )
     let entry = directory.appending(path: "sketchybarrc")

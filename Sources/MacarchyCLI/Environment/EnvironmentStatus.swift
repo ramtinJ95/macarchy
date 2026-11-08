@@ -45,7 +45,8 @@ struct EnvironmentPrerequisiteInspector: Sendable {
           version: {
             try PiAdapter(
               root: StateLayout.defaultRoot(in: homeDirectory),
-              configurationDirectoryURL: homeDirectory.appending(path: ".pi/agent"),
+              configurationDirectoryURL: homeDirectory.appending(
+                path: ConsumerHomePath.piDirectory),
               executableURL: PiAdapter.liveExecutableURL,
               controlIsAvailable: { true },
               processRunner: .live
@@ -65,7 +66,8 @@ struct EnvironmentPrerequisiteInspector: Sendable {
           version: {
             try CodexAdapter(
               root: StateLayout.defaultRoot(in: homeDirectory),
-              configurationDirectoryURL: homeDirectory.appending(path: ".codex"),
+              configurationDirectoryURL: homeDirectory.appending(
+                path: ConsumerHomePath.codexDirectory),
               executableURL: CodexAdapter.liveExecutableURL,
               controlIsAvailable: { true },
               processRunner: .live
@@ -98,7 +100,8 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             version: {
               try HerdrAdapter(
                 root: StateLayout.defaultRoot(in: homeDirectory),
-                configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
+                configurationURL: homeDirectory.appending(
+                  path: ConsumerHomePath.herdrConfiguration),
                 executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
                 controlIsAvailable: { true },
                 processRunner: .live
@@ -214,7 +217,8 @@ struct EnvironmentPrerequisiteInspector: Sendable {
   static func spicetifyPreparation(homeDirectory: URL) -> [EnvironmentPrerequisiteStatus] {
     do {
       try SpicetifyAdapter.requireRefreshPreparation(
-        configurationDirectoryURL: homeDirectory.appending(path: ".config/spicetify"))
+        configurationDirectoryURL: homeDirectory.appending(
+          path: ConsumerHomePath.spicetifyDirectory))
       return [
         EnvironmentPrerequisiteStatus(
           id: "spicetify_preparation", status: "present",
@@ -268,20 +272,22 @@ extension ThemeConsumerPaths {
     stateRoot: URL, homeDirectory: URL, ownership: EnvironmentOwnership? = nil
   ) -> ThemeConsumerPaths {
     ThemeConsumerPaths(
-      kittyConfigurationURL: homeDirectory.appending(path: ".config/kitty/kitty.conf"),
+      kittyConfigurationURL: homeDirectory.appending(path: ConsumerHomePath.kittyConfiguration),
       sketchyBarConfigurationURL: sketchyBarConfigurationURL,
-      shellConfigurationURL: homeDirectory.appending(path: ".zshrc"),
-      ezaConfigurationDirectoryURL: homeDirectory.appending(path: ".config/eza"),
-      batConfigurationDirectoryURL: homeDirectory.appending(path: ".config/bat"),
+      shellConfigurationURL: homeDirectory.appending(path: ConsumerHomePath.shellConfiguration),
+      ezaConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.ezaDirectory),
+      batConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.batDirectory),
       batCacheDirectoryURL: batCacheDirectoryURL,
-      btopConfigurationDirectoryURL: homeDirectory.appending(path: ".config/btop"),
-      yaziConfigurationDirectoryURL: homeDirectory.appending(path: ".config/yazi"),
+      btopConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.btopDirectory),
+      yaziConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.yaziDirectory),
       atuinConfigurationDirectoryURL: homeDirectory.appending(
-        path: ".config/atuin",
+        path: ConsumerHomePath.atuinDirectory,
         directoryHint: .isDirectory
       ),
-      neovimConfigurationDirectoryURL: homeDirectory.appending(path: ".config/nvim"),
-      starshipConfigurationURL: homeDirectory.appending(path: ".config/starship.toml"),
+      neovimConfigurationDirectoryURL: homeDirectory.appending(
+        path: ConsumerHomePath.neovimDirectory),
+      starshipConfigurationURL: homeDirectory.appending(
+        path: ConsumerHomePath.starshipConfiguration),
       starshipBehaviorURL: EnvironmentNativeFileMigration.starshipBehaviorURL(
         homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership),
       piConfigurationDirectoryURL: piConfigurationDirectoryURL,
@@ -327,7 +333,7 @@ struct EnvironmentSessionVerifier: Sendable {
       verifyFreshSession(
         profile, homeDirectory,
         requireManagedMarker: profile.zsh.configurationURL
-          != homeDirectory.appending(path: ".zshrc"))
+          != homeDirectory.appending(path: ConsumerHomePath.shellConfiguration))
     },
     verifyRestored: { profile, homeDirectory in
       verifyFreshSession(profile, homeDirectory, requireManagedMarker: false)

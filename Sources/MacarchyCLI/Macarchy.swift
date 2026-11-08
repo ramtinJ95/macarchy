@@ -45,55 +45,55 @@ struct Macarchy: AsyncParsableCommand {
     var stateRoot = StateLayout.defaultRootPath
 
     @Option(help: "Kitty configuration file.")
-    var kittyConfig = homePath(".config/kitty/kitty.conf")
+    var kittyConfig = homePath(ConsumerHomePath.kittyConfiguration)
 
     @Option(help: "SketchyBar entry configuration file.")
-    var sketchyBarConfig = homePath(".config/sketchybar/sketchybarrc")
+    var sketchyBarConfig = homePath(ConsumerHomePath.sketchyBarConfiguration)
 
     @Option(help: "Shell configuration file.")
-    var shellConfig = homePath(".zshrc")
+    var shellConfig = homePath(ConsumerHomePath.shellConfiguration)
 
     @Option(help: "eza configuration directory.")
-    var ezaConfigDir = homePath(".config/eza", directory: true)
+    var ezaConfigDir = homePath(ConsumerHomePath.ezaDirectory, directory: true)
 
     @Option(help: "bat configuration directory.")
-    var batConfigDir = homePath(".config/bat", directory: true)
+    var batConfigDir = homePath(ConsumerHomePath.batDirectory, directory: true)
 
     @Option(help: "bat cache directory.")
     var batCacheDir = homePath(".cache/bat", directory: true)
 
     @Option(help: "btop configuration directory.")
-    var btopConfigDir = homePath(".config/btop", directory: true)
+    var btopConfigDir = homePath(ConsumerHomePath.btopDirectory, directory: true)
 
     @Option(help: "Yazi configuration directory.")
-    var yaziConfigDir = homePath(".config/yazi", directory: true)
+    var yaziConfigDir = homePath(ConsumerHomePath.yaziDirectory, directory: true)
 
     @Option(help: "Atuin configuration directory.")
-    var atuinConfigDir = homePath(".config/atuin", directory: true)
+    var atuinConfigDir = homePath(ConsumerHomePath.atuinDirectory, directory: true)
 
     @Option(help: "Neovim configuration directory.")
-    var neovimConfigDir = homePath(".config/nvim", directory: true)
+    var neovimConfigDir = homePath(ConsumerHomePath.neovimDirectory, directory: true)
 
     @Option(help: "Starship configuration file.")
-    var starshipConfig = homePath(".config/starship.toml")
+    var starshipConfig = homePath(ConsumerHomePath.starshipConfiguration)
 
     @Option(help: "Starship behavior source file.")
-    var starshipBehavior = homePath(".config/starship/behavior.toml")
+    var starshipBehavior = homePath(ConsumerHomePath.starshipBehavior)
 
     @Option(help: "Pi configuration directory.")
-    var piConfigDir = homePath(".pi/agent", directory: true)
+    var piConfigDir = homePath(ConsumerHomePath.piDirectory, directory: true)
 
     @Option(help: "Herdr configuration file.")
-    var herdrConfig = homePath(".config/herdr/config.toml")
+    var herdrConfig = homePath(ConsumerHomePath.herdrConfiguration)
 
     @Option(help: "tuicr configuration directory.")
-    var tuicrConfigDir = homePath(".config/tuicr", directory: true)
+    var tuicrConfigDir = homePath(ConsumerHomePath.tuicrDirectory, directory: true)
 
     @Option(help: "Codex configuration directory.")
-    var codexConfigDir = homePath(".codex", directory: true)
+    var codexConfigDir = homePath(ConsumerHomePath.codexDirectory, directory: true)
 
     @Option(help: "Spicetify configuration directory.")
-    var spicetifyConfigDir = homePath(".config/spicetify", directory: true)
+    var spicetifyConfigDir = homePath(ConsumerHomePath.spicetifyDirectory, directory: true)
 
     var stateRootURL: URL {
       URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL

@@ -16,7 +16,7 @@ extension EnvironmentProviderInspector {
     guard composition.profile.presets.herdr || ownership != nil else {
       return (nil, nil, nil)
     }
-    let url = homeDirectory.appending(path: ".config/herdr/config.toml")
+    let url = homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration)
     let transaction = EnvironmentHerdrFileTransaction(
       homeDirectory: homeDirectory,
       stateRoot: stateRoot
