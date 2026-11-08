@@ -99,8 +99,8 @@ package struct KeybindingGenerationActivator: Sendable {
     try faultInjector(.stagingCreated)
     try PinnedFilesystem.writeNewRegularFile(
       parentDescriptor: stagingDescriptor,
-      name: "skhdrc",
-      url: stagingURL.appending(path: "skhdrc"),
+      name: SkhdLayout.configurationName,
+      url: stagingURL.appending(path: SkhdLayout.configurationName),
       data: Data(rendered.utf8),
       mode: 0o444
     )
@@ -340,7 +340,7 @@ package struct KeybindingGenerationActivator: Sendable {
       url: url,
       limit: 3
     )
-    let expected = Set(["manifest.json", "skhdrc"])
+    let expected = Set(["manifest.json", SkhdLayout.configurationName])
     guard
       !inventory.truncated,
       allowPartial
@@ -352,7 +352,7 @@ package struct KeybindingGenerationActivator: Sendable {
     guard fchmod(descriptor, 0o755) == 0 else {
       throw KeybindingGenerationActivationError.system("make generation removable", url, errno)
     }
-    for file in ["manifest.json", "skhdrc"] {
+    for file in ["manifest.json", SkhdLayout.configurationName] {
       let removed = file.withCString { Darwin.unlinkat(descriptor, $0, 0) }
       guard removed == 0 || errno == ENOENT else {
         throw KeybindingGenerationActivationError.system(

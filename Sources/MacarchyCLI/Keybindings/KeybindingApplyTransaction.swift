@@ -89,7 +89,7 @@ struct KeybindingApplyTransactionStore: Sendable {
   private var files: KeybindingStateFiles { KeybindingStateFiles(stateRoot: stateRoot) }
 
   func read() throws -> KeybindingApplyTransaction? {
-    guard let data = try files.read("transaction.json") else { return nil }
+    guard let data = try files.read(SkhdLayout.transactionFileName) else { return nil }
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw KeybindingApplyTransactionError.invalid("transaction root must be an object")
     }
@@ -175,11 +175,12 @@ struct KeybindingApplyTransactionStore: Sendable {
   }
 
   func write(_ transaction: KeybindingApplyTransaction) throws {
-    try files.write(transaction, to: "transaction.json")
+    try files.write(transaction, to: SkhdLayout.transactionFileName)
   }
 
   func remove() throws {
-    try files.remove("transaction.json", label: "transaction", ignoringMissingDirectory: false)
+    try files.remove(
+      SkhdLayout.transactionFileName, label: "transaction", ignoringMissingDirectory: false)
   }
 }
 
@@ -388,15 +389,16 @@ struct KeybindingLifecycleEvidenceStore: Sendable {
     guard evidence.isValid else {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence is incomplete")
     }
-    try files.write(evidence, to: "lifecycle.json")
+    try files.write(evidence, to: SkhdLayout.lifecycleFileName)
   }
 
   func remove() throws {
-    try files.remove("lifecycle.json", label: "lifecycle evidence", ignoringMissingDirectory: true)
+    try files.remove(
+      SkhdLayout.lifecycleFileName, label: "lifecycle evidence", ignoringMissingDirectory: true)
   }
 
   private func read() throws -> KeybindingLifecycleEvidence? {
-    guard let data = try files.read("lifecycle.json") else { return nil }
+    guard let data = try files.read(SkhdLayout.lifecycleFileName) else { return nil }
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw KeybindingApplyTransactionError.invalid("lifecycle evidence root must be an object")
     }

@@ -19,7 +19,7 @@ extension KeybindingProviderTransaction {
     defer { Darwin.close(directoryDescriptor) }
     let data = try PinnedFilesystem.readRegularFile(
       parentDescriptor: directoryDescriptor,
-      name: "skhdrc",
+      name: SkhdLayout.configurationName,
       url: entry,
       maximumSize: SetupOwnershipManager.maximumConfigurationSize
     ).data
@@ -38,14 +38,15 @@ extension KeybindingProviderTransaction {
   func replaceOriginalLeafWithManaged(_ record: SetupOwnershipRecord) throws {
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
-    let claim = claimName(record, directory: false)
+    let claim = claimName(record, .leaf)
     try resumeProviderDeletionResidue(
       parentDescriptor: descriptor,
       name: claim,
       record: record,
       url: directory.appending(path: claim)
     )
-    let state = try leafState(descriptor: descriptor, name: "skhdrc", record: record)
+    let state = try leafState(
+      descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
     var claimState = try leafState(
       descriptor: descriptor,
       name: claim,
@@ -68,7 +69,8 @@ extension KeybindingProviderTransaction {
     }
     if state == .original, claimState == .managed {
       try displaceOriginal(
-        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
+        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
+        url: entry)
       try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: entry)
       return
     }
@@ -78,15 +80,16 @@ extension KeybindingProviderTransaction {
     try createSymlink(
       descriptor: descriptor,
       name: claim,
-      destination: KeybindingProviderInspector.managedTarget,
+      destination: SkhdLayout.managedTarget,
       url: entry,
       record: record
     )
     if state == .missing {
-      try rename(descriptor: descriptor, from: claim, to: "skhdrc", url: entry)
+      try rename(descriptor: descriptor, from: claim, to: SkhdLayout.configurationName, url: entry)
     } else {
       try displaceOriginal(
-        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
+        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
+        url: entry)
       guard
         try leafState(
           descriptor: descriptor,
@@ -109,14 +112,15 @@ extension KeybindingProviderTransaction {
     }
     let descriptor = try PinnedFilesystem.openDirectory(at: directory)
     defer { Darwin.close(descriptor) }
-    let claim = claimName(record, directory: false)
+    let claim = claimName(record, .leaf)
     try resumeProviderDeletionResidue(
       parentDescriptor: descriptor,
       name: claim,
       record: record,
       url: directory.appending(path: claim)
     )
-    let state = try leafState(descriptor: descriptor, name: "skhdrc", record: record)
+    let state = try leafState(
+      descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
     var claimState = try leafState(
       descriptor: descriptor,
       name: claim,
@@ -139,7 +143,7 @@ extension KeybindingProviderTransaction {
       if state == .original,
         try claimMarkerMatches(
           parentDescriptor: descriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           record: record,
           url: entry
         )
@@ -147,7 +151,7 @@ extension KeybindingProviderTransaction {
         try finalizeRestoredOriginal(
           record,
           parentDescriptor: descriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           url: entry
         )
       }
@@ -155,7 +159,8 @@ extension KeybindingProviderTransaction {
     }
     if state == .managed, claimState == .original {
       try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
+        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
+        url: entry)
       try removeMarkedItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
       return
@@ -165,14 +170,15 @@ extension KeybindingProviderTransaction {
     }
     switch originalKind(record) {
     case .absent:
-      try rename(descriptor: descriptor, from: "skhdrc", to: claim, url: entry)
+      try rename(descriptor: descriptor, from: SkhdLayout.configurationName, to: claim, url: entry)
       try faultInjector(.managedEntryClaimedForRemoval)
       try removeMarkedItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .regularFile:
       try restoreRegularFileClaim(record, descriptor: descriptor, name: claim)
       try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
+        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
+        url: entry)
       try removeMarkedItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .symbolicLink:
@@ -184,7 +190,8 @@ extension KeybindingProviderTransaction {
         record: record
       )
       try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: "skhdrc", claim: claim, url: entry)
+        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
+        url: entry)
       try removeMarkedItem(
         parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .directorySymbolicLink:
@@ -196,7 +203,7 @@ extension KeybindingProviderTransaction {
   func replaceOriginalDirectoryWithManaged(_ record: SetupOwnershipRecord) throws {
     let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
     defer { Darwin.close(descriptor) }
-    let claim = claimName(record, directory: true)
+    let claim = claimName(record, .directory)
     try resumeProviderDeletionResidue(
       parentDescriptor: descriptor,
       name: claim,
@@ -204,7 +211,8 @@ extension KeybindingProviderTransaction {
       url: configurationDirectory.appending(path: claim),
       directory: true
     )
-    let state = try directoryState(descriptor: descriptor, name: "skhd", record: record)
+    let state = try directoryState(
+      descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
     var claimState = try directoryState(
       descriptor: descriptor,
       name: claim,
@@ -230,7 +238,8 @@ extension KeybindingProviderTransaction {
     }
     if state == .original, claimState == .managed {
       try displaceOriginal(
-        record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
+        record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
+        url: directory)
       try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: directory)
       return
     }
@@ -239,7 +248,8 @@ extension KeybindingProviderTransaction {
     }
     try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
     try displaceOriginal(
-      record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
+      record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
+      url: directory)
     guard
       try directoryState(
         descriptor: descriptor,
@@ -257,7 +267,7 @@ extension KeybindingProviderTransaction {
     }
     let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
     defer { Darwin.close(descriptor) }
-    let claim = claimName(record, directory: true)
+    let claim = claimName(record, .directory)
     try resumeProviderDeletionResidue(
       parentDescriptor: descriptor,
       name: claim,
@@ -265,7 +275,8 @@ extension KeybindingProviderTransaction {
       url: configurationDirectory.appending(path: claim),
       directory: true
     )
-    let state = try directoryState(descriptor: descriptor, name: "skhd", record: record)
+    let state = try directoryState(
+      descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
     var claimState = try directoryState(
       descriptor: descriptor,
       name: claim,
@@ -285,14 +296,14 @@ extension KeybindingProviderTransaction {
       }
       if try claimMarkerMatches(
         parentDescriptor: descriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         record: record,
         url: directory
       ) {
         try finalizeRestoredOriginal(
           record,
           parentDescriptor: descriptor,
-          name: "skhd",
+          name: SkhdLayout.directoryName,
           url: directory
         )
       }
@@ -300,7 +311,8 @@ extension KeybindingProviderTransaction {
     }
     if state == .managed, claimState == .original {
       try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
+        record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
+        url: directory)
       try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
       return
     }
@@ -315,7 +327,8 @@ extension KeybindingProviderTransaction {
       record: record
     )
     try publishRestoredOriginal(
-      record, descriptor: descriptor, liveName: "skhd", claim: claim, url: directory)
+      record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
+      url: directory)
     try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
   }
 
@@ -327,18 +340,21 @@ extension KeybindingProviderTransaction {
     case .directorySymbolicLink:
       let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
       defer { Darwin.close(descriptor) }
-      guard try directoryState(descriptor: descriptor, name: "skhd", record: record) == .original
+      guard
+        try directoryState(descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
+          == .original
       else { throw SetupOwnershipError.ownershipDrift(directory) }
       try authenticateOriginalSymlinkAtPath(
         record,
         parentDescriptor: descriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: directory
       )
     case .absent, .regularFile, .symbolicLink:
       let descriptor = try PinnedFilesystem.openDirectory(at: directory)
       defer { Darwin.close(descriptor) }
-      let state = try leafState(descriptor: descriptor, name: "skhdrc", record: record)
+      let state = try leafState(
+        descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
       guard state == .original || (state == .missing && originalKind(record) == .absent) else {
         throw SetupOwnershipError.ownershipDrift(entry)
       }
@@ -346,7 +362,7 @@ extension KeybindingProviderTransaction {
         try authenticateOriginalSymlinkAtPath(
           record,
           parentDescriptor: descriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           url: entry
         )
       }
@@ -358,11 +374,11 @@ extension KeybindingProviderTransaction {
     directoryLevel: Bool
   ) throws {
     let parentURL = directoryLevel ? configurationDirectory : directory
-    let liveName = directoryLevel ? "skhd" : "skhdrc"
+    let liveName = directoryLevel ? SkhdLayout.directoryName : SkhdLayout.configurationName
     let liveURL = directoryLevel ? directory : entry
     let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
-    let claim = claimName(record, directory: directoryLevel)
+    let claim = claimName(record, directoryLevel ? .directory : .leaf)
     func state(_ name: String, recognizeIncompleteClaim: Bool = false) throws -> ProviderItemState {
       try directoryLevel
         ? directoryState(
@@ -450,7 +466,7 @@ extension KeybindingProviderTransaction {
         name: name,
         url: url
       )
-      if destination == KeybindingProviderInspector.managedTarget {
+      if destination == SkhdLayout.managedTarget {
         return markerMatches ? .managed : .other
       }
       if originalKind(record) == .symbolicLink,
@@ -522,13 +538,15 @@ extension KeybindingProviderTransaction {
     if inventory.entries.isEmpty, !inventory.truncated, recognizeIncompleteClaim {
       return .incomplete
     }
-    guard inventory.entries == ["skhdrc"], !inventory.truncated else { return .other }
+    guard inventory.entries == [SkhdLayout.configurationName], !inventory.truncated else {
+      return .other
+    }
     let target = try PinnedFilesystem.symlinkDestination(
       parentDescriptor: directoryDescriptor,
-      name: "skhdrc",
-      url: url.appending(path: "skhdrc")
+      name: SkhdLayout.configurationName,
+      url: url.appending(path: SkhdLayout.configurationName)
     )
-    return target == KeybindingProviderInspector.managedTarget ? .managed : .other
+    return target == SkhdLayout.managedTarget ? .managed : .other
   }
 
   private func createManagedDirectory(
@@ -595,11 +613,11 @@ extension KeybindingProviderTransaction {
       url: needsPublication ? publicationURL : url,
       limit: 2
     )
-    if inventory.entries == ["skhdrc"], !inventory.truncated {
+    if inventory.entries == [SkhdLayout.configurationName], !inventory.truncated {
       guard
         try leafState(
           descriptor: descriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           record: record
         ) == .managed
       else { throw SetupOwnershipError.ownershipDrift(url) }
@@ -614,9 +632,9 @@ extension KeybindingProviderTransaction {
     }
     try createSymlink(
       descriptor: descriptor,
-      name: "skhdrc",
-      destination: KeybindingProviderInspector.managedTarget,
-      url: (needsPublication ? publicationURL : url).appending(path: "skhdrc"),
+      name: SkhdLayout.configurationName,
+      destination: SkhdLayout.managedTarget,
+      url: (needsPublication ? publicationURL : url).appending(path: SkhdLayout.configurationName),
       record: record
     )
     try faultInjector(.directoryClaimPopulated)
@@ -686,7 +704,7 @@ extension KeybindingProviderTransaction {
     let manager = SetupOwnershipManager()
     let current = try manager.openPinnedRegularFile(
       parentDescriptor: descriptor,
-      name: "skhdrc",
+      name: SkhdLayout.configurationName,
       url: entry,
       label: "skhd entry"
     )
@@ -709,7 +727,7 @@ extension KeybindingProviderTransaction {
     else { throw SetupOwnershipError.ownershipDrift(entry) }
 
     try faultInjector(.regularOriginalPinned)
-    try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
+    try swap(descriptor: descriptor, first: SkhdLayout.configurationName, second: claim, url: entry)
     try faultInjector(.providerClaimSwapped)
     do {
       let pathMetadata = try PinnedFilesystem.metadata(
@@ -730,7 +748,8 @@ extension KeybindingProviderTransaction {
       else { throw SetupOwnershipError.ownershipDrift(entry) }
     } catch {
       do {
-        try swap(descriptor: descriptor, first: "skhdrc", second: claim, url: entry)
+        try swap(
+          descriptor: descriptor, first: SkhdLayout.configurationName, second: claim, url: entry)
       } catch let rollbackError {
         throw SetupOwnershipError.system(
           "restore skhd entry after displacement authentication failed",
@@ -882,7 +901,7 @@ extension KeybindingProviderTransaction {
       guard
         try claimMarkerMatches(descriptor: descriptor, record: record, url: url)
       else { throw SetupOwnershipError.ownershipDrift(url) }
-      let nestedPublication = try publishingName("skhdrc", record: record)
+      let nestedPublication = try publishingName(SkhdLayout.configurationName, record: record)
       try removeMarkedItem(
         parentDescriptor: descriptor,
         name: nestedPublication,
@@ -897,11 +916,11 @@ extension KeybindingProviderTransaction {
       guard !inventory.truncated else {
         throw SetupOwnershipError.ownershipDrift(url)
       }
-      if inventory.entries == ["skhdrc"] {
+      if inventory.entries == [SkhdLayout.configurationName] {
         guard
           try leafState(
             descriptor: descriptor,
-            name: "skhdrc",
+            name: SkhdLayout.configurationName,
             record: record
           ) == .managed
         else {
@@ -909,9 +928,9 @@ extension KeybindingProviderTransaction {
         }
         try removeMarkedItem(
           parentDescriptor: descriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           record: record,
-          url: url.appending(path: "skhdrc")
+          url: url.appending(path: SkhdLayout.configurationName)
         )
         try faultInjector(.directoryClaimEntryRemoved)
       } else if !inventory.entries.isEmpty {

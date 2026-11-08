@@ -134,7 +134,9 @@ package struct KeybindingGenerationInspector: Sendable {
         url: generation,
         limit: 3
       )
-      guard inventory.entries == ["manifest.json", "skhdrc"], !inventory.truncated else {
+      guard inventory.entries == ["manifest.json", SkhdLayout.configurationName],
+        !inventory.truncated
+      else {
         return invalid("current generation contains an unknown or missing item")
       }
     } catch {
@@ -177,19 +179,19 @@ package struct KeybindingGenerationInspector: Sendable {
     guard isSHA256Digest(manifest.inputDigest) else {
       return invalid("current generation input digest is invalid")
     }
-    guard Set(manifest.artifacts.keys) == ["skhdrc"],
-      let expectedDigest = manifest.artifacts["skhdrc"],
+    guard Set(manifest.artifacts.keys) == [SkhdLayout.configurationName],
+      let expectedDigest = manifest.artifacts[SkhdLayout.configurationName],
       isSHA256Digest(expectedDigest)
     else {
       return invalid("current generation artifact manifest is invalid")
     }
 
-    let configurationURL = generation.appending(path: "skhdrc")
+    let configurationURL = generation.appending(path: SkhdLayout.configurationName)
     let configuration: String
     do {
       let file = try PinnedFilesystem.readRegularFile(
         parentDescriptor: generationDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: configurationURL
       )
       guard file.permissions & 0o222 == 0 else {
@@ -265,7 +267,7 @@ package struct KeybindingGenerationManifest: Codable, Equatable, Sendable {
     self.generationID = generationID
     rendererVersion = KeybindingComposer.rendererVersion
     self.inputDigest = inputDigest
-    artifacts = ["skhdrc": renderedDigest]
+    artifacts = [SkhdLayout.configurationName: renderedDigest]
   }
 
   enum CodingKeys: String, CodingKey, CaseIterable {

@@ -40,32 +40,22 @@ struct KeybindingProviderTransaction: Sendable {
     UInt32(UF_IMMUTABLE) | UInt32(UF_APPEND) | UInt32(UF_DATAVAULT)
     | UInt32(SF_IMMUTABLE) | UInt32(SF_APPEND) | UInt32(SF_RESTRICTED) | UInt32(SF_NOUNLINK)
 
-  let homeDirectory: URL
+  let layout: SkhdLayout
   let faultInjector: @Sendable (KeybindingProviderCheckpoint) throws -> Void
 
   init(
     homeDirectory: URL,
     faultInjector: @escaping @Sendable (KeybindingProviderCheckpoint) throws -> Void = { _ in }
   ) {
-    self.homeDirectory = homeDirectory.standardizedFileURL
+    layout = SkhdLayout(home: homeDirectory)
     self.faultInjector = faultInjector
   }
 
-  var configurationDirectory: URL {
-    homeDirectory.appending(path: ".config", directoryHint: .isDirectory)
-  }
-
-  var directory: URL {
-    configurationDirectory.appending(path: "skhd", directoryHint: .isDirectory)
-  }
-
-  var entry: URL {
-    directory.appending(path: "skhdrc")
-  }
-
-  var backup: URL {
-    homeDirectory.appending(path: ".config/macarchy/state/setup/backups/keybindings-skhdrc")
-  }
+  var homeDirectory: URL { layout.home }
+  var configurationDirectory: URL { layout.configurationDirectory }
+  var directory: URL { layout.directory }
+  var entry: URL { layout.entry }
+  var backup: URL { layout.backup }
 
   func preflightInstall(
     expectedEvidence: KeybindingAdoptionEvidence,
@@ -102,7 +92,7 @@ struct KeybindingProviderTransaction: Sendable {
       // Empty native configuration parents are retained, like other setup-created
       // directories. Only the provider entry is owned and removed on teardown.
       let native = try PinnedFilesystem.openOrCreateChildDirectory(
-        parentDescriptor: configuration, name: "skhd", url: directory)
+        parentDescriptor: configuration, name: SkhdLayout.directoryName, url: directory)
       Darwin.close(native)
     }
     let manager = SetupOwnershipManager()
@@ -121,8 +111,7 @@ struct KeybindingProviderTransaction: Sendable {
       approvedEvidenceDigest: approvedEvidenceDigest
     )
     defer { original.closePinnedDescriptor() }
-    let record = try original.record(
-      entry: entry, backup: backup, manager: manager, context: context)
+    let record = try original.record(layout: layout, manager: manager, context: context)
     do {
       try faultInjector(.regularCaptureReady)
       try revalidateCapturedRegularOriginal(original, manager: manager)
@@ -186,10 +175,11 @@ struct KeybindingProviderTransaction: Sendable {
     case .directorySymbolicLink:
       let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
       defer { Darwin.close(descriptor) }
-      let state = try directoryState(descriptor: descriptor, name: "skhd", record: record)
+      let state = try directoryState(
+        descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
       let claim = try directoryState(
         descriptor: descriptor,
-        name: claimName(record, directory: true),
+        name: claimName(record, .directory),
         record: record,
         recognizeIncompleteClaim: true
       )
@@ -210,7 +200,7 @@ struct KeybindingProviderTransaction: Sendable {
           try authenticateOriginalSymlinkAtPath(
             record,
             parentDescriptor: descriptor,
-            name: "skhd",
+            name: SkhdLayout.directoryName,
             url: directory
           )
         }
@@ -218,10 +208,11 @@ struct KeybindingProviderTransaction: Sendable {
     case .absent, .regularFile, .symbolicLink:
       let descriptor = try PinnedFilesystem.openDirectory(at: directory)
       defer { Darwin.close(descriptor) }
-      let state = try leafState(descriptor: descriptor, name: "skhdrc", record: record)
+      let state = try leafState(
+        descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
       let claim = try leafState(
         descriptor: descriptor,
-        name: claimName(record, directory: false),
+        name: claimName(record, .leaf),
         record: record,
         recognizeIncompleteClaim: true
       )
@@ -242,7 +233,7 @@ struct KeybindingProviderTransaction: Sendable {
           try authenticateOriginalSymlinkAtPath(
             record,
             parentDescriptor: descriptor,
-            name: "skhdrc",
+            name: SkhdLayout.configurationName,
             url: entry
           )
         }
@@ -274,10 +265,10 @@ struct KeybindingProviderTransaction: Sendable {
     try requireLegacyClaimAbsent(for: record)
     try verifyOriginal(record, context: context)
     let isDirectory = originalKind(record) == .directorySymbolicLink
-    let parentURL = isDirectory ? configurationDirectory : directory
+    let parentURL = layout.parent(level(record))
     let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
-    let claim = claimName(record, directory: isDirectory)
+    let claim = claimName(record, level(record))
     let claimState =
       if isDirectory {
         try directoryState(descriptor: parent, name: claim, record: record)
@@ -305,11 +296,10 @@ struct KeybindingProviderTransaction: Sendable {
 
   func preflightRetainedOriginalClaim(_ record: SetupOwnershipRecord) throws {
     guard retainsOriginalSymlink(record) else { return }
-    let isDirectory = originalKind(record) == .directorySymbolicLink
-    let parentURL = isDirectory ? configurationDirectory : directory
+    let parentURL = layout.parent(level(record))
     let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
-    let name = claimName(record, directory: isDirectory)
+    let name = claimName(record, level(record))
     let url = parentURL.appending(path: name)
     guard record.retainedOriginalPath == url.path else {
       throw SetupOwnershipError.invalidManifest(
@@ -394,30 +384,30 @@ struct KeybindingProviderTransaction: Sendable {
     defer { Darwin.close(configuration) }
     try requireAbsent(
       parentDescriptor: configuration,
-      name: ".skhd.macarchy-keybindings",
-      url: configurationDirectory.appending(path: ".skhd.macarchy-keybindings")
+      name: SkhdLayout.claimPrefix(.directory),
+      url: configurationDirectory.appending(path: SkhdLayout.claimPrefix(.directory))
     )
     let directoryMetadata = try PinnedFilesystem.metadata(
       parentDescriptor: configuration,
-      name: "skhd",
+      name: SkhdLayout.directoryName,
       url: directory
     )
     if directoryMetadata.st_mode & S_IFMT == S_IFDIR {
       let directoryDescriptor = try PinnedFilesystem.openDirectory(
         parentDescriptor: configuration,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: directory
       )
       defer { Darwin.close(directoryDescriptor) }
       try requireAbsent(
         parentDescriptor: directoryDescriptor,
-        name: ".skhdrc.macarchy-keybindings",
-        url: directory.appending(path: ".skhdrc.macarchy-keybindings")
+        name: SkhdLayout.claimPrefix(.leaf),
+        url: directory.appending(path: SkhdLayout.claimPrefix(.leaf))
       )
       try requireAbsent(
         parentDescriptor: directoryDescriptor,
-        name: legacyRestorationName,
-        url: directory.appending(path: legacyRestorationName)
+        name: SkhdLayout.legacyRestorationName,
+        url: directory.appending(path: SkhdLayout.legacyRestorationName)
       )
     }
   }
@@ -439,19 +429,19 @@ struct KeybindingProviderTransaction: Sendable {
     defer { Darwin.close(configurationDescriptor) }
     let directoryMetadata = try PinnedFilesystem.metadata(
       parentDescriptor: configurationDescriptor,
-      name: "skhd",
+      name: SkhdLayout.directoryName,
       url: directory
     )
     if directoryMetadata.st_mode & S_IFMT == S_IFLNK {
       try KeybindingProviderInspector.requireAdoptableSymlink(
         directoryMetadata,
         parentDescriptor: configurationDescriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: directory
       )
       let destination = try PinnedFilesystem.symlinkDestination(
         parentDescriptor: configurationDescriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: directory
       )
       let target = KeybindingProviderPrimitives.resolveSymlink(
@@ -465,22 +455,23 @@ struct KeybindingProviderTransaction: Sendable {
         url: target,
         limit: 2
       )
-      guard inventory.entries == ["skhdrc"], !inventory.truncated else {
+      guard inventory.entries == [SkhdLayout.configurationName], !inventory.truncated else {
         throw SetupOwnershipError.ownershipDrift(directory)
       }
       let source = try PinnedFilesystem.readRegularFile(
         parentDescriptor: targetDescriptor,
-        name: "skhdrc",
-        url: target.appending(path: "skhdrc"),
+        name: SkhdLayout.configurationName,
+        url: target.appending(path: SkhdLayout.configurationName),
         maximumSize: SetupOwnershipManager.maximumConfigurationSize
       )
       let sourceMetadata = try PinnedFilesystem.metadata(
         parentDescriptor: targetDescriptor,
-        name: "skhdrc",
-        url: target.appending(path: "skhdrc")
+        name: SkhdLayout.configurationName,
+        url: target.appending(path: SkhdLayout.configurationName)
       )
       guard sourceMetadata.st_mode & S_IFMT == S_IFREG, sourceMetadata.st_nlink == 1 else {
-        throw SetupOwnershipError.ownershipDrift(target.appending(path: "skhdrc"))
+        throw SetupOwnershipError.ownershipDrift(
+          target.appending(path: SkhdLayout.configurationName))
       }
       return OriginalEntry(
         kind: .directorySymbolicLink,
@@ -501,7 +492,7 @@ struct KeybindingProviderTransaction: Sendable {
 
     let directoryDescriptor = try PinnedFilesystem.openDirectory(
       parentDescriptor: configurationDescriptor,
-      name: "skhd",
+      name: SkhdLayout.directoryName,
       url: directory
     )
     defer { Darwin.close(directoryDescriptor) }
@@ -509,7 +500,7 @@ struct KeybindingProviderTransaction: Sendable {
     do {
       metadata = try PinnedFilesystem.metadata(
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: entry
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
@@ -532,7 +523,7 @@ struct KeybindingProviderTransaction: Sendable {
       try faultInjector(.regularPathInspected)
       let descriptor = try manager.openPinnedRegularFile(
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: entry,
         label: "skhd entry"
       )
@@ -547,7 +538,7 @@ struct KeybindingProviderTransaction: Sendable {
       )
       let boundMetadata = try PinnedFilesystem.metadata(
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: entry
       )
       guard
@@ -585,12 +576,12 @@ struct KeybindingProviderTransaction: Sendable {
       try KeybindingProviderInspector.requireAdoptableSymlink(
         metadata,
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: entry
       )
       let destination = try PinnedFilesystem.symlinkDestination(
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: entry
       )
       let resolved = KeybindingProviderPrimitives.resolveSymlink(
@@ -707,7 +698,7 @@ struct KeybindingProviderTransaction: Sendable {
     defer { Darwin.close(parent) }
     let path = try PinnedFilesystem.metadata(
       parentDescriptor: parent,
-      name: "skhdrc",
+      name: SkhdLayout.configurationName,
       url: entry
     )
     guard
@@ -732,11 +723,11 @@ struct KeybindingProviderTransaction: Sendable {
     let url: URL
     if original.kind == .directorySymbolicLink {
       parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-      name = ".skhd.macarchy-keybindings"
+      name = SkhdLayout.claimPrefix(.directory)
       url = configurationDirectory.appending(path: name)
     } else {
       parent = try PinnedFilesystem.openDirectory(at: directory)
-      name = ".skhdrc.macarchy-keybindings"
+      name = SkhdLayout.claimPrefix(.leaf)
       url = directory.appending(path: name)
     }
     defer { Darwin.close(parent) }
@@ -749,11 +740,11 @@ struct KeybindingProviderTransaction: Sendable {
     let url: URL
     if originalKind(record) == .directorySymbolicLink {
       parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-      name = ".skhd.macarchy-keybindings"
+      name = SkhdLayout.claimPrefix(.directory)
       url = configurationDirectory.appending(path: name)
     } else {
       parent = try PinnedFilesystem.openDirectory(at: directory)
-      name = ".skhdrc.macarchy-keybindings"
+      name = SkhdLayout.claimPrefix(.leaf)
       url = directory.appending(path: name)
     }
     defer { Darwin.close(parent) }
@@ -771,10 +762,6 @@ struct KeybindingProviderTransaction: Sendable {
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
       return
     }
-  }
-
-  var legacyRestorationName: String {
-    ".skhdrc.macarchy-legacy-restoration"
   }
 }
 
@@ -811,22 +798,18 @@ private struct OriginalEntry {
   }
 
   func record(
-    entry: URL,
-    backup: URL,
+    layout: SkhdLayout,
     manager: SetupOwnershipManager,
     context: SetupOwnershipManager.Context
   ) throws -> SetupOwnershipRecord {
+    let entry = layout.entry
     let nonce = UUID().uuidString.lowercased()
     let retainedOriginalPath: String? =
       switch kind {
       case .symbolicLink:
-        entry.deletingLastPathComponent().appending(
-          path: ".skhdrc.macarchy-keybindings-\(nonce)"
-        ).path
+        layout.claim(.leaf, nonce: nonce).path
       case .directorySymbolicLink:
-        entry.deletingLastPathComponent().deletingLastPathComponent().appending(
-          path: ".skhd.macarchy-keybindings-\(nonce)"
-        ).path
+        layout.claim(.directory, nonce: nonce).path
       case .absent, .regularFile:
         nil
       }
@@ -836,17 +819,17 @@ private struct OriginalEntry {
       kind: .symbolicLink,
       targetPath: entry.path,
       backupPath: kind == .regularFile
-        ? manager.relativePath(backup, below: context.stateRoot) : nil,
+        ? manager.relativePath(layout.backup, below: context.stateRoot) : nil,
       originalDigest: data.map(sha256Digest)
         ?? linkDestination.map { sha256Digest(Data($0.utf8)) },
-      installedDigest: sha256Digest(Data(KeybindingProviderInspector.managedTarget.utf8)),
-      linkDestination: KeybindingProviderInspector.managedTarget,
+      installedDigest: sha256Digest(Data(SkhdLayout.managedTarget.utf8)),
+      linkDestination: SkhdLayout.managedTarget,
       originalKind: kind,
       originalLinkDestination: linkDestination,
       originalFileMode: fileMode,
       originalMetadataDigest: metadataDigest,
       originalVolumeUUID: try retainedOriginalPath.map { _ in
-        let path = kind == .directorySymbolicLink ? entry.deletingLastPathComponent() : entry
+        let path = kind == .directorySymbolicLink ? layout.directory : entry
         var metadata = stat()
         guard lstat(path.path, &metadata) == 0,
           UInt64(metadata.st_dev) == fileDevice, UInt64(metadata.st_ino) == fileInode

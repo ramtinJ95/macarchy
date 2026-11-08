@@ -162,7 +162,8 @@ struct RetainedOwnershipMigration {
       let parent = try PinnedFilesystem.openDirectory(at: transaction.directory)
       defer { close(parent) }
       guard
-        try transaction.leafState(descriptor: parent, name: "skhdrc", record: updated) == .managed
+        try transaction.leafState(
+          descriptor: parent, name: SkhdLayout.configurationName, record: updated) == .managed
       else {
         throw failure("managed skhd entry or claim marker drifted")
       }

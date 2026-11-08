@@ -53,7 +53,7 @@ struct KeybindingProviderInspection: Encodable, Sendable {
 }
 
 struct KeybindingProviderInspector: Sendable {
-  static let managedTarget = "../macarchy/keybindings/current/skhdrc"
+  static let managedTarget = SkhdLayout.managedTarget
   static let ownershipID = "keybindings.skhd-entry"
   static let claimMarkerAttribute = KeybindingProviderPrimitives.claimMarkerAttribute
 
@@ -62,7 +62,7 @@ struct KeybindingProviderInspector: Sendable {
     stateRoot: URL,
     generation: KeybindingGenerationInspection
   ) -> KeybindingProviderInspection {
-    let paths = KeybindingEntryPaths(homeDirectory: homeDirectory, stateRoot: stateRoot)
+    let paths = SkhdLayout(home: homeDirectory, stateRoot: stateRoot)
 
     let homeDescriptor: Int32
     do {
@@ -85,7 +85,7 @@ struct KeybindingProviderInspector: Sendable {
 
   private func inspectConfigurationDirectory(
     homeDescriptor: Int32,
-    paths: KeybindingEntryPaths,
+    paths: SkhdLayout,
     generation: KeybindingGenerationInspection
   ) -> KeybindingProviderInspection {
 
@@ -132,7 +132,7 @@ struct KeybindingProviderInspector: Sendable {
     do {
       directoryMetadata = try PinnedFilesystem.metadata(
         parentDescriptor: configurationDescriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: paths.directory
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
@@ -182,7 +182,7 @@ struct KeybindingProviderInspector: Sendable {
   private func inspectDirectorySymlink(
     metadata: stat,
     configurationDescriptor: Int32,
-    paths: KeybindingEntryPaths,
+    paths: SkhdLayout,
     claimed: Bool
   ) -> KeybindingProviderInspection {
     if claimed {
@@ -192,7 +192,7 @@ struct KeybindingProviderInspector: Sendable {
       try Self.requireAdoptableSymlink(
         metadata,
         parentDescriptor: configurationDescriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: paths.directory
       )
     } catch {
@@ -207,7 +207,7 @@ struct KeybindingProviderInspector: Sendable {
     do {
       target = try PinnedFilesystem.symlinkDestination(
         parentDescriptor: configurationDescriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: paths.directory
       )
     } catch {
@@ -249,7 +249,7 @@ struct KeybindingProviderInspector: Sendable {
         message: "cannot inventory the skhd directory symlink target: \(error)"
       )
     }
-    guard inventory.entries == ["skhdrc"], !inventory.truncated else {
+    guard inventory.entries == [SkhdLayout.configurationName], !inventory.truncated else {
       let entries = inventory.entries.isEmpty ? "none" : inventory.entries.joined(separator: ", ")
       let suffix = inventory.truncated ? ", additional entries omitted" : ""
       return paths.result(
@@ -261,10 +261,10 @@ struct KeybindingProviderInspector: Sendable {
     }
 
     do {
-      let sourceURL = targetDirectory.appending(path: "skhdrc")
+      let sourceURL = targetDirectory.appending(path: SkhdLayout.configurationName)
       let metadata = try PinnedFilesystem.metadata(
         parentDescriptor: targetDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: sourceURL
       )
       guard metadata.st_mode & S_IFMT == S_IFREG, metadata.st_nlink == 1 else {
@@ -276,7 +276,7 @@ struct KeybindingProviderInspector: Sendable {
       }
       let file = try PinnedFilesystem.readRegularFile(
         parentDescriptor: targetDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: sourceURL
       )
       guard let sourceConfiguration = String(data: file.data, encoding: .utf8) else {
@@ -315,7 +315,7 @@ struct KeybindingProviderInspector: Sendable {
 
   private func inspectOrdinaryDirectoryEntry(
     configurationDescriptor: Int32,
-    paths: KeybindingEntryPaths,
+    paths: SkhdLayout,
     generation: KeybindingGenerationInspection,
     ownershipRecord: SetupOwnershipRecord?
   ) -> KeybindingProviderInspection {
@@ -323,7 +323,7 @@ struct KeybindingProviderInspector: Sendable {
     do {
       directoryDescriptor = try PinnedFilesystem.openDirectory(
         parentDescriptor: configurationDescriptor,
-        name: "skhd",
+        name: SkhdLayout.directoryName,
         url: paths.directory
       )
     } catch {
@@ -339,7 +339,7 @@ struct KeybindingProviderInspector: Sendable {
     do {
       entryMetadata = try PinnedFilesystem.metadata(
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: paths.entry
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
@@ -371,7 +371,7 @@ struct KeybindingProviderInspector: Sendable {
   }
 
   private func inspectMissingEntry(
-    paths: KeybindingEntryPaths,
+    paths: SkhdLayout,
     claimed: Bool
   ) -> KeybindingProviderInspection {
     if claimed {
@@ -398,7 +398,7 @@ struct KeybindingProviderInspector: Sendable {
   private func inspectEntrySymlink(
     metadata: stat,
     directoryDescriptor: Int32,
-    paths: KeybindingEntryPaths,
+    paths: SkhdLayout,
     generation: KeybindingGenerationInspection,
     ownershipRecord: SetupOwnershipRecord?
   ) -> KeybindingProviderInspection {
@@ -407,7 +407,7 @@ struct KeybindingProviderInspector: Sendable {
         try Self.requireAdoptableSymlink(
           metadata,
           parentDescriptor: directoryDescriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           url: paths.entry
         )
       } catch {
@@ -423,7 +423,7 @@ struct KeybindingProviderInspector: Sendable {
     do {
       target = try PinnedFilesystem.symlinkDestination(
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: paths.entry
       )
     } catch {
@@ -442,7 +442,7 @@ struct KeybindingProviderInspector: Sendable {
         target: target
       )
     }
-    if target == Self.managedTarget, paths.expectedTarget != Self.managedTarget {
+    if target == SkhdLayout.managedTarget, paths.expectedTarget != SkhdLayout.managedTarget {
       return paths.result(
         .blocked,
         ownership: "state_root_mismatch",
@@ -459,7 +459,7 @@ struct KeybindingProviderInspector: Sendable {
 
   private func inspectMatchingEntrySymlink(
     directoryDescriptor: Int32,
-    paths: KeybindingEntryPaths,
+    paths: SkhdLayout,
     generation: KeybindingGenerationInspection,
     ownershipRecord: SetupOwnershipRecord?,
     target: String
@@ -537,17 +537,17 @@ struct KeybindingProviderInspector: Sendable {
 
   private func inspectAdoptableEntrySymlink(
     directoryDescriptor: Int32,
-    paths: KeybindingEntryPaths
+    paths: SkhdLayout
   ) -> KeybindingProviderInspection {
     do {
       let source = try sourceConfiguration(
         parentDescriptor: directoryDescriptor,
         parentURL: paths.directory,
-        name: "skhdrc"
+        name: SkhdLayout.configurationName
       )
       let target = try PinnedFilesystem.symlinkDestination(
         parentDescriptor: directoryDescriptor,
-        name: "skhdrc",
+        name: SkhdLayout.configurationName,
         url: paths.entry
       )
       return paths.result(
@@ -574,13 +574,13 @@ struct KeybindingProviderInspector: Sendable {
 
   private func inspectAdoptableRegularEntry(
     directoryDescriptor: Int32,
-    paths: KeybindingEntryPaths
+    paths: SkhdLayout
   ) -> KeybindingProviderInspection {
     do {
       let source = try sourceConfiguration(
         parentDescriptor: directoryDescriptor,
         parentURL: paths.directory,
-        name: "skhdrc"
+        name: SkhdLayout.configurationName
       )
       return paths.result(
         .adoptionRequired,
@@ -669,10 +669,10 @@ struct KeybindingProviderInspector: Sendable {
     let home = homeDirectory.standardizedFileURL
     let descriptor = try PinnedFilesystem.openDirectory(at: home)
     defer { Darwin.close(descriptor) }
-    let fallback = home.appending(path: ".skhdrc")
+    let fallback = home.appending(path: SkhdLayout.fallbackName)
     let metadata = try PinnedFilesystem.metadata(
       parentDescriptor: descriptor,
-      name: ".skhdrc",
+      name: SkhdLayout.fallbackName,
       url: fallback
     )
     guard metadata.st_mode & S_IFMT == S_IFREG || metadata.st_mode & S_IFMT == S_IFLNK else {
@@ -685,13 +685,13 @@ struct KeybindingProviderInspector: Sendable {
     let source = try sourceConfiguration(
       parentDescriptor: descriptor,
       parentURL: home,
-      name: ".skhdrc"
+      name: SkhdLayout.fallbackName
     )
     let destination =
       metadata.st_mode & S_IFMT == S_IFLNK
       ? try PinnedFilesystem.symlinkDestination(
         parentDescriptor: descriptor,
-        name: ".skhdrc",
+        name: SkhdLayout.fallbackName,
         url: fallback
       ) : nil
     return KeybindingAdoptionEvidence(
@@ -704,14 +704,14 @@ struct KeybindingProviderInspector: Sendable {
 
   private func inspectMissingPreferredEntry(
     homeDescriptor: Int32,
-    paths: KeybindingEntryPaths,
+    paths: SkhdLayout,
     skhdDirectoryExists: Bool
   ) -> KeybindingProviderInspection {
-    let fallback = paths.home.appending(path: ".skhdrc")
+    let fallback = paths.fallback
     do {
       _ = try PinnedFilesystem.metadata(
         parentDescriptor: homeDescriptor,
-        name: ".skhdrc",
+        name: SkhdLayout.fallbackName,
         url: fallback
       )
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
@@ -744,7 +744,7 @@ struct KeybindingProviderInspector: Sendable {
       let source = try sourceConfiguration(
         parentDescriptor: homeDescriptor,
         parentURL: paths.home,
-        name: ".skhdrc"
+        name: SkhdLayout.fallbackName
       )
       let evidence = try legacyFallbackEvidence(homeDirectory: paths.home)
       return paths.result(
@@ -767,9 +767,9 @@ struct KeybindingProviderInspector: Sendable {
     }
   }
 
-  private func entryOwnershipClaim(_ paths: KeybindingEntryPaths) -> EntryOwnershipClaim {
-    let setupDirectory = paths.stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
-    let manifestURL = setupDirectory.appending(path: "ownership.json")
+  private func entryOwnershipClaim(_ paths: SkhdLayout) -> EntryOwnershipClaim {
+    let setupDirectory = paths.setupDirectory
+    let manifestURL = paths.ownershipManifest
     let descriptor: Int32
     do {
       descriptor = try PinnedFilesystem.openDirectory(at: setupDirectory)
@@ -784,7 +784,7 @@ struct KeybindingProviderInspector: Sendable {
     do {
       data = try PinnedFilesystem.readRegularFile(
         parentDescriptor: descriptor,
-        name: "ownership.json",
+        name: SkhdLayout.ownershipManifestName,
         url: manifestURL,
         maximumSize: 65_536
       ).data
@@ -820,14 +820,15 @@ struct KeybindingProviderInspector: Sendable {
       guard
         try Self.markerIsAbsent(
           parentDescriptor: directoryDescriptor,
-          name: "skhdrc",
+          name: SkhdLayout.configurationName,
           record: record
         )
       else { throw SetupOwnershipError.ownershipDrift(entry) }
       return
     }
     guard
-      try Self.markerMatches(parentDescriptor: directoryDescriptor, name: "skhdrc", record: record)
+      try Self.markerMatches(
+        parentDescriptor: directoryDescriptor, name: SkhdLayout.configurationName, record: record)
     else { throw SetupOwnershipError.ownershipDrift(entry) }
     if record.originalKind == .directorySymbolicLink {
       guard try Self.markerMatches(descriptor: directoryDescriptor, record: record) else {
@@ -957,8 +958,9 @@ struct KeybindingProviderInspector: Sendable {
     _ record: SetupOwnershipRecord,
     context: SetupOwnershipManager.Context
   ) throws {
-    let target = context.homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration)
-    let expectedTarget = Self.managedTarget
+    let layout = SkhdLayout(home: context.homeDirectory, stateRoot: context.stateRoot)
+    let target = layout.entry
+    let expectedTarget = SkhdLayout.managedTarget
     guard
       record.originalVolumeUUID.map({ UUID(uuidString: $0)?.uuidString == $0 }) ?? true,
       [.prepared, .applied, .teardownPrepared].contains(record.phase),
@@ -998,12 +1000,9 @@ struct KeybindingProviderInspector: Sendable {
         )
       }
     case .regularFile:
-      let backup = context.stateRoot.appending(
-        path: "state/setup/backups/keybindings-skhdrc"
-      )
       let manager = SetupOwnershipManager()
       guard
-        record.backupPath == manager.relativePath(backup, below: context.stateRoot),
+        record.backupPath == manager.relativePath(layout.backup, below: context.stateRoot),
         record.originalDigest != nil,
         record.originalLinkDestination == nil,
         record.originalFileMode != nil,
@@ -1020,14 +1019,10 @@ struct KeybindingProviderInspector: Sendable {
         )
       }
     case .symbolicLink, .directorySymbolicLink:
-      let retainedPath =
-        record.originalKind == .directorySymbolicLink
-        ? context.homeDirectory.appending(
-          path: ".config/.skhd.macarchy-keybindings-\(record.claimNonce ?? "invalid")"
-        ).path
-        : context.homeDirectory.appending(
-          path: ".config/skhd/.skhdrc.macarchy-keybindings-\(record.claimNonce ?? "invalid")"
-        ).path
+      let retainedPath = layout.claim(
+        record.originalKind == .directorySymbolicLink ? .directory : .leaf,
+        nonce: record.claimNonce ?? "invalid"
+      ).path
       guard
         record.backupPath == nil,
         let destination = record.originalLinkDestination,
@@ -1038,7 +1033,7 @@ struct KeybindingProviderInspector: Sendable {
         record.originalInode != nil,
         record.originalSourceDigest != nil,
         record.originalInventory
-          == (record.originalKind == .directorySymbolicLink ? ["skhdrc"] : []),
+          == (record.originalKind == .directorySymbolicLink ? [SkhdLayout.configurationName] : []),
         record.retainedOriginalPath == nil || record.retainedOriginalPath == retainedPath
       else {
         throw SetupOwnershipError.invalidManifest(
@@ -1053,8 +1048,8 @@ struct KeybindingProviderInspector: Sendable {
       && record.kind == .symbolicLink
       && record.backupPath == nil
       && record.originalDigest == nil
-      && record.installedDigest == sha256Digest(Data(managedTarget.utf8))
-      && record.linkDestination == managedTarget
+      && record.installedDigest == sha256Digest(Data(SkhdLayout.managedTarget.utf8))
+      && record.linkDestination == SkhdLayout.managedTarget
       && record.replacementDigest == nil
       && record.originalKind == nil
       && record.originalLinkDestination == nil
@@ -1082,30 +1077,9 @@ struct KeybindingProviderInspector: Sendable {
   )
 }
 
-/// The selected home's skhd entry paths that every provider inspection result reports.
-private struct KeybindingEntryPaths {
-  let home: URL
-  let stateRoot: URL
-  let configurationDirectory: URL
-  let directory: URL
-  let entry: URL
-  let expectedTarget: String
-
-  init(homeDirectory: URL, stateRoot: URL) {
-    home = homeDirectory.standardizedFileURL
-    self.stateRoot = stateRoot.standardizedFileURL
-    configurationDirectory = home.appending(path: ".config", directoryHint: .isDirectory)
-    directory = configurationDirectory.appending(path: "skhd", directoryHint: .isDirectory)
-    entry = directory.appending(path: "skhdrc")
-    let canonical = StateLayout.defaultRoot(in: home, directoryHint: .isDirectory)
-      .standardizedFileURL
-    expectedTarget =
-      self.stateRoot == canonical
-      ? KeybindingProviderInspector.managedTarget
-      : StateLayout(root: self.stateRoot).currentSkhdrc.path
-  }
-
-  var ownershipDrift: KeybindingProviderInspection {
+/// The inspection results reported for the selected home's skhd entry.
+extension SkhdLayout {
+  fileprivate var ownershipDrift: KeybindingProviderInspection {
     result(
       .blocked,
       ownership: "ownership_drift",
@@ -1113,7 +1087,7 @@ private struct KeybindingEntryPaths {
     )
   }
 
-  func unsupportedEntry(_ error: Error) -> KeybindingProviderInspection {
+  fileprivate func unsupportedEntry(_ error: Error) -> KeybindingProviderInspection {
     result(
       .blocked,
       ownership: "conflict",
@@ -1121,7 +1095,7 @@ private struct KeybindingEntryPaths {
     )
   }
 
-  func result(
+  fileprivate func result(
     _ status: KeybindingProviderStatus,
     ownership: String,
     source: URL? = nil,
