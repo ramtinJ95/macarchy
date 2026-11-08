@@ -1,5 +1,10 @@
 import Foundation
 
+/// The separate Apple-menu helper executable the bar's Apple item runs.
+package enum AppleMenuHelper {
+  package static let executableName = "macarchy-menu"
+}
+
 enum SketchyBarAppleScript {
   static func render(palettePath: String, helperPath: String) -> String {
     """
