@@ -34,7 +34,7 @@ class TestSafetyBoundary(unittest.TestCase):
         self.assertEqual(offenders, [], "Route all special-file fixtures through TestSafety")
 
     def test_swift_and_shell_use_the_same_guard(self):
-        shell = (ROOT / "Scripts/verify-keybindings-portability.sh").read_text()
+        shell = (ROOT / "Scripts/verify-keybindings-snapshot-safety.sh").read_text()
         self.assertIn("Tests/TestSafety/IsolatedTestEnvironment.swift", shell)
         self.assertLess(shell.index("--check-directory"), shell.index("--create-fifo"))
         for name in ("ThemeCoreTests/BoundedRegularFileTests.swift",
@@ -49,7 +49,8 @@ class TestSafetyBoundary(unittest.TestCase):
                      for path in (ROOT / ".github/workflows").glob("*.yml")}
         self.assertIn("swift test", workflows["ci.yml"])
         guarded = guarded_scripts()
-        self.assertIn("smoke-release-archive.sh", guarded)
+        self.assertIn("verify-keybindings-snapshot-safety.sh", guarded)
+        self.assertNotIn("smoke-release-archive.sh", guarded)
         for name, workflow in workflows.items():
             if "swift test" in workflow:
                 with self.subTest(workflow=name, audit=True):

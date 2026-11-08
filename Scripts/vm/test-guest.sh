@@ -31,4 +31,5 @@ done
 if [[ "$portability" == true ]]; then
   /usr/bin/swift build --product macarchy
   /bin/zsh Scripts/verify-keybindings-portability.sh .build/debug/macarchy
+  /bin/zsh Scripts/verify-keybindings-snapshot-safety.sh
 fi
