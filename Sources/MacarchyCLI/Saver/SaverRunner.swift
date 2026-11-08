@@ -343,53 +343,29 @@ enum SaverEngineProcess {
   }
 
   private static func spawn(_ engine: URL, arguments: [String], input: Int32) throws -> Int32 {
-    func require(_ code: Int32) throws {
-      guard code == 0 else { throw SaverError("cannot prepare ttfx (errno \(code))") }
-    }
-    var attributes: posix_spawnattr_t?
-    try require(posix_spawnattr_init(&attributes))
-    defer { posix_spawnattr_destroy(&attributes) }
     // The runner ignores these signals; ttfx gets the default dispositions back.
     var defaults = sigset_t(0)
     for number in [SIGTERM, SIGHUP, SIGINT, SIGPIPE] {
       defaults |= sigset_t(1) << sigset_t(number - 1)
     }
-    var unblocked = sigset_t(0)
-    try require(posix_spawnattr_setsigdefault(&attributes, &defaults))
-    try require(posix_spawnattr_setsigmask(&attributes, &unblocked))
-    try require(
-      posix_spawnattr_setflags(
-        &attributes,
-        Int16(POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT)))
-    var actions: posix_spawn_file_actions_t?
-    try require(posix_spawn_file_actions_init(&actions))
-    defer { posix_spawn_file_actions_destroy(&actions) }
-    try require(posix_spawn_file_actions_adddup2(&actions, input, STDIN_FILENO))
-    try require(posix_spawn_file_actions_addinherit_np(&actions, STDOUT_FILENO))
-    try require(posix_spawn_file_actions_addinherit_np(&actions, STDERR_FILENO))
-    let argv = [engine.path] + arguments
-    let storage = argv.compactMap { strdup($0) }
-    defer {
-      for pointer in storage { free(pointer) }
+    let spawned = ChildProcess.spawn(
+      engine.path, arguments: arguments,
+      flags: POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT,
+      signalDefaults: defaults, signalMask: sigset_t(0),
+      fileActions: [
+        .duplicate(input, to: STDIN_FILENO), .inherit(STDOUT_FILENO), .inherit(STDERR_FILENO),
+      ])
+    switch spawned {
+    case .success(let pid): return pid
+    case .failure(.prepare(let code)): throw SaverError("cannot prepare ttfx (errno \(code))")
+    case .failure(.allocateArguments): throw SaverError("cannot allocate ttfx arguments")
+    case .failure(.spawn(let code)): throw SaverError("cannot start ttfx (errno \(code))")
     }
-    guard storage.count == argv.count else { throw SaverError("cannot allocate ttfx arguments") }
-    var pointers: [UnsafeMutablePointer<CChar>?] = storage.map { $0 } + [nil]
-    var pid: pid_t = 0
-    let spawned = posix_spawn(&pid, engine.path, &actions, &attributes, &pointers, environ)
-    guard spawned == 0 else { throw SaverError("cannot start ttfx (errno \(spawned))") }
-    return pid
   }
 
   /// SIGTERM, then SIGKILL after about a second, and reap.
   static func stop(_ pid: Int32) {
-    _ = kill(pid, SIGTERM)
-    for _ in 0..<20 {
-      if reap(pid) != nil { return }
-      Thread.sleep(forTimeInterval: 0.05)
-    }
-    _ = kill(pid, SIGKILL)
-    var status: Int32 = 0
-    while waitpid(pid, &status, 0) == -1, errno == EINTR {}
+    ChildProcess.terminateThenKill(pid, polls: 20, interval: 0.05) { reap(pid) != nil }
   }
 
   /// The exit status once ttfx has exited and is reaped; 128 + n when signal n ended it.
@@ -400,7 +376,6 @@ enum SaverEngineProcess {
       return 255
     }
     guard result == pid else { return nil }
-    let signal = status & 0x7f
-    return signal == 0 ? (status >> 8) & 0xff : 128 + signal
+    return ChildProcess.exitCode(waitStatus: status)
   }
 }

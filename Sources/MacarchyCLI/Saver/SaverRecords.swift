@@ -51,10 +51,9 @@ struct SaverProcess: Codable, Equatable, Sendable {
 
   /// The live identity of `pid`, or nil when the kernel cannot resolve it.
   static func observe(_ pid: Int32) -> Self? {
-    guard let started = processStartTime(pid), let path = processExecutablePath(pid) else {
-      return nil
+    ProcessIdentity.observe(pid).map {
+      Self(pid: $0.pid, started: $0.started, executablePath: $0.executablePath)
     }
-    return Self(pid: pid, started: started, executablePath: path)
   }
 
   /// Whether the executable is named macarchy, as every runner's is. Its file is checked only

@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import ThemeCore
 
 enum SketchyBarHookRunnerError: Error, CustomStringConvertible {
   case spawn(Int32)
@@ -36,43 +37,14 @@ struct SketchyBarHookRunner {
   }
 
   func execute(_ hook: URL) throws {
-    var attributes: posix_spawnattr_t?
-    let initializationStatus = posix_spawnattr_init(&attributes)
-    guard initializationStatus == 0 else {
-      throw SketchyBarHookRunnerError.spawn(initializationStatus)
-    }
-    defer { posix_spawnattr_destroy(&attributes) }
-    let flags = Int16(POSIX_SPAWN_SETPGROUP)
-    let flagsStatus = posix_spawnattr_setflags(&attributes, flags)
-    guard flagsStatus == 0 else {
-      throw SketchyBarHookRunnerError.spawn(flagsStatus)
-    }
-    let groupStatus = posix_spawnattr_setpgroup(&attributes, 0)
-    guard groupStatus == 0 else {
-      throw SketchyBarHookRunnerError.spawn(groupStatus)
-    }
-
-    let arguments = ["/bin/sh", hook.path]
-    let storage = arguments.compactMap { strdup($0) }
-    defer {
-      for pointer in storage { free(pointer) }
-    }
-    guard storage.count == arguments.count else {
-      throw SketchyBarHookRunnerError.spawn(ENOMEM)
-    }
-    var argumentPointers: [UnsafeMutablePointer<CChar>?] = storage.map { $0 }
-    argumentPointers.append(nil)
-    var processID: pid_t = 0
-    let spawnStatus = posix_spawn(
-      &processID,
-      "/bin/sh",
-      nil,
-      &attributes,
-      &argumentPointers,
-      environ
-    )
-    guard spawnStatus == 0 else {
-      throw SketchyBarHookRunnerError.spawn(spawnStatus)
+    let processID: pid_t
+    let spawned = ChildProcess.spawn(
+      "/bin/sh", arguments: [hook.path], flags: POSIX_SPAWN_SETPGROUP, processGroup: 0)
+    switch spawned {
+    case .success(let pid): processID = pid
+    case .failure(.prepare(let code)), .failure(.spawn(let code)):
+      throw SketchyBarHookRunnerError.spawn(code)
+    case .failure(.allocateArguments): throw SketchyBarHookRunnerError.spawn(ENOMEM)
     }
 
     let clock = ContinuousClock()
@@ -96,16 +68,12 @@ struct SketchyBarHookRunner {
   }
 
   private func requireSuccess(_ status: Int32) throws {
-    let signal = status & 0x7f
-    guard signal == 0 else { throw SketchyBarHookRunnerError.failed(128 + signal) }
-    let exitStatus = (status >> 8) & 0xff
-    guard exitStatus == 0 else { throw SketchyBarHookRunnerError.failed(exitStatus) }
+    let code = ChildProcess.exitCode(waitStatus: status)
+    guard code == 0 else { throw SketchyBarHookRunnerError.failed(code) }
   }
 
   private func terminateAndReap(_ processID: pid_t) {
-    _ = kill(-processID, SIGKILL)
-    var status: Int32 = 0
-    while waitpid(processID, &status, 0) == -1, errno == EINTR {}
+    ChildProcess.killAndReap(processID, target: -processID)
   }
 
   private func terminateRemainingGroup(_ processID: pid_t) {
