@@ -20,7 +20,6 @@ struct SketchyBarWiFi {
   let sleep: (TimeInterval) -> Void
   let uptime: () -> TimeInterval
   let copy: (String) throws -> Void
-  /// Starts `macarchy` with these arguments without waiting for it.
   let launch: ([String]) throws -> Void
 
   func execute(name: String, sender: String, colors: Colors) throws {

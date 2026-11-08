@@ -95,7 +95,6 @@ struct PopupPointerWatch {
 struct SketchyBarPopupToggle {
   let popup: BarPopup
   let processRunner: ProcessRunner
-  /// Starts `macarchy` with these arguments without waiting for it.
   let launch: ([String]) throws -> Void
 
   func execute(alongside: [String] = []) throws {

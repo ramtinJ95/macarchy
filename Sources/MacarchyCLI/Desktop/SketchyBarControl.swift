@@ -9,7 +9,6 @@ struct SketchyBarControl {
   /// The error a nonzero exit becomes, given the arguments and the bar's output.
   let failure: (_ arguments: [String], _ output: String) -> any Error
 
-  /// Runs `sketchybar <arguments>` and returns its output.
   @discardableResult func callAsFunction(_ arguments: [String]) throws -> String {
     let result = try processRunner.run(
       .init(executableURL: ExternalTool.sketchybar, arguments: arguments, timeout: timeout))
