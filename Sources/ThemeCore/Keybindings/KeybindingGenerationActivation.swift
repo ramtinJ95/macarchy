@@ -392,7 +392,7 @@ package enum KeybindingGenerationActivationError: Error, CustomStringConvertible
     case .invalidComposition:
       "cannot activate a blocked or incomplete keybinding composition"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(errnoDescription(code))"
+      PinnedFilesystemError.message(operation: operation, url: url, code: code)
     }
   }
 }

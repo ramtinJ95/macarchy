@@ -13,6 +13,12 @@ package struct PinnedFilesystemError: Error, CustomStringConvertible, Sendable {
   }
 
   package var description: String {
+    Self.message(operation: operation, url: url, code: code)
+  }
+
+  /// The shared "cannot <operation> <path>: <errno>" line, also rendered by the
+  /// `.system(operation, url, code)` cases of other filesystem error enums.
+  package static func message(operation: String, url: URL, code: Int32) -> String {
     "cannot \(operation) \(url.path): \(errnoDescription(code))"
   }
 }

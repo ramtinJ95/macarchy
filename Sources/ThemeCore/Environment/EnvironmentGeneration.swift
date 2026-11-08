@@ -59,7 +59,7 @@ package enum EnvironmentGenerationError: Error, CustomStringConvertible, Sendabl
     case .artifactsDrifted(let detail):
       "invalid environment generation: artifact inventory or bytes drifted (\(detail))"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(errnoDescription(code))"
+      PinnedFilesystemError.message(operation: operation, url: url, code: code)
     }
   }
 }

@@ -17,7 +17,7 @@ enum EnvironmentLifecycleError: Error, CustomStringConvertible, Sendable {
     case .drift(let reason):
       "environment ownership drifted: \(reason)"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(errnoDescription(code))"
+      PinnedFilesystemError.message(operation: operation, url: url, code: code)
     }
   }
 }
