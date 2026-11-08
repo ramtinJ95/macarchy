@@ -13,13 +13,6 @@ func activateCatppuccinMocha(stateRoot: URL) throws -> String {
   return try ThemeActivator(root: stateRoot).activate(package: package).generationID
 }
 
-func fixtureContents(_ path: String) throws -> String {
-  try String(
-    contentsOf: repositoryRoot.appending(path: "Tests/Fixtures/\(path)"),
-    encoding: .utf8
-  )
-}
-
 func setExtendedAttribute(_ name: String, value: String, at url: URL) throws {
   try setExtendedAttribute(name, data: Data(value.utf8), at: url)
 }

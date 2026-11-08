@@ -473,12 +473,7 @@ extension AdapterContractTests {
   @Test
   func cancellationBeforeActivationDoesNotCommit() async throws {
     try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
-      let configurationURL = root.appending(path: "kitty.conf")
-      try "include \(root.path)/state/adapters/kitty.conf\n".write(
-        to: configurationURL,
-        atomically: true,
-        encoding: .utf8
-      )
+      let configurationURL = try Self.kittyConfiguration(root: root)
       let coordinator = ThemeActivationCoordinator(
         root: root,
         consumerPaths: try Self.consumerPaths(
@@ -504,12 +499,7 @@ extension AdapterContractTests {
   func supersedingActivationReturnsTheCommittedManifestWithPostcommitFailure() async throws {
     let root = try temporaryDirectory()
     defer { removeTemporaryRoot(root) }
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
+    let configurationURL = try Self.kittyConfiguration(root: root)
     let tokyoNight = try tokyoNightPackage()
     let supersedingManifest = Mutex<GenerationManifest?>(nil)
     let coordinator = ThemeActivationCoordinator(
@@ -568,12 +558,7 @@ extension AdapterContractTests {
   @Test
   func selectedReconciliationRejectsInvalidIDsBeforeProcessesOrStatusWrites() async throws {
     try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
-      let configurationURL = root.appending(path: "kitty.conf")
-      try "include \(root.path)/state/adapters/kitty.conf\n".write(
-        to: configurationURL,
-        atomically: true,
-        encoding: .utf8
-      )
+      let configurationURL = try Self.kittyConfiguration(root: root)
       let processes = ProcessRunnerFake()
       let coordinator = ThemeActivationCoordinator(
         root: root,
@@ -744,12 +729,7 @@ extension AdapterContractTests {
     let root = try temporaryDirectory()
     defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
+    let configurationURL = try Self.kittyConfiguration(root: root)
     let statusStore = ReconciliationStatusStore(root: root)
     _ = try statusStore.persist(
       manifest: manifest,
@@ -797,12 +777,7 @@ extension AdapterContractTests {
     let root = try temporaryDirectory()
     defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
+    let configurationURL = try Self.kittyConfiguration(root: root)
     let artifactURL = root.appending(
       path: "generations/\(manifest.generationID)/generated/kitty.conf"
     )
@@ -849,11 +824,8 @@ enum PreflightFailure: String, CaseIterable, Sendable {
   func consumerPaths(root: URL) throws -> ThemeConsumerPaths {
     switch self {
     case .macOSAppearance, .wallpaper:
-      let kittyConfiguration = root.appending(path: "kitty.conf")
-      try "include \(root.path)/state/adapters/kitty.conf\n".write(
-        to: kittyConfiguration, atomically: true, encoding: .utf8)
       return try AdapterContractTests.consumerPaths(
-        root: root, kittyConfigurationURL: kittyConfiguration,
+        root: root, kittyConfigurationURL: AdapterContractTests.kittyConfiguration(root: root),
         sketchyBarConfigurationURL: try AdapterContractTests.sketchyBarConfiguration(root: root))
     case .bat, .eza, .kitty, .sketchybar:
       let paths = try AdapterContractTests.consumerPaths(root: root, adapterIDs: [rawValue])

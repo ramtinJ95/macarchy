@@ -122,6 +122,15 @@ extension AdapterContractTests {
     return configuration
   }
 
+  /// Writes `root/kitty.conf` including the managed Kitty bridge and returns its URL.
+  @discardableResult
+  static func kittyConfiguration(root: URL) throws -> URL {
+    let configuration = root.appending(path: "kitty.conf")
+    try "include \(root.path)/state/adapters/kitty.conf\n".write(
+      to: configuration, atomically: true, encoding: .utf8)
+    return configuration
+  }
+
   static func consumerPaths(
     root: URL,
     kittyConfigurationURL: URL? = nil,
@@ -133,258 +142,32 @@ extension AdapterContractTests {
       switch adapterID {
       case "kitty":
         if kittyConfigurationURL == nil {
-          try "include \(root.path)/state/adapters/kitty.conf\n".write(
-            to: root.appending(path: "kitty.conf"), atomically: true, encoding: .utf8)
+          try kittyConfiguration(root: root)
         }
       case "sketchybar":
         if sketchyBarConfigurationURL == nil {
           _ = try sketchyBarConfiguration(root: root)
         }
-      case "eza":
-        try setUpEza(root: root)
-      case "bat":
-        try setUpBat(root: root)
-      case "btop":
-        try setUpBtop(root: root)
-      case "yazi":
-        try setUpYazi(root: root)
-      case "atuin":
-        try setUpAtuin(root: root)
-      case "neovim":
-        try setUpNeovim(root: root)
-      case "starship":
-        try setUpStarship(root: root)
-      case "pi":
-        try setUpPi(root: root)
-      case "herdr":
-        try setUpHerdr(root: root)
-      case "tuicr":
-        try setUpTuicr(root: root)
-      case "codex":
-        try setUpCodex(root: root)
-      case "spicetify":
-        try setUpSpicetify(root: root)
       case "macos-appearance", "wallpaper":
         // Appearance and wallpaper have no consumer configuration here.
         break
       default:
-        throw AdapterSelectionError.unknown(adapterID)
+        guard
+          try ConsumerConfigurationFixture.write(
+            adapterID, root: root, stateRoot: root, neovim: .aether)
+        else {
+          throw AdapterSelectionError.unknown(adapterID)
+        }
       }
     }
 
     // Even unconfigured consumers stay inside this test root, never the real home.
-    return ThemeConsumerPaths(
+    return ConsumerConfigurationFixture.paths(
+      root: root,
       kittyConfigurationURL: kittyConfigurationURL ?? root.appending(path: "kitty.conf"),
       sketchyBarConfigurationURL: sketchyBarConfigurationURL
-        ?? root.appending(path: "sketchybar/sketchybarrc"),
-      shellConfigurationURL: root.appending(path: ".zshrc"),
-      ezaConfigurationDirectoryURL: root.appending(path: "eza", directoryHint: .isDirectory),
-      batConfigurationDirectoryURL: root.appending(path: "bat", directoryHint: .isDirectory),
-      batCacheDirectoryURL: root.appending(path: "bat-cache", directoryHint: .isDirectory),
-      btopConfigurationDirectoryURL: root.appending(path: "btop", directoryHint: .isDirectory),
-      yaziConfigurationDirectoryURL: root.appending(path: "yazi", directoryHint: .isDirectory),
-      atuinConfigurationDirectoryURL: root.appending(path: "atuin", directoryHint: .isDirectory),
-      neovimConfigurationDirectoryURL: root.appending(path: "nvim", directoryHint: .isDirectory),
-      starshipConfigurationURL: root.appending(path: "starship.toml"),
-      starshipBehaviorURL: root.appending(path: "starship/behavior.toml"),
-      piConfigurationDirectoryURL: root.appending(path: "pi", directoryHint: .isDirectory),
-      herdrConfigurationURL: root.appending(path: "herdr/config.toml"),
-      tuicrConfigurationDirectoryURL: root.appending(path: "tuicr", directoryHint: .isDirectory),
-      codexConfigurationDirectoryURL: root.appending(path: "codex", directoryHint: .isDirectory),
-      spicetifyConfigurationDirectoryURL: root.appending(
-        path: "spicetify", directoryHint: .isDirectory)
+        ?? root.appending(path: "sketchybar/sketchybarrc")
     )
-  }
-
-  private static func setUpEza(root: URL) throws {
-    let ezaDirectory = root.appending(path: "eza", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: ezaDirectory, withIntermediateDirectories: true)
-    let ezaTheme = ezaDirectory.appending(path: "theme.yml")
-    try FileManager.default.createSymbolicLink(
-      at: ezaTheme,
-      withDestinationURL: root.appending(path: "current/\(EzaAdapter.outputPath)")
-    )
-    let shellConfiguration = root.appending(path: ".zshrc")
-    try "export EZA_CONFIG_DIR=\"\(ezaDirectory.path)\"\n".write(
-      to: shellConfiguration,
-      atomically: true,
-      encoding: .utf8
-    )
-  }
-
-  private static func setUpBat(root: URL) throws {
-    let batDirectory = root.appending(path: "bat", directoryHint: .isDirectory)
-    let batThemes = batDirectory.appending(path: "themes", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: batThemes, withIntermediateDirectories: true)
-    let batTheme = batThemes.appending(path: "\(BatAdapter.themeName).tmTheme")
-    try FileManager.default.createSymbolicLink(
-      at: batTheme,
-      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
-    )
-    try "--theme=\"\(BatAdapter.themeName)\"\n".write(
-      to: batDirectory.appending(path: "config"),
-      atomically: true,
-      encoding: .utf8
-    )
-  }
-
-  private static func setUpBtop(root: URL) throws {
-    let btopDirectory = root.appending(path: "btop", directoryHint: .isDirectory)
-    let btopThemes = btopDirectory.appending(path: "themes", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: btopThemes, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: btopThemes.appending(path: "\(BtopAdapter.themeName).theme"),
-      withDestinationURL: root.appending(path: "current/\(BtopAdapter.outputPath)")
-    )
-    try "color_theme = \"\(BtopAdapter.themeName)\"\n".write(
-      to: btopDirectory.appending(path: "btop.conf"), atomically: true, encoding: .utf8)
-  }
-
-  private static func setUpYazi(root: URL) throws {
-    let yaziDirectory = root.appending(path: "yazi", directoryHint: .isDirectory)
-    let yaziFlavor = yaziDirectory.appending(
-      path: "flavors/\(YaziAdapter.flavorName).yazi", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: yaziFlavor, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: yaziFlavor.appending(path: "flavor.toml"),
-      withDestinationURL: root.appending(path: "current/\(YaziAdapter.flavorOutputPath)")
-    )
-    try FileManager.default.createSymbolicLink(
-      at: yaziFlavor.appending(path: "tmtheme.xml"),
-      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.yaziOutputPath)")
-    )
-    try "[flavor]\ndark = \"\(YaziAdapter.flavorName)\"\n".write(
-      to: yaziDirectory.appending(path: "theme.toml"), atomically: true, encoding: .utf8)
-  }
-
-  private static func setUpAtuin(root: URL) throws {
-    let atuinDirectory = root.appending(path: "atuin", directoryHint: .isDirectory)
-    let atuinThemes = atuinDirectory.appending(path: "themes", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: atuinThemes, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: atuinThemes.appending(path: "\(AtuinAdapter.themeName).toml"),
-      withDestinationURL: root.appending(path: "current/\(AtuinAdapter.outputPath)")
-    )
-    try "[theme]\nname = \"\(AtuinAdapter.themeName)\"\n".write(
-      to: atuinDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
-  }
-
-  private static func setUpNeovim(root: URL) throws {
-    let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
-    let neovimPlugins = neovimDirectory.appending(
-      path: "lua/plugins", directoryHint: .isDirectory)
-    let neovimMacarchy = neovimDirectory.appending(
-      path: "lua/macarchy", directoryHint: .isDirectory)
-    let neovimConfig = neovimDirectory.appending(
-      path: "lua/config", directoryHint: .isDirectory)
-    let neovimColors = neovimDirectory.appending(path: "colors", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: neovimPlugins, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: neovimMacarchy, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: neovimConfig, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: neovimColors, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: neovimMacarchy.appending(path: "current.lua"),
-      withDestinationURL: root.appending(path: "current/\(NeovimAdapter.outputPath)")
-    )
-    try """
-    \(NeovimAdapter.integrationDirective)
-    \(NeovimAdapter.aetherRepositoryDirective)
-    \(NeovimAdapter.aetherBranchDirective)
-    \(NeovimAdapter.aetherCommitDirective)
-
-    """.write(
-      to: neovimPlugins.appending(path: "colorscheme.lua"), atomically: true, encoding: .utf8)
-    try "\(NeovimAdapter.importedColorschemeDirective)\n".write(
-      to: neovimColors.appending(path: "\(NeovimAdapter.importedColorscheme).lua"),
-      atomically: true,
-      encoding: .utf8
-    )
-    try "\(NeovimAdapter.backgroundAwareWatcherDirective)\n".write(
-      to: neovimConfig.appending(path: "macarchy-theme.lua"),
-      atomically: true,
-      encoding: .utf8
-    )
-  }
-
-  private static func setUpStarship(root: URL) throws {
-    let starshipDirectory = root.appending(path: "starship", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(
-      at: starshipDirectory, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: root.appending(path: "starship.toml"),
-      withDestinationURL: root.appending(path: StarshipAdapter.bridgePath)
-    )
-    try "format = \"$character\"\n".write(
-      to: starshipDirectory.appending(path: "behavior.toml"),
-      atomically: true,
-      encoding: .utf8
-    )
-  }
-
-  private static func setUpPi(root: URL) throws {
-    let piDirectory = root.appending(path: "pi", directoryHint: .isDirectory)
-    let piThemes = piDirectory.appending(path: "themes", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: piThemes, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: piThemes.appending(path: "\(PiAdapter.themeName).json"),
-      withDestinationURL: root.appending(path: "current/\(PiAdapter.outputPath)")
-    )
-    try "{\"theme\":\"\(PiAdapter.themeName)\"}\n".write(
-      to: piDirectory.appending(path: "settings.json"), atomically: true, encoding: .utf8)
-  }
-
-  private static func setUpHerdr(root: URL) throws {
-    let herdrConfiguration = root.appending(path: "herdr/config.toml")
-    try FileManager.default.createDirectory(
-      at: herdrConfiguration.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try "[theme]\nname = \"catppuccin\"\n".write(
-      to: herdrConfiguration, atomically: true, encoding: .utf8)
-  }
-
-  private static func setUpTuicr(root: URL) throws {
-    let tuicrDirectory = root.appending(path: "tuicr", directoryHint: .isDirectory)
-    let tuicrThemes = tuicrDirectory.appending(path: "themes", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: tuicrThemes, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: tuicrThemes.appending(path: "\(TuicrAdapter.themeName).toml"),
-      withDestinationURL: root.appending(path: "current/\(TuicrAdapter.outputPath)")
-    )
-    try FileManager.default.createSymbolicLink(
-      at: tuicrThemes.appending(path: "\(TuicrAdapter.themeName).tmTheme"),
-      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
-    )
-    try "theme = \"\(TuicrAdapter.themeName)\"\n".write(
-      to: tuicrDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
-  }
-
-  private static func setUpCodex(root: URL) throws {
-    let codexDirectory = root.appending(path: "codex", directoryHint: .isDirectory)
-    let codexThemes = codexDirectory.appending(path: "themes", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: codexThemes, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: codexThemes.appending(path: "\(CodexAdapter.themeName).tmTheme"),
-      withDestinationURL: root.appending(path: "current/\(TextMateThemeArtifact.outputPath)")
-    )
-    try "[tui]\ntheme = \"\(CodexAdapter.themeName)\"\n".write(
-      to: codexDirectory.appending(path: "config.toml"), atomically: true, encoding: .utf8)
-  }
-
-  private static func setUpSpicetify(root: URL) throws {
-    let spicetifyDirectory = root.appending(path: "spicetify", directoryHint: .isDirectory)
-    let spicetifyTheme = spicetifyDirectory.appending(
-      path: "Themes/\(SpicetifyAdapter.themeName)", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: spicetifyTheme, withIntermediateDirectories: true)
-    try FileManager.default.createSymbolicLink(
-      at: spicetifyTheme.appending(path: "color.ini"),
-      withDestinationURL: root.appending(path: "current/\(SpicetifyAdapter.outputPath)")
-    )
-    try
-      "[Setting]\ncurrent_theme = \(SpicetifyAdapter.themeName)\ncolor_scheme = \(SpicetifyAdapter.colorSchemeName)\n"
-      .write(
-        to: spicetifyDirectory.appending(path: "config-xpui.ini"),
-        atomically: true,
-        encoding: .utf8
-      )
   }
 
   func waitUntil(_ condition: @Sendable () -> Bool) async throws {
