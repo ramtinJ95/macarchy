@@ -13,7 +13,6 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import time
 import uuid
 
 import lab
@@ -174,19 +173,23 @@ class Guest:
         result = self.command("/usr/bin/sudo -S -p '' /sbin/shutdown -r now", sudo=True, check=False)
         if result.returncode not in (0, 255):
             raise lab.LabError("Guest rejected reboot.")
-        deadline = time.monotonic() + 180
-        while time.monotonic() < deadline:
-            time.sleep(3)
+
+        def rebooted():
             try:
                 after = self.boot_session()
             except (lab.LabError, subprocess.TimeoutExpired):
-                continue
-            if after != before:
-                if self.command('cat "$HOME/.macarchy-vm-reset-check"').stdout != marker:
-                    raise lab.LabError("Guest marker changed across reboot.")
-                return {"before": before, "after": after, "ssh_reconnected": True,
-                        "marker_preserved": True}
-        raise lab.LabError("No verified new guest boot session within 180 seconds.")
+                return None
+            if after == before:
+                return None
+            if self.command('cat "$HOME/.macarchy-vm-reset-check"').stdout != marker:
+                raise lab.LabError("Guest marker changed across reboot.")
+            return {"before": before, "after": after, "ssh_reconnected": True,
+                    "marker_preserved": True}
+
+        def expired():
+            raise lab.LabError("No verified new guest boot session within 180 seconds.")
+
+        return lab.poll(rebooted, 180, 3, expired)
 
 
 def main():
@@ -251,16 +254,18 @@ def main():
                                        sudo=True, check=False)
                 if result.returncode not in (0, 255):
                     raise lab.LabError("Guest rejected shutdown.")
-                deadline = time.monotonic() + 60
-                while time.monotonic() < deadline:
-                    time.sleep(2)
+
+                def stopped():
                     try:
                         lab.require_stopped(inputs, args.run)
-                        break
                     except lab.LabError:
-                        continue
-                else:
+                        return None
+                    return True
+
+                def not_stopped():
                     raise lab.LabError("Guest shutdown not observed within 60 seconds.")
+
+                lab.poll(stopped, 60, 2, not_stopped)
                 report["evidence"] = {"stopped": True}
             report["status"] = "passed"
     print(json.dumps(report, indent=2))

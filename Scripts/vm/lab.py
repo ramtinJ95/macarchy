@@ -458,18 +458,19 @@ def session(helper, process, inputs, run_id, directory, report):
         audit_no_listener(process.pid)
         anchor = None
         if action in ("click-text", "expect-text"):
-            deadline = time.monotonic() + 60
             attempt = 0
-            while time.monotonic() < deadline:
+
+            def find_anchor():
+                nonlocal attempt, target
                 attempt += 1
                 path = directory / f"{len(report['actions']) + 1:03d}-anchor-{attempt:02d}.png"
                 target = checked_capture(helper, process, inputs, run_id, path)
-                anchor = text_anchor(helper, path, request["text"])
-                if anchor is not None:
-                    break
-                time.sleep(2)
-            if anchor is None:
+                return text_anchor(helper, path, request["text"])
+
+            def no_anchor():
                 raise LabError("Expected guest text did not appear within 60 seconds; no click sent.")
+
+            anchor = poll(find_anchor, 60, 2, no_anchor)
         if action in ("click", "click-text"):
             if target is None:
                 raise LabError("Capture and inspect the window before clicking.")
