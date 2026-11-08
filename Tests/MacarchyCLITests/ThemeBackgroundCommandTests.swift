@@ -33,29 +33,33 @@ struct ThemeBackgroundCommandTests {
     let selected = Mutex([String]())
     let runner = ThemeBackgroundCommandRunner(
       activeManifest: { _ in canonical.withLock { $0 } },
-      preflight: { _, _, _, _ in },
-      activate: { package, backgroundID, _, _, expectedGenerationID in
-        let manifest = try canonical.withLock { current -> GenerationManifest in
-          guard current.generationID == expectedGenerationID else {
-            throw ThemeActivationError.activeGenerationChanged(
-              expected: expectedGenerationID,
-              active: current.generationID
+      activation: ThemeActivationService(
+        preflight: { _, _, _, _ in },
+        activate: { package, backgroundID, _, _, expectedGenerationID in
+          let backgroundID = try #require(backgroundID)
+          let expectedGenerationID = try #require(expectedGenerationID)
+          let manifest = try canonical.withLock { current -> GenerationManifest in
+            guard current.generationID == expectedGenerationID else {
+              throw ThemeActivationError.activeGenerationChanged(
+                expected: expectedGenerationID,
+                active: current.generationID
+              )
+            }
+            let format = try #require(package.background(id: backgroundID)?.format)
+            let next = backgroundManifest(
+              generationID: "g-\(UUID().uuidString.lowercased())",
+              background: GenerationBackground(id: backgroundID, format: format)
             )
+            current = next
+            selected.withLock { $0.append(backgroundID) }
+            return next
           }
-          let format = try #require(package.background(id: backgroundID)?.format)
-          let next = backgroundManifest(
-            generationID: "g-\(UUID().uuidString.lowercased())",
-            background: GenerationBackground(id: backgroundID, format: format)
+          return ThemeActivationResult(
+            manifest: manifest,
+            reconciliation: try ReconciliationRecord(manifest: manifest, results: [])
           )
-          current = next
-          selected.withLock { $0.append(backgroundID) }
-          return next
         }
-        return ThemeActivationResult(
-          manifest: manifest,
-          reconciliation: try ReconciliationRecord(manifest: manifest, results: [])
-        )
-      }
+      )
     )
 
     async let first = runner.next(
@@ -89,11 +93,13 @@ struct ThemeBackgroundCommandTests {
           background: GenerationBackground(id: "default", format: .webp)
         )
       },
-      preflight: { package, backgroundID, _, _ in
-        observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
-        observedSelection.withLock { $0 = backgroundID }
-      },
-      activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+      activation: ThemeActivationService(
+        preflight: { package, backgroundID, _, _ in
+          observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
+          observedSelection.withLock { $0 = backgroundID }
+        },
+        activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+      )
     )
 
     let result = try await runner.set(
@@ -121,11 +127,13 @@ struct ThemeBackgroundCommandTests {
           background: GenerationBackground(id: "second", format: .webp)
         )
       },
-      preflight: { package, backgroundID, _, _ in
-        observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
-        observedSelection.withLock { $0 = backgroundID }
-      },
-      activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+      activation: ThemeActivationService(
+        preflight: { package, backgroundID, _, _ in
+          observedBackgrounds.withLock { $0 = package.backgrounds.map(\.id) }
+          observedSelection.withLock { $0 = backgroundID }
+        },
+        activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+      )
     )
 
     let result = try await runner.next(
@@ -143,8 +151,10 @@ struct ThemeBackgroundCommandTests {
   private func runner(manifest: GenerationManifest) -> ThemeBackgroundCommandRunner {
     ThemeBackgroundCommandRunner(
       activeManifest: { _ in manifest },
-      preflight: { _, _, _, _ in },
-      activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+      activation: ThemeActivationService(
+        preflight: { _, _, _, _ in },
+        activate: { _, _, _, _, _ in throw BackgroundCommandTestError.unexpectedActivation }
+      )
     )
   }
 

@@ -198,7 +198,7 @@ struct ThemeBrowserTests {
   func explicitApplyForwardsOneThemeAndBackgroundActivation() async throws {
     let activations = Mutex(0)
     let selectedBackground = Mutex<String?>(nil)
-    let runner = ThemeSetCommandRunner(
+    let runner = ThemeActivationService(
       preflight: { _, _, _, _ in },
       activate: { package, backgroundID, _, _, _ in
         activations.withLock { $0 += 1 }

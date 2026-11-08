@@ -280,7 +280,7 @@ private struct ThemeInstallFixture {
     let converter = OmarchyThemeConverter(
       stager: OmarchyThemeStager(temporaryRoot: staging, processRunner: processRunner)
     )
-    let activation = ThemeSetCommandRunner(
+    let activation = ThemeActivationService(
       preflight: { _, _, _, _ in },
       activate: { _, _, _, _, _ in
         if let activationResult {

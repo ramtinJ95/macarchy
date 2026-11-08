@@ -37,7 +37,7 @@ extension Theme {
 struct ThemeInstallCommandRunner: Sendable {
   let converter: OmarchyThemeConverter
   let installer: OmarchyThemePackageInstaller
-  let activation: ThemeSetCommandRunner
+  let activation: ThemeActivationService
 
   static let live = ThemeInstallCommandRunner(
     converter: OmarchyThemeConverter(),
@@ -147,7 +147,7 @@ struct ThemeInstallCommandRunner: Sendable {
           )
         }
 
-        let activationReport = try await activation.report(
+        let activationReport = try await activation.reportLocked(
           package: installation.package,
           stateRoot: stateRoot,
           consumerPaths: consumerPaths,

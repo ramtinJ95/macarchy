@@ -138,7 +138,7 @@ struct ThemeBrowserLazyLoadingTests {
     try FileManager.default.createSymbolicLink(
       atPath: current.path, withDestinationPath: "generations/untouched")
     let calls = Mutex(0)
-    let runner = ThemeSetCommandRunner(
+    let runner = ThemeActivationService(
       preflight: { _, _, _, _ in calls.withLock { $0 += 1 } },
       activate: { _, _, _, _, _ in
         calls.withLock { $0 += 1 }

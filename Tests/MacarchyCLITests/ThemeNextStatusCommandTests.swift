@@ -14,7 +14,7 @@ struct ThemeNextStatusCommandTests {
       ("tokyo-night", "catppuccin-mocha"),
     ] {
       let selected = Mutex<String?>(nil)
-      let activation = ThemeSetCommandRunner(
+      let activation = ThemeActivationService(
         preflight: { package, _, _, _ in selected.withLock { $0 = package.id } },
         activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
@@ -40,7 +40,7 @@ struct ThemeNextStatusCommandTests {
   func nextRejectsAnActiveThemeOutsideTheValidatedRepository() async {
     let runner = ThemeNextCommandRunner(
       activeManifest: { _ in testManifest(themeID: "removed-theme") },
-      activation: ThemeSetCommandRunner(
+      activation: ThemeActivationService(
         preflight: { _, _, _, _ in },
         activate: { _, _, _, _, _ in throw TestError.unexpectedActivation }
       )
@@ -73,7 +73,7 @@ struct ThemeNextStatusCommandTests {
   func nextRetriesWhenTheObservedGenerationIsSupersededDuringActivation() async throws {
     let canonical = Mutex(testManifest(generationID: "g-initial", themeID: "catppuccin-mocha"))
     let attempts = Mutex([String]())
-    let activation = ThemeSetCommandRunner(
+    let activation = ThemeActivationService(
       preflight: { _, _, _, _ in },
       activate: { package, _, _, _, expectedGenerationID in
         let attempt = attempts.withLock { attempts in

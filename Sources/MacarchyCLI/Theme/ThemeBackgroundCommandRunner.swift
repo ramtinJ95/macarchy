@@ -20,17 +20,13 @@ enum ThemeBackgroundCommandError: Error, CustomStringConvertible, Equatable {
 
 struct ThemeBackgroundCommandRunner: Sendable {
   let activeManifest: @Sendable (URL) throws -> GenerationManifest
-  let preflight: @Sendable (ThemePackage, String, URL, ThemeConsumerPaths) throws -> Void
-  let activate:
-    @Sendable (ThemePackage, String, URL, ThemeConsumerPaths, String) async throws
-      -> ThemeActivationResult
+  let activation: ThemeActivationService
 
   static let live = ThemeBackgroundCommandRunner(
     activeManifest: { root in
       try ThemeGenerationReader(root: root).activeManifest()
     },
-    preflight: { try ThemeSetCommandRunner.live.preflight($0, $1, $2, $3) },
-    activate: { try await ThemeSetCommandRunner.live.activate($0, $1, $2, $3, $4) }
+    activation: .live
   )
 
   func current(stateRoot: URL) throws -> String {
@@ -52,7 +48,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     try await withThemePackageLock(stateRoot: stateRoot, unlessDryRun: dryRun) {
       try await retryingActiveGenerationChanges {
         let active = try currentManifest(stateRoot: stateRoot)
-        return try await apply(
+        return try await applyLocked(
           package: try repository.package(id: active.themeID),
           backgroundID: backgroundID,
           stateRoot: stateRoot,
@@ -98,7 +94,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
         } else {
           backgroundID = effectivePackage.backgrounds[0].id
         }
-        return try await apply(
+        return try await applyLocked(
           package: package,
           backgroundID: backgroundID,
           stateRoot: stateRoot,
@@ -110,7 +106,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     }
   }
 
-  private func apply(
+  private func applyLocked(
     package: ThemePackage,
     backgroundID: String,
     stateRoot: URL,
@@ -119,7 +115,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
     expectedGenerationID: String
   ) async throws -> (output: String, succeeded: Bool) {
     if dryRun {
-      try preflight(package, backgroundID, stateRoot, consumerPaths)
+      try activation.preflight(package, backgroundID, stateRoot, consumerPaths)
       return (
         "Background '\(backgroundID)' for theme '\(package.id)' is valid.\n"
           + "Canonical state: unchanged (dry run).",
@@ -127,15 +123,13 @@ struct ThemeBackgroundCommandRunner: Sendable {
       )
     }
 
-    let outcome = try await ThemeActivationOutcome.classify {
-      try await activate(
-        package,
-        backgroundID,
-        stateRoot,
-        consumerPaths,
-        expectedGenerationID
-      )
-    }
+    let outcome = try await activation.activateLocked(
+      package: package,
+      backgroundID: backgroundID,
+      stateRoot: stateRoot,
+      consumerPaths: consumerPaths,
+      expectedActiveGenerationID: expectedGenerationID
+    )
     switch outcome {
     case .precommitFailure(let error):
       throw error

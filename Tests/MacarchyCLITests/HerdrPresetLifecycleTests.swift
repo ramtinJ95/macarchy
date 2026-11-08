@@ -1083,7 +1083,7 @@ private struct HerdrFixture {
     )
   }
 
-  func themeSetRunner(runtime: EnvironmentHerdrRuntimeReloader) -> ThemeSetCommandRunner {
+  func themeSetRunner(runtime: EnvironmentHerdrRuntimeReloader) -> ThemeActivationService {
     let makeCoordinator: @Sendable () throws -> ThemeActivationCoordinator = {
       let managedMode = ThemeRuntimeSelection.managedHerdrMode(
         stateRoot: state,
@@ -1105,7 +1105,7 @@ private struct HerdrFixture {
         herdrManagedMode: managedMode
       )
     }
-    return ThemeSetCommandRunner(
+    return ThemeActivationService(
       preflight: { package, background, _, _ in
         try makeCoordinator().preflight(package: package, requestedBackgroundID: background)
       },
