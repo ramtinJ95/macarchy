@@ -262,7 +262,7 @@ package struct ThemeActivationCoordinator: Sendable {
           KittyAdapter(
             root: root,
             configurationURL: consumerPaths.kittyConfigurationURL,
-            includeDirective: Self.kittyIncludeDirective(root: root),
+            includeDirective: KittyAdapter.includeDirective(stateRoot: root),
             processRunner: processRunner
           ))
       case .neovim:
@@ -809,10 +809,6 @@ package struct ThemeActivationCoordinator: Sendable {
         AdapterReconciliation(kind) { AdapterOutcome(status: .unsupported, message: message) }
       }
     )
-  }
-
-  package static func kittyIncludeDirective(root: URL) -> String {
-    "include \(root.appending(path: KittyAdapter.bridgePath).path)"
   }
 }
 

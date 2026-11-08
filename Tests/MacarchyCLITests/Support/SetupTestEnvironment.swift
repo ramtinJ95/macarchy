@@ -99,7 +99,7 @@ final class Fixture: LegacySetupOwnershipFixture {
   }
 
   var includeDirective: String {
-    ThemeActivationCoordinator.kittyIncludeDirective(root: stateRoot)
+    KittyAdapter.includeDirective(stateRoot: stateRoot)
   }
 
   var manifest: URL {

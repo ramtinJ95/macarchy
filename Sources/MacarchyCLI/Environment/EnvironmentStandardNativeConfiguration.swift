@@ -40,7 +40,7 @@ enum EnvironmentStandardNativeConfiguration {
         let lines = text.split(whereSeparator: \.isNewline)
           .map { $0.trimmingCharacters(in: .whitespaces) }
           .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-        let include = "include " + stateRoot.appending(path: KittyAdapter.bridgePath).path
+        let include = KittyAdapter.includeDirective(stateRoot: stateRoot)
         guard lines.last == include, lines.filter({ $0 == include }).count == 1 else {
           throw EnvironmentLifecycleError.drift(
             "Kitty's standard configuration must end with exactly one '\(include)' directive")

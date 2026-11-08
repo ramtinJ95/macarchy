@@ -76,8 +76,8 @@ struct EnvironmentNativeSeed: Sendable {
       }
       let theme =
         destination == provider.standardURL(homeDirectory: homeDirectory)
-        ? "# Keep the managed theme include last.\ninclude "
-          + stateRoot.appending(path: KittyAdapter.bridgePath).path + "\n" : ""
+        ? "# Keep the managed theme include last.\n"
+          + KittyAdapter.includeDirective(stateRoot: stateRoot) + "\n" : ""
       contents = """
         # User-owned configuration. Put overrides after the optional curated defaults.
         include \(defaults)

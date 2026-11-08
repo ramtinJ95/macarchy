@@ -97,8 +97,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
   }
 
   package static func nativeKittyWrapper(source: URL, stateRoot: URL) -> String {
-    "include " + source.path + "\n\ninclude "
-      + stateRoot.appending(path: KittyAdapter.bridgePath).path + "\n"
+    "include " + source.path + "\n\n" + KittyAdapter.includeDirective(stateRoot: stateRoot) + "\n"
   }
 
   /// Shared by publication and connection verification; never execute the wrapper
@@ -218,8 +217,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
           configuration = appendLine("include override/kitty.conf", to: configuration)
         }
         configuration = appendLine(
-          "include " + stateRoot.appending(path: KittyAdapter.bridgePath).path,
-          to: configuration)
+          KittyAdapter.includeDirective(stateRoot: stateRoot), to: configuration)
       }
       artifacts.append(
         EnvironmentConfigurationArtifact(path: "kitty/kitty.conf", contents: configuration)
