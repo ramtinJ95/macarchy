@@ -259,7 +259,7 @@ struct HerdrPresetLifecycleTests {
       let coordinator = EnvironmentTransactionCoordinator(
         homeDirectory: fixture.home, stateRoot: fixture.state)
       let recovery = try coordinator.prepareRecoveryLocked()
-      #expect(recovery.runtimeTarget == .managed)
+      #expect(recovery.herdrRuntimeTarget == .managed)
       #expect(recovery.spicetifyRuntimeTarget == nil)
       #expect(recovery.bordersRuntimeTarget == nil)
       try coordinator.markHerdrRuntimeVerifiedLocked(.managed)
@@ -323,7 +323,7 @@ struct HerdrPresetLifecycleTests {
         homeDirectory: fixture.home, stateRoot: fixture.state
       ).prepareRecoveryLocked()
       #expect(recovery.recovered)
-      #expect(recovery.runtimeTarget == nil)
+      #expect(recovery.herdrRuntimeTarget == nil)
       #expect(recovery.spicetifyRuntimeTarget == nil)
       #expect(recovery.bordersRuntimeTarget == nil)
       #expect(try store.readOwnership() == (journal.direction == .forward ? proposed : previous))
@@ -408,7 +408,7 @@ struct HerdrPresetLifecycleTests {
       ).prepareRecoveryLocked()
       #expect(recovery.recovered)
       #expect(
-        recovery.runtimeTarget == nil && recovery.spicetifyRuntimeTarget == nil
+        recovery.herdrRuntimeTarget == nil && recovery.spicetifyRuntimeTarget == nil
           && recovery.bordersRuntimeTarget == nil)
       #expect(try store.readOwnership() == (journal.direction == .forward ? proposed : previous))
       #expect(!store.transactionExists)
@@ -797,7 +797,7 @@ struct HerdrPresetLifecycleTests {
       adoptionDigest: nil,
       themeBridges: EnvironmentThemeBridgeState(entries: [])
     )
-    #expect(try disableCoordinator.prepareRecoveryLocked().runtimeTarget == .original)
+    #expect(try disableCoordinator.prepareRecoveryLocked().herdrRuntimeTarget == .original)
     #expect(EnvironmentStateStore(stateRoot: disable.state).transactionExists)
     try disableCoordinator.markHerdrRuntimeVerifiedLocked(.original)
     _ = try disableCoordinator.prepareRecoveryLocked()
@@ -813,7 +813,7 @@ struct HerdrPresetLifecycleTests {
       stateRoot: teardown.state
     )
     _ = try teardownCoordinator.teardownLocked(dryRun: false)
-    #expect(try teardownCoordinator.prepareRecoveryLocked().runtimeTarget == .original)
+    #expect(try teardownCoordinator.prepareRecoveryLocked().herdrRuntimeTarget == .original)
     #expect(EnvironmentStateStore(stateRoot: teardown.state).transactionExists)
     try teardownCoordinator.markHerdrRuntimeVerifiedLocked(.original)
     _ = try teardownCoordinator.prepareRecoveryLocked()

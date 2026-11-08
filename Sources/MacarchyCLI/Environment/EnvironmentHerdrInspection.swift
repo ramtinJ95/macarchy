@@ -50,12 +50,7 @@ extension EnvironmentProviderInspector {
     }
     guard composition.profile.presets.herdr else { return (nil, nil, nil) }
 
-    let adapter = HerdrAdapter(
-      root: stateRoot,
-      configurationURL: url,
-      executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
-      controlIsAvailable: { true }
-    )
+    let adapter = HerdrAdapter.environment(stateRoot: stateRoot, homeDirectory: homeDirectory)
     let evidence = try capture(url, directoryLink: nil)
     let herdrDirectory = url.deletingLastPathComponent()
     let hasExternalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
