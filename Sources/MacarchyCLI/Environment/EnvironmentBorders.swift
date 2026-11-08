@@ -283,10 +283,6 @@ extension EnvironmentTransaction {
 }
 
 extension EnvironmentTransactionCoordinator {
-  func pendingBordersRuntimeTargetLocked() throws -> EnvironmentBordersRuntimeTarget? {
-    try EnvironmentStateStore(stateRoot: stateRoot).readTransaction()?.pendingBordersRuntimeTarget
-  }
-
   func markBordersRuntimeVerifiedLocked(_ target: EnvironmentBordersRuntimeTarget) throws {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     guard var transaction = try store.readTransaction(),
