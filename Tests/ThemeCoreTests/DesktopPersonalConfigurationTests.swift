@@ -7,7 +7,7 @@ import Testing
 struct DesktopPersonalConfigurationTests {
   @Test(arguments: ["yabai", "sketchybar"])
   func nativeInputIsFrozenDistinctFromLegacyAndSyntaxChecked(provider: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "native-desktop")
     defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appending(path: "personal.sh")
     let sentinel = root.appending(path: "must-not-execute")
@@ -53,7 +53,7 @@ struct DesktopPersonalConfigurationTests {
 
   @Test(arguments: ["yabai", "sketchybar"])
   func machineNativeSourceUsesItsPhysicalLayerAndRejectsLegacyConflict(provider: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "native-desktop")
     defer { try? FileManager.default.removeItem(at: root) }
     let machineRoot = root.appending(path: "machine")
     try FileManager.default.createDirectory(at: machineRoot, withIntermediateDirectories: true)
@@ -91,7 +91,7 @@ struct DesktopPersonalConfigurationTests {
 
   @Test(arguments: [false, true])
   func yabaiCompletionSignalRequiresSuccessfulPersonalCode(fails: Bool) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "native-desktop")
     defer { try? FileManager.default.removeItem(at: root) }
     let personal = root.appending(path: "personal.sh")
     try (fails ? "false\nprintf 'must not run'\n" : "\"$YABAI\" -m config window_gap 123\n")
@@ -127,12 +127,5 @@ struct DesktopPersonalConfigurationTests {
         try #require(commands.range(of: "window_gap 5")).lowerBound
           < #require(commands.range(of: "window_gap 123")).lowerBound)
     }
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "native-desktop-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

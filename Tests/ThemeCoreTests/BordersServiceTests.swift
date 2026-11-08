@@ -9,7 +9,7 @@ import Testing
 struct BordersServiceTests {
   @Test
   func stoppedInspectionIsInertAndRejectsDormantRegistration() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "borders-service")
     defer { try? FileManager.default.removeItem(at: root) }
     let requests = Mutex<[ProcessRequest]>([])
     let service = BordersService(
@@ -62,7 +62,7 @@ struct BordersServiceTests {
       "dormant", "exited", "dormant-custom", "exited-custom",
     ])
   func nativeRequestsRequireExactSupportedServiceIdentity(label: String, condition: String) throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "borders-service")
     defer { try? FileManager.default.removeItem(at: root) }
     let plist = root.appending(path: "Library/LaunchAgents/\(label).plist")
     try FileManager.default.createDirectory(
@@ -185,17 +185,11 @@ struct BordersServiceTests {
 
   @Test
   func alternateHomeCannotMutateTheRealUsersService() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "borders-service")
     defer { try? FileManager.default.removeItem(at: root) }
     let processes = ProcessRunnerFake()
     let service = BordersService(homeDirectory: root, runner: processes.runner)
     #expect(throws: (any Error).self) { try service.start() }
     #expect(processes.requests.isEmpty)
-  }
-
-  private func temporaryRoot() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(path: "borders-service-\(UUID())")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

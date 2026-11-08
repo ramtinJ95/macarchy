@@ -24,7 +24,7 @@ struct BordersManagedTests {
 
   @Test
   func startupArtifactReadsCanonicalStateAndIsSealedExecutable() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "borders-managed")
     defer { try? FileManager.default.removeItem(at: root) }
     let resources = repositoryRoot.appending(path: "Environment")
     let composition = try EnvironmentConfigurationComposer().compose(
@@ -49,7 +49,7 @@ struct BordersManagedTests {
 
   @Test
   func focusRingSelectionLayersThroughTheExistingPortableProfile() throws {
-    let root = try temporaryRoot()
+    let root = try makeTemporaryDirectory(named: "borders-managed")
     defer { try? FileManager.default.removeItem(at: root) }
     let portable = root.appending(path: "profile.toml")
     let machine = root.appending(path: "machine.toml")
@@ -63,7 +63,8 @@ struct BordersManagedTests {
 
   @Test(arguments: ["#cba6f7", "#ABCDE0", "red", "#12zz34", "#123456;touch nope"])
   func startupValidatesColorBeforeAnyNativeRequest(accent: String) throws {
-    let root = try temporaryRoot().appending(path: "state 'quoted' $literal")
+    let root = try makeTemporaryDirectory(named: "borders-managed")
+      .appending(path: "state 'quoted' $literal")
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
     try FileManager.default.createDirectory(
       at: root.appending(path: "current"), withIntermediateDirectories: true)
@@ -88,12 +89,5 @@ struct BordersManagedTests {
     } else {
       #expect(!result.output.contains("active_color="))
     }
-  }
-
-  private func temporaryRoot() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "borders-managed-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }
