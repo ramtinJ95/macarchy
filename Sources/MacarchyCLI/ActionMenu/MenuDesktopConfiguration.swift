@@ -10,7 +10,7 @@ struct MenuDesktopConfiguration {
   func prepareForEditing() throws -> MenuDesktopEditSession? {
     let layered = try MenuNativeProfileEdit.load(context)
     let generation = try provider.managedGeneration(profile: layered.profile, context: context)
-    let origin = layered.fieldOrigins[provider.rawValue + ".hook"] ?? .portable
+    let origin = layered.fieldOrigins[provider.profileTable + "." + provider.hookKey] ?? .portable
     let parent = (origin == .machine ? context.machineProfileURL : context.profileURL)
       .resolvingSymlinksInPath().deletingLastPathComponent()
     let declared = provider.source(in: layered.profile)
@@ -75,7 +75,7 @@ struct MenuDesktopConfiguration {
     io.write("Personal \(provider.rawValue) input:\n\(reviewed)\n")
     for file in edit.files where file.changed {
       io.write(
-        "Set \(provider.rawValue).configuration in \(file.physical.path); remove any legacy hook declaration, preserve other settings.\n"
+        "Set \(provider.profileTable).\(provider.configurationKey) in \(file.physical.path); remove any legacy hook declaration, preserve other settings.\n"
       )
     }
     io.write(Self.notice(provider) + "\n")
@@ -151,8 +151,7 @@ struct MenuDesktopEditSession {
     else {
       throw EnvironmentLifecycleError.blocked("personal connection is not ready for editing")
     }
-    let defaults = context.desktopResourcesRoot.appending(
-      path: "\(provider.rawValue)/defaults.toml")
+    let defaults = provider.defaultsURL(resourcesRoot: context.desktopResourcesRoot)
     return Self(
       provider: provider, context: context, source: source, target: target,
       before: try BoundedRegularFile.readUTF8(at: target),

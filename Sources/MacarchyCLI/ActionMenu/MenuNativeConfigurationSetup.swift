@@ -197,14 +197,15 @@ struct MenuNativeConfigurationSetup {
     )
     for file in edit.files where file.changed {
       io.write("Profile: \(file.declared.path)\nPhysical file: \(file.physical.path)\n")
-      io.write("  Set \(provider.rawValue).\(provider.profileKey).\n")
+      io.write("  Set \(provider.profileTable).\(provider.profileKey).\n")
       for key in provider.copiedProfileKeys {
         if !CanonicalTOMLSelector(
-          configuration: file.before ?? "", table: provider.rawValue,
+          configuration: file.before ?? "", table: provider.profileTable,
           key: key
         ).assignments.isEmpty {
           io.write(
-            "  Remove copied \(provider.rawValue).\(key); native behavior becomes authoritative.\n")
+            "  Remove copied \(provider.profileTable).\(key); native behavior becomes authoritative.\n"
+          )
         }
       }
     }

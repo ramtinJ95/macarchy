@@ -275,8 +275,8 @@ struct GuidedSetupCommandRunner: Sendable {
       return Set(
         try DependencyProfile.personal(homeDirectory: context.homeDirectory).selectedForSetup(
           profile,
-          defaultsURL: context.desktopResourcesRoot.appending(
-            path: "sketchybar/defaults.toml")
+          defaultsURL: DesktopDesiredState.sketchyBarDefaultsURL(
+            resourcesRoot: context.desktopResourcesRoot)
         ).compactMap { $0.remediation.homebrewPackage })
     }
     return try await execute(context: context, consumerPaths: consumerPaths, answers: answers)
@@ -294,7 +294,7 @@ struct GuidedSetupCommandRunner: Sendable {
     let nativeSources = try answers.nativeStarterProviders.map { provider in
       let path = try encoder.encode(
         UnifiedSetupNativeStarters.profilePath(provider, context: context))
-      return "[\(provider.rawValue)]\n\(provider.profileKey) = "
+      return "[\(provider.profileTable)]\n\(provider.profileKey) = "
         + String(decoding: path, as: UTF8.self) + "\n"
     }.joined(separator: "\n")
     if let fragment = try GuidedSetupProfileWriter.write(

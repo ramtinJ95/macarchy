@@ -24,7 +24,7 @@ struct MenuNativeProfileEdit {
     provider: EnvironmentNativeSeed.Provider = .neovim
   ) throws -> Self {
     let edit = try prepare(
-      context: context, source: source, table: provider.rawValue, key: provider.profileKey,
+      context: context, source: source, table: provider.profileTable, key: provider.profileKey,
       copiedKeys: provider.copiedProfileKeys,
       currentSource: { provider.source(in: $0.environment) })
     guard provider.copiedSource(in: edit.profile.environment) == nil
@@ -37,7 +37,8 @@ struct MenuNativeProfileEdit {
 
   static func keybindings(context: UnifiedSetupPlanContext, source: URL) throws -> Self {
     try prepare(
-      context: context, source: source, table: "keybindings", key: "override",
+      context: context, source: source, table: KeybindingProfile.table,
+      key: KeybindingProfile.key(\.overrideURL),
       copiedKeys: [], currentSource: { $0.keybindings.overrideURL })
   }
 
@@ -45,8 +46,9 @@ struct MenuNativeProfileEdit {
     context: UnifiedSetupPlanContext, source: URL, provider: DesktopPersonalProvider
   ) throws -> Self {
     try prepare(
-      context: context, source: source, table: provider.rawValue,
-      key: "configuration", copiedKeys: ["hook"], currentSource: { provider.source(in: $0) })
+      context: context, source: source, table: provider.profileTable,
+      key: provider.configurationKey, copiedKeys: [provider.hookKey],
+      currentSource: { provider.source(in: $0) })
   }
 
   private static func prepare(
@@ -221,21 +223,6 @@ enum MenuMutationLock {
       return try ActivationLock(root: stateRoot).withLock(body)
     case .environmentLifecycle:
       return try EnvironmentLifecycleLock(stateRoot: stateRoot).withActivationLock(body)
-    }
-  }
-}
-
-extension EnvironmentNativeSeed.Provider {
-  /// These fields configure copied behavior, not the new user-owned source.
-  /// Review must disclose their removal; existing migrations preserve the
-  /// active composed behavior in the writable file before removing intent.
-  var copiedProfileKeys: [String] {
-    switch self {
-    case .neovim: ["configuration"]
-    case .zsh: ["hook"]
-    case .kitty: ["override"]
-    case .starship: ["behavior"]
-    case .atuin: ["configuration", "search_mode", "keymap_mode", "enter_accept", "daemon"]
     }
   }
 }

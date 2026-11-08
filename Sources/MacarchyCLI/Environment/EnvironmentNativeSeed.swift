@@ -7,13 +7,50 @@ struct EnvironmentNativeSeed: Sendable {
   enum Provider: String, Codable, CaseIterable, Sendable {
     case zsh, kitty, atuin, starship, neovim
 
-    var profileKey: String {
+    /// The profile table that declares this provider's sources.
+    var profileTable: String { profileFields.table }
+
+    /// The profile key that selects the native source.
+    var profileKey: String { profileFields.source }
+
+    /// These fields configure copied behavior, not the new user-owned source.
+    /// Review must disclose their removal; existing migrations preserve the
+    /// active composed behavior in the writable file before removing intent.
+    var copiedProfileKeys: [String] { profileFields.copied }
+
+    private var profileFields: (table: String, source: String, copied: [String]) {
       switch self {
-      case .zsh, .kitty: "configuration"
-      case .atuin, .starship, .neovim: "native_configuration"
+      case .zsh:
+        return (
+          ZshProfileOptions.table, ZshProfileOptions.key(\.configurationURL),
+          [ZshProfileOptions.key(\.hookURL)]
+        )
+      case .kitty:
+        return (
+          KittyProfileOptions.table, KittyProfileOptions.key(\.configurationURL),
+          [KittyProfileOptions.key(\.overrideDirectoryURL)]
+        )
+      case .atuin:
+        return (
+          AtuinProfileOptions.table, AtuinProfileOptions.key(\.nativeConfigurationURL),
+          [
+            AtuinProfileOptions.key(\.configurationURL), AtuinProfileOptions.key(\.searchMode),
+            AtuinProfileOptions.key(\.keymapMode), AtuinProfileOptions.key(\.enterAccept),
+            AtuinProfileOptions.key(\.daemon),
+          ]
+        )
+      case .starship:
+        return (
+          StarshipProfileOptions.table, StarshipProfileOptions.key(\.nativeConfigurationURL),
+          [StarshipProfileOptions.key(\.behaviorURL)]
+        )
+      case .neovim:
+        return (
+          NeovimProfileOptions.table, NeovimProfileOptions.key(\.nativeConfigurationDirectoryURL),
+          [NeovimProfileOptions.key(\.configurationDirectoryURL)]
+        )
       }
     }
-
   }
 
   struct Plan: Encodable, Sendable {

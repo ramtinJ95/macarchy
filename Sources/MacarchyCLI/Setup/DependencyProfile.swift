@@ -157,8 +157,8 @@ struct DependencyProfile: Sendable {
 
   func selectedForDesktop(
     _ profile: PortableProfile,
-    defaultsURL: URL = RuntimeEnvironment.live.builtInDesktopURL.appending(
-      path: "sketchybar/defaults.toml")
+    defaultsURL: URL = DesktopDesiredState.sketchyBarDefaultsURL(
+      resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL)
   ) throws -> [DependencyCapability] {
     var ids = Set(["macos-26", "arm64", "homebrew"])
     if profile.desktop.provider == .yabaiSkhd { ids.formUnion(["skhd", "yabai"]) }
@@ -194,8 +194,8 @@ struct DependencyProfile: Sendable {
 
   func selectedForSetup(
     _ profile: PortableProfile,
-    defaultsURL: URL = RuntimeEnvironment.live.builtInDesktopURL.appending(
-      path: "sketchybar/defaults.toml")
+    defaultsURL: URL = DesktopDesiredState.sketchyBarDefaultsURL(
+      resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL)
   ) throws -> [DependencyCapability] {
     let ids = Set(
       (try selectedForDesktop(profile, defaultsURL: defaultsURL)

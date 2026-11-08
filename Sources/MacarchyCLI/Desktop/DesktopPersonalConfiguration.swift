@@ -15,6 +15,37 @@ enum DesktopPersonalProvider: String, Sendable {
     }
   }
 
+  /// The profile table that declares this provider's personal sources.
+  var profileTable: String { profileFields.table }
+
+  /// The profile key that selects the personal configuration.
+  var configurationKey: String { profileFields.configuration }
+
+  /// The profile key that selects the legacy hook the configuration replaces.
+  var hookKey: String { profileFields.hook }
+
+  private var profileFields: (table: String, configuration: String, hook: String) {
+    switch self {
+    case .yabai:
+      return (
+        YabaiProfileOptions.table, YabaiProfileOptions.key(\.configurationURL),
+        YabaiProfileOptions.key(\.hookURL)
+      )
+    case .sketchybar:
+      return (
+        SketchyBarProfileOptions.table, SketchyBarProfileOptions.key(\.configurationURL),
+        SketchyBarProfileOptions.key(\.hookURL)
+      )
+    }
+  }
+
+  func defaultsURL(resourcesRoot: URL) -> URL {
+    switch self {
+    case .yabai: DesktopDesiredState.yabaiDefaultsURL(resourcesRoot: resourcesRoot)
+    case .sketchybar: DesktopDesiredState.sketchyBarDefaultsURL(resourcesRoot: resourcesRoot)
+    }
+  }
+
   func compose(
     profile: PortableProfile, context: UnifiedSetupPlanContext,
     includePersonalConfiguration: Bool = true
