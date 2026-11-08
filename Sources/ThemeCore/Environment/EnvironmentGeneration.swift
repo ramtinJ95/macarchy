@@ -296,23 +296,20 @@ package struct EnvironmentGenerationStore: Sendable {
       Darwin.close(environmentDescriptor)
       Darwin.close(stateDescriptor)
     }
-    let created = StateLayout.generationPath(generationID).withCString { target in
-      temporaryName.withCString { name in
-        Darwin.symlinkat(target, environmentDescriptor, name)
+    try GenerationStore.replaceCurrent(
+      in: environmentDescriptor,
+      with: generationID,
+      through: temporaryName,
+      syncs: true,
+      failure: { step, code in
+        switch step {
+        case .create:
+          return EnvironmentGenerationError.system("create current pointer", temporary, code)
+        case .replace:
+          return EnvironmentGenerationError.system("select current generation", current, code)
+        }
       }
-    }
-    guard created == 0 else {
-      throw EnvironmentGenerationError.system("create current pointer", temporary, errno)
-    }
-    defer { temporaryName.withCString { _ = Darwin.unlinkat(environmentDescriptor, $0, 0) } }
-    let replaced = temporaryName.withCString { source in
-      "current".withCString { destination in
-        Darwin.renameat(environmentDescriptor, source, environmentDescriptor, destination)
-      }
-    }
-    guard replaced == 0, fsync(environmentDescriptor) == 0 else {
-      throw EnvironmentGenerationError.system("select current generation", current, errno)
-    }
+    )
   }
 
   package func restoreCurrent(_ destination: String?) throws {
@@ -340,7 +337,7 @@ package struct EnvironmentGenerationStore: Sendable {
       }
       return
     }
-    _ = try validatedGenerationID(from: destination)
+    let generationID = try validatedGenerationID(from: destination)
     try ensureRoots()
     let temporary = environmentRoot.appending(
       path: ".current-restore-\(UUID().uuidString.lowercased())")
@@ -349,27 +346,21 @@ package struct EnvironmentGenerationStore: Sendable {
       Darwin.close(environmentDescriptor)
       Darwin.close(stateDescriptor)
     }
-    let created = destination.withCString { target in
-      temporary.lastPathComponent.withCString { name in
-        Darwin.symlinkat(target, environmentDescriptor, name)
+    try GenerationStore.replaceCurrent(
+      in: environmentDescriptor,
+      with: generationID,
+      through: temporary.lastPathComponent,
+      syncs: true,
+      failure: { step, code in
+        switch step {
+        case .create:
+          return EnvironmentGenerationError.system(
+            "create restored current pointer", temporary, code)
+        case .replace:
+          return EnvironmentGenerationError.system("restore current pointer", current, code)
+        }
       }
-    }
-    guard created == 0 else {
-      throw EnvironmentGenerationError.system("create restored current pointer", temporary, errno)
-    }
-    defer {
-      temporary.lastPathComponent.withCString {
-        _ = Darwin.unlinkat(environmentDescriptor, $0, 0)
-      }
-    }
-    let replaced = temporary.lastPathComponent.withCString { source in
-      "current".withCString { target in
-        Darwin.renameat(environmentDescriptor, source, environmentDescriptor, target)
-      }
-    }
-    guard replaced == 0, fsync(environmentDescriptor) == 0 else {
-      throw EnvironmentGenerationError.system("restore current pointer", current, errno)
-    }
+    )
   }
 
   package func currentDestination() throws -> String? {
