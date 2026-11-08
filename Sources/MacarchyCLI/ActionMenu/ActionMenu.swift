@@ -27,9 +27,9 @@ struct ActionMenuAction: CaseIterable, Equatable, Sendable {
     ProfileEditAction.allCases.map(Self.profile)
       + [.neovim] + MenuConfigurationAction.allCases.map(Self.configuration)
       + [
-        .appearance, .keybindings, .screenshot, .annotate, .ocr, .prepareImage, .clipboardHistory,
-        .clearClipboardHistory, .keepAwake, .startScreensaver, .toggleIdleScreensaver,
-        .toggleScreensaverPause, .chooseMicrophone, .toggleMicrophone,
+        .appearance, .undoTheme, .keybindings, .screenshot, .annotate, .ocr, .prepareImage,
+        .clipboardHistory, .clearClipboardHistory, .keepAwake, .startScreensaver,
+        .toggleIdleScreensaver, .toggleScreensaverPause, .chooseMicrophone, .toggleMicrophone,
       ]
       + MaintenanceAction.allCases.map(Self.maintenance)
   }
@@ -57,6 +57,11 @@ struct ActionMenuAction: CaseIterable, Equatable, Sendable {
     category: "Appearance", title: "Themes & backgrounds",
     searchText: "appearance themes backgrounds wallpaper colors picker",
     command: .viewer(MacarchyInvocation.themeBrowse))
+
+  static let undoTheme = Self(
+    category: "Appearance", title: "Undo last theme change",
+    searchText: "appearance undo revert previous theme background",
+    command: .alertingViewer(MacarchyInvocation.themeUndo))
 
   static let keybindings = Self(
     category: "Appearance", title: "Keybindings",

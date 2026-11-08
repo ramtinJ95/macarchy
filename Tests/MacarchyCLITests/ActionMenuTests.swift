@@ -103,6 +103,7 @@ struct ActionMenuTests {
 
   @Test(arguments: [
     (ActionMenuAction.appearance, ["theme", "browse"]),
+    (.undoTheme, ["theme", "undo", "--alert-on-error"]),
     (.keybindings, ["keybindings", "show", "--effective"]),
     (.screenshot, ["capture", "screenshot", "--alert-on-error"]),
     (.annotate, ["capture", "annotate", "--alert-on-error"]),
