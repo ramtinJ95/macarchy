@@ -73,7 +73,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
         )
       case .doctor:
         return try SetupComponentExecution(
-          EnvironmentDoctorCommandRunner.live.execute(
+          EnvironmentStatusCommandRunner.live.executeDoctor(
             resourcesRoot: context.environmentResourcesRoot,
             profileURL: context.profileURL,
             profileRequired: context.profileRequired,

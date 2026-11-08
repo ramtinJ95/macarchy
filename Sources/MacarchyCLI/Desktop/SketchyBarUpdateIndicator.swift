@@ -28,7 +28,9 @@ struct SketchyBarUpdateIndicator: Sendable {
     launchReview: { root in
       let runtime = RuntimeEnvironment.live
       let theme = try loadPopupTheme(stateRoot: root, bundledThemesRoot: runtime.builtInThemesURL)
-      _ = try MenuMaintenance.launch(.update, theme: theme, executableURL: runtime.executableURL)
+      _ = try MenuTerminal.launch(
+        .maintenance, arguments: [MenuMaintenance.commandName, MaintenanceAction.update.rawValue],
+        theme: theme, executableURL: runtime.executableURL)
     })
 
   func execute(

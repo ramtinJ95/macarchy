@@ -494,21 +494,37 @@ struct EnvironmentStatusCommandRunner: Sendable {
   }
 
   func execute(
-    operation: String = "environment_status",
     resourcesRoot: URL,
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
-    includeVerification: Bool = false,
     json: Bool,
     profile: PortableProfile? = nil
   ) throws -> (output: String, succeeded: Bool) {
     try run(
-      operation: operation, resourcesRoot: resourcesRoot, profileURL: profileURL,
+      operation: "environment_status", resourcesRoot: resourcesRoot, profileURL: profileURL,
       profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
-      consumerPaths: consumerPaths, includeVerification: includeVerification, applied: nil,
+      consumerPaths: consumerPaths, includeVerification: false, applied: nil,
+      json: json, profile: profile)
+  }
+
+  /// Status plus session verification.
+  func executeDoctor(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    json: Bool,
+    profile: PortableProfile? = nil
+  ) throws -> (output: String, succeeded: Bool) {
+    try run(
+      operation: "environment_doctor", resourcesRoot: resourcesRoot, profileURL: profileURL,
+      profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths, includeVerification: true, applied: nil,
       json: json, profile: profile)
   }
 
@@ -695,42 +711,6 @@ struct EnvironmentStatusCommandRunner: Sendable {
       theme: [],
       verification: [],
       message: message
-    )
-  }
-}
-
-struct EnvironmentDoctorCommandRunner: Sendable {
-  let status: EnvironmentStatusCommandRunner
-
-  static let live = Self(
-    status: EnvironmentStatusCommandRunner(
-      prerequisites: .live,
-      theme: .live,
-      verifier: .live
-    )
-  )
-
-  func execute(
-    resourcesRoot: URL,
-    profileURL: URL,
-    profileRequired: Bool,
-    stateRoot: URL,
-    homeDirectory: URL,
-    consumerPaths: ThemeConsumerPaths,
-    json: Bool,
-    profile: PortableProfile? = nil
-  ) throws -> (output: String, succeeded: Bool) {
-    try status.execute(
-      operation: "environment_doctor",
-      resourcesRoot: resourcesRoot,
-      profileURL: profileURL,
-      profileRequired: profileRequired,
-      stateRoot: stateRoot,
-      homeDirectory: homeDirectory,
-      consumerPaths: consumerPaths,
-      includeVerification: true,
-      json: json,
-      profile: profile
     )
   }
 }
