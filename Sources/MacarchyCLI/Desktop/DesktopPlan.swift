@@ -34,6 +34,33 @@ struct DesktopPlanCommandRunner: Sendable {
     profile suppliedProfile: PortableProfile? = nil,
     requireRunningKeybindingProcess: Bool = true
   ) throws -> CommandExecution {
+    let plan = try report(
+      resourcesRoot: resourcesRoot,
+      keybindingsResourcesRoot: keybindingsResourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      scope: scope,
+      macarchyExecutableURL: macarchyExecutableURL,
+      profile: suppliedProfile,
+      requireRunningKeybindingProcess: requireRunningKeybindingProcess
+    )
+    return (try plan.render(json: json), plan.succeeded)
+  }
+
+  func report(
+    resourcesRoot: URL,
+    keybindingsResourcesRoot: URL = RuntimeEnvironment.live.builtInKeybindingsURL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    scope: DesktopProviderScope = .allProviders,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
+    profile suppliedProfile: PortableProfile? = nil,
+    requireRunningKeybindingProcess: Bool = true
+  ) throws -> DesktopPlanReport {
     var diagnostics: [PlanDiagnostic] = []
     let profile: PortableProfile?
     if let suppliedProfile {
@@ -308,7 +335,7 @@ struct DesktopPlanCommandRunner: Sendable {
         provider: sketchyBarProvider,
         themePalette: sketchyBarPalette
       ) : nil
-    let report = DesktopPlanReport(
+    return DesktopPlanReport(
       outcome: outcome,
       profile: profileURL.path,
       profileStatus: profile == nil
@@ -333,7 +360,6 @@ struct DesktopPlanCommandRunner: Sendable {
       actions: actions,
       diagnostics: diagnostics
     )
-    return (try report.render(json: json), !blocked)
   }
 
   private func yabaiActions(
@@ -503,7 +529,7 @@ struct DesktopPlanCommandRunner: Sendable {
   }
 }
 
-private struct DesktopPlanReport: CommandReport {
+struct DesktopPlanReport: CommandReport, Sendable {
   let schemaVersion = 1
   let operation = "desktop_plan"
   let outcome: String
@@ -528,6 +554,9 @@ private struct DesktopPlanReport: CommandReport {
   let keybindings: DesktopKeybindingPlan?
   let actions: [PlanAction]
   let diagnostics: [PlanDiagnostic]
+
+  /// A blocked plan is the only failed outcome.
+  var succeeded: Bool { outcome != "blocked" }
 
   func renderText() throws -> String {
     var lines = [
@@ -607,7 +636,7 @@ private struct DesktopPlanReport: CommandReport {
   }
 }
 
-private struct DesktopSketchyBarPlanReport: Encodable {
+struct DesktopSketchyBarPlanReport: Encodable, Sendable {
   let packagedDefaults: String
   let settings: SketchyBarSettings?
   let layout: SketchyBarLayout?
