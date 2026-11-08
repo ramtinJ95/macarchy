@@ -146,7 +146,8 @@ struct ThemeInstallCommandTests {
     )
     let activation = ThemeActivationResult(
       manifest: manifest,
-      reconciliation: try ReconciliationRecord(manifest: manifest, results: [])
+      reconciliation: try ReconciliationRecord(manifest: manifest, results: []),
+      notice: "Theme history was not updated."
     )
 
     let execution = try await fixture.runner(activationResult: activation).execute(
@@ -162,6 +163,7 @@ struct ThemeInstallCommandTests {
     #expect(execution.succeeded)
     let report = try jsonObject(execution.output)
     #expect(report["committed"] as? Bool == true)
+    #expect(report["notice"] as? String == "Theme history was not updated.")
     #expect(
       report["slack_theme"] as? String
         == "#1a0d2e,#8b9aff,#5ffbf1,#ff6ec7"

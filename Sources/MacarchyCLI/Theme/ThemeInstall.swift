@@ -339,6 +339,7 @@ private enum ThemeInstallReport {
         conversion: conversion,
         reconciliation: activationJSON.reconciliation,
         slackTheme: activationJSON.slackTheme,
+        notice: activationJSON.notice,
         error: transactionError ?? activationJSON.error
       )
     }
@@ -403,6 +404,7 @@ private struct ThemeInstallJSONReport: Encodable {
   var conversion: OmarchyThemeConversionReport? = nil
   var reconciliation: [AdapterResult]? = nil
   var slackTheme: String? = nil
+  var notice: String? = nil
   var error: String? = nil
 
   enum CodingKeys: String, CodingKey {
@@ -416,6 +418,7 @@ private struct ThemeInstallJSONReport: Encodable {
     case generationID = "generation_id"
     case conversion, reconciliation
     case slackTheme = "slack_theme"
+    case notice
     case error
   }
 }
