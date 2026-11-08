@@ -887,107 +887,12 @@ struct UnifiedSetupPlanReport: CommandReport {
   }
 }
 
-enum JSONValue: Codable, Sendable {
-  case object([String: JSONValue])
-  case array([JSONValue])
-  case string(String)
-  case integer(Int64)
-  case unsignedInteger(UInt64)
-  case number(Double)
-  case bool(Bool)
-  case null
-
-  init(from decoder: Decoder) throws {
-    let container = try decoder.singleValueContainer()
-    if container.decodeNil() {
-      self = .null
-    } else if let value = try? container.decode(Bool.self) {
-      self = .bool(value)
-    } else if let value = try? container.decode(UInt64.self) {
-      self = .unsignedInteger(value)
-    } else if let value = try? container.decode(Int64.self) {
-      self = .integer(value)
-    } else if let value = try? container.decode(Double.self) {
-      self = .number(value)
-    } else if let value = try? container.decode(String.self) {
-      self = .string(value)
-    } else if let value = try? container.decode([String: JSONValue].self) {
-      self = .object(value)
-    } else {
-      self = .array(try container.decode([JSONValue].self))
-    }
-  }
-
-  func encode(to encoder: Encoder) throws {
-    var container = encoder.singleValueContainer()
-    switch self {
-    case .object(let value): try container.encode(value)
-    case .array(let value): try container.encode(value)
-    case .string(let value): try container.encode(value)
-    case .integer(let value): try container.encode(value)
-    case .unsignedInteger(let value): try container.encode(value)
-    case .number(let value): try container.encode(value)
-    case .bool(let value): try container.encode(value)
-    case .null: try container.encodeNil()
-    }
-  }
-
-  var object: [String: JSONValue]? {
-    guard case .object(let value) = self else { return nil }
-    return value
-  }
-
-  var array: [JSONValue]? {
-    guard case .array(let value) = self else { return nil }
-    return value
-  }
-
-  var string: String? {
-    guard case .string(let value) = self else { return nil }
-    return value
-  }
-
-  subscript(_ key: String) -> JSONValue? {
-    object?[key]
-  }
-}
-
 struct SetupComponentReportError: Error, CustomStringConvertible {
   let description: String
 }
 
-/// A delegated command's rendered `--json` result, embedded verbatim by setup apply,
-/// teardown, inspection and package addition.
-struct SetupComponentExecution: Encodable, Sendable {
-  let succeeded: Bool
-  let report: JSONValue
-  let outcome: String
-
-  init(_ execution: CommandExecution) throws {
-    succeeded = execution.succeeded
-    report = try JSONDecoder().decode(JSONValue.self, from: Data(execution.output.utf8))
-    guard let object = report.object else {
-      throw SetupComponentReportError(
-        description: "Delegated plan field component is not an object")
-    }
-    guard let value = object["outcome"] else {
-      throw SetupComponentReportError(description: "Delegated plan is missing component.outcome")
-    }
-    guard let outcome = value.string else {
-      throw SetupComponentReportError(
-        description: "Delegated plan field component.outcome is not a string")
-    }
-    self.outcome = outcome
-  }
-
-  enum CodingKeys: CodingKey {
-    case succeeded, report
-  }
-}
-
 /// A setup stage's own report, embedded verbatim under the stage's `details`.
 enum SetupStageDetails: Encodable, Sendable {
-  case delegated(JSONValue)
   case theme(ThemeSetJSONReport)
   case desktopApply(DesktopAggregateMutationReport)
   case desktopTeardown(DesktopAggregateTeardownReport)
@@ -998,7 +903,6 @@ enum SetupStageDetails: Encodable, Sendable {
   func encode(to encoder: Encoder) throws {
     var container = encoder.singleValueContainer()
     switch self {
-    case .delegated(let report): try container.encode(report)
     case .theme(let report): try container.encode(report)
     case .desktopApply(let report): try container.encode(report)
     case .desktopTeardown(let report): try container.encode(report)
