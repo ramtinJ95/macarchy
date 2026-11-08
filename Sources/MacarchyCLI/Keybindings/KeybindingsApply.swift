@@ -83,9 +83,6 @@ struct KeybindingLifecycleController: Sendable {
 struct KeybindingsApplyCommandRunner: Sendable {
   let lifecycle: KeybindingLifecycleController
   let planner: KeybindingsPlanCommandRunner
-  #if MACARCHY_ACCEPTANCE_TESTING
-    private let acceptanceFailure: KeybindingAcceptanceFailureInjector?
-  #endif
 
   static let live = KeybindingsApplyCommandRunner(lifecycle: .live, planner: .live)
 
@@ -102,32 +99,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
         ),
         service: lifecycle.service
       )
-    #if MACARCHY_ACCEPTANCE_TESTING
-      acceptanceFailure = nil
-    #endif
   }
-
-  #if MACARCHY_ACCEPTANCE_TESTING
-    private init(
-      lifecycle: KeybindingLifecycleController,
-      planner: KeybindingsPlanCommandRunner,
-      acceptanceFailure: KeybindingAcceptanceFailureInjector
-    ) {
-      self.lifecycle = lifecycle
-      self.planner = planner
-      self.acceptanceFailure = acceptanceFailure
-    }
-
-    func withAcceptanceManagedUpdateRollbackCheckpoint(
-      observer: @escaping @Sendable (String) -> Void = { _ in }
-    ) -> Self {
-      Self(
-        lifecycle: lifecycle,
-        planner: planner,
-        acceptanceFailure: KeybindingAcceptanceFailureInjector(observer: observer)
-      )
-    }
-  #endif
 
   func teardownLocked(
     stateRoot: URL,
@@ -508,19 +480,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
     let evidence = Mutex(KeybindingsApplyEvidence())
     do {
       let result = try ActivationLock(root: stateRoot).withLock {
-        #if MACARCHY_ACCEPTANCE_TESTING
-          if let acceptanceFailure {
-            try preflightAcceptanceFailure(
-              acceptanceFailure,
-              resourcesRoot: resourcesRoot,
-              profileURL: profileURL,
-              profileRequired: profileRequired,
-              stateRoot: stateRoot,
-              homeDirectory: homeDirectory,
-              adopt: adopt
-            )
-          }
-        #endif
         return try applyLocked(
           resourcesRoot: resourcesRoot,
           profileURL: profileURL,
@@ -848,7 +807,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     profile: PortableProfile? = nil
   ) throws -> PreparedKeybindingsApply {
     let serviceChange = try lifecycle.service?.prepare(home: homeDirectory, stateRoot: stateRoot)
-    var preparation = try planner.prepare(
+    let preparation = try planner.prepare(
       resourcesRoot: resourcesRoot,
       profileURL: profileURL,
       profileRequired: profileRequired,
@@ -856,7 +815,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       homeDirectory: homeDirectory,
       profile: profile
     )
-    guard preparation.outcome != "blocked", var composition = preparation.composition else {
+    guard preparation.outcome != "blocked", let composition = preparation.composition else {
       throw KeybindingsApplyError.blocked(preparation.blockingMessages.joined(separator: "; "))
     }
     var eligibilityDecision = try eligibility(preparation, adopt: adopt)
@@ -882,33 +841,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
         throw KeybindingsApplyError.blocked(String(describing: error))
       }
     }
-
-    #if MACARCHY_ACCEPTANCE_TESTING
-      if let acceptanceFailure {
-        preparation = try planner.prepare(
-          resourcesRoot: resourcesRoot,
-          profileURL: profileURL,
-          profileRequired: profileRequired,
-          stateRoot: stateRoot,
-          homeDirectory: homeDirectory,
-          profile: profile
-        )
-        guard preparation.outcome != "blocked", let finalComposition = preparation.composition
-        else {
-          throw KeybindingsApplyError.blocked(
-            preparation.blockingMessages.joined(separator: "; ")
-          )
-        }
-        composition = finalComposition
-        eligibilityDecision = try eligibility(preparation, adopt: adopt)
-        try validateAcceptanceFailure(
-          acceptanceFailure,
-          preparation: preparation,
-          composition: composition,
-          eligibility: eligibilityDecision
-        )
-      }
-    #endif
 
     return PreparedKeybindingsApply(
       preparation: preparation,
@@ -997,9 +929,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
       stateRoot: stateRoot,
       homeDirectory: homeDirectory
     )
-    #if MACARCHY_ACCEPTANCE_TESTING
-      try acceptanceFailure?.failAfterVerifiedReload(generationID: selectedGenerationID)
-    #endif
   }
 
   private func verifyAppliedBehavior(
@@ -1554,53 +1483,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
   }
 
-  #if MACARCHY_ACCEPTANCE_TESTING
-    private func preflightAcceptanceFailure(
-      _ failure: KeybindingAcceptanceFailureInjector,
-      resourcesRoot: URL,
-      profileURL: URL,
-      profileRequired: Bool,
-      stateRoot: URL,
-      homeDirectory: URL,
-      adopt: String?
-    ) throws {
-      let preparation = try planner.prepare(
-        resourcesRoot: resourcesRoot,
-        profileURL: profileURL,
-        profileRequired: profileRequired,
-        stateRoot: stateRoot,
-        homeDirectory: homeDirectory
-      )
-      guard preparation.outcome != "blocked", let composition = preparation.composition else {
-        throw KeybindingsApplyError.blocked(
-          preparation.blockingMessages.joined(separator: "; ")
-        )
-      }
-      let eligibility = try eligibility(preparation, adopt: adopt)
-      try validateAcceptanceFailure(
-        failure,
-        preparation: preparation,
-        composition: composition,
-        eligibility: eligibility
-      )
-    }
-
-    private func validateAcceptanceFailure(
-      _ failure: KeybindingAcceptanceFailureInjector,
-      preparation: KeybindingsPlanPreparation,
-      composition: KeybindingComposition,
-      eligibility: KeybindingsApplyEligibility
-    ) throws {
-      try failure.validate(
-        operation: eligibility.operation,
-        lifecycle: eligibility.lifecycle,
-        publishesGeneration: Self.publishesGeneration(preparation.generation, composition),
-        outcome: preparation.outcome,
-        providerStatus: preparation.provider.status
-      )
-    }
-  #endif
-
   private static func publishesGeneration(
     _ generation: KeybindingGenerationInspection,
     _ composition: KeybindingComposition
@@ -1635,50 +1517,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
       == StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory).standardizedFileURL
   }
 }
-
-#if MACARCHY_ACCEPTANCE_TESTING
-  private final class KeybindingAcceptanceFailureInjector: Sendable {
-    private let armed = Mutex(true)
-    private let observer: @Sendable (String) -> Void
-
-    init(observer: @escaping @Sendable (String) -> Void = { _ in }) {
-      self.observer = observer
-    }
-
-    func validate(
-      operation: KeybindingApplyOperation,
-      lifecycle: KeybindingLifecycleAction,
-      publishesGeneration: Bool,
-      outcome: String,
-      providerStatus: KeybindingProviderStatus
-    ) throws {
-      guard
-        operation == .updateGeneration,
-        lifecycle == .reload,
-        publishesGeneration,
-        outcome == "ready",
-        providerStatus == .managed
-      else {
-        throw KeybindingsApplyError.blocked(
-          "the acceptance rollback checkpoint requires one managed generation update with reload"
-        )
-      }
-    }
-
-    func failAfterVerifiedReload(generationID: String) throws {
-      let shouldFail = armed.withLock { armed in
-        guard armed else { return false }
-        armed = false
-        return true
-      }
-      guard shouldFail else { return }
-      observer(generationID)
-      throw KeybindingsApplyError.postcondition(
-        "acceptance checkpoint failed after verified managed update reload"
-      )
-    }
-  }
-#endif
 
 private struct KeybindingsApplyEvidence: Sendable {
   var mutated = false
