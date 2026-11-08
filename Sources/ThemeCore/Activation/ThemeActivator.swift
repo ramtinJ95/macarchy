@@ -55,6 +55,10 @@ package enum ThemeDeactivationError: Error, CustomStringConvertible, Sendable {
 package struct ActivationLock: Sendable {
   // lockf is process-scoped, so sibling threads also need a mutex.
   private static let processMutex = Mutex<Void>(())
+  private static let fileLock = ProcessScopedFileLock<ThemeActivationError>(
+    filename: "activation.lock",
+    cannotCreateRunDirectory: nil,
+    lockFileError: { operation, _, code in .activationLock(operation: operation, code: code) })
 
   private let root: URL
 
@@ -64,26 +68,7 @@ package struct ActivationLock: Sendable {
 
   package func withLock<Value>(_ operation: () throws -> Value) throws -> Value {
     try Self.processMutex.withLock { _ in
-      let runDirectory = root.appending(path: "run", directoryHint: .isDirectory)
-      try FileManager.default.createDirectory(
-        at: runDirectory,
-        withIntermediateDirectories: true
-      )
-
-      let lockURL = runDirectory.appending(path: "activation.lock")
-      let descriptor = lockURL.path.withCString {
-        Darwin.open($0, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0o600)
-      }
-      guard descriptor >= 0 else {
-        throw ThemeActivationError.activationLock(operation: "open", code: errno)
-      }
-      defer { Darwin.close(descriptor) }
-
-      while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
-        if errno == EINTR { continue }
-        throw ThemeActivationError.activationLock(operation: "acquire", code: errno)
-      }
-      return try operation()
+      try Self.fileLock.withFileLock(root: root, operation)
     }
   }
 }
