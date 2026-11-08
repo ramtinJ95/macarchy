@@ -72,7 +72,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
         let package = try repository.package(id: active.themeID)
         let effectivePackage = try MacarchyConfigurationStore(root: stateRoot)
           .addingPersonalBackgrounds(to: package)
-        guard !effectivePackage.backgrounds.isEmpty else {
+        guard let defaultBackground = effectivePackage.defaultBackground else {
           throw BackgroundSelectionError.noBackgrounds(themeID: effectivePackage.id)
         }
         let backgroundID: String
@@ -90,7 +90,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
           backgroundID =
             effectivePackage.backgrounds[(currentIndex + 1) % effectivePackage.backgrounds.count].id
         } else {
-          backgroundID = effectivePackage.backgrounds[0].id
+          backgroundID = defaultBackground.id
         }
         return try await applyLocked(
           package: package,

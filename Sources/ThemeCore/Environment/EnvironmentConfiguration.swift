@@ -1042,7 +1042,8 @@ struct EnvironmentNativeTreeReader {
           url: child
         )
         guard destination.hasPrefix("/"),
-          destination.hasSuffix("/.config/macarchy/current/generated/neovim.lua")
+          destination.hasSuffix(
+            "/\(StateLayout.defaultRootRelativePath)/current/\(NeovimAdapter.outputPath)")
         else {
           throw EnvironmentConfigurationError.invalid(
             root,
