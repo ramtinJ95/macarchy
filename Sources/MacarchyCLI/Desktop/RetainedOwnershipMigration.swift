@@ -142,46 +142,13 @@ struct RetainedOwnershipMigration {
       ) { try store.write(updated) }
 
     case .skhd:
-      guard try KeybindingApplyTransactionStore(stateRoot: stateRoot).read() == nil else {
-        throw failure("pending keybinding transaction blocks ownership migration")
-      }
-      let manager = SetupOwnershipManager()
-      let context = SetupOwnershipManager.Context(homeDirectory: homeDirectory)
-      let records = try manager.readRecords(context: context)
-      guard
-        let index = records.firstIndex(where: { $0.id == KeybindingProviderInspector.ownershipID }),
-        let path = records[index].retainedOriginalPath,
-        records.allSatisfy({ $0.phase == .applied })
-      else { throw failure("no applied retained skhd original, or setup ownership is pending") }
-      let record = records[index]
-      var updated = record
-      let uuid = try RetainedOriginalIdentity.volumeUUID(at: URL(filePath: path))
-      if updated.originalVolumeUUID == nil { updated.originalVolumeUUID = uuid }
-      try KeybindingProviderInspector.validateOwnershipRecord(updated, context: context)
-      let transaction = KeybindingProviderTransaction(homeDirectory: homeDirectory)
-      let parent = try PinnedFilesystem.openDirectory(at: transaction.directory)
-      defer { close(parent) }
-      guard
-        try transaction.leafState(
-          descriptor: parent, name: SkhdLayout.configurationName, record: updated) == .managed
-      else {
-        throw failure("managed skhd entry or claim marker drifted")
-      }
-      try KeybindingProviderInspector().validateManagedOwnershipMarkers(
-        directoryDescriptor: parent, layout: transaction.layout, record: updated)
-      let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
-      guard generation.status == .current, let generationID = generation.generationID else {
-        throw failure("skhd selected generation is not valid")
-      }
+      let binding = try SkhdRetainedOwnershipBinding.inspect(
+        homeDirectory: homeDirectory, stateRoot: stateRoot)
       return try candidateReport(
-        provider, path: path, uuid: uuid,
-        bound: record.originalVolumeUUID != nil, device: record.originalDevice,
-        generationID: generationID, evidence: records
-      ) {
-        var replacement = records
-        replacement[index] = updated
-        try manager.persist(records: replacement, context: context)
-      }
+        provider, path: binding.retainedPath, uuid: binding.volumeUUID,
+        bound: binding.alreadyBound, device: binding.recordedDevice,
+        generationID: binding.generationID, evidence: binding.evidence,
+        persist: binding.persist)
     }
   }
 
