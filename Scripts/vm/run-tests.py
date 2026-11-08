@@ -7,7 +7,6 @@ procedure first. Results/source snapshot remain in the private run directory.
 """
 import argparse
 import hashlib
-import json
 import shlex
 import stat
 import subprocess
@@ -76,8 +75,8 @@ def main():
     evidence = directory / ("tests-" + uuid.uuid4().hex[:12])
     evidence.mkdir(mode=0o700)
     report = {"run": args.run, "status": "in_progress"}
-    lab.write_json(evidence / "report.json", report)
-    try:
+    with lab.recorded_report(evidence / "report.json", report,
+                             echo={"report": str(evidence / "report.json")}):
         archive = evidence / "source.tar.gz"
         report["source_sha256"] = snapshot(lab.ROOT, archive)
         with tempfile.TemporaryDirectory(prefix="ssh-tests-", dir=lab.STATE) as temporary:
@@ -85,13 +84,6 @@ def main():
             report["evidence"] = run_tests(
                 client, archive, evidence, args.filter, args.portability)
         report["status"] = "passed"
-    except Exception as error:
-        report["status"] = "blocked"
-        report["reason"] = lab.describe(error)
-        raise
-    finally:
-        lab.write_json(evidence / "report.json", report)
-        print(json.dumps({"report": str(evidence / "report.json"), **report}, indent=2))
 
 
 if __name__ == "__main__":

@@ -214,8 +214,7 @@ def main():
     if destination.exists():
         raise lab.LabError("Qualification report already exists; inspect it rather than overwrite it.")
     report = {"operation": args.operation, "run": args.run, "status": "in_progress"}
-    lab.write_json(destination, report)
-    try:
+    with lab.recorded_report(destination, report):
         with tempfile.TemporaryDirectory(prefix="ssh-", dir=lab.STATE) as temporary:
             guest = Guest(inputs, args.run, write_askpass(temporary))
             if args.operation == "inspect":
@@ -264,12 +263,6 @@ def main():
                     raise lab.LabError("Guest shutdown not observed within 60 seconds.")
                 report["evidence"] = {"stopped": True}
             report["status"] = "passed"
-    except Exception as error:
-        report["status"] = "blocked"
-        report["reason"] = lab.describe(error)
-        raise
-    finally:
-        lab.write_json(destination, report)
     print(json.dumps(report, indent=2))
 
 

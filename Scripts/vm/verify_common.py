@@ -34,6 +34,10 @@ class Failed(lab.LabError):
     """The product under test reached a wrong result."""
 
 
+def verdict(error):
+    return "failed" if isinstance(error, Failed) else "blocked"
+
+
 def step_command(binary, arguments):
     return f"cd {GUEST_HOME} && " + shlex.join(["/usr/bin/env", "-i", *STEP_ENV, binary, *arguments])
 

@@ -5,6 +5,7 @@ Not imported by Macarchy, ordinary tests, or CI. Run with the adjacent uv lock.
 """
 
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -130,6 +131,42 @@ def vm_info(inputs, name):
 
 def describe(error):
     return str(error) if isinstance(error, LabError) else type(error).__name__
+
+
+def poll(attempt, seconds, interval, expired):
+    """Call attempt() every interval seconds until it returns something other than None.
+
+    Once seconds have passed after a None, returns expired() instead; it may raise."""
+    deadline = time.monotonic() + seconds
+    while (value := attempt()) is None:
+        if time.monotonic() >= deadline:
+            return expired()
+        time.sleep(interval)
+    return value
+
+
+@contextlib.contextmanager
+def recorded_report(path, report, verdict=lambda error: "blocked", reraise=True,
+                    finished=None, echo=None):
+    """Write report to path, run the body, then always write it again.
+
+    An Exception from the body records verdict(error) and its description, and
+    propagates only when reraise. finished, when given, stamps report["finished"]
+    before the final write; echo, when given, is printed merged with the report after it."""
+    write_json(path, report)
+    try:
+        yield report
+    except Exception as error:
+        report["status"] = verdict(error)
+        report["reason"] = describe(error)
+        if reraise:
+            raise
+    finally:
+        if finished is not None:
+            report["finished"] = finished()
+        write_json(path, report)
+        if echo is not None:
+            print(json.dumps({**echo, **report}, indent=2))
 
 
 def require_stopped(inputs, name):
