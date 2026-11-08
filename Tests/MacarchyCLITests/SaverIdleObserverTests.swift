@@ -383,7 +383,7 @@ private final class IdleMachine {
       startSaver: {
         self.starts += 1
         if !self.locked { self.unlockedStarts += 1 }
-        if let failure = self.startFailure { throw SaverError(failure) }
+        if let failure = self.startFailure { throw MessageError(failure) }
         if case .started = self.startAnswer { self.running = true }
         return self.startAnswer
       },
@@ -399,6 +399,6 @@ private final class IdleMachine {
   }
 
   private func check(_ name: String) throws {
-    if let failure = failures[name] { throw SaverError(failure) }
+    if let failure = failures[name] { throw MessageError(failure) }
   }
 }

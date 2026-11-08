@@ -2,14 +2,6 @@ import Darwin
 import Foundation
 import ThemeCore
 
-struct OwnedLaunchAgentError: Error, CustomStringConvertible {
-  let description: String
-
-  init(_ description: String) {
-    self.description = description
-  }
-}
-
 /// What has a launch agent's name in `~/Library/LaunchAgents`.
 enum OwnedLaunchAgentFile: Equatable {
   case absent
@@ -43,8 +35,8 @@ struct OwnedLaunchAgent {
   private var domain: LaunchdUserDomain { LaunchdUserDomain(userID: userID) }
   private var job: String { domain.serviceTarget(label) }
 
-  var conflict: OwnedLaunchAgentError {
-    OwnedLaunchAgentError(
+  var conflict: MessageError {
+    MessageError(
       "\(plistURL.path) is not the launch agent this Macarchy writes, so Macarchy did not change, "
         + "load or remove it. Another Macarchy build or state folder may have written it. If you "
         + "do not need it, run `launchctl bootout \(job)`, delete the file, and try again.")
@@ -126,7 +118,7 @@ struct OwnedLaunchAgent {
 
   func isLoaded() throws -> Bool {
     let output = try domain.printService(label, timeout: 10, runner: runner).loadedOutput {
-      OwnedLaunchAgentError("cannot inspect \(purpose)'s launch agent: \($0.output)")
+      MessageError("cannot inspect \(purpose)'s launch agent: \($0.output)")
     }
     return output != nil
   }
@@ -136,7 +128,7 @@ struct OwnedLaunchAgent {
     guard try !isLoaded() else { return false }
     let result = try launchctl(["bootstrap", domain.target, plistURL.path])
     guard result.terminationStatus == 0 else {
-      throw OwnedLaunchAgentError("cannot load \(purpose)'s launch agent: \(result.output)")
+      throw MessageError("cannot load \(purpose)'s launch agent: \(result.output)")
     }
     return true
   }
@@ -146,7 +138,7 @@ struct OwnedLaunchAgent {
     // launchd holds a kickstart for up to its 30-second throttle after a recent exit.
     let result = try launchctl(["kickstart", job], timeout: 35)
     guard result.terminationStatus == 0 else {
-      throw OwnedLaunchAgentError("cannot start \(purpose)'s launch agent: \(result.output)")
+      throw MessageError("cannot start \(purpose)'s launch agent: \(result.output)")
     }
   }
 
@@ -155,7 +147,7 @@ struct OwnedLaunchAgent {
     guard try isLoaded() else { return false }
     let result = try launchctl(["bootout", job])
     guard result.terminationStatus == 0 else {
-      throw OwnedLaunchAgentError("cannot unload \(purpose)'s launch agent: \(result.output)")
+      throw MessageError("cannot unload \(purpose)'s launch agent: \(result.output)")
     }
     return true
   }

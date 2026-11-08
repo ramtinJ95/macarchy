@@ -53,7 +53,7 @@ enum MaccyOpening: Equatable {
   case started
 }
 
-struct ClipboardHistoryError: Error, CustomStringConvertible {
+extension MessageError {
   static let maccyMissing = Self(
     "Maccy is not installed. Install it with: brew install --cask maccy")
 
@@ -65,12 +65,6 @@ struct ClipboardHistoryError: Error, CustomStringConvertible {
         + "the dialog macOS shows, or give that app Full Disk Access in System Settings › Privacy "
         + "& Security, then try again.")
   }
-
-  let description: String
-
-  init(_ description: String) {
-    self.description = description
-  }
 }
 
 /// Opens and clears the clipboard history Maccy keeps, fully on request and automatically once
@@ -80,14 +74,8 @@ struct ClipboardHistoryError: Error, CustomStringConvertible {
 struct ClipboardHistory {
   /// With the live 50 ms pause, about five seconds for Maccy to quit or start.
   static let waitPolls = 100
-  private static let lock = ProcessScopedFileLock<ClipboardHistoryError>(
-    filename: "clipboard.lock",
-    cannotCreateRunDirectory: { url, error in
-      ClipboardHistoryError("cannot create \(url.path): \(error)")
-    },
-    operationError: { operation, code in
-      ClipboardHistoryError("cannot \(operation) the clipboard lock (errno \(code))")
-    })
+  private static let lock = ProcessScopedFileLock<MessageError>(
+    filename: "clipboard.lock", lockName: "clipboard")
 
   let stateRoot: URL
   let maccy: MaccyApp
@@ -150,7 +138,7 @@ struct ClipboardHistory {
       do {
         return try settings + "\n" + applyAutoClear(.on).message
       } catch {
-        throw ClipboardHistoryError("\(settings)\n\(error)")
+        throw MessageError("\(settings)\n\(error)")
       }
     }
   }
@@ -163,7 +151,7 @@ struct ClipboardHistory {
       do {
         autoClear = try applyAutoClear(.off).message
       } catch {
-        throw ClipboardHistoryError(
+        throw MessageError(
           "\(error)\nMaccy's clearOnQuit and clearSystemClipboard stay on, because the "
             + "automatic clear relies on them while it may still run. Fix the launch agent, then "
             + "run `macarchy clipboard disable` again.")
@@ -175,7 +163,7 @@ struct ClipboardHistory {
   private func applyEnable() throws -> ClipboardIntegrationChange {
     _ = try installedVersion()
     guard try Self.reachingContainer({ try storage.containerExists() }) else {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "Maccy has not run yet, so the settings Macarchy changes would not reach it. Open "
           + "Maccy once, then run `macarchy clipboard enable` again.")
     }
@@ -224,14 +212,14 @@ struct ClipboardHistory {
       let instances = try maccy.instances()
       let wasRunning = !instances.isEmpty
       if wasRunning, !quit(instances) {
-        throw ClipboardHistoryError(
+        throw MessageError(
           "Maccy did not quit within five seconds, so Macarchy deleted nothing and left the "
             + "clipboard as it was. If Maccy quits later, open it again. Then clear again.")
       }
       if unknown == nil {
         // Maccy can start again meanwhile, from the Dock or a login item; never delete under it.
         guard try maccy.instances().isEmpty else {
-          throw ClipboardHistoryError(
+          throw MessageError(
             "Maccy started again during the clear, so Macarchy deleted nothing. Quit Maccy's "
               + "other copy or wait a moment, then clear again.")
         }
@@ -324,7 +312,7 @@ struct ClipboardHistory {
 
   private func installedVersion() throws -> String {
     guard case .installed(let version) = maccy.installation() else {
-      throw ClipboardHistoryError.maccyMissing
+      throw MessageError.maccyMissing
     }
     return version
   }
@@ -335,11 +323,11 @@ struct ClipboardHistory {
     let status = try current()
     guard status.enabled else {
       if status.changed.isEmpty {
-        throw ClipboardHistoryError(
+        throw MessageError(
           "Clipboard history clearing is not enabled, so \(refusal). Run "
             + "`macarchy clipboard enable` first.")
       }
-      throw ClipboardHistoryError(
+      throw MessageError(
         "\(MaccySetting.list(status.changed)) changed in Maccy after Macarchy enabled clearing, "
           + "so \(refusal). Run `macarchy clipboard enable` to turn clearing back on.")
     }
@@ -363,7 +351,7 @@ struct ClipboardHistory {
     do {
       return try record.readStrictly()
     } catch let damaged as InvalidRunStateRecord {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "\(damaged.url.path) is damaged, so Macarchy no longer knows the values clearOnQuit and "
           + "clearSystemClipboard had before it enabled clearing. Set both in Maccy as you want "
           + "them and delete that file, then run `macarchy clipboard enable` to clear again.")
@@ -374,7 +362,7 @@ struct ClipboardHistory {
     do {
       return try autoClearRecord.readStrictly()
     } catch let damaged as InvalidRunStateRecord {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "\(damaged.url.path) is damaged, so Macarchy does not know when clipboard history was "
           + "last cleared. Run `macarchy clipboard auto-clear on` to start a new 24-hour window.")
     }
@@ -396,7 +384,7 @@ struct ClipboardHistory {
     let running = try maccy.instances()
     let instances = running.isEmpty ? try startInBackground() : running
     guard quit(instances) else {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "Maccy did not quit within five seconds, so its history and the clipboard were not "
           + "cleared")
     }
@@ -417,7 +405,7 @@ struct ClipboardHistory {
       return !started.isEmpty
     }
     guard running else {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "Maccy did not start within five seconds, so its history and the clipboard were not "
           + "cleared")
     }
@@ -445,7 +433,7 @@ struct ClipboardHistory {
     do {
       try maccy.open(.background)
     } catch {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "Restarting Maccy after the clear failed: \(error). Open Maccy yourself.")
     }
   }
@@ -454,7 +442,7 @@ struct ClipboardHistory {
     do {
       return try body()
     } catch let error as PinnedFilesystemError where [EPERM, EACCES].contains(error.code) {
-      throw ClipboardHistoryError.appDataPermission(String(describing: error))
+      throw MessageError.appDataPermission(String(describing: error))
     }
   }
 
@@ -465,7 +453,7 @@ struct ClipboardHistory {
       try maccy.open(.background)
       return error
     } catch let restart {
-      return ClipboardHistoryError("\(error); restarting Maccy also failed: \(restart)")
+      return MessageError("\(error); restarting Maccy also failed: \(restart)")
     }
   }
 }
@@ -531,7 +519,7 @@ extension ClipboardHistoryClear {
   /// The message of a complete clear. An incomplete one throws its message, so the command
   /// exits nonzero and a menu launch shows it in an alert.
   func report() throws -> String {
-    guard case .cleared = self else { throw ClipboardHistoryError(message) }
+    guard case .cleared = self else { throw MessageError(message) }
     return message
   }
 }
@@ -575,7 +563,7 @@ extension MaccyOpening {
 extension ClipboardHistoryStatus {
   var message: String {
     guard case .installed(let version) = installation else {
-      return ClipboardHistoryError.maccyMissing.description
+      return MessageError.maccyMissing.description
     }
     var lines = ["Maccy \(version) is installed and \(running ? "running" : "not running")."]
     if !installation.isSupported {

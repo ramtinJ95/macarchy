@@ -3,14 +3,6 @@ import Darwin
 import Foundation
 import ThemeCore
 
-struct SaverError: Error, CustomStringConvertible {
-  let description: String
-
-  init(_ description: String) {
-    self.description = description
-  }
-}
-
 /// A display the saver covers: a Kitty output name, or Kitty's default display when Kitty
 /// reports no names.
 enum SaverDisplay: Hashable, Sendable {
@@ -110,12 +102,8 @@ struct SaverRecordEntry: Equatable, Sendable {
 /// One record per display in `<state root>/run/saver/`. Only that display's runner writes it,
 /// so concurrent runners never share a file.
 struct SaverRecords {
-  private static let lock = ProcessScopedFileLock<SaverError>(
-    filename: "saver.lock",
-    cannotCreateRunDirectory: { url, error in SaverError("cannot create \(url.path): \(error)") },
-    operationError: { operation, code in
-      SaverError("cannot \(operation) the screensaver lock (errno \(code))")
-    })
+  private static let lock = ProcessScopedFileLock<MessageError>(
+    filename: "saver.lock", lockName: "screensaver")
 
   let stateRoot: URL
 
@@ -146,7 +134,7 @@ struct SaverRecords {
     var metadata = stat()
     let executable = session.runner.executablePath
     guard lstat(executable, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG else {
-      throw SaverError("this runner's executable \(executable) is not a regular file")
+      throw MessageError("this runner's executable \(executable) is not a regular file")
     }
     return try withLock { () throws -> Bool in
       guard try launch.read()?.token == session.launch else { return false }
@@ -181,7 +169,7 @@ struct SaverRecords {
     let listing = try PinnedFilesystem.directoryEntries(
       descriptor: descriptor, url: directory, limit: 256)
     guard !listing.truncated else {
-      throw SaverError("\(directory.path) has more than 256 entries; remove the stale ones")
+      throw MessageError("\(directory.path) has more than 256 entries; remove the stale ones")
     }
     return try listing.entries.filter { $0.hasSuffix(".json") }.map { name in
       SaverRecordEntry(name: name, record: try record(named: name).read())
@@ -203,6 +191,6 @@ func terminateSaverProcess(_ pid: Int32) throws {
   guard kill(pid, SIGTERM) != 0 else { return }
   let code = errno
   guard code == ESRCH else {
-    throw SaverError("cannot signal process \(pid) (errno \(code))")
+    throw MessageError("cannot signal process \(pid) (errno \(code))")
   }
 }

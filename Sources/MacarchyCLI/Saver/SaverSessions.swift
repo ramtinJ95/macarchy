@@ -102,10 +102,10 @@ struct Saver {
 
   func start() throws -> SaverStart {
     guard kitty != .missing else {
-      throw SaverError("Kitty is missing at \(SaverKitty.application.path). \(SaverKitty.remedy)")
+      throw MessageError("Kitty is missing at \(SaverKitty.application.path). \(SaverKitty.remedy)")
     }
     if let defect = engine.defect {
-      throw SaverError(
+      throw MessageError(
         "The ttfx engine at \(engine.url.path) is \(defect.summary). \(SaverEngine.remedy)")
     }
     // Runners register under the lock, so start releases it while it waits for them.
@@ -198,14 +198,14 @@ struct Saver {
   }
 
   /// A partial start is no start: the displays that did register are stopped again.
-  private func abandon(_ registered: [SaverRunnerRecord], missing: [String]) -> SaverError {
+  private func abandon(_ registered: [SaverRunnerRecord], missing: [String]) -> MessageError {
     let failure = "The screensaver did not start on \(missing.joined(separator: ", "))"
-    guard !registered.isEmpty else { return SaverError(failure + ".") }
+    guard !registered.isEmpty else { return MessageError(failure + ".") }
     do {
       try stop(registered.map { SaverRecordEntry(name: $0.display.recordName, record: $0) })
-      return SaverError(failure + ". Stopped the displays that did start.")
+      return MessageError(failure + ". Stopped the displays that did start.")
     } catch {
-      return SaverError(failure + "; stopping the displays that did start also failed: \(error)")
+      return MessageError(failure + "; stopping the displays that did start also failed: \(error)")
     }
   }
 
@@ -240,7 +240,7 @@ struct Saver {
       }
     }
     guard stuck.isEmpty else {
-      throw SaverError(
+      throw MessageError(
         "The screensaver on \(stuck.joined(separator: ", ")) did not exit after SIGTERM;"
           + " its record is kept so `macarchy saver stop` can retry.")
     }
@@ -279,7 +279,8 @@ extension Saver {
         let result = try ProcessRunner.live.run(
           ProcessRequest(executableURL: SaverHost.opener, arguments: arguments, timeout: 15))
         guard result.terminationStatus == 0 else {
-          throw SaverError("open exited with status \(result.terminationStatus): \(result.output)")
+          throw MessageError(
+            "open exited with status \(result.terminationStatus): \(result.output)")
         }
       },
       observe: SaverProcess.observe,

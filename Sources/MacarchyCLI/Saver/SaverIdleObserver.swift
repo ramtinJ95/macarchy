@@ -350,19 +350,19 @@ extension SaverIdleObserver {
     let user = UInt32(getuid())
     let pidSize = MemoryLayout<Int32>.stride
     let needed = proc_listpids(UInt32(PROC_UID_ONLY), user, nil, 0)
-    guard needed > 0 else { throw SaverError("cannot list your processes (errno \(errno))") }
+    guard needed > 0 else { throw MessageError("cannot list your processes (errno \(errno))") }
     // Room for processes that start between the two calls.
     var pids = [Int32](repeating: 0, count: Int(needed) / pidSize + 64)
     let capacity = Int32(pids.count * pidSize)
     let filled = proc_listpids(UInt32(PROC_UID_ONLY), user, &pids, capacity)
-    guard filled > 0 else { throw SaverError("cannot list your processes (errno \(errno))") }
+    guard filled > 0 else { throw MessageError("cannot list your processes (errno \(errno))") }
     guard filled < capacity else {
-      throw SaverError("your process list grew faster than it could be read")
+      throw MessageError("your process list grew faster than it could be read")
     }
     for pid in pids.prefix(Int(filled) / pidSize) where pid > 0 {
       guard let path = processExecutablePath(pid) else {
         if hasExited(pid) { continue }
-        throw SaverError("cannot read the executable path of one of your processes")
+        throw MessageError("cannot read the executable path of one of your processes")
       }
       if path.hasSuffix("/ScreenSaverEngine.app/Contents/MacOS/ScreenSaverEngine") { return true }
     }
@@ -386,12 +386,12 @@ extension SaverIdleObserver {
     var count: UInt32 = 0
     let counted = CGGetOnlineDisplayList(0, nil, &count)
     guard counted == .success else {
-      throw SaverError("cannot list the displays (CGError \(counted.rawValue))")
+      throw MessageError("cannot list the displays (CGError \(counted.rawValue))")
     }
     var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
     let listed = CGGetOnlineDisplayList(count, &displays, &count)
     guard listed == .success else {
-      throw SaverError("cannot list the displays (CGError \(listed.rawValue))")
+      throw MessageError("cannot list the displays (CGError \(listed.rawValue))")
     }
     return !displays.prefix(Int(count)).contains { CGDisplayIsAsleep($0) == 0 }
   }

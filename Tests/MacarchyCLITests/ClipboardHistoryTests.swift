@@ -99,7 +99,7 @@ struct ClipboardHistoryTests {
       #expect(status.history.enabled == false)
       #expect(status.history.changed == [.clearOnQuit])
       #expect(status.message.contains("off because clearOnQuit changed in Maccy"))
-      let refused = #expect(throws: ClipboardHistoryError.self) { try engine.clear() }
+      let refused = #expect(throws: MessageError.self) { try engine.clear() }
       #expect(refused?.description.contains("`macarchy clipboard enable`") == true)
 
       #expect(try engine.enable() == .enabled)
@@ -131,7 +131,7 @@ struct ClipboardHistoryTests {
       #expect(try engine.enable() == .enabled)
       machine.failingWrites = [.clearSystemClipboard]
 
-      #expect(throws: ClipboardHistoryError.self) { try engine.disable() }
+      #expect(throws: MessageError.self) { try engine.disable() }
       #expect(machine.settings == [.clearSystemClipboard: true])
       #expect(try fixture.record.read() != nil)
 
@@ -149,7 +149,7 @@ struct ClipboardHistoryTests {
       #expect(try engine.enable() == .enabled)
       machine.refusedDirectories = ["Library/Preferences"]
 
-      let error = #expect(throws: ClipboardHistoryError.self) { try engine.disable() }
+      let error = #expect(throws: MessageError.self) { try engine.disable() }
       #expect(error?.description.contains("access data from other apps") == true)
       #expect(try fixture.record.read() != nil)
       #expect(machine.settings == [.clearOnQuit: true, .clearSystemClipboard: true])
@@ -163,7 +163,7 @@ struct ClipboardHistoryTests {
       machine.running = true
       machine.startsAgainAfterExit = true
 
-      let error = #expect(throws: ClipboardHistoryError.self) { try engine.clear() }
+      let error = #expect(throws: MessageError.self) { try engine.clear() }
       #expect(error?.description.contains("Maccy started again during the clear") == true)
       #expect(Self.storeFiles.allSatisfy(fixture.exists))
       #expect(machine.opened.isEmpty)
@@ -197,7 +197,7 @@ struct ClipboardHistoryTests {
         { _ = try engine.clear() },
       ]
       for operation in operations {
-        let error = #expect(throws: ClipboardHistoryError.self) { try operation() }
+        let error = #expect(throws: MessageError.self) { try operation() }
         #expect(error?.description.contains("is damaged") == true)
       }
       #expect(try String(contentsOf: fixture.record.url, encoding: .utf8) == content)
@@ -210,7 +210,7 @@ struct ClipboardHistoryTests {
   @Test func enableWaitsUntilMaccyHasRunOnce() throws {
     try withEngine { engine, machine, fixture throws in
       try FileManager.default.removeItem(at: fixture.container)
-      let error = #expect(throws: ClipboardHistoryError.self) { try engine.enable() }
+      let error = #expect(throws: MessageError.self) { try engine.enable() }
       #expect(error?.description.contains("Open Maccy once") == true)
       #expect(machine.settings.isEmpty)
       #expect(try engine.status().history.enabled == false)
@@ -260,7 +260,7 @@ struct ClipboardHistoryTests {
       machine.running = true
       machine.exitAfterPauses = nil
 
-      let error = #expect(throws: ClipboardHistoryError.self) { try engine.clear() }
+      let error = #expect(throws: MessageError.self) { try engine.clear() }
       #expect(error?.description.contains("did not quit within five seconds") == true)
       #expect(machine.pauses == ClipboardHistory.waitPolls)
       #expect(machine.log == ["quit"])
@@ -283,7 +283,7 @@ struct ClipboardHistoryTests {
       }
       machine.running = true
 
-      let error = #expect(throws: ClipboardHistoryError.self) { try engine.clear() }
+      let error = #expect(throws: MessageError.self) { try engine.clear() }
       #expect(
         error?.description.contains("Storage.sqlite-wal is \(kind), not a regular file") == true)
       #expect(Self.storeFiles.allSatisfy(fixture.exists))
@@ -299,7 +299,7 @@ struct ClipboardHistoryTests {
       machine.refusedNames = ["Storage.sqlite-wal"]
       machine.running = true
 
-      let error = #expect(throws: ClipboardHistoryError.self) { try engine.clear() }
+      let error = #expect(throws: MessageError.self) { try engine.clear() }
       #expect(error?.description.contains("access data from other apps") == true)
       #expect(Self.storeFiles.allSatisfy(fixture.exists))
       #expect(machine.log == ["quit", "exited", "files", "open background"])
@@ -343,7 +343,7 @@ struct ClipboardHistoryTests {
       let expected: [String] =
         running ? ["quit", "exited", "clear pasteboard", "open background"] : ["clear pasteboard"]
       #expect(machine.log == expected)
-      let error = #expect(throws: ClipboardHistoryError.self) { try outcome.report() }
+      let error = #expect(throws: MessageError.self) { try outcome.report() }
       #expect(error?.description == outcome.message)
       if running {
         let message: String =
@@ -381,7 +381,7 @@ struct ClipboardHistoryTests {
         { _ = try engine.checkClearable() }, { _ = try engine.clear() },
       ]
       for operation in operations {
-        let error = #expect(throws: ClipboardHistoryError.self) { try operation() }
+        let error = #expect(throws: MessageError.self) { try operation() }
         #expect(error?.description.contains("Run `macarchy clipboard enable` first") == true)
       }
       #expect(machine.log.isEmpty)
@@ -398,7 +398,7 @@ struct ClipboardHistoryTests {
         { _ = try engine.setAutoClear(.on) },
       ]
       for operation in operations {
-        let error = #expect(throws: ClipboardHistoryError.self) { try operation() }
+        let error = #expect(throws: MessageError.self) { try operation() }
         #expect(error?.description == Self.missing)
       }
       let status = try engine.status()
@@ -481,12 +481,12 @@ struct ClipboardHistoryTests {
     #expect(try MaccyDefaults.parse(.clearOnQuit, type: absent, value: nil) == nil)
 
     let string = ProcessResult(terminationStatus: 0, output: "Type is string")
-    let notBoolean = #expect(throws: ClipboardHistoryError.self) {
+    let notBoolean = #expect(throws: MessageError.self) {
       try MaccyDefaults.parse(.clearOnQuit, type: string, value: on)
     }
     #expect(notBoolean?.description.contains("not a Boolean") == true)
     let failed = ProcessResult(terminationStatus: 1, output: "cfprefsd is unavailable")
-    #expect(throws: ClipboardHistoryError.self) {
+    #expect(throws: MessageError.self) {
       try MaccyDefaults.parse(.clearOnQuit, type: failed, value: nil)
     }
   }
@@ -576,7 +576,7 @@ struct ClipboardHistoryTests {
   @Test func autoClearOnNeedsClearingEnabled() throws {
     try withEngine { engine, machine, fixture throws in
       machine.settings = [.clearOnQuit: true, .clearSystemClipboard: true]
-      let error = #expect(throws: ClipboardHistoryError.self) { try engine.setAutoClear(.on) }
+      let error = #expect(throws: MessageError.self) { try engine.setAutoClear(.on) }
       #expect(error?.description.contains("Run `macarchy clipboard enable` first") == true)
       #expect(try engine.agent.file() == .absent)
       #expect(try fixture.autoClear.read() == nil)
@@ -595,21 +595,21 @@ struct ClipboardHistoryTests {
 
       let conflict = "is not the launch agent this Macarchy writes"
       for request in ClipboardAutoClearSwitch.allCases {
-        let error = #expect(throws: OwnedLaunchAgentError.self) {
+        let error = #expect(throws: MessageError.self) {
           try engine.setAutoClear(request)
         }
         #expect(error?.description.contains(conflict) == true)
       }
       // Enable still changes Maccy's settings and reports both outcomes. Disable keeps them,
       // because the job loaded under this label may still clear on their strength.
-      let enable = #expect(throws: ClipboardHistoryError.self) {
+      let enable = #expect(throws: MessageError.self) {
         try engine.enableWithAutoClear()
       }
       #expect(
         enable?.description
           == ClipboardIntegrationChange.alreadyEnabled.message + "\n"
           + engine.agent.conflict.description)
-      let disable = #expect(throws: ClipboardHistoryError.self) {
+      let disable = #expect(throws: MessageError.self) {
         try engine.disableWithAutoClear()
       }
       #expect(disable?.description.hasPrefix(engine.agent.conflict.description + "\n") == true)
@@ -631,7 +631,7 @@ struct ClipboardHistoryTests {
       _ = try engine.enableWithAutoClear()
       machine.launchd.state.withLock { $0.bootoutStatus = 5 }
 
-      let error = #expect(throws: ClipboardHistoryError.self) {
+      let error = #expect(throws: MessageError.self) {
         try engine.disableWithAutoClear()
       }
       #expect(error?.description.contains("Boot-out failed: 5") == true)
@@ -784,7 +784,7 @@ struct ClipboardHistoryTests {
         { _ = try engine.runAutoClear() }, { _ = try engine.status() },
       ]
       for operation in operations {
-        let error = #expect(throws: ClipboardHistoryError.self) { try operation() }
+        let error = #expect(throws: MessageError.self) { try operation() }
         #expect(error?.description.contains("Run `macarchy clipboard auto-clear on`") == true)
       }
       #expect(try String(contentsOf: fixture.autoClear.url, encoding: .utf8) == "{")
@@ -1000,7 +1000,7 @@ struct ClipboardHistoryTests {
         },
         write: { setting, value in
           guard !machine.failingWrites.contains(setting) else {
-            throw ClipboardHistoryError("cfprefsd refused the write")
+            throw MessageError("cfprefsd refused the write")
           }
           machine.writes += 1
           machine.settings[setting] = value

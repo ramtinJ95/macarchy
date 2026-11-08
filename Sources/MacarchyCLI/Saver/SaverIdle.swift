@@ -8,12 +8,8 @@ struct SaverIdleRecord: Codable, Equatable, Sendable {
   static let timeouts = 60...(4 * 60 * 60)
   /// Held by every change to the record and by each observer poll, from its read of the record
   /// until its start returns.
-  static let lock = ProcessScopedFileLock<SaverError>(
-    filename: "saver-idle.lock",
-    cannotCreateRunDirectory: { url, error in SaverError("cannot create \(url.path): \(error)") },
-    operationError: { operation, code in
-      SaverError("cannot \(operation) the idle screensaver lock (errno \(code))")
-    })
+  static let lock = ProcessScopedFileLock<MessageError>(
+    filename: "saver-idle.lock", lockName: "idle screensaver")
 
   /// Idle seconds before the saver starts.
   let timeout: Int
@@ -163,7 +159,7 @@ struct SaverIdle {
       let activation = try current()
       if case .conflict = activation.agent { throw agent.conflict }
       guard let enabled = activation.enabled else {
-        throw SaverError(
+        throw MessageError(
           "Idle activation is not on, so there is nothing to pause or resume. Run "
             + "`macarchy saver idle on` first.")
       }
