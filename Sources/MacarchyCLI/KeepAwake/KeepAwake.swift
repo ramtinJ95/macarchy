@@ -156,7 +156,7 @@ extension KeepAwake {
       },
       pause: { Thread.sleep(forTimeInterval: 0.05) },
       now: Date.init,
-      notifyBar: { SketchyBarControl.hintRunningBar(event: barEvent) })
+      notifyBar: { SketchyBarHint.triggerRunningBar(event: barEvent) })
   }
 
   /// Starts caffeinate in its own session with null standard streams, so closing the launching
