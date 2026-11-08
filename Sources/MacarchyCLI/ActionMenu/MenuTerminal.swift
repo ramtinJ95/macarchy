@@ -38,8 +38,8 @@ enum MenuTerminal {
 
   static func launch(
     _ kind: Kind, arguments: [String], theme: NormalizedTheme, executableURL: URL,
-    kittyApplicationURL: URL = URL(filePath: "/Applications/kitty.app"),
-    yabaiURL: URL = URL(filePath: "/opt/homebrew/bin/yabai"),
+    kittyApplicationURL: URL = ExternalTool.kittyApplication,
+    yabaiURL: URL = ExternalTool.yabai,
     launcherURL: URL = URL(filePath: "/usr/bin/open")
   ) throws -> Process {
     var isDirectory: ObjCBool = false

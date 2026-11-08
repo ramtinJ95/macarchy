@@ -21,7 +21,7 @@ struct HomebrewBundleInstaller: Sendable {
       environment = HomebrewBundleInstaller.executionEnvironment(inheriting: inheritedEnvironment)
       brewfile = SetupBrewfile.installing(packages).text
       command =
-        ["/opt/homebrew/bin/brew"] + HomebrewBundleInstaller.arguments
+        [ExternalTool.brew.path] + HomebrewBundleInstaller.arguments
         + [Self.fileURL(context: context).path]
       nativeEffects = HomebrewBundleInstaller.nativeEffects(for: packages)
       approvalDigest = try SetupPackageInstallationStore.digest(
@@ -63,11 +63,8 @@ struct HomebrewBundleInstaller: Sendable {
 
   static func executionEnvironment(inheriting inherited: [String: String]) -> [String] {
     let configuration = configurationVariable(in: inherited)
-    return [
-      "HOMEBREW_NO_ANALYTICS=1", "HOMEBREW_NO_AUTO_UPDATE=1",
-      "HOMEBREW_NO_AUTOREMOVE=1", "HOMEBREW_NO_INSTALL_CLEANUP=1",
-      "HOMEBREW_NO_INSTALL_UPGRADE=1",
-    ] + (configuration.map { ["\($0.name)=\($0.value)"] } ?? [])
+    return HomebrewEnvironment.bundleInstall
+      + (configuration.map { ["\($0.name)=\($0.value)"] } ?? [])
   }
 
   private static func configurationVariable(in inherited: [String: String])
@@ -135,7 +132,7 @@ struct HomebrewBundleInstaller: Sendable {
       "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL=C",
     ]
       + executionEnvironment(inheriting: inheritedEnvironment)
-      + ["/opt/homebrew/bin/brew"] + arguments
+      + [ExternalTool.brew.path] + arguments
   }
 
   static func guidedProcess(brewfile: URL, homeDirectory: URL) -> Process {
@@ -173,8 +170,8 @@ struct HomebrewBundleInstaller: Sendable {
     homeDirectory: URL,
     inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment
   ) throws {
-    guard FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/brew") else {
-      throw SetupPackageAdoptionError("Homebrew is not installed at /opt/homebrew/bin/brew.")
+    guard FileManager.default.isExecutableFile(atPath: ExternalTool.brew.path) else {
+      throw SetupPackageAdoptionError("Homebrew is not installed at \(ExternalTool.brew.path).")
     }
     // bin/brew sources these after the command environment. Do not silently
     // ignore user settings or allow them to request cleanup outside approval.

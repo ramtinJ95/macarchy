@@ -98,7 +98,7 @@ struct SketchyBarWiFi {
   private func bar(_ arguments: [String]) throws -> String {
     let result = try processRunner.run(
       ProcessRequest(
-        executableURL: URL(filePath: "/opt/homebrew/bin/sketchybar"), arguments: arguments,
+        executableURL: ExternalTool.sketchybar, arguments: arguments,
         timeout: 1))
     guard result.terminationStatus == 0 else {
       throw WiFiError.queryFailed("SketchyBar rejected Wi-Fi update")

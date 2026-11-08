@@ -48,7 +48,7 @@ package struct NeovimAdapter: Sendable {
     "lua/macarchy/current.lua", "lua/plugins/colorscheme.lua",
   ]
   static let rendererVersion = 4
-  package static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/nvim")
+  package static let liveExecutableURL = ExternalTool.neovim
 
   let root: URL
   let configurationDirectoryURL: URL

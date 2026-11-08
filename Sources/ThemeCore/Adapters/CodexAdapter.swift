@@ -32,7 +32,7 @@ package struct CodexAdapter: Sendable {
   package static let themeName = "macarchy-current"
   package static let selectionTable = "tui"
   package static let selectionKey = "theme"
-  package static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/codex")
+  package static let liveExecutableURL = ExternalTool.codex
   package static let minimumVersion = "0.151.0"
 
   let root: URL

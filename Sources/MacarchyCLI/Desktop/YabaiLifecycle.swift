@@ -76,7 +76,7 @@ struct YabaiLifecycleController: Sendable {
 
   static let live = YabaiLifecycleController(
     preflight: {
-      let executable = URL(filePath: "/opt/homebrew/bin/yabai")
+      let executable = ExternalTool.yabai
       guard FileManager.default.isExecutableFile(atPath: executable.path) else {
         throw YabaiDesktopError.lifecycle("supported yabai is unavailable at \(executable.path)")
       }
@@ -273,7 +273,7 @@ struct YabaiLifecycleController: Sendable {
   ) throws -> ProcessResult {
     try ProcessRunner.live.run(
       ProcessRequest(
-        executableURL: URL(filePath: "/opt/homebrew/bin/yabai"),
+        executableURL: ExternalTool.yabai,
         arguments: arguments,
         timeout: timeout
       )
@@ -312,7 +312,7 @@ struct YabaiLifecycleController: Sendable {
     guard let path = processExecutablePath(processID) else {
       throw YabaiDesktopError.lifecycle("cannot resolve yabai PID \(processID)")
     }
-    let supportedPath = URL(filePath: "/opt/homebrew/bin/yabai")
+    let supportedPath = ExternalTool.yabai
       .resolvingSymlinksInPath().path
     guard path == supportedPath else {
       throw YabaiDesktopError.lifecycle(

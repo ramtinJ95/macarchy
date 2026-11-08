@@ -35,8 +35,8 @@ package struct YaziAdapter: Sendable {
   /// leaf, relative to the Macarchy state root. Environment apply installs
   /// `~/.config/yazi/theme.toml` as a link to exactly this path.
   package static let managedThemeConfigurationPath = "environment/current/yazi/theme.toml"
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/yazi")
-  static let liveControlURL = URL(filePath: "/opt/homebrew/bin/ya")
+  static let liveExecutableURL = ExternalTool.yazi
+  static let liveControlURL = ExternalTool.ya
 
   private static let killallURL = URL(filePath: "/usr/bin/killall")
 

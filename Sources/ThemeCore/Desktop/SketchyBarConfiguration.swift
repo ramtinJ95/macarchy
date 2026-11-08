@@ -153,7 +153,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
     defaultsURL: URL,
     profile: PortableProfile,
     stateRoot: URL,
-    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy"),
+    macarchyExecutableURL: URL = ExternalTool.macarchy,
     includePersonalConfiguration: Bool = true
   ) throws -> SketchyBarComposition {
     let defaults = try loadDefaults(at: defaultsURL)

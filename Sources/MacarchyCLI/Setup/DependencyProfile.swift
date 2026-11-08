@@ -91,8 +91,8 @@ enum DependencyRemediation: Encodable, Sendable {
   static func externallyTrustedFormula(_ package: String) -> DependencyRemediation {
     .external(
       "Run: brew trust --formula \(package) && "
-        + "HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 "
-        + "HOMEBREW_NO_INSTALL_UPGRADE=1 brew install --formula \(package)",
+        + HomebrewEnvironment.trustedFormulaInstallCommandPrefix
+        + "brew install --formula \(package)",
       formula: package
     )
   }
@@ -265,7 +265,7 @@ struct DependencyProfile: Sendable {
         DependencyCapability(
           id: "homebrew",
           category: .platformRuntime,
-          probes: executable("/opt/homebrew/bin/brew"),
+          probes: executable(ExternalTool.brew.path),
           remediation: .external("Install Homebrew from https://brew.sh.")
         ),
         DependencyCapability(
@@ -291,7 +291,7 @@ struct DependencyProfile: Sendable {
         DependencyCapability(
           id: "fzf",
           category: .environmentSubstrate,
-          probes: executable("/opt/homebrew/bin/fzf") + [
+          probes: executable(ExternalTool.fzf.path) + [
             .exists(URL(filePath: "/opt/homebrew/opt/fzf/shell/key-bindings.zsh")),
             .exists(URL(filePath: "/opt/homebrew/opt/fzf/shell/completion.zsh")),
           ],
@@ -300,7 +300,7 @@ struct DependencyProfile: Sendable {
         DependencyCapability(
           id: "zoxide",
           category: .environmentSubstrate,
-          probes: executable("/opt/homebrew/bin/zoxide"),
+          probes: executable(ExternalTool.zoxide.path),
           remediation: .formula("zoxide")
         ),
         DependencyCapability(
@@ -311,17 +311,17 @@ struct DependencyProfile: Sendable {
         ),
         consumerCapability(
           .kitty,
-          probes: [.exists(URL(filePath: "/Applications/kitty.app"))],
+          probes: [.exists(ExternalTool.kittyApplication)],
           remediation: .cask("kitty")
         ),
         consumerCapability(
           .sketchyBar,
-          probes: executable("/opt/homebrew/bin/sketchybar"),
+          probes: executable(ExternalTool.sketchybar.path),
           remediation: .externallyTrustedFormula("felixkratz/formulae/sketchybar")
         ),
         consumerCapability(
           .sketchyBar, dependencyID: "nowplaying-cli",
-          probes: executable("/opt/homebrew/bin/nowplaying-cli"),
+          probes: executable(ExternalTool.nowplayingCLI.path),
           remediation: .formula("nowplaying-cli")
         ),
         consumerCapability(
@@ -357,13 +357,13 @@ struct DependencyProfile: Sendable {
         DependencyCapability(
           id: "skhd",
           category: .desktopSubstrate,
-          probes: executable("/opt/homebrew/bin/skhd"),
+          probes: executable(ExternalTool.skhd.path),
           remediation: .externallyTrustedFormula("asmvik/formulae/skhd")
         ),
         DependencyCapability(
           id: "yabai",
           category: .desktopSubstrate,
-          probes: executable("/opt/homebrew/bin/yabai"),
+          probes: executable(ExternalTool.yabai.path),
           remediation: .externallyTrustedFormula("asmvik/formulae/yabai")
         ),
         consumerCapability(
@@ -381,22 +381,22 @@ struct DependencyProfile: Sendable {
         ),
         consumerCapability(
           .bat,
-          probes: executable("/opt/homebrew/bin/bat"),
+          probes: executable(ExternalTool.bat.path),
           remediation: .formula("bat")
         ),
         consumerCapability(
           .btop,
-          probes: executable("/opt/homebrew/bin/btop"),
+          probes: executable(ExternalTool.btop.path),
           remediation: .formula("btop")
         ),
         consumerCapability(
           .codex,
-          probes: executable("/opt/homebrew/bin/codex"),
+          probes: executable(ExternalTool.codex.path),
           remediation: .cask("codex")
         ),
         consumerCapability(
           .eza,
-          probes: executable("/opt/homebrew/bin/eza"),
+          probes: executable(ExternalTool.eza.path),
           remediation: .formula("eza")
         ),
         consumerCapability(
@@ -414,48 +414,48 @@ struct DependencyProfile: Sendable {
         ),
         consumerCapability(
           .neovim,
-          probes: executable("/opt/homebrew/bin/nvim"),
+          probes: executable(ExternalTool.neovim.path),
           remediation: .formula("neovim")
         ),
         consumerCapability(
           .pi,
-          probes: executable("/opt/homebrew/bin/pi"),
+          probes: executable(ExternalTool.pi.path),
           remediation: .external(
             "Run: npm install --global @earendil-works/pi-coding-agent"
           )
         ),
         consumerCapability(
           .slack,
-          probes: [.exists(URL(filePath: "/Applications/Slack.app"))],
+          probes: [.exists(ExternalTool.slackApplication)],
           remediation: .cask("slack")
         ),
         consumerCapability(
           .starship,
-          probes: executable("/opt/homebrew/bin/starship"),
+          probes: executable(ExternalTool.starship.path),
           remediation: .formula("starship")
         ),
         consumerCapability(
           .tuicr,
-          probes: executable("/opt/homebrew/bin/tuicr"),
+          probes: executable(ExternalTool.tuicr.path),
           remediation: .formula("tuicr")
         ),
         consumerCapability(
           .yazi,
           probes: [
-            .executable(URL(filePath: "/opt/homebrew/bin/yazi")),
-            .executable(URL(filePath: "/opt/homebrew/bin/ya")),
+            .executable(ExternalTool.yazi),
+            .executable(ExternalTool.ya),
           ],
           remediation: .formula("yazi")
         ),
         consumerCapability(
           .spicetify,
-          probes: executable("/opt/homebrew/bin/spicetify"),
+          probes: executable(ExternalTool.spicetify.path),
           remediation: .formula("spicetify-cli")
         ),
         consumerCapability(
           .spicetify,
           dependencyID: "spotify",
-          probes: [.exists(URL(filePath: "/Applications/Spotify.app"))],
+          probes: [.exists(ExternalTool.spotifyApplication)],
           remediation: .cask("spotify")
         ),
       ]

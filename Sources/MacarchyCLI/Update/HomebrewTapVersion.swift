@@ -26,10 +26,7 @@ struct HomebrewTapVersionReader: Sendable {
     executableURL: HomebrewUpdateRunner.brewURL,
     arguments: ["info", "--json=v2", "--formula", formula],
     timeout: 10,
-    environmentOverrides: [
-      "HOMEBREW_NO_ANALYTICS": "1",
-      "HOMEBREW_NO_AUTO_UPDATE": "1",
-    ]
+    environmentOverrides: HomebrewEnvironment.quiet
   )
 
   let processRunner: ProcessRunner

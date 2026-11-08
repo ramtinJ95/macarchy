@@ -65,13 +65,9 @@ struct SketchyBarLifecycleController: Sendable {
 struct SketchyBarHomebrewService: Sendable {
   static let formula = "felixkratz/formulae/sketchybar"
   static let serviceLabel = "homebrew.mxcl.sketchybar"
-  static let controlURL = URL(filePath: "/opt/homebrew/bin/sketchybar")
+  static let controlURL = ExternalTool.sketchybar
   static let serviceExecutableURL = URL(filePath: "/opt/homebrew/opt/sketchybar/bin/sketchybar")
-  static let brewURL = URL(filePath: "/opt/homebrew/bin/brew")
-  static let mutationEnvironment = [
-    "HOMEBREW_NO_ANALYTICS": "1",
-    "HOMEBREW_NO_AUTO_UPDATE": "1",
-  ]
+  static let brewURL = ExternalTool.brew
 
   let processRunner: ProcessRunner
   let serviceInspection: @Sendable () throws -> SketchyBarRuntimeInspection
@@ -128,7 +124,7 @@ struct SketchyBarHomebrewService: Sendable {
       Self.brewURL,
       ["services", "start", Self.formula],
       timeout: 30,
-      environment: Self.mutationEnvironment
+      environment: HomebrewEnvironment.quiet
     )
     guard result.terminationStatus == 0 else {
       let detail = result.output.isEmpty ? "no output" : result.output
@@ -150,7 +146,7 @@ struct SketchyBarHomebrewService: Sendable {
       ["services", "stop", Self.formula],
       operation: "stop SketchyBar through Homebrew",
       timeout: 30,
-      environment: Self.mutationEnvironment
+      environment: HomebrewEnvironment.quiet
     )
     _ = try settle(expectedRunning: false)
   }

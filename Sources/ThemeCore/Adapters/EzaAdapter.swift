@@ -25,7 +25,7 @@ package struct EzaAdapter: Sendable {
   package static let outputPath = "generated/eza.yml"
   static let rendererVersion = 1
   package static let themeFileName = "theme.yml"
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/eza")
+  static let liveExecutableURL = ExternalTool.eza
 
   package static func environmentDirective(configurationDirectoryURL: URL) -> String {
     "export EZA_CONFIG_DIR=\"\(configurationDirectoryURL.path)\""

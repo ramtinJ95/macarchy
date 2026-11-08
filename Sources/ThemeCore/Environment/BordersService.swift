@@ -41,7 +41,7 @@ package struct BordersServiceInspection: Codable, Equatable, Sendable {
 package struct BordersService: Sendable {
   package static let formula = "felixkratz/formulae/borders"
   package static let label = "homebrew.mxcl.borders"
-  package static let executableURL = URL(filePath: "/opt/homebrew/bin/borders")
+  package static let executableURL = ExternalTool.borders
   package static let serviceExecutableURL = URL(filePath: "/opt/homebrew/opt/borders/bin/borders")
 
   let homeDirectory: URL
@@ -202,10 +202,10 @@ package struct BordersService: Sendable {
     }
     let result = try runner.run(
       ProcessRequest(
-        executableURL: URL(filePath: "/opt/homebrew/bin/brew"),
+        executableURL: ExternalTool.brew,
         arguments: ["services", action, Self.formula],
         timeout: 30,
-        environmentOverrides: ["HOMEBREW_NO_ANALYTICS": "1", "HOMEBREW_NO_AUTO_UPDATE": "1"]
+        environmentOverrides: HomebrewEnvironment.quiet
       ))
     guard result.terminationStatus == 0 else {
       throw BordersServiceError.blocked(

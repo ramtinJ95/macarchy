@@ -37,7 +37,7 @@ struct SketchyBarAdapter: Sendable {
   static let outputPath = "generated/sketchybar.lua"
   static let shellOutputPath = SketchyBarConfigurationComposer.paletteArtifactPath
   static let rendererVersion = 3
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/sketchybar")
+  static let liveExecutableURL = ExternalTool.sketchybar
   static let initImport = "require(\"init\")"
   static let readyItem = SketchyBarConfigurationComposer.readyItem
   static let readyMarkerDeclaration =

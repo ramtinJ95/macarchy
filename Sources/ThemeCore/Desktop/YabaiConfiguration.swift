@@ -90,7 +90,7 @@ package struct YabaiConfigurationComposer: Sendable {
   package func compose(
     defaultsURL: URL,
     profile: PortableProfile,
-    macarchyExecutableURL: URL = URL(filePath: "/opt/homebrew/bin/macarchy"),
+    macarchyExecutableURL: URL = ExternalTool.macarchy,
     includePersonalConfiguration: Bool = true
   ) throws -> YabaiComposition {
     let defaults = try loadDefaults(at: defaultsURL)

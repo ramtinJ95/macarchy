@@ -477,7 +477,7 @@ struct TeardownCommandRunner: Sendable {
 
 private struct TeardownReport: Encodable {
   static let softwareRemovalCommand =
-    "HOMEBREW_NO_AUTOREMOVE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 "
+    HomebrewEnvironment.uninstallCommandPrefix
     + "brew uninstall --formula \(HomebrewTapVersionReader.formula)"
 
   let schemaVersion = 1

@@ -89,10 +89,10 @@ struct HomebrewPackageInventoryReader: Sendable {
   let executableIsAvailable: @Sendable () -> Bool
 
   static let live = Self(
-    prefix: URL(filePath: "/opt/homebrew"),
+    prefix: ExternalTool.homebrewPrefix,
     processRunner: .live,
     executableIsAvailable: {
-      FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/brew")
+      FileManager.default.isExecutableFile(atPath: ExternalTool.brew.path)
     }
   )
 
@@ -109,11 +109,7 @@ struct HomebrewPackageInventoryReader: Sendable {
             executableURL: prefix.appending(path: "bin/brew"),
             arguments: ["list", "--\(kind.rawValue)", "-1"],
             timeout: 10,
-            environmentOverrides: [
-              "HOMEBREW_NO_AUTO_UPDATE": "1",
-              "HOMEBREW_NO_ANALYTICS": "1",
-              "LC_ALL": "C",
-            ]
+            environmentOverrides: HomebrewEnvironment.listing
           )
         )
         guard result.terminationStatus == 0 else {

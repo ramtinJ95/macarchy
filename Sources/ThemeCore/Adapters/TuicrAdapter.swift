@@ -27,7 +27,7 @@ package struct TuicrAdapter: Sendable {
   static let rendererVersion = 1
   package static let themeName = "macarchy-current"
   package static let selectionKey = "theme"
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/tuicr")
+  static let liveExecutableURL = ExternalTool.tuicr
 
   let root: URL
   let configurationDirectoryURL: URL

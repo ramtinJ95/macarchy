@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import ThemeCore
 
 /// Why the bundled ttfx engine cannot run.
 enum SaverEngineDefect: String, Equatable, Sendable {
@@ -48,7 +49,8 @@ enum SaverKitty: Equatable, Sendable {
   /// `version` is nil when the application does not name one.
   case present(version: String?)
 
-  static let application = URL(filePath: "/Applications/kitty.app", directoryHint: .isDirectory)
+  static let application = URL(
+    filePath: ExternalTool.kittyApplication.path, directoryHint: .isDirectory)
   /// The executable every saver panel runs, and the only parent a runner accepts.
   static let executable = application.appending(path: "Contents/MacOS/kitty").path
   static let remedy = "Install Kitty with `brew install --cask kitty`."

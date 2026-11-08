@@ -48,8 +48,8 @@ package struct SpicetifyAdapter: Sendable {
   package static let colorSchemeName = "MacarchyCurrent"
   package static let themeName = "text"
   package static let minimumVersion = "2.44.0"
-  static let liveExecutableURL = URL(filePath: "/opt/homebrew/bin/spicetify")
-  package static let liveSpotifyBundleURL = URL(filePath: "/Applications/Spotify.app")
+  static let liveExecutableURL = ExternalTool.spicetify
+  package static let liveSpotifyBundleURL = ExternalTool.spotifyApplication
 
   package struct ConfigurationSelection: Equatable, Sendable {
     package let theme: String?

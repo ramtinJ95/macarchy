@@ -162,7 +162,7 @@ struct SketchyBarLifecycleTests {
     #expect(observed.allSatisfy { $0.executableURL == SketchyBarHomebrewService.brewURL })
     #expect(
       observed.allSatisfy {
-        $0.environmentOverrides == SketchyBarHomebrewService.mutationEnvironment
+        $0.environmentOverrides == HomebrewEnvironment.quiet
       }
     )
     #expect(state.withLock { $0.waits } == 2)

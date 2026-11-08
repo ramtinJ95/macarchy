@@ -190,7 +190,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
         identities.contains { $0.kind == package.kind && $0.token == package.token }
       },
       brewfile: SetupBrewfile.installing(targets.map(\.identity)).text,
-      command: ["/opt/homebrew/bin/brew"] + HomebrewBundleInstaller.arguments
+      command: [ExternalTool.brew.path] + HomebrewBundleInstaller.arguments
         + [SetupPackageInstallationStore(context: context).brewfileURL.path],
       environment: HomebrewBundleInstaller.environment,
       nativeEffects: HomebrewBundleInstaller.nativeEffects(for: targets.map(\.identity)),
