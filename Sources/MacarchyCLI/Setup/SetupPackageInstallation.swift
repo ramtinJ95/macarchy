@@ -48,9 +48,10 @@ struct SetupPackageInstallationCommandRunner: Sendable {
           throw SetupPackageAdoptionError("--recover cannot be combined with targets or approval.")
         }
         return try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
-          guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
-            throw SetupPackageAdoptionError("Resolve the unified setup transaction first.")
-          }
+          try SetupPendingWork.requireNone(
+            .unifiedTransaction(
+              refusal: SetupPackageAdoptionError("Resolve the unified setup transaction first.")),
+            context: context)
           guard let attempt = try store.read() else {
             return try result(
               "no_change", message: "No package installation attempt exists.", json: json)
@@ -64,7 +65,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
         }
       }
       let identities = try SetupPackageAdoptionCommandRunner.parseTargets(targets)
-      try store.requireResolved()
+      try SetupPendingWork.requireNone(.packageAttempt, context: context)
       let inputs = try inputs(context: context, identities: identities)
       observation = inputs.observation
       reviewed = inputs
@@ -90,7 +91,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
           "Approval does not match the current Brewfile, declared inputs and native command.")
       }
       return try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
-        try store.requireResolved()
+        try SetupPendingWork.requireNone(.packageAttempt, context: context)
         try checkpoint(.beforeRevalidation)
         let revalidate: @Sendable () throws -> Void = {
           let current = try self.inputs(context: context, identities: identities)
@@ -148,10 +149,11 @@ struct SetupPackageInstallationCommandRunner: Sendable {
   func inputs(context: UnifiedSetupPlanContext, identities: [HomebrewPackageIdentity])
     throws -> Inputs
   {
-    guard try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).read() == nil else {
-      throw SetupPackageAdoptionError(
-        "Resolve interrupted unified setup before installing packages.")
-    }
+    try SetupPendingWork.requireNone(
+      .unifiedTransaction(
+        refusal: SetupPackageAdoptionError(
+          "Resolve interrupted unified setup before installing packages.")),
+      context: context)
     let ledger = try SetupPackageAdoptionStore(
       stateRoot: context.stateRoot, homeDirectory: context.homeDirectory
     ).read()

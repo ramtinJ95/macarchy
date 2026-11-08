@@ -206,7 +206,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
     let pendingTransaction: UnifiedSetupTransaction?
     do {
-      try SetupPackageInstallationStore(context: context).requireResolved()
+      try SetupPendingWork.requireNone(.packageAttempt, context: context)
       pendingTransaction = try transactionStore.read()
     } catch {
       return try result(
@@ -406,14 +406,13 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     )
     do {
       let recovery = try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
-        try SetupPackageInstallationStore(context: context).requireResolved()
-        let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
-        guard try store.read() == nil else {
-          throw UnifiedSetupTransactionError.recoveryRequired(
-            "another unified setup operation started after preflight"
-          )
-        }
-        try store.write(transaction)
+        try SetupPendingWork.requireNone(
+          .packageAttempt,
+          .unifiedTransaction(
+            refusal: UnifiedSetupTransactionError.recoveryRequired(
+              "another unified setup operation started after preflight")),
+          context: context)
+        try UnifiedSetupTransactionStore(stateRoot: context.stateRoot).write(transaction)
         return try await recover(
           transaction: transaction,
           context: context,

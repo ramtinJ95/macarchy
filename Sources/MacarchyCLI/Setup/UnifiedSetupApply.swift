@@ -214,7 +214,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     }
     let transactionStore = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
     do {
-      try SetupPackageInstallationStore(context: context).requireResolved()
+      try SetupPendingWork.requireNone(.packageAttempt, context: context)
       if try transactionStore.read() != nil {
         if reviewedPlan != nil {
           throw UnifiedSetupTransactionError.recoveryRequired(
@@ -295,13 +295,13 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
 
     do {
       return try await UnifiedSetupLifecycleLock(stateRoot: context.stateRoot).withLock {
-        try SetupPackageInstallationStore(context: context).requireResolved()
+        try SetupPendingWork.requireNone(
+          .packageAttempt,
+          .unifiedTransaction(
+            refusal: UnifiedSetupTransactionError.recoveryRequired(
+              "another unified setup operation started after preflight")),
+          context: context)
         let store = UnifiedSetupTransactionStore(stateRoot: context.stateRoot)
-        guard try store.read() == nil else {
-          throw UnifiedSetupTransactionError.recoveryRequired(
-            "another unified setup operation started after preflight"
-          )
-        }
         let currentPreparation: UnifiedSetupPreparation
         do {
           currentPreparation = try planner.prepare(context: context)
