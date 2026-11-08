@@ -52,7 +52,6 @@ struct OrdinaryAdapterRuntime: Sendable {
 }
 
 extension OrdinaryAdapterRuntime {
-  /// Stamps the consumer's catalog ID and requirement.
   init(
     _ consumer: RuntimeAdapterKind,
     preflight: @escaping @Sendable () throws -> Void,

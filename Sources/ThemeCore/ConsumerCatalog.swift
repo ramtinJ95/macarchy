@@ -50,10 +50,8 @@ package enum RuntimeAdapterKind: CaseIterable, Hashable, Sendable {
 }
 
 extension RuntimeAdapterKind {
-  /// The ID the built-in catalog registers for this consumer.
   package var adapterID: String { ConsumerCatalog.shared.runtimeIdentity(self).id }
 
-  /// The requirement the built-in catalog registers for this consumer.
   package var requirement: AdapterRequirement {
     ConsumerCatalog.shared.runtimeIdentity(self).requirement
   }

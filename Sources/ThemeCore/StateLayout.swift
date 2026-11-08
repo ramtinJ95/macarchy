@@ -73,7 +73,6 @@ package struct StateLayout: Sendable {
     root.appending(path: "themes", directoryHint: .isDirectory)
   }
 
-  /// The environment generation store.
   package var environment: URL {
     root.appending(path: Self.environmentDirectory, directoryHint: .isDirectory)
   }
@@ -89,7 +88,6 @@ package struct StateLayout: Sendable {
       path: "\(Self.environmentDirectory)/\(Self.generationPath(generationID))/\(path)")
   }
 
-  /// The keybinding generation store.
   package var keybindings: URL {
     root.appending(path: Self.keybindingsDirectory, directoryHint: .isDirectory)
   }
@@ -99,17 +97,14 @@ package struct StateLayout: Sendable {
     root.appending(path: "\(Self.keybindingsDirectory)/\(SkhdLayout.transactionFileName)")
   }
 
-  /// The active keybinding generation's `skhdrc`.
   package var currentSkhdrc: URL {
     root.appending(path: "\(Self.keybindingsDirectory)/current/\(SkhdLayout.configurationName)")
   }
 
-  /// The yabai generation store.
   package var yabai: URL {
     root.appending(path: Self.yabaiDirectory, directoryHint: .isDirectory)
   }
 
-  /// The SketchyBar generation store.
   package var sketchyBar: URL {
     root.appending(path: Self.sketchyBarDirectory, directoryHint: .isDirectory)
   }

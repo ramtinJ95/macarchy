@@ -26,7 +26,6 @@ package struct AdapterInspection: Sendable {
     self.message = message
   }
 
-  /// Stamps the consumer's catalog ID and requirement.
   package init(
     _ consumer: RuntimeAdapterKind,
     status: AdapterInspectionStatus = .ready,
@@ -81,7 +80,6 @@ struct AdapterReconciliation: Sendable {
 }
 
 extension AdapterReconciliation {
-  /// Stamps the consumer's catalog ID and requirement.
   init(_ consumer: RuntimeAdapterKind, run: @escaping @Sendable () async throws -> AdapterOutcome) {
     self.init(id: consumer.adapterID, requirement: consumer.requirement, run: run)
   }
