@@ -117,8 +117,7 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
       }
       let ownership = try state.readOwnership()
       let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-      let current = try generations.currentDestination()
-      guard current == ownership.map({ StateLayout.generationPath($0.generationID) }) else {
+      guard try generations.currentMatches(ownership) else {
         throw EnvironmentLifecycleError.drift(
           "Environment ownership and its active generation disagree.")
       }

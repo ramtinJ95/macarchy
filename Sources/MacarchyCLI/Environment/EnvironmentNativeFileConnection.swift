@@ -67,10 +67,9 @@ struct EnvironmentNativeFileConnection {
       throw EnvironmentLifecycleError.blocked("Existing ownership requires reviewed migration")
     }
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-    guard
-      try generations.currentDestination()
-        == previous.map({ StateLayout.generationPath($0.generationID) })
-    else { throw EnvironmentLifecycleError.drift("Environment pointer and ownership disagree") }
+    guard try generations.currentMatches(previous) else {
+      throw EnvironmentLifecycleError.drift("Environment pointer and ownership disagree")
+    }
     let theme = try ThemeGenerationReader(root: stateRoot).activeManifest()
     let themeData = try sortedKeysJSON(theme)
     if provider == .kitty { try KittyAdapter.validatePreparedBridge(root: stateRoot) }
