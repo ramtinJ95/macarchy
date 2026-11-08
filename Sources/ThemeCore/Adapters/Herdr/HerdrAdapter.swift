@@ -257,19 +257,12 @@ package struct HerdrAdapter: Sendable {
     guard FileManager.default.fileExists(atPath: StateLayout(root: root).currentTheme.path) else {
       return nil
     }
-    let manifest = try ThemeGenerationReader(root: root).activeManifest()
-    let data: Data
-    do {
-      data = try BoundedRegularFile.read(at: desiredThemeURL.resolvingSymlinksInPath()).data
-    } catch {
-      throw HerdrAdapterError.cannotReadDesiredTheme(desiredThemeURL)
+    let active = try Self.activeGeneratedTheme(root: root) { _ in
+      HerdrAdapterError.cannotReadDesiredTheme(desiredThemeURL)
     }
 
     do {
-      return try Self.decodeGeneratedTheme(
-        data,
-        rendererVersion: manifest.rendererVersions[Self.id, default: 0]
-      )
+      return try Self.decodeGeneratedTheme(active.data, rendererVersion: active.rendererVersion)
     } catch {
       throw HerdrAdapterError.cannotReadDesiredTheme(desiredThemeURL)
     }
