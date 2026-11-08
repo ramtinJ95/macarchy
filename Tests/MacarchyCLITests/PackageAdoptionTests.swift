@@ -38,8 +38,8 @@ struct PackageAdoptionTests {
     #expect(!FileManager.default.fileExists(atPath: fixture.context.homeDirectory.path))
     #expect(try SetupCoreOwnershipStore(stateRoot: fixture.context.stateRoot).read() == nil)
     let inventory = try fixture.status(runner)
-    #expect(inventory.proposed.first { $0.identity.name == "jq" }?.adoption == "adopted")
-    #expect(inventory.proposed.first { $0.identity.name == "bat" }?.adoption == "unadopted")
+    #expect(inventory.proposed.first { $0.identity.name == "jq" }?.adoption == .adopted)
+    #expect(inventory.proposed.first { $0.identity.name == "bat" }?.adoption == .unadopted)
     #expect(inventory.outsideProposedRequirements.map(\.token) == ["orphan"])
   }
 
@@ -132,7 +132,7 @@ struct PackageAdoptionTests {
     if afterPublication {
       #expect(
         try fixture.status(runner).proposed.first { $0.identity.name == "jq" }?.adoption
-          == "adopted")
+          == .adopted)
     }
   }
 
@@ -147,10 +147,10 @@ struct PackageAdoptionTests {
         runner, targets: ["formula:bat", "formula:jq"], approval: preview.approval())).succeeded)
     let ledgerBytes = try Data(contentsOf: fixture.store.url)
     let missing = try fixture.status(fixture.runner(formulae: "bat\norphan"))
-    #expect(missing.proposed.first { $0.identity.name == "jq" }?.adoption == "missing")
+    #expect(missing.proposed.first { $0.identity.name == "jq" }?.adoption == .missing)
     try fixture.inventory.formula("jq", version: "2", tap: "homebrew/core")
     let changed = try fixture.status(runner)
-    #expect(changed.proposed.first { $0.identity.name == "jq" }?.adoption == "changed")
+    #expect(changed.proposed.first { $0.identity.name == "jq" }?.adoption == .changed)
     #expect(!(try await fixture.run(runner)).succeeded)
     try fixture.inventory.write(
       "schema_version = 1\n[tools]\nbat = false\n", at: fixture.context.profileURL)
@@ -158,7 +158,7 @@ struct PackageAdoptionTests {
     #expect(!undeclared.proposed.contains { $0.identity.name == "bat" })
     #expect(
       undeclared.retainedAdoptionsOutsideProposed.map(\.entry.identity.name) == ["bat", "jq"])
-    #expect(undeclared.retainedAdoptionsOutsideProposed.first?.status == "adopted")
+    #expect(undeclared.retainedAdoptionsOutsideProposed.first?.status == .adopted)
     #expect(try Data(contentsOf: fixture.store.url) == ledgerBytes)
   }
 
@@ -175,7 +175,7 @@ struct PackageAdoptionTests {
     try JSONSerialization.data(withJSONObject: object).write(to: fixture.store.url)
     let invalid = try fixture.status(runner)
     #expect(invalid.adoptionIssue != nil)
-    #expect(invalid.proposed.allSatisfy { $0.adoption == "unknown" })
+    #expect(invalid.proposed.allSatisfy { $0.adoption == .unknown })
     #expect(!(try await fixture.run(runner)).succeeded)
 
     let absent = try AdoptionFixture()

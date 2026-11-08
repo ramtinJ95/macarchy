@@ -16,13 +16,22 @@ struct SetupPackageInventory: Encodable, Sendable {
   }
 
   struct Package: Encodable, Sendable {
+    /// What Homebrew's installation records say about the declared identity.
+    enum HomebrewStatus: String, Encodable, Sendable {
+      case installed
+      case ambiguous
+      case unknown
+      case differentRecordedIdentity = "different_recorded_identity"
+      case missing
+    }
+
     let identity: HomebrewPackageIdentity
     let standardDeclaration: StandardDeclaration?
     let personalDeclarations: [SetupPackageAdoptionLedger.Declaration]
     let requirements: [Requirement]
-    let homebrewStatus: String
+    let homebrewStatus: HomebrewStatus
     let externallySatisfiedCapabilities: [String]
-    let adoption: String
+    let adoption: SetupPackageAdoptionStatus
 
     var declarations: [SetupPackageAdoptionLedger.Declaration] {
       let standard: [SetupPackageAdoptionLedger.Declaration] =
@@ -54,7 +63,7 @@ struct SetupPackageInventory: Encodable, Sendable {
   let unresolvedInstallations: [HomebrewInstalledPackage]
   struct RetainedAdoption: Encodable, Sendable {
     let entry: SetupPackageAdoptionLedger.Entry
-    let status: String
+    let status: SetupPackageAdoptionStatus
   }
   let retainedAdoptionsOutsideProposed: [RetainedAdoption]
   let adoptionIssue: String?
@@ -116,33 +125,32 @@ struct SetupPackageInventory: Encodable, Sendable {
       let sameToken = observation.packages.filter {
         $0.kind == identity.kind && $0.token == identity.token
       }
-      let status: String
+      let status: Package.HomebrewStatus
       if matches.count == 1 {
-        status = "installed"
+        status = .installed
       } else if matches.count > 1 {
-        status = "ambiguous"
+        status = .ambiguous
       } else if !observation.issues.isEmpty || sameToken.contains(where: { $0.identity == nil }) {
-        status = "unknown"
+        status = .unknown
       } else if !sameToken.isEmpty {
-        status = "different_recorded_identity"
+        status = .differentRecordedIdentity
       } else {
-        status = "missing"
+        status = .missing
       }
-      let adoption: String
+      let adoption: SetupPackageAdoptionStatus
       if adoptionState.issue != nil {
-        adoption = "unknown"
+        adoption = .unknown
       } else if let entry = adoptionState.ledger?.entries.first(where: { $0.identity == identity })
       {
         adoption = entry.status(in: observation)
       } else {
-        adoption =
-          status == "installed" ? "unadopted" : (status == "missing" ? "missing" : "unknown")
+        adoption = status == .installed ? .unadopted : (status == .missing ? .missing : .unknown)
       }
       return Package(
         identity: identity, standardDeclaration: standardDeclaration,
         personalDeclarations: sources.filter { $0.source == "personal_brewfile" },
         requirements: requirements, homebrewStatus: status,
-        externallySatisfiedCapabilities: status == "missing"
+        externallySatisfiedCapabilities: status == .missing
           ? requirements.filter { $0.runtime == .present }.map(\.capabilityID) : [],
         adoption: adoption
       )
@@ -172,7 +180,9 @@ struct SetupPackageInventory: Encodable, Sendable {
       "- Runtime availability is separate; it does not identify which installation supplies an executable.",
     ]
     for package in proposed {
-      lines.append("- \(package.identity.key) [\(package.homebrewStatus); \(package.adoption)]")
+      lines.append(
+        "- \(package.identity.key) [\(package.homebrewStatus.rawValue); \(package.adoption.rawValue)]"
+      )
       if let declaration = package.standardDeclaration {
         lines.append(
           "  - standard_baseline from \(declaration.layer): package only; runtime not assessed")
@@ -228,7 +238,7 @@ struct SetupPackageInventory: Encodable, Sendable {
     }
     for retained in retainedAdoptionsOutsideProposed {
       lines.append(
-        "- Retained adoption outside current declarations: \(retained.entry.identity.key) [\(retained.status)]; no prune authorized."
+        "- Retained adoption outside current declarations: \(retained.entry.identity.key) [\(retained.status.rawValue)]; no prune authorized."
       )
     }
     if let adoptionIssue { lines.append("- Adoption evidence unavailable: \(adoptionIssue)") }

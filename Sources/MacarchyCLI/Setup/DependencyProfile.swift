@@ -482,7 +482,7 @@ struct HomebrewInstallPlan: Encodable, Sendable {
 
   init(inventory: SetupPackageInventory) throws {
     if !inventory.proposed.isEmpty {
-      _ = try SetupPackageAdoptionCommandRunner.parseTargets(inventory.proposed.map(\.identity.key))
+      _ = try HomebrewPackageIdentity.validated(inventory.proposed.map(\.identity))
       guard inventory.observation.issues.isEmpty else {
         throw SetupPackageAdoptionError(
           "Homebrew inventory is unavailable: "
@@ -492,12 +492,12 @@ struct HomebrewInstallPlan: Encodable, Sendable {
     var missing: [HomebrewPackageIdentity] = []
     for package in inventory.proposed {
       switch package.homebrewStatus {
-      case "installed": break
-      case "missing":
+      case .installed: break
+      case .missing:
         if package.externallySatisfiedCapabilities.isEmpty { missing.append(package.identity) }
       default:
         throw SetupPackageAdoptionError(
-          "\(package.identity.key) has uncertain or conflicting Homebrew state (\(package.homebrewStatus)); inspect it before setup."
+          "\(package.identity.key) has uncertain or conflicting Homebrew state (\(package.homebrewStatus.rawValue)); inspect it before setup."
         )
       }
     }

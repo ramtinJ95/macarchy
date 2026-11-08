@@ -52,9 +52,9 @@ struct SetupBrewfile: Equatable, Sendable {
       let range =
         match.range(at: 2).location == NSNotFound ? match.range(at: 3) : match.range(at: 2)
       let name = ns.substring(with: range)
-      let parts = name.components(separatedBy: "/")
-      guard kind == "tap" ? parts.count == 2 : [1, 3].contains(parts.count),
-        parts.allSatisfy(HomebrewPackageIdentity.validToken)
+      guard
+        kind == "tap"
+          ? HomebrewPackageIdentity.validTap(name) : HomebrewPackageIdentity.validName(name)
       else { throw SetupPackageAdoptionError("Invalid Brewfile identity at line \(offset + 1).") }
       if kind == "tap" {
         taps.append(name)

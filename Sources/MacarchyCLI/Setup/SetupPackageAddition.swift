@@ -100,12 +100,14 @@ struct SetupPackageAdditionCommandRunner: Sendable {
       intent = "saved"
       try checkpoint(.afterSave)
       if let installation = prepared.installation, !installation.targets.isEmpty {
+        // The approved addition digest covers these reviewed inputs, so their own digest is the
+        // install approval; the runner recomputes it from saved state and refuses any drift.
         let execution = try SetupComponentExecution(
           await SetupPackageInstallationCommandRunner(
             planner: planner, provider: provider
           ).execute(
             context: context, targets: installation.selected.map(\.key),
-            approval: SetupPackageInstallationStore.digest(installation), json: true))
+            approval: installation.approvalDigest, json: true))
         stages.append(execution)
         guard execution.succeeded else {
           throw SetupPackageAdoptionError(
@@ -252,7 +254,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
       guard let package = inventory.proposed.first(where: { $0.identity == identity }) else {
         throw SetupPackageAdoptionError("\(identity.key) is not effective after the proposed edit.")
       }
-      if package.homebrewStatus == "missing" {
+      if package.homebrewStatus == .missing {
         missing.append(identity)
       } else {
         installed.append(identity)

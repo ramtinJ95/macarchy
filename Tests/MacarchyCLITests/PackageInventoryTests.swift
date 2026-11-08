@@ -71,7 +71,7 @@ struct PackageInventoryTests {
         )
       ], observation: observation)
     let atuin = try #require(report.proposed.first { $0.identity.name == "atuin" })
-    #expect(atuin.homebrewStatus == "missing")
+    #expect(atuin.homebrewStatus == .missing)
     #expect(atuin.externallySatisfiedCapabilities == ["atuin"])
   }
 
@@ -95,7 +95,7 @@ struct PackageInventoryTests {
     #expect(observation.packages.first { $0.token == "bat" }?.issue?.contains("Ambiguous") == true)
     let report = inventory([capability("bat", .formula("bat"))], observation: observation)
     let bat = try #require(report.proposed.first { $0.identity.name == "bat" })
-    #expect(bat.homebrewStatus == "unknown")
+    #expect(bat.homebrewStatus == .unknown)
     #expect(bat.externallySatisfiedCapabilities.isEmpty)
     #expect(report.unresolvedInstallations.count == 4)
   }
@@ -118,9 +118,9 @@ struct PackageInventoryTests {
       ], observation: observation)
     #expect(
       report.proposed.first { $0.identity.token == "yabai" }?.homebrewStatus
-        == "different_recorded_identity")
+        == .differentRecordedIdentity)
     #expect(report.outsideProposedRequirements[0].identity?.name == "koekeishiya/formulae/yabai")
-    #expect(report.proposed.first { $0.identity.token == "eza" }?.homebrewStatus == "unknown")
+    #expect(report.proposed.first { $0.identity.token == "eza" }?.homebrewStatus == .unknown)
   }
 
   @Test
@@ -134,7 +134,7 @@ struct PackageInventoryTests {
       let observation = fixture.reader(formulae: output).read()
       #expect(observation.status == "unavailable")
       let report = inventory([capability("bat", .formula("bat"))], observation: observation)
-      #expect(report.proposed.allSatisfy { $0.homebrewStatus == "unknown" })
+      #expect(report.proposed.allSatisfy { $0.homebrewStatus == .unknown })
       #expect(!report.observation.issues.isEmpty)
     }
   }
@@ -198,7 +198,7 @@ struct PackageInventoryTests {
     #expect(formula.requirements.map(\.layer) == ["portable", "machine"])
     #expect(
       formula.requirements.map(\.sourcePath) == ["/dotfiles/profile.toml", "/state/machine.toml"])
-    #expect(formula.homebrewStatus == "installed")
+    #expect(formula.homebrewStatus == .installed)
     #expect(formula.externallySatisfiedCapabilities.isEmpty)
     #expect(report.nonHomebrewRequirements.map(\.capabilityID) == ["pi"])
     #expect(report.outsideProposedRequirements.compactMap { $0.identity?.name } == ["unrelated"])
@@ -253,7 +253,7 @@ struct PackageInventoryTests {
         == expectedCasks)
     #expect(packages.proposed.count == 65)
     #expect(packages.proposed.filter { $0.standardDeclaration != nil }.count == 50)
-    #expect(packages.proposed.allSatisfy { $0.homebrewStatus == "missing" })
+    #expect(packages.proposed.allSatisfy { $0.homebrewStatus == .missing })
     #expect(packages.proposed.map(\.identity.key) == packages.proposed.map(\.identity.key).sorted())
     for name in ["herdr", "slack", "spotify"] {
       let package = try #require(packages.proposed.first { $0.identity.name == name })
@@ -315,7 +315,7 @@ struct PackageInventoryTests {
       #expect(package.externallySatisfiedCapabilities == [name])
     }
     let git = try #require(packages.proposed.first { $0.identity.name == "git" })
-    #expect(git.homebrewStatus == "installed")
+    #expect(git.homebrewStatus == .installed)
     #expect(git.requirements.isEmpty)
     #expect(packages.outsideProposedRequirements.isEmpty)
   }
