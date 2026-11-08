@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import verify
 import verify_lean as lean
-import verify_borders as borders
+import verify_common
 
 
 class LeanJourneyTests(unittest.TestCase):
@@ -26,10 +26,10 @@ class LeanJourneyTests(unittest.TestCase):
     def test_review_digest_is_not_an_adoption_request(self):
         ready = {"outcome": "ready", "adoption": [],
                  "keybindings": {"adoption_evidence_digest": "sha256:example"}}
-        self.assertEqual(borders._blockers(ready), [])
-        self.assertTrue(borders._blockers(dict(ready, adoption=["foreign entry"])))
-        self.assertTrue(borders._blockers(dict(ready, outcome="adoption_required")))
-        self.assertTrue(borders._blockers(dict(ready, blocked=True)))
+        self.assertEqual(verify_common.blockers(ready), [])
+        self.assertTrue(verify_common.blockers(dict(ready, adoption=["foreign entry"])))
+        self.assertTrue(verify_common.blockers(dict(ready, outcome="adoption_required")))
+        self.assertTrue(verify_common.blockers(dict(ready, blocked=True)))
 
     def test_closed_profile_has_only_opt_in_focus_and_no_other_provider(self):
         profile = tomllib.loads(lean.profile("lean"))

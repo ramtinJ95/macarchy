@@ -4,7 +4,7 @@ import json
 from pathlib import PurePosixPath
 import shlex
 
-import verify_borders as borders
+import verify_common as v
 
 LABEL = "io.github.ramtinj95.macarchy.focus-ring"
 PLIST = "/Users/omarchy/Library/LaunchAgents/" + LABEL + ".plist"
@@ -111,8 +111,7 @@ def assess_restoration(result):
     )
 
 
-def run_journey(client, record, evidence, report, package=None):
-    import verify as v
+def run_journey(client, record, evidence, report, upgrade=None):
     report["not_covered"] = [
         "Homebrew-installed Macarchy or release archive",
         "guided setup or providers other than the isolated lean-only profile",
@@ -123,7 +122,7 @@ def run_journey(client, record, evidence, report, package=None):
     ]
     source = record["guest"]["source"]
     binary = record["guest"]["binary"]
-    if package is not None:
+    if upgrade is not None:
         binary = "/opt/homebrew/bin/macarchy"
         report["not_covered"][0] = "Actual Homebrew installation, receipts and upgrade/cleanup commands"
     helper = str(PurePosixPath(binary).parent / "macarchy-focus-ring")
@@ -138,7 +137,7 @@ def run_journey(client, record, evidence, report, package=None):
         "full teardown convergence: absent default consumers fail after owned lean removal",
     ], "mutation_scope": {"state": root, "profile": path, "launch_agent": PLIST,
                            "native_appearance": "guest-only canonical theme preference"}}
-    sh = borders._runner(client, evidence, report)
+    sh = v.runner(client, evidence, report)
 
     def cli(name, *arguments, expected=0):
         command = v.step_command(binary, list(arguments))
@@ -148,7 +147,7 @@ def run_journey(client, record, evidence, report, package=None):
                 command + "; rc=$?; " + " || ".join("test $rc -eq " + str(code) for code in codes))
         raw = sh(name, command, timeout=60)
         value = json.loads(raw)
-        if not expected and borders._blockers(value):
+        if not expected and v.blockers(value):
             raise v.Failed(name + " reported blocked/adoption state; no auto-approval")
         return value
 
@@ -190,9 +189,9 @@ def run_journey(client, record, evidence, report, package=None):
         absent(name + "-service-absent")
 
     # Native session and ownership prerequisites precede every product mutation.
-    borders.require_console_user(client, evidence, report)
-    sh("scratch-absent", borders._absent(scratch), blocked=True)
-    sh("lean-plist-absent", borders._absent(PLIST), blocked=True)
+    v.require_console_user(client, evidence, report)
+    sh("scratch-absent", v.absent(scratch), blocked=True)
+    sh("lean-plist-absent", v.absent(PLIST), blocked=True)
     sh("no-incumbents",
        "/usr/bin/pgrep -u $(id -u) -x 'borders|macarchy-focus.*'; rc=$?; test $rc -eq 1",
        blocked=True)
@@ -202,15 +201,15 @@ def run_journey(client, record, evidence, report, package=None):
            "test ! -e " + q(plist) + " && test ! -L " + q(plist)
            + " && { /bin/launchctl print gui/$(id -u)/" + q(label)
            + "; rc=$?; test $rc -eq 113; }", blocked=True)
-    if package is None:
-        sh("helper-build", "cd " + q(source) + " && env " + borders.DEV
+    if upgrade is None:
+        sh("helper-build", "cd " + q(source) + " && env " + v.DEVELOPER_DIR
            + " swift build --product macarchy-focus-ring", timeout=180)
     else:
         section["known_limits"].remove("release archive/install provenance")
     section["helper_sha256"] = sh("helper-sha256", "shasum -a 256 " + q(helper)).split()[0]
     sh("scratch-create", "umask 077; mkdir " + q(scratch))
     meter = scratch + "/lean-io"
-    sh("io-meter-build", "env " + borders.DEV + " /usr/bin/clang -Wall -Wextra -Werror "
+    sh("io-meter-build", "env " + v.DEVELOPER_DIR + " /usr/bin/clang -Wall -Wextra -Werror "
        + q(source + "/Scripts/vm/lean-io.c") + " -o " + q(meter), timeout=30)
     write_profile("lean", first=True)
     may_own_service = False
@@ -230,9 +229,8 @@ def run_journey(client, record, evidence, report, package=None):
         if section["theme_failures"]:
             raise v.Failed("; ".join(section["theme_failures"]))
 
-        if package is not None:
-            import verify_packaged_lean
-            verify_packaged_lean.upgrade(sh, cli, runtime, root, package)
+        if upgrade is not None:
+            upgrade(sh, cli, runtime, root)
             doctor("package-upgraded-doctor")
             changed = runtime("package-upgraded-runtime")
 

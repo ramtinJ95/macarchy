@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 import guest
 import lab
 import verify
+import verify_common
 
 SESSION = "verify-0123456789ab"
 RUN = "setup-0123456789ab"
@@ -452,12 +453,12 @@ class BoundaryTests(unittest.TestCase):
 
     def test_owned_stop_requires_the_exact_recorded_process_identity(self):
         record = {"pid": 4242, "identity": "Tue Oct 13 10:00:00 2026 tart run setup-0123456789ab"}
-        with patch.object(verify, "process_identity", return_value="other process"), \
+        with patch.object(verify_common, "process_identity", return_value="other process"), \
                 patch.object(verify.os, "kill") as kill:
             self.assertEqual(verify.stop_owned(record), "owned_process_not_running")
         kill.assert_not_called()
         identities = [record["identity"], record["identity"], None, None]
-        with patch.object(verify, "process_identity", side_effect=identities), \
+        with patch.object(verify_common, "process_identity", side_effect=identities), \
                 patch.object(verify.os, "kill") as kill, patch.object(verify.time, "sleep"):
             self.assertEqual(verify.stop_owned(record), "stopped_owned_process")
         kill.assert_called_once_with(4242, signal.SIGINT)

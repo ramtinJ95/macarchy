@@ -12,9 +12,8 @@ from pathlib import Path
 
 import guest
 import lab
-import verify_borders as b
+import verify_common as v
 
-v = b._v()
 q = shlex.quote
 BREW = '/opt/homebrew/bin/borders'
 ACTIONS = {'focus', 'move', 'resize', 'minimize', 'restore', 'close', 'fullscreen', 'animate', 'motion', 'settle', 'stop'}
@@ -123,7 +122,7 @@ class Session:
             f.write(json.dumps(data, indent=2, sort_keys=True, default=str) + '\n')
 
     def sh(self, name, command, timeout=30):
-        return b.run(self.c, self.ev, self.report, name, command, timeout=timeout)
+        return v.run(self.c, self.ev, self.report, name, command, timeout=timeout)
 
     def read(self, command):
         # Unlogged poll; transport loss blocks the lab run.
@@ -151,10 +150,6 @@ class Session:
         self.mark('exit', name=name, code=code)
         if code:
             raise v.Failed(f'{name}: exit {code}')
-
-    def theme(self, theme):
-        b.set_theme(self.c, self.ev, self.report, self.ctx, theme=theme)
-        self.mark('theme', theme=theme)
 
     def fixture(self, count, label, directory):
         if count not in (1, 8, 24) or label in self.fixtures:
@@ -224,7 +219,7 @@ class Session:
         pf, cli = q(f'{self.ctx["work"]}/{name}.pid'), self.ctx['binary']
         argv = shlex.join([cli, 'desktop', 'borders', 'preview', '--renderer', renderer, '--state-root',
                            self.ctx['state'], '--seconds', str(seconds), '--json'])
-        # Same env as b.cli, exec'd directly so the recorded pid is the CLI itself.
+        # Same env as v.step_command, exec'd directly so the recorded pid is the CLI itself.
         p = self.spawn(name, f'cd {v.GUEST_HOME} && set -C && echo $$ > {pf} && '
                              f'exec /usr/bin/env -i {shlex.join(v.STEP_ENV)} {argv}', until=seconds + 15)
         end, deadline = time.monotonic() + seconds, time.monotonic() + 8

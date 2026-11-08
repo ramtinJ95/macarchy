@@ -66,7 +66,7 @@ class PackagedLeanTests(unittest.TestCase):
             self.assertIn("test ! -e " + path + " && test ! -L " + path, command)
 
     def test_journey_always_attempts_owned_cleanup_on_failure(self):
-        with patch.object(package.borders, "_runner"), patch.object(package.borders, "require_console_user"), \
+        with patch.object(package.v, "runner"), patch.object(package.v, "require_console_user"), \
                 patch.object(package, "prepare", side_effect=verify.Failed("build failed")), \
                 patch.object(package, "cleanup") as cleanup:
             with self.assertRaises(verify.Failed):

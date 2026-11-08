@@ -8,6 +8,7 @@ from unittest import mock
 import border_workload as w
 import verify
 import verify_borders as b
+import verify_common
 
 WS = '202 WindowServer 1.5G- 1.0'
 FRAME = {'x': 0, 'y': 25, 'width': 640, 'height': 480}
@@ -76,7 +77,7 @@ class WorkloadTests(unittest.TestCase):
         t = w.OwnedTart({'pid': 42})
         self.assertEqual(t.pid, 42)
         for owned, want in ((True, None), (False, 1)):
-            with self.subTest(owned=owned), mock.patch.object(verify, 'owned_tart', return_value=owned) as m:
+            with self.subTest(owned=owned), mock.patch.object(verify_common, 'owned_tart', return_value=owned) as m:
                 self.assertEqual(t.poll(), want)
                 m.assert_called_once_with(t.record)
 

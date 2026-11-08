@@ -1,8 +1,9 @@
 """Closed release-archive/Cellar simulation. Never invokes Homebrew or installs on the host."""
+import functools
 import json
 import shlex
 
-import verify_borders as borders
+import verify_common as v
 import verify_lean as lean
 
 q = shlex.quote
@@ -39,27 +40,26 @@ def assess_upgrade(before, after, first, second, plist_before, plist_after, root
 
 
 def prepare(sh, record, evidence, section):
-    import verify as v
     source = record["guest"]["source"]
     work = source + "/" + evidence.name + "-package"
     # No existing keg or links may be adopted, including dangling symlinks.
     sh("package-targets-absent", " && ".join(
-        [borders._absent(CELLAR), borders._absent(work)]
-        + [borders._absent(BIN + "/" + name) for name in PRODUCTS]
+        [v.absent(CELLAR), v.absent(work)]
+        + [v.absent(BIN + "/" + name) for name in PRODUCTS]
         + ["test -d " + q(path) + " && test ! -L " + q(path)
            for path in ("/opt", "/opt/homebrew", "/opt/homebrew/Cellar", BIN)]), blocked=True)
     sh("package-work", "mkdir " + q(work))
     # Archive smoke uses git's resource inventory; this is the owned source snapshot,
     # not a checkout or index on the host, and never creates a commit.
     sh("package-inventory", "cd " + q(source) + " && git init -q && git add -- Themes Keybindings Desktop Environment")
-    sh("package-release-build", "cd " + q(source) + " && env " + borders.DEV
+    sh("package-release-build", "cd " + q(source) + " && env " + v.DEVELOPER_DIR
        + " swift build -c release", timeout=600)
     version = sh("package-version", "cat " + q(source + "/VERSION.txt")).strip()
     revision = record["host_source"]["head"]
     package = "macarchy-" + version + "-arm64-apple-darwin"
     archive = work + "/dist/" + package + ".tar.gz"
     # Both smoke paths create adversarial fixtures only through TestSafety in this VM.
-    environment = "env " + borders.DEV + " MACARCHY_TEST_VM=1 TMPDIR=/private/tmp/ "
+    environment = "env " + v.DEVELOPER_DIR + " MACARCHY_TEST_VM=1 TMPDIR=/private/tmp/ "
     # The archive bundles ttfx, so the guest needs git, network and a Rust toolchain.
     sh("package-ttfx-build", "cd " + q(source) + " && Scripts/build-ttfx.sh "
        + q(work + "/ttfx"), timeout=900)
@@ -94,7 +94,6 @@ def prepare(sh, record, evidence, section):
 
 
 def upgrade(sh, cli, runtime, root, section):
-    import verify as v
     first, second = section["copies"]
     plist_command = "plutil -convert json -o - " + q(lean.PLIST)
     before = runtime("package-before-upgrade")
@@ -118,12 +117,12 @@ def cleanup(sh, section):
     sh("package-cleanup-service-absent",
        "{ pgrep -u $(id -u) -x 'macarchy-focus.*'; rc=$?; test $rc -eq 1; }"
        + " && { launchctl print gui/$(id -u)/" + q(lean.LABEL)
-       + "; rc=$?; test $rc -eq 113; } && " + borders._absent(lean.PLIST))
+       + "; rc=$?; test $rc -eq 113; } && " + v.absent(lean.PLIST))
     checks, removals = [], []
     for name in PRODUCTS:
         link = BIN + "/" + name
         targets = [copy + "/bin/" + name for copy in section["copies"]]
-        checks.append("{ " + borders._absent(link) + "; } || { test -L " + q(link)
+        checks.append("{ " + v.absent(link) + "; } || { test -L " + q(link)
                       + " && { " + " || ".join('test "$(readlink ' + q(link) + ')" = '
                                                 + q(target) for target in targets) + "; }; }")
         removals.append("if test -L " + q(link) + "; then rm " + q(link) + "; fi")
@@ -131,16 +130,17 @@ def cleanup(sh, section):
        + " && ".join("{ " + check + "; }" for check in checks) + " && { "
        + "; ".join(removals) + "; rm -rf " + q(CELLAR) + "; }")
     sh("package-cleanup-absent", " && ".join(
-        [borders._absent(CELLAR)] + [borders._absent(BIN + "/" + name) for name in PRODUCTS]))
+        [v.absent(CELLAR)] + [v.absent(BIN + "/" + name) for name in PRODUCTS]))
     section["cleanup"] = "removed owned links and Cellar copies"
 
 
 def run_journey(client, record, evidence, report):
-    sh = borders._runner(client, evidence, report)
-    borders.require_console_user(client, evidence, report)
+    sh = v.runner(client, evidence, report)
+    v.require_console_user(client, evidence, report)
     section = report["package"] = {"scope": "guest-local archive; simulated Cellar/link upgrade, not brew install"}
     try:
         prepare(sh, record, evidence, section)
-        return lean.run_journey(client, record, evidence, report, package=section)
+        return lean.run_journey(client, record, evidence, report,
+                                upgrade=functools.partial(upgrade, section=section))
     finally:
         cleanup(sh, section)

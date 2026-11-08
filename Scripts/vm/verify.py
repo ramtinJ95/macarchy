@@ -26,25 +26,18 @@ import time
 import tomllib
 import uuid
 
-# Script and import share one module identity, so verify_borders raises this module's Failed.
-sys.modules.setdefault("verify", sys.modules[__name__])
-
 import guest
 import lab
+from verify_common import (
+    DEVELOPER_DIR, GUEST_HOME, GUEST_USER, Blocked, Failed, guest_directory, guest_identity,
+    load_session, owned_tart, parse_json, process_identity, read_pins, recorded_binary,
+    require_session_directory, session_name, session_ready, step_command)
 
 _spec = importlib.util.spec_from_file_location("run_tests", lab.HERE / "run-tests.py")
 run_tests = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(run_tests)
 
-GUEST_USER = "omarchy"
-GUEST_HOME = "/Users/" + GUEST_USER
 STATE_ROOT = GUEST_HOME + "/.config/macarchy"
-DEVELOPER_DIR = "DEVELOPER_DIR=/Library/Developer/CommandLineTools"
-# A clean, user-like environment; update checks and Homebrew auto-update stay off.
-STEP_ENV = ("HOME=" + GUEST_HOME, "USER=omarchy", "LOGNAME=omarchy", "LANG=en_US.UTF-8",
-            "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-            "MACARCHY_DISABLE_UPDATE_CHECKS=1", "HOMEBREW_NO_AUTO_UPDATE=1",
-            "HOMEBREW_NO_ANALYTICS=1")
 # Product-owned locations a read-only journey must not touch. Not a whole-disk audit.
 WATCHED = (".config", ".cache", ".local", ".zshrc", ".zprofile", ".zshenv", ".pi", ".codex",
            "Library/LaunchAgents", "Library/Application Support/Macarchy")
@@ -63,33 +56,8 @@ LOGIN_WAIT = 60
 EXIT = {"passed": 0, "ready": 0, "cleaned": 0, "running": 0, "failed": 1, "blocked": 3}
 
 
-class Blocked(lab.LabError):
-    """Precondition, ownership or transport problem: no product verdict was reached."""
-
-
-class Failed(lab.LabError):
-    """The product under test reached a wrong result."""
-
-
 def now():
     return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def session_name(value):
-    if not isinstance(value, str) or not re.fullmatch(r"verify-[0-9a-f]{12}", value):
-        raise Blocked("Session must be the verify-<12 hex> name printed by launch.")
-    return value
-
-
-def guest_directory(session):
-    return f"{GUEST_HOME}/macarchy-{session_name(session)}"
-
-
-def read_pins():
-    """Read-only counterpart of lab.initialize for doctor and evidence."""
-    if lab.STATE.is_symlink() or not lab.STATE.is_dir():
-        raise Blocked("Lab state directory is missing or a symlink.")
-    return json.loads((lab.HERE / "inputs.json").read_text())
 
 
 def test_clone(inputs, run):
@@ -135,17 +103,6 @@ def lock_busy(directory):
     return False
 
 
-def load_session(directory, session):
-    path = directory / session_name(session) / "session.json"
-    if path.parent.is_symlink() or not path.is_file():
-        raise Blocked("Unknown session for this run; use the name printed by launch.")
-    record = json.loads(path.read_text())
-    if (record.get("tool"), record.get("session"), record.get("run")) != (
-            "verify.py", session, directory.name):
-        raise Blocked("Session record belongs to another run or tool; refusing it.")
-    return record
-
-
 write_askpass = guest.write_askpass
 
 
@@ -184,18 +141,6 @@ def host_source():
                               check=True, capture_output=True, text=True, timeout=30).stdout
     return {"head": git("rev-parse", "HEAD").strip(),
             "status_entries": len(git("status", "--porcelain=v1").splitlines())}
-
-
-def step_command(binary, arguments):
-    return f"cd {GUEST_HOME} && " + shlex.join(["/usr/bin/env", "-i", *STEP_ENV, binary, *arguments])
-
-
-def parse_json(text):
-    try:
-        value = json.loads(text)
-    except ValueError:
-        return None
-    return value if isinstance(value, dict) else None
 
 
 def build_in_guest(client, session, archive, evidence):
@@ -301,14 +246,6 @@ JOURNEYS = {
                  "declared backgrounds and reports exactly the inactive theme state, without "
                  "creating, deleting or changing anything under the watched guest paths."},
 }
-
-
-def require_session_directory(client, session):
-    remote = guest_directory(session)
-    owner = client.command(f"/bin/cat {shlex.quote(remote)}/.verify-owner", check=False)
-    if owner.returncode or owner.stdout.strip() != session:
-        raise Blocked("Guest directory is missing or not owned by this session.")
-    return remote
 
 
 def state_root_present(client):
@@ -425,18 +362,6 @@ def next_evidence(session_directory, name):
         except FileExistsError:
             continue
     raise Blocked("Too many drive attempts in this session; launch a new one.")
-
-
-def process_identity(pid):
-    """Start time plus full command line; a reused PID cannot match a recorded identity."""
-    result = subprocess.run(["/bin/ps", "-ww", "-o", "lstart=", "-o", "command=", "-p", str(pid)],
-                            capture_output=True, text=True, timeout=10)
-    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
-
-
-def owned_tart(record):
-    """True only for the exact process start recorded by verify.py start."""
-    return bool(record.get("identity")) and process_identity(record["pid"]) == record["identity"]
 
 
 def stop_owned(record):
@@ -721,14 +646,6 @@ class Checks:
         return value
 
 
-def session_ready(directory, session):
-    record = load_session(directory, session)
-    status = record.get("status")
-    if status != "ready":
-        raise Blocked(f"Session status is {status}; launch a new session.")
-    return record
-
-
 def verify_tart(inputs):
     lab.check_version(inputs)
     return inputs["tart"]["version"]
@@ -769,24 +686,6 @@ def require_fresh_state(client):
     if state_root_present(client):
         raise Blocked("~/.config/macarchy exists; journeys need a fresh test-base clone.")
     return "~/.config/macarchy absent"
-
-
-def recorded_binary(client, record):
-    digest = client.command("/usr/bin/shasum -a 256 " + shlex.quote(record["guest"]["binary"]),
-                            check=False).stdout.split()
-    return bool(digest) and digest[0] == record["guest"]["binary_sha256"]
-
-
-def guest_identity(client, record):
-    require_session_directory(client, record["session"])
-    binary = record["guest"]["binary"]
-    if not recorded_binary(client, record):
-        raise Blocked("Guest binary differs from the identity recorded at launch.")
-    version = parse_json(client.command(step_command(binary, ["version", "--json"]),
-                                        check=False).stdout)
-    if version != record["guest"]["version"]:
-        raise Blocked("version --json differs from the identity recorded at launch.")
-    return {"binary": binary, "sha256": record["guest"]["binary_sha256"], "version": version}
 
 
 def doctor(run, session=None, record_report=False):
