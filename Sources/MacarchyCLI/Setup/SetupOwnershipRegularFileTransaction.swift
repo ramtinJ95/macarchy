@@ -344,8 +344,7 @@ extension SetupOwnershipManager {
     else {
       throw SetupOwnershipError.ownershipDrift(target)
     }
-    guard swap(parentDescriptor: parentDescriptor, first: replacementName, second: targetName) == 0
-    else {
+    guard PinnedFilesystem.swap(replacementName, with: targetName, in: parentDescriptor) else {
       throw SetupOwnershipError.posix("replace \(label)", target)
     }
     // After publication this name holds displaced user data, not disposable
@@ -355,9 +354,7 @@ extension SetupOwnershipManager {
 
     // Put the original back and let the deferred cleanup drop the replacement.
     func restoreOriginal(andThrow error: any Error) throws -> Never {
-      guard
-        swap(parentDescriptor: parentDescriptor, first: replacementName, second: targetName) == 0
-      else {
+      guard PinnedFilesystem.swap(replacementName, with: targetName, in: parentDescriptor) else {
         throw SetupOwnershipError.posix("restore concurrently changed \(label)", target)
       }
       cleanupTemporary = true
@@ -713,20 +710,6 @@ extension SetupOwnershipManager {
     return data
   }
 
-  func swap(parentDescriptor: Int32, first: String, second: String) -> Int32 {
-    first.withCString { firstPath in
-      second.withCString { secondPath in
-        Darwin.renameatx_np(
-          parentDescriptor,
-          firstPath,
-          parentDescriptor,
-          secondPath,
-          UInt32(RENAME_SWAP)
-        )
-      }
-    }
-  }
-
   func write(
     _ data: Data,
     descriptor: Int32,
@@ -779,10 +762,10 @@ extension SetupOwnershipManager {
   }
 
   func itemExists(_ url: URL) throws -> Bool {
-    var metadata = stat()
-    if lstat(url.path, &metadata) == 0 { return true }
-    if errno == ENOENT { return false }
-    throw SetupOwnershipError.posix("inspect", url)
+    guard let exists = PinnedFilesystem.entryExists(at: url) else {
+      throw SetupOwnershipError.posix("inspect", url)
+    }
+    return exists
   }
 
   struct RegularFileSnapshot: Equatable, Codable, Sendable {

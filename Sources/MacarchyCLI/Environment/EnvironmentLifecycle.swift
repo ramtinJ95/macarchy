@@ -1442,10 +1442,10 @@ struct EnvironmentTransactionCoordinator: Sendable {
   }
 
   private func itemExists(_ url: URL) throws -> Bool {
-    var metadata = stat()
-    if lstat(url.path, &metadata) == 0 { return true }
-    if errno == ENOENT { return false }
-    throw EnvironmentLifecycleError.system("inspect path", url, errno)
+    guard let exists = PinnedFilesystem.entryExists(at: url) else {
+      throw EnvironmentLifecycleError.system("inspect path", url, errno)
+    }
+    return exists
   }
 
   private func removeCreatedDirectories(_ paths: [String]) throws {

@@ -113,7 +113,9 @@ package struct OmarchyThemePackageInstallation: Sendable {
   }
 
   fileprivate static func swap(_ first: URL, _ second: URL, operation: String) throws {
-    try renamex(first, second, flags: UInt32(RENAME_SWAP), operation: operation)
+    guard PinnedFilesystem.swap(first, with: second) else {
+      throw OmarchyThemePackageInstallationError.publication(operation: operation, code: errno)
+    }
   }
 
   fileprivate static func renameExclusive(
@@ -121,21 +123,7 @@ package struct OmarchyThemePackageInstallation: Sendable {
     _ destination: URL,
     operation: String
   ) throws {
-    try renamex(source, destination, flags: UInt32(RENAME_EXCL), operation: operation)
-  }
-
-  private static func renamex(
-    _ source: URL,
-    _ destination: URL,
-    flags: UInt32,
-    operation: String
-  ) throws {
-    let result = source.path.withCString { sourcePath in
-      destination.path.withCString { destinationPath in
-        Darwin.renamex_np(sourcePath, destinationPath, flags)
-      }
-    }
-    guard result == 0 else {
+    guard PinnedFilesystem.renameExclusively(source, to: destination) else {
       throw OmarchyThemePackageInstallationError.publication(operation: operation, code: errno)
     }
   }
@@ -221,7 +209,9 @@ package struct OmarchyThemePackageInstaller: Sendable {
         displacedPackage: incoming
       )
     } catch {
-      guard shouldRemoveIncoming, Self.entryExists(incoming) else { throw error }
+      guard shouldRemoveIncoming, PinnedFilesystem.entryExists(at: incoming) != false else {
+        throw error
+      }
       do {
         try FileManager.default.removeItem(at: incoming)
       } catch let cleanupError {
@@ -292,10 +282,5 @@ package struct OmarchyThemePackageInstaller: Sendable {
       throw OmarchyThemePackageInstallationError.interruptedTransaction(residue.path)
     }
     return true
-  }
-
-  private static func entryExists(_ url: URL) -> Bool {
-    var metadata = stat()
-    return lstat(url.path, &metadata) == 0 || errno != ENOENT
   }
 }
