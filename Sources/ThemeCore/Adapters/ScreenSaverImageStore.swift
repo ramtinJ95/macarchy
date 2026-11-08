@@ -144,7 +144,7 @@ package struct ScreenSaverImageStore: Sendable {
   }
 
   private func activeSource() throws -> Source? {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     let preferences = ScreenSaverPreferenceStore(root: root)
     if let preference = try preferences.load()[manifest.themeID] {
       return Source(

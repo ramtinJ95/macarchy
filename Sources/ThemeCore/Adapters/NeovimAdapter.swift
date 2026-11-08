@@ -190,7 +190,7 @@ package struct NeovimAdapter: Sendable {
   }
 
   private func validateRuntime() throws {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     let marker = "MACARCHY_THEME=\(manifest.generationID):\(manifest.themeID)"
     let result = try processRunner.run(
       ProcessRequest(

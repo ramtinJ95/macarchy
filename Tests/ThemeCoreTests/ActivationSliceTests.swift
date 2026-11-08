@@ -26,7 +26,9 @@ struct ActivationSliceTests {
       #expect(throws: (any Error).self) {
         try activator.deactivate(expectedGenerationID: manifest.generationID, dryRun: false)
       }
-      #expect(try store.activeManifest().generationID == manifest.generationID)
+      #expect(
+        try ThemeGenerationReader(root: root).activeManifest().generationID == manifest.generationID
+      )
       guard case .current(let status) = try store.read() else {
         Issue.record("Deactivation must preserve the original reconciliation status")
         return
@@ -64,7 +66,7 @@ struct ActivationSliceTests {
         dryRun: true
       )
       #expect(
-        try ReconciliationStatusStore(root: root).activeManifest().generationID
+        try ThemeGenerationReader(root: root).activeManifest().generationID
           == manifest.generationID
       )
 
@@ -75,7 +77,7 @@ struct ActivationSliceTests {
         )
       }
       #expect(
-        try ReconciliationStatusStore(root: root).activeManifest().generationID
+        try ThemeGenerationReader(root: root).activeManifest().generationID
           == manifest.generationID
       )
 
@@ -124,7 +126,7 @@ struct ActivationSliceTests {
         ofItemAtPath: manifestURL.path
       )
 
-      let legacy = try ReconciliationStatusStore(root: root).activeManifest()
+      let legacy = try ThemeGenerationReader(root: root).activeManifest()
       #expect(legacy.manifestSchemaVersion == GenerationManifest.legacySchemaVersion)
       #expect(legacy.themeDigest.isEmpty)
       #expect(legacy.background == nil)
@@ -454,7 +456,7 @@ struct ActivationSliceTests {
         )
       )
       #expect(
-        try ReconciliationStatusStore(root: root).activeManifest().generationID
+        try ThemeGenerationReader(root: root).activeManifest().generationID
           == manifest.generationID)
     }
   }
@@ -614,7 +616,9 @@ struct ActivationSliceTests {
         committed = error
       }
 
-      #expect(try store.activeManifest().generationID == committed.manifest.generationID)
+      #expect(
+        try ThemeGenerationReader(root: root).activeManifest().generationID
+          == committed.manifest.generationID)
       guard case .stale(let activeGenerationID, let stale) = try store.read() else {
         throw TestError.expectedStaleStatus
       }
@@ -692,13 +696,13 @@ struct ActivationSliceTests {
     try runCrashProbe(root: precommitRoot, checkpoint: "generationWritten")
 
     #expect(
-      try ReconciliationStatusStore(root: precommitRoot).activeManifest().generationID
+      try ThemeGenerationReader(root: precommitRoot).activeManifest().generationID
         == original.generationID)
     #expect(try !transactionResidue(at: precommitRoot).isEmpty)
     #expect(try externalProcessCanAcquireLock(at: precommitRoot))
     try runCrashProbe(root: precommitRoot, checkpoint: "generationPublished")
     #expect(
-      try ReconciliationStatusStore(root: precommitRoot).activeManifest().generationID
+      try ThemeGenerationReader(root: precommitRoot).activeManifest().generationID
         == original.generationID)
     let interruptedPublications = try FileManager.default.contentsOfDirectory(
       at: precommitRoot.appending(path: "generations", directoryHint: .isDirectory),
@@ -731,7 +735,7 @@ struct ActivationSliceTests {
     )
     #expect(try transactionResidue(at: precommitRoot).isEmpty)
     #expect(
-      try ReconciliationStatusStore(root: precommitRoot).activeManifest().generationID
+      try ThemeGenerationReader(root: precommitRoot).activeManifest().generationID
         == recoveredActivation.generationID)
 
     let postcommitRoot = try temporaryDirectory()
@@ -748,7 +752,7 @@ struct ActivationSliceTests {
 
     try runCrashProbe(root: postcommitRoot, checkpoint: "currentReplaced")
 
-    let committed = try store.activeManifest()
+    let committed = try ThemeGenerationReader(root: postcommitRoot).activeManifest()
     #expect(committed.themeID == "tokyo-night")
     guard case .stale(let activeGenerationID, let stale) = try store.read() else {
       throw TestError.expectedStaleStatus
@@ -796,7 +800,7 @@ struct ActivationSliceTests {
     _ = try reuseOnly.activate(package: packages[1])
     #expect(try generationIDs(at: stateRoot) == [second.generationID, third.generationID].sorted())
     #expect(
-      try ReconciliationStatusStore(root: stateRoot).activeManifest().generationID
+      try ThemeGenerationReader(root: stateRoot).activeManifest().generationID
         == second.generationID)
   }
 
@@ -846,7 +850,7 @@ struct ActivationSliceTests {
       error = committed
     }
     #expect(
-      try ReconciliationStatusStore(root: stateRoot).activeManifest().generationID
+      try ThemeGenerationReader(root: stateRoot).activeManifest().generationID
         == error.manifest.generationID)
     #expect(publications.withLock { $0.typed } == 1)
     #expect(publications.withLock { $0.darwin } == 1)

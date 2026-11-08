@@ -31,7 +31,7 @@ struct SketchyBarPalettePlanInspector: Sendable {
       )
     }
     do {
-      let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+      let manifest = try ThemeGenerationReader(root: stateRoot).activeManifest()
       let rendererVersion = manifest.rendererVersions[
         SketchyBarConfigurationComposer.providerID,
         default: 0

@@ -399,7 +399,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     let themeID: String
     let source: String
     let currentGenerationID: String?
-    if let manifest = try ReconciliationStatusStore(root: context.stateRoot)
+    if let manifest = try ThemeGenerationReader(root: context.stateRoot)
       .activeManifestIfPresent()
     {
       themeID = manifest.themeID

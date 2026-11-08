@@ -10,7 +10,7 @@ struct EnvironmentStarshipMigrationTests {
     let fixture = try EnvironmentLifecycleFixture(externalEntries: false)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     try fixture.activateTheme()
-    let manifest = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let manifest = try ThemeGenerationReader(root: fixture.state).activeManifest()
     let palette = try String(
       contentsOf: fixture.state.appending(
         path: "generations/\(manifest.generationID)/generated/starship.toml"), encoding: .utf8)
@@ -45,7 +45,7 @@ struct EnvironmentStarshipMigrationTests {
     try fixture.activateTheme()
     let source = fixture.root.appending(path: "my-prompt.toml")
     let alias = fixture.root.appending(path: "prompt-link.toml")
-    let manifest = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let manifest = try ThemeGenerationReader(root: fixture.state).activeManifest()
     let palette = try String(
       contentsOf: fixture.state.appending(
         path: "generations/\(manifest.generationID)/generated/starship.toml"), encoding: .utf8)

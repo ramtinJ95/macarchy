@@ -101,7 +101,7 @@ struct EnvironmentNeovimMigrationTests {
     let applied = try await fixture.apply(adopt: nil, neovim: neverRestore)
     #expect(applied.succeeded, "\(applied.output)")
     try fixture.activateTheme()
-    let active = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let active = try ThemeGenerationReader(root: fixture.state).activeManifest()
     let adapter = NeovimAdapter(
       root: fixture.state, configurationDirectoryURL: fixture.home.appending(path: ".config/nvim"),
       executableURL: NeovimAdapter.liveExecutableURL, controlIsAvailable: { true },
@@ -185,7 +185,7 @@ struct EnvironmentNeovimMigrationTests {
 
     // The real consumer must accept the migrated topology, not just the owner.
     try fixture.activateTheme()
-    let active = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let active = try ThemeGenerationReader(root: fixture.state).activeManifest()
     let adapter = NeovimAdapter(
       root: fixture.state, configurationDirectoryURL: migration.publicURL,
       executableURL: NeovimAdapter.liveExecutableURL, controlIsAvailable: { true },

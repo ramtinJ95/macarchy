@@ -188,7 +188,7 @@ package struct SpicetifyAdapter: Sendable {
   private func desiredRuntimeEvidence(
     spicetifyVersion: String, spotifyVersion: String
   ) throws -> SpicetifyRuntimeEvidence {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     guard let colorDigest = manifest.artifacts[Self.outputPath] else {
       throw SpicetifyAdapterError.invalidRuntimeEvidence(
         "the active generation has no \(Self.outputPath) digest"

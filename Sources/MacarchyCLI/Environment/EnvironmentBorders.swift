@@ -385,7 +385,8 @@ func verifyPendingBordersRuntime(
     throw EnvironmentLifecycleError.blocked("Borders restoration has no original service state")
   }
   let statusStore = ReconciliationStatusStore(root: root)
-  let manifest = try target == .managed ? statusStore.activeManifest() : nil
+  let manifest =
+    try target == .managed ? ThemeGenerationReader(root: root).activeManifest() : nil
 
   try lock.withLock {
     guard var pending = try store.readTransaction(), pending == transaction else {

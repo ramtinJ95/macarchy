@@ -71,7 +71,7 @@ struct EnvironmentNativeFileConnection {
       try generations.currentDestination()
         == previous.map({ StateLayout.generationPath($0.generationID) })
     else { throw EnvironmentLifecycleError.drift("Environment pointer and ownership disagree") }
-    let theme = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+    let theme = try ThemeGenerationReader(root: stateRoot).activeManifest()
     let themeEncoder = JSONEncoder()
     themeEncoder.outputFormatting = [.sortedKeys]
     let themeData = try themeEncoder.encode(theme)

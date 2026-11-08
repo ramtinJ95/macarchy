@@ -191,7 +191,7 @@ struct NativeGuidedSetupTests {
     #expect(!result.succeeded)
     #expect(try EnvironmentStateStore(stateRoot: context.stateRoot).readOwnership() == nil)
     #expect(throws: (any Error).self) {
-      try ReconciliationStatusStore(root: context.stateRoot).activeManifest()
+      try ThemeGenerationReader(root: context.stateRoot).activeManifest()
     }
     if change == "destination" {
       #expect(try String(contentsOf: source, encoding: .utf8) == "personal replacement\n")

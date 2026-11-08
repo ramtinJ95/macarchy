@@ -14,7 +14,7 @@ struct ThemeScreenSaverCommandRunner: Sendable {
       guard backgroundID != nil || followWallpaper else { return try images.reconcile() }
       let selectedThemeID =
         try themeID
-        ?? ReconciliationStatusStore(root: stateRoot).activeManifest().themeID
+        ?? ThemeGenerationReader(root: stateRoot).activeManifest().themeID
       let preferences = ScreenSaverPreferenceStore(root: stateRoot)
       if let backgroundID {
         let package = try MacarchyConfigurationStore(root: stateRoot).addingPersonalBackgrounds(
@@ -27,7 +27,7 @@ struct ThemeScreenSaverCommandRunner: Sendable {
         backgroundID.map { "Saved screensaver image '\($0)' for '\(selectedThemeID)'." }
         ?? "Screensaver for '\(selectedThemeID)' now follows its wallpaper."
       do {
-        let active = try ReconciliationStatusStore(root: stateRoot).activeManifestIfPresent()
+        let active = try ThemeGenerationReader(root: stateRoot).activeManifestIfPresent()
         guard active?.themeID == selectedThemeID else {
           return saved
             + " It will be used when this theme is active. Theme and wallpaper unchanged."

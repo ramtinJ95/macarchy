@@ -306,7 +306,7 @@ private struct ThemeInstallFixture {
   }
 
   func activeManifest() throws -> GenerationManifest {
-    try ReconciliationStatusStore(root: stateRoot).activeManifest()
+    try ThemeGenerationReader(root: stateRoot).activeManifest()
   }
 
   func transactionResidue() throws -> [String] {

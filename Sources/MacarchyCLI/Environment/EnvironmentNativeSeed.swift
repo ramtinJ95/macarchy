@@ -110,7 +110,7 @@ struct EnvironmentNativeSeed: Sendable {
         if let bootstrapPalette {
           palette = bootstrapPalette
         } else {
-          let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+          let manifest = try ThemeGenerationReader(root: stateRoot).activeManifest()
           palette = try BoundedRegularFile.read(
             at: manifest.artifactURL(root: stateRoot, path: "generated/starship.toml")
           ).data

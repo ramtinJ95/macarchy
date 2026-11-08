@@ -21,7 +21,7 @@ struct ThemeNextCommandRunner: Sendable {
 
   static let live = ThemeNextCommandRunner(
     activeManifest: { root in
-      try ReconciliationStatusStore(root: root).activeManifest()
+      try ThemeGenerationReader(root: root).activeManifest()
     },
     activation: .live
   )

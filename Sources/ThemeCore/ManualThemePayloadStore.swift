@@ -43,7 +43,7 @@ package struct ManualThemePayloadStore: Sendable {
 
     let manifest: GenerationManifest
     do {
-      manifest = try ReconciliationStatusStore(root: root).activeManifest()
+      manifest = try ThemeGenerationReader(root: root).activeManifest()
     } catch ReconciliationStatusError.noActiveGeneration {
       throw ManualThemePayloadError.noActiveTheme
     }

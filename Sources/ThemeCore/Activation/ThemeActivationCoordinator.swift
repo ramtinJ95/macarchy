@@ -77,6 +77,7 @@ package struct ThemeActivationCoordinator: Sendable {
   private let spicetify: SpicetifyAdapter
   private let starship: StarshipAdapter
   private let statusStore: ReconciliationStatusStore
+  private let themeGenerations: ThemeGenerationReader
   private let wallpaper: WallpaperAdapter
   private let wallpaperSignal: YabaiWallpaperSignal
   private let yazi: YaziAdapter
@@ -269,6 +270,7 @@ package struct ThemeActivationCoordinator: Sendable {
       processRunner: processRunner
     )
     self.statusStore = statusStore
+    themeGenerations = ThemeGenerationReader(root: root)
     tuicr = TuicrAdapter(
       root: root,
       configurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
@@ -377,7 +379,7 @@ package struct ThemeActivationCoordinator: Sendable {
     _ adapterIDs: [String]
   ) throws -> (manifest: GenerationManifest, inspections: [AdapterInspection]) {
     try validateSelection(adapterIDs)
-    let manifest = try statusStore.activeManifest()
+    let manifest = try themeGenerations.activeManifest()
     let adapters = configuredAdapters(
       context: AdapterResolutionContext(
         desiredAppearance: try activeAppearance(manifest: manifest),
@@ -413,7 +415,7 @@ package struct ThemeActivationCoordinator: Sendable {
     }
     var context = AdapterResolutionContext(includeRuntimeChecks: includeRuntimeChecks)
     do {
-      let manifest = try statusStore.activeManifest()
+      let manifest = try themeGenerations.activeManifest()
       context.unsupportedAdapterIDs = try unsupportedNamedThemeAdapterIDs(manifest: manifest)
       do {
         context.desiredAppearance = try activeAppearance(manifest: manifest)
@@ -445,7 +447,7 @@ package struct ThemeActivationCoordinator: Sendable {
     excludingAdapterIDs: Set<String> = []
   ) async throws -> (manifest: GenerationManifest, record: ReconciliationRecord) {
     try validateSelection(adapterIDs)
-    let manifest = try statusStore.activeManifest()
+    let manifest = try themeGenerations.activeManifest()
     let adapters = configuredAdapters(
       context: AdapterResolutionContext(
         desiredWallpaperURL: activeWallpaperURL(manifest: manifest),
@@ -535,7 +537,7 @@ package struct ThemeActivationCoordinator: Sendable {
         },
         reconciliation: {
           appearance.reconciliation {
-            let manifest = try statusStore.activeManifest()
+            let manifest = try themeGenerations.activeManifest()
             return try activeAppearance(manifest: manifest)
           }
         }
@@ -619,7 +621,7 @@ package struct ThemeActivationCoordinator: Sendable {
           return inspectWallpaper(
             desiredWallpaperURL: context.desiredWallpaperURL,
             intentionallyUnmanaged: context.wallpaperIntentionallyUnmanaged
-              ?? ((try? statusStore.activeManifest()).map {
+              ?? ((try? themeGenerations.activeManifest()).map {
                 activeWallpaperURL(manifest: $0) == nil
               } ?? false),
             includeRuntimeChecks: context.includeRuntimeChecks
@@ -628,7 +630,7 @@ package struct ThemeActivationCoordinator: Sendable {
         reconciliation: {
           AdapterReconciliation(id: WallpaperAdapter.id, requirement: .required) {
             let wallpaperOutcome = try await wallpaper.reconciliation {
-              let manifest = try statusStore.activeManifest()
+              let manifest = try themeGenerations.activeManifest()
               return activeWallpaperURL(manifest: manifest)
             }.run()
             // The Photos folder is a projection of this same wallpaper consumer,
@@ -680,7 +682,7 @@ package struct ThemeActivationCoordinator: Sendable {
     )
     var preferences = try backgroundPreferences.load()
     if recoverActivePreference,
-      let active = try statusStore.activeManifestIfPresent(),
+      let active = try themeGenerations.activeManifestIfPresent(),
       active.manifestSchemaVersion == GenerationManifest.currentSchemaVersion
     {
       try rememberBackground(of: active, in: &preferences)
@@ -777,7 +779,7 @@ package struct ThemeActivationCoordinator: Sendable {
   }
 
   private func previousReconciliationEvidence() throws -> PreviousReconciliationEvidence? {
-    guard let manifest = try statusStore.activeManifestIfPresent() else { return nil }
+    guard let manifest = try themeGenerations.activeManifestIfPresent() else { return nil }
     let record: ReconciliationRecord? =
       if case .current(let record)? = try? statusStore.reconciliationState(for: manifest) {
         record

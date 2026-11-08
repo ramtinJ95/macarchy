@@ -252,7 +252,7 @@ struct DesktopApplyCommandRunner: Sendable {
     let themeNeedsReconciliation: Bool
     do {
       if !adapterIDs.isEmpty {
-        _ = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+        _ = try ThemeGenerationReader(root: stateRoot).activeManifest()
       }
       if let theme, !adapterIDs.isEmpty {
         let inspections = try theme.inspect(adapterIDs, stateRoot, consumerPaths)

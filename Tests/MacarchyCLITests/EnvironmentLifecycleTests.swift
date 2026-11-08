@@ -238,7 +238,7 @@ struct EnvironmentLifecycleTests {
     ]
     let statusStore = ReconciliationStatusStore(root: fixture.state)
     _ = try statusStore.persist(
-      manifest: statusStore.activeManifest(),
+      manifest: ThemeGenerationReader(root: fixture.state).activeManifest(),
       results: environmentThemeAdapterIDs.map(appliedAdapterResult)
     )
     let digest = try #require(
@@ -274,7 +274,7 @@ struct EnvironmentLifecycleTests {
 
     // A standalone reapply must retain other domains, including missing evidence repair.
     _ = try statusStore.persist(
-      manifest: statusStore.activeManifest(),
+      manifest: ThemeGenerationReader(root: fixture.state).activeManifest(),
       results: environmentThemeAdapterIDs.map(appliedAdapterResult)
     )
     let standalone = try await fixture.apply(
@@ -413,7 +413,7 @@ struct EnvironmentLifecycleTests {
     #expect(defaultAdapterIDs.contains(MacOSAppearanceAdapter.id))
     #expect(defaultAdapterIDs.contains(SketchyBarAdapter.id))
     _ = try statusStore.persist(
-      manifest: try statusStore.activeManifest(),
+      manifest: try ThemeGenerationReader(root: fixture.state).activeManifest(),
       results: defaultAdapterIDs.map(appliedAdapterResult)
     )
     let digest = try #require(
@@ -1760,7 +1760,7 @@ private func recordingThemeController(
       record(adapterIDs)
       let store = ReconciliationStatusStore(root: stateRoot)
       let record = try store.persist(
-        manifest: try store.activeManifest(),
+        manifest: try ThemeGenerationReader(root: stateRoot).activeManifest(),
         results: adapterIDs.map(appliedAdapterResult)
       )
       return DesktopThemeReconciliation(

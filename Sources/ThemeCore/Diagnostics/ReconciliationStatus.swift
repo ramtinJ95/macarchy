@@ -223,12 +223,4 @@ public struct ReconciliationStatusStore: Sendable {
     }
   }
 
-  package func activeManifestIfPresent() throws -> GenerationManifest? {
-    try ThemeGenerationReader(root: root).activeManifestIfPresent()
-  }
-
-  package func activeManifest() throws -> GenerationManifest {
-    try ThemeGenerationReader(root: root).activeManifest()
-  }
-
 }

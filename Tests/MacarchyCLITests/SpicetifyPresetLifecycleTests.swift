@@ -59,7 +59,7 @@ struct SpicetifyPresetLifecycleTests {
           #expect(!dryRun)
           #expect(calls.withLock { $0.last } == "desktop")
           calls.withLock { $0.append("theme") }
-          let generation = try ReconciliationStatusStore(root: state).activeManifest().generationID
+          let generation = try ThemeGenerationReader(root: state).activeManifest().generationID
           _ = try ThemeActivator(root: state).deactivate(
             expectedGenerationID: generation, dryRun: false)
           return .noChange("Prior theme absence restored")
@@ -162,7 +162,7 @@ struct SpicetifyPresetLifecycleTests {
     let theme = DesktopThemeController(
       reconcile: { ids, state, _ in
         DesktopThemeReconciliation(
-          generationID: try ReconciliationStatusStore(root: state).activeManifest().generationID,
+          generationID: try ThemeGenerationReader(root: state).activeManifest().generationID,
           results: ids.map {
             DesktopThemeAdapterStatus(
               adapterID: $0, requirement: "required", status: "applied", message: "matching receipt"

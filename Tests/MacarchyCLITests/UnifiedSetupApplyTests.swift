@@ -351,7 +351,7 @@ struct UnifiedSetupApplyTests {
     let refreshed = try #require(refreshedGenerationID.withLock { $0 })
     #expect(refreshed != outdated.generationID)
     #expect(
-      try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID == refreshed)
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID == refreshed)
     let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
     // Teardown's first check: the receipt must name the active generation it may remove.
     let replacementCheck = {
@@ -993,7 +993,7 @@ struct UnifiedSetupApplyTests {
     #expect(report["outcome"] as? String == "no_change")
     #expect(report["mutated"] as? Bool == false)
     #expect(
-      try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
         == manifest.generationID
     )
     let ownership = try #require(try SetupCoreOwnershipStore(stateRoot: fixture.state).read())
@@ -1016,7 +1016,7 @@ struct UnifiedSetupApplyTests {
       }
       #expect(try SetupCoreOwnershipStore(stateRoot: fixture.state).read() == ownership)
       #expect(
-        try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID
+        try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
           == manifest.generationID)
     }
   }

@@ -37,7 +37,7 @@ enum ThemeStatusSnapshot: Sendable {
 
 func readThemeStatusSnapshot(_ root: URL) throws -> ThemeStatusSnapshot {
   let store = ReconciliationStatusStore(root: root)
-  let manifest = try store.activeManifest()
+  let manifest = try ThemeGenerationReader(root: root).activeManifest()
   do {
     return .state(
       manifest: manifest,

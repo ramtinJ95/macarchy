@@ -929,7 +929,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private func activePalette() throws -> (generationID: String, color: String) {
-    let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+    let manifest = try ThemeGenerationReader(root: stateRoot).activeManifest()
     guard
       manifest.rendererVersions[SketchyBarConfigurationComposer.providerID, default: 0] >= 2,
       manifest.artifacts[SketchyBarConfigurationComposer.paletteArtifactPath] != nil

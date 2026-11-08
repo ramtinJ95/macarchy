@@ -21,7 +21,7 @@ struct EnvironmentNeovimConnection {
 
   func plan() throws -> Plan {
     do {
-      let theme = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+      let theme = try ThemeGenerationReader(root: stateRoot).activeManifest()
       _ = try BoundedRegularFile.read(
         at: theme.artifactURL(root: stateRoot, path: NeovimAdapter.outputPath))
     } catch {
