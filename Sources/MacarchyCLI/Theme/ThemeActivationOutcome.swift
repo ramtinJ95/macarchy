@@ -38,3 +38,37 @@ enum ThemeActivationOutcome {
     }
   }
 }
+
+extension ThemeActivationOutcome {
+  /// The generation the pointer swapped to, or nil when canonical state is unchanged.
+  var committedManifest: GenerationManifest? {
+    switch self {
+    case .committed(let result, _): result.manifest
+    case .committedActivationError(let manifest, _),
+      .committedReconciliationError(let manifest, _):
+      manifest
+    case .precommitFailure: nil
+    }
+  }
+
+  /// The same outcome with `notice` reported after any notice it already has.
+  func addingNotice(_ notice: String) -> Self {
+    switch self {
+    case .committed(let result, let requiredFailure):
+      .committed(
+        ThemeActivationResult(
+          manifest: result.manifest,
+          reconciliation: result.reconciliation,
+          notice: [result.notice, notice].compactMap { $0 }.joined(separator: " ")
+        ),
+        requiredFailure: requiredFailure
+      )
+    case .committedActivationError(let manifest, let cause):
+      .committedActivationError(manifest: manifest, cause: "\(cause) \(notice)")
+    case .committedReconciliationError(let manifest, let cause):
+      .committedReconciliationError(manifest: manifest, cause: "\(cause) \(notice)")
+    case .precommitFailure:
+      self
+    }
+  }
+}

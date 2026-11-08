@@ -1,15 +1,18 @@
 import Foundation
 import ThemeCore
 
-/// Canonical theme activation for `theme set`, `next`, `background` and `install`, the theme
-/// browser and setup's theme refresh. Methods ending in `Locked` never take ThemePackageLock: the
-/// caller holds it through `withThemePackageLock` for anything but a dry run (ADR-0052).
+/// Canonical theme activation for `theme set`, `next`, `background`, `install` and `undo`, the
+/// theme browser and setup's theme refresh. Methods ending in `Locked` never take
+/// ThemePackageLock: the caller holds it through `withThemePackageLock` for anything but a dry
+/// run (ADR-0052), which also serializes the history writes that follow each commit.
 struct ThemeActivationService: Sendable {
   let preflight: @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths) throws -> Void
   let activate:
     @Sendable (ThemePackage, String?, URL, ThemeConsumerPaths, String?) async throws
       -> ThemeActivationResult
   var slackIsEnabled: @Sendable (URL) throws -> Bool = { _ in true }
+  /// Records committed activations for `theme undo`; nil keeps no history.
+  var history: ThemeHistoryRecorder? = nil
 
   static let live = coordinator(
     enabledAdapterIDs: nil,
@@ -57,7 +60,8 @@ struct ThemeActivationService: Sendable {
           onCommittedLocked: onCommittedLocked
         )
       },
-      slackIsEnabled: slackIsEnabled
+      slackIsEnabled: slackIsEnabled,
+      history: .live
     )
   }
 
@@ -98,7 +102,8 @@ struct ThemeActivationService: Sendable {
     dryRun: Bool,
     expectedActiveGenerationID: String?,
     json: Bool,
-    requestedBackgroundID: String? = nil
+    requestedBackgroundID: String? = nil,
+    historyUpdate: ThemeHistoryUpdate = .record
   ) async throws -> CommandExecution {
     try await reportLocked(
       package: package,
@@ -106,7 +111,8 @@ struct ThemeActivationService: Sendable {
       consumerPaths: consumerPaths,
       dryRun: dryRun,
       expectedActiveGenerationID: expectedActiveGenerationID,
-      requestedBackgroundID: requestedBackgroundID
+      requestedBackgroundID: requestedBackgroundID,
+      historyUpdate: historyUpdate
     ).execution(json: json)
   }
 
@@ -117,7 +123,8 @@ struct ThemeActivationService: Sendable {
     consumerPaths: ThemeConsumerPaths,
     dryRun: Bool,
     expectedActiveGenerationID: String?,
-    requestedBackgroundID: String? = nil
+    requestedBackgroundID: String? = nil,
+    historyUpdate: ThemeHistoryUpdate = .record
   ) async throws -> ThemeSetReport {
     if dryRun {
       do {
@@ -133,7 +140,8 @@ struct ThemeActivationService: Sendable {
       backgroundID: requestedBackgroundID,
       stateRoot: stateRoot,
       consumerPaths: consumerPaths,
-      expectedActiveGenerationID: expectedActiveGenerationID
+      expectedActiveGenerationID: expectedActiveGenerationID,
+      historyUpdate: historyUpdate
     )
     return ThemeSetReport(outcome, themeID: package.id, slackTheme: slackTheme)
   }
@@ -143,9 +151,11 @@ struct ThemeActivationService: Sendable {
     backgroundID: String?,
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths,
-    expectedActiveGenerationID: String?
+    expectedActiveGenerationID: String?,
+    historyUpdate: ThemeHistoryUpdate = .record
   ) async throws -> ThemeActivationOutcome {
-    try await ThemeActivationOutcome.classify {
+    let previous = history?.activeSelection(stateRoot: stateRoot)
+    let outcome = try await ThemeActivationOutcome.classify {
       try await activate(
         package,
         backgroundID,
@@ -154,6 +164,83 @@ struct ThemeActivationService: Sendable {
         expectedActiveGenerationID
       )
     }
+    guard let history, let previous else { return outcome }
+    return history.record(outcome, previous: previous, update: historyUpdate, stateRoot: stateRoot)
+  }
+}
+
+/// How a committed activation changes the theme history.
+enum ThemeHistoryUpdate: Sendable {
+  /// Add the committed selection after the one that was active before.
+  case record
+  /// `theme undo`: keep `remaining`, whose last entry, the selection being restored, is
+  /// replaced by the committed one.
+  case undo(remaining: [ThemeHistoryEntry])
+}
+
+/// Keeps `state/theme-history.json` in step with committed activations. History is evidence for
+/// `theme undo`, never canonical state: a history failure becomes a notice on the committed
+/// activation and never changes whether the activation succeeded.
+struct ThemeHistoryRecorder: Sendable {
+  let activeManifest: @Sendable (URL) throws -> GenerationManifest?
+  let load: @Sendable (URL) throws -> [ThemeHistoryEntry]
+  let persist: @Sendable ([ThemeHistoryEntry], URL) throws -> Void
+  let now: @Sendable () -> String
+
+  static let live = ThemeHistoryRecorder(
+    activeManifest: { try ThemeGenerationReader(root: $0).activeManifestIfPresent() },
+    load: { try ThemeHistoryStore(root: $0).load() },
+    persist: { try ThemeHistoryStore(root: $1).persist($0) },
+    now: { ISO8601DateFormatter().string(from: Date()) }
+  )
+
+  /// The selection active before an activation; read before it so the first recorded change
+  /// can be undone too.
+  func activeSelection(stateRoot: URL) -> Result<ThemeHistoryEntry?, any Error> {
+    Result {
+      try activeManifest(stateRoot).map { ThemeHistoryEntry(manifest: $0, recordedAt: now()) }
+    }
+  }
+
+  func record(
+    _ outcome: ThemeActivationOutcome,
+    previous: Result<ThemeHistoryEntry?, any Error>,
+    update: ThemeHistoryUpdate,
+    stateRoot: URL
+  ) -> ThemeActivationOutcome {
+    guard let manifest = outcome.committedManifest else { return outcome }
+    let committed = ThemeHistoryEntry(manifest: manifest, recordedAt: now())
+    var notices: [String] = []
+    let entries: [ThemeHistoryEntry]
+    switch update {
+    case .record:
+      let existing: [ThemeHistoryEntry]
+      do {
+        existing = try load(stateRoot)
+      } catch {
+        existing = []
+        notices.append("Theme history could not be read and was started again: \(error).")
+      }
+      let before: ThemeHistoryEntry?
+      do {
+        before = try previous.get()
+      } catch {
+        before = nil
+        notices.append(
+          "The previously active theme could not be read, so undo cannot return to it: \(error).")
+      }
+      entries = ThemeHistory.recording(existing, previous: before, committed: committed)
+    case .undo(let remaining):
+      // The restored entry becomes what actually committed, even when activation chose a
+      // background for an entry that recorded none, so a later undo cannot return to it.
+      entries = Array(remaining.dropLast()) + [committed]
+    }
+    do {
+      try persist(entries, stateRoot)
+    } catch {
+      notices.append("Theme history was not updated, so undo may skip this change: \(error).")
+    }
+    return notices.isEmpty ? outcome : outcome.addingNotice(notices.joined(separator: " "))
   }
 }
 
