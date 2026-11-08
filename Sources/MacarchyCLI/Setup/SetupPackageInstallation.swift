@@ -38,10 +38,42 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     var approvalDigest: String { get throws { try canonicalJSONDigest(self) } }
   }
 
+  struct Report: CommandReport, Sendable {
+    let operation = "setup_install_packages"
+    let outcome: String
+    let approvalDigest: String?
+    let brewfile: String?
+    let command: [String]?
+    let environment: [String]
+    let boundary = "native_dependency_and_related_package_effects_delegated_to_homebrew"
+    let nativeEffects: [String]
+    let targets: [SetupPackageInstallationAttempt.Target]
+    let attempt: SetupPackageInstallationAttempt.Summary?
+    let inventoryWarnings: [HomebrewInstalledPackage]
+    let message: String
+
+    var succeeded: Bool { ["preview", "no_change", "complete"].contains(outcome) }
+
+    /// Human and JSON previews expose the same declared scope and limitations.
+    func renderText() throws -> String {
+      let json = try renderJSON(self)
+      return "Package installation [\(outcome)]\n\(json)"
+    }
+  }
+
   func execute(
     context: UnifiedSetupPlanContext, targets: [String], approval: String?,
     recover: Bool = false, json: Bool
   ) async throws -> CommandExecution {
+    let installation = try await report(
+      context: context, targets: targets, approval: approval, recover: recover)
+    return (try installation.render(json: json), installation.succeeded)
+  }
+
+  func report(
+    context: UnifiedSetupPlanContext, targets: [String], approval: String?,
+    recover: Bool = false
+  ) async throws -> Report {
     let store = SetupPackageInstallationStore(context: context)
     var reviewed: Inputs?
     var observation: HomebrewPackageObservation?
@@ -56,15 +88,15 @@ struct SetupPackageInstallationCommandRunner: Sendable {
               refusal: SetupPackageAdoptionError("Resolve the unified setup transaction first.")),
             context: context)
           guard let attempt = try store.read() else {
-            return try result(
-              "no_change", message: "No package installation attempt exists.", json: json)
+            return result(
+              "no_change", message: "No package installation attempt exists.")
           }
           guard attempt.phase == .running else {
-            return try result(
+            return result(
               attempt.phase.rawValue, attempt: attempt,
-              message: "Last attempt is already resolved; no Homebrew command was run.", json: json)
+              message: "Last attempt is already resolved; no Homebrew command was run.")
           }
-          return try finish(attempt, context: context, store: store, json: json)
+          return try finish(attempt, context: context, store: store)
         }
       }
       let identities = try SetupPackageAdoptionCommandRunner.parseTargets(targets)
@@ -73,21 +105,20 @@ struct SetupPackageInstallationCommandRunner: Sendable {
       observation = inputs.observation
       reviewed = inputs
       guard !inputs.targets.isEmpty else {
-        return try result(
+        return result(
           "no_change", observation: observation,
-          message: "Every named package matches its applied declaration; nothing was written.",
-          json: json)
+          message: "Every named package matches its applied declaration; nothing was written.")
       }
       try provider.preflight()
       let digest = try inputs.approvalDigest
       guard let approval else {
-        return try result(
+        return result(
           "preview", brewfile: inputs.brewfile, command: inputs.command,
           approval: digest, targets: inputs.targets,
           observation: observation,
           message:
-            "Review the Brewfile and native command scope; Homebrew owns dependency and related-package effects. Repeat with --approve \(digest). No installation occurred.",
-          json: json)
+            "Review the Brewfile and native command scope; Homebrew owns dependency and related-package effects. Repeat with --approve \(digest). No installation occurred."
+        )
       }
       guard approval == digest else {
         throw SetupPackageAdoptionError(
@@ -132,20 +163,20 @@ struct SetupPackageInstallationCommandRunner: Sendable {
           attempt.diagnostic = String(execution.diagnostic.prefix(8 * 1024))
           try store.write(attempt)
           try checkpoint(.afterNativeOutcome)
-          return try finish(attempt, context: context, store: store, json: json)
+          return try finish(attempt, context: context, store: store)
         } catch {
-          return try result(
+          return result(
             "recovery_required", attempt: attempt,
             message:
-              "Installation attempt needs observation-only --recover: \(error). No rollback is claimed.",
-            json: json)
+              "Installation attempt needs observation-only --recover: \(error). No rollback is claimed."
+          )
         }
       }
     } catch {
-      return try result(
+      return result(
         "blocked", brewfile: reviewed?.brewfile, command: reviewed?.command,
         observation: observation,
-        message: String(describing: error), json: json)
+        message: String(describing: error))
     }
   }
 
@@ -205,8 +236,8 @@ struct SetupPackageInstallationCommandRunner: Sendable {
 
   private func finish(
     _ pending: SetupPackageInstallationAttempt, context: UnifiedSetupPlanContext,
-    store: SetupPackageInstallationStore, json: Bool
-  ) throws -> CommandExecution {
+    store: SetupPackageInstallationStore
+  ) throws -> Report {
     var attempt = pending
     if let session = attempt.processSession,
       try HomebrewPackageInstallProcess.sessionExists(session)
@@ -233,11 +264,11 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     else {
       attempt.phase = .partial
       try store.write(attempt)
-      return try result(
+      return result(
         "partial", attempt: attempt, observation: observation,
         message:
-          "Native success and observed named installations were not both established. No declarations were adopted, no rollback or retry occurred. Inspect installed packages before explicit adoption or a new plan.",
-        json: json)
+          "Native success and observed named installations were not both established. No declarations were adopted, no rollback or retry occurred. Inspect installed packages before explicit adoption or a new plan."
+      )
     }
     let ledgerStore = SetupPackageAdoptionStore(
       stateRoot: context.stateRoot, homeDirectory: context.homeDirectory)
@@ -272,11 +303,11 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     try checkpoint(.afterPublication)
     attempt.phase = .complete
     try store.write(attempt)
-    return try result(
+    return result(
       "complete", attempt: attempt, observation: observation,
       message:
-        "Native installation succeeded and named receipts were observed. Only named declarations were recorded; dependency effects remain Homebrew-owned. No provider configuration changed.",
-      json: json)
+        "Native installation succeeded and named receipts were observed. Only named declarations were recorded; dependency effects remain Homebrew-owned. No provider configuration changed."
+    )
   }
 
   private func result(
@@ -284,23 +315,9 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     approval: String? = nil, attempt: SetupPackageInstallationAttempt? = nil,
     targets: [SetupPackageInstallationAttempt.Target] = [],
     observation: HomebrewPackageObservation? = nil,
-    message: String, json: Bool
-  ) throws -> CommandExecution {
-    struct Report: Encodable {
-      let operation = "setup_install_packages"
-      let outcome: String
-      let approvalDigest: String?
-      let brewfile: String?
-      let command: [String]?
-      let environment: [String]
-      let boundary = "native_dependency_and_related_package_effects_delegated_to_homebrew"
-      let nativeEffects: [String]
-      let targets: [SetupPackageInstallationAttempt.Target]
-      let attempt: SetupPackageInstallationAttempt.Summary?
-      let inventoryWarnings: [HomebrewInstalledPackage]
-      let message: String
-    }
-    let report = Report(
+    message: String
+  ) -> Report {
+    Report(
       outcome: outcome, approvalDigest: approval, brewfile: brewfile ?? attempt?.brewfile,
       command: command, environment: HomebrewBundleInstaller.environment,
       nativeEffects: HomebrewBundleInstaller.nativeEffects(
@@ -311,11 +328,5 @@ struct SetupPackageInstallationCommandRunner: Sendable {
         $0.issue != nil || $0.identity == nil
       } ?? [],
       message: message)
-    // Human and JSON previews expose the same declared scope and limitations.
-    let output = try renderJSON(report)
-    return (
-      json ? output : "Package installation [\(outcome)]\n\(output)",
-      ["preview", "no_change", "complete"].contains(outcome)
-    )
   }
 }

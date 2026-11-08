@@ -11,7 +11,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     let declarations: [SetupPackageAdoptionLedger.Declaration]
   }
 
-  struct Report: Encodable {
+  struct Report: CommandReport, Sendable {
     let operation = "setup_adopt_packages"
     let outcome: String
     let targets: [String]
@@ -19,6 +19,32 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     let candidates: [Candidate]
     let message: String
     let boundary = "macarchy_adoption_only_no_homebrew_or_provider_mutation"
+
+    var succeeded: Bool { ["preview", "no_change", "adopted"].contains(outcome) }
+
+    func renderText() throws -> String {
+      let preview = outcome == "preview"
+      var lines = ["Package adoption [\(outcome)]", message]
+      if preview {
+        lines.append("Adoption only; no Homebrew packages or provider configuration will change.")
+      }
+      for candidate in candidates {
+        lines.append("- \(candidate.identity.key): \(candidate.versions.joined(separator: ", "))")
+        if preview {
+          for declaration in candidate.declarations {
+            lines.append(
+              "  - \(declaration.source): \(declaration.selectionField ?? "package declaration") from \(declaration.layer)"
+                + (declaration.sourcePath.map { " (\($0))" } ?? ""))
+          }
+          for receipt in candidate.receipts {
+            lines.append(
+              "  - \(receipt.path) [\(receipt.digest); device \(receipt.device); inode \(receipt.inode)]"
+            )
+          }
+        }
+      }
+      return lines.joined(separator: "\n")
+    }
   }
 
   struct Prepared: Encodable, Sendable {
@@ -40,6 +66,13 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
   func execute(
     context: UnifiedSetupPlanContext, targets: [String], approval: String?, json: Bool
   ) async throws -> CommandExecution {
+    let adoption = try await report(context: context, targets: targets, approval: approval)
+    return (try adoption.render(json: json), adoption.succeeded)
+  }
+
+  func report(
+    context: UnifiedSetupPlanContext, targets: [String], approval: String?
+  ) async throws -> Report {
     let store = SetupPackageAdoptionStore(
       stateRoot: context.stateRoot, homeDirectory: context.homeDirectory)
     var reviewed: Prepared?
@@ -48,18 +81,17 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
       let prepared = try prepare(context: context, identities: identities, store: store)
       reviewed = prepared
       if prepared.additions.isEmpty {
-        return try result(
+        return result(
           "no_change", targets: targets, prepared: prepared,
           message:
-            "Every named installation already matches its adoption record; no state was written.",
-          json: json)
+            "Every named installation already matches its adoption record; no state was written.")
       }
       guard let approval else {
-        return try result(
+        return result(
           "preview", targets: targets, prepared: prepared,
           message:
-            "Review the exact declarations and receipts, then repeat with --approve \(prepared.digest).",
-          json: json)
+            "Review the exact declarations and receipts, then repeat with --approve \(prepared.digest)."
+        )
       }
       guard approval == prepared.digest else {
         throw SetupPackageAdoptionError(
@@ -93,22 +125,21 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
         } catch {
           // Publication is the commit point. Never claim rollback or erase an
           // adoption merely because reporting/verification was interrupted.
-          return try result(
+          return result(
             "commit_unverified", targets: targets, prepared: current,
             message:
-              "Adoption publication completed, but confirmation failed: \(error). Inspect package status before retrying.",
-            json: json)
+              "Adoption publication completed, but confirmation failed: \(error). Inspect package status before retrying."
+          )
         }
-        return try result(
+        return result(
           "adopted", targets: targets, prepared: current,
           message:
-            "Adoption recorded after receipt revalidation. No Homebrew packages or provider configuration changed.",
-          json: json)
+            "Adoption recorded after receipt revalidation. No Homebrew packages or provider configuration changed."
+        )
       }
     } catch {
-      return try result(
-        "blocked", targets: targets, prepared: reviewed, message: String(describing: error),
-        json: json)
+      return result(
+        "blocked", targets: targets, prepared: reviewed, message: String(describing: error))
     }
   }
 
@@ -193,40 +224,12 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
   }
 
   private func result(
-    _ outcome: String, targets: [String], prepared: Prepared?, message: String, json: Bool
-  ) throws -> CommandExecution {
-    let preview = outcome == "preview"
-    let candidates = prepared?.candidates ?? []
-    let report = Report(
+    _ outcome: String, targets: [String], prepared: Prepared?, message: String
+  ) -> Report {
+    Report(
       outcome: outcome, targets: targets,
-      approvalDigest: preview ? prepared?.digest : nil,
-      candidates: candidates, message: message
+      approvalDigest: outcome == "preview" ? prepared?.digest : nil,
+      candidates: prepared?.candidates ?? [], message: message
     )
-    let output: String
-    if json {
-      output = try renderJSON(report)
-    } else {
-      var lines = ["Package adoption [\(outcome)]", message]
-      if preview {
-        lines.append("Adoption only; no Homebrew packages or provider configuration will change.")
-      }
-      for candidate in candidates {
-        lines.append("- \(candidate.identity.key): \(candidate.versions.joined(separator: ", "))")
-        if preview {
-          for declaration in candidate.declarations {
-            lines.append(
-              "  - \(declaration.source): \(declaration.selectionField ?? "package declaration") from \(declaration.layer)"
-                + (declaration.sourcePath.map { " (\($0))" } ?? ""))
-          }
-          for receipt in candidate.receipts {
-            lines.append(
-              "  - \(receipt.path) [\(receipt.digest); device \(receipt.device); inode \(receipt.inode)]"
-            )
-          }
-        }
-      }
-      output = lines.joined(separator: "\n")
-    }
-    return (output, ["preview", "no_change", "adopted"].contains(outcome))
   }
 }
