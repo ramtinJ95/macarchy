@@ -41,25 +41,6 @@ public struct RenderedArtifact: Sendable {
 public struct RenderedTheme: Sendable {
   public let artifacts: [RenderedArtifact]
 
-  // Preserve the v0.3 ThemeCore rendering contract while artifacts become the
-  // authoritative storage. New code should consume `artifacts` by path.
-  public var atuinTheme: String { requiredString(atPath: AtuinAdapter.outputPath) }
-  public var batTheme: String { requiredString(atPath: TextMateThemeArtifact.outputPath) }
-  public var btopTheme: String { requiredString(atPath: BtopAdapter.outputPath) }
-  public var ezaTheme: String { requiredString(atPath: EzaAdapter.outputPath) }
-  public var herdrTheme: String { requiredString(atPath: HerdrAdapter.outputPath) }
-  public var themeJSON: Data { requiredData(atPath: ThemeRenderer.themeOutputPath) }
-  public var kittyConfiguration: String { requiredString(atPath: KittyAdapter.outputPath) }
-  public var neovimTheme: String { requiredString(atPath: NeovimAdapter.outputPath) }
-  public var piTheme: String { requiredString(atPath: PiAdapter.outputPath) }
-  public var sketchyBarPalette: String { requiredString(atPath: SketchyBarAdapter.outputPath) }
-  public var slackTheme: String { requiredString(atPath: SlackAdapter.outputPath) }
-  public var spicetifyTheme: String { requiredString(atPath: SpicetifyAdapter.outputPath) }
-  public var starshipPalette: String { requiredString(atPath: StarshipAdapter.outputPath) }
-  public var tuicrTheme: String { requiredString(atPath: TuicrAdapter.outputPath) }
-  public var wallpaper: Data? { artifact(atPath: WallpaperAdapter.outputPath)?.data }
-  public var yaziFlavor: String { requiredString(atPath: YaziAdapter.flavorOutputPath) }
-
   package init(artifacts: [RenderedArtifact]) throws {
     var validatedPaths: [(path: String, components: [String])] = []
     for artifact in artifacts {
@@ -112,17 +93,6 @@ public struct RenderedTheme: Sendable {
 
   package var manifestArtifacts: [String: String] {
     Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, sha256Digest($0.data)) })
-  }
-
-  private func requiredData(atPath path: String) -> Data {
-    guard let artifact = artifact(atPath: path) else {
-      preconditionFailure("Rendered theme is missing required artifact '\(path)'")
-    }
-    return artifact.data
-  }
-
-  private func requiredString(atPath path: String) -> String {
-    String(decoding: requiredData(atPath: path), as: UTF8.self)
   }
 
   private static func isValidPath(_ path: String) -> Bool {
