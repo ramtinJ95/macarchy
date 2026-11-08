@@ -65,27 +65,15 @@ struct RetainedOwnershipMigration {
   func execute(provider: Provider, approval: String? = nil) throws -> Report {
     guard let approval else { return try candidate(provider).report }
     return try ActivationLock(root: stateRoot).withLock {
-      let reviewed = try candidate(provider)
-      guard reviewed.report.evidenceDigest == approval else {
-        throw failure("stale or incorrect approval; review a fresh ownership migration preview")
-      }
-      if reviewed.report.status == "already_bound" { return reviewed.report }
-      // Re-read all evidence immediately before publication, under the shared activation lock.
-      let current = try candidate(provider)
-      guard current.report == reviewed.report else {
-        throw failure("ownership migration evidence changed before publication")
-      }
-      try current.persist()
-      var report = current.report
-      report.status = "migrated"
-      return report
+      try publishReviewedOwnershipMigration(
+        approval: approval, status: \Report.status, evidenceDigest: \Report.evidenceDigest,
+        stale: failure("stale or incorrect approval; review a fresh ownership migration preview"),
+        changed: failure("ownership migration evidence changed before publication")
+      ) { try candidate(provider) }
     }
   }
 
-  private struct Candidate {
-    let report: Report
-    let persist: () throws -> Void
-  }
+  private typealias Candidate = (report: Report, persist: () throws -> Void)
 
   private func candidate(_ provider: Provider) throws -> Candidate {
     guard try !DesktopAggregateTransactionStore.parentTransactionPending(stateRoot: stateRoot)
@@ -216,7 +204,7 @@ struct RetainedOwnershipMigration {
     var data = try sortedKeysJSON(report)
     data.append(try sortedKeysJSON(evidence))
     report.evidenceDigest = sha256Digest(data)
-    return Candidate(report: report, persist: persist)
+    return (report, persist)
   }
 
   private func failure(_ message: String) -> ValidationError { ValidationError(message) }
