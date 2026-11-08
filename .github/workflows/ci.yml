@@ -173,6 +173,11 @@ jobs:
           trap 'kill "$diagnostic_pid" 2>/dev/null || true; wait "$diagnostic_pid" 2>/dev/null || true' EXIT
           wait "$test_pid"
 
+      # Release archive smoke no longer creates special files; the FIFO self-test runs here.
+      - name: Self-test the keybinding snapshot helper
+        timeout-minutes: 5
+        run: Scripts/verify-keybindings-snapshot-safety.sh
+
       - name: Build release
         run: swift build -c release
 
