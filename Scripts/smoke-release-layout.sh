@@ -99,6 +99,13 @@ snapshot_tree() {
   "$snapshot_helper" "$root" > "$destination"
 }
 
+# Fails unless some object anywhere in <json-file> has <key> equal to the JSON literal
+# <value>, e.g. '"ready"', false or 1.
+json_has() {
+  /usr/bin/jq -e --arg key "$2" --argjson value "$3" \
+    'any(.. | objects | select(has($key)); .[$key] == $value)' "$1" > /dev/null
+}
+
 version=$(/usr/bin/plutil -extract version raw -o - "$metadata")
 snapshot_tree "$temporary_directory/home-before.json" "$home"
 snapshot_tree "$temporary_directory/resources-before.json" "$resources"
@@ -109,8 +116,8 @@ cd "$work"
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" version --json \
   > "$temporary_directory/version.json"
-grep -q "\"version\" : \"$version\"" "$temporary_directory/version.json"
-grep -q '"installation" : "unmanaged"' "$temporary_directory/version.json"
+json_has "$temporary_directory/version.json" version "\"$version\""
+json_has "$temporary_directory/version.json" installation '"unmanaged"'
 
 themes=$(HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" theme list)
@@ -130,12 +137,12 @@ EOF
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" setup plan --profile "$temporary_directory/plan-profile.toml" \
   --json > "$temporary_directory/setup-plan.json"
-grep -q '"operation" : "setup_plan"' "$temporary_directory/setup-plan.json"
-grep -q '"outcome" : "ready"' "$temporary_directory/setup-plan.json"
-grep -q '"mutated" : false' "$temporary_directory/setup-plan.json"
-grep -q '"id" : "catppuccin-mocha"' "$temporary_directory/setup-plan.json"
-grep -q '"operation" : "desktop_plan"' "$temporary_directory/setup-plan.json"
-grep -q '"operation" : "environment_plan"' "$temporary_directory/setup-plan.json"
+json_has "$temporary_directory/setup-plan.json" operation '"setup_plan"'
+json_has "$temporary_directory/setup-plan.json" outcome '"ready"'
+json_has "$temporary_directory/setup-plan.json" mutated false
+json_has "$temporary_directory/setup-plan.json" id '"catppuccin-mocha"'
+json_has "$temporary_directory/setup-plan.json" operation '"desktop_plan"'
+json_has "$temporary_directory/setup-plan.json" operation '"environment_plan"'
 print "unified setup plan smoke passed"
 
 cat > "$temporary_directory/disabled-profile.toml" <<'EOF'
@@ -163,17 +170,16 @@ for operation in status doctor; do
     "$binary" setup "$operation" \
     --profile "$temporary_directory/disabled-profile.toml" \
     --json > "$temporary_directory/setup-$operation.json"
-  grep -q "\"operation\" : \"setup_$operation\"" \
-    "$temporary_directory/setup-$operation.json"
-  grep -q '"outcome" : "absent"' "$temporary_directory/setup-$operation.json"
+  json_has "$temporary_directory/setup-$operation.json" operation "\"setup_$operation\""
+  json_has "$temporary_directory/setup-$operation.json" outcome '"absent"'
 done
 HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" setup teardown \
   --profile "$temporary_directory/disabled-profile.toml" \
   --dry-run --json > "$temporary_directory/setup-teardown.json"
-grep -q '"operation" : "setup_teardown"' "$temporary_directory/setup-teardown.json"
-grep -q '"outcome" : "no_change"' "$temporary_directory/setup-teardown.json"
-grep -q '"packages" : "retained_external"' "$temporary_directory/setup-teardown.json"
+json_has "$temporary_directory/setup-teardown.json" operation '"setup_teardown"'
+json_has "$temporary_directory/setup-teardown.json" outcome '"no_change"'
+json_has "$temporary_directory/setup-teardown.json" packages '"retained_external"'
 print "unified setup inspection and teardown smoke passed"
 
 # The module is off by default: exercise the packaged commands without sending
@@ -184,11 +190,11 @@ for operation in plan apply status doctor teardown recover; do
     --profile "$temporary_directory/disabled-profile.toml" \
     --state-root "$temporary_directory/preferences-state" \
     --json > "$temporary_directory/preferences-$operation.json"
-  grep -q '"operation" : "macos_preferences"' "$temporary_directory/preferences-$operation.json"
-  grep -q '"mutated" : false' "$temporary_directory/preferences-$operation.json"
+  json_has "$temporary_directory/preferences-$operation.json" operation '"macos_preferences"'
+  json_has "$temporary_directory/preferences-$operation.json" mutated false
   outcome=disabled
   if [[ $operation == recover ]]; then outcome=recovered; fi
-  grep -q "\"outcome\" : \"$outcome\"" "$temporary_directory/preferences-$operation.json"
+  json_has "$temporary_directory/preferences-$operation.json" outcome "\"$outcome\""
 done
 [[ ! -e "$temporary_directory/preferences-state/state/preferences/state.json" ]]
 print "disabled native preferences lifecycle smoke passed"
@@ -198,8 +204,9 @@ HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   --skhd-config "$layout/share/macarchy/keybindings/defaults.skhdrc" \
   --catalog "$layout/share/macarchy/keybindings/metadata.toml" \
   --json > "$temporary_directory/keybindings-list.json"
-grep -q '"schema_version" : 1' "$temporary_directory/keybindings-list.json"
-[[ "$(grep -c '"identity" :' "$temporary_directory/keybindings-list.json")" == "51" ]]
+json_has "$temporary_directory/keybindings-list.json" schema_version 1
+[[ "$(/usr/bin/jq '[.. | objects | select(has("identity"))] | length' \
+  "$temporary_directory/keybindings-list.json")" == "51" ]]
 
 "$script_directory/verify-keybindings-portability.sh" "$binary"
 
@@ -208,26 +215,26 @@ HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" desktop plan --json > "$temporary_directory/desktop-plan.json" \
   || desktop_plan_status=$?
 (( desktop_plan_status == 0 || desktop_plan_status == 1 ))
-grep -q '"operation" : "desktop_plan"' "$temporary_directory/desktop-plan.json"
-grep -q '"mutated" : false' "$temporary_directory/desktop-plan.json"
-grep -q '"desktop_provider" : "yabai-skhd"' "$temporary_directory/desktop-plan.json"
+json_has "$temporary_directory/desktop-plan.json" operation '"desktop_plan"'
+json_has "$temporary_directory/desktop-plan.json" mutated false
+json_has "$temporary_directory/desktop-plan.json" desktop_provider '"yabai-skhd"'
 if (( desktop_plan_status == 1 )); then
-  grep -Eq '"code" : "(desktop_prerequisite_missing|keybindings_blocked|yabai_service_prerequisite)"' \
-    "$temporary_directory/desktop-plan.json"
-  unexpected_desktop_diagnostic="$(
-    grep '"code" :' "$temporary_directory/desktop-plan.json" \
-      | grep -Ev '"code" : "(desktop_prerequisite_missing|keybindings_blocked|yabai_service_prerequisite)"' || true
-  )"
-  if [[ -n "$unexpected_desktop_diagnostic" ]]; then
+  expected_desktop_codes='["desktop_prerequisite_missing","keybindings_blocked","yabai_service_prerequisite"]'
+  /usr/bin/jq -e --argjson expected "$expected_desktop_codes" \
+    'any(.. | objects | select(has("code")); .code | IN($expected[]))' \
+    "$temporary_directory/desktop-plan.json" > /dev/null
+  if ! /usr/bin/jq -e --argjson expected "$expected_desktop_codes" \
+    'all(.. | objects | select(has("code")); .code | IN($expected[]))' \
+    "$temporary_directory/desktop-plan.json" > /dev/null
+  then
     cat "$temporary_directory/desktop-plan.json"
     exit 1
   fi
-  if grep -q '"code" : "keybindings_blocked"' "$temporary_directory/desktop-plan.json"; then
+  if json_has "$temporary_directory/desktop-plan.json" code '"keybindings_blocked"'; then
     # The isolated HOME can lack a service registration even when the host's
     # supported skhd binary and process are present. Never borrow that service.
-    grep -q '"provider_status" : "install_required"' \
-      "$temporary_directory/desktop-plan.json"
-    grep -q '"ownership" : "absent"' "$temporary_directory/desktop-plan.json"
+    json_has "$temporary_directory/desktop-plan.json" provider_status '"install_required"'
+    json_has "$temporary_directory/desktop-plan.json" ownership '"absent"'
   fi
 fi
 print "desktop plan smoke passed"
@@ -246,15 +253,15 @@ HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   --json > "$temporary_directory/desktop-doctor.json" \
   || desktop_doctor_status=$?
 (( desktop_doctor_status == 0 || desktop_doctor_status == 1 ))
-grep -q '"operation" : "desktop_doctor"' "$temporary_directory/desktop-doctor.json"
+json_has "$temporary_directory/desktop-doctor.json" operation '"desktop_doctor"'
 if (( desktop_doctor_status == 0 )); then
-  grep -q '"outcome" : "healthy"' "$temporary_directory/desktop-doctor.json"
+  json_has "$temporary_directory/desktop-doctor.json" outcome '"healthy"'
 else
-  grep -q '"outcome" : "unhealthy"' "$temporary_directory/desktop-doctor.json"
-  awk '
-    /"id" :/ { finding = $0 }
-    /"status" : "failure"/ && finding !~ /"desktop\.prerequisite\./ { exit 1 }
-  ' "$temporary_directory/desktop-doctor.json"
+  json_has "$temporary_directory/desktop-doctor.json" outcome '"unhealthy"'
+  # Only missing prerequisites may fail.
+  /usr/bin/jq -e 'all(.. | objects | select(.status == "failure");
+    (.id // "") | tostring | startswith("desktop.prerequisite."))' \
+    "$temporary_directory/desktop-doctor.json" > /dev/null
 fi
 print "desktop doctor smoke passed"
 
@@ -263,14 +270,14 @@ HOME="$home" CFFIXED_USER_HOME="$home" TMPDIR="$runtime_tmp" \
   "$binary" environment plan --json > "$temporary_directory/environment-plan.json" \
   || environment_plan_status=$?
 (( environment_plan_status == 0 || environment_plan_status == 1 ))
-grep -q '"operation" : "environment_plan"' "$temporary_directory/environment-plan.json"
-grep -q '"mutated" : false' "$temporary_directory/environment-plan.json"
-grep -q '"terminal_provider" : "kitty"' "$temporary_directory/environment-plan.json"
-grep -q '"shell_provider" : "zsh"' "$temporary_directory/environment-plan.json"
+json_has "$temporary_directory/environment-plan.json" operation '"environment_plan"'
+json_has "$temporary_directory/environment-plan.json" mutated false
+json_has "$temporary_directory/environment-plan.json" terminal_provider '"kitty"'
+json_has "$temporary_directory/environment-plan.json" shell_provider '"zsh"'
 if (( environment_plan_status == 0 )); then
-  grep -q '"outcome" : "ready"' "$temporary_directory/environment-plan.json"
+  json_has "$temporary_directory/environment-plan.json" outcome '"ready"'
 else
-  grep -q '"outcome" : "blocked"' "$temporary_directory/environment-plan.json"
+  json_has "$temporary_directory/environment-plan.json" outcome '"blocked"'
 fi
 print "environment plan smoke passed"
 
@@ -285,9 +292,9 @@ for operation in apply status doctor teardown; do
       --profile "$temporary_directory/disabled-profile.toml" \
       --json > "$temporary_directory/environment-$operation.json"
   fi
-  grep -q "\"operation\" : \"environment_$operation\"" \
-    "$temporary_directory/environment-$operation.json"
-  grep -q '"mutated" : false' "$temporary_directory/environment-$operation.json"
+  json_has "$temporary_directory/environment-$operation.json" operation \
+    "\"environment_$operation\""
+  json_has "$temporary_directory/environment-$operation.json" mutated false
 done
 print "environment lifecycle smoke passed"
 
