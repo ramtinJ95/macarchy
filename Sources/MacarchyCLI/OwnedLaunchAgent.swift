@@ -40,8 +40,8 @@ struct OwnedLaunchAgent {
     home.appending(path: "Library/LaunchAgents/\(label).plist")
   }
 
-  private var domain: String { "gui/\(userID)" }
-  private var job: String { "\(domain)/\(label)" }
+  private var domain: LaunchdUserDomain { LaunchdUserDomain(userID: userID) }
+  private var job: String { domain.serviceTarget(label) }
 
   var conflict: OwnedLaunchAgentError {
     OwnedLaunchAgentError(
@@ -125,17 +125,16 @@ struct OwnedLaunchAgent {
   }
 
   func isLoaded() throws -> Bool {
-    let result = try launchctl(["print", job])
-    guard [0, 113].contains(result.terminationStatus) else {
-      throw OwnedLaunchAgentError("cannot inspect \(purpose)'s launch agent: \(result.output)")
+    let output = try domain.printService(label, timeout: 10, runner: runner).loadedOutput {
+      OwnedLaunchAgentError("cannot inspect \(purpose)'s launch agent: \($0.output)")
     }
-    return result.terminationStatus == 0
+    return output != nil
   }
 
   /// Bootstraps the job unless it is loaded. Returns whether it did.
   func load() throws -> Bool {
     guard try !isLoaded() else { return false }
-    let result = try launchctl(["bootstrap", domain, plistURL.path])
+    let result = try launchctl(["bootstrap", domain.target, plistURL.path])
     guard result.terminationStatus == 0 else {
       throw OwnedLaunchAgentError("cannot load \(purpose)'s launch agent: \(result.output)")
     }

@@ -120,16 +120,24 @@ package struct LeanFocusService: Sendable {
   package var propertyListURL: URL {
     homeDirectory.appending(path: "Library/LaunchAgents/\(Self.label).plist")
   }
-  private var domain: String { "gui/\(getuid())" }
-  private var job: String { "\(domain)/\(Self.label)" }
+  private var domain: LaunchdUserDomain { LaunchdUserDomain() }
+  private var job: String { domain.serviceTarget(Self.label) }
 
   package func inspect(
     configuration: LeanFocusServiceConfiguration?
   ) throws -> LeanFocusServiceInspection {
     let plist = try propertyListData()
-    let loaded = try command(["print", job])
-    guard loaded.terminationStatus == 0 || loaded.terminationStatus == 113 else {
-      throw LeanFocusServiceError("cannot inspect launchd job: \(loaded.output)")
+    let isLoaded: Bool
+    let jobOutput: String
+    switch try domain.printService(Self.label, timeout: 5, runner: runner) {
+    case .loaded(let output):
+      isLoaded = true
+      jobOutput = output
+    case .notLoaded(let output):
+      isLoaded = false
+      jobOutput = output
+    case .failed(let result):
+      throw LeanFocusServiceError("cannot inspect launchd job: \(result.output)")
     }
     // Darwin truncates p_comm. The conservative prefix also refuses unknown
     // similarly named processes; it never authorizes killing any of them.
@@ -142,7 +150,7 @@ package struct LeanFocusService: Sendable {
     guard [0, 1].contains(processes.terminationStatus) else {
       throw LeanFocusServiceError("cannot inspect helper processes: \(processes.output)")
     }
-    if plist == nil, loaded.terminationStatus == 113, processes.terminationStatus == 1 {
+    if plist == nil, !isLoaded, processes.terminationStatus == 1 {
       return .absent
     }
     guard let configuration, configuration.isValid, let plist,
@@ -151,11 +159,11 @@ package struct LeanFocusService: Sendable {
       throw LeanFocusServiceError(
         "an unowned or changed helper/job/plist exists; refusing to adopt or replace it")
     }
-    let lines = loaded.output.split(separator: "\n").map {
+    let lines = jobOutput.split(separator: "\n").map {
       $0.trimmingCharacters(in: .whitespaces)
     }
     var pid: Int32?
-    if loaded.terminationStatus == 0 {
+    if isLoaded {
       guard lines.contains("path = \(propertyListURL.path)"),
         lines.contains("program = \(configuration.executablePath)"),
         let start = lines.firstIndex(of: "arguments = {"),
@@ -191,7 +199,7 @@ package struct LeanFocusService: Sendable {
         Int32($0.dropFirst("last exit code = ".count).prefix { $0 == "-" || $0.isNumber })
       }
     return .init(
-      registered: true, loaded: loaded.terminationStatus == 0, processID: pid,
+      registered: true, loaded: isLoaded, processID: pid,
       executableIsCurrent: executableIsCurrent, lastExitStatus: lastExit)
   }
 
@@ -224,7 +232,7 @@ package struct LeanFocusService: Sendable {
     let arguments =
       before.isRunning
       ? ["kickstart", "-k", job]
-      : before.loaded ? ["kickstart", job] : ["bootstrap", domain, propertyListURL.path]
+      : before.loaded ? ["kickstart", job] : ["bootstrap", domain.target, propertyListURL.path]
     // A kickstart can wait for launchd's 30-second throttle after a recent
     // normal exit. Keep inspection bounded at 5 s, but allow this one owned
     // launch request to complete without killing it while launchd is waiting.
