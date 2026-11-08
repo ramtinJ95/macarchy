@@ -448,19 +448,18 @@ struct EnvironmentApplyCommandRunner: Sendable {
   }
 
   private func unifiedSetupRefusal(
-    stateRoot: URL, profileURL: URL, json: Bool, withinUnifiedSetup: Bool
-  ) throws -> CommandExecution? {
+    stateRoot: URL, profileURL: URL, withinUnifiedSetup: Bool
+  ) -> EnvironmentLifecycleReport? {
     guard
       let refusal = pendingUnifiedSetupRefusal(
         stateRoot: stateRoot, withinUnifiedSetup: withinUnifiedSetup)
     else { return nil }
-    return try failure(
+    return failure(
       profileURL: profileURL,
       message: refusal,
       mutated: false,
       transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
-        ? "recovery_required" : "clear",
-      json: json
+        ? "recovery_required" : "clear"
     )
   }
 
@@ -479,6 +478,34 @@ struct EnvironmentApplyCommandRunner: Sendable {
     enabledThemeAdapterIDs suppliedThemeAdapterIDs: [String]? = nil,
     profile suppliedProfile: PortableProfile? = nil
   ) async throws -> CommandExecution {
+    try await report(
+      resourcesRoot: resourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths,
+      adopt: adopt,
+      deferFinalization: deferFinalization,
+      withinUnifiedSetup: withinUnifiedSetup,
+      enabledThemeAdapterIDs: suppliedThemeAdapterIDs,
+      profile: suppliedProfile
+    ).execution(json: json)
+  }
+
+  func report(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    adopt: String?,
+    deferFinalization: Bool = false,
+    withinUnifiedSetup: Bool = false,
+    enabledThemeAdapterIDs suppliedThemeAdapterIDs: [String]? = nil,
+    profile suppliedProfile: PortableProfile? = nil
+  ) async throws -> EnvironmentLifecycleReport {
     let profile: PortableProfile
     let composition: EnvironmentComposition
     var enabledThemeAdapterIDs: [String]
@@ -507,11 +534,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
         )
       }
     } catch {
-      return try failure(
+      return failure(
         profileURL: profileURL,
         message: String(describing: error),
-        mutated: false,
-        json: json
+        mutated: false
       )
     }
 
@@ -522,12 +548,11 @@ struct EnvironmentApplyCommandRunner: Sendable {
         desiredEnabled: profile.environment.presets.spicetify
       )
     } catch {
-      return try failure(
+      return failure(
         profileURL: profileURL,
         profile: profile.environment,
         message: String(describing: error),
-        mutated: false,
-        json: json
+        mutated: false
       )
     }
     var prerequisiteState = prerequisites.inspect(profile.environment, homeDirectory)
@@ -536,13 +561,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
     }
     let missing = prerequisiteState.filter { $0.status == "missing" }
     guard missing.isEmpty else {
-      return try failure(
+      return failure(
         profileURL: profileURL,
         profile: profile.environment,
         prerequisites: prerequisiteState,
         message: "Missing prerequisites: \(missing.map(\.id).joined(separator: ", ")).",
-        mutated: false,
-        json: json
+        mutated: false
       )
     }
 
@@ -560,12 +584,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
           || stateStore.transactionExists
           || EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination() != nil
         if !hasManagedState {
-          return try EnvironmentStatusCommandRunner(
+          return EnvironmentStatusCommandRunner(
             prerequisites: prerequisites,
             theme: theme,
             verifier: verifier,
             bordersRuntime: runtimes.borders
-          ).executeAfterApply(
+          ).reportAfterApply(
             EnvironmentApplyObservation(
               outcome: "no_change",
               mutated: false,
@@ -576,13 +600,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
             consumerPaths: consumerPaths,
-            json: json,
             profile: profile
           )
         }
         return try await EnvironmentLifecycleLock(stateRoot: stateRoot).withAsyncLock {
-          if let refusal = try unifiedSetupRefusal(
-            stateRoot: stateRoot, profileURL: profileURL, json: json,
+          if let refusal = unifiedSetupRefusal(
+            stateRoot: stateRoot, profileURL: profileURL,
             withinUnifiedSetup: withinUnifiedSetup)
           {
             return refusal
@@ -603,32 +626,30 @@ struct EnvironmentApplyCommandRunner: Sendable {
               restorationMessage: result.message
             )
           } catch {
-            return try failure(
+            return failure(
               profileURL: profileURL,
               profile: profile.environment,
               prerequisites: prerequisiteState,
               theme: result.restored,
               message: defaultConsumerReconciliationFailureMessage(result.message, error),
-              mutated: result.changed,
-              json: json
+              mutated: result.changed
             )
           }
           guard restored.succeeded else {
-            return try failure(
+            return failure(
               profileURL: profileURL,
               profile: profile.environment,
               prerequisites: prerequisiteState,
               theme: restored.theme,
               message: restored.message,
-              mutated: result.changed,
-              json: json
+              mutated: result.changed
             )
           }
-          return try EnvironmentStatusCommandRunner(
+          return EnvironmentStatusCommandRunner(
             prerequisites: prerequisites,
             theme: theme,
             verifier: verifier
-          ).executeAfterApply(
+          ).reportAfterApply(
             EnvironmentApplyObservation(
               theme: restored.theme,
               outcome: result.changed ? "applied" : "no_change",
@@ -640,28 +661,26 @@ struct EnvironmentApplyCommandRunner: Sendable {
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
             consumerPaths: consumerPaths,
-            json: json,
             profile: profile
           )
         }
       } catch {
-        return try failure(
+        return failure(
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
           message: String(describing: error),
           mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
           transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
-            ? "recovery_required" : "clear",
-          json: json
+            ? "recovery_required" : "clear"
         )
       }
     }
 
     try FileManager.default.createDirectory(at: stateRoot, withIntermediateDirectories: true)
     return try await EnvironmentLifecycleLock(stateRoot: stateRoot).withAsyncLock {
-      if let refusal = try unifiedSetupRefusal(
-        stateRoot: stateRoot, profileURL: profileURL, json: json,
+      if let refusal = unifiedSetupRefusal(
+        stateRoot: stateRoot, profileURL: profileURL,
         withinUnifiedSetup: withinUnifiedSetup)
       {
         return refusal
@@ -670,25 +689,23 @@ struct EnvironmentApplyCommandRunner: Sendable {
       do {
         let recovered = try runtimes.recoverTransaction(coordinator: coordinator)
         if recovered {
-          return try failure(
+          return failure(
             profileURL: profileURL,
             profile: profile.environment,
             prerequisites: prerequisiteState,
             message: "Interrupted environment state was recovered; review plan and apply again.",
-            mutated: true,
-            json: json
+            mutated: true
           )
         }
       } catch {
-        return try failure(
+        return failure(
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
           message: String(describing: error),
           mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
           transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
-            ? "recovery_required" : "clear",
-          json: json
+            ? "recovery_required" : "clear"
         )
       }
 
@@ -700,13 +717,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
           enabledThemeAdapterIDs = Set(enabledThemeAdapterIDs)
             .union(
               Set(previous?.enabledThemeAdapterIDs ?? [])
-                .intersection(PortableProfile.allNonEnvironmentThemeAdapterIDs))
+                .intersection(PortableProfile.allNonEnvironmentThemeAdapterIDs)
+            )
             .sorted()
         } catch {
-          return try failure(
+          return failure(
             profileURL: profileURL, profile: profile.environment,
             message: "Cannot preserve applied theme inventory: \(error)",
-            mutated: false, json: json)
+            mutated: false)
         }
       }
 
@@ -721,13 +739,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
               .sorted()
           }
         } catch {
-          return try failure(
+          return failure(
             profileURL: profileURL,
             profile: profile.environment,
             prerequisites: prerequisiteState,
             message: "An active canonical theme is required before environment apply: \(error)",
-            mutated: false,
-            json: json
+            mutated: false
           )
         }
       }
@@ -744,9 +761,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
           desiredEnabled: profile.environment.focusRing == .lean,
           stateRoot: stateRoot, homeDirectory: homeDirectory, runtime: runtimes.borders.lean)
       } catch {
-        return try failure(
+        return failure(
           profileURL: profileURL, profile: profile.environment,
-          message: String(describing: error), mutated: false, json: json)
+          message: String(describing: error), mutated: false)
       }
       let inspection = EnvironmentProviderInspector().inspect(
         composition: composition,
@@ -756,15 +773,14 @@ struct EnvironmentApplyCommandRunner: Sendable {
         leanService: leanService
       )
       guard !inspection.isBlocked else {
-        return try failure(
+        return failure(
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
           entries: inspection.entries,
           adoptionEvidenceDigest: inspection.adoptionEvidenceDigest,
           message: inspection.blockedMessage ?? "Provider ownership drifted.",
-          mutated: false,
-          json: json
+          mutated: false
         )
       }
       let applyResult: (changed: Bool, generationID: String)
@@ -805,7 +821,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           )
         }
       } catch {
-        return try failure(
+        return failure(
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
@@ -814,8 +830,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
           message: String(describing: error),
           mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
           transactionStatus: EnvironmentStateStore(stateRoot: stateRoot).transactionExists
-            ? "recovery_required" : "clear",
-          json: json
+            ? "recovery_required" : "clear"
         )
       }
 
@@ -914,7 +929,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
         do {
           try runtimes.rollbackTransaction(coordinator: coordinator)
         } catch {
-          return try failure(
+          return failure(
             profileURL: profileURL,
             profile: profile.environment,
             prerequisites: prerequisiteState,
@@ -922,13 +937,12 @@ struct EnvironmentApplyCommandRunner: Sendable {
               ? "Environment configuration ownership rollback requires recovery; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). Rollback failed: \(error)"
               : "Provider verification failed: \(applyError). Rollback requires recovery: \(error)",
             mutated: true,
-            transactionStatus: "recovery_required",
-            json: json
+            transactionStatus: "recovery_required"
           )
         }
         let restorationVerification = verifier.verifyRestored(profile.environment, homeDirectory)
         if let failed = restorationVerification.first(where: { $0.status != "verified" }) {
-          return try failure(
+          return failure(
             profileURL: profileURL,
             profile: profile.environment,
             prerequisites: prerequisiteState,
@@ -936,28 +950,26 @@ struct EnvironmentApplyCommandRunner: Sendable {
               neovimPluginPreparationRan
               ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(applyError). The restored fresh session also failed: \(failed.message)"
               : "Environment apply rolled back. Apply failed: \(applyError). The restored fresh session failed: \(failed.message)",
-            mutated: applyResult.changed,
-            json: json
+            mutated: applyResult.changed
           )
         }
-        return try failure(
+        return failure(
           profileURL: profileURL,
           profile: profile.environment,
           prerequisites: prerequisiteState,
           message: neovimPluginPreparationRan
             ? "Environment configuration ownership was rolled back; provider-private Neovim plugin/cache changes may remain. Apply failed: \(error)"
             : "Environment apply rolled back: \(error)",
-          mutated: applyResult.changed,
-          json: json
+          mutated: applyResult.changed
         )
       }
 
-      return try EnvironmentStatusCommandRunner(
+      return EnvironmentStatusCommandRunner(
         prerequisites: prerequisites,
         theme: theme,
         verifier: verifier,
         bordersRuntime: runtimes.borders
-      ).executeAfterApply(
+      ).reportAfterApply(
         EnvironmentApplyObservation(
           theme: appliedTheme,
           verification: verification,
@@ -973,7 +985,6 @@ struct EnvironmentApplyCommandRunner: Sendable {
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
         consumerPaths: consumerPaths,
-        json: json,
         profile: profile
       )
     }
@@ -1033,10 +1044,9 @@ struct EnvironmentApplyCommandRunner: Sendable {
     theme: [DesktopThemeAdapterStatus] = [],
     message: String,
     mutated: Bool,
-    transactionStatus: String = "clear",
-    json: Bool
-  ) throws -> CommandExecution {
-    let report = EnvironmentLifecycleReport(
+    transactionStatus: String = "clear"
+  ) -> EnvironmentLifecycleReport {
+    EnvironmentLifecycleReport(
       operation: "environment_apply",
       outcome: "blocked",
       mutated: mutated,
@@ -1051,7 +1061,6 @@ struct EnvironmentApplyCommandRunner: Sendable {
       verification: [],
       message: message
     )
-    return (try report.render(json: json), false)
   }
 }
 
@@ -1089,6 +1098,22 @@ struct EnvironmentTeardownCommandRunner: Sendable {
     json: Bool,
     withinUnifiedSetup: Bool = false
   ) async throws -> CommandExecution {
+    try await report(
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths,
+      dryRun: dryRun,
+      withinUnifiedSetup: withinUnifiedSetup
+    ).execution(json: json)
+  }
+
+  func report(
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    dryRun: Bool,
+    withinUnifiedSetup: Bool = false
+  ) async throws -> EnvironmentLifecycleReport {
     var prerequisiteState = [EnvironmentPrerequisiteStatus]()
     do {
       let store = EnvironmentStateStore(stateRoot: stateRoot)
@@ -1097,7 +1122,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         || store.transactionExists
         || EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination() != nil
       if !hasManagedState {
-        let report = Self.report(
+        return Self.report(
           outcome: "absent",
           mutated: false,
           generationStatus: "absent",
@@ -1105,7 +1130,6 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           theme: [],
           message: "No managed environment ownership exists."
         )
-        return (try report.render(json: json), true)
       }
       if try requiresSpicetifyRuntimePrerequisites(
         stateRoot: stateRoot,
@@ -1115,7 +1139,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         let missing = prerequisiteState.filter { $0.status == "missing" }
         guard missing.isEmpty else {
           let message = "Missing prerequisites: \(missing.map(\.id).joined(separator: ", "))."
-          let report = Self.report(
+          return Self.report(
             outcome: "blocked",
             mutated: false,
             generationStatus: "unknown",
@@ -1124,7 +1148,6 @@ struct EnvironmentTeardownCommandRunner: Sendable {
             theme: [],
             message: message
           )
-          return (try report.render(json: json), false)
         }
       }
       return try await EnvironmentLifecycleLock(stateRoot: stateRoot).withAsyncLock {
@@ -1132,7 +1155,7 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           let refusal = pendingUnifiedSetupRefusal(
             stateRoot: stateRoot, withinUnifiedSetup: withinUnifiedSetup)
         {
-          let report = Self.report(
+          return Self.report(
             outcome: "blocked",
             mutated: false,
             generationStatus: "unknown",
@@ -1141,7 +1164,6 @@ struct EnvironmentTeardownCommandRunner: Sendable {
             theme: [],
             message: refusal
           )
-          return (try report.render(json: json), false)
         }
         let coordinator = EnvironmentTransactionCoordinator(
           homeDirectory: homeDirectory,
@@ -1166,33 +1188,29 @@ struct EnvironmentTeardownCommandRunner: Sendable {
               restorationMessage: result.message
             )
           } catch {
-            return (
-              try Self.report(
-                outcome: "blocked",
-                mutated: true,
-                generationStatus: "absent",
-                prerequisites: prerequisiteState,
-                theme: themeState,
-                message: defaultConsumerReconciliationFailureMessage(result.message, error)
-              ).render(json: json), false
+            return Self.report(
+              outcome: "blocked",
+              mutated: true,
+              generationStatus: "absent",
+              prerequisites: prerequisiteState,
+              theme: themeState,
+              message: defaultConsumerReconciliationFailureMessage(result.message, error)
             )
           }
           themeState = restored.theme
           message = restored.message
           guard restored.succeeded else {
-            return (
-              try Self.report(
-                outcome: "blocked",
-                mutated: true,
-                generationStatus: "absent",
-                prerequisites: prerequisiteState,
-                theme: themeState,
-                message: message
-              ).render(json: json), false
+            return Self.report(
+              outcome: "blocked",
+              mutated: true,
+              generationStatus: "absent",
+              prerequisites: prerequisiteState,
+              theme: themeState,
+              message: message
             )
           }
         }
-        let report = Self.report(
+        return Self.report(
           outcome: dryRun ? "ready" : result.changed ? "restored" : "absent",
           mutated: !dryRun && result.changed,
           generationStatus: dryRun ? "unchanged" : "absent",
@@ -1200,10 +1218,9 @@ struct EnvironmentTeardownCommandRunner: Sendable {
           theme: themeState,
           message: message
         )
-        return (try report.render(json: json), true)
       }
     } catch {
-      let report = Self.report(
+      return Self.report(
         outcome: "blocked",
         mutated: EnvironmentStateStore(stateRoot: stateRoot).transactionExists,
         generationStatus: "unknown",
@@ -1213,7 +1230,6 @@ struct EnvironmentTeardownCommandRunner: Sendable {
         theme: [],
         message: String(describing: error)
       )
-      return (try report.render(json: json), false)
     }
   }
 

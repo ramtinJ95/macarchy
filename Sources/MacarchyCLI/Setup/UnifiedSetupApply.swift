@@ -29,7 +29,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let themeApply: ThemeApply
   let themeRefresh: ThemeRefresh
   let desktopApply: ComponentApply<DesktopAggregateMutationReport>
-  let environmentApply: ComponentApply<SetupComponentExecution>
+  let environmentApply: ComponentApply<EnvironmentLifecycleReport>
   let transactionTeardown: UnifiedSetupTeardownCommandRunner
   let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
 
@@ -42,7 +42,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     themeApply: @escaping ThemeApply,
     themeRefresh: @escaping ThemeRefresh = UnifiedSetupApplyCommandRunner.liveThemeRefresh,
     desktopApply: @escaping ComponentApply<DesktopAggregateMutationReport>,
-    environmentApply: @escaping ComponentApply<SetupComponentExecution>,
+    environmentApply: @escaping ComponentApply<EnvironmentLifecycleReport>,
     transactionTeardown: UnifiedSetupTeardownCommandRunner = .live,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
@@ -159,21 +159,18 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       )
     },
     environmentApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in
-      try await SetupComponentExecution(
-        EnvironmentApplyCommandRunner.live.execute(
-          resourcesRoot: context.environmentResourcesRoot,
-          profileURL: context.profileURL,
-          profileRequired: context.profileRequired,
-          stateRoot: context.stateRoot,
-          homeDirectory: context.homeDirectory,
-          consumerPaths: consumerPaths,
-          adopt: adoptions.environment,
-          json: true,
-          deferFinalization: true,
-          withinUnifiedSetup: true,
-          enabledThemeAdapterIDs: enabledThemeAdapterIDs,
-          profile: profile
-        )
+      try await EnvironmentApplyCommandRunner.live.report(
+        resourcesRoot: context.environmentResourcesRoot,
+        profileURL: context.profileURL,
+        profileRequired: context.profileRequired,
+        stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory,
+        consumerPaths: consumerPaths,
+        adopt: adoptions.environment,
+        deferFinalization: true,
+        withinUnifiedSetup: true,
+        enabledThemeAdapterIDs: enabledThemeAdapterIDs,
+        profile: profile
       )
     }
   )
@@ -535,7 +532,6 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
                 adoptions,
                 currentModel.enabledThemeAdapterIDs
               ),
-              mutationField: "mutated",
               successMessage: "The daily tool environment converged."
             )
           } catch {
@@ -794,28 +790,6 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   }
 
   private func stage(
-    _ execution: SetupComponentExecution,
-    mutationField: String,
-    successMessage: String
-  ) throws -> UnifiedSetupApplyStage {
-    guard case .bool(let mutated) = execution.report[mutationField] else {
-      throw SetupComponentReportError(
-        description: "Delegated result is missing boolean field '\(mutationField)'."
-      )
-    }
-    return UnifiedSetupApplyStage(
-      succeeded: execution.succeeded,
-      mutated: mutated,
-      message: execution.succeeded
-        ? successMessage
-        : execution.report["message"]?.string
-          ?? execution.report["error"]?.string
-          ?? "The delegated operation failed.",
-      details: .delegated(execution.report)
-    )
-  }
-
-  private func stage(
     _ report: ThemeSetJSONReport,
     successMessage: String
   ) -> UnifiedSetupApplyStage {
@@ -830,6 +804,15 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   ) -> UnifiedSetupApplyStage {
     stage(
       .desktopApply(report), succeeded: report.succeeded, mutated: report.mutated,
+      failureMessage: report.message, successMessage: successMessage)
+  }
+
+  private func stage(
+    _ report: EnvironmentLifecycleReport,
+    successMessage: String
+  ) -> UnifiedSetupApplyStage {
+    stage(
+      .environment(report), succeeded: report.succeeded, mutated: report.mutated,
       failureMessage: report.message, successMessage: successMessage)
   }
 

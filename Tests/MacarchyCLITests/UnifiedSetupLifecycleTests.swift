@@ -75,7 +75,7 @@ struct UnifiedSetupLifecycleTests {
         )
       },
       desktopInspection: { _, _, _, _ in desktopInspectionStub() },
-      environmentInspection: { _, _, _, _ in try applyComponent(#"{"outcome":"current"}"#) }
+      environmentInspection: { _, _, _, _ in environmentInspectionStub() }
     )
 
     let execution = try runner.execute(
@@ -108,7 +108,7 @@ struct UnifiedSetupLifecycleTests {
       planner: fixture.planner(),
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun ? "preview" : "apply")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun, previewOutcome: "ready")
+        return environmentTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "apply")") }
@@ -165,7 +165,7 @@ struct UnifiedSetupLifecycleTests {
         if dryRun, didInterrupt.withLock({ $0 }) {
           Issue.record("Recovery must resume the component transaction instead of previewing it")
         }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun, previewOutcome: "ready")
+        return environmentTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "apply")") }
@@ -337,7 +337,7 @@ struct UnifiedSetupLifecycleTests {
       planner: fixture.planner(),
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun)") }
-        return try teardownComponent(dryRun: dryRun, mutated: false)
+        return environmentTeardownStub(dryRun: dryRun, mutated: false)
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun)") }

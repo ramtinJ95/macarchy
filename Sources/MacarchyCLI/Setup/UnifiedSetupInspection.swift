@@ -19,7 +19,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
   let planner: UnifiedSetupPlanCommandRunner
   let themeInspection: UnifiedSetupThemeInspection
   let desktopInspection: ComponentInspection<DesktopInspectionReport>
-  let environmentInspection: ComponentInspection<SetupComponentExecution>
+  let environmentInspection: ComponentInspection<EnvironmentLifecycleReport>
 
   static let live = Self(
     planner: .live,
@@ -57,30 +57,24 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     environmentInspection: { operation, context, profile, consumerPaths in
       switch operation {
       case .status:
-        return try SetupComponentExecution(
-          EnvironmentStatusCommandRunner.live.execute(
-            resourcesRoot: context.environmentResourcesRoot,
-            profileURL: context.profileURL,
-            profileRequired: context.profileRequired,
-            stateRoot: context.stateRoot,
-            homeDirectory: context.homeDirectory,
-            consumerPaths: consumerPaths,
-            json: true,
-            profile: profile
-          )
+        return EnvironmentStatusCommandRunner.live.statusReport(
+          resourcesRoot: context.environmentResourcesRoot,
+          profileURL: context.profileURL,
+          profileRequired: context.profileRequired,
+          stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory,
+          consumerPaths: consumerPaths,
+          profile: profile
         )
       case .doctor:
-        return try SetupComponentExecution(
-          EnvironmentStatusCommandRunner.live.executeDoctor(
-            resourcesRoot: context.environmentResourcesRoot,
-            profileURL: context.profileURL,
-            profileRequired: context.profileRequired,
-            stateRoot: context.stateRoot,
-            homeDirectory: context.homeDirectory,
-            consumerPaths: consumerPaths,
-            json: true,
-            profile: profile
-          )
+        return EnvironmentStatusCommandRunner.live.doctorReport(
+          resourcesRoot: context.environmentResourcesRoot,
+          profileURL: context.profileURL,
+          profileRequired: context.profileRequired,
+          stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory,
+          consumerPaths: consumerPaths,
+          profile: profile
         )
       }
     }
@@ -220,12 +214,9 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     )
   }
 
-  private func stage(_ execution: SetupComponentExecution) -> UnifiedSetupInspectionStage {
-    return UnifiedSetupInspectionStage(
-      succeeded: execution.succeeded,
-      outcome: execution.outcome,
-      details: .delegated(execution.report)
-    )
+  private func stage(_ report: EnvironmentLifecycleReport) -> UnifiedSetupInspectionStage {
+    UnifiedSetupInspectionStage(
+      succeeded: report.succeeded, outcome: report.outcome, details: .environment(report))
   }
 
   private func stage(_ report: DesktopInspectionReport) -> UnifiedSetupInspectionStage {

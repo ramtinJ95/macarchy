@@ -11,7 +11,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     @Sendable (UnifiedSetupPlanContext, Bool) async throws -> UnifiedSetupTeardownStage
 
   let planner: UnifiedSetupPlanCommandRunner
-  let environmentTeardown: ComponentTeardown<SetupComponentExecution>
+  let environmentTeardown: ComponentTeardown<EnvironmentLifecycleReport>
   let desktopTeardown: ComponentTeardown<DesktopAggregateTeardownReport>
   let themeTeardown: ThemeTeardown
   let environmentApplyFinalization: ApplyFinalization
@@ -20,7 +20,7 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
 
   init(
     planner: UnifiedSetupPlanCommandRunner,
-    environmentTeardown: @escaping ComponentTeardown<SetupComponentExecution>,
+    environmentTeardown: @escaping ComponentTeardown<EnvironmentLifecycleReport>,
     desktopTeardown: @escaping ComponentTeardown<DesktopAggregateTeardownReport>,
     themeTeardown: @escaping ThemeTeardown,
     environmentApplyFinalization: @escaping ApplyFinalization = { _, _ in
@@ -45,15 +45,12 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   static let live = Self(
     planner: .live,
     environmentTeardown: { context, consumerPaths, dryRun in
-      try await SetupComponentExecution(
-        EnvironmentTeardownCommandRunner.live.execute(
-          stateRoot: context.stateRoot,
-          homeDirectory: context.homeDirectory,
-          consumerPaths: consumerPaths,
-          dryRun: dryRun,
-          json: true,
-          withinUnifiedSetup: true
-        )
+      try await EnvironmentTeardownCommandRunner.live.report(
+        stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory,
+        consumerPaths: consumerPaths,
+        dryRun: dryRun,
+        withinUnifiedSetup: true
       )
     },
     desktopTeardown: { context, _, dryRun in
@@ -596,27 +593,12 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   }
 
   private func stage(
-    _ execution: SetupComponentExecution,
+    _ report: EnvironmentLifecycleReport,
     dryRun: Bool
-  ) throws -> UnifiedSetupTeardownStage {
-    let mutated: Bool
-    if let value = execution.report["mutated"] {
-      guard case .bool(let decoded) = value else {
-        throw SetupComponentReportError(description: "Delegated teardown mutation is invalid.")
-      }
-      mutated = decoded
-    } else if dryRun {
-      mutated = false
-    } else {
-      throw SetupComponentReportError(description: "Delegated teardown has no mutation field.")
-    }
-    return UnifiedSetupTeardownStage(
-      succeeded: execution.succeeded,
-      mutated: mutated,
-      outcome: dryRun && execution.outcome == "ready" ? "planned" : execution.outcome,
-      message: execution.report["message"]?.string ?? "Delegated teardown completed.",
-      details: .delegated(execution.report)
-    )
+  ) -> UnifiedSetupTeardownStage {
+    stage(
+      .environment(report), succeeded: report.succeeded, mutated: report.mutated,
+      outcome: report.outcome, message: report.message, dryRun: dryRun)
   }
 
   private func stage(
