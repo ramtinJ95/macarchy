@@ -82,31 +82,24 @@ enum ThemeSetReport {
         "Error: \(error)",
       ].joined(separator: "\n")
     case .committed(let result, let requiredFailure, let slackTheme):
-      var lines = [
+      let headline =
         "Activated '\(result.manifest.themeID)' as generation '\(result.manifest.generationID)'."
-      ]
-      if let notice = result.notice { lines.append("Notice: \(notice)") }
-      lines.append("Reconciliation:")
-      lines.append(contentsOf: result.reconciliation.results.map(renderAdapterResult))
-      if requiredFailure {
-        lines.append("Required reconciliation failed; the commit was not rolled back.")
-      }
-      lines.append(contentsOf: renderSlackManualImport(slackTheme))
-      return lines.joined(separator: "\n")
+      return
+        (renderCommittedActivation(
+          headline: headline, result: result, requiredFailure: requiredFailure)
+        + renderSlackManualImport(slackTheme)).joined(separator: "\n")
     case .committedActivationError(let manifest, let cause, let slackTheme):
       return
-        ([
-          "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
-          "Postcommit activation work could not complete: \(cause)",
-          "The commit was not rolled back.",
-        ] + renderSlackManualImport(slackTheme)).joined(separator: "\n")
+        (renderCommittedFailure(
+          headline: "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
+          cause: "Postcommit activation work could not complete: \(cause)")
+        + renderSlackManualImport(slackTheme)).joined(separator: "\n")
     case .committedError(let manifest, let cause, let slackTheme):
       return
-        ([
-          "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
-          "Reconciliation could not complete: \(cause)",
-          "The commit was not rolled back.",
-        ] + renderSlackManualImport(slackTheme)).joined(separator: "\n")
+        (renderCommittedFailure(
+          headline: "Committed '\(manifest.themeID)' as generation '\(manifest.generationID)'.",
+          cause: "Reconciliation could not complete: \(cause)")
+        + renderSlackManualImport(slackTheme)).joined(separator: "\n")
     }
   }
 
@@ -181,4 +174,23 @@ struct ThemeSetJSONReport: Encodable {
     case slackTheme = "slack_theme"
     case error
   }
+}
+
+/// The text lines of a committed activation under its command's headline.
+func renderCommittedActivation(
+  headline: String, result: ThemeActivationResult, requiredFailure: Bool
+) -> [String] {
+  var lines = [headline]
+  if let notice = result.notice { lines.append("Notice: \(notice)") }
+  lines.append("Reconciliation:")
+  lines.append(contentsOf: result.reconciliation.results.map(renderAdapterResult))
+  if requiredFailure {
+    lines.append("Required reconciliation failed; the commit was not rolled back.")
+  }
+  return lines
+}
+
+/// The text lines of an activation that committed before `cause` stopped its later work.
+func renderCommittedFailure(headline: String, cause: String) -> [String] {
+  [headline, cause, "The commit was not rolled back."]
 }

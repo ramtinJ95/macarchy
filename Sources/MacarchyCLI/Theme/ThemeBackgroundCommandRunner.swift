@@ -150,16 +150,11 @@ struct ThemeBackgroundCommandRunner: Sendable {
         false
       )
     case .committed(let result, let requiredFailure):
-      var lines = [
-        "Activated background '\(backgroundID)' for theme '\(package.id)' as generation "
-          + "'\(result.manifest.generationID)'."
-      ]
-      if let notice = result.notice { lines.append("Notice: \(notice)") }
-      lines.append("Reconciliation:")
-      lines.append(contentsOf: result.reconciliation.results.map(renderAdapterResult))
-      if requiredFailure {
-        lines.append("Required reconciliation failed; the commit was not rolled back.")
-      }
+      let lines = renderCommittedActivation(
+        headline:
+          "Activated background '\(backgroundID)' for theme '\(package.id)' as generation "
+          + "'\(result.manifest.generationID)'.",
+        result: result, requiredFailure: requiredFailure)
       return (lines.joined(separator: "\n"), !requiredFailure)
     }
   }
@@ -169,12 +164,12 @@ struct ThemeBackgroundCommandRunner: Sendable {
     backgroundID: String,
     cause: String
   ) -> String {
-    [
-      "Committed background '\(backgroundID)' for theme '\(manifest.themeID)' as generation "
+    renderCommittedFailure(
+      headline:
+        "Committed background '\(backgroundID)' for theme '\(manifest.themeID)' as generation "
         + "'\(manifest.generationID)'.",
-      cause,
-      "The commit was not rolled back.",
-    ].joined(separator: "\n")
+      cause: cause
+    ).joined(separator: "\n")
   }
 
   private func currentManifest(stateRoot: URL) throws -> GenerationManifest {
