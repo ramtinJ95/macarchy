@@ -20,6 +20,11 @@ package struct ThemeCommittedWithReconciliationError: Error, CustomStringConvert
   package let manifest: GenerationManifest
   package let cause: String
 
+  package init(manifest: GenerationManifest, cause: String) {
+    self.manifest = manifest
+    self.cause = cause
+  }
+
   package var description: String {
     "Theme '\(manifest.themeID)' committed as generation '\(manifest.generationID)', but reconciliation failed: \(cause)"
   }

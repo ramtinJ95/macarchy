@@ -87,47 +87,25 @@ struct ThemeSetCommandRunner: Sendable {
     expectedActiveGenerationID: String?,
     requestedBackgroundID: String? = nil
   ) async throws -> ThemeSetReport {
-    let report: ThemeSetReport
     if dryRun {
       do {
         try preflight(package, requestedBackgroundID, stateRoot, consumerPaths)
-        report = .dryRun(themeID: package.id)
+        return .dryRun(themeID: package.id)
       } catch {
-        report = .precommitFailure(themeID: package.id, error: error)
-      }
-    } else {
-      let slackTheme = try slackIsEnabled(stateRoot) ? SlackAdapter.render(package: package) : nil
-      do {
-        report = .committed(
-          try await activate(
-            package,
-            requestedBackgroundID,
-            stateRoot,
-            consumerPaths,
-            expectedActiveGenerationID
-          ),
-          slackTheme: slackTheme
-        )
-      } catch let error as ThemeActivationError {
-        if case .activeGenerationChanged = error { throw error }
-        report = .precommitFailure(themeID: package.id, error: error)
-      } catch let error as ThemeCommittedActivationError {
-        report = .committedActivationError(
-          manifest: error.manifest,
-          cause: error.cause,
-          slackTheme: slackTheme
-        )
-      } catch let error as ThemeCommittedWithReconciliationError {
-        report = .committedError(
-          manifest: error.manifest,
-          cause: error.cause,
-          slackTheme: slackTheme
-        )
-      } catch {
-        report = .precommitFailure(themeID: package.id, error: error)
+        return .precommitFailure(themeID: package.id, error: error)
       }
     }
-    return report
+    let slackTheme = try slackIsEnabled(stateRoot) ? SlackAdapter.render(package: package) : nil
+    let outcome = try await ThemeActivationOutcome.classify {
+      try await activate(
+        package,
+        requestedBackgroundID,
+        stateRoot,
+        consumerPaths,
+        expectedActiveGenerationID
+      )
+    }
+    return ThemeSetReport(outcome, themeID: package.id, slackTheme: slackTheme)
   }
 }
 

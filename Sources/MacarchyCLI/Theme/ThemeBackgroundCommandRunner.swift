@@ -127,46 +127,49 @@ struct ThemeBackgroundCommandRunner: Sendable {
       )
     }
 
-    let result: ThemeActivationResult
-    do {
-      result = try await activate(
+    let outcome = try await ThemeActivationOutcome.classify {
+      try await activate(
         package,
         backgroundID,
         stateRoot,
         consumerPaths,
         expectedGenerationID
       )
-    } catch let error as ThemeCommittedActivationError {
+    }
+    switch outcome {
+    case .precommitFailure(let error):
+      throw error
+    case .committedActivationError(let manifest, let cause):
       return (
         committedFailure(
-          manifest: error.manifest,
+          manifest: manifest,
           backgroundID: backgroundID,
-          cause: "Postcommit activation work could not complete: \(error.cause)"
+          cause: "Postcommit activation work could not complete: \(cause)"
         ),
         false
       )
-    } catch let error as ThemeCommittedWithReconciliationError {
+    case .committedReconciliationError(let manifest, let cause):
       return (
         committedFailure(
-          manifest: error.manifest,
+          manifest: manifest,
           backgroundID: backgroundID,
-          cause: "Reconciliation could not complete: \(error.cause)"
+          cause: "Reconciliation could not complete: \(cause)"
         ),
         false
       )
+    case .committed(let result, let requiredFailure):
+      var lines = [
+        "Activated background '\(backgroundID)' for theme '\(package.id)' as generation "
+          + "'\(result.manifest.generationID)'."
+      ]
+      if let notice = result.notice { lines.append("Notice: \(notice)") }
+      lines.append("Reconciliation:")
+      lines.append(contentsOf: result.reconciliation.results.map(renderAdapterResult))
+      if requiredFailure {
+        lines.append("Required reconciliation failed; the commit was not rolled back.")
+      }
+      return (lines.joined(separator: "\n"), !requiredFailure)
     }
-    var lines = [
-      "Activated background '\(backgroundID)' for theme '\(package.id)' as generation "
-        + "'\(result.manifest.generationID)'."
-    ]
-    if let notice = result.notice { lines.append("Notice: \(notice)") }
-    lines.append("Reconciliation:")
-    lines.append(contentsOf: result.reconciliation.results.map(renderAdapterResult))
-    let succeeded = !hasRequiredReconciliationFailure(result.reconciliation.results)
-    if !succeeded {
-      lines.append("Required reconciliation failed; the commit was not rolled back.")
-    }
-    return (lines.joined(separator: "\n"), succeeded)
   }
 
   private func committedFailure(
