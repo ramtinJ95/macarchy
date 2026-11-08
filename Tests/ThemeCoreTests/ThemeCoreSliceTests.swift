@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -71,7 +72,7 @@ struct ThemeCoreSliceTests {
         )
       ]
     )
-    let outputRoot = try temporaryDirectory()
+    let outputRoot = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: outputRoot) }
     try ThemeRenderer().write(exactOrdinary, to: outputRoot)
     #expect(
@@ -189,7 +190,7 @@ struct ThemeCoreSliceTests {
     let package = try ThemePackageLoader().load(packageURL: packageURL)
 
     let rendered = try ThemeRenderer().render(package: package, generationID: "test-generation")
-    let outputRoot = try temporaryDirectory()
+    let outputRoot = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: outputRoot) }
     try ThemeRenderer().write(rendered, to: outputRoot)
 
@@ -246,7 +247,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func piDerivesReadableConversationRolesWhenSurfaceMatchesThePage() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "lavender-like")
     let manifest = packageURL.appending(path: "theme.toml")
@@ -292,7 +293,7 @@ struct ThemeCoreSliceTests {
     let source =
       repositoryRoot
       .appending(path: "Themes/catppuccin-mocha", directoryHint: .isDirectory)
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = root.appending(path: "broken", directoryHint: .isDirectory)
     try FileManager.default.copyItem(at: source, to: packageURL)
@@ -365,7 +366,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func lightAppearanceMetadataIsAcceptedWithoutShippingALightTheme() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "light-fixture")
     let manifest = packageURL.appending(path: "theme.toml")
@@ -380,7 +381,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func invalidAppearanceReportsMetadataSourceLine() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "invalid-appearance")
     let manifest = packageURL.appending(path: "theme.toml")
@@ -400,7 +401,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func packageCanDeliberatelyOmitNamedConsumerMappings() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "missing-mappings")
     try "schema_version = 1\n\n[mappings]\n".write(
@@ -444,7 +445,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func missingRequiredThemeKeyFailsBeforeTypedDecoding() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "missing-key")
     let manifest = packageURL.appending(path: "theme.toml")
@@ -461,7 +462,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func duplicateIdentifiersAcrossRootsFailExplicitly() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let builtIn = root.appending(path: "built-in", directoryHint: .isDirectory)
     let user = root.appending(path: "user", directoryHint: .isDirectory)
@@ -479,7 +480,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func missingAndCorruptBackgroundAssetsFail() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
 
     let missingPackage = try copyCatppuccin(to: root, named: "missing-asset")
@@ -501,7 +502,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func backgroundSymlinkCannotEscapePackage() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "external-wallpaper")
     let wallpaper = packageURL.appending(path: "wallpapers/default.png")
@@ -519,7 +520,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func personalWallpaperConfigurationRejectsInvalidShapeAndSource() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let configuration = root.appending(path: "config.toml")
     try """
@@ -571,7 +572,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func personalWallpaperAdditionsExtendRatherThanReplacePackageInventory() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let wallpaper = repositoryRoot.appending(path: "Tests/Fixtures/Images/test-wallpaper.png")
     try """
@@ -600,7 +601,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func unknownSchemaKeyReportsItsSource() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "unknown-key")
     let manifest = packageURL.appending(path: "theme.toml")
@@ -618,7 +619,7 @@ struct ThemeCoreSliceTests {
 
   @Test
   func quotedTableNameFailsWithCanonicalSyntaxDiagnostic() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root, named: "quoted-table")
     let manifest = packageURL.appending(path: "theme.toml")
@@ -631,13 +632,6 @@ struct ThemeCoreSliceTests {
     }
     #expect(diagnostic.location.line == 6)
     #expect(diagnostic.message == "Theme manifest tables must use bare names")
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let url = FileManager.default.temporaryDirectory
-      .appending(path: "macarchy-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
   }
 
   private func copyCatppuccin(to root: URL, named name: String) throws -> URL {

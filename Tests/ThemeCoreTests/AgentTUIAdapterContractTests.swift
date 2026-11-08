@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -8,10 +9,7 @@ extension AdapterContractTests {
   @Test
   func piPublishesAValidCustomThemeThroughItsWatchedCanonicalLink() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
 
     let configuration = root.appending(path: "pi", directoryHint: .isDirectory)
@@ -59,10 +57,7 @@ extension AdapterContractTests {
   @Test
   func agentTUIAdaptersPreserveBehaviorAndExposeTheirRealUpdateBoundaries() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: tokyoNightPackage())
 
     let herdrConfiguration = root.appending(path: "herdr/config.toml")
@@ -170,10 +165,7 @@ extension AdapterContractTests {
   @Test
   func herdrRetriesFailedReloadsAndRecognizesOnlyAConfirmedStoppedServer() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: tokyoNightPackage())
     let configuration = root.appending(path: "herdr/config.toml")
     try FileManager.default.createDirectory(
@@ -238,10 +230,7 @@ extension AdapterContractTests {
   @Test
   func herdrAdoptsUpdatesAndRemovesOnlyItsCompleteCustomPalette() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let importedCatppuccin = packageWithoutNamedThemeMappings(try catppuccinPackage())
     _ = try testActivator(root: root).activate(package: importedCatppuccin)
 
@@ -369,10 +358,7 @@ extension AdapterContractTests {
   @Test
   func herdrResumesFirstImportBeforeBackupWithoutMutatingPreflight() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
     _ = try testActivator(root: root).activate(package: package)
     let configuration = root.appending(path: "herdr/config.toml")
@@ -419,10 +405,7 @@ extension AdapterContractTests {
   @Test
   func agentTUIAdaptersRejectMalformedDocumentsConflictingModesAndWrongLinks() throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
 
     let tuicr = root.appending(path: "tuicr", directoryHint: .isDirectory)

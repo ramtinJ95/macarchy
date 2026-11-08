@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Synchronization
 import TestSafety
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI

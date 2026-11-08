@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -8,10 +9,7 @@ extension AdapterContractTests {
   @Test
   func backgroundOnlyActivationCarriesEvidenceAndRestoresRememberedSelection() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let package = try packageWithSecondBackground(root: root)
     let requests = BackgroundRequestLog()
     let wallpaperState = BackgroundWallpaperState(

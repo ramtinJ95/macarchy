@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -319,11 +320,7 @@ struct ThemeBrowserTests {
   }
 
   private var themesRoot: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Themes", directoryHint: .isDirectory)
+    repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
   }
 }
 

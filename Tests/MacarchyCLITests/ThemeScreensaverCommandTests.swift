@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -10,7 +11,7 @@ struct ThemeScreensaverCommandTests {
   func preparesOnlyTheRequestedStateRootsImageWithoutActivatingATheme() async throws {
     let root = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-saver-command-\(UUID().uuidString)")
-    defer { removeRoot(root) }
+    defer { removeTemporaryRoot(root) }
     let package = try ThemePackageLoader().load(
       packageURL: repositoryRoot.appending(path: "Themes/kanagawa-wave"))
     let manifest = try ThemeActivator(root: root, faultInjector: { _ in }).activate(
@@ -32,7 +33,7 @@ struct ThemeScreensaverCommandTests {
   @Test
   func savesActiveAndInactiveThemeChoicesWithoutActivatingWallpaperOrOtherAdapters() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "macarchy-saver-\(UUID())")
-    defer { removeRoot(root) }
+    defer { removeTemporaryRoot(root) }
     let repository = ThemeRepository(builtInRoot: repositoryRoot.appending(path: "Themes"))
     let active = try repository.package(id: "kanagawa-wave")
     let other = try repository.package(id: "catppuccin-mocha")
@@ -67,7 +68,7 @@ struct ThemeScreensaverCommandTests {
   @Test
   func exportFailureRetainsExplicitSavedIntentForRetry() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "macarchy-saver-\(UUID())")
-    defer { removeRoot(root) }
+    defer { removeTemporaryRoot(root) }
     let repository = ThemeRepository(builtInRoot: repositoryRoot.appending(path: "Themes"))
     let package = try repository.package(id: "kanagawa-wave")
     _ = try ThemeActivator(root: root, faultInjector: { _ in }).activate(package: package)
@@ -95,17 +96,5 @@ struct ThemeScreensaverCommandTests {
     #expect(throws: (any Error).self) {
       try Theme.Screensaver.parse(["--theme", "kanagawa-wave"])
     }
-  }
-
-  private func removeRoot(_ root: URL) {
-    if let files = FileManager.default.enumerator(
-      at: root, includingPropertiesForKeys: [.isDirectoryKey])
-    {
-      for case let file as URL in files
-      where (try? file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
-      }
-    }
-    try? FileManager.default.removeItem(at: root)
   }
 }

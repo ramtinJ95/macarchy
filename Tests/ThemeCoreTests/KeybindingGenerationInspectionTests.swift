@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -9,7 +10,7 @@ struct KeybindingGenerationInspectionTests {
 
   @Test
   func missingStateIsExplicit() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-tests")
     defer { try? FileManager.default.removeItem(at: root) }
 
     #expect(inspector.inspect(stateRoot: root) == .missing)
@@ -17,7 +18,7 @@ struct KeybindingGenerationInspectionTests {
 
   @Test
   func validatesCurrentManifestIdentityPermissionsAndArtifactDigest() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-tests")
     let generation = try publishFixture(
       stateRoot: root,
       expectedConfiguration: "alt - j : default\n",
@@ -43,7 +44,7 @@ struct KeybindingGenerationInspectionTests {
 
   @Test
   func corruptCurrentArtifactBlocksInspection() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-tests")
     let generation = try publishFixture(
       stateRoot: root,
       expectedConfiguration: "alt - j : default\n",
@@ -65,7 +66,7 @@ struct KeybindingGenerationInspectionTests {
 
   @Test
   func unknownGenerationInventoryBlocksInspection() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-tests")
     let generation = try publishFixture(
       stateRoot: root,
       expectedConfiguration: "alt - j : default\n",
@@ -96,7 +97,7 @@ struct KeybindingGenerationInspectionTests {
 
   @Test
   func symlinkedKeybindingStateAncestorIsInvalid() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
     let external = root.appending(path: "external/keybindings", directoryHint: .isDirectory)
@@ -152,14 +153,5 @@ struct KeybindingGenerationInspectionTests {
       withDestinationPath: "generations/\(generationID)"
     )
     return generation
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-keybinding-generation-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

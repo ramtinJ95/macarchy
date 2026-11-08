@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -7,7 +8,7 @@ import Testing
 struct ScreenSaverImageStoreTests {
   @Test(arguments: [ThemeBackgroundFormat.png, .jpeg, .webp])
   func exportsChosenImageAsPNGWithoutClaimingNativeSelection(format: ThemeBackgroundFormat) throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let package = try package(format: format)
       _ = try activator(root).activate(package: package)
       let store = ScreenSaverImageStore(root: root)
@@ -23,7 +24,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func stableFolderUpdatesAndRepeatedReconciliationDoesNotRewriteTheImage() throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let store = ScreenSaverImageStore(root: root)
       _ = try activator(root).activate(package: package(format: .jpeg))
       _ = try store.reconcile()
@@ -53,7 +54,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func failedPreparationPreservesLastImageAndStaleWorkCannotOverwriteNewerCanonicalState() throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let original = ScreenSaverImageStore(root: root)
       _ = try activator(root).activate(package: package(format: .jpeg))
       _ = try original.reconcile()
@@ -84,7 +85,7 @@ struct ScreenSaverImageStoreTests {
   @Test
   func matchingImageStillRechecksCanonicalGenerationAndFolderBinding() throws {
     for replaceFolder in [false, true] {
-      try withTemporaryRoot { root in
+      try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
         let store = ScreenSaverImageStore(root: root)
         _ = try activator(root).activate(package: package(format: .png))
         _ = try store.reconcile()
@@ -107,7 +108,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func inspectionWaitsForReceiptPublicationInsteadOfRejectingItsTemporaryFile() async throws {
-    try await withTemporaryRoot { root in
+    try await withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let store = ScreenSaverImageStore(root: root)
       _ = try activator(root).activate(package: package(format: .png))
       _ = try store.reconcile()
@@ -135,7 +136,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func unownedContentsAndDirectoryLinksArePreservedRatherThanAdopted() throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       _ = try activator(root).activate(package: package(format: .png))
       let store = ScreenSaverImageStore(root: root)
       let external = root.appending(path: "personal")
@@ -158,7 +159,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func linkedDestinationAndUnexpectedPhotosFailWithoutTouchingExternalFiles() throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       _ = try activator(root).activate(package: package(format: .png))
       let store = ScreenSaverImageStore(root: root)
       _ = try store.reconcile()
@@ -182,7 +183,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func noBackgroundRetainsPreviousExportAndCorruptCanonicalStateFailsExplicitly() throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let store = ScreenSaverImageStore(root: root)
       _ = try activator(root).activate(package: package(format: .png))
       _ = try store.reconcile()
@@ -203,7 +204,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func perThemeScreensaversSurviveWallpaperChangesAndReturnToInheritance() throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let wallpaper = try package(format: .jpeg)
       let independent = try package(format: .png)
       let other = try ThemePackageLoader().load(
@@ -245,7 +246,7 @@ struct ScreenSaverImageStoreTests {
   @Test(arguments: [false, true])
   func changedSelectionRejectsStalePublicationEvenWhenTheImageAlreadyMatches(matching: Bool) throws
   {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let first = try package(format: .png)
       let replacement = try package(format: .webp)
       _ = try activator(root).activate(package: first)
@@ -271,7 +272,7 @@ struct ScreenSaverImageStoreTests {
 
   @Test
   func invalidSelectionsAndDamagedSnapshotsFailWithoutFallingBackToWallpaper() throws {
-    try withTemporaryRoot { root in
+    try withTemporaryRoot(named: "macarchy-theme-core-tests") { root in
       let selected = try package(format: .png)
       _ = try activator(root).activate(package: package(format: .jpeg))
       let preferences = ScreenSaverPreferenceStore(root: root)

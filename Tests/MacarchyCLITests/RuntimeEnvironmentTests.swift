@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -81,8 +82,10 @@ struct RuntimeEnvironmentTests {
 
   @Test
   func packagedLayoutLoadsThemesAndDetectsInstallationOwnership() throws {
-    let root = try temporaryDirectory(under: repositoryRoot.appending(path: ".build"))
-      .resolvingSymlinksInPath().standardizedFileURL
+    let root = try makeTemporaryDirectory(
+      named: "macarchy-runtime-tests", under: repositoryRoot.appending(path: ".build")
+    )
+    .resolvingSymlinksInPath().standardizedFileURL
     defer { try? FileManager.default.removeItem(at: root) }
     let layout = try packagedLayout(at: root)
     let runtime = RuntimeEnvironment(executableURL: layout.executable)
@@ -133,8 +136,10 @@ struct RuntimeEnvironmentTests {
 
   @Test
   func packagedMetadataPreventsCheckoutFallbackWhenThemesAreMissing() throws {
-    let root = try temporaryDirectory(under: repositoryRoot.appending(path: ".build"))
-      .resolvingSymlinksInPath().standardizedFileURL
+    let root = try makeTemporaryDirectory(
+      named: "macarchy-runtime-tests", under: repositoryRoot.appending(path: ".build")
+    )
+    .resolvingSymlinksInPath().standardizedFileURL
     defer { try? FileManager.default.removeItem(at: root) }
     let layout = try packagedLayout(at: root, includeThemes: false)
     let runtime = RuntimeEnvironment(executableURL: layout.executable)
@@ -147,7 +152,7 @@ struct RuntimeEnvironmentTests {
 
   @Test
   func invalidPackagedMetadataFailsVisibly() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-runtime-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let invalid =
       "{\"schema_version\":1,\"version\":\"9.0.0\",\"revision\":\"\(revision)\"}\n"
@@ -239,16 +244,5 @@ struct RuntimeEnvironmentTests {
       to: desktop
     )
     return (executable, themes, keybindings, desktop)
-  }
-
-  private func temporaryDirectory(
-    under parent: URL = FileManager.default.temporaryDirectory
-  ) throws -> URL {
-    let root = parent.appending(
-      path: "macarchy-runtime-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

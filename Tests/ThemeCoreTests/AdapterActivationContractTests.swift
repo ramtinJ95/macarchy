@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -8,10 +9,7 @@ extension AdapterContractTests {
   @Test
   func activationPublishesBeforeAdapterProcessesAndPersistsTheirResults() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let includeDirective = "include \(root.path)/state/adapters/kitty.conf"
     let configurationURL = root.appending(path: "kitty.conf")
     try "\(includeDirective)\n".write(
@@ -347,10 +345,7 @@ extension AdapterContractTests {
   @Test
   func disabledConsumersWithMissingOrInvalidConfigurationDoNotBlockActivation() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let consumerPaths = try Self.consumerPaths(root: root, adapterIDs: [KittyAdapter.id])
     #expect(
       try FileManager.default.contentsOfDirectory(atPath: root.path) == ["kitty.conf"]
@@ -514,10 +509,7 @@ extension AdapterContractTests {
   @Test
   func supersedingActivationReturnsTheCommittedManifestWithPostcommitFailure() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let configurationURL = root.appending(path: "kitty.conf")
     try "include \(root.path)/state/adapters/kitty.conf\n".write(
       to: configurationURL,
@@ -622,10 +614,7 @@ extension AdapterContractTests {
   @Test
   func importedHerdrAndNeovimPalettesReconcileAsRequiredAdapters() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let package = packageWithoutNamedThemeMappings(try catppuccinPackage())
     let manifest = try testActivator(root: root).activate(package: package)
     let store = ReconciliationStatusStore(root: root)
@@ -695,10 +684,7 @@ extension AdapterContractTests {
   @Test
   func reconcileDryRunInspectsWithoutProcessesOrStatusWrites() throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
     try "include other.conf\n".write(
@@ -768,10 +754,7 @@ extension AdapterContractTests {
   @Test
   func repeatedSelectedReconciliationPreservesOtherResultsAndIsIdempotent() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
     try "include \(root.path)/state/adapters/kitty.conf\n".write(
@@ -827,10 +810,7 @@ extension AdapterContractTests {
   @Test
   func reconciliationRejectsCorruptActiveArtifactsBeforeProcessesRun() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configurationURL = root.appending(path: "kitty.conf")
     try "include \(root.path)/state/adapters/kitty.conf\n".write(

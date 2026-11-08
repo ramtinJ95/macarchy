@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -7,11 +8,7 @@ import Testing
 struct ThemePreviewRendererTests {
   @Test
   func everyValidatedThemeProducesADeterministicRenderableCard() throws {
-    let themesRoot = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Themes", directoryHint: .isDirectory)
+    let themesRoot = repositoryRoot.appending(path: "Themes", directoryHint: .isDirectory)
     let packages = try ThemeRepository(builtInRoot: themesRoot).packages()
 
     for package in packages {

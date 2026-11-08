@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -13,8 +14,7 @@ struct ZshIntegrationTests {
       path: "macarchy-zsh-integrations-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let resources = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent().appending(path: "Environment")
+    let resources = repositoryRoot.appending(path: "Environment")
     let profile = try PortableProfileLoader().decode(
       """
       schema_version = 1

@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -13,7 +14,7 @@ struct SpicetifyPresetLifecycleTests {
   {
     let original = "[Setting]\ncurrent_theme = text\ncolor_scheme = Personal\n"
     let fixture = try SpicetifyPresetFixture(configuration: original)
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let coordinator = EnvironmentTransactionCoordinator(
       homeDirectory: fixture.home, stateRoot: fixture.state)
     let inspection = try fixture.inspection(enabled: true)
@@ -155,7 +156,7 @@ struct SpicetifyPresetLifecycleTests {
   {
     let fixture = try SpicetifyPresetFixture(
       configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let store = EnvironmentStateStore(stateRoot: fixture.state)
     try store.recordUnverifiedSpicetifyRecovery()
     let refreshes = Mutex(0)
@@ -194,7 +195,7 @@ struct SpicetifyPresetLifecycleTests {
   func managedRestorationCannotBeDeferredAndMalformedDeferralFailsClosed() throws {
     let fixture = try SpicetifyPresetFixture(
       configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let inspection = try fixture.inspection(enabled: true)
     _ = try fixture.apply(
       enabled: true, inspection: inspection, adoptionDigest: inspection.adoptionEvidenceDigest)
@@ -222,7 +223,7 @@ struct SpicetifyPresetLifecycleTests {
     let original =
       "[Setting]\ncurrent_theme = Personal # keep\ncolor_scheme = Blue\nspotify_path = /external\n"
     let fixture = try SpicetifyPresetFixture(configuration: original)
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
 
     let inspection = try fixture.inspection(enabled: true)
     let digest = try #require(inspection.adoptionEvidenceDigest)
@@ -268,7 +269,7 @@ struct SpicetifyPresetLifecycleTests {
   @Test
   func completeExactSymlinkTupleIsAuthorityOnlyAndNeverAdopted() throws {
     let fixture = try SpicetifyPresetFixture(configuration: nil)
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     try fixture.installExternalTuple()
     let before = try fixture.snapshotExternalTuple()
 
@@ -297,14 +298,14 @@ struct SpicetifyPresetLifecycleTests {
       "[Setting]\ncurrent_theme = \(String(repeating: "x", count: EnvironmentSpicetifyOwnership.maximumSelectorSize + 1))\ncolor_scheme = Blue\n",
     ] {
       let fixture = try SpicetifyPresetFixture(configuration: text)
-      defer { removeSpicetifyTestRoot(fixture.root) }
+      defer { removeTemporaryRoot(fixture.root) }
       #expect(try fixture.inspection(enabled: true).isBlocked)
       #expect(try Data(contentsOf: fixture.configuration) == Data(text.utf8))
     }
 
     let partial = try SpicetifyPresetFixture(
       configuration: "[Setting]\ncurrent_theme = text\ncolor_scheme = macarchy\n")
-    defer { removeSpicetifyTestRoot(partial.root) }
+    defer { removeTemporaryRoot(partial.root) }
     let partialInspection = try partial.inspection(enabled: true)
     #expect(!partialInspection.isBlocked)
     #expect(partialInspection.adoptionEvidenceDigest != nil)
@@ -319,7 +320,7 @@ struct SpicetifyPresetLifecycleTests {
   func disableRollbackRetainsRuntimeRecoveryUntilPriorTargetRefreshes() throws {
     let fixture = try SpicetifyPresetFixture(
       configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let enabled = try fixture.inspection(enabled: true)
     _ = try fixture.apply(
       enabled: true,
@@ -354,7 +355,7 @@ struct SpicetifyPresetLifecycleTests {
   func aggregateDisableRefreshesRestoredTargetBeforeRemovingAuthority() async throws {
     let original = "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n"
     let fixture = try SpicetifyPresetFixture(configuration: original)
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let enabled = try fixture.inspection(enabled: true)
     _ = try fixture.apply(
       enabled: true,
@@ -395,7 +396,7 @@ struct SpicetifyPresetLifecycleTests {
   func aggregateDisablePreflightsRestorationDependenciesBeforeMutation() async throws {
     let fixture = try SpicetifyPresetFixture(
       configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let enabled = try fixture.inspection(enabled: true)
     _ = try fixture.apply(
       enabled: true,
@@ -443,7 +444,7 @@ struct SpicetifyPresetLifecycleTests {
   func teardownPreflightsRestorationDependenciesBeforeMutation() async throws {
     let fixture = try SpicetifyPresetFixture(
       configuration: "[Setting]\ncurrent_theme = Personal\ncolor_scheme = Blue\n")
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let enabled = try fixture.inspection(enabled: true)
     _ = try fixture.apply(
       enabled: true,
@@ -484,7 +485,7 @@ struct SpicetifyPresetLifecycleTests {
   @Test
   func disabledSteadyStateDoesNotInspectSpicetifyRuntime() async throws {
     let fixture = try SpicetifyPresetFixture(configuration: nil)
-    defer { removeSpicetifyTestRoot(fixture.root) }
+    defer { removeTemporaryRoot(fixture.root) }
     let inspections = Mutex(0)
 
     let result = try await EnvironmentApplyCommandRunner(
@@ -532,28 +533,6 @@ private func missingSpicetifyRuntimePrerequisites(
       ]
     }
   )
-}
-
-func removeSpicetifyTestRoot(_ root: URL) {
-  guard
-    let enumerator = FileManager.default.enumerator(
-      at: root,
-      includingPropertiesForKeys: [.isDirectoryKey]
-    )
-  else { return }
-  var directories = [root]
-  for case let item as URL in enumerator {
-    if (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-      directories.append(item)
-    }
-  }
-  for directory in directories.reversed() {
-    try? FileManager.default.setAttributes(
-      [.posixPermissions: 0o700],
-      ofItemAtPath: directory.path
-    )
-  }
-  try? FileManager.default.removeItem(at: root)
 }
 
 private struct SpicetifyPresetFixture {

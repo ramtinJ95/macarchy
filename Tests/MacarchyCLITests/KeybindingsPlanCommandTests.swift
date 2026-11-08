@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -13,7 +14,7 @@ struct KeybindingsPlanCommandTests {
 
   @Test
   func packagedDefaultsProduceAReadOnlyLiveOwnershipPlan() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybindings-plan-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -430,7 +431,7 @@ struct KeybindingsPlanCommandTests {
   }
 
   private func planFixture() throws -> PlanFixture {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybindings-plan-tests")
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let profileDirectory = root.appending(path: "dotfiles", directoryHint: .isDirectory)
     let resources = root.appending(path: "resources", directoryHint: .isDirectory)
@@ -538,15 +539,6 @@ struct KeybindingsPlanCommandTests {
       value: "01234567-89ab-cdef-0123-456789abcdef",
       at: entry
     )
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-keybindings-plan-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }
 

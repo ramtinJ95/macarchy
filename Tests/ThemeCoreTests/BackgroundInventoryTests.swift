@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -42,7 +43,7 @@ struct BackgroundInventoryTests {
 
   @Test
   func olderWallpaperContractRequiresReinstallation() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-background-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root)
     try replaceBackgroundContract(
@@ -65,7 +66,7 @@ struct BackgroundInventoryTests {
 
   @Test
   func canonicalInventoryPreservesDeclaredOrderAndExplicitIdentity() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-background-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let packageURL = try copyCatppuccin(to: root)
     let firstDirectory = packageURL.appending(
@@ -119,7 +120,7 @@ struct BackgroundInventoryTests {
 
   @Test
   func inventoryRejectsDuplicateIDsAndUnsupportedImages() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-background-tests")
     defer { try? FileManager.default.removeItem(at: root) }
 
     let duplicate = try copyCatppuccin(to: root, name: "duplicate")
@@ -164,13 +165,6 @@ struct BackgroundInventoryTests {
     }
     #expect(unsupportedDiagnostic.field == "backgrounds.path")
     #expect(unsupportedDiagnostic.message.contains("unsupported image extension"))
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-background-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-    return url
   }
 
   private func copyCatppuccin(to root: URL, name: String = "theme") throws -> URL {

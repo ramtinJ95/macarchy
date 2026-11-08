@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -8,7 +9,7 @@ struct EnvironmentConfigurationTests {
 
   @Test(arguments: ["zsh", "kitty", "atuin", "starship"])
   func nativeConnectionComposesOnlyItsProviderAndRetainsOtherArtifacts(provider: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appending(path: "personal.conf")
     let contents: String
@@ -50,7 +51,7 @@ struct EnvironmentConfigurationTests {
 
   @Test(arguments: ["relative", "absolute", "linked", "relative-linked"])
   func explicitNativeSourcesMayLeaveTheProfileDirectory(kind: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profileRoot = root.appending(path: "macarchy")
     let userRoot = root.appending(path: "macarchy-user")
@@ -103,7 +104,7 @@ struct EnvironmentConfigurationTests {
   func liveSourcesResolveBesideTheirDeclaringProfileAndRetainLayerOrigins(
     machineOverridesSources: Bool
   ) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let portableDirectory = root.appending(path: "portable")
     let machineDirectory = root.appending(path: "machine")
@@ -191,7 +192,7 @@ struct EnvironmentConfigurationTests {
     .enabled(if: ProcessInfo.processInfo.environment["MACARCHY_TEST_KITTY_CONFIG"] == "1"),
     arguments: [false, true])
   func installedKittyLoadsLiveIncludesAndTrailingTheme(standard: Bool) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appending(path: "personal kitty.conf")
     let nested = root.appending(path: "nested.conf")
@@ -239,7 +240,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func liveKittyConfigurationSeparatesDefaultsBehaviorAndTrailingTheme() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appending(path: "personal kitty.conf")
     try "font_size 14\n".write(to: source, atomically: true, encoding: .utf8)
@@ -260,7 +261,7 @@ struct EnvironmentConfigurationTests {
 
   @Test(arguments: ["missing.conf", "$PERSONAL.conf", "conflicting.conf"])
   func liveKittyConfigurationRejectsInvalidConnections(name: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     if name != "missing.conf" {
       try "font_size 14\n".write(to: root.appending(path: name), atomically: true, encoding: .utf8)
@@ -276,7 +277,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func completePersonalZshOwnsInitializationPathsAndPrivateRuntimeInputs() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appending(path: "personal.zsh")
     try #"""
@@ -337,7 +338,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func liveZshConfigurationPreservesEditsOutsideGenerationIdentity() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let source = root.appending(path: "personal.zsh")
     try "export PERSONAL=before\n".write(to: source, atomically: true, encoding: .utf8)
@@ -373,7 +374,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func liveZshConfigurationRejectsMissingSourcesAndLegacyHookCombination() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let missing = try PortableProfileLoader().decode(
       "schema_version = 1\n[zsh]\nconfiguration = \"missing.zsh\"\n",
@@ -562,7 +563,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func packagedNeovimOverlayRendersTheEscapedConcreteStateRoot() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let stateRoot = root.appending(
       path: "state \"quoted\" \\ root",
@@ -593,7 +594,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func providerInitCommandFailureStopsTheManagedShellMarker() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let home = root.appending(path: "home", directoryHint: .isDirectory)
     let bin = root.appending(path: "bin", directoryHint: .isDirectory)
@@ -643,7 +644,8 @@ struct EnvironmentConfigurationTests {
 
   @Test(arguments: [0, 17])
   func externalAtuinInitializesWithoutAnInheritedPersonalPath(exitStatus: Int) throws {
-    let root = try temporaryDirectory().appending(path: "home with spaces")
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
+      .appending(path: "home with spaces")
     defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
     let atuinBin = root.appending(path: ".atuin/bin")
     let bin = root.appending(path: "bin")
@@ -691,7 +693,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func nativeInputsAndStableOptionsProduceSelfContainedArtifacts() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let kitty = root.appending(path: "kitty", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: kitty, withIntermediateDirectories: true)
@@ -808,7 +810,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func fullNativeNeovimConfigurationPreservesFilesOutsideReservedThemePaths() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let neovim = root.appending(path: "nvim", directoryHint: .isDirectory)
     let custom = neovim.appending(path: "lua/custom", directoryHint: .isDirectory)
@@ -919,7 +921,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func completeADR0027ThemeSeamMigratesAtomically() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let (neovim, profile) = try legacyNeovimConfiguration(in: root)
 
@@ -953,7 +955,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func partialADR0027ThemeSeamConflicts() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let (neovim, profile) = try legacyNeovimConfiguration(in: root)
     try FileManager.default.removeItem(
@@ -971,7 +973,7 @@ struct EnvironmentConfigurationTests {
 
   @Test(arguments: ["[", "[]"])
   func nativeNeovimLockRejectsMalformedJSONAndNonObjects(lock: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let (neovim, profile) = try legacyNeovimConfiguration(in: root)
     try Data(lock.utf8).write(to: neovim.appending(path: "lazy-lock.json"))
@@ -996,7 +998,7 @@ struct EnvironmentConfigurationTests {
     "lua/plugins/colorscheme.lua",
   ])
   func legacyNeovimThemeRecognitionRequiresExactBytes(path: String) throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let (neovim, profile) = try legacyNeovimConfiguration(in: root)
     let source = neovim.appending(path: path)
@@ -1019,7 +1021,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func fullNativeNeovimConfigurationRejectsLinksAndThemePathConflicts() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let neovim = root.appending(path: "nvim", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: neovim, withIntermediateDirectories: true)
@@ -1075,7 +1077,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func providerOwnedThemeAndUnsafeKittyIncludesFailClosed() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     try "palette = \"personal\"\n".write(
       to: root.appending(path: "starship.toml"),
@@ -1121,7 +1123,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func kittyOverridesRejectGeneratedIncludesAndSymbolicLinkRoots() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let kittyDirectory = root.appending(path: "kitty", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: kittyDirectory, withIntermediateDirectories: true)
@@ -1157,7 +1159,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func atuinOptionsRespectTableBoundariesAndDaemonRequirements() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let atuin = root.appending(path: "atuin.toml")
     try """
@@ -1222,7 +1224,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func nativeInputReadRejectsRetargetedIntermediateSymbolicLink() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profileDirectory = root.appending(path: "profile", directoryHint: .isDirectory)
     let inside = profileDirectory.appending(path: "inside", directoryHint: .isDirectory)
@@ -1255,7 +1257,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func kittyOverrideReadRejectsRetargetedIntermediateSymbolicLink() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profileDirectory = root.appending(path: "profile", directoryHint: .isDirectory)
     let inside = profileDirectory.appending(path: "inside", directoryHint: .isDirectory)
@@ -1288,7 +1290,7 @@ struct EnvironmentConfigurationTests {
 
   @Test
   func kittyOverrideEntryLimitAppliesAcrossNestedDirectories() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-environment-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let kitty = root.appending(path: "kitty", directoryHint: .isDirectory)
     let nested = kitty.appending(path: "a", directoryHint: .isDirectory)
@@ -1361,14 +1363,5 @@ struct EnvironmentConfigurationTests {
       source: root.appending(path: "profile.toml")
     )
     return (neovim, profile)
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-environment-configuration-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

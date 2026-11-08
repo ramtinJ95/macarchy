@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -8,10 +9,7 @@ extension AdapterContractTests {
   @Test(arguments: [2, 15])
   func sketchyBarReloadsTheExactEntryConfigAndDetectsABrokenPaletteSeam(readyAt: Int) async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let configuration = try Self.sketchyBarConfiguration(root: root)
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let requests = Mutex([ProcessRequest]())
@@ -97,11 +95,7 @@ extension AdapterContractTests {
       "schema_version = 1\n",
       source: root.appending(path: "profile.toml")
     )
-    let defaults = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Desktop/sketchybar/defaults.toml")
+    let defaults = repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml")
     let composition = try SketchyBarConfigurationComposer().compose(
       defaultsURL: defaults,
       profile: profile,
@@ -149,10 +143,7 @@ extension AdapterContractTests {
   @Test
   func sketchyBarRuntimeInspectionIsExplicitAndNonMutating() throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let configuration = try Self.sketchyBarConfiguration(root: root)
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let requests = Mutex([ProcessRequest]())

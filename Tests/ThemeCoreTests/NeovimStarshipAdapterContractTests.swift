@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -18,10 +19,7 @@ extension AdapterContractTests {
   @Test
   func namedApplicationAdaptersPreserveBehaviorAndUpdateAtTheirBoundaries() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
     let neovimPlugins = neovimDirectory.appending(
@@ -132,10 +130,7 @@ extension AdapterContractTests {
   @Test(arguments: [false, true])
   func neovimRuntimeInspectionExposesRejectedActivePalette(linkedLoader: Bool) async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
     let plugins = neovimDirectory.appending(path: "lua/plugins", directoryHint: .isDirectory)
@@ -234,10 +229,7 @@ extension AdapterContractTests {
   @Test
   func importedNeovimPreflightRequiresPinnedSourceControlledRenderer() throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let neovimDirectory = root.appending(path: "nvim", directoryHint: .isDirectory)
     let plugins = neovimDirectory.appending(path: "lua/plugins", directoryHint: .isDirectory)

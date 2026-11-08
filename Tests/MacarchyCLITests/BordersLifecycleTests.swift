@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -497,15 +498,6 @@ struct ManagedBordersFixture {
   }
 
   func remove() {
-    if let entries = FileManager.default.enumerator(
-      at: directory, includingPropertiesForKeys: [.isDirectoryKey])
-    {
-      for case let url as URL in entries {
-        if (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-          try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        }
-      }
-    }
-    try? FileManager.default.removeItem(at: directory)
+    removeTemporaryRoot(directory)
   }
 }

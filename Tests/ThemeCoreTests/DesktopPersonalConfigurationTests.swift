@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -18,7 +19,7 @@ struct DesktopPersonalConfigurationTests {
         source: root.appending(path: "profile.toml"))
     }
     func compose(_ key: String) throws -> (String, String) {
-      let defaults = repository.appending(path: "Desktop/\(provider)/defaults.toml")
+      let defaults = repositoryRoot.appending(path: "Desktop/\(provider)/defaults.toml")
       if provider == "yabai" {
         let value = try YabaiConfigurationComposer().compose(
           defaultsURL: defaults, profile: profile(key))
@@ -74,7 +75,7 @@ struct DesktopPersonalConfigurationTests {
     let conflict = try PortableProfileLoader().decode(
       "schema_version = 1\n[\(provider)]\nconfiguration = \"personal.sh\"\nhook = \"old.sh\"\n",
       source: machine)
-    let defaults = repository.appending(path: "Desktop/\(provider)/defaults.toml")
+    let defaults = repositoryRoot.appending(path: "Desktop/\(provider)/defaults.toml")
     if provider == "yabai" {
       #expect(throws: YabaiConfigurationError.self) {
         try YabaiConfigurationComposer().compose(defaultsURL: defaults, profile: conflict)
@@ -99,7 +100,7 @@ struct DesktopPersonalConfigurationTests {
       "schema_version = 1\n[yabai]\nconfiguration = \"personal.sh\"\n",
       source: root.appending(path: "profile.toml"))
     let composition = try YabaiConfigurationComposer().compose(
-      defaultsURL: repository.appending(path: "Desktop/yabai/defaults.toml"), profile: profile)
+      defaultsURL: repositoryRoot.appending(path: "Desktop/yabai/defaults.toml"), profile: profile)
     let stub = root.appending(path: "yabai")
     let log = root.appending(path: "commands")
     try "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '\(log.path)'\n".write(
@@ -126,11 +127,6 @@ struct DesktopPersonalConfigurationTests {
         try #require(commands.range(of: "window_gap 5")).lowerBound
           < #require(commands.range(of: "window_gap 123")).lowerBound)
     }
-  }
-
-  private var repository: URL {
-    URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-      .deletingLastPathComponent()
   }
 
   private func temporaryDirectory() throws -> URL {

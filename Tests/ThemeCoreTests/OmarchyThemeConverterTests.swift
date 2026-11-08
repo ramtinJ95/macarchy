@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import ImageIO
 import TestSafety
+import TestSupport
 import Testing
 
 @testable import ThemeCore

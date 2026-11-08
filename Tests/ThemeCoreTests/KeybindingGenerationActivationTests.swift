@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -6,7 +7,7 @@ import Testing
 struct KeybindingGenerationActivationTests {
   @Test
   func stagesSealsSelectsAndRollsBackAFirstGeneration() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-activation")
     defer { try? FileManager.default.removeItem(at: root) }
     let composition = try composition()
     let activator = KeybindingGenerationActivator(stateRoot: root)
@@ -30,7 +31,7 @@ struct KeybindingGenerationActivationTests {
   @Test
   func publishesWritableStagingBeforeSealingTheFinalGeneration() throws {
     struct InvalidPublicationOrder: Error {}
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-activation")
     defer { try? FileManager.default.removeItem(at: root) }
     let generations = root.appending(
       path: "keybindings/generations",
@@ -78,7 +79,7 @@ struct KeybindingGenerationActivationTests {
   @Test
   func pointerFailureLeavesAValidUnselectedGenerationAndNoTemporaryPointer() throws {
     struct Injected: Error {}
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-activation")
     defer { try? FileManager.default.removeItem(at: root) }
     let activator = KeybindingGenerationActivator(
       stateRoot: root,
@@ -99,7 +100,7 @@ struct KeybindingGenerationActivationTests {
 
   @Test
   func startupRecoveryRemovesOnlyValidatedStagingAndPointerResidue() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-activation")
     defer { try? FileManager.default.removeItem(at: root) }
     let keybindings = root.appending(path: "keybindings", directoryHint: .isDirectory)
     let generations = keybindings.appending(path: "generations", directoryHint: .isDirectory)
@@ -125,7 +126,7 @@ struct KeybindingGenerationActivationTests {
 
   @Test
   func retentionRefusesUnknownInventoryWithoutDeletingKnownArtifacts() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-activation")
     defer { try? FileManager.default.removeItem(at: root) }
     let activator = KeybindingGenerationActivator(stateRoot: root)
     let first = try activator.stage(try composition())
@@ -158,7 +159,7 @@ struct KeybindingGenerationActivationTests {
 
   @Test
   func removingAnAlreadyAbsentOwnedGenerationIsIdempotent() throws {
-    let root = try temporaryDirectory()
+    let root = try makeTemporaryDirectory(named: "macarchy-keybinding-generation-activation")
     defer { try? FileManager.default.removeItem(at: root) }
     let activator = KeybindingGenerationActivator(stateRoot: root)
     let staged = try activator.stage(try composition())
@@ -188,14 +189,5 @@ struct KeybindingGenerationActivationTests {
       overrideText: nil,
       userCatalog: nil
     )
-  }
-
-  private func temporaryDirectory() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-keybinding-generation-activation-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
   }
 }

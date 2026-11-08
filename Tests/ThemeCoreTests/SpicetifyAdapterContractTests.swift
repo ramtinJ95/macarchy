@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -85,10 +86,7 @@ extension AdapterContractTests {
     }
 
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
     let configuration = try spicetifyConfiguration(root: root).directory
     let requests = Mutex([ProcessRequest]())
@@ -158,10 +156,7 @@ extension AdapterContractTests {
   @Test(SpicetifyAdapterBlockingScope())
   func spicetifyRuntimeEvidenceMakesMatchingRepeatANoopAndVersionsInvalidateIt() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let configuration = try spicetifyConfiguration(root: root).directory
     let versions = Mutex((spicetify: "2.44.0", spotify: "1.2.97"))
@@ -245,10 +240,7 @@ extension AdapterContractTests {
   @Test(SpicetifyAdapterBlockingScope())
   func spicetifySerializesOverlappingReconciliations() async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let configuration = try spicetifyConfiguration(root: root).directory
     let state = Mutex((refreshes: 0, active: 0, maximumActive: 0, releaseFirst: false))
@@ -299,10 +291,7 @@ extension AdapterContractTests {
     scenario: String, restoring: Bool
   ) async throws {
     let root = try temporaryDirectory()
-    defer {
-      makeWritableForRemoval(root)
-      try? FileManager.default.removeItem(at: root)
-    }
+    defer { removeTemporaryRoot(root) }
     _ = try testActivator(root: root).activate(package: catppuccinPackage())
     let configuration = try spicetifyConfiguration(root: root).directory
     let state = Mutex((queries: 0, requests: [ProcessRequest]()))

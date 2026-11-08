@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI

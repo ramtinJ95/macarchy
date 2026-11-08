@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -13,8 +14,7 @@ struct ThemeBrowserLazyLoadingTests {
   func supportedMachineCatalogTiming() throws {
     let path = try #require(ProcessInfo.processInfo.environment["MACARCHY_TEST_BROWSER_STATE_ROOT"])
     let root = URL(filePath: path)
-    let builtIn = URL(filePath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent().deletingLastPathComponent().appending(path: "Themes")
+    let builtIn = repositoryRoot.appending(path: "Themes")
     let repository = ThemeRepository(builtInRoot: builtIn, userRoot: root.appending(path: "themes"))
     let clock = ContinuousClock()
     let started = clock.now
@@ -167,8 +167,7 @@ private struct LazyBrowserFixture {
     ThemeRepository(builtInRoot: root.appending(path: "built-in"), userRoot: library)
   }
   private var source: URL {
-    URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-      .deletingLastPathComponent().appending(path: "Themes/catppuccin-mocha")
+    repositoryRoot.appending(path: "Themes/catppuccin-mocha")
   }
   var validImage: Data {
     get throws { try Data(contentsOf: source.appending(path: "wallpapers/1-totoro.webp")) }

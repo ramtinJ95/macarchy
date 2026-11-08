@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 import ThemeCore
 

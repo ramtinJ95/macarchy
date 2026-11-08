@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -6,7 +7,7 @@ import Testing
 struct SketchyBarConfigurationTests {
   @Test(arguments: [false, true])
   func generatedCommandsPreserveNativeArguments(toggle: Bool) throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       "schema_version = 1\n[sketchybar]\nleft = []\nright = [\"\(toggle ? "toggle" : "volume")\"]\n",
@@ -54,7 +55,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test func callbacksTreatMetacharactersInPluginPathsAsLiteralData() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let script = root.appending(path: "$HOME `id` 'quoted'.sh")
     try "#!/bin/sh\nprintf '%s\\n' \"$SENDER\" \"$0\"\n".write(
@@ -75,7 +76,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test func nativeMenuToggleIsGenerationScopedAndNeverKillsAnotherProcess() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     for enabled in [false, true] {
       let profile = try PortableProfileLoader().decode(
@@ -107,7 +108,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test func appleUsesOnlyTheSeparatePackagedHelperAndCanBeRemoved() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     for enabled in [false, true] {
       let profile = try PortableProfileLoader().decode(
@@ -129,7 +130,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test func mediaHasOnePollerAndSelectableControlsWithoutDeprecatedEvents() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     for enabled in [false, true] {
       let profile = try PortableProfileLoader().decode(
@@ -148,7 +149,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test func calendarDefaultsAdaptButExplicitPositionsRemainAuthoritative() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     for explicit in [false, true] {
       let profile = try PortableProfileLoader().decode(
@@ -207,7 +208,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test func disablingClockAlsoRemovesItsAutomaticUpdateChecks() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       "schema_version = 1\n[sketchybar]\nleft = []\ncenter = []\nright = []\n",
@@ -228,7 +229,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func wifiHasOnePollerAndIndividuallyRemovedPopupInventory() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     for enabled in [false, true] {
       let profile = try PortableProfileLoader().decode(
@@ -254,7 +255,7 @@ struct SketchyBarConfigurationTests {
 
   @Test(arguments: [true, false])
   func automaticClockCanBeSelectedWithoutRestoringExcludedMedia(automatic: Bool) throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       """
@@ -276,7 +277,7 @@ struct SketchyBarConfigurationTests {
   }
 
   @Test func automaticClockRequiresAnEnabledClock() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       "schema_version = 1\n[sketchybar]\nright = []\nautomatic_clock = true\n",
@@ -294,7 +295,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func metricsAreIndividuallyPositionedAndRemoved() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     for modules in [[], ["cpu"], ["memory"], ["cpu", "memory"]] {
       let selected = modules.map { "\"\($0)\"" }.joined(separator: ",")
@@ -318,7 +319,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func composesTheCompleteDeterministicPersonalDefault() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       "schema_version = 1\n",
@@ -379,7 +380,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func batteryIsPositionedAndDisabledThroughTheExistingLayout() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     for enabled in [false, true] {
       let profile = try PortableProfileLoader().decode(
@@ -404,7 +405,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func disabledDesktopKeepsTheBarAndMakesSpacesVisiblyUnavailable() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       """
@@ -431,7 +432,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func profileControlsModuleVisibilityPositionOrderAndOptionalVolume() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       """
@@ -479,7 +480,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func hidingSpacesRemovesTheYabaiDependencyFromTheRenderedEntry() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       """
@@ -505,7 +506,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func copiesTheTrustedHookWithoutExecutingItAndIncludesItInGenerationIdentity() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let marker = root.appending(path: "executed")
     let hook = root.appending(path: "sketchybar.sh")
@@ -565,7 +566,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func rejectsInvalidTrustedHooksBeforeRendering() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     let outside = FileManager.default.temporaryDirectory.appending(
       path: "macarchy-sketchybar-outside-hook-\(UUID().uuidString).sh"
     )
@@ -637,7 +638,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func rejectsAnOverrideThatDuplicatesAPackagedModulePosition() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let profile = try PortableProfileLoader().decode(
       """
@@ -659,7 +660,7 @@ struct SketchyBarConfigurationTests {
 
   @Test
   func rejectsUnknownPackagedDefaultsBeforeRendering() throws {
-    let root = try configurationRoot()
+    let root = try makeTemporaryDirectory(named: "macarchy-sketchybar-configuration-tests")
     defer { try? FileManager.default.removeItem(at: root) }
     let invalid = root.appending(path: "defaults.toml")
     let original = try String(contentsOf: defaultsURL, encoding: .utf8)
@@ -683,20 +684,7 @@ struct SketchyBarConfigurationTests {
   }
 
   private var defaultsURL: URL {
-    URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Desktop/sketchybar/defaults.toml")
-  }
-
-  private func configurationRoot() throws -> URL {
-    let root = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-sketchybar-configuration-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory
-    )
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
+    repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml")
   }
 
   private func requireValidShellSyntax(

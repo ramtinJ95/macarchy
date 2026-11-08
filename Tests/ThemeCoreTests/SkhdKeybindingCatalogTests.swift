@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -194,10 +195,7 @@ struct SkhdKeybindingCatalogTests {
   }
 
   private func fixtureContents(_ name: String) throws -> String {
-    let root = URL(filePath: #filePath)
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appending(path: "Fixtures/Skhd", directoryHint: .isDirectory)
+    let root = repositoryRoot.appending(path: "Tests/Fixtures/Skhd", directoryHint: .isDirectory)
     return try String(contentsOf: root.appending(path: name), encoding: .utf8)
   }
 

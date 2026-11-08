@@ -1,6 +1,7 @@
 import Dispatch
 import Foundation
 import Synchronization
+import TestSupport
 import Testing
 
 @testable import MacarchyCLI
@@ -510,19 +511,11 @@ struct HomebrewLifecycleTests {
       ofItemAtPath: executable.path
     )
     try FileManager.default.copyItem(
-      at: URL(filePath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appending(path: "Themes"),
+      at: repositoryRoot.appending(path: "Themes"),
       to: resourceRoot.appending(path: "themes")
     )
     try FileManager.default.copyItem(
-      at: URL(filePath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appending(path: "Environment"),
+      at: repositoryRoot.appending(path: "Environment"),
       to: resourceRoot.appending(path: "environment")
     )
     try Data(

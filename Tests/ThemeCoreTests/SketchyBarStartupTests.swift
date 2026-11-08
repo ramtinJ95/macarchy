@@ -1,4 +1,5 @@
 import Foundation
+import TestSupport
 import Testing
 
 @testable import ThemeCore
@@ -127,9 +128,7 @@ struct SketchyBarStartupTests {
       right = ["clock"]
       """,
       source: root.appending(path: "profile.toml"))
-    let defaults = URL(filePath: #filePath)
-      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-      .appending(path: "Desktop/sketchybar/defaults.toml")
+    let defaults = repositoryRoot.appending(path: "Desktop/sketchybar/defaults.toml")
     let composition = try SketchyBarConfigurationComposer().compose(
       defaultsURL: defaults, profile: profile, stateRoot: root)
     let provider = root.appending(path: "desktop/sketchybar/current")
