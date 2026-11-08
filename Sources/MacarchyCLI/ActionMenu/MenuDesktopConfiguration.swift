@@ -79,27 +79,28 @@ struct MenuDesktopConfiguration {
       )
     }
     io.write(Self.notice(provider) + "\n")
-    guard
-      try io.confirm(
+    return try edit.publishReviewed(
+      approved: try io.confirm(
         "Save this connection and activate only this provider when the editor exits successfully? Saved files and intent remain on failure."
-      )
-    else { return nil }
-    return try ActivationLock(root: context.stateRoot).withLock {
-      try edit.validateBefore()
-      guard source.resolvingSymlinksInPath() == physical,
-        try BoundedRegularFile.readUTF8(at: physical) == reviewed,
-        try legacyUnchanged(),
-        try provider.inputsMatchGeneration(
-          profile: layered.profile, context: context,
-          excludingPersonalConfiguration: declared != nil),
-        try provider.managedGeneration(profile: layered.profile, context: context) == generation
-      else {
-        throw EnvironmentLifecycleError.blocked("reviewed connection changed; review again")
-      }
-      try edit.publish()
-      return try MenuDesktopEditSession.begin(
-        provider: provider, context: context, source: source, newConnection: true)
-    }
+      ),
+      lock: .activation,
+      replan: {
+        try edit.validateBefore()
+        guard source.resolvingSymlinksInPath() == physical,
+          try BoundedRegularFile.readUTF8(at: physical) == reviewed,
+          try legacyUnchanged(),
+          try provider.inputsMatchGeneration(
+            profile: layered.profile, context: context,
+            excludingPersonalConfiguration: declared != nil),
+          try provider.managedGeneration(profile: layered.profile, context: context) == generation
+        else {
+          throw EnvironmentLifecycleError.blocked("reviewed connection changed; review again")
+        }
+      },
+      effect: {
+        try MenuDesktopEditSession.begin(
+          provider: provider, context: context, source: source, newConnection: true)
+      })
   }
 
   static func notice(_ provider: DesktopPersonalProvider) -> String {
