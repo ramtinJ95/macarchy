@@ -29,7 +29,7 @@ struct EnvironmentNativeFileMigration: Sendable {
   var legacyTarget: String {
     stateRoot.appending(
       path: provider == .atuin
-        ? "environment/current/atuin/config.toml" : StarshipAdapter.bridgePath
+        ? StateLayout.environmentCurrentPath("atuin/config.toml") : StarshipAdapter.bridgePath
     ).path
   }
 
@@ -50,7 +50,7 @@ struct EnvironmentNativeFileMigration: Sendable {
   ) -> URL {
     Self(provider: .starship, homeDirectory: homeDirectory, stateRoot: stateRoot)
       .nativeTarget(in: ownership)
-      ?? stateRoot.appending(path: "environment/current/starship/behavior.toml")
+      ?? StateLayout(root: stateRoot).environmentArtifact("starship/behavior.toml")
   }
 
   private func nativeTargetIsAllowed(_ path: String) -> Bool {
@@ -114,8 +114,7 @@ struct EnvironmentNativeFileMigration: Sendable {
     }
     let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
     let palette = try BoundedRegularFile.read(
-      at: stateRoot.appending(
-        path: "generations/\(manifest.generationID)/generated/starship.toml")
+      at: manifest.artifactURL(root: stateRoot, path: "generated/starship.toml")
     ).data
     return try StarshipNativeConfiguration(url: nativeURL).seed(behavior: data, palette: palette)
   }
@@ -146,7 +145,8 @@ struct EnvironmentNativeFileMigration: Sendable {
       throw EnvironmentLifecycleError.drift(publicURL.path)
     }
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-    guard try generations.currentDestination() == "generations/\(ownership.generationID)" else {
+    guard try generations.currentDestination() == StateLayout.generationPath(ownership.generationID)
+    else {
       throw EnvironmentLifecycleError.drift("environment pointer and ownership disagree")
     }
     let data =
@@ -170,8 +170,8 @@ struct EnvironmentNativeFileMigration: Sendable {
     return (
       Plan(
         source: sourceURL?.path
-          ?? stateRoot.appending(
-            path: "environment/generations/\(ownership.generationID)/\(provider.artifact)"
+          ?? StateLayout(root: stateRoot).environmentGenerationArtifact(
+            ownership.generationID, provider.artifact
           ).path,
         destination: nativeURL.path, approval: digest,
         message: sourceURL != nil
@@ -200,7 +200,7 @@ struct EnvironmentNativeFileMigration: Sendable {
     else { throw EnvironmentLifecycleError.blocked("native migration changes unrelated ownership") }
     guard
       try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
-        == "generations/\(old.generationID)"
+        == StateLayout.generationPath(old.generationID)
     else {
       throw EnvironmentLifecycleError.drift("environment pointer changed during native migration")
     }
@@ -319,7 +319,7 @@ extension EnvironmentTransactionCoordinator {
   ) throws {
     let transaction = EnvironmentTransaction(
       operation: operation, previousOwnership: previous, proposedOwnership: proposed,
-      previousCurrentDestination: "generations/\(previous.generationID)")
+      previousCurrentDestination: StateLayout.generationPath(previous.generationID))
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     try store.writeTransaction(transaction)
     do {

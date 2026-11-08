@@ -88,7 +88,7 @@ struct EnvironmentHerdrOwnershipMigration {
     guard let ownership = try store.readOwnership(), var herdr = ownership.herdr,
       let expected = herdr.directoryLink, let recordedDevice = expected.device,
       try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
-        == "generations/\(ownership.generationID)"
+        == StateLayout.generationPath(ownership.generationID)
     else { throw ValidationError("no matching applied Herdr directory-link ownership to migrate") }
     let directory = homeDirectory.appending(path: ".config/herdr")
     let observed = try EnvironmentProviderInspector().capture(directory, directoryLink: nil)

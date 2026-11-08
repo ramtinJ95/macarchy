@@ -154,6 +154,6 @@ struct EnvironmentNeovimThemePreparation {
   }
 
   private func target(_ path: String) -> String {
-    stateRoot.appending(path: "environment/current/neovim/\(path)").path
+    StateLayout(root: stateRoot).environmentArtifact("neovim/\(path)").path
   }
 }

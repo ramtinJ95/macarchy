@@ -71,7 +71,7 @@ struct YabaiTransactionStore: Sendable {
 
   private var file: DesktopStateFile {
     DesktopStateFile(
-      stateRoot: stateRoot, directory: "desktop/yabai", name: "transaction.json",
+      stateRoot: stateRoot, directory: StateLayout.yabaiDirectory, name: "transaction.json",
       maximumSize: 65_536)
   }
 
@@ -118,7 +118,8 @@ struct YabaiProviderTransaction: Sendable {
   private var entry: URL { configurationDirectory.appending(path: "yabairc") }
 
   func retainedOriginalURL(nonce: UUID = UUID()) -> URL {
-    stateRoot.appending(path: "desktop/yabai/retained-\(nonce.uuidString.lowercased())")
+    stateRoot.appending(
+      path: "\(StateLayout.yabaiDirectory)/retained-\(nonce.uuidString.lowercased())")
   }
 
   /// Settles an interrupted transaction: rolls back an apply or completes a teardown.

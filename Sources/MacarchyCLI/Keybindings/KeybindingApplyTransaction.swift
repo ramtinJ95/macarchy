@@ -188,7 +188,7 @@ private struct KeybindingStateFiles {
   let stateRoot: URL
 
   private var directory: URL {
-    stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+    StateLayout(root: stateRoot).keybindings
   }
 
   /// Returns nil when the directory or the file is absent.

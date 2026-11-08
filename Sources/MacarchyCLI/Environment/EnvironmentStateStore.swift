@@ -6,7 +6,7 @@ struct EnvironmentStateStore: Sendable {
   let stateRoot: URL
 
   private var directory: URL {
-    stateRoot.appending(path: "environment", directoryHint: .isDirectory)
+    StateLayout(root: stateRoot).environment
   }
   private var ownershipURL: URL { directory.appending(path: "ownership.json") }
   private var transactionURL: URL { directory.appending(path: "transaction.json") }
@@ -190,7 +190,7 @@ struct EnvironmentStateStore: Sendable {
         : EnvironmentNativeFileConnection.ownershipChangeIsValid(transaction, stateRoot: stateRoot)
       return valid
         && transaction.previousCurrentDestination
-          == transaction.previousOwnership.map({ "generations/\($0.generationID)" })
+          == transaction.previousOwnership.map({ StateLayout.generationPath($0.generationID) })
         && transaction.previousThemeGenerationID == nil && transaction.rollbackThemeBridges.isEmpty
         && transaction.replacementNames.isEmpty
         && transaction.herdrRuntimeTarget == nil && transaction.herdrRuntimeVerified == nil
@@ -215,7 +215,8 @@ struct EnvironmentStateStore: Sendable {
         return false
       }
       return changeIsValid
-        && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
+        && transaction.previousCurrentDestination
+          == StateLayout.generationPath(previous.generationID)
         && transaction.previousThemeGenerationID == nil
         && transaction.rollbackThemeBridges.isEmpty
         && transaction.replacementNames.isEmpty
@@ -231,7 +232,8 @@ struct EnvironmentStateStore: Sendable {
       else { return false }
       return previous.replacingHerdr(oldHerdr.replacingManagedTheme(newHerdr.managedTheme))
         == proposed
-        && transaction.previousCurrentDestination == "generations/\(previous.generationID)"
+        && transaction.previousCurrentDestination
+          == StateLayout.generationPath(previous.generationID)
         && transaction.previousThemeGenerationID == nil
         && transaction.rollbackThemeBridges.isEmpty
         // A theme transaction reserves only Herdr's replacement.

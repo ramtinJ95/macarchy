@@ -74,7 +74,7 @@ struct SketchyBarTransactionStore: Sendable {
 
   private var file: DesktopStateFile {
     DesktopStateFile(
-      stateRoot: stateRoot, directory: "desktop/sketchybar", name: "transaction.json",
+      stateRoot: stateRoot, directory: StateLayout.sketchyBarDirectory, name: "transaction.json",
       maximumSize: 65_536)
   }
 
@@ -688,7 +688,7 @@ struct SketchyBarProviderTransaction: Sendable {
 
   func retainedOriginalURL(nonce: UUID = UUID()) -> URL {
     stateRoot.appending(
-      path: "desktop/sketchybar/retained-\(nonce.uuidString.lowercased())"
+      path: "\(StateLayout.sketchyBarDirectory)/retained-\(nonce.uuidString.lowercased())"
     )
   }
 

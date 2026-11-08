@@ -176,7 +176,7 @@ struct DesktopPlanCommandRunner: Sendable {
       diagnostics.append(
         DesktopPlanDiagnostic(
           code: "yabai_generation_invalid",
-          source: stateRoot.appending(path: "desktop/yabai/current").path,
+          source: stateRoot.appending(path: "\(StateLayout.yabaiDirectory)/current").path,
           message: yabaiGeneration.message
         )
       )
@@ -207,7 +207,7 @@ struct DesktopPlanCommandRunner: Sendable {
         diagnostics.append(
           DesktopPlanDiagnostic(
             code: "sketchybar_generation_invalid",
-            source: stateRoot.appending(path: "desktop/sketchybar/current").path,
+            source: stateRoot.appending(path: "\(StateLayout.sketchyBarDirectory)/current").path,
             message: sketchyBarGeneration.message
           )
         )
@@ -238,7 +238,7 @@ struct DesktopPlanCommandRunner: Sendable {
         diagnostics.append(
           DesktopPlanDiagnostic(
             code: "sketchybar_theme_palette_invalid",
-            source: stateRoot.appending(path: "current").path,
+            source: StateLayout(root: stateRoot).currentTheme.path,
             message: sketchyBarPalette.message
           )
         )

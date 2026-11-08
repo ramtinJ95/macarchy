@@ -938,9 +938,8 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
         "the active theme does not contain the managed SketchyBar shell palette"
       )
     }
-    let paletteURL = stateRoot.appending(
-      path: "current/\(SketchyBarConfigurationComposer.paletteArtifactPath)"
-    )
+    let paletteURL = StateLayout(root: stateRoot).currentThemeArtifact(
+      SketchyBarConfigurationComposer.paletteArtifactPath)
     let text = try BoundedRegularFile.readUTF8(at: paletteURL, maximumSize: 65_536)
     let values = text.split(separator: "\n").compactMap { line -> String? in
       let prefix = "MACARCHY_BAR_COLOR="
@@ -1074,7 +1073,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private func pluginPath(_ name: String) -> String {
-    stateRoot.appending(path: "desktop/sketchybar/current/plugins/\(name).sh").path
+    stateRoot.appending(path: "\(StateLayout.sketchyBarDirectory)/current/plugins/\(name).sh").path
   }
 
   private func query<Value: Decodable>(

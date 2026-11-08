@@ -27,7 +27,7 @@ struct KeybindingsDoctorCommandRunner: Sendable {
       )
     }
 
-    let transactionURL = stateRoot.appending(path: "keybindings/transaction.json")
+    let transactionURL = StateLayout(root: stateRoot).keybindingTransaction
     switch effectiveState.transaction.status {
     case .pending:
       if let transaction = effectiveState.transaction.pendingTransaction {

@@ -460,7 +460,8 @@ struct YabaiLifecycleEvidenceStore: Sendable {
 
   private var file: DesktopStateFile {
     DesktopStateFile(
-      stateRoot: stateRoot, directory: "desktop/yabai", name: "lifecycle.json", maximumSize: 32_768)
+      stateRoot: stateRoot, directory: StateLayout.yabaiDirectory, name: "lifecycle.json",
+      maximumSize: 32_768)
   }
 
   func read() throws -> YabaiLifecycleEvidence? {

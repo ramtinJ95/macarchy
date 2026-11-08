@@ -87,7 +87,7 @@ struct MenuNeovimSetup {
       io.write("Add only these missing theme links (no Lua or lockfile replacement):\n")
       for path in theme.links {
         io.write(
-          "  \(path) -> \(context.stateRoot.appending(path: "environment/current/neovim/\(path)").path)\n"
+          "  \(path) -> \(StateLayout(root: context.stateRoot).environmentArtifact("neovim/\(path)").path)\n"
         )
       }
       io.write(

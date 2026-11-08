@@ -67,7 +67,7 @@ struct EnvironmentNativeSeed: Sendable {
 
         """
     case .kitty:
-      let defaults = stateRoot.appending(path: "environment/current/kitty/defaults.conf").path
+      let defaults = StateLayout(root: stateRoot).environmentArtifact("kitty/defaults.conf").path
       guard !defaults.contains("$"),
         !defaults.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
       else {
@@ -92,7 +92,7 @@ struct EnvironmentNativeSeed: Sendable {
         let relative = String(artifact.path.dropFirst("neovim/".count))
         if EnvironmentNeovimMigration.themePaths.contains(relative) {
           return
-            "\(relative) -> \(stateRoot.appending(path: "environment/current/\(artifact.path)").path)"
+            "\(relative) -> \(StateLayout(root: stateRoot).environmentArtifact(artifact.path).path)"
         }
         return "\(relative):\n" + String(decoding: artifact.data, as: UTF8.self)
       }.joined(separator: "\n\n")
@@ -112,8 +112,7 @@ struct EnvironmentNativeSeed: Sendable {
         } else {
           let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
           palette = try BoundedRegularFile.read(
-            at: stateRoot.appending(
-              path: "generations/\(manifest.generationID)/generated/starship.toml")
+            at: manifest.artifactURL(root: stateRoot, path: "generated/starship.toml")
           ).data
         }
         contents = String(

@@ -6,7 +6,7 @@ enum YabaiServicePolicy: NativeUserServicePolicy {
   static let name = "yabai"
   static let label = "com.asmvik.yabai"
   static let supportedVersion = "7.1.25"
-  static let receiptPath = "desktop/yabai/service.json"
+  static let receiptPath = "\(StateLayout.yabaiDirectory)/service.json"
   // Unlike skhd, yabai 7.1.25's native stop also disables the job (ADR-0278).
   static let nativeStopDisablesJob = true
 

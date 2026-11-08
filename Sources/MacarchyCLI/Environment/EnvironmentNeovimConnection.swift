@@ -23,8 +23,7 @@ struct EnvironmentNeovimConnection {
     do {
       let theme = try ReconciliationStatusStore(root: stateRoot).activeManifest()
       _ = try BoundedRegularFile.read(
-        at: stateRoot.appending(
-          path: "generations/\(theme.generationID)/generated/neovim.lua"))
+        at: theme.artifactURL(root: stateRoot, path: NeovimAdapter.outputPath))
     } catch {
       throw EnvironmentLifecycleError.blocked(
         "Neovim connection requires a valid active theme; select or repair the theme first. \(error)"
@@ -46,7 +45,9 @@ struct EnvironmentNeovimConnection {
         "legacy environment adapter inventory requires reviewed migration first")
     }
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-    guard try generations.currentDestination() == previous.map({ "generations/\($0.generationID)" })
+    guard
+      try generations.currentDestination()
+        == previous.map({ StateLayout.generationPath($0.generationID) })
     else {
       throw EnvironmentLifecycleError.drift("environment pointer and ownership disagree")
     }
@@ -105,7 +106,7 @@ struct EnvironmentNeovimConnection {
       publicURL: publicURL, source: source, standard: plan.standard)
     let transaction = EnvironmentTransaction(
       operation: .neovimConnection, previousOwnership: plan.previous, proposedOwnership: proposed,
-      previousCurrentDestination: plan.previous.map { "generations/\($0.generationID)" })
+      previousCurrentDestination: plan.previous.map { StateLayout.generationPath($0.generationID) })
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     try store.writeTransaction(transaction)
     do {
@@ -207,7 +208,7 @@ struct EnvironmentNeovimConnection {
     let current = try generations.currentDestination()
     guard
       current == transaction.previousCurrentDestination
-        || current == "generations/\(proposed.generationID)"
+        || current == StateLayout.generationPath(proposed.generationID)
     else {
       throw EnvironmentLifecycleError.drift("environment pointer changed during Neovim connection")
     }

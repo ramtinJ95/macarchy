@@ -64,7 +64,9 @@ struct EnvironmentNativeFileConnection {
       throw EnvironmentLifecycleError.blocked("Existing ownership requires reviewed migration")
     }
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-    guard try generations.currentDestination() == previous.map({ "generations/\($0.generationID)" })
+    guard
+      try generations.currentDestination()
+        == previous.map({ StateLayout.generationPath($0.generationID) })
     else { throw EnvironmentLifecycleError.drift("Environment pointer and ownership disagree") }
     let theme = try ReconciliationStatusStore(root: stateRoot).activeManifest()
     let themeEncoder = JSONEncoder()
@@ -122,7 +124,9 @@ struct EnvironmentNativeFileConnection {
     let transaction = EnvironmentTransaction(
       operation: operation,
       previousOwnership: reviewed.previous, proposedOwnership: proposed,
-      previousCurrentDestination: reviewed.previous.map { "generations/\($0.generationID)" })
+      previousCurrentDestination: reviewed.previous.map {
+        StateLayout.generationPath($0.generationID)
+      })
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     try store.writeTransaction(transaction)
     do {
@@ -145,19 +149,20 @@ struct EnvironmentNativeFileConnection {
   }
 
   private func newRecords(standard: Bool) -> [EnvironmentOwnershipRecord] {
+    let layout = StateLayout(root: stateRoot)
     var links: [(EnvironmentEntryID, URL, String)] = []
     if !standard {
       let target: String
       switch provider {
-      case .zsh: target = stateRoot.appending(path: "environment/current/zsh/.zshrc").path
-      case .kitty: target = stateRoot.appending(path: "environment/current/kitty/kitty.conf").path
+      case .zsh: target = layout.environmentArtifact("zsh/.zshrc").path
+      case .kitty: target = layout.environmentArtifact("kitty/kitty.conf").path
       default: target = source.path
       }
       links.append((provider.entryID, publicURL, target))
     }
     if provider == .atuin {
       links.append(
-        (.atuinTheme, themeURL, stateRoot.appending(path: "current/generated/atuin.toml").path))
+        (.atuinTheme, themeURL, layout.currentThemeArtifact(AtuinAdapter.outputPath).path))
     }
     return links.map { id, url, target in
       EnvironmentOwnershipRecord(
@@ -262,7 +267,7 @@ struct EnvironmentNativeFileConnection {
     let owned = try store.readOwnership()
     guard
       current == transaction.previousCurrentDestination
-        || current == "generations/\(proposed.generationID)",
+        || current == StateLayout.generationPath(proposed.generationID),
       owned == transaction.previousOwnership || owned == proposed
     else {
       throw EnvironmentLifecycleError.drift(
