@@ -88,7 +88,7 @@ struct KeybindingsApplyCommandTests {
     #expect(
       try FileManager.default.destinationOfSymbolicLink(
         atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path
-      ) == KeybindingProviderInspector.managedTarget
+      ) == SkhdLayout.managedTarget
     )
 
     let teardown = try runner.teardownLocked(
@@ -204,7 +204,7 @@ struct KeybindingsApplyCommandTests {
     #expect(applied.succeeded)
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
     let teardown = try runner.teardownLocked(
       stateRoot: fixture.stateRoot,
@@ -294,7 +294,7 @@ struct KeybindingsApplyCommandTests {
     #expect(report["mutated"] as? Bool == true)
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget)
+        == SkhdLayout.managedTarget)
     #expect(lifecycle.calls.withLock { $0 } == ["preflight", "verify"])
   }
 
@@ -358,7 +358,7 @@ struct KeybindingsApplyCommandTests {
 
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
     #expect(lifecycle.calls.withLock { $0 } == ["preflight"])
   }
@@ -492,7 +492,7 @@ struct KeybindingsApplyCommandTests {
     #expect(
       try FileManager.default.destinationOfSymbolicLink(
         atPath: skhd.appending(path: "skhdrc").path
-      ) == KeybindingProviderInspector.managedTarget
+      ) == SkhdLayout.managedTarget
     )
     #expect(try Data(contentsOf: sourceEntry) == sourceBytes)
     #expect(lifecycle.calls.withLock { $0 } == callsBeforeDryRun + ["preflight"])
@@ -683,7 +683,7 @@ struct KeybindingsApplyCommandTests {
       try KeybindingLifecycleEvidence(
         generationID: staged.manifest.generationID,
         providerEntryPoint: fixture.home.appending(path: ".config/skhd/skhdrc").path,
-        providerTarget: KeybindingProviderInspector.managedTarget,
+        providerTarget: SkhdLayout.managedTarget,
         action: .restart,
         process: .testRunning
       )
@@ -1065,7 +1065,7 @@ struct KeybindingsApplyCommandTests {
     #expect(try store.read() == nil)
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
   }
 
@@ -1110,7 +1110,7 @@ struct KeybindingsApplyCommandTests {
     #expect(
       try FileManager.default.destinationOfSymbolicLink(
         atPath: skhd.appending(path: "skhdrc").path
-      ) == KeybindingProviderInspector.managedTarget
+      ) == SkhdLayout.managedTarget
     )
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: claim.path)
@@ -1391,7 +1391,7 @@ struct KeybindingsApplyCommandTests {
     #expect(try Data(contentsOf: claim) == foreign)
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
   }
 
@@ -1451,7 +1451,7 @@ struct KeybindingsApplyCommandTests {
 
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
   }
 
@@ -1527,7 +1527,7 @@ struct KeybindingsApplyCommandTests {
     let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
     try Data("alt - x : marker collision\n".utf8).write(to: entry)
     try setExtendedAttribute(
-      KeybindingProviderInspector.claimMarkerAttribute,
+      KeybindingProviderPrimitives.claimMarkerAttribute,
       value: "foreign",
       at: entry
     )
@@ -1623,7 +1623,7 @@ struct KeybindingsApplyCommandTests {
     #expect(raced.withLock { $0 })
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
   }
 
@@ -1778,7 +1778,7 @@ struct KeybindingsApplyCommandTests {
     }
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
   }
 
@@ -1809,7 +1809,7 @@ struct KeybindingsApplyCommandTests {
     )
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
   }
 
@@ -2115,11 +2115,11 @@ struct KeybindingsApplyCommandTests {
     #expect(try fixture.execute(runner: runner, json: true).succeeded)
     let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
     try removeExtendedAttribute(
-      KeybindingProviderInspector.claimMarkerAttribute,
+      KeybindingProviderPrimitives.claimMarkerAttribute,
       at: entry,
       symbolicLink: true
     )
-    let target = KeybindingProviderInspector.managedTarget
+    let target = SkhdLayout.managedTarget
     let legacy = SetupOwnershipRecord(
       id: KeybindingProviderInspector.ownershipID,
       phase: .applied,
@@ -2377,7 +2377,7 @@ struct KeybindingsApplyCommandTests {
     #expect(lifecycle.calls.withLock { $0 }.isEmpty)
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
     #expect(try KeybindingApplyTransactionStore(stateRoot: fixture.stateRoot).read() == nil)
   }
@@ -2768,7 +2768,7 @@ struct KeybindingsApplyCommandTests {
     #expect(!FileManager.default.fileExists(atPath: residue.path))
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
   }
 
@@ -2926,14 +2926,14 @@ struct KeybindingsApplyCommandTests {
     )
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: residue.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
 
     try KeybindingProviderTransaction(homeDirectory: fixture.home).restoreManagedEntry()
 
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: entry.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
     #expect(!FileManager.default.fileExists(atPath: residue.path))
   }
@@ -2974,7 +2974,7 @@ struct KeybindingsApplyCommandTests {
     #expect(!FileManager.default.fileExists(atPath: publication.path))
     #expect(
       try FileManager.default.destinationOfSymbolicLink(atPath: residue.path)
-        == KeybindingProviderInspector.managedTarget
+        == SkhdLayout.managedTarget
     )
     try FileManager.default.removeItem(at: entry)
 
@@ -3024,7 +3024,7 @@ struct KeybindingsApplyCommandTests {
     )
     try FileManager.default.createSymbolicLink(
       atPath: publication.path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
     let interrupted = KeybindingProviderTransaction(
       homeDirectory: fixture.home,

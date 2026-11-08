@@ -84,7 +84,7 @@ struct KeybindingsApplyFixture {
     let entry = home.appending(path: ".config/skhd/skhdrc")
     try FileManager.default.createSymbolicLink(
       atPath: entry.path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
     let record = SetupOwnershipRecord(
       id: KeybindingProviderInspector.ownershipID,
@@ -93,8 +93,8 @@ struct KeybindingsApplyFixture {
       targetPath: entry.path,
       backupPath: nil,
       originalDigest: nil,
-      installedDigest: sha256Digest(Data(KeybindingProviderInspector.managedTarget.utf8)),
-      linkDestination: KeybindingProviderInspector.managedTarget
+      installedDigest: sha256Digest(Data(SkhdLayout.managedTarget.utf8)),
+      linkDestination: SkhdLayout.managedTarget
     )
     try SetupOwnershipManager().persist(
       records: [record],
@@ -423,7 +423,7 @@ extension KeybindingsApplyCommandTests {
       count: SetupOwnershipManager.maximumExtendedAttributeValueSize + 1
     )
     try setSymbolicLinkExtendedAttribute(
-      KeybindingProviderInspector.claimMarkerAttribute,
+      KeybindingProviderPrimitives.claimMarkerAttribute,
       data: marker,
       at: symlink
     )
@@ -457,7 +457,7 @@ extension KeybindingsApplyCommandTests {
     #expect(after.st_ino == before.st_ino)
     #expect(
       try symbolicLinkExtendedAttributeSize(
-        KeybindingProviderInspector.claimMarkerAttribute,
+        KeybindingProviderPrimitives.claimMarkerAttribute,
         at: symlink
       ) == marker.count
     )

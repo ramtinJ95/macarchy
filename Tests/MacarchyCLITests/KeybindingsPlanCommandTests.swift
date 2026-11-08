@@ -137,7 +137,7 @@ struct KeybindingsPlanCommandTests {
     )
     try FileManager.default.createSymbolicLink(
       atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
 
     let initial = try execute(fixture, json: true, profileRequired: false)
@@ -181,7 +181,7 @@ struct KeybindingsPlanCommandTests {
     )
     try FileManager.default.createSymbolicLink(
       atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
     let initial = try execute(fixture, json: true, profileRequired: false)
     let initialReport = try jsonObject(initial.output)
@@ -322,7 +322,7 @@ struct KeybindingsPlanCommandTests {
     )
     try FileManager.default.createSymbolicLink(
       atPath: fixture.home.appending(path: ".config/skhd/skhdrc").path,
-      withDestinationPath: KeybindingProviderInspector.managedTarget
+      withDestinationPath: SkhdLayout.managedTarget
     )
     let existing = "cmd - x : existing generation\n"
     generation = try publishGeneration(
@@ -515,7 +515,7 @@ struct KeybindingsPlanCommandTests {
   private func writeOwnershipClaim(_ fixture: PlanFixture) throws {
     let setup = fixture.stateRoot.appending(path: "state/setup", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: setup, withIntermediateDirectories: true)
-    let target = KeybindingProviderInspector.managedTarget
+    let target = SkhdLayout.managedTarget
     let entry = fixture.home.appending(path: ".config/skhd/skhdrc")
     let record = SetupOwnershipRecord(
       id: KeybindingProviderInspector.ownershipID,
@@ -535,7 +535,7 @@ struct KeybindingsPlanCommandTests {
       to: setup.appending(path: "ownership.json")
     )
     try setSymbolicLinkExtendedAttribute(
-      KeybindingProviderInspector.claimMarkerAttribute,
+      KeybindingProviderPrimitives.claimMarkerAttribute,
       value: "01234567-89ab-cdef-0123-456789abcdef",
       at: entry
     )
