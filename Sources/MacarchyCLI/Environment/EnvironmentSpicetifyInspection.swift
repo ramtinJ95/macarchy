@@ -2,6 +2,8 @@ import Foundation
 import ThemeCore
 
 extension EnvironmentProviderInspector {
+  /// Spicetify adopts only an ordinary config-xpui.ini and accepts an external symlink only as a
+  /// complete exact tuple; it never installs the file.
   func inspectSpicetify(
     composition: EnvironmentComposition,
     homeDirectory: URL,
@@ -9,142 +11,70 @@ extension EnvironmentProviderInspector {
     ownership: EnvironmentSpicetifyOwnership?,
     legacyOwned: Bool,
     externallyAuthoritative: Bool
-  ) throws -> (
-    entry: EnvironmentEntryInspection?,
-    proposedOwnership: EnvironmentSpicetifyOwnership?,
-    externalEvidence: EnvironmentEntryEvidence?
-  ) {
-    guard
-      composition.profile.presets.spicetify || ownership != nil || legacyOwned
-        || externallyAuthoritative
-    else { return (nil, nil, nil) }
-
-    let url = homeDirectory.appending(path: ConsumerHomePath.spicetifyConfiguration)
-    if legacyOwned {
-      let evidence = try capture(url, directoryLink: nil)
-      guard evidence.kind == .regularFile,
-        try selectionIsManaged(at: url, evidence: evidence)
-      else { throw EnvironmentLifecycleError.drift("legacy setup-owned Spicetify selectors") }
-      return (
-        EnvironmentEntryInspection(
-          id: "spicetify_configuration",
+  ) throws -> KeyOwnedInspection<EnvironmentSpicetifyOwnership> {
+    try inspectLinkedSelector(
+      .spicetify, composition: composition, homeDirectory: homeDirectory, stateRoot: stateRoot,
+      ownership: ownership, legacyOwned: legacyOwned,
+      externallyAuthoritative: externallyAuthoritative,
+      isManaged: { url, evidence in try selectionIsManaged(at: url, evidence: evidence) },
+      inspectUnowned: { url, evidence, externalAncestor in
+        if evidence.kind == .symbolicLink || externalAncestor {
+          let exact = try spicetifyExternalTupleIsExact(
+            homeDirectory: homeDirectory,
+            stateRoot: stateRoot,
+            configurationEvidence: evidence
+          )
+          return (
+            EnvironmentEntryInspection(
+              id: "spicetify_configuration",
+              path: url.path,
+              status: exact ? .external : .unsupported,
+              ownership: exact ? "external_exact" : "external",
+              message: exact
+                ? "The complete exact Stow selector and color-link tuple remains externally owned."
+                : "A symlink-owned Spicetify configuration requires the complete exact selector and color-link tuple.",
+              evidence: evidence
+            ), nil, exact ? evidence : nil
+          )
+        }
+        guard evidence.kind == .regularFile else {
+          return (
+            EnvironmentEntryInspection(
+              id: "spicetify_configuration",
+              path: url.path,
+              status: .unsupported,
+              ownership: "external",
+              message:
+                "Spicetify config-xpui.ini must already be an ordinary file or a complete exact Stow tuple.",
+              evidence: evidence
+            ), nil, nil
+          )
+        }
+        let data = try configurationData(at: url, evidence: evidence)
+        let originalSelection = try SetupOwnershipManager().spicetifySelection(data, target: url)
+        let proposedOwnership = EnvironmentSpicetifyOwnership(
           path: url.path,
-          status: .external,
-          ownership: "legacy_setup",
-          message: "The working legacy setup-owned Spicetify selector tuple is preserved.",
-          evidence: evidence
-        ), nil, nil
-      )
-    }
-
-    if let ownership {
-      guard ownership.path == url.path,
-        try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
-      else { throw EnvironmentLifecycleError.blocked("Spicetify ownership path is invalid") }
-      let evidence = try capture(url, directoryLink: nil)
-      let exact =
-        try evidence.kind == .regularFile
-        && selectionIsManaged(at: url, evidence: evidence)
-      return (
-        EnvironmentEntryInspection(
-          id: "spicetify_configuration",
-          path: url.path,
-          status: exact
-            ? (composition.profile.presets.spicetify ? .managed : .restorationRequired)
-            : .drifted,
-          ownership: "macarchy",
-          message: exact
-            ? (composition.profile.presets.spicetify
-              ? "The Spicetify current_theme and color_scheme selectors are managed."
-              : "The disabled Spicetify selectors will be restored exactly.")
-            : "The owned Spicetify selectors drifted.",
-          evidence: nil
-        ),
-        composition.profile.presets.spicetify ? ownership : nil,
-        nil
-      )
-    }
-
-    if externallyAuthoritative {
-      let evidence = try capture(url, directoryLink: nil)
-      let exact = try spicetifyExternalTupleIsExact(
-        homeDirectory: homeDirectory,
-        stateRoot: stateRoot,
-        configurationEvidence: evidence
-      )
-      return (
-        EnvironmentEntryInspection(
-          id: "spicetify_configuration",
-          path: url.path,
-          status: exact ? .external : .drifted,
-          ownership: "external_exact",
-          message: exact
-            ? "The exact Spicetify selector and color-link tuple remains externally owned."
-            : "The externally owned Spicetify tuple drifted.",
-          evidence: evidence
-        ), nil, nil
-      )
-    }
-
-    guard composition.profile.presets.spicetify else { return (nil, nil, nil) }
-    let evidence = try capture(url, directoryLink: nil)
-    let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
-    if evidence.kind == .symbolicLink || externalAncestor {
-      let exact = try spicetifyExternalTupleIsExact(
-        homeDirectory: homeDirectory,
-        stateRoot: stateRoot,
-        configurationEvidence: evidence
-      )
-      return (
-        EnvironmentEntryInspection(
-          id: "spicetify_configuration",
-          path: url.path,
-          status: exact ? .external : .unsupported,
-          ownership: exact ? "external_exact" : "external",
-          message: exact
-            ? "The complete exact Stow selector and color-link tuple remains externally owned."
-            : "A symlink-owned Spicetify configuration requires the complete exact selector and color-link tuple.",
-          evidence: evidence
-        ), nil, exact ? evidence : nil
-      )
-    }
-    guard evidence.kind == .regularFile else {
-      return (
-        EnvironmentEntryInspection(
-          id: "spicetify_configuration",
-          path: url.path,
-          status: .unsupported,
-          ownership: "external",
-          message:
-            "Spicetify config-xpui.ini must already be an ordinary file or a complete exact Stow tuple.",
-          evidence: evidence
-        ), nil, nil
-      )
-    }
-    let data = try configurationData(at: url, evidence: evidence)
-    let originalSelection = try SetupOwnershipManager().spicetifySelection(data, target: url)
-    let proposedOwnership = EnvironmentSpicetifyOwnership(
-      path: url.path,
-      originalSelection: originalSelection
-    )
-    guard proposedOwnership.hasValidShape else {
-      throw EnvironmentLifecycleError.blocked(
-        "Spicetify selector values exceed the bounded restoration evidence contract"
-      )
-    }
-    return (
-      EnvironmentEntryInspection(
-        id: "spicetify_configuration",
-        path: url.path,
-        status: .adoptionRequired,
-        ownership: "external",
-        message:
-          "Only current_theme and color_scheme require reviewed adoption; all other Spicetify state remains external.",
-        evidence: evidence
-      ),
-      proposedOwnership,
-      evidence
-    )
+          originalSelection: originalSelection
+        )
+        guard proposedOwnership.hasValidShape else {
+          throw EnvironmentLifecycleError.blocked(
+            "Spicetify selector values exceed the bounded restoration evidence contract"
+          )
+        }
+        return (
+          EnvironmentEntryInspection(
+            id: "spicetify_configuration",
+            path: url.path,
+            status: .adoptionRequired,
+            ownership: "external",
+            message:
+              "Only current_theme and color_scheme require reviewed adoption; all other Spicetify state remains external.",
+            evidence: evidence
+          ),
+          proposedOwnership,
+          evidence
+        )
+      })
   }
 
   func spicetifyExternalTupleIsExact(

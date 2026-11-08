@@ -447,7 +447,8 @@ struct EnvironmentProviderInspector: Sendable {
           of: homeDirectory.appending(path: ConsumerHomePath.btopConfiguration))
       }
 
-      let codex = try inspectCodex(
+      let codex = try inspectSelector(
+        .codex, EnvironmentSelectorDocument<EnvironmentCodexOwnership>.codex,
         composition: composition,
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
@@ -457,10 +458,8 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = codex.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
-        [.codexTheme], in: allowed, label: "Codex", legacyLink: "Codex theme link",
-        legacyOwned: legacyOwned[.codex, default: false],
-        externallyAuthoritative: externallyAuthoritative[.codex, default: false]
-          && !composition.profile.presets.codex,
+        .codex, in: allowed, legacyOwned: legacyOwned[.codex, default: false],
+        externallyAuthoritative: externallyAuthoritative[.codex, default: false],
         composition: composition)
       if codex.proposedOwnership != nil {
         try recordMissingParents(
@@ -480,7 +479,8 @@ struct EnvironmentProviderInspector: Sendable {
           of: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration))
       }
 
-      let pi = try inspectPi(
+      let pi = try inspectSelector(
+        .pi, EnvironmentSelectorDocument<EnvironmentPiOwnership>.pi,
         composition: composition,
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
@@ -490,10 +490,8 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = pi.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
-        [.piTheme], in: allowed, label: "Pi", legacyLink: "Pi link",
-        legacyOwned: legacyOwned[.pi, default: false],
-        externallyAuthoritative: externallyAuthoritative[.pi, default: false]
-          && !composition.profile.presets.pi,
+        .pi, in: allowed, legacyOwned: legacyOwned[.pi, default: false],
+        externallyAuthoritative: externallyAuthoritative[.pi, default: false],
         composition: composition)
       if pi.proposedOwnership != nil {
         try recordMissingParents(of: homeDirectory.appending(path: ConsumerHomePath.piSettings))
@@ -509,10 +507,8 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = spicetify.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
-        [.spicetifyColor], in: allowed, label: "Spicetify",
-        legacyLink: "Spicetify color link", legacyOwned: legacyOwned[.spicetify, default: false],
-        externallyAuthoritative: externallyAuthoritative[.spicetify, default: false]
-          && !composition.profile.presets.spicetify,
+        .spicetify, in: allowed, legacyOwned: legacyOwned[.spicetify, default: false],
+        externallyAuthoritative: externallyAuthoritative[.spicetify, default: false],
         composition: composition)
 
       if composition.profile.presets.slack {
@@ -536,7 +532,8 @@ struct EnvironmentProviderInspector: Sendable {
         )
       }
 
-      let tuicr = try inspectTuicr(
+      let tuicr = try inspectSelector(
+        .tuicr, EnvironmentSelectorDocument<EnvironmentTuicrOwnership>.tuicr,
         composition: composition,
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
@@ -546,10 +543,8 @@ struct EnvironmentProviderInspector: Sendable {
       )
       if let entry = tuicr.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
-        [.tuicrTheme, .tuicrSyntax], in: allowed, label: "tuicr", legacyLink: "tuicr link",
-        legacyOwned: legacyOwned[.tuicr, default: false],
-        externallyAuthoritative: externallyAuthoritative[.tuicr, default: false]
-          && !composition.profile.presets.tuicr,
+        .tuicr, in: allowed, legacyOwned: legacyOwned[.tuicr, default: false],
+        externallyAuthoritative: externallyAuthoritative[.tuicr, default: false],
         composition: composition)
       if tuicr.proposedOwnership != nil {
         try recordMissingParents(
@@ -1131,17 +1126,16 @@ struct EnvironmentProviderInspector: Sendable {
   /// Inspects the theme links a preset keeps outside environment ownership: its working legacy
   /// setup-owned links, or its exact external tuple while the preset is disabled.
   private func preservedPresetLinks(
-    _ ids: [EnvironmentEntryID],
+    _ linked: EnvironmentLinkedPreset,
     in allowed: [EnvironmentEntryID: EnvironmentManagedEntry],
-    label: String,
-    legacyLink: String,
     legacyOwned: Bool,
     externallyAuthoritative: Bool,
     composition: EnvironmentComposition
   ) throws -> [EnvironmentEntryInspection] {
+    let entries = linked.themeLinks.map { allowed[$0]! }
     var inspections = [EnvironmentEntryInspection]()
     if legacyOwned {
-      for entry in ids.map({ allowed[$0]! }) {
+      for entry in entries {
         guard try managedEntryIsExact(entry) else {
           throw EnvironmentLifecycleError.drift("legacy setup-owned \(entry.id.rawValue)")
         }
@@ -1151,14 +1145,15 @@ struct EnvironmentProviderInspector: Sendable {
             path: entry.url.path,
             status: .external,
             ownership: "legacy_setup",
-            message: "The working legacy setup-owned \(legacyLink) is preserved.",
+            message:
+              "The working legacy setup-owned \(linked.inspectionWording.legacyLink) is preserved.",
             evidence: nil
           )
         )
       }
     }
-    if externallyAuthoritative {
-      for entry in ids.map({ allowed[$0]! }) {
+    if externallyAuthoritative, !linked.preset.isEnabled(in: composition.profile.presets) {
+      for entry in entries {
         let captured = try capture(entry.url, directoryLink: nil)
         guard try externalEntryIsExact(entry, evidence: captured, composition: composition) else {
           throw EnvironmentLifecycleError.drift("externally owned \(entry.id.rawValue)")
@@ -1169,7 +1164,8 @@ struct EnvironmentProviderInspector: Sendable {
             path: entry.url.path,
             status: .external,
             ownership: "external_exact",
-            message: "The exact \(label) tuple remains externally owned until disablement.",
+            message:
+              "The exact \(linked.file.label) tuple remains externally owned until disablement.",
             evidence: captured
           )
         )
@@ -1192,231 +1188,222 @@ struct EnvironmentProviderInspector: Sendable {
     }
   }
 
-  private func inspectCodex(
+  typealias KeyOwnedInspection<Ownership> = (
+    entry: EnvironmentEntryInspection?,
+    proposedOwnership: Ownership?,
+    externalEvidence: EnvironmentEntryEvidence?
+  )
+
+  /// Inspects a linked preset's key-owned selector file. Legacy setup ownership, Macarchy's own
+  /// ownership and an externally authoritative tuple are judged alike for every linked preset;
+  /// `inspectUnowned` judges the enabled preset's file when none of those govern it.
+  func inspectLinkedSelector<Ownership: EnvironmentPresetFileOwnership>(
+    _ linked: EnvironmentLinkedPreset,
     composition: EnvironmentComposition,
     homeDirectory: URL,
     stateRoot: URL,
-    ownership: EnvironmentCodexOwnership?,
+    ownership: Ownership?,
     legacyOwned: Bool,
-    externallyAuthoritative: Bool
-  ) throws -> (
-    entry: EnvironmentEntryInspection?,
-    proposedOwnership: EnvironmentCodexOwnership?,
-    externalEvidence: EnvironmentEntryEvidence?
-  ) {
-    guard
-      composition.profile.presets.codex || ownership != nil || legacyOwned
-        || externallyAuthoritative
-    else { return (nil, nil, nil) }
-    let url = homeDirectory.appending(path: ConsumerHomePath.codexConfiguration)
+    externallyAuthoritative: Bool,
+    isManaged: (URL, EnvironmentEntryEvidence) throws -> Bool,
+    inspectUnowned: (
+      _ url: URL, _ evidence: EnvironmentEntryEvidence, _ hasExternalAncestor: Bool
+    ) throws -> KeyOwnedInspection<Ownership>
+  ) throws -> KeyOwnedInspection<Ownership> {
+    let enabled = linked.preset.isEnabled(in: composition.profile.presets)
+    guard enabled || ownership != nil || legacyOwned || externallyAuthoritative else {
+      return (nil, nil, nil)
+    }
+    let url = homeDirectory.appending(path: linked.file.configurationPath)
+    let wording = linked.inspectionWording
+    func entry(
+      _ status: EnvironmentInspectionStatus, owner: String, message: String,
+      evidence: EnvironmentEntryEvidence?
+    ) -> EnvironmentEntryInspection {
+      EnvironmentEntryInspection(
+        id: linked.file.entryID, path: url.path, status: status, ownership: owner,
+        message: message, evidence: evidence)
+    }
     if legacyOwned {
       let evidence = try capture(url, directoryLink: nil)
-      guard evidence.kind == .regularFile,
-        try EnvironmentCodexDocument.matchesManaged(
-          configurationText(at: url, evidence: evidence), source: url)
-      else { throw EnvironmentLifecycleError.drift("legacy setup-owned Codex selector") }
+      guard evidence.kind == .regularFile, try isManaged(url, evidence) else {
+        throw EnvironmentLifecycleError.drift(wording.legacyDrift)
+      }
       return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.codexConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "legacy_setup",
-          message: "The working legacy setup-owned Codex integration is preserved.",
-          evidence: evidence
-        ), nil, nil
+        entry(
+          .external, owner: "legacy_setup", message: wording.legacyPreserved, evidence: evidence),
+        nil, nil
       )
     }
     if let ownership {
       guard ownership.path == url.path,
         try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
-      else { throw EnvironmentLifecycleError.blocked("Codex ownership path is invalid") }
-      let evidence = try capture(url, directoryLink: nil)
-      let exact: Bool
-      if evidence.kind == .regularFile {
-        exact = try EnvironmentCodexDocument.matchesManaged(
-          configurationText(at: url, evidence: evidence), source: url)
-      } else {
-        exact = false
+      else {
+        throw EnvironmentLifecycleError.blocked("\(linked.file.label) ownership path is invalid")
       }
+      let evidence = try capture(url, directoryLink: nil)
+      let exact = try evidence.kind == .regularFile && isManaged(url, evidence)
       return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.codexConfiguration.rawValue,
-          path: url.path,
-          status: exact
-            ? (composition.profile.presets.codex ? .managed : .restorationRequired)
-            : .drifted,
-          ownership: "macarchy",
-          message: exact
-            ? (composition.profile.presets.codex
-              ? "The Codex [tui].theme key is managed."
-              : "The disabled Codex [tui].theme key will be restored.")
-            : "The owned Codex [tui].theme key drifted.",
-          evidence: nil
-        ),
-        composition.profile.presets.codex ? ownership : nil,
+        entry(
+          exact ? (enabled ? .managed : .restorationRequired) : .drifted, owner: "macarchy",
+          message: exact ? (enabled ? wording.managed : wording.restored) : wording.drifted,
+          evidence: nil),
+        enabled ? ownership : nil,
         nil
       )
     }
     if externallyAuthoritative {
       let evidence = try capture(url, directoryLink: nil)
-      guard
-        try codexExternalTupleIsExact(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot,
-          configurationEvidence: evidence
-        )
-      else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.codexConfiguration.rawValue,
-            path: url.path,
-            status: .drifted,
-            ownership: "external_exact",
-            message: "The externally owned Codex tuple drifted.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
+      let exact = try externalTupleIsExact(
+        linked, homeDirectory: homeDirectory, stateRoot: stateRoot,
+        configurationEvidence: evidence)
       return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.codexConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "external_exact",
-          message: "The exact Codex tuple remains externally owned until disablement.",
-          evidence: evidence
-        ), nil, nil
+        entry(
+          exact ? .external : .drifted, owner: "external_exact",
+          message: exact
+            ? wording.externalTupleExact
+            : "The externally owned \(linked.file.label) tuple drifted.",
+          evidence: evidence),
+        nil, nil
       )
     }
-    guard composition.profile.presets.codex else { return (nil, nil, nil) }
+    guard enabled else { return (nil, nil, nil) }
     let evidence = try capture(url, directoryLink: nil)
     let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
+    return try inspectUnowned(url, evidence, externalAncestor)
+  }
+
+  /// Inspects the Codex, Pi or tuicr selector file through its document rules.
+  private func inspectSelector<Ownership: EnvironmentPresetFileOwnership>(
+    _ linked: EnvironmentLinkedPreset,
+    _ document: EnvironmentSelectorDocument<Ownership>,
+    composition: EnvironmentComposition,
+    homeDirectory: URL,
+    stateRoot: URL,
+    ownership: Ownership?,
+    legacyOwned: Bool,
+    externallyAuthoritative: Bool
+  ) throws -> KeyOwnedInspection<Ownership> {
+    try inspectLinkedSelector(
+      linked, composition: composition, homeDirectory: homeDirectory, stateRoot: stateRoot,
+      ownership: ownership, legacyOwned: legacyOwned,
+      externallyAuthoritative: externallyAuthoritative,
+      isManaged: { url, evidence in
+        try Ownership.matchesManaged(
+          selectorData(document, at: url, evidence: evidence, hasExternalAncestor: false),
+          at: url)
+      },
+      inspectUnowned: { url, evidence, externalAncestor in
+        try inspectUnownedSelector(
+          linked, document, at: url, evidence: evidence, hasExternalAncestor: externalAncestor,
+          homeDirectory: homeDirectory, stateRoot: stateRoot)
+      })
+  }
+
+  /// An external symlink must carry the exact selector and links, an ordinary file is exact or
+  /// adopted, and an absent file is installed.
+  private func inspectUnownedSelector<Ownership: EnvironmentPresetFileOwnership>(
+    _ linked: EnvironmentLinkedPreset,
+    _ document: EnvironmentSelectorDocument<Ownership>,
+    at url: URL,
+    evidence: EnvironmentEntryEvidence,
+    hasExternalAncestor externalAncestor: Bool,
+    homeDirectory: URL,
+    stateRoot: URL
+  ) throws -> KeyOwnedInspection<Ownership> {
+    func entry(
+      _ status: EnvironmentInspectionStatus, owner: String, message: String
+    ) -> EnvironmentEntryInspection {
+      EnvironmentEntryInspection(
+        id: linked.file.entryID, path: url.path, status: status, ownership: owner,
+        message: message, evidence: evidence)
+    }
     if evidence.kind == .symbolicLink || externalAncestor {
-      let text = try externalConfigurationText(
-        at: url,
-        evidence: evidence,
-        hasExternalAncestor: externalAncestor,
-        label: "Codex configuration"
-      )
-      guard try EnvironmentCodexDocument.matchesManaged(text, source: url) else {
+      let data = try selectorData(
+        document, at: url, evidence: evidence, hasExternalAncestor: externalAncestor)
+      guard try Ownership.matchesManaged(data, at: url) else {
         return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.codexConfiguration.rawValue,
-            path: url.path,
-            status: .unsupported,
-            ownership: "external",
-            message: "A divergent Codex selector is behind an externally owned symlink.",
-            evidence: evidence
-          ), nil, nil
+          entry(
+            .unsupported, owner: "external",
+            message:
+              "A divergent \(linked.file.label) selector is behind an externally owned symlink."),
+          nil, nil
         )
       }
       guard
         try externalLinksAreExact(
-          [.codexTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
+          Set(linked.themeLinks), homeDirectory: homeDirectory, stateRoot: stateRoot)
       else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.codexConfiguration.rawValue,
-            path: url.path,
-            status: .unsupported,
-            ownership: "external",
-            message: "The externally owned Codex selector requires the exact theme link.",
-            evidence: evidence
-          ), nil, nil
-        )
+        return (entry(.unsupported, owner: "external", message: document.linksRequired), nil, nil)
       }
       return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.codexConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "external_exact",
-          message: "The exact Codex selector and theme link remain externally owned.",
-          evidence: evidence
-        ), nil, evidence
+        entry(.external, owner: "external_exact", message: document.linkedExact), nil, evidence
       )
     }
     if evidence.kind == .regularFile {
-      let text = try configurationText(at: url, evidence: evidence)
-      if try EnvironmentCodexDocument.matchesManaged(text, source: url) {
+      let data = try selectorData(document, at: url, evidence: evidence, hasExternalAncestor: false)
+      if try Ownership.matchesManaged(data, at: url) {
         return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.codexConfiguration.rawValue,
-            path: url.path,
-            status: .external,
-            ownership: "external_exact",
-            message: "The exact Codex [tui].theme key remains externally owned.",
-            evidence: evidence
-          ), nil, nil
+          entry(.external, owner: "external_exact", message: document.selectorExact), nil, nil
         )
       }
-      let proposed = try EnvironmentCodexDocument.ownership(for: text, source: url)
+      let proposed = try document.adopting(data, url)
       return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.codexConfiguration.rawValue,
-          path: url.path,
-          status: .adoptionRequired,
-          ownership: "external",
-          message: "The existing Codex [tui].theme key requires reviewed adoption.",
-          evidence: evidence
-        ), proposed, evidence
+        entry(.adoptionRequired, owner: "external", message: document.adoption), proposed, evidence
       )
     }
-    if evidence.kind == .absent, !externalAncestor {
+    // An external ancestor was judged above, so an absent file has only owned parents.
+    if evidence.kind == .absent {
       return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.codexConfiguration.rawValue,
-          path: url.path,
-          status: .installRequired,
-          ownership: "external",
-          message: "Minimal Codex [tui].theme configuration will be installed.",
-          evidence: evidence
-        ),
-        EnvironmentCodexOwnership(
-          path: url.path,
-          originalFileExisted: false,
-          originalSelector: nil,
-          introducedTable: true,
-          insertedSeparatorBeforeTable: false,
-          insertedSeparatorAfterTable: false
-        ), evidence
+        entry(.installRequired, owner: "external", message: document.installation),
+        document.installing(url), evidence
       )
     }
-    return (
-      EnvironmentEntryInspection(
-        id: EnvironmentEntryID.codexConfiguration.rawValue,
-        path: url.path,
-        status: .unsupported,
-        ownership: "external",
-        message: "The Codex configuration cannot be safely adopted.",
-        evidence: evidence
-      ), nil, nil
-    )
+    return (entry(.unsupported, owner: "external", message: document.unsupported), nil, nil)
   }
 
-  func codexExternalTupleIsExact(
+  /// Reads a selector file, following an external symlink chain when one owns it. A text
+  /// selector must decode as UTF-8, and each read path reports that failure in its own words.
+  private func selectorData<Ownership: EnvironmentPresetFileOwnership>(
+    _ document: EnvironmentSelectorDocument<Ownership>,
+    at url: URL,
+    evidence: EnvironmentEntryEvidence,
+    hasExternalAncestor: Bool
+  ) throws -> Data {
+    let label = Ownership.filesystem.configurationLabel
+    guard evidence.kind == .symbolicLink || hasExternalAncestor else {
+      return document.isText
+        ? Data(try configurationText(at: url, evidence: evidence).utf8)
+        : try configurationData(at: url, evidence: evidence)
+    }
+    return document.isText
+      ? Data(
+        try externalConfigurationText(
+          at: url, evidence: evidence, hasExternalAncestor: hasExternalAncestor, label: label
+        ).utf8)
+      : try externalConfigurationData(
+        at: url, evidence: evidence, hasExternalAncestor: hasExternalAncestor, label: label)
+  }
+
+  private func selectorTupleIsExact<Ownership: EnvironmentPresetFileOwnership>(
+    _ linked: EnvironmentLinkedPreset,
+    _ document: EnvironmentSelectorDocument<Ownership>,
     homeDirectory: URL,
     stateRoot: URL,
-    configurationEvidence: EnvironmentEntryEvidence? = nil
+    configurationEvidence: EnvironmentEntryEvidence?
   ) throws -> Bool {
-    let configuration = homeDirectory.appending(path: ConsumerHomePath.codexConfiguration)
+    let configuration = homeDirectory.appending(path: linked.file.configurationPath)
     return try externalTupleIsExact(
       configuration: configuration,
-      links: [.codexTheme],
+      links: Set(linked.themeLinks),
       homeDirectory: homeDirectory,
       stateRoot: stateRoot,
       configurationEvidence: configurationEvidence
     ) { evidence, externalAncestor in
-      let text =
-        evidence.kind == .symbolicLink || externalAncestor
-        ? try externalConfigurationText(
-          at: configuration,
-          evidence: evidence,
-          hasExternalAncestor: externalAncestor,
-          label: "Codex configuration"
-        )
-        : try configurationText(at: configuration, evidence: evidence)
-      return try EnvironmentCodexDocument.matchesManaged(text, source: configuration)
+      try Ownership.matchesManaged(
+        selectorData(
+          document, at: configuration, evidence: evidence, hasExternalAncestor: externalAncestor),
+        at: configuration)
     }
   }
 
@@ -1430,11 +1417,13 @@ struct EnvironmentProviderInspector: Sendable {
   ) throws -> Bool {
     switch linked {
     case .codex:
-      try codexExternalTupleIsExact(
+      try selectorTupleIsExact(
+        linked, EnvironmentSelectorDocument<EnvironmentCodexOwnership>.codex,
         homeDirectory: homeDirectory, stateRoot: stateRoot,
         configurationEvidence: configurationEvidence)
     case .pi:
-      try piExternalTupleIsExact(
+      try selectorTupleIsExact(
+        linked, EnvironmentSelectorDocument<EnvironmentPiOwnership>.pi,
         homeDirectory: homeDirectory, stateRoot: stateRoot,
         configurationEvidence: configurationEvidence)
     case .spicetify:
@@ -1442,7 +1431,8 @@ struct EnvironmentProviderInspector: Sendable {
         homeDirectory: homeDirectory, stateRoot: stateRoot,
         configurationEvidence: configurationEvidence)
     case .tuicr:
-      try tuicrExternalTupleIsExact(
+      try selectorTupleIsExact(
+        linked, EnvironmentSelectorDocument<EnvironmentTuicrOwnership>.tuicr,
         homeDirectory: homeDirectory, stateRoot: stateRoot,
         configurationEvidence: configurationEvidence)
     }
@@ -1677,484 +1667,6 @@ struct EnvironmentProviderInspector: Sendable {
         evidence: evidence
       ), nil, nil
     )
-  }
-
-  private func inspectPi(
-    composition: EnvironmentComposition,
-    homeDirectory: URL,
-    stateRoot: URL,
-    ownership: EnvironmentPiOwnership?,
-    legacyOwned: Bool,
-    externallyAuthoritative: Bool
-  ) throws -> (
-    entry: EnvironmentEntryInspection?,
-    proposedOwnership: EnvironmentPiOwnership?,
-    externalEvidence: EnvironmentEntryEvidence?
-  ) {
-    guard
-      composition.profile.presets.pi || ownership != nil || legacyOwned
-        || externallyAuthoritative
-    else { return (nil, nil, nil) }
-    let url = homeDirectory.appending(path: ConsumerHomePath.piSettings)
-    if legacyOwned {
-      let evidence = try capture(url, directoryLink: nil)
-      guard evidence.kind == .regularFile,
-        try EnvironmentPiDocument.matchesManaged(
-          configurationData(at: url, evidence: evidence),
-          source: url
-        )
-      else { throw EnvironmentLifecycleError.drift("legacy setup-owned Pi selector") }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.piConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "legacy_setup",
-          message: "The working legacy setup-owned Pi integration is preserved.",
-          evidence: evidence
-        ), nil, nil
-      )
-    }
-    if let ownership {
-      guard ownership.path == url.path,
-        try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
-      else { throw EnvironmentLifecycleError.blocked("Pi ownership path is invalid") }
-      let evidence = try capture(url, directoryLink: nil)
-      let exact: Bool
-      if evidence.kind == .regularFile {
-        exact = try EnvironmentPiDocument.matchesManaged(
-          configurationData(at: url, evidence: evidence),
-          source: url
-        )
-      } else {
-        exact = false
-      }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.piConfiguration.rawValue,
-          path: url.path,
-          status: exact
-            ? (composition.profile.presets.pi ? .managed : .restorationRequired) : .drifted,
-          ownership: "macarchy",
-          message: exact
-            ? (composition.profile.presets.pi
-              ? "The Pi theme member is managed."
-              : "The disabled Pi theme member will be restored.")
-            : "The owned Pi theme member drifted.",
-          evidence: nil
-        ),
-        composition.profile.presets.pi ? ownership : nil,
-        nil
-      )
-    }
-    if externallyAuthoritative {
-      let evidence = try capture(url, directoryLink: nil)
-      guard
-        try piExternalTupleIsExact(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot,
-          configurationEvidence: evidence
-        )
-      else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.piConfiguration.rawValue,
-            path: url.path,
-            status: .drifted,
-            ownership: "external_exact",
-            message: "The externally owned Pi tuple drifted.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.piConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "external_exact",
-          message: "The exact Pi tuple remains externally owned until disablement.",
-          evidence: evidence
-        ), nil, nil
-      )
-    }
-    guard composition.profile.presets.pi else { return (nil, nil, nil) }
-    let evidence = try capture(url, directoryLink: nil)
-    let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
-    let externalConfiguration = evidence.kind == .symbolicLink || externalAncestor
-    if externalConfiguration {
-      let data = try externalConfigurationData(
-        at: url,
-        evidence: evidence,
-        hasExternalAncestor: externalAncestor,
-        label: "Pi settings"
-      )
-      guard try EnvironmentPiDocument.matchesManaged(data, source: url) else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.piConfiguration.rawValue,
-            path: url.path,
-            status: .unsupported,
-            ownership: "external",
-            message: "A divergent Pi selector is behind an externally owned symlink.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      guard
-        try externalLinksAreExact(
-          [.piTheme], homeDirectory: homeDirectory, stateRoot: stateRoot)
-      else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.piConfiguration.rawValue,
-            path: url.path,
-            status: .unsupported,
-            ownership: "external",
-            message: "The externally owned Pi selector requires the exact watched theme link.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.piConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "external_exact",
-          message: "The exact Pi selector and watched theme link remain externally owned.",
-          evidence: evidence
-        ), nil, evidence
-      )
-    }
-    if evidence.kind == .regularFile {
-      let data = try configurationData(at: url, evidence: evidence)
-      if try EnvironmentPiDocument.matchesManaged(data, source: url) {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.piConfiguration.rawValue,
-            path: url.path,
-            status: .external,
-            ownership: "external_exact",
-            message: "The exact Pi theme member remains externally owned.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      let proposed = try EnvironmentPiDocument.ownership(for: data, source: url)
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.piConfiguration.rawValue,
-          path: url.path,
-          status: .adoptionRequired,
-          ownership: "external",
-          message: "The existing Pi theme member requires reviewed adoption.",
-          evidence: evidence
-        ), proposed, evidence
-      )
-    }
-    if evidence.kind == .absent, !externalAncestor {
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.piConfiguration.rawValue,
-          path: url.path,
-          status: .installRequired,
-          ownership: "external",
-          message: "Minimal Pi settings containing only the theme member will be installed.",
-          evidence: evidence
-        ),
-        EnvironmentPiOwnership(path: url.path, originalFileExisted: false, originalMember: nil),
-        evidence
-      )
-    }
-    return (
-      EnvironmentEntryInspection(
-        id: EnvironmentEntryID.piConfiguration.rawValue,
-        path: url.path,
-        status: .unsupported,
-        ownership: "external",
-        message: "Pi settings cannot be safely adopted.",
-        evidence: evidence
-      ), nil, nil
-    )
-  }
-
-  func piExternalTupleIsExact(
-    homeDirectory: URL,
-    stateRoot: URL,
-    configurationEvidence: EnvironmentEntryEvidence? = nil
-  ) throws -> Bool {
-    let configuration = homeDirectory.appending(path: ConsumerHomePath.piSettings)
-    return try externalTupleIsExact(
-      configuration: configuration,
-      links: [.piTheme],
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot,
-      configurationEvidence: configurationEvidence
-    ) { evidence, externalAncestor in
-      try EnvironmentPiDocument.matchesManaged(
-        externalConfigurationData(
-          at: configuration,
-          evidence: evidence,
-          hasExternalAncestor: externalAncestor,
-          label: "Pi settings"
-        ),
-        source: configuration
-      )
-    }
-  }
-
-  private func inspectTuicr(
-    composition: EnvironmentComposition,
-    homeDirectory: URL,
-    stateRoot: URL,
-    ownership: EnvironmentTuicrOwnership?,
-    legacyOwned: Bool,
-    externallyAuthoritative: Bool
-  ) throws -> (
-    entry: EnvironmentEntryInspection?,
-    proposedOwnership: EnvironmentTuicrOwnership?,
-    externalEvidence: EnvironmentEntryEvidence?
-  ) {
-    guard
-      composition.profile.presets.tuicr || ownership != nil || legacyOwned
-        || externallyAuthoritative
-    else {
-      return (nil, nil, nil)
-    }
-    let url = homeDirectory.appending(path: ConsumerHomePath.tuicrConfiguration)
-    if legacyOwned {
-      let evidence = try capture(url, directoryLink: nil)
-      guard evidence.kind == .regularFile,
-        try EnvironmentTuicrDocument.matchesManaged(
-          configurationText(at: url, evidence: evidence),
-          source: url
-        )
-      else {
-        throw EnvironmentLifecycleError.drift("legacy setup-owned tuicr selector")
-      }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "legacy_setup",
-          message: "The working legacy setup-owned tuicr integration is preserved.",
-          evidence: evidence
-        ), nil, nil
-      )
-    }
-    if let ownership {
-      guard ownership.path == url.path,
-        try !hasSymlinkAncestor(url, stoppingAt: homeDirectory)
-      else { throw EnvironmentLifecycleError.blocked("tuicr ownership path is invalid") }
-      let evidence = try capture(url, directoryLink: nil)
-      let exact: Bool
-      if evidence.kind == .regularFile {
-        exact = try EnvironmentTuicrDocument.matchesManaged(
-          configurationText(at: url, evidence: evidence), source: url)
-      } else {
-        exact = false
-      }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-          path: url.path,
-          status: exact
-            ? (composition.profile.presets.tuicr ? .managed : .restorationRequired)
-            : .drifted,
-          ownership: "macarchy",
-          message: exact
-            ? (composition.profile.presets.tuicr
-              ? "The tuicr theme key is managed."
-              : "The disabled tuicr theme key will be restored.")
-            : "The owned tuicr theme key drifted.",
-          evidence: nil
-        ),
-        composition.profile.presets.tuicr ? ownership : nil,
-        nil
-      )
-    }
-    if externallyAuthoritative {
-      let evidence = try capture(url, directoryLink: nil)
-      guard
-        try tuicrExternalTupleIsExact(
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot,
-          configurationEvidence: evidence
-        )
-      else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-            path: url.path,
-            status: .drifted,
-            ownership: "external_exact",
-            message: "The externally owned tuicr tuple drifted.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "external_exact",
-          message: "The exact tuicr tuple remains externally owned until disablement.",
-          evidence: evidence
-        ), nil, nil
-      )
-    }
-    guard composition.profile.presets.tuicr else { return (nil, nil, nil) }
-    let evidence = try capture(url, directoryLink: nil)
-    let externalAncestor = try hasSymlinkAncestor(url, stoppingAt: homeDirectory)
-    let externalConfiguration = evidence.kind == .symbolicLink || externalAncestor
-    if externalConfiguration {
-      let text = try externalConfigurationText(
-        at: url,
-        evidence: evidence,
-        hasExternalAncestor: externalAncestor,
-        label: "tuicr configuration"
-      )
-      guard try EnvironmentTuicrDocument.matchesManaged(text, source: url) else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-            path: url.path,
-            status: .unsupported,
-            ownership: "external",
-            message: "A divergent tuicr selector is behind an externally owned symlink.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      guard
-        try externalLinksAreExact(
-          [.tuicrTheme, .tuicrSyntax],
-          homeDirectory: homeDirectory,
-          stateRoot: stateRoot)
-      else {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-            path: url.path,
-            status: .unsupported,
-            ownership: "external",
-            message: "The externally owned tuicr selector requires both exact canonical links.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-          path: url.path,
-          status: .external,
-          ownership: "external_exact",
-          message: "The exact tuicr selector and canonical links remain externally owned.",
-          evidence: evidence
-        ), nil, evidence
-      )
-    }
-    if evidence.kind == .regularFile {
-      let text = try configurationText(at: url, evidence: evidence)
-      if try EnvironmentTuicrDocument.matchesManaged(text, source: url) {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-            path: url.path,
-            status: .external,
-            ownership: "external_exact",
-            message: "The exact tuicr theme key remains externally owned.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      if externalAncestor {
-        return (
-          EnvironmentEntryInspection(
-            id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-            path: url.path,
-            status: .unsupported,
-            ownership: "external",
-            message: "A divergent tuicr selector is below a symlink-owned directory.",
-            evidence: evidence
-          ), nil, nil
-        )
-      }
-      let proposed = try EnvironmentTuicrDocument.ownership(for: text, source: url)
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-          path: url.path,
-          status: .adoptionRequired,
-          ownership: "external",
-          message: "The existing tuicr theme key requires reviewed adoption.",
-          evidence: evidence
-        ),
-        EnvironmentTuicrOwnership(
-          path: url.path,
-          originalFileExisted: true,
-          originalSelector: proposed.originalSelector,
-          insertedSeparatorBefore: proposed.insertedSeparatorBefore
-        ), evidence
-      )
-    }
-    if evidence.kind == .absent, !externalAncestor {
-      return (
-        EnvironmentEntryInspection(
-          id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-          path: url.path,
-          status: .installRequired,
-          ownership: "external",
-          message: "The minimal tuicr theme selector will be installed.",
-          evidence: evidence
-        ),
-        EnvironmentTuicrOwnership(
-          path: url.path,
-          originalFileExisted: false,
-          originalSelector: nil,
-          insertedSeparatorBefore: false
-        ), evidence
-      )
-    }
-    return (
-      EnvironmentEntryInspection(
-        id: EnvironmentEntryID.tuicrConfiguration.rawValue,
-        path: url.path,
-        status: .unsupported,
-        ownership: "external",
-        message: "The tuicr configuration cannot be safely adopted.",
-        evidence: evidence
-      ), nil, nil
-    )
-  }
-
-  func tuicrExternalTupleIsExact(
-    homeDirectory: URL,
-    stateRoot: URL,
-    configurationEvidence: EnvironmentEntryEvidence? = nil
-  ) throws -> Bool {
-    let configuration = homeDirectory.appending(path: ConsumerHomePath.tuicrConfiguration)
-    return try externalTupleIsExact(
-      configuration: configuration,
-      links: [.tuicrTheme, .tuicrSyntax],
-      homeDirectory: homeDirectory,
-      stateRoot: stateRoot,
-      configurationEvidence: configurationEvidence
-    ) { evidence, externalAncestor in
-      let text =
-        evidence.kind == .symbolicLink || externalAncestor
-        ? try externalConfigurationText(
-          at: configuration,
-          evidence: evidence,
-          hasExternalAncestor: externalAncestor,
-          label: "tuicr configuration"
-        )
-        : try configurationText(at: configuration, evidence: evidence)
-      return try EnvironmentTuicrDocument.matchesManaged(text, source: configuration)
-    }
   }
 
   /// Whether a key-owned preset's configuration and theme links still form its exact external
