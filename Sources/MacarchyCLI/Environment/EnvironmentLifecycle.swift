@@ -891,7 +891,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       throw EnvironmentLifecycleError.blocked("environment ownership has an invalid structure")
     }
     let allowed = Dictionary(
-      uniqueKeysWithValues: inspector.allManagedEntries(
+      uniqueKeysWithValues: EnvironmentManagedEntry.all(
         homeDirectory: homeDirectory,
         stateRoot: stateRoot
       ).map { ($0.id, $0) }

@@ -58,18 +58,6 @@ struct EnvironmentProviderInspection: Sendable {
   }
 }
 
-struct EnvironmentManagedEntry: Equatable, Sendable {
-  enum ManagedKind: String, Sendable {
-    case kittyDirectory = "kitty_directory"
-    case symbolicLink = "symbolic_link"
-  }
-
-  let id: EnvironmentEntryID
-  let url: URL
-  let kind: ManagedKind
-  let target: String
-}
-
 struct EnvironmentProviderInspector: Sendable {
   private static let maximumExternalFileSize = 4 * 1_048_576
   let slackPreset: EnvironmentSlackPreset
@@ -244,8 +232,10 @@ struct EnvironmentProviderInspector: Sendable {
       }
       let owned = Dictionary(uniqueKeysWithValues: (ownership?.records ?? []).map { ($0.id, $0) })
       let allowed = Dictionary(
-        uniqueKeysWithValues: allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
-          .map { ($0.id, $0) }
+        uniqueKeysWithValues: EnvironmentManagedEntry.all(
+          homeDirectory: homeDirectory, stateRoot: stateRoot
+        )
+        .map { ($0.id, $0) }
       )
       for record in ownership?.records ?? [] {
         guard let entry = allowed[record.id],
@@ -660,153 +650,8 @@ struct EnvironmentProviderInspector: Sendable {
     where linked.preset.isEnabled(in: profile.presets) {
       enabled.formUnion(linked.themeLinks)
     }
-    return allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+    return EnvironmentManagedEntry.all(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .filter { enabled.contains($0.id) }
-  }
-
-  func allManagedEntries(homeDirectory: URL, stateRoot: URL) -> [EnvironmentManagedEntry] {
-    let home = homeDirectory.standardizedFileURL
-    let state = stateRoot.standardizedFileURL
-    let layout = StateLayout(root: state)
-    return [
-      EnvironmentManagedEntry(
-        id: .bordersDirectory,
-        url: home.appending(path: ".config/borders"),
-        kind: .symbolicLink,
-        target: layout.environmentArtifact("borders").path
-      ),
-      EnvironmentManagedEntry(
-        id: .bordersConfiguration,
-        url: home.appending(path: ConsumerHomePath.bordersConfiguration),
-        kind: .symbolicLink,
-        target: layout.environmentArtifact("borders/bordersrc").path
-      ),
-      EnvironmentManagedEntry(
-        id: .kitty,
-        url: home.appending(path: ConsumerHomePath.kittyDirectory, directoryHint: .isDirectory),
-        kind: .kittyDirectory,
-        target: layout.environmentArtifact("kitty/kitty.conf").path
-      ),
-      EnvironmentManagedEntry(
-        id: .zsh,
-        url: home.appending(path: ConsumerHomePath.shellConfiguration),
-        kind: .symbolicLink,
-        target: layout.environmentArtifact("zsh/.zshrc").path
-      ),
-      EnvironmentManagedEntry(
-        id: .starship,
-        url: home.appending(path: ConsumerHomePath.starshipConfiguration),
-        kind: .symbolicLink,
-        target: state.appending(path: StarshipAdapter.bridgePath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .neovim,
-        url: home.appending(path: ConsumerHomePath.neovimDirectory, directoryHint: .isDirectory),
-        kind: .symbolicLink,
-        target: layout.environmentArtifact("neovim").path
-      ),
-      EnvironmentManagedEntry(
-        id: .atuinConfiguration,
-        url: home.appending(path: ConsumerHomePath.atuinConfiguration),
-        kind: .symbolicLink,
-        target: layout.environmentArtifact("atuin/config.toml").path
-      ),
-      EnvironmentManagedEntry(
-        id: .atuinTheme,
-        url: home.appending(
-          path: "\(ConsumerHomePath.atuinDirectory)/themes/\(AtuinAdapter.themeName).toml"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(AtuinAdapter.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .batConfiguration,
-        url: home.appending(path: ConsumerHomePath.batConfiguration),
-        kind: .symbolicLink,
-        target: state.appending(path: BatAdapter.managedConfigurationPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .batTheme,
-        url: home.appending(
-          path: "\(ConsumerHomePath.batDirectory)/themes/\(BatAdapter.themeFileName)"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .ezaTheme,
-        url: home.appending(path: "\(ConsumerHomePath.ezaDirectory)/\(EzaAdapter.themeFileName)"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(EzaAdapter.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .btopTheme,
-        url: home.appending(
-          path: "\(ConsumerHomePath.btopDirectory)/themes/\(BtopAdapter.themeFileName)"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(BtopAdapter.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .codexTheme,
-        url: home.appending(
-          path: "\(ConsumerHomePath.codexDirectory)/themes/\(CodexAdapter.themeName).tmTheme"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .piTheme,
-        url: home.appending(
-          path: "\(ConsumerHomePath.piDirectory)/themes/\(PiAdapter.themeName).json"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(PiAdapter.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .spicetifyColor,
-        url: home.appending(path: ".config/spicetify/Themes/text/color.ini"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(SpicetifyAdapter.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .tuicrTheme,
-        url: home.appending(
-          path: "\(ConsumerHomePath.tuicrDirectory)/themes/\(TuicrAdapter.themeName).toml"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(TuicrAdapter.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .tuicrSyntax,
-        url: home.appending(
-          path: "\(ConsumerHomePath.tuicrDirectory)/themes/\(TuicrAdapter.themeName).tmTheme"),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(TextMateThemeArtifact.outputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .yaziConfiguration,
-        url: home.appending(path: ".config/yazi/yazi.toml"),
-        kind: .symbolicLink,
-        target: layout.environmentArtifact("yazi/yazi.toml").path
-      ),
-      EnvironmentManagedEntry(
-        id: .yaziThemeSelection,
-        url: home.appending(path: ConsumerHomePath.yaziTheme),
-        kind: .symbolicLink,
-        target: state.appending(path: YaziAdapter.managedThemeConfigurationPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .yaziFlavor,
-        url: home.appending(
-          path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/flavor.toml"
-        ),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(YaziAdapter.flavorOutputPath).path
-      ),
-      EnvironmentManagedEntry(
-        id: .yaziSyntax,
-        url: home.appending(
-          path: ".config/yazi/flavors/\(YaziAdapter.flavorName).yazi/tmtheme.xml"
-        ),
-        kind: .symbolicLink,
-        target: layout.currentThemeArtifact(TextMateThemeArtifact.yaziOutputPath).path
-      ),
-    ]
   }
 
   func capture(
@@ -1691,7 +1536,7 @@ struct EnvironmentProviderInspector: Sendable {
     homeDirectory: URL,
     stateRoot: URL
   ) throws -> Bool {
-    let entries = allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
+    let entries = EnvironmentManagedEntry.all(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .filter { ids.contains($0.id) }
     guard entries.count == ids.count else { return false }
     for entry in entries {
