@@ -48,7 +48,7 @@ struct UnifiedSetupApplyTests {
       })
     let plan = try runner.planner.prepare(context: fixture.context).report
     #expect(plan.packageInstallation?.approvalDigest != nil)
-    #expect(try plan.preferencesApprovalDigest != nil)
+    #expect(plan.preferencesApprovalDigest != nil)
     let result = try await MenuSetupReview(
       runner: runner,
       io: .init(read: { confirm ? "y" : "n" }, write: { _ in })

@@ -334,13 +334,13 @@ private final class PackageLayeringFixture: Sendable {
     installed.withLock { $0 = true }
   }
   func planner() -> UnifiedSetupPlanCommandRunner {
-    let unrelated: UnifiedSetupPlanCommandRunner.ComponentPlanner = { _, _ in
+    let unrelated: @Sendable () -> any Error = {
       Issue.record("This check must finish before unrelated provider planning")
-      throw SetupPackageAdoptionError("unrelated provider planning")
+      return SetupPackageAdoptionError("unrelated provider planning")
     }
     return .init(
-      capabilityIsAvailable: { _ in false }, desktopPlanner: unrelated,
-      environmentPlanner: { context, profile, _ in try unrelated(context, profile) },
+      capabilityIsAvailable: { _ in false }, desktopPlanner: { _, _ in throw unrelated() },
+      environmentPlanner: { _, _, _ in throw unrelated() },
       packageInventoryReader: {
         self.inventory.reader(formulae: self.installed.withLock { $0 } ? "hello" : "").read()
       },

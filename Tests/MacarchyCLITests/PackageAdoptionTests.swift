@@ -309,14 +309,14 @@ private struct AdoptionFixture {
 
   func runner(formulae: String = "bat\njq\norphan") -> SetupPackageAdoptionCommandRunner {
     let reader = inventory.reader(formulae: formulae)
-    let unrelated: UnifiedSetupPlanCommandRunner.ComponentPlanner = { _, _ in
+    let unrelated: @Sendable () -> any Error = {
       Issue.record("Package adoption must not invoke unrelated provider planning")
-      throw SetupPackageAdoptionError("unrelated setup invoked")
+      return SetupPackageAdoptionError("unrelated setup invoked")
     }
     return .init(
       planner: UnifiedSetupPlanCommandRunner(
-        capabilityIsAvailable: { _ in false }, desktopPlanner: unrelated,
-        environmentPlanner: { context, profile, _ in try unrelated(context, profile) },
+        capabilityIsAvailable: { _ in false }, desktopPlanner: { _, _ in throw unrelated() },
+        environmentPlanner: { _, _, _ in throw unrelated() },
         packageInventoryReader: { reader.read() },
         standardBrewfile: { _ in
           try SetupBrewfile.read(at: repositoryRoot.appending(path: "Environment/Brewfile"))

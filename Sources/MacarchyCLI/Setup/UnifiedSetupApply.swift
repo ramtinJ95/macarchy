@@ -265,7 +265,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         throw EnvironmentLifecycleError.blocked(
           "Native starter approval changed; review guided setup again before any mutation.")
       }
-      guard try preferencesApproval == plan.preferencesApprovalDigest else {
+      guard preferencesApproval == plan.preferencesApprovalDigest else {
         throw PreferencesError.invalid(
           "Supply exactly --approve-preferences from the reviewed setup plan before any setup mutation."
         )

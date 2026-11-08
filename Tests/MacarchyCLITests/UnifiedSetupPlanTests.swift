@@ -92,18 +92,14 @@ struct UnifiedSetupPlanTests {
     let second = try readyPlan(secondContext)
     let firstComponents = try #require(first.report.components)
     let secondComponents = try #require(second.report.components)
-    let firstYabairc = try #require(
-      firstComponents.desktop.report["rendered_yabairc"]?.string
-    )
-    let secondYabairc = try #require(
-      secondComponents.desktop.report["rendered_yabairc"]?.string
-    )
+    let firstYabairc = try #require(firstComponents.desktop.report.renderedYabairc)
+    let secondYabairc = try #require(secondComponents.desktop.report.renderedYabairc)
     let firstEnvironment = try normalizedArtifacts(
-      firstComponents.environment.report,
+      firstComponents.environment.report.renderedArtifacts,
       home: firstContext.homeDirectory
     )
     let secondEnvironment = try normalizedArtifacts(
-      secondComponents.environment.report,
+      secondComponents.environment.report.renderedArtifacts,
       home: secondContext.homeDirectory
     )
 
@@ -111,15 +107,15 @@ struct UnifiedSetupPlanTests {
     #expect(first.report.fieldOrigins == second.report.fieldOrigins)
     #expect(firstYabairc.contains("window_gap 11"))
     #expect(firstYabairc == secondYabairc)
-    #expect(firstComponents.desktop.report["keybindings"]?["outcome"]?.string == "ready")
-    #expect(secondComponents.desktop.report["keybindings"]?["outcome"]?.string == "ready")
+    #expect(firstComponents.desktop.report.keybindings?.outcome == "ready")
+    #expect(secondComponents.desktop.report.keybindings?.outcome == "ready")
     #expect(
       try normalizedArtifacts(
-        firstComponents.desktop.report["sketchybar"],
+        firstComponents.desktop.report.sketchyBar?.renderedArtifacts,
         home: firstContext.homeDirectory
       )
         == normalizedArtifacts(
-          secondComponents.desktop.report["sketchybar"],
+          secondComponents.desktop.report.sketchyBar?.renderedArtifacts,
           home: secondContext.homeDirectory
         )
     )
@@ -153,9 +149,8 @@ struct UnifiedSetupPlanTests {
     let standard = try readyPlan(standardContext)
     let exceptional = try readyPlan(exceptionalContext)
     let exceptionalComponents = try #require(exceptional.report.components)
-    let exceptionalEnvironmentArtifacts = try #require(
-      exceptionalComponents.environment.report["rendered_artifacts"]?.object
-    )
+    let exceptionalEnvironmentArtifacts = exceptionalComponents.environment.report
+      .renderedArtifacts
 
     #expect(
       standard.report.providers.merging(["top_bar": "disabled", "terminal": "disabled"]) {
@@ -173,16 +168,9 @@ struct UnifiedSetupPlanTests {
         == Set(exceptional.model.capabilities.map(\.id))
     )
     #expect(!standard.model.capabilities.map(\.id).contains("btop"))
-    #expect(
-      standard.report.components?.desktop.report["sketchybar"]?["rendered_artifacts"]?.object
-        != nil
-    )
-    #expect(
-      exceptionalComponents.desktop.report["sketchybar"]?["rendered_artifacts"]?.object == nil
-    )
-    #expect(
-      exceptionalComponents.environment.report["terminal_provider"]?.string == "disabled"
-    )
+    #expect(standard.report.components?.desktop.report.sketchyBar?.renderedArtifacts != nil)
+    #expect(exceptionalComponents.desktop.report.sketchyBar?.renderedArtifacts == nil)
+    #expect(exceptionalComponents.environment.report.terminalProvider == "disabled")
     #expect(
       exceptionalEnvironmentArtifacts["kitty/kitty.conf"] == nil
     )
@@ -280,51 +268,41 @@ struct UnifiedSetupPlanTests {
       capabilityIsAvailable: { _ in false },
       desktopPlanner: { context, profile in
         calls.withLock { $0.append("desktop:\(profile.environment.tools.bat)") }
-        return try component(
-          """
-          {
-            "outcome":"ready",
-            "keybindings":{
-              "outcome":"ready",
-              "provider_status":"adoption_required",
-              "ownership":"file",
-              "adoption_evidence_digest":"sha256:keybindings"
-            },
-            "provider":{
-              "entry_point":"\(context.homeDirectory.path)/.config/yabai/yabairc",
-              "status":"install_required",
-              "ownership":"absent",
-              "adoption_evidence_digest":null
-            },
-            "sketchybar":{
-              "provider":{
-                "entry_point":"\(context.homeDirectory.path)/.config/sketchybar/sketchybarrc",
-                "status":"install_required",
-                "ownership":"absent",
-                "adoption_evidence_digest":"sha256:sketchybar"
-              }
-            },
-            "actions":[{"id":"converge_desktop","message":"Converge desktop."}]
-          }
-          """
+        return desktopPlanStub(
+          keybindings: keybindingPlanStub(
+            providerStatus: "adoption_required",
+            ownership: "file",
+            adoptionEvidenceDigest: "sha256:keybindings"
+          ),
+          provider: providerPlanStub(
+            "\(context.homeDirectory.path)/.config/yabai/yabairc",
+            status: .installRequired,
+            ownership: .absent
+          ),
+          sketchyBar: providerPlanStub(
+            "\(context.homeDirectory.path)/.config/sketchybar/sketchybarrc",
+            status: .installRequired,
+            ownership: .absent,
+            adoptionEvidenceDigest: "sha256:sketchybar"
+          ),
+          actions: [PlanAction(id: "converge_desktop", message: "Converge desktop.")]
         )
       },
       environmentPlanner: { context, profile, _ in
         calls.withLock { $0.append("environment:\(profile.environment.kitty.fontSize ?? 0)") }
-        return try component(
-          """
-          {
-            "outcome":"ready",
-            "adoption_evidence_digest":"sha256:environment",
-            "entries":[{
-              "id":"kitty",
-              "path":"\(context.homeDirectory.path)/.config/kitty",
-              "status":"adoption_required",
-              "ownership":"directory_symlink"
-            }],
-            "actions":[{"id":"converge_environment","message":"Converge environment."}]
-          }
-          """
+        return environmentPlanStub(
+          adoptionEvidenceDigest: "sha256:environment",
+          entries: [
+            EnvironmentEntryInspection(
+              id: "kitty",
+              path: "\(context.homeDirectory.path)/.config/kitty",
+              status: .adoptionRequired,
+              ownership: "directory_symlink",
+              message: "kitty",
+              evidence: nil
+            )
+          ],
+          actions: [PlanAction(id: "converge_environment", message: "Converge environment.")]
         )
       }
     )
@@ -408,14 +386,16 @@ struct UnifiedSetupPlanTests {
       encoding: .utf8
     )
     let calls = Mutex(0)
-    let unexpected: UnifiedSetupPlanCommandRunner.ComponentPlanner = { _, _ in
-      calls.withLock { $0 += 1 }
-      return try component("{\"outcome\":\"ready\",\"actions\":[]}")
-    }
     let runner = UnifiedSetupPlanCommandRunner(
       capabilityIsAvailable: { _ in true },
-      desktopPlanner: unexpected,
-      environmentPlanner: { context, profile, _ in try unexpected(context, profile) }
+      desktopPlanner: { _, _ in
+        calls.withLock { $0 += 1 }
+        return desktopPlanStub()
+      },
+      environmentPlanner: { _, _, _ in
+        calls.withLock { $0 += 1 }
+        return environmentPlanStub()
+      }
     )
 
     let execution = try runner.execute(
@@ -449,32 +429,21 @@ struct UnifiedSetupPlanTests {
     let runner = UnifiedSetupPlanCommandRunner(
       capabilityIsAvailable: { _ in true },
       desktopPlanner: { context, _ in
-        try component(
-          """
-          {
-            "outcome":"blocked",
-            "keybindings":{
-              "outcome":"ready",
-              "provider_status":"managed",
-              "ownership":"managed",
-              "adoption_evidence_digest":null
-            },
-            "provider":{
-              "entry_point":"\(context.homeDirectory.path)/.config/yabai/yabairc",
-              "status":"blocked",
-              "ownership":"file",
-              "adoption_evidence_digest":null
-            },
-            "actions":[],
-            "diagnostics":[{"message":"Unsafe desktop ownership."}]
-          }
-          """,
-          succeeded: false
+        desktopPlanStub(
+          outcome: "blocked",
+          provider: providerPlanStub(
+            "\(context.homeDirectory.path)/.config/yabai/yabairc",
+            status: .blocked,
+            ownership: .regularFile
+          ),
+          diagnostics: [
+            PlanDiagnostic(
+              code: "yabai_provider_blocked", source: "yabai",
+              message: "Unsafe desktop ownership.")
+          ]
         )
       },
-      environmentPlanner: { _, _, _ in
-        try component("{\"outcome\":\"ready\",\"entries\":[],\"actions\":[]}")
-      },
+      environmentPlanner: { _, _, _ in environmentPlanStub() },
       packageInventoryReader: { .init(packages: [], issues: []) },
       standardBrewfile: { _ in SetupBrewfile(packages: []) }
     )
@@ -568,14 +537,14 @@ struct UnifiedSetupPlanTests {
             throw BordersServiceError.blocked("planning must not request appearance")
           },
           lean: .unexpectedInTest, inspectIncumbent: { _ in .stopped })
-        return try SetupComponentExecution(
+        return try SetupComponentPlan(
           EnvironmentPlanCommandRunner(
             prerequisites: .assumed, bordersRuntime: borders
-          ).execute(
+          ).report(
             resourcesRoot: context.environmentResourcesRoot,
             profileURL: context.profileURL, profileRequired: context.profileRequired,
             stateRoot: context.stateRoot, homeDirectory: context.homeDirectory,
-            json: true, profile: profile, bootstrapTheme: bootstrapTheme))
+            profile: profile, bootstrapTheme: bootstrapTheme))
       })
     runner.packageInventoryReader = { .init(packages: [], issues: []) }
     let preparation = try runner.prepare(context: context)
@@ -586,16 +555,13 @@ struct UnifiedSetupPlanTests {
   }
 
   private func normalizedArtifacts(
-    _ report: JSONValue?,
+    _ renderedArtifacts: [String: String]?,
     home: URL
   ) throws -> [String: String] {
-    let artifacts = try #require(report?["rendered_artifacts"]?.object)
+    let artifacts = try #require(renderedArtifacts)
     var normalized = [String: String]()
     for (path, value) in artifacts {
-      normalized[path] = try #require(value.string).replacingOccurrences(
-        of: home.path,
-        with: "$HOME"
-      )
+      normalized[path] = value.replacingOccurrences(of: home.path, with: "$HOME")
     }
     return normalized
   }
@@ -613,8 +579,4 @@ struct UnifiedSetupPlanTests {
     }
     .sorted()
   }
-}
-
-private func component(_ json: String, succeeded: Bool = true) throws -> SetupComponentExecution {
-  try SetupComponentExecution((output: json, succeeded: succeeded))
 }

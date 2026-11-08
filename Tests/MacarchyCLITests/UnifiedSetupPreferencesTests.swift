@@ -31,7 +31,7 @@ struct UnifiedSetupPreferencesTests {
         return try applyComponent("{}")
       })
     let plan = try runner.planner.prepare(context: fixture.context).report
-    #expect(try plan.preferencesApprovalDigest != nil)
+    #expect(plan.preferencesApprovalDigest != nil)
     #expect(plan.packageInstallation?.approvalDigest != nil)
     let result = try await runner.execute(
       context: fixture.context, consumerPaths: testConsumerPaths(),
@@ -84,7 +84,7 @@ struct UnifiedSetupPreferencesTests {
         }
       })
     let plan = try runner.planner.prepare(context: fixture.context).report
-    let approval = try plan.preferencesApprovalDigest
+    let approval = plan.preferencesApprovalDigest
     #expect(try plan.render(json: false).contains("not native preferences"))
     let result = try await runner.execute(
       context: fixture.context, consumerPaths: testConsumerPaths(), preferencesApproval: approval,
@@ -284,7 +284,8 @@ struct UnifiedSetupPreferencesTests {
     let preparation = try planner.prepare(context: fixture.context)
     #expect(!preparation.succeeded)
     #expect(
-      preparation.report.components?.preferences.outcome == (unsupported ? "blocked" : "drifted"))
+      preparation.report.components?.preferences.report.outcome
+        == (unsupported ? "blocked" : "drifted"))
     #expect(preparation.report.diagnostics.contains { $0.code == "preferences_plan_blocked" })
     for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
       let result = try inspector(planner: planner).execute(

@@ -55,17 +55,15 @@ enum UnifiedSetupPreparation {
 }
 
 struct UnifiedSetupPlanCommandRunner: Sendable {
-  typealias ComponentPlanner =
+  let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
+  let desktopPlanner:
     @Sendable (
       UnifiedSetupPlanContext, PortableProfile
-    ) throws -> SetupComponentExecution
-
-  let capabilityIsAvailable: @Sendable (DependencyCapability) -> Bool
-  let desktopPlanner: ComponentPlanner
+    ) throws -> SetupComponentPlan<DesktopPlanReport>
   let environmentPlanner:
     @Sendable (
       UnifiedSetupPlanContext, PortableProfile, ThemePackage?
-    ) throws -> SetupComponentExecution
+    ) throws -> SetupComponentPlan<EnvironmentPlanReport>
   var packageInventoryReader: @Sendable () -> HomebrewPackageObservation = {
     .unavailable("Package inventory reader is not configured.")
   }
@@ -77,41 +75,39 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
   static let live = UnifiedSetupPlanCommandRunner(
     capabilityIsAvailable: { $0.isAvailable() },
     desktopPlanner: { context, profile in
-      let execution = try DesktopPlanCommandRunner(
-        keybindings: .live,
-        prerequisites: .assumed
-      ).execute(
-        resourcesRoot: context.desktopResourcesRoot,
-        keybindingsResourcesRoot: context.keybindingsResourcesRoot,
-        profileURL: context.profileURL,
-        profileRequired: context.profileRequired,
-        stateRoot: context.stateRoot,
-        homeDirectory: context.homeDirectory,
-        json: true,
-        profile: profile,
-        requireRunningKeybindingProcess: false
-      )
-      return try SetupComponentExecution(execution)
+      try SetupComponentPlan(
+        DesktopPlanCommandRunner(
+          keybindings: .live,
+          prerequisites: .assumed
+        ).report(
+          resourcesRoot: context.desktopResourcesRoot,
+          keybindingsResourcesRoot: context.keybindingsResourcesRoot,
+          profileURL: context.profileURL,
+          profileRequired: context.profileRequired,
+          stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory,
+          profile: profile,
+          requireRunningKeybindingProcess: false
+        ))
     },
     environmentPlanner: { context, profile, bootstrapTheme in
-      let execution = try EnvironmentPlanCommandRunner(
-        prerequisites: EnvironmentPrerequisiteInspector { profile, home in
-          profile.presets.spicetify
-            ? EnvironmentPrerequisiteInspector.spicetifyPreparation(homeDirectory: home) : []
-        },
-        requiresActiveTheme: false
-      ).execute(
-        resourcesRoot: context.environmentResourcesRoot,
-        profileURL: context.profileURL,
-        profileRequired: context.profileRequired,
-        stateRoot: context.stateRoot,
-        homeDirectory: context.homeDirectory,
-        json: true,
-        profile: profile,
-        bootstrapTheme: bootstrapTheme,
-        nativeStarters: context.nativeStarters
-      )
-      return try SetupComponentExecution(execution)
+      try SetupComponentPlan(
+        EnvironmentPlanCommandRunner(
+          prerequisites: EnvironmentPrerequisiteInspector { profile, home in
+            profile.presets.spicetify
+              ? EnvironmentPrerequisiteInspector.spicetifyPreparation(homeDirectory: home) : []
+          },
+          requiresActiveTheme: false
+        ).report(
+          resourcesRoot: context.environmentResourcesRoot,
+          profileURL: context.profileURL,
+          profileRequired: context.profileRequired,
+          stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory,
+          profile: profile,
+          bootstrapTheme: bootstrapTheme,
+          nativeStarters: context.nativeStarters
+        ))
     },
     packageInventoryReader: { HomebrewPackageInventoryReader.live.read() }
   )
@@ -290,21 +286,22 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     let components = SetupComponentPlans(
       desktop: desktop,
       environment: environment,
-      preferences: try preferences.inspect(
-        context: context.preferencesContext, desired: profile.macOSPreferences
-      ).componentExecution()
+      preferences: SetupComponentPlan(
+        try preferences.inspect(
+          context: context.preferencesContext, desired: profile.macOSPreferences))
     )
     var diagnostics = [PlanDiagnostic]()
-    for (stage, component) in components.all where !component.succeeded {
+    for component in components.all where !component.succeeded {
       diagnostics.append(
         PlanDiagnostic(
-          code: "\(stage.rawValue)_plan_blocked",
-          source: stage.rawValue,
-          message: componentFailureMessage(id: stage.rawValue, component: component)
+          code: "\(component.stage.rawValue)_plan_blocked",
+          source: component.stage.rawValue,
+          message: componentFailureMessage(
+            id: component.stage.rawValue, messages: component.diagnostics)
         )
       )
     }
-    let actions = try plannedActions(
+    let actions = plannedActions(
       installPlan: model.packages,
       theme: model.theme,
       components: components
@@ -343,13 +340,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     return .ready(model, report)
   }
 
-  private func componentFailureMessage(
-    id: String,
-    component: SetupComponentExecution
-  ) -> String {
-    let messages = (component.report["diagnostics"]?.array ?? []).compactMap {
-      $0["message"]?.string
-    }
+  private func componentFailureMessage(id: String, messages: [String]) -> String {
     guard !messages.isEmpty else { return "The delegated \(id) plan is blocked." }
     return "The delegated \(id) plan is blocked: \(messages.joined(separator: "; "))"
   }
@@ -498,37 +489,26 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     homeDirectory: URL
   ) throws -> [UnifiedSetupFile] {
     var result = [UnifiedSetupFile]()
+    let desktop = components.desktop.report
     if profile.desktop.provider == .yabaiSkhd {
-      let keybindings = try components.desktop.keybindingPlan
+      let keybindings = try components.desktop.keybindings
       result.append(
         UnifiedSetupFile(
           id: "skhd_entry",
           path: homeDirectory.appending(path: ConsumerHomePath.skhdConfiguration).path,
-          status: try keybindings.providerStatus,
-          ownership: try keybindings.ownership
+          status: keybindings.providerStatus,
+          ownership: keybindings.ownership
         )
       )
     }
-    let yabaiProvider = try components.desktop.yabaiPlan
-    result.append(
+    result.append(UnifiedSetupFile(id: "yabai_entry", provider: desktop.provider))
+    if let provider = desktop.sketchyBar?.provider {
+      result.append(UnifiedSetupFile(id: "sketchybar_entry", provider: provider))
+    }
+    result += components.environment.report.entries.map {
       UnifiedSetupFile(
-        id: "yabai_entry",
-        path: try yabaiProvider.entryPoint,
-        status: try yabaiProvider.status,
-        ownership: try yabaiProvider.ownership
-      )
-    )
-    if let provider = try components.desktop.sketchyBarPlan {
-      result.append(
-        UnifiedSetupFile(
-          id: "sketchybar_entry",
-          path: try provider.entryPoint,
-          status: try provider.status,
-          ownership: try provider.ownership
-        )
-      )
+        id: $0.id, path: $0.path, status: $0.status.rawValue, ownership: $0.ownership)
     }
-    result += try components.environment.environmentFiles
     return result.sorted { lhs, rhs in
       lhs.path == rhs.path ? lhs.id < rhs.id : lhs.path < rhs.path
     }
@@ -542,30 +522,28 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
       guard status == "adoption_required", let digest else { return }
       result.append(UnifiedSetupAdoptionEvidence(id: target.rawValue, digest: digest))
     }
-    let keybindings = try components.desktop.keybindingPlan
-    let keybindingStatus = try keybindings.providerStatus
-    let keybindingDigest = try keybindings.adoptionEvidenceDigest
+    let keybindings = try components.desktop.keybindings
     if profile.desktop.provider == .yabaiSkhd {
       append(
         .keybindings,
-        status: keybindingStatus,
-        digest: keybindingDigest
+        status: keybindings.providerStatus,
+        digest: keybindings.adoptionEvidenceDigest
       )
     }
-    let yabaiProvider = try components.desktop.yabaiPlan
+    let desktop = components.desktop.report
     append(
       .yabai,
-      status: try yabaiProvider.status,
-      digest: try yabaiProvider.adoptionEvidenceDigest
+      status: desktop.provider.status.rawValue,
+      digest: desktop.provider.adoptionEvidenceDigest
     )
-    if let provider = try components.desktop.sketchyBarPlan {
+    if let provider = desktop.sketchyBar?.provider {
       append(
         .sketchybar,
-        status: try provider.status,
-        digest: try provider.adoptionEvidenceDigest
+        status: provider.status.rawValue,
+        digest: provider.adoptionEvidenceDigest
       )
     }
-    if let digest = try components.environment.environmentAdoptionEvidenceDigest {
+    if let digest = components.environment.report.adoptionEvidenceDigest {
       result.append(
         UnifiedSetupAdoptionEvidence(
           id: UnifiedSetupAdoptionTarget.environment.rawValue, digest: digest))
@@ -577,7 +555,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     installPlan: HomebrewInstallPlan,
     theme: UnifiedSetupThemePlan,
     components: SetupComponentPlans
-  ) throws -> [UnifiedSetupAction] {
+  ) -> [UnifiedSetupAction] {
     var result = [UnifiedSetupAction]()
     if !installPlan.formulae.isEmpty || !installPlan.casks.isEmpty {
       result.append(
@@ -607,146 +585,70 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
         )
       )
     }
-    for (stage, component) in components.all {
-      result += try component.plannedActions(in: stage.rawValue)
+    for component in components.all {
+      result += component.actions.map {
+        UnifiedSetupAction(stage: component.stage.rawValue, id: $0.id, message: $0.message)
+      }
     }
     return result
   }
 }
 
-struct SetupComponentExecution: Encodable, Sendable {
+/// A component stage's plan: the component's own report, embedded verbatim in the setup plan.
+struct SetupComponentPlan<Report: Encodable & Sendable>: Encodable, Sendable {
   let succeeded: Bool
-  let report: JSONValue
-  let outcome: String
+  let report: Report
 
-  init(_ execution: CommandExecution) throws {
-    succeeded = execution.succeeded
-    report = try JSONDecoder().decode(JSONValue.self, from: Data(execution.output.utf8))
-    _ = try report.requiredObject(at: "component")
-    outcome = try report.requiredString("outcome", at: "component")
+  private init(succeeded: Bool, report: Report) {
+    self.succeeded = succeeded
+    self.report = report
   }
+}
 
-  enum CodingKeys: CodingKey {
-    case succeeded, report
+extension SetupComponentPlan where Report == DesktopPlanReport {
+  init(_ report: DesktopPlanReport) { self.init(succeeded: report.succeeded, report: report) }
+
+  /// Absent when the desktop planner could not plan keybindings; its diagnostics say why.
+  var keybindings: DesktopKeybindingPlan {
+    get throws {
+      guard let keybindings = report.keybindings else {
+        throw SetupComponentReportError(
+          description: "Delegated plan is missing desktop.keybindings")
+      }
+      return keybindings
+    }
   }
+}
+
+extension SetupComponentPlan where Report == EnvironmentPlanReport {
+  init(_ report: EnvironmentPlanReport) { self.init(succeeded: report.succeeded, report: report) }
+}
+
+extension SetupComponentPlan where Report == PreferencesReport {
+  init(_ report: PreferencesReport) { self.init(succeeded: report.succeeded, report: report) }
 }
 
 struct SetupComponentPlans: Encodable, Sendable {
-  let desktop: SetupComponentExecution
-  let environment: SetupComponentExecution
-  let preferences: SetupComponentExecution
+  let desktop: SetupComponentPlan<DesktopPlanReport>
+  let environment: SetupComponentPlan<EnvironmentPlanReport>
+  let preferences: SetupComponentPlan<PreferencesReport>
 
   /// The planned component stages, in apply order; the theme stage is planned by setup itself.
-  var all: [(SetupStage, SetupComponentExecution)] {
-    [(.desktop, desktop), (.environment, environment), (.preferences, preferences)]
-  }
-}
-
-// Read-only projections keep the original report authoritative. Validate only at
-// the consuming stage: keybinding ownership, for example, is unused when disabled.
-extension SetupComponentExecution {
-  fileprivate var keybindingPlan: SetupKeybindingPlanProjection {
-    get throws {
-      SetupKeybindingPlanProjection(value: try report.required("keybindings", at: "desktop"))
-    }
-  }
-
-  fileprivate var yabaiPlan: SetupProviderPlanProjection {
-    get throws {
-      SetupProviderPlanProjection(
-        object: try report.requiredObject("provider", at: "desktop"),
-        path: "desktop.provider"
-      )
-    }
-  }
-
-  fileprivate var sketchyBarPlan: SetupProviderPlanProjection? {
-    get throws {
-      guard let sketchyBar = report["sketchybar"] else { return nil }
-      return SetupProviderPlanProjection(
-        object: try sketchyBar.requiredObject("provider", at: "desktop.sketchybar"),
-        path: "desktop.sketchybar.provider"
-      )
-    }
-  }
-
-  fileprivate var environmentFiles: [UnifiedSetupFile] {
-    get throws {
-      try report.requiredArray("entries", at: "environment").enumerated().map { index, entry in
-        try entry.setupFile(at: "environment.entries[\(index)]")
-      }
-    }
-  }
-
-  fileprivate var environmentAdoptionEvidenceDigest: String? {
-    get throws { try report.optionalString("adoption_evidence_digest", at: "environment") }
-  }
-
-  fileprivate func plannedActions(in componentID: String) throws -> [UnifiedSetupAction] {
-    try report.requiredArray("actions", at: componentID).enumerated().map { index, action in
-      try action.setupAction(in: componentID, at: "\(componentID).actions[\(index)]")
-    }
-  }
-}
-
-private struct SetupKeybindingPlanProjection {
-  let value: JSONValue
-
-  // Deliberately do not require an object: the existing keybinding accessor
-  // reports a missing field (not "not an object") for a non-object value.
-  var providerStatus: String {
-    get throws { try value.requiredString("provider_status", at: "desktop.keybindings") }
-  }
-
-  var ownership: String {
-    get throws { try value.requiredString("ownership", at: "desktop.keybindings") }
-  }
-
-  var adoptionEvidenceDigest: String? {
-    get throws { try value.optionalString("adoption_evidence_digest", at: "desktop.keybindings") }
-  }
-}
-
-private struct SetupProviderPlanProjection {
-  let object: [String: JSONValue]
-  let path: String
-
-  var entryPoint: String {
-    get throws { try object.requiredString("entry_point", at: path) }
-  }
-
-  var status: String {
-    get throws { try object.requiredString("status", at: path) }
-  }
-
-  var ownership: String {
-    get throws { try object.requiredString("ownership", at: path) }
-  }
-
-  var adoptionEvidenceDigest: String? {
-    get throws { try object.optionalString("adoption_evidence_digest", at: path) }
-  }
-}
-
-extension JSONValue {
-  fileprivate func setupFile(at path: String) throws -> UnifiedSetupFile {
-    let object = try requiredObject(at: path)
-    return UnifiedSetupFile(
-      id: try object.requiredString("id", at: path),
-      path: try object.requiredString("path", at: path),
-      status: try object.requiredString("status", at: path),
-      ownership: try object.requiredString("ownership", at: path)
-    )
-  }
-
-  fileprivate func setupAction(in componentID: String, at path: String) throws -> UnifiedSetupAction
-  {
-    let object = try requiredObject(at: path)
-    return UnifiedSetupAction(
-      stage: componentID,
-      id: try object.requiredString("id", at: path),
-      message: try object.requiredString("message", at: path)
-    )
+  var all: [(stage: SetupStage, succeeded: Bool, actions: [PlanAction], diagnostics: [String])] {
+    [
+      (
+        .desktop, desktop.succeeded, desktop.report.actions,
+        desktop.report.diagnostics.map(\.message)
+      ),
+      (
+        .environment, environment.succeeded, environment.report.actions,
+        environment.report.diagnostics.map(\.message)
+      ),
+      (
+        .preferences, preferences.succeeded, preferences.report.actions,
+        preferences.report.diagnostics.map(\.message)
+      ),
+    ]
   }
 }
 
@@ -782,6 +684,14 @@ struct UnifiedSetupFile: Encodable, Sendable {
   let path: String
   let status: String
   let ownership: String
+}
+
+extension UnifiedSetupFile {
+  init(id: String, provider: DesktopProviderPlanInspection) {
+    self.init(
+      id: id, path: provider.entryPoint, status: provider.status.rawValue,
+      ownership: provider.ownership.rawValue)
+  }
 }
 
 struct UnifiedSetupService: Encodable, Sendable {
@@ -958,10 +868,10 @@ struct UnifiedSetupPlanReport: CommandReport {
     lines += manualBoundaries.map { "- \($0.id) [\($0.kind)]: \($0.instruction)" }
     lines.append(actions.isEmpty ? "Actions: none" : "Actions:")
     lines += actions.map { "- \($0.stage)/\($0.id): \($0.message)" }
-    if let preferences = components?.preferences, preferences.outcome != "disabled" {
-      if let target = preferences.report["target"]?.string { lines.append(target) }
-      if let runtime = preferences.report["runtime"]?.string { lines.append(runtime) }
-      if let digest = try preferencesApprovalDigest {
+    if let preferences = components?.preferences.report, preferences.outcome != "disabled" {
+      lines.append(preferences.target)
+      lines.append(preferences.runtime)
+      if let digest = preferences.approvalDigest {
         lines.append("Approve native preference changes with --approve-preferences \(digest).")
       }
     }
@@ -970,24 +880,10 @@ struct UnifiedSetupPlanReport: CommandReport {
     return lines.joined(separator: "\n")
   }
 
-  var preferencesApprovalDigest: String? {
-    get throws {
-      try components?.preferences.report.optionalString("approval_digest", at: "preferences")
-    }
-  }
+  var preferencesApprovalDigest: String? { components?.preferences.report.approvalDigest }
 
   var preferencesAutomationPermission: MacOSPreference? {
-    get throws {
-      guard
-        let value = try components?.preferences.report.optionalString(
-          "automation_permission", at: "preferences")
-      else { return nil }
-      guard let key = MacOSPreference(rawValue: value) else {
-        throw SetupComponentReportError(
-          description: "Unknown preferences Automation recipient: \(value)")
-      }
-      return key
-    }
+    components?.preferences.report.automationPermission
   }
 }
 
@@ -1060,64 +956,31 @@ struct SetupComponentReportError: Error, CustomStringConvertible {
   let description: String
 }
 
-extension JSONValue {
-  fileprivate func required(_ key: String, at path: String) throws -> JSONValue {
-    guard let object, let value = object[key] else {
-      throw SetupComponentReportError(description: "Delegated plan is missing \(path).\(key)")
-    }
-    return value
-  }
+/// A delegated command's rendered `--json` result, embedded verbatim by setup apply,
+/// teardown, inspection and package addition.
+struct SetupComponentExecution: Encodable, Sendable {
+  let succeeded: Bool
+  let report: JSONValue
+  let outcome: String
 
-  fileprivate func requiredObject(at path: String) throws -> [String: JSONValue] {
-    guard let object else {
-      throw SetupComponentReportError(description: "Delegated plan field \(path) is not an object")
-    }
-    return object
-  }
-
-  fileprivate func requiredObject(_ key: String, at path: String) throws -> [String: JSONValue] {
-    try required(key, at: path).requiredObject(at: "\(path).\(key)")
-  }
-
-  fileprivate func requiredArray(_ key: String, at path: String) throws -> [JSONValue] {
-    let value = try required(key, at: path)
-    guard let array = value.array else {
+  init(_ execution: CommandExecution) throws {
+    succeeded = execution.succeeded
+    report = try JSONDecoder().decode(JSONValue.self, from: Data(execution.output.utf8))
+    guard let object = report.object else {
       throw SetupComponentReportError(
-        description: "Delegated plan field \(path).\(key) is not an array"
-      )
+        description: "Delegated plan field component is not an object")
     }
-    return array
-  }
-
-  fileprivate func requiredString(_ key: String, at path: String) throws -> String {
-    try required(key, at: path).requiredString(at: "\(path).\(key)")
-  }
-
-  fileprivate func requiredString(at path: String) throws -> String {
-    guard let string else {
-      throw SetupComponentReportError(description: "Delegated plan field \(path) is not a string")
+    guard let value = object["outcome"] else {
+      throw SetupComponentReportError(description: "Delegated plan is missing component.outcome")
     }
-    return string
-  }
-
-  fileprivate func optionalString(_ key: String, at path: String) throws -> String? {
-    guard let value = object?[key] else { return nil }
-    if case .null = value { return nil }
-    return try value.requiredString(at: "\(path).\(key)")
-  }
-}
-
-extension Dictionary where Key == String, Value == JSONValue {
-  fileprivate func requiredString(_ key: String, at path: String) throws -> String {
-    guard let value = self[key] else {
-      throw SetupComponentReportError(description: "Delegated plan is missing \(path).\(key)")
+    guard let outcome = value.string else {
+      throw SetupComponentReportError(
+        description: "Delegated plan field component.outcome is not a string")
     }
-    return try value.requiredString(at: "\(path).\(key)")
+    self.outcome = outcome
   }
 
-  fileprivate func optionalString(_ key: String, at path: String) throws -> String? {
-    guard let value = self[key] else { return nil }
-    if case .null = value { return nil }
-    return try value.requiredString(at: "\(path).\(key)")
+  enum CodingKeys: CodingKey {
+    case succeeded, report
   }
 }
