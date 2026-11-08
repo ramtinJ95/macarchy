@@ -18,8 +18,20 @@ package struct PackageProfile: Equatable, Sendable {
     package let excludedCasks: [String]
   }
 
-  package let baseline: PackageBaseline
-  package let layers: [Layer]
+  package var baseline: PackageBaseline
+  package var layers: [Layer]
 
   package static let defaults = Self(baseline: .core, layers: [])
+}
+
+extension PackageProfile: PortableProfileSection {
+  package static let table = "packages"
+  package static var fields: [PortableProfileField<Self>] {
+    [
+      .init("baseline", \.baseline),
+      .contributed("brewfile"),
+      .contributed("exclude_formulae"),
+      .contributed("exclude_casks"),
+    ]
+  }
 }
