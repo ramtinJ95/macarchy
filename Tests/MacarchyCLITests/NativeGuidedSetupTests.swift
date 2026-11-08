@@ -261,20 +261,15 @@ struct NativeGuidedSetupTests {
         return desktopApplyStub("no_change", mutated: false)
       },
       environmentApply: { context, profile, paths, approvals, adapters in
-        try await SetupComponentExecution(
-          EnvironmentApplyCommandRunner(
-            prerequisites: .assumed, theme: nil, verifier: .assumed,
-            neovim: neovim
-          ).execute(
-            resourcesRoot: context.environmentResourcesRoot, profileURL: context.profileURL,
-            profileRequired: true, stateRoot: context.stateRoot,
-            homeDirectory: context.homeDirectory,
-            consumerPaths: paths, adopt: approvals.environment, json: true, deferFinalization: true,
-            withinUnifiedSetup: true, enabledThemeAdapterIDs: adapters, profile: profile))
+        try await EnvironmentApplyCommandRunner(
+          prerequisites: .assumed, theme: nil, verifier: .assumed,
+          neovim: neovim
+        ).report(
+          resourcesRoot: context.environmentResourcesRoot, profileURL: context.profileURL,
+          profileRequired: true, stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory,
+          consumerPaths: paths, adopt: approvals.environment, deferFinalization: true,
+          withinUnifiedSetup: true, enabledThemeAdapterIDs: adapters, profile: profile)
       })
   }
-}
-
-private func component(_ json: String) throws -> SetupComponentExecution {
-  try SetupComponentExecution((output: json, succeeded: true))
 }

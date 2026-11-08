@@ -992,6 +992,7 @@ enum SetupStageDetails: Encodable, Sendable {
   case desktopApply(DesktopAggregateMutationReport)
   case desktopTeardown(DesktopAggregateTeardownReport)
   case desktopInspection(DesktopInspectionReport)
+  case environment(EnvironmentLifecycleReport)
   case preferences(PreferencesReport)
 
   func encode(to encoder: Encoder) throws {
@@ -1002,6 +1003,7 @@ enum SetupStageDetails: Encodable, Sendable {
     case .desktopApply(let report): try container.encode(report)
     case .desktopTeardown(let report): try container.encode(report)
     case .desktopInspection(let report): try container.encode(report)
+    case .environment(let report): try container.encode(report)
     case .preferences(let report): try container.encode(report)
     }
   }

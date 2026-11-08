@@ -74,7 +74,7 @@ struct UnifiedSetupPreferencesTests {
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
-        return try applyComponent(#"{"outcome":"applied","mutated":true}"#)
+        return environmentReportStub()
       },
       faultInjector: { checkpoint in
         if case .preferencesApplied = checkpoint {
@@ -213,9 +213,7 @@ struct UnifiedSetupPreferencesTests {
       planner: fixture.planner(preferences: lifecycle),
       environmentTeardown: { _, _, preview in
         if !preview { calls.withLock { $0.append("environment") } }
-        return try applyComponent(
-          preview
-            ? #"{"outcome":"planned","mutated":false}"# : #"{"outcome":"restored","mutated":true}"#)
+        return environmentTeardownStub(dryRun: preview, mutated: !preview)
       },
       desktopTeardown: { _, _, preview in
         if !preview { calls.withLock { $0.append("desktop") } }
@@ -332,6 +330,6 @@ struct UnifiedSetupPreferencesTests {
           generationID: model.theme.currentGenerationID, message: "fixture")
       },
       desktopInspection: { _, _, _, _ in desktopInspectionStub() },
-      environmentInspection: { _, _, _, _ in try applyComponent(#"{"outcome":"current"}"#) })
+      environmentInspection: { _, _, _, _ in environmentInspectionStub() })
   }
 }

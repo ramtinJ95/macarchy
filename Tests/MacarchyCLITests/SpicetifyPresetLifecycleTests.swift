@@ -50,7 +50,7 @@ struct SpicetifyPresetLifecycleTests {
         planner: .live,
         environmentTeardown: { _, _, _ in
           Issue.record("Apply rollback must not use ordinary teardown")
-          return try teardownComponent(dryRun: false, mutated: false)
+          return environmentTeardownStub(dryRun: false, mutated: false)
         },
         desktopTeardown: { _, _, _ in
           Issue.record("Apply rollback must not use ordinary teardown")

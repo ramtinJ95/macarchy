@@ -371,7 +371,7 @@ struct EnvironmentSessionVerifier: Sendable {
   }
 }
 
-struct EnvironmentLifecycleReport: CommandReport {
+struct EnvironmentLifecycleReport: CommandReport, Sendable {
   let schemaVersion = 1
   let operation: String
   let outcome: String
@@ -397,6 +397,10 @@ struct EnvironmentLifecycleReport: CommandReport {
 
   var succeeded: Bool {
     ["converged", "applied", "no_change", "ready", "restored", "absent"].contains(outcome)
+  }
+
+  func execution(json: Bool) throws -> CommandExecution {
+    (try render(json: json), succeeded)
   }
 
   func renderText() throws -> String {
@@ -431,7 +435,7 @@ struct EnvironmentLifecycleReport: CommandReport {
   }
 }
 
-struct EnvironmentGenerationReport: Encodable {
+struct EnvironmentGenerationReport: Encodable, Sendable {
   let status: String
   let generationID: String?
   let inputDigest: String?
@@ -502,11 +506,26 @@ struct EnvironmentStatusCommandRunner: Sendable {
     json: Bool,
     profile: PortableProfile? = nil
   ) throws -> CommandExecution {
-    try run(
+    try statusReport(
+      resourcesRoot: resourcesRoot, profileURL: profileURL, profileRequired: profileRequired,
+      stateRoot: stateRoot, homeDirectory: homeDirectory, consumerPaths: consumerPaths,
+      profile: profile
+    ).execution(json: json)
+  }
+
+  func statusReport(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    profile: PortableProfile? = nil
+  ) -> EnvironmentLifecycleReport {
+    run(
       operation: "environment_status", resourcesRoot: resourcesRoot, profileURL: profileURL,
       profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
-      consumerPaths: consumerPaths, includeVerification: false, applied: nil,
-      json: json, profile: profile)
+      consumerPaths: consumerPaths, includeVerification: false, applied: nil, profile: profile)
   }
 
   /// Status plus session verification.
@@ -520,15 +539,31 @@ struct EnvironmentStatusCommandRunner: Sendable {
     json: Bool,
     profile: PortableProfile? = nil
   ) throws -> CommandExecution {
-    try run(
+    try doctorReport(
+      resourcesRoot: resourcesRoot, profileURL: profileURL, profileRequired: profileRequired,
+      stateRoot: stateRoot, homeDirectory: homeDirectory, consumerPaths: consumerPaths,
+      profile: profile
+    ).execution(json: json)
+  }
+
+  /// Status plus session verification.
+  func doctorReport(
+    resourcesRoot: URL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    profile: PortableProfile? = nil
+  ) -> EnvironmentLifecycleReport {
+    run(
       operation: "environment_doctor", resourcesRoot: resourcesRoot, profileURL: profileURL,
       profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
-      consumerPaths: consumerPaths, includeVerification: true, applied: nil,
-      json: json, profile: profile)
+      consumerPaths: consumerPaths, includeVerification: true, applied: nil, profile: profile)
   }
 
   /// Reports apply's result through the status path, reusing what apply already observed.
-  func executeAfterApply(
+  func reportAfterApply(
     _ applied: EnvironmentApplyObservation,
     resourcesRoot: URL,
     profileURL: URL,
@@ -536,13 +571,12 @@ struct EnvironmentStatusCommandRunner: Sendable {
     stateRoot: URL,
     homeDirectory: URL,
     consumerPaths: ThemeConsumerPaths,
-    json: Bool,
     profile: PortableProfile
-  ) throws -> CommandExecution {
-    try run(
+  ) -> EnvironmentLifecycleReport {
+    run(
       operation: "environment_apply", resourcesRoot: resourcesRoot, profileURL: profileURL,
       profileRequired: profileRequired, stateRoot: stateRoot, homeDirectory: homeDirectory,
-      consumerPaths: consumerPaths, includeVerification: true, applied: applied, json: json,
+      consumerPaths: consumerPaths, includeVerification: true, applied: applied,
       profile: profile)
   }
 
@@ -556,9 +590,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
     consumerPaths: ThemeConsumerPaths,
     includeVerification: Bool,
     applied: EnvironmentApplyObservation?,
-    json: Bool,
     profile suppliedProfile: PortableProfile?
-  ) throws -> CommandExecution {
+  ) -> EnvironmentLifecycleReport {
     let profile: PortableProfile
     let composition: EnvironmentComposition
     do {
@@ -571,9 +604,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
         stateRoot: stateRoot
       )
     } catch {
-      let report = failure(
+      return failure(
         operation: operation, profile: profileURL, message: String(describing: error))
-      return (try report.render(json: json), false)
     }
 
     let generation = EnvironmentGenerationStore(stateRoot: stateRoot).inspect(expected: composition)
@@ -630,9 +662,8 @@ struct EnvironmentStatusCommandRunner: Sendable {
             message: EnvironmentStateStore.spicetifyRecoveryMessage))
       }
     } catch {
-      let report = failure(
+      return failure(
         operation: operation, profile: profileURL, message: String(describing: error))
-      return (try report.render(json: json), false)
     }
     let missing = prerequisiteState.contains { $0.status == "missing" }
     let providerReady =
@@ -656,7 +687,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       converged
       ? (applied?.outcome ?? "converged")
       : transactionStatus == "clear" ? "drifted" : "blocked"
-    let report = EnvironmentLifecycleReport(
+    return EnvironmentLifecycleReport(
       operation: operation,
       outcome: outcome,
       mutated: applied?.mutated ?? false,
@@ -674,7 +705,6 @@ struct EnvironmentStatusCommandRunner: Sendable {
           ? (applied?.message ?? "The managed daily tool environment is converged.")
           : "The managed daily tool environment requires attention.")
     )
-    return (try report.render(json: json), report.succeeded)
   }
 
   static func providers(_ profile: EnvironmentProfile) -> [String: String] {

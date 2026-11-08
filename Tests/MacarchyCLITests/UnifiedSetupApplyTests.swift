@@ -195,9 +195,7 @@ struct UnifiedSetupApplyTests {
             ]
         )
         calls.withLock { $0.append("environment") }
-        return try applyComponent(
-          #"{"operation":"environment_apply","outcome":"applied","mutated":true,"message":"environment changed"}"#
-        )
+        return environmentReportStub(message: "environment changed")
       },
       transactionTeardown: teardown
     )
@@ -254,9 +252,7 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
-        return try applyComponent(
-          #"{"operation":"environment_apply","outcome":"applied","mutated":true,"message":"environment changed"}"#
-        )
+        return environmentReportStub(message: "environment changed")
       })
 
     let plan = try runner.planner.prepare(context: fixture.context).report
@@ -383,9 +379,7 @@ struct UnifiedSetupApplyTests {
       environment: { _, _, _, received, _ in
         #expect(received == approvals)
         calls.withLock { $0.append("environment") }
-        return try applyComponent(
-          #"{"operation":"environment_apply","outcome":"no_change","mutated":false,"message":"environment ready"}"#
-        )
+        return environmentReportStub("no_change", mutated: false, message: "environment ready")
       }
     )
 
@@ -577,9 +571,7 @@ struct UnifiedSetupApplyTests {
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
-        return try applyComponent(
-          #"{"operation":"environment_apply","outcome":"no_change","mutated":false,"message":"ready"}"#
-        )
+        return environmentReportStub("no_change", mutated: false, message: "ready")
       })
     let preview = try runner.planner.prepare(context: fixture.context).report
     let approval = try #require(preview.packageInstallation?.approvalDigest)
@@ -621,7 +613,7 @@ struct UnifiedSetupApplyTests {
       planner: fixture.planner(plannedStages: [.desktop]),
       environmentTeardown: { _, _, _ in
         Issue.record("Environment teardown must not run when apply stopped at desktop")
-        return try teardownComponent(dryRun: true, mutated: false)
+        return environmentTeardownStub(dryRun: true, mutated: false)
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "rollback")") }
@@ -696,7 +688,7 @@ struct UnifiedSetupApplyTests {
       planner: fixture.planner(plannedStages: [.desktop, .environment]),
       environmentTeardown: { _, _, dryRun in
         calls.withLock { $0.append("environment:\(dryRun ? "preview" : "rollback")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+        return environmentTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "rollback")") }
@@ -745,10 +737,7 @@ struct UnifiedSetupApplyTests {
         desktopApplyStub()
       },
       environment: { _, _, _, _, _ in
-        try applyComponent(
-          #"{"operation":"environment_apply","outcome":"failed","mutated":true,"message":"environment failed"}"#,
-          succeeded: false
-        )
+        environmentReportStub("failed", message: "environment failed")
       },
       transactionTeardown: teardown
     )
@@ -781,7 +770,7 @@ struct UnifiedSetupApplyTests {
       planner: fixture.planner(plannedStages: [.desktop]),
       environmentTeardown: { _, _, _ in
         Issue.record("Environment was not part of the interrupted transaction")
-        return try teardownComponent(dryRun: true, mutated: false)
+        return environmentTeardownStub(dryRun: true, mutated: false)
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "rollback")") }

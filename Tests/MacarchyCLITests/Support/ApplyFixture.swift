@@ -85,12 +85,14 @@ final class ApplyFixture: @unchecked Sendable {
       Issue.record("No theme reactivation reviewed")
       throw UnexpectedComponentCall()
     },
-    desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply<
-      DesktopAggregateMutationReport
-    >,
-    environment: @escaping UnifiedSetupApplyCommandRunner.ComponentApply<
-      SetupComponentExecution
-    >,
+    desktop:
+      @escaping UnifiedSetupApplyCommandRunner.ComponentApply<
+        DesktopAggregateMutationReport
+      >,
+    environment:
+      @escaping UnifiedSetupApplyCommandRunner.ComponentApply<
+        EnvironmentLifecycleReport
+      >,
     transactionTeardown: UnifiedSetupTeardownCommandRunner? = nil,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
@@ -119,9 +121,7 @@ final class ApplyFixture: @unchecked Sendable {
         ?? UnifiedSetupTeardownCommandRunner(
           planner: planner,
           environmentTeardown: { _, _, _ in
-            try applyComponent(
-              #"{"outcome":"no_change","mutated":false,"message":"environment"}"#
-            )
+            environmentReportStub("no_change", mutated: false)
           },
           desktopTeardown: { _, _, _ in
             desktopTeardownStub("no_change", message: "desktop")
@@ -374,21 +374,26 @@ func desktopInspectionStub() -> DesktopInspectionReport {
   .doctor(DoctorJSONReport(operation: "desktop_doctor", findings: []))
 }
 
-func applyComponent(
-  _ json: String,
-  succeeded: Bool = true
-) throws -> SetupComponentExecution {
-  try SetupComponentExecution((output: json, succeeded: succeeded))
+func environmentReportStub(
+  _ outcome: String = "applied",
+  operation: String = "environment_apply",
+  mutated: Bool = true,
+  message: String = "environment"
+) -> EnvironmentLifecycleReport {
+  EnvironmentLifecycleReport(
+    operation: operation, outcome: outcome, mutated: mutated, profile: nil, providers: [:],
+    generation: EnvironmentGenerationReport(status: "current", message: message),
+    transactionStatus: "clear", adoptionEvidenceDigest: nil, prerequisites: [], entries: [],
+    theme: [], verification: [], message: message)
 }
 
-func teardownComponent(
-  dryRun: Bool,
-  mutated: Bool,
-  previewOutcome: String = "planned"
-) throws -> SetupComponentExecution {
-  try applyComponent(
-    """
-    {"outcome":"\(dryRun ? previewOutcome : mutated ? "restored" : "no_change")","mutated":\(mutated),"message":"component"}
-    """
-  )
+/// An environment teardown preview is ready; a teardown restores what it mutated.
+func environmentTeardownStub(dryRun: Bool, mutated: Bool) -> EnvironmentLifecycleReport {
+  environmentReportStub(
+    dryRun ? "ready" : mutated ? "restored" : "no_change", operation: "environment_teardown",
+    mutated: mutated, message: "component")
+}
+
+func environmentInspectionStub() -> EnvironmentLifecycleReport {
+  environmentReportStub("converged", operation: "environment_status", mutated: false)
 }
