@@ -25,7 +25,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .adoptionRequired)
-    #expect(inspection.ownership == "legacy_fallback")
+    #expect(inspection.ownership.rawValue == "legacy_fallback")
     #expect(inspection.source == fallback.path)
     #expect(inspection.sourceConfiguration == "alt - j : fallback command\n")
     #expect(inspection.adoptionEvidenceDigest != nil)
@@ -47,7 +47,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "legacy_fallback_conflict")
+    #expect(inspection.ownership.rawValue == "legacy_fallback_conflict")
   }
 
   @Test
@@ -67,7 +67,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .adoptionRequired)
-    #expect(inspection.ownership == "directory_symlink")
+    #expect(inspection.ownership.rawValue == "directory_symlink")
     #expect(inspection.source == fixture.dotfiles.appending(path: "skhdrc").path)
   }
 
@@ -107,7 +107,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .adoptionRequired)
-    #expect(inspection.ownership == "regular_file")
+    #expect(inspection.ownership.rawValue == "regular_file")
     #expect(inspection.source == entry.path)
     #expect(inspection.originalTarget == nil)
     #expect(inspection.retainedOriginalRequirement == nil)
@@ -133,7 +133,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .adoptionRequired)
-    #expect(inspection.ownership == "entry_symlink")
+    #expect(inspection.ownership.rawValue == "entry_symlink")
     #expect(inspection.source == source.path)
     #expect(inspection.originalTarget == "custom.skhdrc")
     #expect(inspection.retainedOriginalRequirement == "exact_inode")
@@ -153,7 +153,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "conflict")
+    #expect(inspection.ownership.rawValue == "conflict")
     #expect(
       inspection.message.hasPrefix("existing skhd entry point is not a bounded regular file: "))
   }
@@ -174,7 +174,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "matching_unclaimed_unreadable")
+    #expect(inspection.ownership.rawValue == "matching_unclaimed_unreadable")
   }
 
   @Test
@@ -200,7 +200,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .managed)
-    #expect(inspection.ownership == "manifest_claimed_symlink")
+    #expect(inspection.ownership.rawValue == "manifest_claimed_symlink")
   }
 
   @Test
@@ -222,7 +222,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "ownership_drift")
+    #expect(inspection.ownership.rawValue == "ownership_drift")
   }
 
   @Test
@@ -239,7 +239,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "ownership_drift")
+    #expect(inspection.ownership.rawValue == "ownership_drift")
   }
 
   @Test
@@ -274,7 +274,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "invalid_ownership_evidence")
+    #expect(inspection.ownership.rawValue == "invalid_ownership_evidence")
   }
 
   @Test
@@ -290,7 +290,7 @@ struct KeybindingProviderInspectionTests {
     let inspection = inspect(fixture)
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "unsafe_ancestor")
+    #expect(inspection.ownership.rawValue == "unsafe_ancestor")
   }
 
   @Test
@@ -353,7 +353,7 @@ struct KeybindingProviderInspectionTests {
     )
 
     #expect(inspection.status == .blocked)
-    #expect(inspection.ownership == "state_root_mismatch")
+    #expect(inspection.ownership.rawValue == "state_root_mismatch")
   }
 
   private func inspect(

@@ -66,7 +66,7 @@ struct KeybindingProviderTransaction: Sendable {
       let inspection = KeybindingProviderInspector().inspect(
         homeDirectory: homeDirectory, stateRoot: stateRoot,
         generation: KeybindingGenerationInspector().inspect(stateRoot: stateRoot))
-      if inspection.status == .installRequired, inspection.ownership == "absent",
+      if inspection.status == .installRequired, inspection.ownership == .absent,
         inspection.adoptionEvidence == expectedEvidence
       {
         guard try !backupExists() else { throw SetupOwnershipError.orphanedBackup(backup) }

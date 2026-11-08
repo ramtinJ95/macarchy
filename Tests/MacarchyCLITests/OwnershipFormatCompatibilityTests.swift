@@ -90,8 +90,9 @@ struct OwnershipFormatCompatibilityTests {
           status: .current, generationID: evidence.generationID, inputDigest: nil,
           renderedDigest: nil, configuration: nil, message: nil),
         provider: KeybindingProviderInspection(
-          status: .managed, entryPoint: evidence.providerEntryPoint, ownership: "managed",
-          source: nil, originalTarget: nil, expectedTarget: evidence.providerTarget, message: "",
+          status: .managed, entryPoint: evidence.providerEntryPoint,
+          ownership: .manifestClaimedSymlink, source: nil, originalTarget: nil,
+          expectedTarget: evidence.providerTarget, message: "",
           adoptionEvidenceDigest: nil, retainedOriginalRequirement: nil,
           retainedOriginalStatus: nil, sourceConfiguration: nil, adoptionEvidence: nil),
         process: KeybindingProcessInspection(

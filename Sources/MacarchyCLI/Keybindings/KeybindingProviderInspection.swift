@@ -9,6 +9,30 @@ enum KeybindingProviderStatus: String, Encodable, Sendable {
   case blocked
 }
 
+/// How inspection classified the skhd entry; the raw values are the reported `ownership` strings.
+enum KeybindingProviderOwnership: String, Encodable, Sendable {
+  case absent
+  case conflict
+  case directorySymlink = "directory_symlink"
+  case entrySymlink = "entry_symlink"
+  case invalidOwnershipEvidence = "invalid_ownership_evidence"
+  case legacyFallback = "legacy_fallback"
+  case legacyFallbackConflict = "legacy_fallback_conflict"
+  case legacyFallbackRequiresDirectory = "legacy_fallback_requires_directory"
+  case manifestClaimedSymlink = "manifest_claimed_symlink"
+  case manifestClaimedSymlinkLegacyRestore = "manifest_claimed_symlink_legacy_restore"
+  case matchingUnclaimedSymlink = "matching_unclaimed_symlink"
+  case matchingUnclaimedUnreadable = "matching_unclaimed_unreadable"
+  case ordinaryDirectory = "ordinary_directory"
+  case ownershipDrift = "ownership_drift"
+  case recoveryRequired = "recovery_required"
+  case regularFile = "regular_file"
+  case retainedOriginalDrift = "retained_original_drift"
+  case stateRootMismatch = "state_root_mismatch"
+  case unknown
+  case unsafeAncestor = "unsafe_ancestor"
+}
+
 struct KeybindingAdoptionEvidence: Equatable, Sendable {
   enum Kind: String, Sendable {
     case absent
@@ -33,7 +57,7 @@ struct KeybindingAdoptionEvidence: Equatable, Sendable {
 struct KeybindingProviderInspection: Encodable, Sendable {
   let status: KeybindingProviderStatus
   let entryPoint: String
-  let ownership: String
+  let ownership: KeybindingProviderOwnership
   let source: String?
   let originalTarget: String?
   let expectedTarget: String
@@ -70,7 +94,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "unsafe_ancestor",
+        ownership: .unsafeAncestor,
         message: "cannot open the selected home without following symlinks: \(error)"
       )
     }
@@ -105,7 +129,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "unsafe_ancestor",
+        ownership: .unsafeAncestor,
         message: "~/.config is not a pinned ordinary directory: \(error)"
       )
     }
@@ -114,11 +138,11 @@ struct KeybindingProviderInspector: Sendable {
     let ownershipRecord: SetupOwnershipRecord?
     switch entryOwnershipClaim(paths) {
     case .invalid(let message):
-      return paths.result(.blocked, ownership: "invalid_ownership_evidence", message: message)
+      return paths.result(.blocked, ownership: .invalidOwnershipEvidence, message: message)
     case .prepared:
       return paths.result(
         .blocked,
-        ownership: "recovery_required",
+        ownership: .recoveryRequired,
         message: "keybinding entry ownership transaction is prepared but incomplete"
       )
     case .claimed(let record):
@@ -147,7 +171,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "unknown",
+        ownership: .unknown,
         message: "cannot inspect skhd configuration directory: \(error)"
       )
     }
@@ -173,7 +197,7 @@ struct KeybindingProviderInspector: Sendable {
       }
       return paths.result(
         .blocked,
-        ownership: "conflict",
+        ownership: .conflict,
         message: "~/.config/skhd is neither a directory nor a symbolic link"
       )
     }
@@ -198,7 +222,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "directory_symlink",
+        ownership: .directorySymlink,
         message: "skhd directory symlink cannot be adopted: \(error)"
       )
     }
@@ -213,7 +237,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "directory_symlink",
+        ownership: .directorySymlink,
         message: "cannot read skhd directory symlink: \(error)"
       )
     }
@@ -227,7 +251,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "directory_symlink",
+        ownership: .directorySymlink,
         originalTarget: target,
         message: "skhd directory symlink target is not a pinned ordinary directory: \(error)"
       )
@@ -244,7 +268,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "directory_symlink",
+        ownership: .directorySymlink,
         originalTarget: target,
         message: "cannot inventory the skhd directory symlink target: \(error)"
       )
@@ -254,7 +278,7 @@ struct KeybindingProviderInspector: Sendable {
       let suffix = inventory.truncated ? ", additional entries omitted" : ""
       return paths.result(
         .blocked,
-        ownership: "directory_symlink",
+        ownership: .directorySymlink,
         originalTarget: target,
         message: "directory-level adoption requires only skhdrc; found: \(entries)\(suffix)"
       )
@@ -288,7 +312,7 @@ struct KeybindingProviderInspector: Sendable {
       }
       return paths.result(
         .adoptionRequired,
-        ownership: "directory_symlink",
+        ownership: .directorySymlink,
         source: sourceURL,
         originalTarget: target,
         message:
@@ -306,7 +330,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "directory_symlink",
+        ownership: .directorySymlink,
         originalTarget: target,
         message: "directory-level skhdrc is not a bounded regular file: \(error)"
       )
@@ -329,7 +353,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "ordinary_directory",
+        ownership: .ordinaryDirectory,
         message: "cannot pin the ordinary skhd directory: \(error)"
       )
     }
@@ -347,7 +371,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "ordinary_directory",
+        ownership: .ordinaryDirectory,
         message: "cannot inspect skhd entry point: \(error)"
       )
     }
@@ -383,7 +407,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "unsafe_ancestor",
+        ownership: .unsafeAncestor,
         message: "cannot reopen the selected home to inspect ~/.skhdrc: \(error)"
       )
     }
@@ -413,7 +437,7 @@ struct KeybindingProviderInspector: Sendable {
       } catch {
         return paths.result(
           .blocked,
-          ownership: "entry_symlink",
+          ownership: .entrySymlink,
           message: "skhd entry-point symlink cannot be adopted: \(error)"
         )
       }
@@ -429,7 +453,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "entry_symlink",
+        ownership: .entrySymlink,
         message: "cannot read skhd entry-point symlink: \(error)"
       )
     }
@@ -445,7 +469,7 @@ struct KeybindingProviderInspector: Sendable {
     if target == SkhdLayout.managedTarget, paths.expectedTarget != SkhdLayout.managedTarget {
       return paths.result(
         .blocked,
-        ownership: "state_root_mismatch",
+        ownership: .stateRootMismatch,
         originalTarget: target,
         message: "entry-point link targets the canonical state root, not the selected state root"
       )
@@ -477,7 +501,7 @@ struct KeybindingProviderInspector: Sendable {
         }
         return paths.result(
           .blocked,
-          ownership: "retained_original_drift",
+          ownership: .retainedOriginalDrift,
           message:
             "the authenticated retained-original claim is missing, drifted, or no longer bound to its persisted path",
           retainedOriginalRequirement: "exact_inode",
@@ -498,8 +522,7 @@ struct KeybindingProviderInspector: Sendable {
       }
       return paths.result(
         .managed,
-        ownership: legacySymlink
-          ? "manifest_claimed_symlink_legacy_restore" : "manifest_claimed_symlink",
+        ownership: legacySymlink ? .manifestClaimedSymlinkLegacyRestore : .manifestClaimedSymlink,
         originalTarget: target,
         message: legacySymlink
           ? "legacy ownership predates retained-original claims; teardown can safely "
@@ -512,14 +535,14 @@ struct KeybindingProviderInspector: Sendable {
     guard generation.status == .current, let configuration = generation.configuration else {
       return paths.result(
         .blocked,
-        ownership: "matching_unclaimed_unreadable",
+        ownership: .matchingUnclaimedUnreadable,
         originalTarget: target,
         message: "matching unclaimed link has no valid current generation to preview"
       )
     }
     return paths.result(
       .adoptionRequired,
-      ownership: "matching_unclaimed_symlink",
+      ownership: .matchingUnclaimedSymlink,
       source: StateLayout(root: paths.stateRoot).currentSkhdrc,
       originalTarget: target,
       message: "entry-point link matches the plan but has no Macarchy ownership evidence",
@@ -552,7 +575,7 @@ struct KeybindingProviderInspector: Sendable {
       )
       return paths.result(
         .adoptionRequired,
-        ownership: "entry_symlink",
+        ownership: .entrySymlink,
         source: source.url,
         originalTarget: target,
         message:
@@ -584,7 +607,7 @@ struct KeybindingProviderInspector: Sendable {
       )
       return paths.result(
         .adoptionRequired,
-        ownership: "regular_file",
+        ownership: .regularFile,
         source: source.url,
         message: "existing skhd entry point requires explicit adoption",
         sourceConfiguration: source.text,
@@ -717,7 +740,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch let error as PinnedFilesystemError where error.code == ENOENT {
       return paths.result(
         .installRequired,
-        ownership: skhdDirectoryExists ? "ordinary_directory" : "absent",
+        ownership: skhdDirectoryExists ? .ordinaryDirectory : .absent,
         message: skhdDirectoryExists
           ? "skhd entry point is absent"
           : "skhd configuration directory and entry point are absent",
@@ -726,7 +749,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "legacy_fallback_conflict",
+        ownership: .legacyFallbackConflict,
         message: "cannot inspect fallback ~/.skhdrc without following the preferred path: \(error)"
       )
     }
@@ -734,7 +757,7 @@ struct KeybindingProviderInspector: Sendable {
     guard skhdDirectoryExists else {
       return paths.result(
         .blocked,
-        ownership: "legacy_fallback_requires_directory",
+        ownership: .legacyFallbackRequiresDirectory,
         source: fallback,
         message: "fallback ~/.skhdrc exists; create and review an ordinary ~/.config/skhd "
           + "directory before Macarchy can install a preferred entry without shadowing it"
@@ -749,7 +772,7 @@ struct KeybindingProviderInspector: Sendable {
       let evidence = try legacyFallbackEvidence(homeDirectory: paths.home)
       return paths.result(
         .adoptionRequired,
-        ownership: "legacy_fallback",
+        ownership: .legacyFallback,
         source: source.url,
         originalTarget: evidence.linkDestination,
         message: "fallback ~/.skhdrc is authoritative until reviewed adoption installs the "
@@ -760,7 +783,7 @@ struct KeybindingProviderInspector: Sendable {
     } catch {
       return paths.result(
         .blocked,
-        ownership: "legacy_fallback_conflict",
+        ownership: .legacyFallbackConflict,
         source: fallback,
         message: "fallback ~/.skhdrc is not a bounded supported file or symlink: \(error)"
       )
@@ -1072,7 +1095,7 @@ extension SkhdLayout {
   fileprivate var ownershipDrift: KeybindingProviderInspection {
     result(
       .blocked,
-      ownership: "ownership_drift",
+      ownership: .ownershipDrift,
       message: "ownership manifest claims the skhd entry point, but filesystem state differs"
     )
   }
@@ -1080,14 +1103,14 @@ extension SkhdLayout {
   fileprivate func unsupportedEntry(_ error: Error) -> KeybindingProviderInspection {
     result(
       .blocked,
-      ownership: "conflict",
+      ownership: .conflict,
       message: "existing skhd entry point is not a bounded regular file: \(error)"
     )
   }
 
   fileprivate func result(
     _ status: KeybindingProviderStatus,
-    ownership: String,
+    ownership: KeybindingProviderOwnership,
     source: URL? = nil,
     originalTarget: String? = nil,
     message: String,

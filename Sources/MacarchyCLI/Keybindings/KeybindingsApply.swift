@@ -410,7 +410,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
         effectiveBehavior: effectiveBehavior,
         profile: profile
       )
-      guard preparation.outcome != "blocked", preparation.composition != nil else {
+      guard preparation.outcome != .blocked, preparation.composition != nil else {
         throw KeybindingsApplyError.blocked(
           preparation.blockingMessages.joined(separator: "; ")
         )
@@ -427,7 +427,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
           approvedEvidenceDigest: adopt
         )
       }
-      if preparation.outcome == "no_change" {
+      if preparation.outcome == .noChange {
         try lifecycle.verifyProcess()
         let report = KeybindingsApplyReport(
           outcome: "no_change",
@@ -651,7 +651,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       }
     }
 
-    if prepared.preparation.outcome == "no_change" {
+    if prepared.preparation.outcome == .noChange {
       try lifecycle.verifyProcess()
       let observed = evidence.withLock { $0 }
       return KeybindingsApplyReport(
@@ -815,7 +815,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       homeDirectory: homeDirectory,
       profile: profile
     )
-    guard preparation.outcome != "blocked", let composition = preparation.composition else {
+    guard preparation.outcome != .blocked, let composition = preparation.composition else {
       throw KeybindingsApplyError.blocked(preparation.blockingMessages.joined(separator: "; "))
     }
     var eligibilityDecision = try eligibility(preparation, adopt: adopt)
@@ -1137,7 +1137,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     case .installEntry:
       guard
         providerInspection.status == .installRequired,
-        providerInspection.ownership == "ordinary_directory"
+        providerInspection.ownership == .ordinaryDirectory
       else {
         throw KeybindingsApplyError.postcondition(
           "rollback did not restore the absent provider entry"
@@ -1369,7 +1369,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     if transaction.operation == .installEntry {
       guard
         inspection.status == .installRequired,
-        ["ordinary_directory", "absent"].contains(inspection.ownership)
+        [.ordinaryDirectory, .absent].contains(inspection.ownership)
       else {
         throw SetupOwnershipError.ownershipDrift(URL(filePath: inspection.entryPoint))
       }
@@ -1411,7 +1411,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     guard
       inspection.status == .adoptionRequired
         || (inspection.status == .installRequired
-          && inspection.ownership == "ordinary_directory")
+          && inspection.ownership == .ordinaryDirectory)
     else {
       throw SetupOwnershipError.ownershipDrift(URL(filePath: inspection.entryPoint))
     }
@@ -1457,7 +1457,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     case .managed:
       return KeybindingsApplyEligibility(operation: .updateGeneration, lifecycle: .reload)
     case .installRequired
-    where ["ordinary_directory", "absent"].contains(preparation.provider.ownership):
+    where [.ordinaryDirectory, .absent].contains(preparation.provider.ownership):
       return KeybindingsApplyEligibility(operation: .installEntry, lifecycle: .restart)
     case .installRequired:
       throw KeybindingsApplyError.blocked(

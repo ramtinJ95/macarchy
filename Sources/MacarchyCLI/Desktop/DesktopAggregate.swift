@@ -244,14 +244,14 @@ struct DesktopKeybindingOrchestrator: Sendable {
     _ preparation: KeybindingsPlanPreparation
   ) -> DesktopKeybindingPlan {
     DesktopKeybindingPlan(
-      outcome: preparation.outcome,
+      outcome: preparation.outcome.rawValue,
       effectiveStatus: preparation.effectiveBehavior.status.rawValue,
-      message: preparation.outcome == "blocked"
+      message: preparation.outcome == .blocked
         ? preparation.blockingMessages.joined(separator: "; ")
         : preparation.effectiveBehavior.statusMessage,
       generationID: preparation.generation.generationID,
       providerStatus: preparation.provider.status.rawValue,
-      ownership: preparation.provider.ownership,
+      ownership: preparation.provider.ownership.rawValue,
       adoptionEvidenceDigest: preparation.provider.adoptionEvidenceDigest,
       transactionStatus: preparation.effectiveBehavior.transaction.status.rawValue
     )
