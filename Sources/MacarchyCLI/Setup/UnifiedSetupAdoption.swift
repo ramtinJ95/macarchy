@@ -1,6 +1,14 @@
 import Foundation
 import ThemeCore
 
+/// A configuration unified setup may adopt, named alike in plans, approvals and adoption files.
+enum UnifiedSetupAdoptionTarget: String, CaseIterable, Sendable {
+  case yabai
+  case keybindings
+  case sketchybar
+  case environment
+}
+
 struct UnifiedSetupAdoptionApprovals: Equatable, Sendable {
   static let none = Self()
 
@@ -21,13 +29,30 @@ struct UnifiedSetupAdoptionApprovals: Equatable, Sendable {
     self.environment = environment
   }
 
+  /// Approves exactly the digests a reviewed plan listed, keyed by adoption target.
+  init(digests: [String: String]) {
+    self.init(
+      yabai: digests[UnifiedSetupAdoptionTarget.yabai.rawValue],
+      keybindings: digests[UnifiedSetupAdoptionTarget.keybindings.rawValue],
+      sketchybar: digests[UnifiedSetupAdoptionTarget.sketchybar.rawValue],
+      environment: digests[UnifiedSetupAdoptionTarget.environment.rawValue]
+    )
+  }
+
+  func approval(for target: UnifiedSetupAdoptionTarget) -> String? {
+    switch target {
+    case .yabai: yabai
+    case .keybindings: keybindings
+    case .sketchybar: sketchybar
+    case .environment: environment
+    }
+  }
+
   var values: [String: String] {
-    [
-      "yabai": yabai,
-      "keybindings": keybindings,
-      "sketchybar": sketchybar,
-      "environment": environment,
-    ].compactMapValues { $0 }
+    Dictionary(
+      uniqueKeysWithValues: UnifiedSetupAdoptionTarget.allCases.compactMap { target in
+        approval(for: target).map { (target.rawValue, $0) }
+      })
   }
 
   func validate(required evidence: [UnifiedSetupAdoptionEvidence]) throws {
@@ -66,9 +91,7 @@ struct UnifiedSetupAdoptionFile {
       guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         throw UnifiedSetupAdoptionError("Adoption file must contain one JSON object.")
       }
-      let allowed = Set([
-        "schema_version", "yabai", "keybindings", "sketchybar", "environment",
-      ])
+      let allowed = Set(["schema_version"] + UnifiedSetupAdoptionTarget.allCases.map(\.rawValue))
       guard Set(object.keys).isSubset(of: allowed), object["schema_version"] != nil else {
         throw UnifiedSetupAdoptionError("Adoption file contains unknown or missing fields.")
       }

@@ -40,9 +40,7 @@ struct MenuSetupReview: Sendable {
       context: context, consumerPaths: consumerPaths,
       packageApproval: plan.packageInstallation?.approvalDigest,
       preferencesApproval: plan.preferencesApprovalDigest,
-      adoptions: UnifiedSetupAdoptionApprovals(
-        yabai: approvals["yabai"], keybindings: approvals["keybindings"],
-        sketchybar: approvals["sketchybar"], environment: approvals["environment"]),
+      adoptions: UnifiedSetupAdoptionApprovals(digests: approvals),
       reviewedPlan: reviewedPlan, json: false)
   }
 }

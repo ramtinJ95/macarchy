@@ -152,6 +152,52 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
       )
     }
   }
+
+  /// The service unified setup reports for the preset; only Herdr's running server is reloaded.
+  var setupService: UnifiedSetupService? {
+    switch self {
+    case .herdr:
+      UnifiedSetupService(id: "herdr", ownership: "external", lifecycle: "reload_if_running")
+    case .codex, .pi, .slack, .spicetify, .tuicr: nil
+    }
+  }
+
+  /// The step unified setup leaves to the user for the preset.
+  var setupManualBoundary: UnifiedSetupManualBoundary? {
+    switch self {
+    case .slack:
+      UnifiedSetupManualBoundary(
+        id: "slack_theme_import",
+        kind: "application_ui",
+        instruction: "Import the generated four-color theme in each Slack workspace."
+      )
+    case .codex, .herdr, .pi, .spicetify, .tuicr: nil
+    }
+  }
+}
+
+extension FocusRingProviderSelection {
+  /// The service unified setup reports for the selected focus ring.
+  var setupServices: [UnifiedSetupService] {
+    switch self {
+    case .lean:
+      [
+        UnifiedSetupService(
+          id: BordersAdapter.leanID, ownership: "macarchy_user_service",
+          lifecycle:
+            "own_absent_only; suspend_retained_borders; live_palette_acknowledgement; unregister_on_disable; borders_selection_is_rollback; known_platform_limits"
+        )
+      ]
+    case .borders:
+      [
+        UnifiedSetupService(
+          id: BordersAdapter.id, ownership: "homebrew_service",
+          lifecycle:
+            "start_or_request_palette; restart_on_adoption_and_restore; no_settings_readback")
+      ]
+    case .disabled: []
+    }
+  }
 }
 
 /// A preset whose key-owned selector points at canonical theme links. Such a preset may still be

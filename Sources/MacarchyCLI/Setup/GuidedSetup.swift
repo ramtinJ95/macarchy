@@ -421,12 +421,7 @@ struct GuidedSetupCommandRunner: Sendable {
       io.write("Configuration adoption: \(adoption.id) — \(adoption.digest)\n")
       approved[adoption.id] = adoption.digest
     }
-    let adoptions = UnifiedSetupAdoptionApprovals(
-      yabai: approved["yabai"],
-      keybindings: approved["keybindings"],
-      sketchybar: approved["sketchybar"],
-      environment: approved["environment"]
-    )
+    let adoptions = UnifiedSetupAdoptionApprovals(digests: approved)
     let packageApproval = plan.packageInstallation?.approvalDigest
     let preferencesApproval = try plan.preferencesApprovalDigest
     if let packageApproval {
