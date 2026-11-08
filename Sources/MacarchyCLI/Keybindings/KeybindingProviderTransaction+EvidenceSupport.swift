@@ -27,7 +27,7 @@ extension KeybindingProviderTransaction {
   }
 
   /// The level a record claims: the whole directory for an adopted directory symlink.
-  func level(_ record: SetupOwnershipRecord) -> SkhdLayout.Level {
+  func claimLevel(_ record: SetupOwnershipRecord) -> SkhdLayout.Level {
     originalKind(record) == .directorySymbolicLink ? .directory : .leaf
   }
 
@@ -81,41 +81,26 @@ extension KeybindingProviderTransaction {
   }
 
   func removeAuthenticatedProviderResidues(_ record: SetupOwnershipRecord) throws {
-    let isDirectory = originalKind(record) == .directorySymbolicLink
-    let claim = claimName(record, level(record))
+    let level = claimLevel(record)
+    let claim = claimName(record, level)
     let publication = try publishingName(claim, record: record)
-    if isDirectory {
-      let parent = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-      defer { Darwin.close(parent) }
-      try resumeProviderDeletionResidue(
+    let parentURL = layout.parent(level)
+    let parent = try PinnedFilesystem.openDirectory(at: parentURL)
+    defer { Darwin.close(parent) }
+    try resumeProviderDeletionResidue(
+      parentDescriptor: parent,
+      name: claim,
+      record: record,
+      url: parentURL.appending(path: claim),
+      directory: level == .directory
+    )
+    for name in [publication, claim] {
+      try removeClaimItem(
+        level,
         parentDescriptor: parent,
-        name: claim,
+        name: name,
         record: record,
-        url: configurationDirectory.appending(path: claim),
-        directory: true
-      )
-      try removeManagedDirectory(parentDescriptor: parent, name: publication, record: record)
-      try removeManagedDirectory(parentDescriptor: parent, name: claim, record: record)
-    } else {
-      let parent = try PinnedFilesystem.openDirectory(at: directory)
-      defer { Darwin.close(parent) }
-      try resumeProviderDeletionResidue(
-        parentDescriptor: parent,
-        name: claim,
-        record: record,
-        url: directory.appending(path: claim)
-      )
-      try removeMarkedItem(
-        parentDescriptor: parent,
-        name: publication,
-        record: record,
-        url: directory.appending(path: publication)
-      )
-      try removeMarkedItem(
-        parentDescriptor: parent,
-        name: claim,
-        record: record,
-        url: directory.appending(path: claim)
+        url: parentURL.appending(path: name)
       )
     }
   }

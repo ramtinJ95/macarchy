@@ -26,394 +26,248 @@ extension KeybindingProviderTransaction {
     try writeOriginalBackup(data, record: record, manager: manager)
   }
 
+  /// Puts the managed claim at the live name and settles the displaced original. Leaf and
+  /// directory claims follow the same steps; they differ only in how an item is inspected,
+  /// created and removed, and in how an incomplete claim is resumed.
   func replaceOriginalWithManaged(_ record: SetupOwnershipRecord) throws {
-    switch originalKind(record) {
-    case .directorySymbolicLink:
-      try replaceOriginalDirectoryWithManaged(record)
-    case .absent, .regularFile, .symbolicLink:
-      try replaceOriginalLeafWithManaged(record)
-    }
-  }
-
-  func replaceOriginalLeafWithManaged(_ record: SetupOwnershipRecord) throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    let level = claimLevel(record)
+    let liveName = SkhdLayout.liveName(level)
+    let live = layout.live(level)
+    let parentURL = layout.parent(level)
+    let descriptor = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(descriptor) }
-    let claim = claimName(record, .leaf)
+    let claim = claimName(record, level)
     try resumeProviderDeletionResidue(
       parentDescriptor: descriptor,
       name: claim,
       record: record,
-      url: directory.appending(path: claim)
+      url: parentURL.appending(path: claim),
+      directory: level == .directory
     )
-    let state = try leafState(
-      descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
-    var claimState = try leafState(
+    let state = try itemState(level, descriptor: descriptor, name: liveName, record: record)
+    var claimState = try itemState(
+      level,
       descriptor: descriptor,
       name: claim,
       record: record,
       recognizeIncompleteClaim: true
     )
     if claimState == .incomplete {
-      try removeMarkedItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
-      claimState = .missing
+      switch level {
+      case .leaf:
+        // An incomplete leaf claim is discarded and created again below.
+        try removeMarkedItem(
+          parentDescriptor: descriptor, name: claim, record: record, url: live)
+        claimState = .missing
+      case .directory:
+        // An incomplete directory claim is completed in place.
+        try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
+        claimState = try directoryState(descriptor: descriptor, name: claim, record: record)
+      }
     }
     if state == .managed {
       if claimState == .original {
-        try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: entry)
+        try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: live)
       }
       guard claimState == .missing || claimState == .original else {
-        throw SetupOwnershipError.ownershipDrift(entry)
+        throw SetupOwnershipError.ownershipDrift(live)
       }
       return
     }
     if state == .original, claimState == .managed {
       try displaceOriginal(
-        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
-        url: entry)
-      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: entry)
+        record, descriptor: descriptor, liveName: liveName, claim: claim, url: live)
+      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: live)
       return
     }
     guard state == .original || (state == .missing && originalKind(record) == .absent),
       claimState == .missing
-    else { throw SetupOwnershipError.ownershipDrift(entry) }
-    try createSymlink(
-      descriptor: descriptor,
-      name: claim,
-      destination: SkhdLayout.managedTarget,
-      url: entry,
-      record: record
-    )
+    else { throw SetupOwnershipError.ownershipDrift(live) }
+    switch level {
+    case .leaf:
+      try createSymlink(
+        descriptor: descriptor,
+        name: claim,
+        destination: SkhdLayout.managedTarget,
+        url: live,
+        record: record
+      )
+    case .directory:
+      try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
+    }
     if state == .missing {
-      try rename(descriptor: descriptor, from: claim, to: SkhdLayout.configurationName, url: entry)
+      try rename(descriptor: descriptor, from: claim, to: liveName, url: live)
     } else {
       try displaceOriginal(
-        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
-        url: entry)
+        record, descriptor: descriptor, liveName: liveName, claim: claim, url: live)
       guard
-        try leafState(
-          descriptor: descriptor,
-          name: claim,
-          record: record
-        ) == .original
-      else { throw SetupOwnershipError.ownershipDrift(entry) }
-      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: entry)
+        try itemState(level, descriptor: descriptor, name: claim, record: record) == .original
+      else { throw SetupOwnershipError.ownershipDrift(live) }
+      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: live)
     }
   }
 
-  func restoreOriginalLeaf(
+  /// Puts the original back at the live name and removes the managed claim. Only a leaf
+  /// restoration re-reads the ownership record and verifies the restored original afterwards.
+  func restoreOriginal(
     _ record: SetupOwnershipRecord,
     context: SetupOwnershipManager.Context
   ) throws {
+    let level = claimLevel(record)
+    let verifiesRestoredOriginal = level == .leaf
     if retainsOriginalSymlink(record) {
-      try restoreRetainedOriginalSymlink(record, directoryLevel: false)
-      try verifyOriginal(try ownershipRecord().0, context: context)
+      try restoreRetainedOriginalSymlink(record, level: level)
+      if verifiesRestoredOriginal {
+        try verifyOriginal(try ownershipRecord().0, context: context)
+      }
       return
     }
-    let descriptor = try PinnedFilesystem.openDirectory(at: directory)
+    let liveName = SkhdLayout.liveName(level)
+    let live = layout.live(level)
+    let parentURL = layout.parent(level)
+    let descriptor = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(descriptor) }
-    let claim = claimName(record, .leaf)
+    let claim = claimName(record, level)
     try resumeProviderDeletionResidue(
       parentDescriptor: descriptor,
       name: claim,
       record: record,
-      url: directory.appending(path: claim)
+      url: parentURL.appending(path: claim),
+      directory: level == .directory
     )
-    let state = try leafState(
-      descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
-    var claimState = try leafState(
+    let state = try itemState(level, descriptor: descriptor, name: liveName, record: record)
+    var claimState = try itemState(
+      level,
       descriptor: descriptor,
       name: claim,
       record: record,
       recognizeIncompleteClaim: true
     )
     if claimState == .incomplete {
-      try removeMarkedItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
+      try removeClaimItem(
+        level, parentDescriptor: descriptor, name: claim, record: record, url: live)
       claimState = .missing
     }
     if state == .original || (state == .missing && originalKind(record) == .absent) {
       if claimState == .managed {
-        try removeMarkedItem(
-          parentDescriptor: descriptor, name: claim, record: record, url: entry)
+        try removeClaimItem(
+          level, parentDescriptor: descriptor, name: claim, record: record, url: live)
       }
       guard claimState == .missing || claimState == .managed else {
-        throw SetupOwnershipError.ownershipDrift(entry)
+        throw SetupOwnershipError.ownershipDrift(live)
       }
       if state == .original,
         try claimMarkerMatches(
           parentDescriptor: descriptor,
-          name: SkhdLayout.configurationName,
+          name: liveName,
           record: record,
-          url: entry
+          url: live
         )
       {
         try finalizeRestoredOriginal(
           record,
           parentDescriptor: descriptor,
-          name: SkhdLayout.configurationName,
-          url: entry
+          name: liveName,
+          url: live
         )
       }
       return
     }
     if state == .managed, claimState == .original {
       try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
-        url: entry)
-      try removeMarkedItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
+        record, descriptor: descriptor, liveName: liveName, claim: claim, url: live)
+      try removeClaimItem(
+        level, parentDescriptor: descriptor, name: claim, record: record, url: live)
       return
     }
     guard state == .managed, claimState == .missing else {
-      throw SetupOwnershipError.ownershipDrift(entry)
+      throw SetupOwnershipError.ownershipDrift(live)
     }
     switch originalKind(record) {
     case .absent:
-      try rename(descriptor: descriptor, from: SkhdLayout.configurationName, to: claim, url: entry)
+      try rename(descriptor: descriptor, from: liveName, to: claim, url: live)
       try faultInjector(.managedEntryClaimedForRemoval)
-      try removeMarkedItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
     case .regularFile:
       try restoreRegularFileClaim(record, descriptor: descriptor, name: claim)
       try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
-        url: entry)
-      try removeMarkedItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
-    case .symbolicLink:
+        record, descriptor: descriptor, liveName: liveName, claim: claim, url: live)
+    case .symbolicLink, .directorySymbolicLink:
       try createSymlink(
         descriptor: descriptor,
         name: claim,
         destination: try originalLink(record),
-        url: entry,
+        url: live,
         record: record
       )
       try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: SkhdLayout.configurationName, claim: claim,
-        url: entry)
-      try removeMarkedItem(
-        parentDescriptor: descriptor, name: claim, record: record, url: entry)
-    case .directorySymbolicLink:
-      throw SetupOwnershipError.invalidManifest("directory adoption cannot restore a leaf")
+        record, descriptor: descriptor, liveName: liveName, claim: claim, url: live)
     }
-    try verifyOriginal(try ownershipRecord().0, context: context)
-  }
-
-  func replaceOriginalDirectoryWithManaged(_ record: SetupOwnershipRecord) throws {
-    let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-    defer { Darwin.close(descriptor) }
-    let claim = claimName(record, .directory)
-    try resumeProviderDeletionResidue(
-      parentDescriptor: descriptor,
-      name: claim,
-      record: record,
-      url: configurationDirectory.appending(path: claim),
-      directory: true
-    )
-    let state = try directoryState(
-      descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
-    var claimState = try directoryState(
-      descriptor: descriptor,
-      name: claim,
-      record: record,
-      recognizeIncompleteClaim: true
-    )
-    if claimState == .incomplete {
-      try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
-      claimState = try directoryState(
-        descriptor: descriptor,
-        name: claim,
-        record: record
-      )
+    try removeClaimItem(
+      level, parentDescriptor: descriptor, name: claim, record: record, url: live)
+    if verifiesRestoredOriginal {
+      try verifyOriginal(try ownershipRecord().0, context: context)
     }
-    if state == .managed {
-      if claimState == .original {
-        try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: directory)
-      }
-      guard claimState == .missing || claimState == .original else {
-        throw SetupOwnershipError.ownershipDrift(directory)
-      }
-      return
-    }
-    if state == .original, claimState == .managed {
-      try displaceOriginal(
-        record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
-        url: directory)
-      try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: directory)
-      return
-    }
-    guard state == .original, claimState == .missing else {
-      throw SetupOwnershipError.ownershipDrift(directory)
-    }
-    try createManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
-    try displaceOriginal(
-      record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
-      url: directory)
-    guard
-      try directoryState(
-        descriptor: descriptor,
-        name: claim,
-        record: record
-      ) == .original
-    else { throw SetupOwnershipError.ownershipDrift(directory) }
-    try settleDisplacedOriginal(record, descriptor: descriptor, claim: claim, url: directory)
-  }
-
-  func restoreOriginalDirectory(_ record: SetupOwnershipRecord) throws {
-    if retainsOriginalSymlink(record) {
-      try restoreRetainedOriginalSymlink(record, directoryLevel: true)
-      return
-    }
-    let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-    defer { Darwin.close(descriptor) }
-    let claim = claimName(record, .directory)
-    try resumeProviderDeletionResidue(
-      parentDescriptor: descriptor,
-      name: claim,
-      record: record,
-      url: configurationDirectory.appending(path: claim),
-      directory: true
-    )
-    let state = try directoryState(
-      descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
-    var claimState = try directoryState(
-      descriptor: descriptor,
-      name: claim,
-      record: record,
-      recognizeIncompleteClaim: true
-    )
-    if claimState == .incomplete {
-      try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
-      claimState = .missing
-    }
-    if state == .original {
-      if claimState == .managed {
-        try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
-      }
-      guard claimState == .missing || claimState == .managed else {
-        throw SetupOwnershipError.ownershipDrift(directory)
-      }
-      if try claimMarkerMatches(
-        parentDescriptor: descriptor,
-        name: SkhdLayout.directoryName,
-        record: record,
-        url: directory
-      ) {
-        try finalizeRestoredOriginal(
-          record,
-          parentDescriptor: descriptor,
-          name: SkhdLayout.directoryName,
-          url: directory
-        )
-      }
-      return
-    }
-    if state == .managed, claimState == .original {
-      try publishRestoredOriginal(
-        record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
-        url: directory)
-      try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
-      return
-    }
-    guard state == .managed, claimState == .missing else {
-      throw SetupOwnershipError.ownershipDrift(directory)
-    }
-    try createSymlink(
-      descriptor: descriptor,
-      name: claim,
-      destination: try originalLink(record),
-      url: directory,
-      record: record
-    )
-    try publishRestoredOriginal(
-      record, descriptor: descriptor, liveName: SkhdLayout.directoryName, claim: claim,
-      url: directory)
-    try removeManagedDirectory(parentDescriptor: descriptor, name: claim, record: record)
   }
 
   func verifyOriginal(
     _ record: SetupOwnershipRecord,
     context: SetupOwnershipManager.Context
   ) throws {
-    switch originalKind(record) {
-    case .directorySymbolicLink:
-      let descriptor = try PinnedFilesystem.openDirectory(at: configurationDirectory)
-      defer { Darwin.close(descriptor) }
-      guard
-        try directoryState(descriptor: descriptor, name: SkhdLayout.directoryName, record: record)
-          == .original
-      else { throw SetupOwnershipError.ownershipDrift(directory) }
+    let level = claimLevel(record)
+    let liveName = SkhdLayout.liveName(level)
+    let live = layout.live(level)
+    let descriptor = try PinnedFilesystem.openDirectory(at: layout.parent(level))
+    defer { Darwin.close(descriptor) }
+    let state = try itemState(level, descriptor: descriptor, name: liveName, record: record)
+    guard state == .original || (state == .missing && originalKind(record) == .absent) else {
+      throw SetupOwnershipError.ownershipDrift(live)
+    }
+    if [.symbolicLink, .directorySymbolicLink].contains(originalKind(record)) {
       try authenticateOriginalSymlinkAtPath(
         record,
         parentDescriptor: descriptor,
-        name: SkhdLayout.directoryName,
-        url: directory
+        name: liveName,
+        url: live
       )
-    case .absent, .regularFile, .symbolicLink:
-      let descriptor = try PinnedFilesystem.openDirectory(at: directory)
-      defer { Darwin.close(descriptor) }
-      let state = try leafState(
-        descriptor: descriptor, name: SkhdLayout.configurationName, record: record)
-      guard state == .original || (state == .missing && originalKind(record) == .absent) else {
-        throw SetupOwnershipError.ownershipDrift(entry)
-      }
-      if originalKind(record) == .symbolicLink {
-        try authenticateOriginalSymlinkAtPath(
-          record,
-          parentDescriptor: descriptor,
-          name: SkhdLayout.configurationName,
-          url: entry
-        )
-      }
     }
   }
 
   private func restoreRetainedOriginalSymlink(
     _ record: SetupOwnershipRecord,
-    directoryLevel: Bool
+    level: SkhdLayout.Level
   ) throws {
-    let parentURL = directoryLevel ? configurationDirectory : directory
-    let liveName = directoryLevel ? SkhdLayout.directoryName : SkhdLayout.configurationName
-    let liveURL = directoryLevel ? directory : entry
+    let parentURL = layout.parent(level)
+    let liveName = SkhdLayout.liveName(level)
+    let liveURL = layout.live(level)
     let parent = try PinnedFilesystem.openDirectory(at: parentURL)
     defer { Darwin.close(parent) }
-    let claim = claimName(record, directoryLevel ? .directory : .leaf)
+    let claim = claimName(record, level)
     func state(_ name: String, recognizeIncompleteClaim: Bool = false) throws -> ProviderItemState {
-      try directoryLevel
-        ? directoryState(
-          descriptor: parent,
-          name: name,
-          record: record,
-          recognizeIncompleteClaim: recognizeIncompleteClaim
-        )
-        : leafState(
-          descriptor: parent,
-          name: name,
-          record: record,
-          recognizeIncompleteClaim: recognizeIncompleteClaim
-        )
+      try itemState(
+        level,
+        descriptor: parent,
+        name: name,
+        record: record,
+        recognizeIncompleteClaim: recognizeIncompleteClaim
+      )
     }
-    func removeClaimItem(_ name: String) throws {
-      if directoryLevel {
-        try removeManagedDirectory(parentDescriptor: parent, name: name, record: record)
-      } else {
-        try removeMarkedItem(
-          parentDescriptor: parent,
-          name: name,
-          record: record,
-          url: parentURL.appending(path: name)
-        )
-      }
+    func removeClaim(_ name: String) throws {
+      try removeClaimItem(
+        level,
+        parentDescriptor: parent,
+        name: name,
+        record: record,
+        url: parentURL.appending(path: name)
+      )
     }
     let liveState = try state(liveName)
     var claimState = try state(claim, recognizeIncompleteClaim: true)
     if liveState == .original, claimState == .incomplete {
-      try removeClaimItem(claim)
+      try removeClaim(claim)
       claimState = .missing
     }
     if liveState == .original, claimState == .missing {
-      try removeClaimItem(publishingName(claim, record: record))
+      try removeClaim(publishingName(claim, record: record))
       try authenticateOriginalSymlinkAtPath(
         record,
         parentDescriptor: parent,
@@ -438,6 +292,50 @@ extension KeybindingProviderTransaction {
       url: liveURL
     )
     guard try state(claim) == .managed else { throw SetupOwnershipError.ownershipDrift(liveURL) }
+  }
+
+  /// The state of `name` beside the live item at `level`.
+  func itemState(
+    _ level: SkhdLayout.Level,
+    descriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord,
+    recognizeIncompleteClaim: Bool = false
+  ) throws -> ProviderItemState {
+    switch level {
+    case .leaf:
+      try leafState(
+        descriptor: descriptor,
+        name: name,
+        record: record,
+        recognizeIncompleteClaim: recognizeIncompleteClaim
+      )
+    case .directory:
+      try directoryState(
+        descriptor: descriptor,
+        name: name,
+        record: record,
+        recognizeIncompleteClaim: recognizeIncompleteClaim
+      )
+    }
+  }
+
+  /// Removes the authenticated managed item `name` at `level`. A leaf removal is reported
+  /// against `url`; a directory must hold nothing but the managed link.
+  func removeClaimItem(
+    _ level: SkhdLayout.Level,
+    parentDescriptor: Int32,
+    name: String,
+    record: SetupOwnershipRecord,
+    url: URL
+  ) throws {
+    switch level {
+    case .leaf:
+      try removeMarkedItem(
+        parentDescriptor: parentDescriptor, name: name, record: record, url: url)
+    case .directory:
+      try removeManagedDirectory(parentDescriptor: parentDescriptor, name: name, record: record)
+    }
   }
 
   func leafState(
