@@ -247,7 +247,7 @@ struct DesktopPlanCommandRunner: Sendable {
       sketchyBarGeneration = .missing
       sketchyBarProvider = DesktopProviderPlanInspection(
         status: .disabled,
-        ownership: "not_inspected",
+        ownership: .notInspected,
         entryPoint: homeDirectory.appending(path: ConsumerHomePath.sketchyBarConfiguration).path,
         originalTarget: nil,
         source: nil,
@@ -448,10 +448,10 @@ struct DesktopPlanCommandRunner: Sendable {
     case .adoptionRequired:
       [
         PlanAction(
-          id: provider.ownership == "directory_symlink"
+          id: provider.ownership == .directorySymlink
             ? "adopt_\(name)_directory_symlink"
             : "adopt_\(entryName)_entry",
-          message: "Adopt the existing \(provider.ownership) after explicit approval."
+          message: "Adopt the existing \(provider.ownership.rawValue) after explicit approval."
         )
       ]
     case .managed, .disabled, .externallyManaged, .recoveryRequired, .blocked:
@@ -544,7 +544,7 @@ private struct DesktopPlanReport: CommandReport {
       "- proposed input digest: \(proposedInputDigest ?? "unavailable")",
       "- rendered digest: \(renderedDigest ?? "unavailable")",
       "- current generation [\(currentGenerationStatus)]: \(currentGenerationID ?? "none")",
-      "- yabai provider [\(provider.status.rawValue), \(provider.ownership)]: "
+      "- yabai provider [\(provider.status.rawValue), \(provider.ownership.rawValue)]: "
         + provider.message,
       "- provider entry point: \(provider.entryPoint)",
       "- provider original target: \(provider.originalTarget ?? "none")",
@@ -641,7 +641,7 @@ private struct DesktopSketchyBarPlanReport: Encodable {
       "- SketchyBar rendered digest: \(renderedDigest ?? "unavailable")",
       "- SketchyBar current generation [\(currentGenerationStatus)]: "
         + (currentGenerationID ?? "none"),
-      "- SketchyBar provider [\(provider.status.rawValue), \(provider.ownership)]: "
+      "- SketchyBar provider [\(provider.status.rawValue), \(provider.ownership.rawValue)]: "
         + provider.message,
       "- SketchyBar provider entry point: \(provider.entryPoint)",
       "- SketchyBar provider original target: \(provider.originalTarget ?? "none")",

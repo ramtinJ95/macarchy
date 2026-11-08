@@ -15,9 +15,36 @@ enum DesktopProviderPlanStatus: String, Codable, Sendable {
   var permitsApply: Bool { [.managed, .installRequired, .adoptionRequired].contains(self) }
 }
 
+/// Who owns a yabai or SketchyBar configuration entry, as desktop plan JSON reports it.
+enum DesktopProviderOwnership: String, Encodable, Sendable {
+  case absent
+  case regularFile = "regular_file"
+  case entrySymlink = "entry_symlink"
+  case directorySymlink = "directory_symlink"
+  case managed
+  case external
+  case uninspectable
+  case transactionPending = "transaction_pending"
+  case managedTargetWithoutOwnership = "managed_target_without_ownership"
+  case ownershipDrift = "ownership_drift"
+  case generationDrift = "generation_drift"
+  case retainedOriginalDrift = "retained_original_drift"
+  case notInspected = "not_inspected"
+
+  /// An unowned entry is reported as the kind of original it is.
+  init(_ kind: DesktopOriginalKind) {
+    switch kind {
+    case .absent: self = .absent
+    case .regularFile: self = .regularFile
+    case .entrySymlink: self = .entrySymlink
+    case .directorySymlink: self = .directorySymlink
+    }
+  }
+}
+
 struct DesktopProviderPlanInspection: Encodable, Sendable {
   let status: DesktopProviderPlanStatus
-  let ownership: String
+  let ownership: DesktopProviderOwnership
   let entryPoint: String
   let originalTarget: String?
   let source: String?
@@ -26,7 +53,7 @@ struct DesktopProviderPlanInspection: Encodable, Sendable {
 
   static func result(
     _ status: DesktopProviderPlanStatus,
-    ownership: String,
+    ownership: DesktopProviderOwnership,
     entry: URL,
     originalTarget: String? = nil,
     source: String? = nil,

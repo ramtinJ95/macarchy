@@ -254,7 +254,7 @@ struct SketchyBarTransactionTests {
       generation: SketchyBarGenerationInspector(stateRoot: fixture.state).inspect()
     )
     #expect(provider.status == .blocked)
-    #expect(provider.ownership == "uninspectable")
+    #expect(provider.ownership.rawValue == "uninspectable")
     #expect(provider.message.contains("source inventory drifted"))
   }
 
