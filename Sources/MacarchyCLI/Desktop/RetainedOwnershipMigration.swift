@@ -168,7 +168,7 @@ struct RetainedOwnershipMigration {
         throw failure("managed skhd entry or claim marker drifted")
       }
       try KeybindingProviderInspector().validateManagedOwnershipMarkers(
-        directoryDescriptor: parent, entry: transaction.entry, record: updated)
+        directoryDescriptor: parent, layout: transaction.layout, record: updated)
       let generation = KeybindingGenerationInspector().inspect(stateRoot: stateRoot)
       guard generation.status == .current, let generationID = generation.generationID else {
         throw failure("skhd selected generation is not valid")

@@ -232,10 +232,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
   ) -> [KeybindingsPlanAction] {
     guard !isBlocked, let renderedDigest, let inputDigest else { return [] }
     var actions: [KeybindingsPlanAction] = []
-    if generation.status == .missing
-      || generation.renderedDigest != renderedDigest
-      || generation.inputDigest != inputDigest
-    {
+    if generation.needsGeneration(inputDigest: inputDigest, renderedDigest: renderedDigest) {
       actions.append(
         KeybindingsPlanAction(
           id: "publish_generation",

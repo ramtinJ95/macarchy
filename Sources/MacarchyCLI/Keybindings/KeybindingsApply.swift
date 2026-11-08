@@ -416,17 +416,13 @@ struct KeybindingsApplyCommandRunner: Sendable {
         )
       }
       let serviceChange = try lifecycle.service?.prepare(home: homeDirectory, stateRoot: stateRoot)
-      let eligibility = try eligibility(preparation, adopt: adopt)
-      if serviceChange?.previous.running != false { try lifecycle.preflight() }
-      if eligibility.operation.mutatesEntry {
-        guard let evidence = preparation.provider.adoptionEvidence else {
-          throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
-        }
-        try KeybindingProviderTransaction(homeDirectory: homeDirectory).preflightInstall(
-          expectedEvidence: evidence,
-          approvedEvidenceDigest: adopt
-        )
-      }
+      let eligibility = try preflightApply(
+        preparation,
+        adopt: adopt,
+        serviceChange: serviceChange,
+        homeDirectory: homeDirectory,
+        failures: .passThrough
+      )
       if preparation.outcome == .noChange {
         try lifecycle.verifyProcess()
         let report = KeybindingsApplyReport(
@@ -441,7 +437,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       let report = KeybindingsApplyReport(
         outcome: "planned",
         mutated: false,
-        lifecycle: serviceChange?.previous.running == false ? .start : eligibility.lifecycle,
+        lifecycle: eligibility.lifecycle,
         generationID: preparation.generation.generationID,
         message:
           eligibility.operation == .adoptEntry
@@ -664,9 +660,9 @@ struct KeybindingsApplyCommandRunner: Sendable {
     }
 
     let activator = KeybindingGenerationActivator(stateRoot: stateRoot)
-    let needsGeneration = Self.publishesGeneration(
-      prepared.preparation.generation,
-      prepared.composition
+    let needsGeneration = prepared.preparation.generation.needsGeneration(
+      inputDigest: prepared.composition.inputDigest,
+      renderedDigest: prepared.composition.renderedDigest
     )
     let selectedGenerationID =
       needsGeneration
@@ -818,37 +814,65 @@ struct KeybindingsApplyCommandRunner: Sendable {
     guard preparation.outcome != .blocked, let composition = preparation.composition else {
       throw KeybindingsApplyError.blocked(preparation.blockingMessages.joined(separator: "; "))
     }
-    var eligibilityDecision = try eligibility(preparation, adopt: adopt)
-    if serviceChange?.previous.running == false {
-      eligibilityDecision.lifecycle = .start
-    }
-    do {
-      if serviceChange?.previous.running != false { try lifecycle.preflight() }
-    } catch {
-      throw KeybindingsApplyError.blocked(String(describing: error))
-    }
-    let providerEvidence = preparation.provider.adoptionEvidence
-    if eligibilityDecision.operation.mutatesEntry {
-      guard let providerEvidence else {
-        throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
-      }
-      do {
-        try KeybindingProviderTransaction(homeDirectory: homeDirectory).preflightInstall(
-          expectedEvidence: providerEvidence,
-          approvedEvidenceDigest: adopt
-        )
-      } catch {
-        throw KeybindingsApplyError.blocked(String(describing: error))
-      }
-    }
-
+    let eligibilityDecision = try preflightApply(
+      preparation,
+      adopt: adopt,
+      serviceChange: serviceChange,
+      homeDirectory: homeDirectory,
+      failures: .blockApply
+    )
     return PreparedKeybindingsApply(
       preparation: preparation,
       composition: composition,
       eligibility: eligibilityDecision,
-      providerEvidence: providerEvidence,
+      providerEvidence: preparation.provider.adoptionEvidence,
       service: serviceChange
     )
+  }
+
+  /// How a failed process or entry preflight is reported: apply blocks with it, while preview
+  /// reports the underlying error unchanged.
+  private enum PreflightFailures {
+    case blockApply
+    case passThrough
+  }
+
+  /// Decides the apply operation, then preflights the skhd process unless a stopped service will
+  /// be started instead, and the provider entry when the operation mutates it.
+  private func preflightApply(
+    _ preparation: KeybindingsPlanPreparation,
+    adopt: String?,
+    serviceChange: UserServiceChange?,
+    homeDirectory: URL,
+    failures: PreflightFailures
+  ) throws -> KeybindingsApplyEligibility {
+    func preflight(_ check: () throws -> Void) throws {
+      do {
+        try check()
+      } catch {
+        guard failures == .blockApply else { throw error }
+        throw KeybindingsApplyError.blocked(String(describing: error))
+      }
+    }
+    var decision = try eligibility(preparation, adopt: adopt)
+    let startsStoppedService = serviceChange?.previous.running == false
+    if startsStoppedService {
+      decision.lifecycle = .start
+    } else {
+      try preflight(lifecycle.preflight)
+    }
+    if decision.operation.mutatesEntry {
+      guard let evidence = preparation.provider.adoptionEvidence else {
+        throw KeybindingsApplyError.blocked("provider mutation evidence is unavailable")
+      }
+      try preflight {
+        try KeybindingProviderTransaction(homeDirectory: homeDirectory).preflightInstall(
+          expectedEvidence: evidence,
+          approvedEvidenceDigest: adopt
+        )
+      }
+    }
+    return decision
   }
 
   private func stageApplyGeneration(
@@ -1367,10 +1391,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
   ) throws {
     let inspection = inspectCurrentProvider(stateRoot: stateRoot, homeDirectory: homeDirectory)
     if transaction.operation == .installEntry {
-      guard
-        inspection.status == .installRequired,
-        [.ordinaryDirectory, .absent].contains(inspection.ownership)
-      else {
+      guard inspection.allowsCleanInstall else {
         throw SetupOwnershipError.ownershipDrift(URL(filePath: inspection.entryPoint))
       }
     } else {
@@ -1456,8 +1477,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
     switch preparation.provider.status {
     case .managed:
       return KeybindingsApplyEligibility(operation: .updateGeneration, lifecycle: .reload)
-    case .installRequired
-    where [.ordinaryDirectory, .absent].contains(preparation.provider.ownership):
+    case .installRequired where preparation.provider.allowsCleanInstall:
       return KeybindingsApplyEligibility(operation: .installEntry, lifecycle: .restart)
     case .installRequired:
       throw KeybindingsApplyError.blocked(
@@ -1481,15 +1501,6 @@ struct KeybindingsApplyCommandRunner: Sendable {
     case .blocked:
       throw KeybindingsApplyError.blocked(preparation.provider.message)
     }
-  }
-
-  private static func publishesGeneration(
-    _ generation: KeybindingGenerationInspection,
-    _ composition: KeybindingComposition
-  ) -> Bool {
-    generation.status == .missing
-      || generation.inputDigest != composition.inputDigest
-      || generation.renderedDigest != composition.renderedDigest
   }
 
   private func inspectCurrentProvider(

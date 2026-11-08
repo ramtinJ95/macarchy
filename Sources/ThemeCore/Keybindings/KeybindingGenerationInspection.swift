@@ -23,6 +23,11 @@ package struct KeybindingGenerationInspection: Equatable, Sendable {
     configuration: nil,
     message: nil
   )
+
+  /// Whether these digests need a generation other than the current one.
+  package func needsGeneration(inputDigest: String?, renderedDigest: String?) -> Bool {
+    status == .missing || self.inputDigest != inputDigest || self.renderedDigest != renderedDigest
+  }
 }
 
 package struct KeybindingGenerationInspector: Sendable {

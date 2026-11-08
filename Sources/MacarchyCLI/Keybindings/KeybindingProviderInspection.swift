@@ -68,6 +68,12 @@ struct KeybindingProviderInspection: Encodable, Sendable {
   let sourceConfiguration: String?
   let adoptionEvidence: KeybindingAdoptionEvidence?
 
+  /// A clean install needs no adoption: the entry is absent inside an ordinary or absent
+  /// `~/.config/skhd`.
+  var allowsCleanInstall: Bool {
+    status == .installRequired && [.ordinaryDirectory, .absent].contains(ownership)
+  }
+
   enum CodingKeys: String, CodingKey {
     case status, entryPoint, ownership, source, originalTarget, expectedTarget, message
     case adoptionEvidenceDigest = "adoption_evidence_digest"
@@ -492,7 +498,7 @@ struct KeybindingProviderInspector: Sendable {
       do {
         try validateManagedOwnershipMarkers(
           directoryDescriptor: directoryDescriptor,
-          entry: paths.entry,
+          layout: paths,
           record: ownershipRecord
         )
       } catch {
@@ -836,9 +842,10 @@ struct KeybindingProviderInspector: Sendable {
 
   func validateManagedOwnershipMarkers(
     directoryDescriptor: Int32,
-    entry: URL,
+    layout: SkhdLayout,
     record: SetupOwnershipRecord
   ) throws {
+    let entry = layout.entry
     if Self.isLegacyCleanInstallRecord(record) {
       guard
         try Self.markerIsAbsent(
@@ -855,13 +862,11 @@ struct KeybindingProviderInspector: Sendable {
     else { throw SetupOwnershipError.ownershipDrift(entry) }
     if record.originalKind == .directorySymbolicLink {
       guard try Self.markerMatches(descriptor: directoryDescriptor, record: record) else {
-        throw SetupOwnershipError.ownershipDrift(entry.deletingLastPathComponent())
+        throw SetupOwnershipError.ownershipDrift(layout.directory)
       }
     }
     if record.retainedOriginalPath != nil {
-      let home = entry.deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent()
-      try KeybindingProviderTransaction(homeDirectory: home)
+      try KeybindingProviderTransaction(homeDirectory: layout.home)
         .preflightRetainedOriginalClaim(record)
     }
   }
