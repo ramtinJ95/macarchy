@@ -38,7 +38,7 @@ struct EnvironmentNeovimThemePreparation {
       throw EnvironmentLifecycleError.system("inspect Neovim source", root, errno)
     }
     evidence.append("root:\(identity.st_dev):\(identity.st_ino)")
-    for path in EnvironmentNeovimMigration.themePaths.sorted() {
+    for path in NeovimAdapter.managedThemePaths.sorted() {
       let parts = path.split(separator: "/").map(String.init)
       var parent = descriptor
       var opened: [Int32] = []

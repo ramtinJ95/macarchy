@@ -5,7 +5,6 @@ import ThemeCore
 /// The native tree is user-owned and deliberately outside the removable runtime root.
 /// Only its four theme bridges and the public entry link remain Macarchy-owned.
 struct EnvironmentNeovimMigration: Sendable {
-  static let themePaths = NeovimAdapter.managedThemePaths
   let homeDirectory: URL
   let stateRoot: URL
   var sourceURL: URL? = nil
@@ -94,7 +93,7 @@ struct EnvironmentNeovimMigration: Sendable {
     }
     _ = try BoundedRegularFile.read(
       at: nativeRoot.appending(path: "init.lua").resolvingSymlinksInPath())
-    for path in Self.themePaths {
+    for path in NeovimAdapter.managedThemePaths {
       let url = nativeRoot.appending(path: path)
       let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
       defer { Darwin.close(parent) }
@@ -179,7 +178,7 @@ struct EnvironmentNeovimMigration: Sendable {
     let manifest = try generations.manifest(generationID: ownership.generationID)
     let paths = Set(manifest.artifacts.keys.filter { $0.hasPrefix("neovim/") })
     guard paths.contains("neovim/init.lua"), paths.contains("neovim/lazy-lock.json"),
-      Self.themePaths.allSatisfy({ paths.contains("neovim/\($0)") })
+      NeovimAdapter.managedThemePaths.allSatisfy({ paths.contains("neovim/\($0)") })
     else {
       throw EnvironmentLifecycleError.blocked("the active generation has no complete Neovim seed")
     }
@@ -242,7 +241,7 @@ struct EnvironmentNeovimMigration: Sendable {
       }
       let targetParent = try PinnedFilesystem.openDirectory(at: target.deletingLastPathComponent())
       defer { Darwin.close(targetParent) }
-      if Self.themePaths.contains(relative) {
+      if NeovimAdapter.managedThemePaths.contains(relative) {
         try FileManager.default.createSymbolicLink(
           at: target, withDestinationURL: StateLayout(root: stateRoot).environmentArtifact(path))
       } else {

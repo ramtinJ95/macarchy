@@ -90,7 +90,7 @@ struct EnvironmentNativeSeed: Sendable {
       files = Dictionary(uniqueKeysWithValues: artifacts.map { ($0.path, $0.data) })
       contents = artifacts.sorted(by: { $0.path < $1.path }).map { artifact in
         let relative = String(artifact.path.dropFirst("neovim/".count))
-        if EnvironmentNeovimMigration.themePaths.contains(relative) {
+        if NeovimAdapter.managedThemePaths.contains(relative) {
           return
             "\(relative) -> \(StateLayout(root: stateRoot).environmentArtifact(artifact.path).path)"
         }

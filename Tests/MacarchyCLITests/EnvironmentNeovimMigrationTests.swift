@@ -16,7 +16,7 @@ struct EnvironmentNeovimMigrationTests {
     if kind == "missing" { selected = fixture.root.appending(path: "missing") }
     if kind == "theme" {
       try FileManager.default.removeItem(
-        at: source.appending(path: EnvironmentNeovimMigration.themePaths[0]))
+        at: source.appending(path: NeovimAdapter.managedThemePaths[0]))
     }
     if kind == "state" {
       try FileManager.default.createDirectory(at: fixture.state, withIntermediateDirectories: true)
@@ -52,7 +52,7 @@ struct EnvironmentNeovimMigrationTests {
     let source = fixture.root.appending(path: "external-nvim")
     try FileManager.default.copyItem(
       at: repositoryRoot.appending(path: "Environment/neovim/default"), to: source)
-    for path in EnvironmentNeovimMigration.themePaths {
+    for path in NeovimAdapter.managedThemePaths {
       let url = source.appending(path: path)
       try FileManager.default.createDirectory(
         at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

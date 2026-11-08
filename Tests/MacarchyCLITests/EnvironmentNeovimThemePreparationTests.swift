@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ThemeCore
 
 @testable import MacarchyCLI
 
@@ -23,7 +24,7 @@ struct EnvironmentNeovimThemePreparationTests {
     #expect(try Data(contentsOf: root.appending(path: "init.lua")) == initial)
     #expect(try Data(contentsOf: root.appending(path: "lazy-lock.json")) == lock)
     #expect(try EnvironmentStateStore(stateRoot: fixture.state).readOwnership() == nil)
-    for path in EnvironmentNeovimMigration.themePaths {
+    for path in NeovimAdapter.managedThemePaths {
       #expect(
         try FileManager.default.destinationOfSymbolicLink(
           atPath: root.appending(path: path).path)

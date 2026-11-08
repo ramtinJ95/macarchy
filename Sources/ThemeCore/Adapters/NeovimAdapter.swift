@@ -34,9 +34,13 @@ package struct NeovimAdapter: Sendable {
   package static let aetherCommit = "567efb778534e11ee1072d4fe27178f705a27d8a"
   package static let aetherCommitDirective = "commit = \"\(aetherCommit)\","
   package static let outputPath = "generated/neovim.lua"
+  // Theme files inside the Neovim configuration directory.
+  static let importedColorschemePath = "colors/\(importedColorscheme).lua"
+  static let watcherPath = "lua/config/macarchy-theme.lua"
+  static let themeLinkPath = "lua/macarchy/current.lua"
+  static let configurationPath = "lua/plugins/colorscheme.lua"
   package static let managedThemePaths = [
-    "colors/macarchy-imported.lua", "lua/config/macarchy-theme.lua",
-    "lua/macarchy/current.lua", "lua/plugins/colorscheme.lua",
+    importedColorschemePath, watcherPath, themeLinkPath, configurationPath,
   ]
   static let rendererVersion = 4
   package static let liveExecutableURL = ExternalTool.neovim
@@ -48,20 +52,20 @@ package struct NeovimAdapter: Sendable {
   let processRunner: ProcessRunner
 
   private var configurationURL: URL {
-    configurationDirectoryURL.appending(path: "lua/plugins/colorscheme.lua")
+    configurationDirectoryURL.appending(path: Self.configurationPath)
   }
 
   private var importedColorschemeURL: URL {
-    configurationDirectoryURL.appending(path: "colors/\(Self.importedColorscheme).lua")
+    configurationDirectoryURL.appending(path: Self.importedColorschemePath)
   }
 
   private var watcherURL: URL {
-    configurationDirectoryURL.appending(path: "lua/config/macarchy-theme.lua")
+    configurationDirectoryURL.appending(path: Self.watcherPath)
   }
 
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
-      url: configurationDirectoryURL.appending(path: "lua/macarchy/current.lua"),
+      url: configurationDirectoryURL.appending(path: Self.themeLinkPath),
       destination: StateLayout(root: root).currentThemeArtifact(Self.outputPath)
     )
   }

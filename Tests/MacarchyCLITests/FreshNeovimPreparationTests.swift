@@ -27,7 +27,7 @@ struct FreshNeovimPreparationTests {
         temporary.withLock { $0 = root }
         let copied = root.appending(path: "nvim/lazy-lock.json")
         #expect(try Data(contentsOf: copied) == original)
-        for path in EnvironmentNeovimMigration.themePaths {
+        for path in NeovimAdapter.managedThemePaths {
           let target = root.appending(path: "nvim/\(path)").resolvingSymlinksInPath()
           let attributes = try FileManager.default.attributesOfItem(atPath: target.path)
           #expect((try #require(attributes[.posixPermissions] as? NSNumber)).intValue & 0o222 == 0)
