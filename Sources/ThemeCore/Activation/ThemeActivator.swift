@@ -158,8 +158,7 @@ public struct ThemeActivator: Sendable {
     dryRun: Bool
   ) throws -> String? {
     let cleanupError: String? = try activationLock.withLock {
-      let statusStore = ReconciliationStatusStore(root: root)
-      let manifest = try statusStore.activeManifest()
+      let manifest = try ThemeGenerationReader(root: root).activeManifest()
       guard manifest.generationID == expectedGenerationID else {
         throw ThemeDeactivationError.activeGenerationChanged(
           expected: expectedGenerationID,
@@ -167,7 +166,7 @@ public struct ThemeActivator: Sendable {
         )
       }
       do {
-        switch try statusStore.read() {
+        switch try ReconciliationStatusStore(root: root).read() {
         case .missing:
           break
         case .current(let record) where record.generationID == expectedGenerationID:
@@ -259,7 +258,7 @@ public struct ThemeActivator: Sendable {
     let result = try activationLock.withLock {
       let background = try preparedBackground()
       if let expectedActiveGenerationID {
-        let active = try ReconciliationStatusStore(root: root).activeManifest().generationID
+        let active = try ThemeGenerationReader(root: root).activeManifest().generationID
         guard active == expectedActiveGenerationID else {
           throw ThemeActivationError.activeGenerationChanged(
             expected: expectedActiveGenerationID,
@@ -314,7 +313,7 @@ public struct ThemeActivator: Sendable {
     background: PreparedThemeBackground,
     interruptedTrash: [URL]
   ) throws -> LockedActivationResult {
-    let previousGenerationID = currentGenerationID()
+    let previousGenerationID = ThemeGenerationReader(root: root).currentGenerationIDIfValid()
     try validate(background: background)
     let themeDigest = try generationThemeDigest(package: package)
     let inputDigest = try generationInputDigest(
@@ -451,7 +450,7 @@ public struct ThemeActivator: Sendable {
 
   private func recoverInterruptedActivation() throws -> [URL] {
     let generationsRoot = root.appending(path: "generations", directoryHint: .isDirectory)
-    let activeGenerationID = currentGenerationID()
+    let activeGenerationID = ThemeGenerationReader(root: root).currentGenerationIDIfValid()
     var trashURLs = [URL]()
     if FileManager.default.fileExists(atPath: generationsRoot.path) {
       for item in try FileManager.default.contentsOfDirectory(
@@ -535,18 +534,9 @@ public struct ThemeActivator: Sendable {
     guard lstat(url.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFDIR else {
       return nil
     }
-    guard
-      let manifestFile = safelyReadManifest(at: url.appending(path: "manifest.json")),
-      manifestFile.permissions & 0o222 == 0,
-      let object = manifestObject(in: manifestFile.data),
-      let schemaVersion = object["manifest_schema_version"] as? Int,
-      let encodedKeys = GenerationManifest.encodedKeys(schemaVersion: schemaVersion),
-      Set(object.keys) == encodedKeys,
-      let manifest = try? JSONDecoder().decode(GenerationManifest.self, from: manifestFile.data),
-      manifest.manifestSchemaVersion == schemaVersion,
-      manifest.generationID == url.lastPathComponent,
-      (try? manifest.validateArtifacts(at: url)) != nil
-    else { return nil }
+    guard (try? ThemeGenerationReader.manifest(in: url, policy: .published)) != nil else {
+      return nil
+    }
     let modified = Date(
       timeIntervalSince1970: TimeInterval(metadata.st_mtimespec.tv_sec)
         + TimeInterval(metadata.st_mtimespec.tv_nsec) / 1_000_000_000
@@ -680,16 +670,7 @@ public struct ThemeActivator: Sendable {
       lstat(url.path, &metadata) == 0,
       metadata.st_mode & S_IFMT == S_IFDIR,
       metadata.st_mode & 0o222 != 0,
-      let manifestFile = safelyReadManifest(at: url.appending(path: "manifest.json")),
-      manifestFile.permissions & 0o222 == 0,
-      let object = manifestObject(in: manifestFile.data),
-      Set(object.keys) == GenerationManifest.encodedKeys,
-      let manifest = try? JSONDecoder().decode(GenerationManifest.self, from: manifestFile.data),
-      manifest.generationID == url.lastPathComponent,
-      (try? manifest.validateArtifacts(
-        at: url,
-        requireReadOnlyGenerationDirectory: false
-      )) != nil,
+      let manifest = try? ThemeGenerationReader.manifest(in: url, policy: .unsealed),
       hasExactGenerationInventory(manifest, at: url)
     else { return false }
     return true
@@ -747,19 +728,6 @@ public struct ThemeActivator: Sendable {
     return lstat(url.path, &metadata) == 0 && metadata.st_mode & S_IFMT == S_IFLNK
   }
 
-  private func currentGenerationID() -> String? {
-    let currentURL = StateLayout(root: root).currentTheme
-    guard
-      let destination = try? FileManager.default.destinationOfSymbolicLink(
-        atPath: currentURL.path
-      )
-    else { return nil }
-    let components = destination.split(separator: "/", omittingEmptySubsequences: false)
-    guard components.count == 2, components[0] == "generations" else { return nil }
-    let generationID = String(components[1])
-    return isGenerationID(generationID) ? generationID : nil
-  }
-
   /// Failures after the pointer swap must still report the committed manifest.
   private func afterCommit(
     _ manifest: GenerationManifest,
@@ -793,44 +761,26 @@ public struct ThemeActivator: Sendable {
 
       let manifestURL = generationURL.appending(path: "manifest.json")
       guard
-        let manifestFile = safelyReadManifest(at: manifestURL),
-        let object = manifestObject(in: manifestFile.data),
+        let manifestFile = try? BoundedRegularFile.read(at: manifestURL),
+        let object = try? JSONSerialization.jsonObject(with: manifestFile.data) as? [String: Any],
         object["input_digest"] as? String == inputDigest
       else { continue }
 
-      try requireReusable(
-        Set(object.keys) == GenerationManifest.encodedKeys,
-        generationURL,
-        "manifest.json contains unknown or missing fields"
-      )
-      try requireReusable(
-        manifestFile.permissions & 0o222 == 0,
-        generationURL,
-        "manifest.json is writable"
-      )
-
       let manifest: GenerationManifest
       do {
-        manifest = try JSONDecoder().decode(GenerationManifest.self, from: manifestFile.data)
-      } catch {
-        throw corruptGeneration(
-          generationURL,
-          reason: "manifest.json cannot be decoded: \(String(describing: error))"
+        manifest = try ThemeGenerationReader.manifest(
+          from: manifestFile,
+          in: generationURL,
+          policy: .reuseCandidate
         )
+      } catch let error as GenerationIntegrityError {
+        throw corruptGeneration(generationURL, reason: error.reason)
       }
       try validateReusableGeneration(
         manifest, at: generationURL, inputDigest: inputDigest, package: package)
       reusable = reusable ?? manifest
     }
     return reusable
-  }
-
-  private func safelyReadManifest(at url: URL) -> BoundedRegularFile? {
-    try? BoundedRegularFile.read(at: url)
-  }
-
-  private func manifestObject(in data: Data) -> [String: Any]? {
-    try? JSONSerialization.jsonObject(with: data) as? [String: Any]
   }
 
   private func validateReusableGeneration(

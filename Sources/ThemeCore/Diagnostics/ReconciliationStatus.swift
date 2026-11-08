@@ -180,7 +180,7 @@ public struct ReconciliationStatusStore: Sendable {
   }
 
   public func read() throws -> ReconciliationState {
-    let active = try activeManifest()
+    let active = try ThemeGenerationReader(root: root).activeManifest()
     return try reconciliationState(for: active)
   }
 
@@ -214,7 +214,7 @@ public struct ReconciliationStatusStore: Sendable {
   }
 
   private func requireActiveGeneration(_ expectedGenerationID: String) throws {
-    let activeGenerationID = try activeManifest().generationID
+    let activeGenerationID = try ThemeGenerationReader(root: root).activeManifest().generationID
     guard activeGenerationID == expectedGenerationID else {
       throw ReconciliationStatusError.generationChanged(
         expected: expectedGenerationID,
@@ -223,129 +223,12 @@ public struct ReconciliationStatusStore: Sendable {
     }
   }
 
-  /// The active manifest, or nil when no generation has been activated yet.
   package func activeManifestIfPresent() throws -> GenerationManifest? {
-    do {
-      return try activeManifest()
-    } catch ReconciliationStatusError.noActiveGeneration {
-      return nil
-    }
+    try ThemeGenerationReader(root: root).activeManifestIfPresent()
   }
 
   package func activeManifest() throws -> GenerationManifest {
-    for _ in 0..<3 {
-      let generationID = try activeGenerationID()
-      let generationURL = root.appending(
-        path: StateLayout.generationPath(generationID),
-        directoryHint: .isDirectory
-      )
-      do {
-        try requireDirectory(generationURL, role: "generation '\(generationID)'")
-        let manifestFile = try BoundedRegularFile.read(
-          at: generationURL.appending(path: "manifest.json")
-        )
-        guard manifestFile.permissions & 0o222 == 0 else {
-          throw ReconciliationStatusError.invalidActiveGeneration("manifest.json is writable")
-        }
-        let manifest = try decodeActiveManifest(manifestFile.data, generationID: generationID)
-        try manifest.validateArtifacts(at: generationURL)
-        if try activeGenerationID() == generationID {
-          return manifest
-        }
-      } catch {
-        if (try? activeGenerationID()) != generationID { continue }
-        if let error = error as? ReconciliationStatusError { throw error }
-        throw ReconciliationStatusError.invalidActiveGeneration(String(describing: error))
-      }
-    }
-    throw ReconciliationStatusError.invalidActiveGeneration(
-      "current changed repeatedly while it was being read"
-    )
-  }
-
-  private func activeGenerationID() throws -> String {
-    let currentURL = StateLayout(root: root).currentTheme
-    var metadata = stat()
-    guard lstat(currentURL.path, &metadata) == 0 else {
-      let code = errno
-      if code == ENOENT { throw ReconciliationStatusError.noActiveGeneration }
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "cannot inspect current (errno \(code)): \(String(cString: strerror(code)))"
-      )
-    }
-    guard metadata.st_mode & S_IFMT == S_IFLNK else {
-      throw ReconciliationStatusError.invalidActiveGeneration("current is not a symbolic link")
-    }
-
-    let destination: String
-    do {
-      destination = try FileManager.default.destinationOfSymbolicLink(atPath: currentURL.path)
-    } catch {
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "cannot read current symbolic link: \(String(describing: error))"
-      )
-    }
-    let components = destination.split(separator: "/", omittingEmptySubsequences: false)
-    guard
-      components.count == 2,
-      components[0] == "generations",
-      isGenerationID(String(components[1]))
-    else {
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "current target '\(destination)' is not generations/g-<uuid>"
-      )
-    }
-    return String(components[1])
-  }
-
-  private func decodeActiveManifest(
-    _ data: Data,
-    generationID: String
-  ) throws -> GenerationManifest {
-    do {
-      let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-      guard
-        let object,
-        let schemaVersion = object["manifest_schema_version"] as? Int,
-        let encodedKeys = GenerationManifest.encodedKeys(schemaVersion: schemaVersion),
-        Set(object.keys) == encodedKeys
-      else {
-        throw ReconciliationStatusError.invalidActiveGeneration(
-          "manifest.json contains unknown or missing fields"
-        )
-      }
-      let manifest = try JSONDecoder().decode(GenerationManifest.self, from: data)
-      guard manifest.manifestSchemaVersion == schemaVersion else {
-        throw ReconciliationStatusError.invalidActiveGeneration(
-          "manifest schema version changed while decoding"
-        )
-      }
-      guard manifest.generationID == generationID else {
-        throw ReconciliationStatusError.invalidActiveGeneration(
-          "manifest generation_id '\(manifest.generationID)' does not match '\(generationID)'"
-        )
-      }
-      return manifest
-    } catch let error as ReconciliationStatusError {
-      throw error
-    } catch {
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "manifest.json cannot be decoded: \(String(describing: error))"
-      )
-    }
-  }
-
-  private func requireDirectory(_ url: URL, role: String) throws {
-    var metadata = stat()
-    guard lstat(url.path, &metadata) == 0 else {
-      let code = errno
-      throw ReconciliationStatusError.invalidActiveGeneration(
-        "\(role) cannot be inspected (errno \(code)): \(String(cString: strerror(code)))"
-      )
-    }
-    guard metadata.st_mode & S_IFMT == S_IFDIR else {
-      throw ReconciliationStatusError.invalidActiveGeneration("\(role) is not a directory")
-    }
+    try ThemeGenerationReader(root: root).activeManifest()
   }
 
 }
