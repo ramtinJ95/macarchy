@@ -308,7 +308,7 @@ extension AdapterContractTests {
       makeWritableForRemoval(root)
       try? FileManager.default.removeItem(at: root)
     }
-    let store = ReconciliationStatusStore(root: root)
+    let store = ThemeGenerationReader(root: root)
     let missingGenerationID = "g-00000000-0000-0000-0000-000000000000"
     try FileManager.default.createSymbolicLink(
       atPath: root.appending(path: "current").path,

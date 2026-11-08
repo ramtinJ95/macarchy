@@ -218,7 +218,7 @@ struct ScreenSaverImageStoreTests {
       let exported = images.folderURL.appending(path: "wallpaper.png")
       #expect(try Data(contentsOf: exported) == independent.firstBackgroundData)
       #expect(
-        try ReconciliationStatusStore(root: root).activeManifest().generationID
+        try ThemeGenerationReader(root: root).activeManifest().generationID
           == manifest.generationID)
       let receipt = root.appending(path: "state/screensaver-preferences.json")
       let before = try identity(receipt)

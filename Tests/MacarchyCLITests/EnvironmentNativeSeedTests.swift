@@ -136,7 +136,7 @@ struct EnvironmentNativeSeedTests {
     #expect(repeated.succeeded, "\(repeated.output)")
     #expect(try jsonObject(repeated.output)["outcome"] as? String == "no_change")
     try fixture.activateTheme()
-    let active = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let active = try ThemeGenerationReader(root: fixture.state).activeManifest()
     let adapter = NeovimAdapter(
       root: fixture.state, configurationDirectoryURL: fixture.home.appending(path: ".config/nvim"),
       executableURL: NeovimAdapter.liveExecutableURL, controlIsAvailable: { true },

@@ -953,7 +953,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
 
   private func restoreRollbackThemeBridges(_ transaction: EnvironmentTransaction) throws {
     if let previousThemeGenerationID = transaction.previousThemeGenerationID {
-      let active = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+      let active = try ThemeGenerationReader(root: stateRoot).activeManifest()
       guard active.generationID == previousThemeGenerationID else { return }
     }
     try EnvironmentThemeBridgeState(entries: transaction.rollbackThemeBridges).restore()

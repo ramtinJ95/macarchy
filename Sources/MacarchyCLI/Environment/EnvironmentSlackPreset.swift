@@ -32,7 +32,7 @@ struct EnvironmentSlackPreset: Sendable {
   }
 
   func payload(stateRoot: URL) throws -> String {
-    let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+    let manifest = try ThemeGenerationReader(root: stateRoot).activeManifest()
     guard manifest.rendererVersions[SlackAdapter.id] == SlackAdapter.rendererVersion else {
       throw EnvironmentLifecycleError.blocked(
         "the active canonical generation does not contain a renderer-v2 Slack payload"

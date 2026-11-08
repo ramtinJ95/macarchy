@@ -128,7 +128,7 @@ struct EnvironmentPlanCommandRunner: Sendable {
       !composition.profile.selectedThemeAdapterIDs.isEmpty || composition.profile.presets.slack
     {
       do {
-        _ = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+        _ = try ThemeGenerationReader(root: stateRoot).activeManifest()
         themeDiagnostic = nil
       } catch {
         themeDiagnostic = EnvironmentPlanDiagnostic(

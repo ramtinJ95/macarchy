@@ -325,7 +325,7 @@ struct SketchyBarAdapter: Sendable {
   }
 
   private func activeBarColor() throws -> String {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     return Self.barColor(try manifest.normalizedTheme(root: root).semantic.background)
   }
 

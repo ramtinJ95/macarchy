@@ -208,7 +208,7 @@ package struct StarshipAdapter: Sendable {
   }
 
   private func activePalette() throws -> String {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     let data = try BoundedRegularFile.read(
       at: manifest.artifactURL(root: root, path: Self.outputPath)
     ).data

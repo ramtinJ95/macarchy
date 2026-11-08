@@ -1054,7 +1054,7 @@ private struct HerdrFixture {
       theme: DesktopThemeController(
         reconcile: { adapterIDs, stateRoot, _ in
           DesktopThemeReconciliation(
-            generationID: try ReconciliationStatusStore(root: stateRoot).activeManifest()
+            generationID: try ThemeGenerationReader(root: stateRoot).activeManifest()
               .generationID,
             results: adapterIDs.map {
               DesktopThemeAdapterStatus(

@@ -260,7 +260,7 @@ extension AdapterContractTests {
         return ProcessResult(terminationStatus: 0, output: AtuinAdapter.themeName)
       }
       if request.executableURL == NeovimAdapter.liveExecutableURL {
-        let active = try ReconciliationStatusStore(root: root).activeManifest()
+        let active = try ThemeGenerationReader(root: root).activeManifest()
         return ProcessResult(
           terminationStatus: 0,
           output: "MACARCHY_THEME=\(active.generationID):\(active.themeID)"

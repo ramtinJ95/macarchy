@@ -251,7 +251,7 @@ func loadPopupTheme(
   bundledThemesRoot: URL
 ) throws -> NormalizedTheme {
   do {
-    return try ReconciliationStatusStore(root: stateRoot).activeManifest()
+    return try ThemeGenerationReader(root: stateRoot).activeManifest()
       .normalizedTheme(root: stateRoot)
   } catch ReconciliationStatusError.noActiveGeneration {
     let package = try ThemePackageLoader().load(

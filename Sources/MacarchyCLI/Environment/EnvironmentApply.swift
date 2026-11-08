@@ -282,7 +282,7 @@ private func reconcileRestoredDefaultConsumers(
     )
   }
   let hasActiveTheme =
-    try ReconciliationStatusStore(root: stateRoot).activeManifestIfPresent() != nil
+    try ThemeGenerationReader(root: stateRoot).activeManifestIfPresent() != nil
   let adapterIDs =
     hasActiveTheme
     ? try ThemeRuntimeSelection.enabledAdapterIDs(
@@ -831,7 +831,7 @@ struct EnvironmentApplyCommandRunner: Sendable {
             homeDirectory: homeDirectory, stateRoot: stateRoot, resourcesRoot: resourcesRoot)
           let previousThemeGenerationID: String?
           if theme != nil, !profile.environment.selectedThemeAdapterIDs.isEmpty {
-            previousThemeGenerationID = try ReconciliationStatusStore(root: stateRoot)
+            previousThemeGenerationID = try ThemeGenerationReader(root: stateRoot)
               .activeManifest().generationID
           } else {
             previousThemeGenerationID = nil

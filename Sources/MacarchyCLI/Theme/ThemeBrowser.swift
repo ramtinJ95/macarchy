@@ -275,7 +275,7 @@ struct ThemeBrowserCommandLoader: Sendable {
   static let live = ThemeBrowserCommandLoader(
     loadMetadata: { try $0.metadata() },
     loadPreferences: { try BackgroundPreferenceStore(root: $0).load() },
-    loadActiveManifest: { try ReconciliationStatusStore(root: $0).activeManifestIfPresent() },
+    loadActiveManifest: { try ThemeGenerationReader(root: $0).activeManifestIfPresent() },
     loadPersonalBackgrounds: { root, themeIDs in
       try MacarchyConfigurationStore(root: root).personalBackgroundMetadata(themeIDs: themeIDs)
     },
@@ -362,7 +362,7 @@ struct ThemeBrowserApplyRunner: Sendable {
       -> (output: String, succeeded: Bool)
 
   static let live = ThemeBrowserApplyRunner(
-    activeThemeID: { try ReconciliationStatusStore(root: $0).activeManifestIfPresent()?.themeID },
+    activeThemeID: { try ThemeGenerationReader(root: $0).activeManifestIfPresent()?.themeID },
     setActiveBackground: { repository, backgroundID, root, consumerPaths in
       try await ThemeBackgroundCommandRunner.live.set(
         repository: repository,

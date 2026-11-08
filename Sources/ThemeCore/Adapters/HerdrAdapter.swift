@@ -334,7 +334,7 @@ package struct HerdrAdapter: Sendable {
   }
 
   package static func desiredTheme(root: URL) throws -> GeneratedHerdrTheme {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     let url = StateLayout(root: root).currentThemeArtifact(outputPath).resolvingSymlinksInPath()
     let data = try BoundedRegularFile.read(at: url).data
     return try decodeGeneratedTheme(
@@ -517,7 +517,7 @@ package struct HerdrAdapter: Sendable {
     guard FileManager.default.fileExists(atPath: StateLayout(root: root).currentTheme.path) else {
       return nil
     }
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     let data: Data
     do {
       data = try BoundedRegularFile.read(at: desiredThemeURL.resolvingSymlinksInPath()).data

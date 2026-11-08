@@ -930,7 +930,7 @@ struct SketchyBarRuntimeTests {
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let inspector = SketchyBarPalettePlanInspector()
     #expect(inspector.inspect(stateRoot: fixture.state, enabled: true).status == .current)
-    let manifest = try ReconciliationStatusStore(root: fixture.state).activeManifest()
+    let manifest = try ThemeGenerationReader(root: fixture.state).activeManifest()
     let url = fixture.state.appending(path: "generations/\(manifest.generationID)/manifest.json")
     var object = try #require(
       JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
@@ -943,7 +943,7 @@ struct SketchyBarRuntimeTests {
     #expect(inspector.inspect(stateRoot: fixture.state, enabled: true).status == .refreshRequired)
     #expect(inspector.inspect(stateRoot: fixture.state, enabled: false).status == .disabled)
     #expect(
-      try ReconciliationStatusStore(root: fixture.state).activeManifest().generationID
+      try ThemeGenerationReader(root: fixture.state).activeManifest().generationID
         == manifest.generationID)
   }
 

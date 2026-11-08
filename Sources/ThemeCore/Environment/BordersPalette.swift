@@ -26,7 +26,7 @@ package struct BordersPalette: Equatable, Sendable {
   }
 
   package static func read(root: URL) throws -> Self {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     let theme = try manifest.normalizedTheme(root: root)
     return Self(
       generationID: manifest.generationID, themeID: manifest.themeID,

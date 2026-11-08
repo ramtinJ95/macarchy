@@ -62,7 +62,7 @@ struct BordersLifecycleTests {
     for failedRecord in [false, true] {
       if failedRecord {
         _ = try status.persist(
-          manifest: status.activeManifest(),
+          manifest: ThemeGenerationReader(root: fixture.root).activeManifest(),
           results: [
             AdapterResult(adapterID: BordersAdapter.id, requirement: .required, status: .failed)
           ])
@@ -93,7 +93,8 @@ struct BordersLifecycleTests {
     defer { fixture.remove() }
     if stale {
       let status = ReconciliationStatusStore(root: fixture.root)
-      _ = try status.persist(manifest: status.activeManifest(), results: [])
+      _ = try status.persist(
+        manifest: ThemeGenerationReader(root: fixture.root).activeManifest(), results: [])
       try fixture.activate("tokyo-night")
     }
     let calls = Mutex(0)

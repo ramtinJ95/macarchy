@@ -22,7 +22,7 @@ struct ThemeScreensaverCommandTests {
       FileManager.default.fileExists(atPath: root.appending(path: "screensaver/wallpaper.png").path)
     )
     #expect(
-      try ReconciliationStatusStore(root: root).activeManifest().generationID
+      try ThemeGenerationReader(root: root).activeManifest().generationID
         == manifest.generationID)
     #expect(
       !FileManager.default.fileExists(
@@ -57,7 +57,7 @@ struct ThemeScreensaverCommandTests {
       backgroundID: nil, followWallpaper: true)
     #expect(try preferences.load().keys.sorted() == [other.id])
     #expect(
-      try ReconciliationStatusStore(root: root).activeManifest().generationID
+      try ThemeGenerationReader(root: root).activeManifest().generationID
         == manifest.generationID)
     #expect(
       !FileManager.default.fileExists(

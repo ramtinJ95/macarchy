@@ -113,7 +113,7 @@ struct EnvironmentNativeFileMigration: Sendable {
       }
       return data
     }
-    let manifest = try ReconciliationStatusStore(root: stateRoot).activeManifest()
+    let manifest = try ThemeGenerationReader(root: stateRoot).activeManifest()
     let palette = try BoundedRegularFile.read(
       at: manifest.artifactURL(root: stateRoot, path: "generated/starship.toml")
     ).data

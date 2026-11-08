@@ -258,7 +258,7 @@ func verifyPendingLeanHandoff(
   try lock.withLock {
     if let destination {
       let status = ReconciliationStatusStore(root: root)
-      let manifest = try status.activeManifest()
+      let manifest = try ThemeGenerationReader(root: root).activeManifest()
       var results: [AdapterResult] = []
       if case .current(let record) = try status.reconciliationState(for: manifest) {
         results = record.results.filter {

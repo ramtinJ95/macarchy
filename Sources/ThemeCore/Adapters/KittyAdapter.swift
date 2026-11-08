@@ -159,7 +159,7 @@ package struct KittyAdapter: Sendable {
   }
 
   private static func activeConfiguration(root: URL) throws -> Data {
-    let manifest = try ReconciliationStatusStore(root: root).activeManifest()
+    let manifest = try ThemeGenerationReader(root: root).activeManifest()
     return try BoundedRegularFile.read(
       at: manifest.artifactURL(root: root, path: Self.outputPath)
     ).data

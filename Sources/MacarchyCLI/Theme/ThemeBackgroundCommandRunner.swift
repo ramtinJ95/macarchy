@@ -27,7 +27,7 @@ struct ThemeBackgroundCommandRunner: Sendable {
 
   static let live = ThemeBackgroundCommandRunner(
     activeManifest: { root in
-      try ReconciliationStatusStore(root: root).activeManifest()
+      try ThemeGenerationReader(root: root).activeManifest()
     },
     preflight: { try ThemeSetCommandRunner.live.preflight($0, $1, $2, $3) },
     activate: { try await ThemeSetCommandRunner.live.activate($0, $1, $2, $3, $4) }
