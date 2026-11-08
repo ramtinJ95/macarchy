@@ -137,34 +137,23 @@ package struct KeybindingGenerationActivator: Sendable {
     defer { Darwin.close(descriptor) }
     let temporaryName =
       ".current-\(generation.manifest.generationID)-\(UUID().uuidString.lowercased())"
-    let temporaryURL = keybindingsRoot.appending(path: temporaryName)
-    let destination = "generations/\(generation.manifest.generationID)"
-    let created = destination.withCString { destinationPath in
-      temporaryName.withCString { name in
-        Darwin.symlinkat(destinationPath, descriptor, name)
+    try GenerationStore.replaceCurrent(
+      in: descriptor,
+      with: generation.manifest.generationID,
+      through: temporaryName,
+      syncs: true,
+      beforeReplace: { try faultInjector(.currentReady) },
+      failure: { step, code in
+        switch step {
+        case .create:
+          return KeybindingGenerationActivationError.system(
+            "create current pointer", keybindingsRoot.appending(path: temporaryName), code)
+        case .replace:
+          return KeybindingGenerationActivationError.system(
+            "replace current pointer", keybindingsRoot.appending(path: "current"), code)
+        }
       }
-    }
-    guard created == 0 else {
-      throw KeybindingGenerationActivationError.system(
-        "create current pointer",
-        temporaryURL,
-        errno
-      )
-    }
-    defer { temporaryName.withCString { _ = Darwin.unlinkat(descriptor, $0, 0) } }
-    try faultInjector(.currentReady)
-    let replaced = temporaryName.withCString { source in
-      "current".withCString { destinationName in
-        Darwin.renameat(descriptor, source, descriptor, destinationName)
-      }
-    }
-    guard replaced == 0, fsync(descriptor) == 0 else {
-      throw KeybindingGenerationActivationError.system(
-        "replace current pointer",
-        keybindingsRoot.appending(path: "current"),
-        errno
-      )
-    }
+    )
     try faultInjector(.currentReplaced)
   }
 
@@ -174,32 +163,22 @@ package struct KeybindingGenerationActivator: Sendable {
     defer { Darwin.close(descriptor) }
     if let generationID {
       let temporaryName = ".current-restore-\(UUID().uuidString.lowercased())"
-      let destination = "generations/\(generationID)"
-      let created = destination.withCString { destinationPath in
-        temporaryName.withCString { name in
-          Darwin.symlinkat(destinationPath, descriptor, name)
+      try GenerationStore.replaceCurrent(
+        in: descriptor,
+        with: generationID,
+        through: temporaryName,
+        syncs: false,
+        failure: { step, code in
+          switch step {
+          case .create:
+            return KeybindingGenerationActivationError.system(
+              "create rollback pointer", keybindingsRoot.appending(path: temporaryName), code)
+          case .replace:
+            return KeybindingGenerationActivationError.system(
+              "restore current pointer", keybindingsRoot.appending(path: "current"), code)
+          }
         }
-      }
-      guard created == 0 else {
-        throw KeybindingGenerationActivationError.system(
-          "create rollback pointer",
-          keybindingsRoot.appending(path: temporaryName),
-          errno
-        )
-      }
-      defer { temporaryName.withCString { _ = Darwin.unlinkat(descriptor, $0, 0) } }
-      let replaced = temporaryName.withCString { source in
-        "current".withCString { destinationName in
-          Darwin.renameat(descriptor, source, descriptor, destinationName)
-        }
-      }
-      guard replaced == 0 else {
-        throw KeybindingGenerationActivationError.system(
-          "restore current pointer",
-          keybindingsRoot.appending(path: "current"),
-          errno
-        )
-      }
+      )
     } else {
       let removed = "current".withCString { Darwin.unlinkat(descriptor, $0, 0) }
       guard removed == 0 || errno == ENOENT else {
