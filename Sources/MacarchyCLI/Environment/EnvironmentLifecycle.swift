@@ -818,7 +818,6 @@ struct EnvironmentTransactionCoordinator: Sendable {
     try providerEntries.removeCreatedDirectories(Array(obsoleteDirectories))
   }
 
-  /// Moves one key-owned configuration file between the ownership snapshots.
   private func transition(
     _ file: EnvironmentKeyOwnedFile,
     from old: EnvironmentOwnership?,

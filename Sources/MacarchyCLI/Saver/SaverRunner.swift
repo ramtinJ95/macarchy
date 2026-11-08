@@ -32,7 +32,6 @@ enum SaverRunnerEvent: Equatable, Sendable {
   case terminate
   /// ttfx exited with this status; 128 + n when signal n ended it.
   case engineExited(Int32)
-  /// The wait's bound passed.
   case timeout
 }
 

@@ -1,7 +1,7 @@
 import ThemeCore
 
 // Validation is pure; callers retain their own inspection and filesystem-read order.
-// Each preset declares its legacy setup records in `EnvironmentPreset.legacyIntegration`.
+// Linked presets declare their legacy setup records in `EnvironmentLinkedPreset.legacyIntegration`.
 enum EnvironmentLegacyIntegration {
   static func hasCompleteLegacyIntegration(
     named name: String,
