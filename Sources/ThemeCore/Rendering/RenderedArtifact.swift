@@ -120,17 +120,6 @@ package enum RenderedArtifactSizePolicy: Equatable, Sendable {
   case ordinary
   case wallpaper
 
-  package init?(maximumSize: Int) {
-    switch maximumSize {
-    case BoundedRegularFile.maximumSize:
-      self = .ordinary
-    case WallpaperAsset.maximumSize:
-      self = .wallpaper
-    default:
-      return nil
-    }
-  }
-
   package var maximumSize: Int {
     switch self {
     case .ordinary:

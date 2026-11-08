@@ -187,13 +187,6 @@ public struct ThemePackage: Sendable {
     defaultBackground.map(data(for:))
   }
 
-  var defaultBackgroundData: Data {
-    guard let data = firstBackgroundData else {
-      preconditionFailure("Theme package has no default background")
-    }
-    return data
-  }
-
   func addingPersonalBackgrounds(_ additions: [ThemeBackgroundAddition]) throws -> ThemePackage {
     guard !additions.isEmpty else { return self }
     let merged = try metadata.addingPersonalBackgrounds(additions.map(\.background))
