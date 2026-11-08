@@ -38,7 +38,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
   ) async throws -> CommandExecution {
     var reviewed: Prepared?
     var intent = "unchanged"
-    var stages: [SetupComponentExecution] = []
+    var stages: [Stage] = []
     do {
       if recover {
         guard targets.isEmpty, approval == nil, !machineOnly else {
@@ -102,14 +102,13 @@ struct SetupPackageAdditionCommandRunner: Sendable {
       if let installation = prepared.installation, !installation.targets.isEmpty {
         // The approved addition digest covers these reviewed inputs, so their own digest is the
         // install approval; the runner recomputes it from saved state and refuses any drift.
-        let execution = try SetupComponentExecution(
-          await SetupPackageInstallationCommandRunner(
-            planner: planner, provider: provider
-          ).execute(
-            context: context, targets: installation.selected.map(\.key),
-            approval: installation.approvalDigest, json: true))
-        stages.append(execution)
-        guard execution.succeeded else {
+        let installed = try await SetupPackageInstallationCommandRunner(
+          planner: planner, provider: provider
+        ).report(
+          context: context, targets: installation.selected.map(\.key),
+          approval: installation.approvalDigest)
+        stages.append(.installation(installed))
+        guard installed.succeeded else {
           throw SetupPackageAdoptionError(
             "Named installation did not complete; inspect the installation report and use setup install-packages --recover when required."
           )
@@ -139,11 +138,10 @@ struct SetupPackageAdditionCommandRunner: Sendable {
             "Reviewed installed candidates or prior adoption history changed after saving; preview again before adoption."
           )
         }
-        let execution = try SetupComponentExecution(
-          await runner.execute(
-            context: context, targets: identities.map(\.key), approval: current.digest, json: true))
-        stages.append(execution)
-        guard execution.succeeded else {
+        let adopted = try await runner.report(
+          context: context, targets: identities.map(\.key), approval: current.digest)
+        stages.append(.adoption(adopted))
+        guard adopted.succeeded else {
           throw SetupPackageAdoptionError(
             "Named adoption did not complete; inspect the adoption report before retrying.")
         }
@@ -288,7 +286,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
 
   private func result(
     _ outcome: String, prepared: Prepared?, intent: String,
-    stages: [SetupComponentExecution], message: String, json: Bool
+    stages: [Stage], message: String, json: Bool
   )
     throws -> CommandExecution
   {
@@ -298,7 +296,7 @@ struct SetupPackageAdditionCommandRunner: Sendable {
       let intent: String
       let approvalDigest: String?
       let preview: Preview?
-      let stages: [SetupComponentExecution]
+      let stages: [Stage]
       let message: String
     }
     let output = try renderJSON(
@@ -310,6 +308,32 @@ struct SetupPackageAdditionCommandRunner: Sendable {
       json ? output : "Package addition [\(outcome)]\n\(output)",
       ["preview", "no_change", "complete", "recovered"].contains(outcome)
     )
+  }
+
+  /// A delegated package stage's own report and whether it succeeded.
+  private enum Stage: Encodable, Sendable {
+    case installation(SetupPackageInstallationCommandRunner.Report)
+    case adoption(SetupPackageAdoptionCommandRunner.Report)
+
+    var succeeded: Bool {
+      switch self {
+      case .installation(let report): report.succeeded
+      case .adoption(let report): report.succeeded
+      }
+    }
+
+    enum CodingKeys: CodingKey {
+      case succeeded, report
+    }
+
+    func encode(to encoder: Encoder) throws {
+      var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encode(succeeded, forKey: .succeeded)
+      switch self {
+      case .installation(let report): try container.encode(report, forKey: .report)
+      case .adoption(let report): try container.encode(report, forKey: .report)
+      }
+    }
   }
 
   /// Keep the report named-scope only. Whole-ledger and source metadata evidence
