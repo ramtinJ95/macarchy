@@ -167,10 +167,9 @@ extension KeepAwake {
       stateRoot: stateRoot,
       spawn: spawnCaffeinate,
       process: { pid in
-        guard let started = processStartTime(pid), let path = processExecutablePath(pid) else {
-          return nil
+        ProcessIdentity.observe(pid).map {
+          KeepAwakeProcess(started: $0.started, executablePath: $0.executablePath)
         }
-        return KeepAwakeProcess(started: started, executablePath: path)
       },
       terminate: { pid in
         guard kill(pid, SIGTERM) != 0 else { return }
@@ -188,40 +187,24 @@ extension KeepAwake {
   /// terminal or bar script does not end it. It is never reaped here: the command exits right
   /// after, and launchd reaps the reparented process.
   private static func spawnCaffeinate(_ arguments: [String]) throws -> Int32 {
-    func require(_ code: Int32, _ operation: String) throws {
-      guard code == 0 else {
-        throw KeepAwakeError("cannot \(operation) caffeinate (errno \(code))")
-      }
-    }
-    var attributes: posix_spawnattr_t?
-    try require(posix_spawnattr_init(&attributes), "prepare")
-    defer { posix_spawnattr_destroy(&attributes) }
-    try require(
-      posix_spawnattr_setflags(
-        &attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT)),
-      "prepare")
-    var actions: posix_spawn_file_actions_t?
-    try require(posix_spawn_file_actions_init(&actions), "prepare")
-    defer { posix_spawn_file_actions_destroy(&actions) }
-    for (descriptor, flags) in [
-      (STDIN_FILENO, O_RDONLY), (STDOUT_FILENO, O_WRONLY), (STDERR_FILENO, O_WRONLY),
-    ] {
-      try require(
-        posix_spawn_file_actions_addopen(&actions, descriptor, "/dev/null", flags, 0), "prepare")
-    }
-    let argv = [caffeinatePath] + arguments
-    let storage = argv.compactMap { strdup($0) }
-    defer {
-      for pointer in storage { free(pointer) }
-    }
-    guard storage.count == argv.count else {
+    let spawned = ChildProcess.spawn(
+      caffeinatePath, arguments: arguments,
+      flags: POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT,
+      fileActions: [
+        .open(descriptor: STDIN_FILENO, path: "/dev/null", flags: O_RDONLY, mode: 0),
+        .open(descriptor: STDOUT_FILENO, path: "/dev/null", flags: O_WRONLY, mode: 0),
+        .open(descriptor: STDERR_FILENO, path: "/dev/null", flags: O_WRONLY, mode: 0),
+      ])
+    switch spawned {
+    case .success(let pid):
+      return pid
+    case .failure(.prepare(let code)):
+      throw KeepAwakeError("cannot prepare caffeinate (errno \(code))")
+    case .failure(.allocateArguments):
       throw KeepAwakeError("cannot allocate caffeinate arguments")
+    case .failure(.spawn(let code)):
+      throw KeepAwakeError("cannot launch caffeinate (errno \(code))")
     }
-    var pointers: [UnsafeMutablePointer<CChar>?] = storage.map { $0 } + [nil]
-    var pid: pid_t = 0
-    try require(
-      posix_spawn(&pid, caffeinatePath, &actions, &attributes, &pointers, environ), "launch")
-    return pid
   }
 }
 

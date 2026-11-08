@@ -16,3 +16,21 @@ package func processStartTime(_ pid: Int32) -> UInt64? {
   else { return nil }
   return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
 }
+
+/// A live process's PID, start time and executable path, read together. Each record that stores
+/// these keeps its own type and keys; this is only the observation.
+package struct ProcessIdentity: Equatable, Sendable {
+  package let pid: Int32
+  /// Microseconds, as `processStartTime` returns.
+  package let started: UInt64
+  package let executablePath: String
+
+  /// The identity of `pid`, or nil when the kernel cannot resolve its start time or path.
+  /// The path is not read when the start time cannot be.
+  package static func observe(_ pid: Int32) -> Self? {
+    guard let started = processStartTime(pid), let path = processExecutablePath(pid) else {
+      return nil
+    }
+    return Self(pid: pid, started: started, executablePath: path)
+  }
+}

@@ -53,29 +53,18 @@ enum HomebrewPackageInstallProcess {
     else {
       throw SetupPackageAdoptionError("Installation requires a bounded explicit env command.")
     }
-    func require(_ code: Int32) throws {
-      guard code == 0 else {
-        throw SetupPackageAdoptionError("Installation process operation failed (errno \(code)).")
-      }
-    }
-    var attributes: posix_spawnattr_t?
-    try require(posix_spawnattr_init(&attributes))
-    defer { posix_spawnattr_destroy(&attributes) }
-    try require(
-      posix_spawnattr_setflags(
-        &attributes,
-        Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_START_SUSPENDED | POSIX_SPAWN_CLOEXEC_DEFAULT)))
-    let arguments = [request.executableURL.path] + request.arguments
-    let storage = arguments.compactMap { strdup($0) }
-    defer {
-      for pointer in storage { free(pointer) }
-    }
-    guard storage.count == arguments.count else {
+    let pid: pid_t
+    let spawned = ChildProcess.spawn(
+      request.executableURL.path, arguments: request.arguments,
+      flags: POSIX_SPAWN_SETSID | POSIX_SPAWN_START_SUSPENDED | POSIX_SPAWN_CLOEXEC_DEFAULT)
+    switch spawned {
+    case .success(let child):
+      pid = child
+    case .failure(.prepare(let code)), .failure(.spawn(let code)):
+      throw SetupPackageAdoptionError("Installation process operation failed (errno \(code)).")
+    case .failure(.allocateArguments):
       throw SetupPackageAdoptionError("Cannot allocate installation arguments.")
     }
-    var pointers: [UnsafeMutablePointer<CChar>?] = storage.map { $0 } + [nil]
-    var pid: pid_t = 0
-    try require(posix_spawn(&pid, request.executableURL.path, nil, &attributes, &pointers, environ))
     var reaped = false
     do {
       try recordProcess(pid)
@@ -96,8 +85,7 @@ enum HomebrewPackageInstallProcess {
             throw SetupPackageAdoptionError(
               "Native installer left running descendants; success is unverified.")
           }
-          let signal = status & 0x7f
-          return signal == 0 ? (status >> 8) & 0xff : 128 + signal
+          return ChildProcess.exitCode(waitStatus: status)
         }
         if result == -1, errno != EINTR {
           throw SetupPackageAdoptionError("Cannot wait for installation process (errno \(errno)).")
@@ -108,11 +96,7 @@ enum HomebrewPackageInstallProcess {
         "Native installation exceeded its execution limit; use --recover for observed partial state."
       )
     } catch {
-      if !reaped {
-        _ = kill(pid, SIGKILL)
-        var status: Int32 = 0
-        while waitpid(pid, &status, 0) == -1, errno == EINTR {}
-      }
+      if !reaped { ChildProcess.killAndReap(pid, target: pid) }
       do { try terminateSession(pid) } catch let cleanup {
         throw SetupPackageAdoptionError("\(error); installation session cleanup failed: \(cleanup)")
       }

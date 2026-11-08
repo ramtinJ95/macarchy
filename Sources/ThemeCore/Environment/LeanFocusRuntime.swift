@@ -15,14 +15,13 @@ package struct LeanFocusRuntime: Codable, Equatable, Sendable {
   package static func publish(
     configuration: LeanFocusServiceConfiguration, generationID: String, accent: String
   ) throws {
-    guard let started = processStartTime(getpid()),
-      let processPath = processExecutablePath(getpid()),
-      let physical = LeanFocusServiceConfiguration.physicalPath(processPath),
+    guard let identity = ProcessIdentity.observe(getpid()),
+      let physical = LeanFocusServiceConfiguration.physicalPath(identity.executablePath),
       physical == configuration.currentExecutablePath
     else { throw LeanFocusServiceError("cannot establish the running helper identity") }
     let value = Self(
       label: LeanFocusService.label, stateRoot: configuration.stateRoot,
-      pid: getpid(), started: started, executablePath: physical,
+      pid: identity.pid, started: identity.started, executablePath: physical,
       generationID: generationID, accent: accent)
     let parent = try PinnedFilesystem.openDirectory(
       at: configuration.runtimeURL.deletingLastPathComponent())
