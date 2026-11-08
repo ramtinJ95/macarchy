@@ -19,7 +19,7 @@ struct Borders: ParsableCommand {
     var stateRoot = StateLayout.defaultRootPath
 
     @Option(help: "Preview duration in seconds (1–300).")
-    var seconds: Double = 30
+    var seconds: Double = BordersPalette.defaultPreviewSeconds
 
     @Flag(help: "Inspect the palette, provider and exact arguments without starting borders.")
     var dryRun = false
@@ -32,7 +32,7 @@ struct Borders: ParsableCommand {
 
     func validate() throws {
       guard seconds.isFinite, BordersPalette.previewSeconds.contains(seconds) else {
-        throw ValidationError("--seconds must be between 1 and 300.")
+        throw ValidationError(BordersPalette.previewSecondsRangeMessage)
       }
     }
 

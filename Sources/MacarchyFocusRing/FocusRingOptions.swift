@@ -17,7 +17,7 @@ struct FocusRingOptions: ParsableArguments {
     help: "Run persistently as the exact Macarchy-owned launchd job; not a standalone preview.")
   var managed = false
 
-  var previewDuration: Double { seconds ?? 30 }
+  var previewDuration: Double { seconds ?? BordersPalette.defaultPreviewSeconds }
 
   @Flag(
     name: .customLong(FocusRingHelperCommand.jsonFlag),
@@ -29,7 +29,7 @@ struct FocusRingOptions: ParsableArguments {
       throw ValidationError("--managed and --seconds are mutually exclusive.")
     }
     guard previewDuration.isFinite, BordersPalette.previewSeconds.contains(previewDuration) else {
-      throw ValidationError("--seconds must be between 1 and 300.")
+      throw ValidationError(BordersPalette.previewSecondsRangeMessage)
     }
     guard stateRoot.hasPrefix("/") else {
       throw ValidationError("--state-root must be an absolute path.")
