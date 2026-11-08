@@ -107,20 +107,25 @@ struct MenuNeovimSetup {
       let (plan, _) = try reconnect.plan()
       showProfile(profileEdit)
       io.write(plan.message + "\n")
-      guard try confirm("Save the reviewed Neovim profile intent and connect \(source.path)?")
+      guard
+        try profileEdit.publishReviewed(
+          approved: try confirm(
+            "Save the reviewed Neovim profile intent and connect \(source.path)?"),
+          lock: .environmentLifecycle,
+          replan: {
+            // Revalidate both consents before the first write.
+            guard try reconnect.plan().0.approval == plan.approval else {
+              throw EnvironmentLifecycleError.blocked("Neovim connection changed; review again")
+            }
+          },
+          effect: {
+            io.write(
+              try EnvironmentTransactionCoordinator(
+                homeDirectory: homeDirectory,
+                stateRoot: context.stateRoot
+              ).migrateNeovimLocked(approval: plan.approval, sourceURL: source) + "\n")
+          }) != nil
       else { return nil }
-      try withMutationLock {
-        // Revalidate both consents before the first write.
-        guard try reconnect.plan().0.approval == plan.approval else {
-          throw EnvironmentLifecycleError.blocked("Neovim connection changed; review again")
-        }
-        try profileEdit.publish()
-        io.write(
-          try EnvironmentTransactionCoordinator(
-            homeDirectory: homeDirectory,
-            stateRoot: context.stateRoot
-          ).migrateNeovimLocked(approval: plan.approval, sourceURL: source) + "\n")
-      }
     } else {
       let connection = EnvironmentNeovimConnection(
         homeDirectory: homeDirectory,
@@ -130,15 +135,18 @@ struct MenuNeovimSetup {
       io.write(
         "Connect Neovim and its generated theme only. Other provider files and runtime processes stay unchanged. No plugin restore, package installation or full environment apply.\n"
       )
-      guard try confirm("Save the reviewed Neovim intent and make this connection?") else {
+      guard
+        try profileEdit.publishReviewed(
+          approved: try confirm("Save the reviewed Neovim intent and make this connection?"),
+          lock: .environmentLifecycle,
+          replan: {
+            guard try connection.plan().approval == plan.approval else {
+              throw EnvironmentLifecycleError.blocked("Neovim connection changed; review again")
+            }
+          },
+          effect: { try connection.connectLocked(approval: plan.approval) }) != nil
+      else {
         return nil
-      }
-      try withMutationLock {
-        guard try connection.plan().approval == plan.approval else {
-          throw EnvironmentLifecycleError.blocked("Neovim connection changed; review again")
-        }
-        try profileEdit.publish()
-        try connection.connectLocked(approval: plan.approval)
       }
     }
     io.write(
@@ -152,12 +160,10 @@ struct MenuNeovimSetup {
   private func publishProfile(_ edit: MenuNativeProfileEdit) throws -> Bool {
     guard edit.files.contains(where: \.changed) else { return true }
     showProfile(edit)
-    guard
-      try confirm(
-        "Save this Neovim source declaration? No connection or runtime changes are needed.")
-    else { return false }
-    try withMutationLock { try edit.publish() }
-    return true
+    return try edit.publishReviewed(
+      approved: try confirm(
+        "Save this Neovim source declaration? No connection or runtime changes are needed."),
+      lock: .environmentLifecycle, replan: {}, effect: {}) != nil
   }
 
   private func showProfile(_ edit: MenuNativeProfileEdit) {
@@ -223,23 +229,23 @@ struct MenuNeovimSetup {
     let (move, _) = try cutover.plan()
     showProfile(edit)
     io.write(move.message + "\n")
-    guard
-      try confirm(
-        "Save the reviewed profile intent and move the writable tree to \(standard.path)?")
-    else { return false }
-    try withMutationLock {
-      guard try cutover.plan().0.approval == move.approval else {
-        throw EnvironmentLifecycleError.blocked("Neovim migration changed; review again")
-      }
-      try edit.publish()
-      io.write(
-        try EnvironmentTransactionCoordinator(
-          homeDirectory: homeDirectory,
-          stateRoot: context.stateRoot
-        ).migrateStandardLocked(
-          provider: .neovim,
-          sourceURL: migration.nativeRoot, approval: move.approval) + "\n")
-    }
-    return true
+    return try edit.publishReviewed(
+      approved: try confirm(
+        "Save the reviewed profile intent and move the writable tree to \(standard.path)?"),
+      lock: .environmentLifecycle,
+      replan: {
+        guard try cutover.plan().0.approval == move.approval else {
+          throw EnvironmentLifecycleError.blocked("Neovim migration changed; review again")
+        }
+      },
+      effect: {
+        io.write(
+          try EnvironmentTransactionCoordinator(
+            homeDirectory: homeDirectory,
+            stateRoot: context.stateRoot
+          ).migrateStandardLocked(
+            provider: .neovim,
+            sourceURL: migration.nativeRoot, approval: move.approval) + "\n")
+      }) != nil
   }
 }

@@ -146,6 +146,21 @@ struct MenuNativeProfileEdit {
     }
   }
 
+  /// Finishes one reviewed menu step whose plan was already shown. Only an approved step
+  /// takes `lock`; under it `replan` throws unless the reviewed step is unchanged, then this
+  /// intent is published and `effect` runs. Returns nil when the user declined.
+  func publishReviewed<Value>(
+    approved: Bool, lock: MenuMutationLock,
+    replan: () throws -> Void, effect: () throws -> Value
+  ) throws -> Value? {
+    guard approved else { return nil }
+    return try lock.withLock(stateRoot: context.stateRoot) {
+      try replan()
+      try publish()
+      return try effect()
+    }
+  }
+
   static func load(_ context: UnifiedSetupPlanContext, proposed: [URL: String] = [:]) throws
     -> LayeredPortableProfile
   {
@@ -189,6 +204,24 @@ struct MenuNativeProfileEdit {
     }
     return File(
       declared: declared, physical: physical, before: text, snapshot: snapshot, after: text)
+  }
+}
+
+/// The lock a reviewed menu step publishes under. Each call site names its flow's lock:
+/// the flows deliberately differ, and lock order stays with the caller.
+enum MenuMutationLock {
+  /// Activation only, as keybinding and desktop connections serialize.
+  case activation
+  /// The environment lifecycle lock, then activation, as native environment sources serialize.
+  case environmentLifecycle
+
+  func withLock<Value>(stateRoot: URL, _ body: () throws -> Value) throws -> Value {
+    switch self {
+    case .activation:
+      return try ActivationLock(root: stateRoot).withLock(body)
+    case .environmentLifecycle:
+      return try EnvironmentLifecycleLock(stateRoot: stateRoot).withActivationLock(body)
+    }
   }
 }
 

@@ -67,29 +67,30 @@ struct MenuKeybindingSetup {
     }
     io.write(
       "Proposed effective skhd configuration:\n\(plan.composition?.renderedConfiguration ?? "")\n")
-    guard
-      try confirm(
+    return try edit.publishReviewed(
+      approved: try confirm(
         "Save this source connection and reload only managed keybindings? Saved intent remains on failure. No adoption, installation or other provider apply."
-      )
-    else { return nil }
-    try ActivationLock(root: context.stateRoot).withLock {
-      try edit.validateBefore()
-      let current = try prepare(edit.profile)
-      guard source.resolvingSymlinksInPath() == physical,
-        try reviewedDigest(current, profile: edit.profile) == digest,
-        current.generation.generationID == plan.generation.generationID
-      else {
-        throw EnvironmentLifecycleError.blocked("keybinding connection changed; review again")
-      }
-      try edit.publish()
-      let result = try runner.applyIntegrationLocked(
-        resourcesRoot: context.keybindingsResourcesRoot, profileURL: context.profileURL,
-        profileRequired: context.profileRequired, stateRoot: context.stateRoot,
-        homeDirectory: context.homeDirectory, adopt: nil, deferFinalization: false,
-        profile: edit.profile, approvedInputDigest: digest)
-      io.write(result.message + "\n")
-    }
-    return physical
+      ),
+      lock: .activation,
+      replan: {
+        try edit.validateBefore()
+        let current = try prepare(edit.profile)
+        guard source.resolvingSymlinksInPath() == physical,
+          try reviewedDigest(current, profile: edit.profile) == digest,
+          current.generation.generationID == plan.generation.generationID
+        else {
+          throw EnvironmentLifecycleError.blocked("keybinding connection changed; review again")
+        }
+      },
+      effect: {
+        let result = try runner.applyIntegrationLocked(
+          resourcesRoot: context.keybindingsResourcesRoot, profileURL: context.profileURL,
+          profileRequired: context.profileRequired, stateRoot: context.stateRoot,
+          homeDirectory: context.homeDirectory, adopt: nil, deferFinalization: false,
+          profile: edit.profile, approvedInputDigest: digest)
+        io.write(result.message + "\n")
+        return physical
+      })
   }
 
   private func prepare(_ profile: PortableProfile) throws -> KeybindingsPlanPreparation {

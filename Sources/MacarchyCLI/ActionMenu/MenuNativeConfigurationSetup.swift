@@ -44,14 +44,19 @@ struct MenuNativeConfigurationSetup {
           context: context, source: active, provider: provider)
         if edit.files.contains(where: \.changed) {
           show(edit)
-          guard try confirm("Save this native source declaration? The connection stays unchanged.")
+          guard
+            try edit.publishReviewed(
+              approved: try confirm(
+                "Save this native source declaration? The connection stays unchanged."),
+              lock: .environmentLifecycle,
+              replan: {
+                // Do not publish stale intent if ownership or the public link changed
+                // while reviewing.
+                _ = try resolver.connectedSource(provider, profile: layered.profile)
+              },
+              effect: {}) != nil
           else {
             return nil
-          }
-          try withMutationLock {
-            // Do not publish stale intent if ownership or the public link changed while reviewing.
-            _ = try resolver.connectedSource(provider, profile: layered.profile)
-            try edit.publish()
           }
         }
       } else if ownership?.records.contains(where: { $0.id == provider.entryID }) == true {
@@ -66,21 +71,25 @@ struct MenuNativeConfigurationSetup {
         show(edit)
         io.write("\(plan.message)\nDestination: \(plan.destination)\n")
         guard
-          try confirm(
-            "Save this source intent and perform only the reviewed \(provider.rawValue) migration?")
+          try edit.publishReviewed(
+            approved: try confirm(
+              "Save this source intent and perform only the reviewed \(provider.rawValue) migration?"
+            ),
+            lock: .environmentLifecycle,
+            replan: {
+              guard try reconnect.plan().0.approval == plan.approval else {
+                throw EnvironmentLifecycleError.blocked("Native connection changed; review again")
+              }
+            },
+            effect: {
+              io.write(
+                try EnvironmentTransactionCoordinator(
+                  homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
+                ).migrateNativeFileLocked(
+                  provider: kind, approval: plan.approval, sourceURL: declared) + "\n")
+            }) != nil
         else {
           return nil
-        }
-        try withMutationLock {
-          guard try reconnect.plan().0.approval == plan.approval else {
-            throw EnvironmentLifecycleError.blocked("Native connection changed; review again")
-          }
-          try edit.publish()
-          io.write(
-            try EnvironmentTransactionCoordinator(
-              homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
-            ).migrateNativeFileLocked(provider: kind, approval: plan.approval, sourceURL: declared)
-              + "\n")
         }
       } else if active == nil {
         guard try prepareInitialConnection(layered: layered.profile) else { return nil }
@@ -152,17 +161,16 @@ struct MenuNativeConfigurationSetup {
     show(edit)
     io.write("Connect only \(provider.rawValue) at \(connection.publicURL.path).\n")
     if provider == .atuin { io.write("Create theme link: \(connection.themeURL.path)\n") }
-    guard try confirm("Save this source intent and connect this provider only?") else {
-      return false
-    }
-    try withMutationLock {
-      guard try connection.plan(profile: edit.profile).approval == plan.approval else {
-        throw EnvironmentLifecycleError.blocked("Native connection changed; review again")
-      }
-      try edit.publish()
-      try connection.connectLocked(profile: edit.profile, approval: plan.approval)
-    }
-    return true
+    return try edit.publishReviewed(
+      approved: try confirm("Save this source intent and connect this provider only?"),
+      lock: .environmentLifecycle,
+      replan: {
+        guard try connection.plan(profile: edit.profile).approval == plan.approval else {
+          throw EnvironmentLifecycleError.blocked("Native connection changed; review again")
+        }
+      },
+      effect: { try connection.connectLocked(profile: edit.profile, approval: plan.approval) })
+      != nil
   }
 
   private func prepareStarter(at source: URL, edit: MenuNativeProfileEdit) throws -> Bool {
