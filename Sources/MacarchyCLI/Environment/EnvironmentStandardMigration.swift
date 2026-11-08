@@ -224,11 +224,11 @@ struct EnvironmentStandardMigration: Sendable {
       provider == .neovim
       ? EnvironmentNeovimMigration(homeDirectory: homeDirectory, stateRoot: stateRoot)
         .allows(record, entry: expected)
-      : (provider == .atuin || provider == .starship)
-        && EnvironmentNativeFileMigration(
-          provider: provider == .atuin ? .atuin : .starship,
-          homeDirectory: homeDirectory, stateRoot: stateRoot
+      : provider.nativeFileProvider.map {
+        EnvironmentNativeFileMigration(
+          provider: $0, homeDirectory: homeDirectory, stateRoot: stateRoot
         ).allows(record, entry: expected)
+      } ?? false
     guard record.publicPath == publicURL.path,
       record.managedKind == expected.kind.rawValue,
       record.managedTarget == expected.target || native

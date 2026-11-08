@@ -7,6 +7,15 @@ struct EnvironmentNativeSeed: Sendable {
   enum Provider: String, Codable, CaseIterable, Sendable {
     case zsh, kitty, atuin, starship, neovim
 
+    /// The single-file native migration this provider uses, if its native source is one file.
+    var nativeFileProvider: EnvironmentNativeFileMigration.Provider? {
+      switch self {
+      case .atuin: .atuin
+      case .starship: .starship
+      case .zsh, .kitty, .neovim: nil
+      }
+    }
+
     /// The profile table that declares this provider's sources.
     var profileTable: String { profileFields.table }
 

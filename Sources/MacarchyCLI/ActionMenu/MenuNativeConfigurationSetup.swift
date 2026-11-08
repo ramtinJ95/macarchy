@@ -32,8 +32,7 @@ struct MenuNativeConfigurationSetup {
         return try MenuConfigurationEditor.target(action, context: context, io: io)
       }
     }
-    if provider == .atuin || provider == .starship {
-      let kind: EnvironmentNativeFileMigration.Provider = provider == .atuin ? .atuin : .starship
+    if let kind = provider.nativeFileProvider {
       let migration = EnvironmentNativeFileMigration(
         provider: kind,
         homeDirectory: context.homeDirectory, stateRoot: context.stateRoot)

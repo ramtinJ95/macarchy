@@ -70,10 +70,10 @@ struct MenuConfigurationValidate: ParsableCommand {
     guard let contents = String(data: data, encoding: .utf8) else {
       throw ValidationError("Saved configuration is not UTF-8. The edit was not reverted.")
     }
-    if provider == .atuin || provider == .starship {
+    if let fileProvider = provider.nativeFileProvider {
       _ = try TOMLTable(source: contents)
       try EnvironmentNativeFileMigration(
-        provider: provider == .atuin ? .atuin : .starship,
+        provider: fileProvider,
         homeDirectory: context.homeDirectory, stateRoot: context.stateRoot
       ).validateNativeFile(at: target, userOwnedPublicEntry: true)
       return

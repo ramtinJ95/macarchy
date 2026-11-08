@@ -135,7 +135,7 @@ struct EnvironmentConfigurationSourceResolver: Sendable {
           .nativeTarget(in: ownership)
       case .atuin, .starship:
         native = EnvironmentNativeFileMigration(
-          provider: provider == .atuin ? .atuin : .starship,
+          provider: provider.nativeFileProvider!,
           homeDirectory: homeDirectory, stateRoot: stateRoot
         ).nativeTarget(in: ownership)
       }
