@@ -14,7 +14,7 @@ struct UnifiedSetupPreferencesTests {
     try selectDock(true, fixture: fixture)
     try "schema_version = 1\n[packages]\nbaseline = 'standard'\n".write(
       to: fixture.context.profileURL, atomically: true, encoding: .utf8)
-    let os = PreferencesTests.MemoryPreferences()
+    let os = MemoryPreferences()
     let runner = fixture.runner(
       available: { _ in true }, preferences: .init(native: os.native),
       packages: .init(packages: [.init(kind: .formula, name: "jq")]),
@@ -52,7 +52,7 @@ struct UnifiedSetupPreferencesTests {
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
     try selectDock(true, fixture: fixture)
-    let os = PreferencesTests.MemoryPreferences()
+    let os = MemoryPreferences()
     let calls = Mutex([String]())
     let lifecycle = PreferencesLifecycle(
       native: .init(
@@ -120,7 +120,7 @@ struct UnifiedSetupPreferencesTests {
     let fixture = try ApplyFixture()
     let manifest = try fixture.activateSetupOwnedTheme()
     defer { fixture.cleanup(expectedThemeGenerationID: manifest.generationID) }
-    let os = PreferencesTests.MemoryPreferences()
+    let os = MemoryPreferences()
     let lifecycle = PreferencesLifecycle(native: os.native)
     let context = try fixture.context.preferencesContext
     let previous = MacOSPreferencesProfile(enabled: true, dockAutohide: true)
@@ -157,7 +157,7 @@ struct UnifiedSetupPreferencesTests {
   func unifiedCommitRecoveryVerifiesThenFinalizesForwardWithoutASetter() async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
-    let os = PreferencesTests.MemoryPreferences()
+    let os = MemoryPreferences()
     let lifecycle = PreferencesLifecycle(native: os.native)
     let context = try fixture.context.preferencesContext
     let desired = MacOSPreferencesProfile(enabled: true, dockAutohide: true)
@@ -192,7 +192,7 @@ struct UnifiedSetupPreferencesTests {
   func teardownRestoresPreferencesFirstAndResumesAfterInterruption() async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
-    let os = PreferencesTests.MemoryPreferences()
+    let os = MemoryPreferences()
     let calls = Mutex([String]())
     let lifecycle = PreferencesLifecycle(
       native: .init(
@@ -263,7 +263,7 @@ struct UnifiedSetupPreferencesTests {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     try selectDock(true, fixture: fixture)
-    let os = PreferencesTests.MemoryPreferences()
+    let os = MemoryPreferences()
     var lifecycle = PreferencesLifecycle(native: os.native)
     if unsupported {
       lifecycle = .init(

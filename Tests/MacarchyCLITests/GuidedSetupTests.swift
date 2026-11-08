@@ -346,7 +346,7 @@ struct GuidedSetupTests {
   func singleConfirmationIncludesNativeChanges(approvePreferences: Bool) async throws {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
-    let os = PreferencesTests.MemoryPreferences()
+    let os = MemoryPreferences()
     let lifecycle = PreferencesLifecycle(native: os.native)
     let context = guidedContext(fixture)
     let responses = Mutex([approvePreferences ? "yes" : ""])
