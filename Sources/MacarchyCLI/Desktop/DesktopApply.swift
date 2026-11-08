@@ -81,16 +81,16 @@ struct DesktopApplyCommandRunner: Sendable {
     )
   }
 
-  func execute(
+  /// `desktop apply --yabai-only`: SketchyBar, keybindings and theme adapters stay outside
+  /// scope. The full desktop apply is `executeAggregate`.
+  func executeYabaiOnly(
     resourcesRoot: URL,
     profileURL: URL,
     profileRequired: Bool,
     stateRoot: URL,
     homeDirectory: URL,
     adopt: String?,
-    sketchyBarAdopt: String? = nil,
     json: Bool,
-    scope: DesktopProviderScope = .allProviders,
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL
   ) throws -> (output: String, succeeded: Bool) {
     let desired: DesktopDesiredState
@@ -101,34 +101,25 @@ struct DesktopApplyCommandRunner: Sendable {
         profileRequired: profileRequired,
         stateRoot: stateRoot,
         macarchyExecutableURL: macarchyExecutableURL,
-        scope: scope
+        scope: .yabaiOnly
       )
     } catch {
       return try result(
         outcome: "blocked",
         mutated: false,
         yabai: nil,
-        sketchyBar: nil,
         message: String(describing: error),
         json: json,
         succeeded: false
       )
     }
     var yabaiBeforeFailure: ApplyResult?
-    var sketchyBarBeforeFailure: ApplyResult?
     do {
-      let results = try ActivationLock(root: stateRoot).withLock {
-        if scope == .yabaiOnly,
-          try DesktopAggregateTransactionStore.parentTransactionPending(stateRoot: stateRoot)
-        {
+      let applied = try ActivationLock(root: stateRoot).withLock {
+        if try DesktopAggregateTransactionStore.parentTransactionPending(stateRoot: stateRoot) {
           throw DesktopApplyBlockedError(
             reason: "complete the pending desktop/setup transaction before a yabai-only apply"
           )
-        }
-        if desired.sketchyBarComposition != nil,
-          let reason = SketchyBarPalettePlanInspector().applyBlocker(stateRoot: stateRoot)
-        {
-          throw DesktopApplyBlockedError(reason: reason)
         }
         let yabai =
           if let composition = desired.yabaiComposition {
@@ -152,42 +143,22 @@ struct DesktopApplyCommandRunner: Sendable {
             )
           }
         yabaiBeforeFailure = yabai
-        let sketchyBar: ApplyResult? =
-          if scope == .allProviders {
-            try coordinator.sketchyBarTransaction(
-              stateRoot: stateRoot,
-              homeDirectory: homeDirectory
-            ).applyLocked(
-              composition: desired.sketchyBarComposition,
-              adoptionEvidenceDigest: sketchyBarAdopt
-            )
-          } else {
-            nil
-          }
-        sketchyBarBeforeFailure = sketchyBar
-        return (yabai, sketchyBar)
+        return yabai
       }
-      let changed = results.0.changed || results.1?.changed == true
-      let recovered = results.1?.lifecycle == "recovery"
       return try self.result(
-        outcome: recovered ? "recovered" : changed ? "applied" : "no_change",
-        mutated: changed,
-        yabai: results.0,
-        sketchyBar: results.1,
-        message: recovered
-          ? "interrupted state was recovered; run desktop apply again"
-          : scope == .yabaiOnly
-            ? "yabai-only apply completed; SketchyBar, keybindings, and theme adapters were not changed"
-            : changed ? "desktop provider state changed" : "desktop providers are converged",
+        outcome: applied.changed ? "applied" : "no_change",
+        mutated: applied.changed,
+        yabai: applied,
+        message:
+          "yabai-only apply completed; SketchyBar, keybindings, and theme adapters were not changed",
         json: json,
-        succeeded: !recovered
+        succeeded: true
       )
     } catch let error as DesktopApplyBlockedError {
       return try result(
         outcome: "blocked",
         mutated: false,
         yabai: nil,
-        sketchyBar: nil,
         message: error.reason,
         json: json,
         succeeded: false
@@ -197,12 +168,10 @@ struct DesktopApplyCommandRunner: Sendable {
     } catch {
       return try result(
         outcome: "failed",
-        mutated: yabaiBeforeFailure?.changed == true || sketchyBarBeforeFailure?.changed == true
-          || YabaiTransactionStore(stateRoot: stateRoot).exists
-          || (scope == .allProviders && SketchyBarTransactionStore(stateRoot: stateRoot).exists),
+        mutated: yabaiBeforeFailure?.changed == true
+          || YabaiTransactionStore(stateRoot: stateRoot).exists,
         yabai: yabaiBeforeFailure,
-        sketchyBar: sketchyBarBeforeFailure,
-        message: yabaiBeforeFailure?.changed == true || sketchyBarBeforeFailure?.changed == true
+        message: yabaiBeforeFailure?.changed == true
           ? "a prior desktop provider changed before a later provider failed; inspect status before retrying: \(error)"
           : String(describing: error),
         json: json,
@@ -620,7 +589,6 @@ struct DesktopApplyCommandRunner: Sendable {
     outcome: String,
     mutated: Bool,
     yabai: ApplyResult?,
-    sketchyBar: ApplyResult?,
     message: String,
     json: Bool,
     succeeded: Bool
@@ -630,7 +598,7 @@ struct DesktopApplyCommandRunner: Sendable {
       outcome: outcome,
       mutated: mutated,
       yabai: yabai,
-      sketchyBar: sketchyBar,
+      sketchyBar: nil,
       message: message
     )
     return (try report.render(json: json), succeeded)

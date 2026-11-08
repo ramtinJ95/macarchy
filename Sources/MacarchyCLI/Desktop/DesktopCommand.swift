@@ -97,15 +97,14 @@ struct Desktop: ParsableCommand {
             scope: yabaiOnly ? .yabaiOnly : .allProviders
           )
         } else if yabaiOnly {
-          try DesktopApplyCommandRunner.live.execute(
+          try DesktopApplyCommandRunner.live.executeYabaiOnly(
             resourcesRoot: RuntimeEnvironment.live.builtInDesktopURL,
             profileURL: profileURL,
             profileRequired: profileOptions.isRequired,
             stateRoot: state.stateRootURL,
             homeDirectory: home,
             adopt: adopt,
-            json: json,
-            scope: .yabaiOnly
+            json: json
           )
         } else {
           try await DesktopApplyCommandRunner.live.executeAggregate(

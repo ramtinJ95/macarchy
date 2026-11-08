@@ -17,10 +17,10 @@ struct DesktopApplyCommandTests {
       lifecycle: lifecycle.controller,
       keybindings: nil, prerequisites: .assumed, theme: nil)
     #expect(
-      try runner.execute(
+      try runner.executeYabaiOnly(
         resourcesRoot: fixture.resources, profileURL: fixture.profile,
         profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
-        adopt: try fixture.adoptionDigest(), json: true, scope: .yabaiOnly
+        adopt: try fixture.adoptionDigest(), json: true
       ).succeeded)
     let store = YabaiOwnershipStore(stateRoot: fixture.state)
     var record = try #require(try store.read())
@@ -76,10 +76,10 @@ struct DesktopApplyCommandTests {
       lifecycle: lifecycle.controller,
       sketchyBarLifecycle: bar.controller, keybindings: nil, prerequisites: .assumed, theme: nil)
     #expect(
-      try runner.execute(
+      try runner.executeYabaiOnly(
         resourcesRoot: fixture.resources, profileURL: fixture.profile,
         profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
-        adopt: nil, json: true, scope: .yabaiOnly
+        adopt: nil, json: true
       ).succeeded)
     let original = try String(contentsOf: fixture.profile, encoding: .utf8)
     let generation = YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID
@@ -153,10 +153,10 @@ struct DesktopApplyCommandTests {
       lifecycle: lifecycle.controller,
       keybindings: nil, prerequisites: .assumed, theme: nil)
     #expect(
-      try runner.execute(
+      try runner.executeYabaiOnly(
         resourcesRoot: fixture.resources, profileURL: fixture.profile,
         profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
-        adopt: nil, json: true, scope: .yabaiOnly
+        adopt: nil, json: true
       ).succeeded)
     let generation = YabaiGenerationInspector(stateRoot: fixture.state).inspect().generationID
     lifecycle.calls.withLock { $0 = [] }
@@ -203,10 +203,10 @@ struct DesktopApplyCommandTests {
       lifecycle: lifecycle.controller,
       keybindings: nil, prerequisites: .assumed, theme: nil)
     #expect(
-      try runner.execute(
+      try runner.executeYabaiOnly(
         resourcesRoot: fixture.resources, profileURL: fixture.profile,
         profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
-        adopt: nil, json: true, scope: .yabaiOnly
+        adopt: nil, json: true
       ).succeeded)
     let context = Self.personalContext(
       root: fixture.root, home: fixture.home, state: fixture.state,
@@ -228,10 +228,10 @@ struct DesktopApplyCommandTests {
       try FileManager.default.createSymbolicLink(
         at: session.target, withDestinationURL: replacement)
     default:
-      _ = try runner.execute(
+      _ = try runner.executeYabaiOnly(
         resourcesRoot: fixture.resources, profileURL: fixture.profile,
         profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
-        adopt: nil, json: true, scope: .yabaiOnly)
+        adopt: nil, json: true)
     }
     lifecycle.calls.withLock { $0 = [] }
     #expect(throws: (any Error).self) { try session.finish(runner: runner) }
@@ -239,7 +239,7 @@ struct DesktopApplyCommandTests {
   }
 
   @Test(arguments: [false, true])
-  func personalBarUsesOnlyReloadAndRetainsSavedIntentOnRuntimeFailure(fails: Bool) throws {
+  func personalBarUsesOnlyReloadAndRetainsSavedIntentOnRuntimeFailure(fails: Bool) async throws {
     let fixture = try SketchyBarPublicCommandFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let yabai = YabaiLifecycleFixture(running: false)
@@ -259,12 +259,11 @@ struct DesktopApplyCommandTests {
       sketchyBarCoreRuntime: .init(
         inspect: inspect, settle: inspect, settleRestored: { _ in true }),
       keybindings: nil, prerequisites: .assumed, theme: nil)
-    #expect(
-      try runner.execute(
-        resourcesRoot: fixture.resources, profileURL: fixture.profile,
-        profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
-        adopt: nil, json: true
-      ).succeeded)
+    let applied = try await runner.executeAggregate(
+      resourcesRoot: fixture.resources, profileURL: fixture.profile,
+      profileRequired: true, stateRoot: fixture.state, homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(), adopt: nil, keybindingsAdopt: nil, json: true)
+    #expect(applied.succeeded)
     let generation = SketchyBarGenerationInspector(stateRoot: fixture.state).inspect().generationID
     let context = Self.personalContext(
       root: fixture.root, home: fixture.home, state: fixture.state,
@@ -341,10 +340,9 @@ struct DesktopApplyCommandTests {
       lifecycle: working.controller, sketchyBarLifecycle: bar.controller,
       keybindings: nil, prerequisites: .assumed, theme: nil
     )
-    let installed = try runner.execute(
+    let installed = try runner.executeYabaiOnly(
       resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
       stateRoot: fixture.state, homeDirectory: fixture.home, adopt: nil, json: true,
-      scope: .yabaiOnly,
       macarchyExecutableURL: URL(filePath: "/opt/homebrew/Cellar/macarchy/0.9.3/bin/macarchy")
     )
     #expect(installed.succeeded)
@@ -355,10 +353,10 @@ struct DesktopApplyCommandTests {
     let upgraded = try DesktopApplyCommandRunner(
       lifecycle: lifecycle.controller, sketchyBarLifecycle: bar.controller,
       keybindings: nil, prerequisites: .assumed, theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
       stateRoot: fixture.state, homeDirectory: fixture.home, adopt: nil, json: true,
-      scope: .yabaiOnly, macarchyExecutableURL: URL(filePath: "/opt/homebrew/bin/macarchy")
+      macarchyExecutableURL: URL(filePath: "/opt/homebrew/bin/macarchy")
     )
     #expect(upgraded.succeeded == !failsVerification)
     let current = YabaiGenerationInspector(stateRoot: fixture.state).inspect()
@@ -393,10 +391,9 @@ struct DesktopApplyCommandTests {
     let lifecycle = YabaiLifecycleFixture(running: true)
     let execution = try DesktopApplyCommandRunner(
       lifecycle: lifecycle.controller, keybindings: nil, prerequisites: .assumed, theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources, profileURL: fixture.profile, profileRequired: true,
-      stateRoot: fixture.state, homeDirectory: fixture.home, adopt: nil, json: true,
-      scope: .yabaiOnly
+      stateRoot: fixture.state, homeDirectory: fixture.home, adopt: nil, json: true
     )
     #expect(!execution.succeeded)
     #expect(execution.output.contains("pending desktop/setup transaction"))
@@ -461,7 +458,7 @@ struct DesktopApplyCommandTests {
   }
 
   @Test
-  func trustedSketchyBarHookReportsSuccessfulPartialStatus() throws {
+  func trustedSketchyBarHookReportsSuccessfulPartialStatus() async throws {
     let fixture = try SketchyBarPublicCommandFixture(hasHook: true)
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let yabaiLifecycle = YabaiLifecycleFixture(running: false)
@@ -474,13 +471,15 @@ struct DesktopApplyCommandTests {
       theme: nil
     )
 
-    let apply = try applyRunner.execute(
+    let apply = try await applyRunner.executeAggregate(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
       adopt: nil,
+      keybindingsAdopt: nil,
       json: true
     )
     let status = try DesktopStatusCommandRunner(
@@ -509,7 +508,7 @@ struct DesktopApplyCommandTests {
   }
 
   @Test
-  func publicCommandsConvergeReportAndTeardownSketchyBar() throws {
+  func publicCommandsConvergeReportAndTeardownSketchyBar() async throws {
     let fixture = try SketchyBarPublicCommandFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let yabaiLifecycle = YabaiLifecycleFixture(running: false)
@@ -525,13 +524,15 @@ struct DesktopApplyCommandTests {
       theme: nil
     )
 
-    let apply = try runner.execute(
+    let apply = try await runner.executeAggregate(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
       adopt: nil,
+      keybindingsAdopt: nil,
       sketchyBarAdopt: try fixture.adoptionDigest(),
       json: true
     )
@@ -546,13 +547,15 @@ struct DesktopApplyCommandTests {
         == "../macarchy/desktop/sketchybar/current/sketchybarrc"
     )
 
-    let repeatApply = try runner.execute(
+    let repeatApply = try await runner.executeAggregate(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
       stateRoot: fixture.state,
       homeDirectory: fixture.home,
+      consumerPaths: testConsumerPaths(),
       adopt: nil,
+      keybindingsAdopt: nil,
       json: true
     )
     let repeatReport = try jsonObject(repeatApply.output)
@@ -662,7 +665,7 @@ struct DesktopApplyCommandTests {
       theme: nil
     )
 
-    let apply = try runner.execute(
+    let apply = try runner.executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -696,7 +699,7 @@ struct DesktopApplyCommandTests {
     let disablePlanReport = try jsonObject(disablePlan.output)
     let disableActions = try #require(disablePlanReport["actions"] as? [[String: Any]])
     #expect(disableActions.compactMap { $0["id"] as? String } == ["teardown_yabai_provider"])
-    let disable = try runner.execute(
+    let disable = try runner.executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: true,
@@ -743,7 +746,7 @@ struct DesktopApplyCommandTests {
     )
     let digest = try fixture.adoptionDigest()
 
-    let apply = try runner.execute(
+    let apply = try runner.executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -755,7 +758,7 @@ struct DesktopApplyCommandTests {
     #expect(apply.succeeded)
     #expect(try linkTarget(entry) == fixture.managedTarget)
 
-    let repeatApply = try runner.execute(
+    let repeatApply = try runner.executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -849,7 +852,7 @@ struct DesktopApplyCommandTests {
       keybindings: nil,
       prerequisites: .assumed,
       theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -895,7 +898,7 @@ struct DesktopApplyCommandTests {
     let digest = try fixture.adoptionDigest()
 
     #expect(throws: YabaiInterruptionError.self) {
-      _ = try interrupted.execute(
+      _ = try interrupted.executeYabaiOnly(
         resourcesRoot: fixture.resources,
         profileURL: fixture.profile,
         profileRequired: false,
@@ -912,7 +915,7 @@ struct DesktopApplyCommandTests {
       keybindings: nil,
       prerequisites: .assumed,
       theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -938,7 +941,7 @@ struct DesktopApplyCommandTests {
       keybindings: nil,
       prerequisites: .assumed,
       theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -998,7 +1001,7 @@ struct DesktopApplyCommandTests {
       keybindings: nil,
       prerequisites: .assumed,
       theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -1027,7 +1030,7 @@ struct DesktopApplyCommandTests {
       keybindings: nil,
       prerequisites: .assumed,
       theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
@@ -1055,7 +1058,7 @@ struct DesktopApplyCommandTests {
       keybindings: nil,
       prerequisites: .assumed,
       theme: nil
-    ).execute(
+    ).executeYabaiOnly(
       resourcesRoot: fixture.resources,
       profileURL: fixture.profile,
       profileRequired: false,
