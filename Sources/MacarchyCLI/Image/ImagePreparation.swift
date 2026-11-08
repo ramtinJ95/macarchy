@@ -251,9 +251,7 @@ struct ImagePreparation {
 
   /// Writes exclusively, so a file that appeared after `checkNewFile` is never replaced.
   static func writeNewFile(_ data: Data, to url: URL) throws {
-    do {
-      try data.write(to: url, options: .withoutOverwriting)
-    } catch let error where alreadyExists(error) {
+    guard try NewFile.write(data, to: url) else {
       throw ImagePreparationError.outputExists(url.path)
     }
   }
@@ -304,26 +302,9 @@ struct ImagePreparation {
         directoryHint: .notDirectory)
     }
     for attempt in 1...Self.maximumNameAttempts {
-      do {
-        try data.write(to: candidate(attempt), options: .withoutOverwriting)
-        return candidate(attempt)
-      } catch let error where Self.alreadyExists(error) {
-        continue
-      }
+      if try NewFile.write(data, to: candidate(attempt)) { return candidate(attempt) }
     }
     throw ImagePreparationError.namesExhausted(candidate(1).path)
-  }
-
-  /// Foundation reports EEXIST as a Cocoa error, possibly wrapping the POSIX one.
-  private static func alreadyExists(_ error: any Error) -> Bool {
-    let failure = error as NSError
-    if failure.domain == NSCocoaErrorDomain,
-      failure.code == CocoaError.fileWriteFileExists.rawValue
-    {
-      return true
-    }
-    let errors: [NSError?] = [failure, failure.userInfo[NSUnderlyingErrorKey] as? NSError]
-    return errors.contains { $0?.domain == NSPOSIXErrorDomain && $0?.code == Int(EEXIST) }
   }
 
   /// Local wall-clock time, `yyyyMMdd-HHmmss`.

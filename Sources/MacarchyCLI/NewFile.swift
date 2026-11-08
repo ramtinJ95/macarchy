@@ -21,4 +21,27 @@ enum NewFile {
     else { return .missingParent(parent) }
     return nil
   }
+
+  /// Writes `data` exclusively, so a file that appeared after `refusal(at:)` is never replaced.
+  /// Returns false when something already has the name; any other failure throws.
+  static func write(_ data: Data, to url: URL) throws -> Bool {
+    do {
+      try data.write(to: url, options: .withoutOverwriting)
+      return true
+    } catch let error where alreadyExists(error) {
+      return false
+    }
+  }
+
+  /// Foundation reports EEXIST as a Cocoa error, possibly wrapping the POSIX one.
+  private static func alreadyExists(_ error: any Error) -> Bool {
+    let failure = error as NSError
+    if failure.domain == NSCocoaErrorDomain,
+      failure.code == CocoaError.fileWriteFileExists.rawValue
+    {
+      return true
+    }
+    let errors: [NSError?] = [failure, failure.userInfo[NSUnderlyingErrorKey] as? NSError]
+    return errors.contains { $0?.domain == NSPOSIXErrorDomain && $0?.code == Int(EEXIST) }
+  }
 }
