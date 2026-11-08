@@ -7,6 +7,27 @@ and releases use [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-08
+
+### Removed
+
+- The hidden internal `macarchy desktop _audio-output` command; the SketchyBar
+  volume popup selects outputs through `_audio-picker`, so nothing called it (#315).
+- The ThemeCore library's `OmarchyThemeConverter.withConvertedPackage(from:_:)`;
+  Macarchy itself never used it (#315).
+
+### Fixed
+
+- The action menu now names itself when it cannot open, reporting "Cannot show
+  the action menu without an active display" or "Cannot run the action menu as
+  an accessory application" instead of the keybindings popup's wording (#315).
+- `macarchy environment status` no longer reports drift when Herdr or Neovim
+  reports that the active theme has no named mapping; it now agrees with
+  `macarchy doctor`, which treats that state as a warning (#315).
+- Theme activation and reconciliation now check that Spotify's unpacked `xpui`
+  is prepared before refreshing Spicetify, as standalone environment commands
+  already did, instead of failing midway through the refresh (#315).
+
 ## [0.14.9] - 2026-11-06
 
 ### Fixed
