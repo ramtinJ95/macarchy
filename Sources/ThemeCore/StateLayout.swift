@@ -68,6 +68,11 @@ package struct StateLayout: Sendable {
     root.appending(path: "state/reconciliation.json")
   }
 
+  /// The user theme library that `theme install` publishes into.
+  package var userThemes: URL {
+    root.appending(path: "themes", directoryHint: .isDirectory)
+  }
+
   /// The environment generation store.
   package var environment: URL {
     root.appending(path: Self.environmentDirectory, directoryHint: .isDirectory)

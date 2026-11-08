@@ -20,10 +20,7 @@ extension Theme {
       let execution = try await ThemeInstallCommandRunner.live.execute(
         source: source,
         repository: options.repository,
-        userThemesRoot: options.stateRootURL.appending(
-          path: "themes",
-          directoryHint: .isDirectory
-        ),
+        userThemesRoot: StateLayout(root: options.stateRootURL).userThemes,
         stateRoot: options.stateRootURL,
         consumerPaths: options.consumerPaths,
         dryRun: options.dryRun,

@@ -412,7 +412,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     }
     let repository = ThemeRepository(
       builtInRoot: context.themesRoot,
-      userRoot: context.stateRoot.appending(path: "themes", directoryHint: .isDirectory)
+      userRoot: StateLayout(root: context.stateRoot).userThemes
     )
     let package = try MacarchyConfigurationStore(root: context.stateRoot)
       .addingPersonalBackgrounds(to: repository.package(id: themeID))
