@@ -201,6 +201,20 @@ package struct LayeredPortableProfile: Equatable, Sendable {
   package let fieldOrigins: [String: PortableProfileLayerKind]
 }
 
+package enum PortableProfileError: Error, CustomStringConvertible, Sendable {
+  case cannotRead(URL, String)
+  case invalid(URL, String)
+
+  package var description: String {
+    switch self {
+    case .cannotRead(let source, let reason):
+      "\(source.path): cannot read Macarchy profile: \(reason)"
+    case .invalid(let source, let reason):
+      "\(source.path): invalid Macarchy profile: \(reason)"
+    }
+  }
+}
+
 package struct PortableProfileLoader: Sendable {
   private let proposedSources: [URL: String]
 
@@ -346,17 +360,17 @@ package struct PortableProfileLoader: Sendable {
       allowsTable: { Self.allowedTables.contains($0.path) && !$0.isArray },
       allowedFields: Self.allowedFields)
     {
-      throw KeybindingProfileError.invalid(source, reason)
+      throw PortableProfileError.invalid(source, reason)
     }
 
     let document: PortableProfileDocument
     do {
       document = try TOMLDecoder().decode(PortableProfileDocument.self, from: text)
     } catch {
-      throw KeybindingProfileError.invalid(source, String(describing: error))
+      throw PortableProfileError.invalid(source, String(describing: error))
     }
     guard document.schemaVersion == 1 else {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "unsupported schema_version \(document.schemaVersion); expected 1"
       )
@@ -418,14 +432,14 @@ package struct PortableProfileLoader: Sendable {
   ) throws -> KeybindingProfile {
     let disabled = options?.disabled ?? []
     guard disabled.count <= 1_024 else {
-      throw KeybindingProfileError.invalid(source, "disabled contains more than 1024 identities")
+      throw PortableProfileError.invalid(source, "disabled contains more than 1024 identities")
     }
     guard Set(disabled).count == disabled.count else {
-      throw KeybindingProfileError.invalid(source, "disabled identities must be unique")
+      throw PortableProfileError.invalid(source, "disabled identities must be unique")
     }
     let parser = SkhdConfigurationParser()
     if let identity = disabled.first(where: { !parser.isCanonicalIdentity($0) }) {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "disabled identity '\(identity)' is not a normalized skhd chord"
       )
@@ -454,13 +468,13 @@ package struct PortableProfileLoader: Sendable {
       source: source
     )
     if let layout = options?.layout, !["bsp", "stack", "float"].contains(layout) {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "yabai.layout must be bsp, stack, or float"
       )
     }
     if let ratio = options?.splitRatio, !(0.1...0.9).contains(ratio) {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "yabai.split_ratio must be between 0.1 and 0.9"
       )
@@ -473,7 +487,7 @@ package struct PortableProfileLoader: Sendable {
       ("window_gap", options?.windowGap),
     ] {
       if let value, !(0...256).contains(value) {
-        throw KeybindingProfileError.invalid(
+        throw PortableProfileError.invalid(
           source,
           "yabai.\(field) must be between 0 and 256"
         )
@@ -520,7 +534,7 @@ package struct PortableProfileLoader: Sendable {
       .compactMap { $0 }
       .flatMap { $0 }
     if Set(modules).count != modules.count {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "each explicitly positioned SketchyBar module must be unique"
       )
@@ -650,23 +664,23 @@ package struct PortableProfileLoader: Sendable {
         !family.isEmpty, family.utf8.count <= 128,
         !family.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
       else {
-        throw KeybindingProfileError.invalid(
+        throw PortableProfileError.invalid(
           source,
           "kitty.font_family must be a single-line value of at most 128 bytes"
         )
       }
     }
     if let size = options?.fontSize, !(4...96).contains(size) {
-      throw KeybindingProfileError.invalid(source, "kitty.font_size must be between 4 and 96")
+      throw PortableProfileError.invalid(source, "kitty.font_size must be between 4 and 96")
     }
     if let opacity = options?.backgroundOpacity, !(0...1).contains(opacity) {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "kitty.background_opacity must be between 0 and 1"
       )
     }
     if let blur = options?.backgroundBlur, !(0...64).contains(blur) {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "kitty.background_blur must be between 0 and 64"
       )
@@ -695,7 +709,7 @@ package struct PortableProfileLoader: Sendable {
       guard !editor.isEmpty, editor.utf8.count <= 128,
         editor.unicodeScalars.allSatisfy(allowed.contains)
       else {
-        throw KeybindingProfileError.invalid(
+        throw PortableProfileError.invalid(
           source,
           "zsh.editor must be an ASCII command name of at most 128 bytes"
         )
@@ -718,7 +732,7 @@ package struct PortableProfileLoader: Sendable {
     if let mode = options?.searchMode,
       !["fuzzy", "prefix", "fulltext", "daemon-fuzzy"].contains(mode)
     {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "atuin.search_mode must be fuzzy, prefix, fulltext, or daemon-fuzzy"
       )
@@ -726,7 +740,7 @@ package struct PortableProfileLoader: Sendable {
     if let mode = options?.keymapMode,
       !["emacs", "vim-insert", "vim-normal"].contains(mode)
     {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "atuin.keymap_mode must be emacs, vim-insert, or vim-normal"
       )
@@ -751,7 +765,7 @@ package struct PortableProfileLoader: Sendable {
     source: URL
   ) throws -> T where T.RawValue == String {
     guard let selection = T(rawValue: value) else {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "\(field) has unsupported provider '\(value)'"
       )
@@ -769,7 +783,7 @@ package struct PortableProfileLoader: Sendable {
       !path.hasPrefix("~"),
       !path.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
     else {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "\(field) must be an explicit absolute or profile-relative path without tilde expansion or control characters"
       )
@@ -785,23 +799,23 @@ package struct PortableProfileLoader: Sendable {
   ) throws -> URL? {
     guard let path else { return nil }
     guard path == path.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else {
-      throw KeybindingProfileError.invalid(source, "\(field) must be a nonempty relative path")
+      throw PortableProfileError.invalid(source, "\(field) must be a nonempty relative path")
     }
     guard !NSString(string: path).isAbsolutePath else {
-      throw KeybindingProfileError.invalid(source, "\(field) must be a relative path")
+      throw PortableProfileError.invalid(source, "\(field) must be a relative path")
     }
     let lexicalBase = base.standardizedFileURL
     let lexicalTarget = lexicalBase.appending(path: path).standardizedFileURL
     let lexicalPrefix = lexicalBase.path.hasSuffix("/") ? lexicalBase.path : lexicalBase.path + "/"
     guard lexicalTarget.path.hasPrefix(lexicalPrefix) else {
-      throw KeybindingProfileError.invalid(source, "\(field) must stay beside the profile")
+      throw PortableProfileError.invalid(source, "\(field) must stay beside the profile")
     }
     let resolvedBase = lexicalBase.resolvingSymlinksInPath().standardizedFileURL
     let resolvedTarget = lexicalTarget.resolvingSymlinksInPath().standardizedFileURL
     let resolvedPrefix =
       resolvedBase.path.hasSuffix("/") ? resolvedBase.path : resolvedBase.path + "/"
     guard resolvedTarget.path.hasPrefix(resolvedPrefix) else {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "\(field) must not escape the profile directory through a symbolic link"
       )
@@ -824,24 +838,24 @@ package struct PortableProfileLoader: Sendable {
     let resolved = source.resolvingSymlinksInPath().standardizedFileURL
     if let text = proposedSources[resolved] {
       guard text.utf8.count <= 65_536 else {
-        throw KeybindingProfileError.invalid(source, "profile exceeds 64 KiB")
+        throw PortableProfileError.invalid(source, "profile exceeds 64 KiB")
       }
       return LoadedSource(text: text, resolvedSource: resolved)
     }
     var metadata = stat()
     guard lstat(source.path, &metadata) == 0 else {
       if errno == ENOENT, !required { return nil }
-      throw KeybindingProfileError.cannotRead(source, errnoDescription(errno))
+      throw PortableProfileError.cannotRead(source, errnoDescription(errno))
     }
 
     let data: Data
     do {
       data = try BoundedRegularFile.read(at: resolved, maximumSize: 65_536).data
     } catch {
-      throw KeybindingProfileError.cannotRead(source, String(describing: error))
+      throw PortableProfileError.cannotRead(source, String(describing: error))
     }
     guard let text = String(data: data, encoding: .utf8) else {
-      throw KeybindingProfileError.invalid(source, "profile is not valid UTF-8")
+      throw PortableProfileError.invalid(source, "profile is not valid UTF-8")
     }
     return LoadedSource(text: text, resolvedSource: resolved)
   }
@@ -854,7 +868,7 @@ package struct PortableProfileLoader: Sendable {
         syntaxRole: "Macarchy profile"
       )
     } catch {
-      throw KeybindingProfileError.invalid(source, String(describing: error))
+      throw PortableProfileError.invalid(source, String(describing: error))
     }
   }
 
@@ -1116,7 +1130,7 @@ package struct PortableProfileLoader: Sendable {
     source: URL
   ) throws {
     if terminal == .disabled, declaredTables.contains("kitty") {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "[kitty] cannot customize a disabled terminal provider"
       )
@@ -1128,34 +1142,34 @@ package struct PortableProfileLoader: Sendable {
       || prompt != .disabled && declaredTables.contains("prompt")
       || history != .disabled && declaredTables.contains("history")
     if shell == .disabled, hasShellCustomization {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "zsh, prompt, and history customization requires shell.provider = \"zsh\""
       )
     }
     if prompt == .disabled, declaredTables.contains("starship") {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "[starship] cannot customize a disabled prompt provider"
       )
     }
     if history == .disabled, declaredTables.contains("atuin") {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "[atuin] cannot customize a disabled history provider"
       )
     }
     if editor == .disabled, declaredTables.contains("neovim") {
-      throw KeybindingProfileError.invalid(
+      throw PortableProfileError.invalid(
         source,
         "[neovim] cannot customize a disabled editor provider"
       )
     }
     if !tools.btop, declaredTables.contains("btop") {
-      throw KeybindingProfileError.invalid(source, "[btop] cannot customize a disabled daily tool")
+      throw PortableProfileError.invalid(source, "[btop] cannot customize a disabled daily tool")
     }
     if !tools.yazi, declaredTables.contains("yazi") {
-      throw KeybindingProfileError.invalid(source, "[yazi] cannot customize a disabled daily tool")
+      throw PortableProfileError.invalid(source, "[yazi] cannot customize a disabled daily tool")
     }
   }
 }
