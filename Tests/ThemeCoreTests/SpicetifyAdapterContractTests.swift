@@ -57,6 +57,8 @@ extension AdapterContractTests {
         Issue.record("Unprepared Spotify must not run any process")
         return ProcessResult(terminationStatus: 0, output: "")
       },
+      spicetifyVersionProvider: { SpicetifyAdapter.minimumVersion },
+      spotifyVersionProvider: { "1.2.97" },
       refreshPreparation: { throw SpicetifyAdapterError.refreshNotPrepared("stock Spotify") })
     let result = try await adapter.reconciliation().run()
     #expect(result.status == .failed)
@@ -233,7 +235,9 @@ extension AdapterContractTests {
       configurationDirectoryURL: fixture.directory,
       executableURL: SpicetifyAdapter.liveExecutableURL,
       controlIsAvailable: { true },
-      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") }
+      processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+      spicetifyVersionProvider: { SpicetifyAdapter.minimumVersion },
+      spotifyVersionProvider: { "1.2.97" }
     )
     #expect(drifted.inspection().status == .drifted)
   }
@@ -268,7 +272,9 @@ extension AdapterContractTests {
         }
         state.withLock { $0.active -= 1 }
         return ProcessResult(terminationStatus: 0, output: "")
-      }
+      },
+      spicetifyVersionProvider: { SpicetifyAdapter.minimumVersion },
+      spotifyVersionProvider: { "1.2.97" }
     )
     let first = Task { try await adapter.reconciliation().run() }
     try await waitUntil { state.withLock { $0.refreshes == 1 } }
@@ -340,7 +346,10 @@ extension AdapterContractTests {
           || (scenario == "refresh-failed" && request.arguments == ["--no-restart", "refresh"])
         return ProcessResult(
           terminationStatus: failed ? 1 : 0, output: failed ? "provider rejected" : "")
-      }, waitBetweenProcessChecks: {})
+      },
+      spicetifyVersionProvider: { SpicetifyAdapter.minimumVersion },
+      spotifyVersionProvider: { "1.2.97" },
+      waitBetweenProcessChecks: {})
     let succeeds = ["closed", "replacement", "fallback", "delayed-shutdown", "transient-open"]
       .contains(scenario)
     do {
