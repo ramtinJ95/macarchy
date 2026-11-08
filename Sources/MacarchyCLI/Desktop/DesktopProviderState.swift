@@ -57,6 +57,12 @@ enum DesktopOriginalKind: String, Codable, Sendable {
   case directorySymlink = "directory_symlink"
 }
 
+/// Whether a provider path names any entry, without following a final symlink.
+func pathExistsNoFollow(_ path: String) -> Bool {
+  var metadata = stat()
+  return lstat(path, &metadata) == 0
+}
+
 /// Identity of a provider entry Macarchy adopted. The yabai and SketchyBar records persist
 /// different JSON keys, so each keeps its own type and shares the identity rules here.
 protocol DesktopAdoptionEvidence: Sendable {

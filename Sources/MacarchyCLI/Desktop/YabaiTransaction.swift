@@ -132,6 +132,192 @@ struct YabaiProviderTransaction: Sendable {
     }
   }
 
+  // The caller holds ActivationLock across every desktop provider transaction.
+  func convergeLocked(
+    composition: YabaiComposition,
+    adoptionEvidenceDigest adopt: String?,
+    lifecycle: YabaiLifecycleController,
+    faultInjector: @Sendable (YabaiTransactionCheckpoint) throws -> Void,
+    deferFinalization: Bool = false
+  ) throws -> ApplyResult {
+    let transactionStore = YabaiTransactionStore(stateRoot: stateRoot)
+    if let pending = try transactionStore.read() {
+      try recoverPending(pending, lifecycle: lifecycle)
+    }
+
+    let generationInspector = YabaiGenerationInspector(stateRoot: stateRoot)
+    let previousGeneration = generationInspector.inspect()
+    if previousGeneration.status == .invalid {
+      throw YabaiDesktopError.invalidState(previousGeneration.message)
+    }
+    let ownershipStore = YabaiOwnershipStore(stateRoot: stateRoot)
+    let previousOwnership = try ownershipStore.read()
+    let providerInspector = YabaiProviderPlanInspector()
+    let provider = providerInspector.inspect(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot,
+      enabled: true
+    )
+    guard [.managed, .installRequired, .adoptionRequired].contains(provider.status) else {
+      throw YabaiDesktopError.invalidState(provider.message)
+    }
+
+    let original: YabaiAdoptionEvidence
+    let retainedOriginalPath: String?
+    let createdDirectory: Bool
+    if let previousOwnership {
+      original = previousOwnership.original
+      retainedOriginalPath = previousOwnership.retainedOriginalPath
+      createdDirectory = previousOwnership.createdConfigurationDirectory
+    } else {
+      original = try providerInspector.captureUnowned(
+        directory: configurationDirectory, entry: entry)
+      if provider.status == .adoptionRequired {
+        guard let adopt, adopt == original.digest else {
+          throw YabaiDesktopError.invalidState(
+            "adoption requires --adopt \(original.digest) from the current reviewed plan"
+          )
+        }
+      }
+      retainedOriginalPath =
+        original.kind == .absent
+        ? nil : retainedOriginalURL().path
+      var metadata = stat()
+      createdDirectory =
+        original.kind == .absent && lstat(configurationDirectory.path, &metadata) != 0
+    }
+
+    let serviceChange = try lifecycle.service?.prepare(home: homeDirectory, stateRoot: stateRoot)
+    let serviceWasRunning = try lifecycle.preflight()
+    if let serviceChange, serviceChange.previous.running != serviceWasRunning {
+      throw YabaiDesktopError.lifecycle("yabai service changed during preflight; review again")
+    }
+    let activator = YabaiGenerationActivator(stateRoot: stateRoot)
+    let prepared = try activator.prepare(composition)
+    let previousLifecycle = try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).read()
+    if !prepared.created,
+      let previousOwnership,
+      previousOwnership.generationID == prepared.manifest.generationID,
+      previousLifecycle?.generationID == prepared.manifest.generationID
+    {
+      let runtime = lifecycle.inspect(composition)
+      if runtime.status == .converged || runtime.status == .partial {
+        return ApplyResult(
+          changed: false,
+          generationID: prepared.manifest.generationID,
+          lifecycle: "none",
+          message: "managed yabai configuration and observable runtime state are already converged"
+        )
+      }
+    }
+
+    let managedTarget = YabaiProviderPlanInspector.managedTarget(
+      homeDirectory: homeDirectory,
+      stateRoot: stateRoot
+    )
+    let ownership = YabaiOwnershipRecord(
+      generationID: prepared.manifest.generationID,
+      managedTarget: managedTarget,
+      original: original,
+      retainedOriginalPath: retainedOriginalPath,
+      createdConfigurationDirectory: createdDirectory,
+      priorServiceRunning: previousOwnership?.priorServiceRunning ?? serviceWasRunning
+    )
+    var transaction = YabaiTransaction(
+      operation: .apply,
+      phase: .prepared,
+      generationID: prepared.manifest.generationID,
+      previousGenerationID: previousGeneration.generationID,
+      generationCreated: prepared.created,
+      ownership: ownership,
+      previousOwnership: previousOwnership,
+      previousLifecycle: previousLifecycle,
+      serviceWasRunning: serviceWasRunning,
+      service: serviceChange
+    )
+    try transactionStore.write(transaction)
+
+    do {
+      if prepared.created { try activator.select(prepared) }
+      if previousOwnership == nil {
+        transaction.phase = .providerChanging
+        try transactionStore.write(transaction)
+        let recaptured = try providerInspector.captureUnowned(
+          directory: configurationDirectory, entry: entry)
+        guard recaptured == original else {
+          throw YabaiDesktopError.invalidState(
+            "yabai provider changed after the approved adoption preview"
+          )
+        }
+        try installManaged(ownership)
+      }
+      try ownershipStore.write(ownership)
+      transaction.phase = .providerChanged
+      try transactionStore.write(transaction)
+      try faultInjector(.providerChanged)
+
+      transaction.phase = .serviceChanging
+      try transactionStore.write(transaction)
+      if var change = transaction.service, let service = lifecycle.service,
+        !change.previous.running
+      {
+        if change.previous.registration == nil {
+          change.installationAttempted = true
+          transaction.service = change
+          try transactionStore.write(transaction)
+          change.installed = try service.install(home: homeDirectory)
+          transaction.service = change
+          try transactionStore.write(transaction)
+        }
+        guard let registration = change.expectedRegistration else {
+          throw YabaiDesktopError.lifecycle("yabai service registration is missing")
+        }
+        try service.start(home: homeDirectory, expected: registration)
+        try lifecycle.verifyStarted()
+      } else {
+        try lifecycle.restart()
+      }
+      if let service = lifecycle.service {
+        guard try service.inspect(home: homeDirectory).running else {
+          throw YabaiDesktopError.lifecycle(
+            "yabai user service is not running after activation; grant Accessibility manually")
+        }
+      }
+      transaction.phase = .serviceChanged
+      try transactionStore.write(transaction)
+      let runtime = lifecycle.inspectAfterRestart(composition)
+      guard runtime.status == .converged || runtime.status == .partial else {
+        throw YabaiDesktopError.lifecycle(runtime.message)
+      }
+      try YabaiLifecycleEvidenceStore(stateRoot: stateRoot).write(
+        YabaiLifecycleEvidence(
+          generationID: prepared.manifest.generationID,
+          runtime: runtime
+        )
+      )
+      if !deferFinalization {
+        try commitDeferred(lifecycle: lifecycle)
+      }
+      return ApplyResult(
+        changed: true,
+        generationID: prepared.manifest.generationID,
+        lifecycle: serviceChange?.previous.running == false ? "start" : "restart",
+        message: runtime.message
+      )
+    } catch is YabaiInterruptionError {
+      throw YabaiInterruptionError.injected
+    } catch let applyError {
+      do {
+        try recoverApply(transaction, lifecycle: lifecycle)
+      } catch {
+        throw YabaiDesktopError.invalidState(
+          "apply failed: \(applyError); rollback requires recovery: \(error)"
+        )
+      }
+      throw applyError
+    }
+  }
+
   func teardownLocked(
     lifecycle: YabaiLifecycleController,
     faultInjector: @Sendable (YabaiTransactionCheckpoint) throws -> Void,
@@ -494,10 +680,5 @@ struct YabaiProviderTransaction: Sendable {
       sourceRead: .path,
       invalidState: { YabaiDesktopError.invalidState($0) }
     )
-  }
-
-  private func pathExistsNoFollow(_ path: String) -> Bool {
-    var metadata = stat()
-    return lstat(path, &metadata) == 0
   }
 }
