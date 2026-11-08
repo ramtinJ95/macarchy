@@ -66,11 +66,11 @@ struct EnvironmentNeovimConnection {
       Darwin.close(parent)
     }
     let manifest = try generations.currentManifest()
-    let artifacts = try (manifest?.artifacts.keys.sorted() ?? []).map { path in
-      EnvironmentConfigurationArtifact(
-        path: path,
-        data: try generations.validatedArtifact(generationID: manifest!.generationID, path: path))
-    }
+    let artifacts =
+      try manifest.map {
+        try generations.validatedArtifacts(
+          generationID: $0.generationID, paths: $0.artifacts.keys.sorted())
+      } ?? []
     let composition = try EnvironmentConfigurationComposer().composeNeovimConnection(
       resourcesRoot: resourcesRoot, source: source, stateRoot: stateRoot,
       retaining: artifacts, previousInputDigest: manifest?.inputDigest)
@@ -219,49 +219,17 @@ struct EnvironmentNeovimConnection {
       )
       .validateNativeTree(userOwnedPublicEntry: true)
     }
-    if record != nil { try transitionPublicLink(connect: forward) }
+    if record != nil {
+      try EnvironmentNativeSource.transitionConnectionLink(
+        at: publicURL, target: source.path, connect: forward, label: "Neovim",
+        connectOperation: "connect Neovim")
+    }
     if forward {
       try generations.select(proposed.generationID)
     } else {
       try generations.restoreCurrent(transaction.previousCurrentDestination)
     }
     try store.writeOwnership(forward ? proposed : before)
-  }
-
-  private func transitionPublicLink(connect: Bool) throws {
-    let parent = try PinnedFilesystem.openDirectory(at: publicURL.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    var metadata = stat()
-    let rc = publicURL.lastPathComponent.withCString {
-      fstatat(parent, $0, &metadata, AT_SYMLINK_NOFOLLOW)
-    }
-    if rc == 0 {
-      guard metadata.st_mode & S_IFMT == S_IFLNK,
-        try PinnedFilesystem.symlinkDestination(
-          parentDescriptor: parent, name: publicURL.lastPathComponent, url: publicURL)
-          == source.path
-      else { throw EnvironmentLifecycleError.drift(publicURL.path) }
-      if !connect {
-        guard publicURL.lastPathComponent.withCString({ unlinkat(parent, $0, 0) }) == 0 else {
-          throw EnvironmentLifecycleError.system("remove Neovim connection", publicURL, errno)
-        }
-      }
-    } else {
-      guard errno == ENOENT else {
-        throw EnvironmentLifecycleError.system("inspect Neovim connection", publicURL, errno)
-      }
-      if connect {
-        let created = source.path.withCString { target in
-          publicURL.lastPathComponent.withCString { symlinkat(target, parent, $0) }
-        }
-        guard created == 0 else {
-          throw EnvironmentLifecycleError.system("connect Neovim", publicURL, errno)
-        }
-      }
-    }
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync Neovim connection", publicURL, errno)
-    }
   }
 }
 

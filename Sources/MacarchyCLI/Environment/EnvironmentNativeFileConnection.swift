@@ -86,11 +86,11 @@ struct EnvironmentNativeFileConnection {
       }
     }
     let manifest = try generations.currentManifest()
-    let artifacts = try (manifest?.artifacts.keys.sorted() ?? []).map { path in
-      EnvironmentConfigurationArtifact(
-        path: path,
-        data: try generations.validatedArtifact(generationID: manifest!.generationID, path: path))
-    }
+    let artifacts =
+      try manifest.map {
+        try generations.validatedArtifacts(
+          generationID: $0.generationID, paths: $0.artifacts.keys.sorted())
+      } ?? []
     let composition = try EnvironmentConfigurationComposer().composeNativeConnection(
       provider: provider.rawValue, resourcesRoot: resourcesRoot, profile: profile,
       source: source, stateRoot: stateRoot, retaining: artifacts,
@@ -280,7 +280,9 @@ struct EnvironmentNativeFileConnection {
       if record.id == .kitty {
         try transitionKittyDirectory(record, connect: forward)
       } else {
-        try transitionLink(record, connect: forward)
+        try transitionLink(
+          at: URL(filePath: record.publicPath), to: record.managedTarget,
+          connect: forward)
       }
     }
     if forward {
@@ -320,11 +322,8 @@ struct EnvironmentNativeFileConnection {
     guard !children.truncated,
       children.entries.isEmpty || children.entries == ["kitty.conf"]
     else { throw EnvironmentLifecycleError.drift("Kitty directory contains personal additions") }
-    let link = EnvironmentOwnershipRecord(
-      id: record.id, publicPath: url.appending(path: "kitty.conf").path,
-      managedKind: "symbolic_link", managedTarget: record.managedTarget,
-      original: record.original, retainedPath: nil)
-    try transitionLink(link, connect: connect)
+    try transitionLink(
+      at: url.appending(path: "kitty.conf"), to: record.managedTarget, connect: connect)
     if !connect {
       guard url.lastPathComponent.withCString({ unlinkat(parent, $0, AT_REMOVEDIR) }) == 0 else {
         throw EnvironmentLifecycleError.system("remove Kitty directory", url, errno)
@@ -335,39 +334,10 @@ struct EnvironmentNativeFileConnection {
     }
   }
 
-  private func transitionLink(_ record: EnvironmentOwnershipRecord, connect: Bool) throws {
-    let url = URL(filePath: record.publicPath)
-    let parent = try PinnedFilesystem.openDirectory(at: url.deletingLastPathComponent())
-    defer { Darwin.close(parent) }
-    var metadata = stat()
-    let rc = url.lastPathComponent.withCString {
-      fstatat(parent, $0, &metadata, AT_SYMLINK_NOFOLLOW)
-    }
-    if rc == 0 {
-      guard metadata.st_mode & S_IFMT == S_IFLNK,
-        try PinnedFilesystem.symlinkDestination(
-          parentDescriptor: parent, name: url.lastPathComponent, url: url)
-          == record.managedTarget
-      else { throw EnvironmentLifecycleError.drift(url.path) }
-      if !connect, url.lastPathComponent.withCString({ unlinkat(parent, $0, 0) }) != 0 {
-        throw EnvironmentLifecycleError.system("remove native connection", url, errno)
-      }
-    } else {
-      guard errno == ENOENT else {
-        throw EnvironmentLifecycleError.system("inspect native connection", url, errno)
-      }
-      if connect {
-        let rc = record.managedTarget.withCString { target in
-          url.lastPathComponent.withCString { symlinkat(target, parent, $0) }
-        }
-        guard rc == 0 else {
-          throw EnvironmentLifecycleError.system("connect native source", url, errno)
-        }
-      }
-    }
-    guard fsync(parent) == 0 else {
-      throw EnvironmentLifecycleError.system("sync native connection", url, errno)
-    }
+  private func transitionLink(at url: URL, to target: String, connect: Bool) throws {
+    try EnvironmentNativeSource.transitionConnectionLink(
+      at: url, target: target, connect: connect, label: "native",
+      connectOperation: "connect native source")
   }
 }
 
