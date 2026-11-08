@@ -1294,6 +1294,41 @@ struct EnvironmentLifecycleTests {
     #expect(try fixture.status().succeeded)
   }
 
+  @Test(arguments: [("neovim", true), ("herdr", true), ("kitty", false)])
+  func statusAcceptsUnsupportedOnlyFromNamedThemeOnlyAdapters(
+    adapterID: String,
+    accepted: Bool
+  ) async throws {
+    let fixture = try EnvironmentLifecycleFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    let digest = try #require(
+      try jsonObject(fixture.plan().output)["adoption_evidence_digest"] as? String
+    )
+    #expect(try await fixture.apply(adopt: digest).succeeded)
+    let theme = DesktopThemeController(
+      reconcile: { _, _, _ in
+        Issue.record("environment status must not reconcile")
+        throw CancellationError()
+      },
+      inspect: { _, _, _ in
+        [
+          DesktopThemeAdapterStatus(
+            adapterID: adapterID,
+            requirement: "required",
+            status: "unsupported",
+            message: "the active theme has no named mapping"
+          )
+        ]
+      }
+    )
+
+    let status = try fixture.status(theme: theme)
+
+    #expect(status.succeeded == accepted, "\(status.output)")
+    #expect(
+      try jsonObject(status.output)["outcome"] as? String == (accepted ? "converged" : "drifted"))
+  }
+
   @Test
   func successfulApplyUsesItsThemeAndSessionObservationsOnce() async throws {
     let fixture = try EnvironmentLifecycleFixture()

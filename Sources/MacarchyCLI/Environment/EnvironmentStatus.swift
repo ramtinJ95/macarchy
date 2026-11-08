@@ -644,9 +644,7 @@ struct EnvironmentStatusCommandRunner: Sendable {
       : generation.status == .current
     let themeReady =
       themeFailure == nil
-      && themeState.allSatisfy {
-        $0.status == "ready" || $0.status == "applied" || $0.status == "restart_required"
-      }
+      && themeState.allSatisfy(isAcceptedEnvironmentThemeStatus)
     let verificationReady = verification.allSatisfy {
       $0.status == "verified" || $0.status == "manual_required"
     }
