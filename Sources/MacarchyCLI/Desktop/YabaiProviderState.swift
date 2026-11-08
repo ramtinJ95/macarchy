@@ -95,7 +95,7 @@ struct YabaiProviderPlanInspector: Sendable {
     if transactionPending {
       return .result(
         .recoveryRequired,
-        ownership: "transaction_pending",
+        ownership: .transactionPending,
         entry: entry,
         message: "an interrupted yabai transaction must be recovered before planning changes"
       )
@@ -114,14 +114,14 @@ struct YabaiProviderPlanInspector: Sendable {
       case .absent:
         return .result(
           .installRequired,
-          ownership: "absent",
+          ownership: .absent,
           entry: entry,
           message: "no yabai configuration entry exists"
         )
       case .regularFile, .entrySymlink, .directorySymlink:
         return .result(
           .adoptionRequired,
-          ownership: evidence.kind.rawValue,
+          ownership: DesktopProviderOwnership(evidence.kind),
           entry: entry,
           originalTarget: evidence.linkTarget,
           source: evidence.sourceURL(directory: directory, entry: entry, entryName: "yabairc")?
@@ -133,7 +133,7 @@ struct YabaiProviderPlanInspector: Sendable {
     } catch {
       return .result(
         .blocked,
-        ownership: "uninspectable",
+        ownership: .uninspectable,
         entry: entry,
         message: String(describing: error)
       )
@@ -230,7 +230,7 @@ struct YabaiProviderPlanInspector: Sendable {
     guard isManagedEntry(entry, target: ownership.managedTarget) else {
       return .result(
         .blocked,
-        ownership: "ownership_drift",
+        ownership: .ownershipDrift,
         entry: entry,
         message: "owned yabairc no longer matches the managed target"
       )
@@ -241,7 +241,7 @@ struct YabaiProviderPlanInspector: Sendable {
       } catch {
         return .result(
           .blocked,
-          ownership: "retained_original_drift",
+          ownership: .retainedOriginalDrift,
           entry: entry,
           message: String(describing: error)
         )
@@ -249,7 +249,7 @@ struct YabaiProviderPlanInspector: Sendable {
     }
     return .result(
       .managed,
-      ownership: "managed",
+      ownership: .managed,
       entry: entry,
       message: "the yabai provider entry is owned by Macarchy"
     )
@@ -260,7 +260,7 @@ struct YabaiProviderPlanInspector: Sendable {
     guard lstat(directory.path, &metadata) == 0 else {
       return .result(
         errno == ENOENT ? .disabled : .externallyManaged,
-        ownership: errno == ENOENT ? "absent" : "uninspectable",
+        ownership: errno == ENOENT ? .absent : .uninspectable,
         entry: entry,
         message: errno == ENOENT
           ? "desktop role is disabled and no yabai configuration exists"
@@ -269,7 +269,7 @@ struct YabaiProviderPlanInspector: Sendable {
     }
     return .result(
       .externallyManaged,
-      ownership: "external",
+      ownership: .external,
       entry: entry,
       message: "desktop role is disabled; existing yabai state remains externally managed"
     )

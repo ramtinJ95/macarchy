@@ -225,7 +225,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     if transactionPending {
       return .result(
         .recoveryRequired,
-        ownership: "transaction_pending",
+        ownership: .transactionPending,
         entry: entry,
         message: "an interrupted SketchyBar transaction must be recovered before planning changes"
       )
@@ -244,7 +244,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
       {
         return .result(
           .blocked,
-          ownership: "managed_target_without_ownership",
+          ownership: .managedTargetWithoutOwnership,
           entry: entry,
           message: "SketchyBar points at Macarchy state without an ownership record"
         )
@@ -257,14 +257,14 @@ struct SketchyBarProviderPlanInspector: Sendable {
       case .absent:
         return .result(
           .installRequired,
-          ownership: "absent",
+          ownership: .absent,
           entry: entry,
           message: "no SketchyBar configuration entry exists"
         )
       case .regularFile, .entrySymlink, .directorySymlink:
         return .result(
           .adoptionRequired,
-          ownership: evidence.kind.rawValue,
+          ownership: DesktopProviderOwnership(evidence.kind),
           entry: entry,
           originalTarget: evidence.linkTarget,
           source: evidence.sourceURL(directory: directory, entry: entry, entryName: "sketchybarrc")?
@@ -276,7 +276,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     } catch {
       return .result(
         .blocked,
-        ownership: "uninspectable",
+        ownership: .uninspectable,
         entry: entry,
         message: String(describing: error)
       )
@@ -410,7 +410,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     else {
       return .result(
         .blocked,
-        ownership: "ownership_drift",
+        ownership: .ownershipDrift,
         entry: entry,
         message: "owned sketchybarrc no longer matches the managed target"
       )
@@ -421,7 +421,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     else {
       return .result(
         .blocked,
-        ownership: "generation_drift",
+        ownership: .generationDrift,
         entry: entry,
         message: "SketchyBar ownership does not match a valid selected generation"
       )
@@ -429,7 +429,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     try SketchyBarProviderTransaction.authenticateRetained(ownership)
     return .result(
       .managed,
-      ownership: "managed",
+      ownership: .managed,
       entry: entry,
       message: "the SketchyBar provider entry is owned by Macarchy"
     )
@@ -443,7 +443,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     guard lstat(directory.path, &metadata) == 0 else {
       return .result(
         errno == ENOENT ? .disabled : .externallyManaged,
-        ownership: errno == ENOENT ? "absent" : "uninspectable",
+        ownership: errno == ENOENT ? .absent : .uninspectable,
         entry: entry,
         message: errno == ENOENT
           ? "top-bar role is disabled and no SketchyBar configuration exists"
@@ -452,7 +452,7 @@ struct SketchyBarProviderPlanInspector: Sendable {
     }
     return .result(
       .externallyManaged,
-      ownership: "external",
+      ownership: .external,
       entry: entry,
       message: "top-bar role is disabled; existing SketchyBar state remains externally managed"
     )
