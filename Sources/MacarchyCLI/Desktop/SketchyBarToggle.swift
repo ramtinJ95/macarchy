@@ -139,12 +139,8 @@ struct SketchyBarToggle {
     return label.hasPrefix(token + "|")
   }
 
-  @discardableResult private func bar(_ arguments: [String]) throws -> String {
-    let result = try processRunner.run(
-      .init(
-        executableURL: SketchyBarCoreRuntimeVerifier.controlURL, arguments: arguments, timeout: 1))
-    guard result.terminationStatus == 0 else { throw ToggleError.barQuery }
-    return result.output
+  private var bar: SketchyBarControl {
+    SketchyBarControl(processRunner: processRunner) { _, _ in ToggleError.barQuery }
   }
 
   static func noForeignToggle(processRunner: ProcessRunner = .live) throws -> Bool {

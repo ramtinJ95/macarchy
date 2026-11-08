@@ -135,13 +135,8 @@ struct SketchyBarAudioPicker {
     if opening { try launch(BarPopup.volume.watchArguments) }
   }
 
-  @discardableResult private func bar(_ arguments: [String]) throws -> String {
-    let result = try processRunner.run(
-      .init(
-        executableURL: ExternalTool.sketchybar, arguments: arguments,
-        timeout: 1))
-    guard result.terminationStatus == 0 else { throw AudioDeviceError.pickerUpdateFailed }
-    return result.output
+  private var bar: SketchyBarControl {
+    SketchyBarControl(processRunner: processRunner) { _, _ in AudioDeviceError.pickerUpdateFailed }
   }
 }
 

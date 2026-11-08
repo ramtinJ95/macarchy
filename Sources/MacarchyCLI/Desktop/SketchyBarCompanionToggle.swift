@@ -78,13 +78,9 @@ struct SketchyBarCompanionToggle {
       standardInput: FileHandle.nullDevice, standardOutput: FileHandle.nullDevice)
   }
 
-  private func bar(_ arguments: [String]) throws {
-    let result = try processRunner.run(
-      .init(
-        executableURL: SketchyBarCoreRuntimeVerifier.controlURL, arguments: arguments, timeout: 1))
-    guard result.terminationStatus == 0 else {
-      throw CompanionToggleError(
-        description: "SketchyBar \(companion.item) failed: \(result.output)")
+  private var bar: SketchyBarControl {
+    SketchyBarControl(processRunner: processRunner) { [item = companion.item] _, output in
+      CompanionToggleError(description: "SketchyBar \(item) failed: \(output)")
     }
   }
 }
