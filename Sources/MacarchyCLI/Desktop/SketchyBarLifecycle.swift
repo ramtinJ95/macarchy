@@ -209,14 +209,8 @@ struct SketchyBarHomebrewService: Sendable {
     home: URL = FileManager.default.homeDirectoryForCurrentUser,
     processPath: (Int32) throws -> String = nativeProcessPath
   ) throws -> SketchyBarRuntimeInspection {
-    let uid = String(getuid())
     let processResult = try processRunner.run(
-      ProcessRequest(
-        executableURL: URL(filePath: "/usr/bin/pgrep"),
-        arguments: ["-u", uid, "-x", "sketchybar"],
-        timeout: 2
-      )
-    )
+      .processLookup("sketchybar", owner: .effectiveUser, timeout: 2))
     let registration: HomebrewUserServiceRegistration?
     do {
       registration = try HomebrewUserServiceRegistration.inspect(

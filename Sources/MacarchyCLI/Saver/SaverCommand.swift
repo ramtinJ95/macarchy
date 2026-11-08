@@ -1,6 +1,7 @@
 import AppKit
 import ArgumentParser
 import Foundation
+import ThemeCore
 
 struct SaverCommand: ParsableCommand {
   static let configuration = CommandConfiguration(
@@ -262,11 +263,10 @@ struct SaverCommand: ParsableCommand {
         .live(
           stateRoot: URL(filePath: root, directoryHint: .isDirectory).standardizedFileURL,
           alert: { failure in
-            let process = Process()
-            process.executableURL = RuntimeEnvironment.live.executableURL
-            process.arguments = ["saver", "_idle", "--state-root", root, "--alert=\(failure)"]
             do {
-              try process.run()
+              try launchDetachedProcess(
+                RuntimeEnvironment.live.executableURL,
+                arguments: ["saver", "_idle", "--state-root", root, "--alert=\(failure)"])
             } catch {
               let line = "Could not show the alert for this failure: \(error)\n"
               try? FileHandle.standardError.write(contentsOf: Data(line.utf8))

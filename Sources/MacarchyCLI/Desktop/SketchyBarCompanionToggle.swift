@@ -73,12 +73,9 @@ struct SketchyBarCompanionToggle {
 
   /// Starts this binary detached, as the action menu does, so the bar script returns at once.
   static func launchMacarchy(_ arguments: [String]) throws {
-    let process = Process()
-    process.executableURL = RuntimeEnvironment.live.executableURL
-    process.arguments = arguments
-    process.standardInput = FileHandle.nullDevice
-    process.standardOutput = FileHandle.nullDevice
-    try process.run()
+    try launchDetachedProcess(
+      RuntimeEnvironment.live.executableURL, arguments: arguments,
+      standardInput: FileHandle.nullDevice, standardOutput: FileHandle.nullDevice)
   }
 
   private func bar(_ arguments: [String]) throws {

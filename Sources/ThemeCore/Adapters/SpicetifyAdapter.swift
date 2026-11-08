@@ -59,8 +59,6 @@ package struct SpicetifyAdapter: Sendable {
     package let spotifyPath: String?
   }
 
-  private static let processLookupURL = URL(filePath: "/usr/bin/pgrep")
-
   let root: URL
   let configurationDirectoryURL: URL
   let executableURL: URL
@@ -382,13 +380,7 @@ package struct SpicetifyAdapter: Sendable {
   }
 
   private func spotifyPIDs() throws -> Set<Int32>? {
-    let process = try processRunner.run(
-      ProcessRequest(
-        executableURL: Self.processLookupURL,
-        arguments: ["-x", "Spotify"],
-        timeout: 1
-      )
-    )
+    let process = try processRunner.run(.processLookup("Spotify", owner: .anyUser, timeout: 1))
     if process.terminationStatus == 1 { return nil }
     guard process.terminationStatus == 0 else {
       throw SpicetifyAdapterError.processInspectionFailed(process.output)

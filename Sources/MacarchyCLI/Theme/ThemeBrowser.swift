@@ -128,13 +128,9 @@ struct ThemeBrowserApplyProcessLauncher: Sendable {
 
   static let live = ThemeBrowserApplyProcessLauncher(
     spawn: { executableURL, arguments, environment in
-      let process = Process()
-      process.executableURL = executableURL
-      process.arguments = arguments
-      process.environment = environment
-      process.standardOutput = FileHandle.standardOutput
-      process.standardError = FileHandle.standardError
-      try process.run()
+      let process = try launchDetachedProcess(
+        executableURL, arguments: arguments, environment: environment,
+        standardOutput: FileHandle.standardOutput, standardError: FileHandle.standardError)
       return RunningProcess(
         isRunning: { process.isRunning },
         terminationStatus: { process.terminationStatus }

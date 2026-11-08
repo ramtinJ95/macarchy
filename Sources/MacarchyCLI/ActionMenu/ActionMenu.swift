@@ -206,32 +206,27 @@ struct ActionMenu: AsyncParsableCommand {
   static func launchViewer(_ action: ActionMenuAction, executableURL: URL) throws -> Process {
     // Match the standalone viewer shortcuts. Use this exact binary rather than
     // PATH so development and installed menus launch their own matching version.
-    let process = Process()
-    process.executableURL = executableURL
+    let arguments: [String]
     switch action {
-    case .appearance: process.arguments = ["theme", "browse"]
-    case .keybindings: process.arguments = ["keybindings", "show", "--effective"]
-    case .screenshot: process.arguments = ["capture", "screenshot", "--alert-on-error"]
-    case .annotate: process.arguments = ["capture", "annotate", "--alert-on-error"]
-    case .ocr: process.arguments = ["capture", "ocr", "--alert-on-error"]
-    case .prepareImage: process.arguments = ["image", "choose", "--alert-on-error"]
-    case .clipboardHistory: process.arguments = ["clipboard", "open", "--alert-on-error"]
-    case .clearClipboardHistory:
-      process.arguments = ["clipboard", "clear", "--confirm", "--alert-on-error"]
-    case .keepAwake: process.arguments = ["keep-awake", "toggle", "--alert-on-error"]
-    case .startScreensaver: process.arguments = ["saver", "start", "--alert-on-error"]
-    case .toggleIdleScreensaver:
-      process.arguments = ["saver", "idle", "toggle", "--alert-on-error"]
-    case .toggleScreensaverPause:
-      process.arguments = ["saver", "toggle-pause", "--alert-on-error"]
-    case .chooseMicrophone: process.arguments = ["mic", "choose", "--alert-on-error"]
-    case .toggleMicrophone: process.arguments = ["mic", "toggle", "--alert-on-error"]
+    case .appearance: arguments = ["theme", "browse"]
+    case .keybindings: arguments = ["keybindings", "show", "--effective"]
+    case .screenshot: arguments = ["capture", "screenshot", "--alert-on-error"]
+    case .annotate: arguments = ["capture", "annotate", "--alert-on-error"]
+    case .ocr: arguments = ["capture", "ocr", "--alert-on-error"]
+    case .prepareImage: arguments = ["image", "choose", "--alert-on-error"]
+    case .clipboardHistory: arguments = ["clipboard", "open", "--alert-on-error"]
+    case .clearClipboardHistory: arguments = ["clipboard", "clear", "--confirm", "--alert-on-error"]
+    case .keepAwake: arguments = ["keep-awake", "toggle", "--alert-on-error"]
+    case .startScreensaver: arguments = ["saver", "start", "--alert-on-error"]
+    case .toggleIdleScreensaver: arguments = ["saver", "idle", "toggle", "--alert-on-error"]
+    case .toggleScreensaverPause: arguments = ["saver", "toggle-pause", "--alert-on-error"]
+    case .chooseMicrophone: arguments = ["mic", "choose", "--alert-on-error"]
+    case .toggleMicrophone: arguments = ["mic", "toggle", "--alert-on-error"]
     case .maintenance, .profile, .neovim, .configuration:
       throw ValidationError(
         "Configuration and maintenance actions must launch through their menu terminal")
     }
-    try process.run()
-    return process
+    return try launchDetachedProcess(executableURL, arguments: arguments)
   }
 }
 
