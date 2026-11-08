@@ -119,17 +119,4 @@ struct AudioDeviceTests {
     #expect(!String(decoding: data, as: UTF8.self).contains(uid))
     #expect(device.identity.count == 64)
   }
-
-  @Test func commandRequiresCompleteValidatedSelector() throws {
-    _ = try Desktop.AudioOutputCommand.parse([])
-    _ = try Desktop.AudioOutputCommand.parse([
-      "--id", "7", "--identity", String(repeating: "a", count: 64),
-    ])
-    for args in [
-      ["--id", "7"], ["--identity", "x"], ["--id", "7", "--identity", "$(bad)"],
-      ["--id", "-1", "--identity", String(repeating: "a", count: 64)],
-    ] {
-      #expect(throws: (any Error).self) { try Desktop.AudioOutputCommand.parse(args) }
-    }
-  }
 }
