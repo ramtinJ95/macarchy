@@ -322,21 +322,24 @@ extension EnvironmentTransactionCoordinator {
       operation: operation, previousOwnership: previous, proposedOwnership: proposed,
       previousCurrentDestination: StateLayout.generationPath(previous.generationID))
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    try store.writeTransaction(transaction)
-    do {
-      try transition(previous, proposed)
-      try store.writeOwnership(proposed)
-      try faultInjector(.authorityPublished)
-      try store.removeTransaction()
-    } catch {
-      let failure = error
-      try store.writeTransaction(transaction.rollingBack)
-      try transition(proposed, previous)
-      try store.writeOwnership(previous)
-      try store.removeTransaction()
-      throw EnvironmentLifecycleError.blocked(
-        "\(label) entry rolled back; the writable configuration is preserved at \(preservedPath). \(failure)"
-      )
-    }
+    try store.runJournaled(
+      transaction,
+      commit: .immediate,
+      forward: {
+        try transition(previous, proposed)
+        try store.writeOwnership(proposed)
+        try faultInjector(.authorityPublished)
+      },
+      reverse: { _ in
+        try transition(proposed, previous)
+        try store.writeOwnership(previous)
+      },
+      rollbackFailure: .propagate,
+      rolledBack: {
+        EnvironmentLifecycleError.blocked(
+          "\(label) entry rolled back; the writable configuration is preserved at \(preservedPath). \($0)"
+        )
+      }
+    )
   }
 }

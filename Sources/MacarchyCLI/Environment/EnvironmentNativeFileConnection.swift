@@ -130,21 +130,21 @@ struct EnvironmentNativeFileConnection {
       previousCurrentDestination: reviewed.previous.map {
         StateLayout.generationPath($0.generationID)
       })
-    let store = EnvironmentStateStore(stateRoot: stateRoot)
-    try store.writeTransaction(transaction)
-    do {
-      try transition(transaction)
-      try faultInjector(.authorityPublished)
-      try store.removeTransaction()
-    } catch {
-      let failure = error
-      try store.writeTransaction(transaction.rollingBack)
-      try transition(transaction.rollingBack)
-      try store.removeTransaction()
-      throw EnvironmentLifecycleError.blocked(
-        "Native connection rolled back; personal configuration remains at \(source.path). \(failure)"
-      )
-    }
+    try EnvironmentStateStore(stateRoot: stateRoot).runJournaled(
+      transaction,
+      commit: .immediate,
+      forward: {
+        try transition(transaction)
+        try faultInjector(.authorityPublished)
+      },
+      reverse: { try transition($0) },
+      rollbackFailure: .propagate,
+      rolledBack: {
+        EnvironmentLifecycleError.blocked(
+          "Native connection rolled back; personal configuration remains at \(source.path). \($0)"
+        )
+      }
+    )
   }
 
   private var affectedIDs: Set<EnvironmentEntryID> {

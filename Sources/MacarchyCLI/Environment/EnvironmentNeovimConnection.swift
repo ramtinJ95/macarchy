@@ -107,21 +107,20 @@ struct EnvironmentNeovimConnection {
     let transaction = EnvironmentTransaction(
       operation: .neovimConnection, previousOwnership: plan.previous, proposedOwnership: proposed,
       previousCurrentDestination: plan.previous.map { StateLayout.generationPath($0.generationID) })
-    let store = EnvironmentStateStore(stateRoot: stateRoot)
-    try store.writeTransaction(transaction)
-    do {
-      try transition(transaction)
-      try faultInjector(.authorityPublished)
-      try store.removeTransaction()
-    } catch {
-      let failure = error
-      let rollback = transaction.rollingBack
-      try store.writeTransaction(rollback)
-      try transition(rollback)
-      try store.removeTransaction()
-      throw EnvironmentLifecycleError.blocked(
-        "Neovim connection rolled back; user configuration remains at \(source.path). \(failure)")
-    }
+    try EnvironmentStateStore(stateRoot: stateRoot).runJournaled(
+      transaction,
+      commit: .immediate,
+      forward: {
+        try transition(transaction)
+        try faultInjector(.authorityPublished)
+      },
+      reverse: { try transition($0) },
+      rollbackFailure: .propagate,
+      rolledBack: {
+        EnvironmentLifecycleError.blocked(
+          "Neovim connection rolled back; user configuration remains at \(source.path). \($0)")
+      }
+    )
   }
 
   static func proposedOwnership(
