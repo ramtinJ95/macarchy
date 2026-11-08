@@ -594,8 +594,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             // This success report is emitted only after unified finalization below.
             if report.outcome == "pending_commit" { report.outcome = "applied" }
             preferences = try stage(
-              report.componentExecution(),
-              mutationField: "mutated", successMessage: "Selected macOS preferences converged.")
+              report, successMessage: "Selected macOS preferences converged.")
           } catch {
             return try await failureAfterRollback(
               transaction: transaction, mutated: true, context: context,
@@ -823,7 +822,24 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         : execution.report["message"]?.string
           ?? execution.report["error"]?.string
           ?? "The delegated operation failed.",
-      details: execution.report
+      details: .delegated(execution.report)
+    )
+  }
+
+  private func stage(
+    _ report: PreferencesReport,
+    successMessage: String
+  ) throws -> UnifiedSetupApplyStage {
+    guard let mutated = report.mutated else {
+      throw SetupComponentReportError(
+        description: "Delegated result is missing boolean field 'mutated'.")
+    }
+    return UnifiedSetupApplyStage(
+      succeeded: report.succeeded,
+      mutated: mutated,
+      message: report.succeeded
+        ? successMessage : report.message ?? "The delegated operation failed.",
+      details: .preferences(report)
     )
   }
 
@@ -887,7 +903,7 @@ struct UnifiedSetupApplyStage: Encodable, Sendable {
   let succeeded: Bool
   let mutated: Bool
   let message: String
-  let details: JSONValue?
+  let details: SetupStageDetails?
 
   static func noChange(_ message: String) -> Self {
     Self(succeeded: true, mutated: false, message: message, details: nil)

@@ -35,10 +35,6 @@ struct PreferencesReport: CommandReport, Sendable {
     ["ready", "disabled", "no_change", "applied", "pending_commit", "recovered"].contains(outcome)
   }
 
-  func componentExecution() throws -> SetupComponentExecution {
-    try SetupComponentExecution((output: render(json: true), succeeded: succeeded))
-  }
-
   static func failure(_ error: Error, context: PreferencesContext) -> Self {
     let outcome: String
     switch error {

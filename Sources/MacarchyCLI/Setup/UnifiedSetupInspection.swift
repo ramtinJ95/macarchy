@@ -157,7 +157,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     let preferences = try stage(
       planner.preferences.inspect(
         context: context.preferencesContext, desired: model.profile.macOSPreferences, status: true
-      ).componentExecution())
+      ))
     if model.theme.status == "activation_required", ownership == nil, plan.adoption.isEmpty,
       missing.isEmpty, preferences.outcome == "disabled"
     {
@@ -226,8 +226,13 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     return UnifiedSetupInspectionStage(
       succeeded: execution.succeeded,
       outcome: execution.outcome,
-      details: execution.report
+      details: .delegated(execution.report)
     )
+  }
+
+  private func stage(_ report: PreferencesReport) -> UnifiedSetupInspectionStage {
+    UnifiedSetupInspectionStage(
+      succeeded: report.succeeded, outcome: report.outcome, details: .preferences(report))
   }
 
   private func result(
@@ -258,7 +263,7 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
 struct UnifiedSetupInspectionStage: Encodable, Sendable {
   let succeeded: Bool
   let outcome: String
-  let details: JSONValue
+  let details: SetupStageDetails
 }
 
 private struct UnifiedSetupInspectionReport: CommandReport {
