@@ -268,7 +268,7 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     backgroundImageCache.countLimit = 24
     backgroundImageCache.totalCostLimit = 96 * 1_024 * 1_024
 
-    guard let visibleFrame = Self.activeScreen()?.visibleFrame else {
+    guard let visibleFrame = popupActiveScreen()?.visibleFrame else {
       throw ThemeBrowserError.noActiveDisplay
     }
     let width = min(720, visibleFrame.width - 96)
@@ -324,21 +324,9 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
   }
 
   func run() throws {
-    let application = NSApplication.shared
-    guard
-      application.activationPolicy() == .accessory
-        || application.setActivationPolicy(.accessory)
-    else {
-      throw ThemeBrowserError.cannotActivateAccessoryApplication
-    }
-    application.mainMenu = popupMainMenu()
-    application.delegate = self
-    application.finishLaunching()
-    showWindow(nil)
-    application.activate(ignoringOtherApps: true)
-    window?.makeKeyAndOrderFront(nil)
-    window?.makeFirstResponder(searchField)
-    application.run()
+    try runAccessoryPopup(
+      self, focusing: searchField,
+      cannotActivate: ThemeBrowserError.cannotActivateAccessoryApplication)
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -1218,10 +1206,5 @@ final class ThemeBrowserWindowController: NSWindowController, NSApplicationDeleg
     }
     previousPreviewButton.isEnabled = enabled && previews.count > 1
     nextPreviewButton.isEnabled = enabled && previews.count > 1
-  }
-
-  private static func activeScreen() -> NSScreen? {
-    let pointer = NSEvent.mouseLocation
-    return NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main
   }
 }

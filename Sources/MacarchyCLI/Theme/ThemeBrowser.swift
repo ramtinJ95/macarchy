@@ -1,8 +1,6 @@
 import Foundation
 import ThemeCore
 
-private let themeBrowserSearchLocale = Locale(identifier: "en_US_POSIX")
-
 struct ThemeBrowserPreview: Sendable {
   let label: String
   let data: Data
@@ -30,12 +28,8 @@ struct ThemeBrowserItem: Sendable {
   }
 
   fileprivate func matches(_ terms: [String]) -> Bool {
-    guard !terms.isEmpty else { return true }
-    let searchable = [metadata.id, metadata.displayName, metadata.appearance.rawValue]
-      .joined(separator: "\n")
-      .folding(
-        options: [.caseInsensitive, .diacriticInsensitive], locale: themeBrowserSearchLocale)
-    return terms.allSatisfy(searchable.contains)
+    PopupSearch.matches(
+      terms, fields: [metadata.id, metadata.displayName, metadata.appearance.rawValue])
   }
 }
 
@@ -52,14 +46,7 @@ struct ThemeBrowserContent: Sendable {
   }
 
   func filteredItems(query: String) -> [ThemeBrowserItem] {
-    let terms =
-      query
-      .folding(
-        options: [.caseInsensitive, .diacriticInsensitive],
-        locale: themeBrowserSearchLocale
-      )
-      .split(whereSeparator: \Character.isWhitespace)
-      .map(String.init)
+    let terms = PopupSearch.terms(query)
     return items.filter { $0.matches(terms) }
   }
 
