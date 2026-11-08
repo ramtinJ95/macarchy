@@ -139,7 +139,7 @@ public struct ThemeActivator: Sendable {
     onCommittedLocked: (GenerationManifest) throws -> Void
   ) throws -> GenerationManifest {
     let background =
-      package.backgrounds.first.map {
+      package.defaultBackground.map {
         PreparedThemeBackground(
           selection: GenerationBackground(id: $0.id, format: $0.format),
           data: package.data(for: $0)
