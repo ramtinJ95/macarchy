@@ -595,15 +595,4 @@ private final class ConversionFixture {
     try? FileManager.default.removeItem(at: root)
   }
 
-  private func jpegData(from png: Data) throws -> Data {
-    let source = try #require(CGImageSourceCreateWithData(png as CFData, nil))
-    let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
-    let output = NSMutableData()
-    let destination = try #require(
-      CGImageDestinationCreateWithData(output, "public.jpeg" as CFString, 1, nil))
-    CGImageDestinationAddImage(destination, image, nil)
-    try #require(CGImageDestinationFinalize(destination))
-    return output as Data
-  }
-
 }

@@ -327,12 +327,7 @@ extension AdapterContractTests {
       withDestinationURL: behaviorConfiguration
     )
 
-    let kittyConfiguration = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: kittyConfiguration,
-      atomically: true,
-      encoding: .utf8
-    )
+    let kittyConfiguration = try Self.kittyConfiguration(root: root)
     let coordinator = ThemeActivationCoordinator(
       root: root,
       consumerPaths: try Self.consumerPaths(
@@ -365,12 +360,7 @@ extension AdapterContractTests {
     let root = try temporaryDirectory()
     defer { removeTemporaryRoot(root) }
     let manifest = try testActivator(root: root).activate(package: catppuccinPackage())
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
+    let configurationURL = try Self.kittyConfiguration(root: root)
     let store = ReconciliationStatusStore(root: root)
     _ = try store.persist(
       manifest: manifest,
@@ -426,12 +416,7 @@ extension AdapterContractTests {
   func overlappingActivationsLeaveAppearanceMatchingCanonicalState() async throws {
     let root = try temporaryDirectory()
     defer { removeTemporaryRoot(root) }
-    let configurationURL = root.appending(path: "kitty.conf")
-    try "include \(root.path)/state/adapters/kitty.conf\n".write(
-      to: configurationURL,
-      atomically: true,
-      encoding: .utf8
-    )
+    let configurationURL = try Self.kittyConfiguration(root: root)
     let state = Mutex(
       (
         appearance: ThemeAppearance.dark,

@@ -9,7 +9,7 @@ struct SkhdConfigurationParserTests {
 
   @Test
   func personalFixtureHasExactCoverageWithoutDiagnostics() throws {
-    let result = parser.parse(try fixtureContents("personal.skhdrc"))
+    let result = parser.parse(try fixtureContents("Skhd/personal.skhdrc"))
 
     #expect(result.bindings.count == 57)
     #expect(Set(result.bindings.map(\.identity)).count == 57)
@@ -154,10 +154,5 @@ struct SkhdConfigurationParserTests {
 
     #expect(result.diagnostics.isEmpty)
     #expect(result.bindings.map(\.identity) == ["alt-j", "alt-k"])
-  }
-
-  private func fixtureContents(_ name: String) throws -> String {
-    let root = repositoryRoot.appending(path: "Tests/Fixtures/Skhd", directoryHint: .isDirectory)
-    return try String(contentsOf: root.appending(path: name), encoding: .utf8)
   }
 }

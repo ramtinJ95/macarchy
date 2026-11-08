@@ -11,7 +11,7 @@ struct SkhdKeybindingCatalogTests {
   @Test
   func decodesStrictMetadataOnlyCatalog() throws {
     let catalog = try loader.decode(
-      try fixtureContents("representative-catalog.toml"),
+      try fixtureContents("Skhd/representative-catalog.toml"),
       source: source
     )
 
@@ -165,7 +165,7 @@ struct SkhdKeybindingCatalogTests {
       """
     )
     let catalog = try loader.decode(
-      try fixtureContents("representative-catalog.toml")
+      try fixtureContents("Skhd/representative-catalog.toml")
         + """
 
         [[bindings]]
@@ -192,11 +192,6 @@ struct SkhdKeybindingCatalogTests {
 
     #expect(!catalog.isPresent)
     #expect(catalog.entries.isEmpty)
-  }
-
-  private func fixtureContents(_ name: String) throws -> String {
-    let root = repositoryRoot.appending(path: "Tests/Fixtures/Skhd", directoryHint: .isDirectory)
-    return try String(contentsOf: root.appending(path: name), encoding: .utf8)
   }
 
   private func errorDescription(_ document: String) -> String {
