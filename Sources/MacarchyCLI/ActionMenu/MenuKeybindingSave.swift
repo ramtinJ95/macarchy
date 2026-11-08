@@ -140,11 +140,8 @@ struct MenuKeybindingSaveSession: Codable {
       let preparation = try runner.planner.prepare(
         resourcesRoot: resourcesRoot, profileURL: portable.path, profileRequired: false,
         stateRoot: stateRoot, homeDirectory: homeDirectory, profile: profile)
-      guard preparation.outcome != .blocked,
-        preparation.provider.status == .managed,
-        preparation.effectiveBehavior.transaction.status == .clear,
-        preparation.generation.generationID == generationID,
-        let approvedDigest = preparation.composition?.inputDigest
+      guard preparation.generation.generationID == generationID,
+        let approvedDigest = preparation.approvableInputDigest
       else {
         throw ValidationError(
           "Keybinding state changed or requires review; no save applied. "
