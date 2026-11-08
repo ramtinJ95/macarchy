@@ -35,7 +35,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     }
 
     /// The `--approve` digest that authorizes installing exactly these inputs.
-    var approvalDigest: String { get throws { try SetupPackageInstallationStore.digest(self) } }
+    var approvalDigest: String { get throws { try canonicalJSONDigest(self) } }
   }
 
   func execute(
@@ -106,7 +106,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
         try revalidate()
         var attempt = SetupPackageInstallationAttempt(
           schemaVersion: 3, contextDigest: store.contextDigest, approvalDigest: digest,
-          priorLedgerDigest: try SetupPackageInstallationStore.digest(inputs.ledger),
+          priorLedgerDigest: try canonicalJSONDigest(inputs.ledger),
           targets: inputs.targets, brewfile: inputs.brewfile)
         try store.write(attempt)
         do {
@@ -250,7 +250,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
         declarations: target.declarations, approvalDigest: attempt.approvalDigest)
     }
     let current = try ledgerStore.read()
-    if try SetupPackageInstallationStore.digest(current) == attempt.priorLedgerDigest {
+    if try canonicalJSONDigest(current) == attempt.priorLedgerDigest {
       try ledgerStore.write(
         .init(contextDigest: store.contextDigest, entries: (current?.entries ?? []) + entries))
     } else {
@@ -263,7 +263,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
         ? nil
         : .init(contextDigest: store.contextDigest, entries: remainder)
       guard current?.entries.filter({ targets.contains($0.identity) }) == entries,
-        try SetupPackageInstallationStore.digest(prior) == attempt.priorLedgerDigest
+        try canonicalJSONDigest(prior) == attempt.priorLedgerDigest
       else {
         throw SetupPackageAdoptionError(
           "Adoption ledger changed during installation; publication requires manual review.")

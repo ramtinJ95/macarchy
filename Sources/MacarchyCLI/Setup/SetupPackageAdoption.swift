@@ -163,7 +163,7 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
       let candidates: [Candidate]
       let ledger: SetupPackageAdoptionLedger?
     }
-    let digest = try SetupPackageInstallationStore.digest(
+    let digest = try canonicalJSONDigest(
       Binding(
         contextDigest: store.contextDigest,
         profilePaths: [context.profileURL, context.machineProfileURL].map(
