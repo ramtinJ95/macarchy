@@ -79,10 +79,8 @@ struct UnifiedSetupApplyTests {
       desktop: { _, _, _, approvals, _ in
         #expect(approvals.yabai == "reviewed-yabai")
         calls.withLock { $0.append("desktop") }
-        return try applyComponent(
-          mode == "failure"
-            ? #"{"outcome":"failed","mutated":false}"# : #"{"outcome":"applied","mutated":true}"#,
-          succeeded: mode != "failure")
+        return mode == "failure"
+          ? desktopApplyStub("failed", mutated: false) : desktopApplyStub()
       },
       environment: { _, _, _, _, _ in
         Issue.record("Unreviewed environment mutation")
@@ -184,9 +182,7 @@ struct UnifiedSetupApplyTests {
         #expect(enabledThemeAdapterIDs.contains("wallpaper"))
         #expect(!enabledThemeAdapterIDs.contains("sketchybar"))
         calls.withLock { $0.append("desktop") }
-        return try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
-        )
+        return desktopApplyStub(message: "desktop changed")
       },
       environment: { _, profile, _, _, enabledThemeAdapterIDs in
         #expect(profile.environment.kitty.fontSize == 15)
@@ -254,9 +250,7 @@ struct UnifiedSetupApplyTests {
       desktop: { _, _, _, _, enabledThemeAdapterIDs in
         desktopAdapterIDs.withLock { $0 = Set(enabledThemeAdapterIDs) }
         calls.withLock { $0.append("desktop") }
-        return try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
-        )
+        return desktopApplyStub(message: "desktop changed")
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
@@ -330,9 +324,7 @@ struct UnifiedSetupApplyTests {
         return themeReportStub()
       },
       desktop: { _, _, _, _, _ in
-        try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"applied","mutated":true,"message":"desktop changed"}"#
-        )
+        desktopApplyStub(message: "desktop changed")
       },
       environment: { _, _, _, _, _ in
         Issue.record("No environment stage was planned")
@@ -386,9 +378,7 @@ struct UnifiedSetupApplyTests {
       desktop: { _, _, _, received, _ in
         #expect(received == approvals)
         calls.withLock { $0.append("desktop") }
-        return try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"no_change","mutated":false,"message":"desktop ready"}"#
-        )
+        return desktopApplyStub("no_change", mutated: false, message: "desktop ready")
       },
       environment: { _, _, _, received, _ in
         #expect(received == approvals)
@@ -583,8 +573,7 @@ struct UnifiedSetupApplyTests {
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop") }
-        return try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"no_change","mutated":false,"message":"ready"}"#)
+        return desktopApplyStub("no_change", mutated: false, message: "ready")
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
@@ -636,7 +625,7 @@ struct UnifiedSetupApplyTests {
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "rollback")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+        return desktopTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       themeTeardown: { _, _, _, dryRun in
         calls.withLock { $0.append("theme:\(dryRun ? "preview" : "rollback")") }
@@ -671,10 +660,7 @@ struct UnifiedSetupApplyTests {
         themeReportStub()
       },
       desktop: { _, _, _, _, _ in
-        try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"failed","mutated":true,"message":"desktop failed"}"#,
-          succeeded: false
-        )
+        desktopApplyStub("failed", message: "desktop failed")
       },
       environment: { _, _, _, _, _ in
         environmentCalls.withLock { $0 += 1 }
@@ -714,7 +700,7 @@ struct UnifiedSetupApplyTests {
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "rollback")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+        return desktopTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       themeTeardown: { _, _, _, dryRun in
         calls.withLock { $0.append("theme:\(dryRun ? "preview" : "rollback")") }
@@ -756,9 +742,7 @@ struct UnifiedSetupApplyTests {
         themeReportStub()
       },
       desktop: { _, _, _, _, _ in
-        try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"applied","mutated":true}"#
-        )
+        desktopApplyStub()
       },
       environment: { _, _, _, _, _ in
         try applyComponent(
@@ -801,7 +785,7 @@ struct UnifiedSetupApplyTests {
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "rollback")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+        return desktopTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       themeTeardown: { _, _, _, dryRun in
         calls.withLock { $0.append("theme:\(dryRun ? "preview" : "rollback")") }
@@ -838,9 +822,7 @@ struct UnifiedSetupApplyTests {
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop:apply") }
-        return try applyComponent(
-          #"{"operation":"desktop_apply","outcome":"applied","mutated":true}"#
-        )
+        return desktopApplyStub()
       },
       environment: { _, _, _, _, _ in
         Issue.record("Environment must not run before the injected interruption")

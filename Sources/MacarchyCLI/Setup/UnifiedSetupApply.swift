@@ -2,7 +2,7 @@ import Foundation
 import ThemeCore
 
 struct UnifiedSetupApplyCommandRunner: Sendable {
-  typealias ComponentApply =
+  typealias ComponentApply<Report> =
     @Sendable (
       UnifiedSetupPlanContext,
       PortableProfile,
@@ -10,7 +10,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       UnifiedSetupAdoptionApprovals,
       [String]
     ) async throws
-    -> SetupComponentExecution
+    -> Report
   typealias ThemeApply =
     @Sendable (ThemePackage, URL) async throws -> ThemeSetJSONReport
   /// Reactivates the active theme, reconciling only the given adapters. The final
@@ -28,8 +28,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   let writePreMutationPlan: @Sendable (String) throws -> Void
   let themeApply: ThemeApply
   let themeRefresh: ThemeRefresh
-  let desktopApply: ComponentApply
-  let environmentApply: ComponentApply
+  let desktopApply: ComponentApply<DesktopAggregateMutationReport>
+  let environmentApply: ComponentApply<SetupComponentExecution>
   let transactionTeardown: UnifiedSetupTeardownCommandRunner
   let faultInjector: @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void
 
@@ -41,8 +41,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     writePreMutationPlan: @escaping @Sendable (String) throws -> Void,
     themeApply: @escaping ThemeApply,
     themeRefresh: @escaping ThemeRefresh = UnifiedSetupApplyCommandRunner.liveThemeRefresh,
-    desktopApply: @escaping ComponentApply,
-    environmentApply: @escaping ComponentApply,
+    desktopApply: @escaping ComponentApply<DesktopAggregateMutationReport>,
+    environmentApply: @escaping ComponentApply<SetupComponentExecution>,
     transactionTeardown: UnifiedSetupTeardownCommandRunner = .live,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
@@ -138,27 +138,24 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       return ThemeSetReport(outcome, themeID: package.id, slackTheme: nil).jsonReport
     },
     desktopApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in
-      try await SetupComponentExecution(
-        DesktopApplyCommandRunner(
-          lifecycle: .live,
-          keybindings: .live,
-          prerequisites: .live,
-          theme: .live(enabling: Set(enabledThemeAdapterIDs))
-        ).executeAggregate(
-          resourcesRoot: context.desktopResourcesRoot,
-          keybindingsResourcesRoot: context.keybindingsResourcesRoot,
-          profileURL: context.profileURL,
-          profileRequired: context.profileRequired,
-          stateRoot: context.stateRoot,
-          homeDirectory: context.homeDirectory,
-          consumerPaths: consumerPaths,
-          adopt: adoptions.yabai,
-          keybindingsAdopt: adoptions.keybindings,
-          sketchyBarAdopt: adoptions.sketchybar,
-          json: true,
-          deferFinalization: true,
-          profile: profile
-        )
+      try await DesktopApplyCommandRunner(
+        lifecycle: .live,
+        keybindings: .live,
+        prerequisites: .live,
+        theme: .live(enabling: Set(enabledThemeAdapterIDs))
+      ).aggregateReport(
+        resourcesRoot: context.desktopResourcesRoot,
+        keybindingsResourcesRoot: context.keybindingsResourcesRoot,
+        profileURL: context.profileURL,
+        profileRequired: context.profileRequired,
+        stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory,
+        consumerPaths: consumerPaths,
+        adopt: adoptions.yabai,
+        keybindingsAdopt: adoptions.keybindings,
+        sketchyBarAdopt: adoptions.sketchybar,
+        deferFinalization: true,
+        profile: profile
       )
     },
     environmentApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in
@@ -491,7 +488,6 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
                 adoptions,
                 currentModel.enabledThemeAdapterIDs
               ),
-              mutationField: "mutated",
               successMessage: "Desktop providers converged."
             )
           } catch {
@@ -826,6 +822,15 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     stage(
       .theme(report), succeeded: report.succeeded, mutated: report.committed,
       failureMessage: report.error, successMessage: successMessage)
+  }
+
+  private func stage(
+    _ report: DesktopAggregateMutationReport,
+    successMessage: String
+  ) -> UnifiedSetupApplyStage {
+    stage(
+      .desktopApply(report), succeeded: report.succeeded, mutated: report.mutated,
+      failureMessage: report.message, successMessage: successMessage)
   }
 
   private func stage(

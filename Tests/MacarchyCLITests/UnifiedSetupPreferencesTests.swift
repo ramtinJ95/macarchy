@@ -70,7 +70,7 @@ struct UnifiedSetupPreferencesTests {
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop") }
-        return try applyComponent(#"{"outcome":"applied","mutated":true}"#)
+        return desktopApplyStub()
       },
       environment: { _, _, _, _, _ in
         calls.withLock { $0.append("environment") }
@@ -219,9 +219,7 @@ struct UnifiedSetupPreferencesTests {
       },
       desktopTeardown: { _, _, preview in
         if !preview { calls.withLock { $0.append("desktop") } }
-        return try applyComponent(
-          preview
-            ? #"{"outcome":"planned","mutated":false}"# : #"{"outcome":"restored","mutated":true}"#)
+        return desktopTeardownStub(dryRun: preview, mutated: !preview)
       },
       themeTeardown: { _, _, _, preview in
         if !preview { calls.withLock { $0.append("theme") } }
@@ -333,7 +331,7 @@ struct UnifiedSetupPreferencesTests {
           succeeded: true, status: ownership == nil ? "absent" : "managed",
           generationID: model.theme.currentGenerationID, message: "fixture")
       },
-      desktopInspection: { _, _, _, _ in try applyComponent(#"{"outcome":"current"}"#) },
+      desktopInspection: { _, _, _, _ in desktopInspectionStub() },
       environmentInspection: { _, _, _, _ in try applyComponent(#"{"outcome":"current"}"#) })
   }
 }

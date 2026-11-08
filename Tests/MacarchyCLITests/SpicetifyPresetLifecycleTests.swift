@@ -54,7 +54,7 @@ struct SpicetifyPresetLifecycleTests {
         },
         desktopTeardown: { _, _, _ in
           Issue.record("Apply rollback must not use ordinary teardown")
-          return try teardownComponent(dryRun: false, mutated: false)
+          return desktopTeardownStub(dryRun: false, mutated: false)
         },
         themeTeardown: { state, _, _, dryRun in
           #expect(!dryRun)

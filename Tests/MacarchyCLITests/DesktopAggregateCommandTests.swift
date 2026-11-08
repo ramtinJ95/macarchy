@@ -326,13 +326,10 @@ struct DesktopAggregateCommandTests {
         throw UnexpectedComponentCall()
       },
       desktopTeardown: { _, _, dryRun in
-        try SetupComponentExecution(
-          fixture.teardownRunner.executeAggregate(
-            stateRoot: fixture.state,
-            homeDirectory: fixture.home,
-            dryRun: dryRun,
-            json: true
-          )
+        try fixture.teardownRunner.aggregateReport(
+          stateRoot: fixture.state,
+          homeDirectory: fixture.home,
+          dryRun: dryRun
         )
       },
       themeTeardown: { _, _, _, _ in .noChange("theme") },
@@ -363,21 +360,18 @@ struct DesktopAggregateCommandTests {
         throw UnexpectedComponentCall()
       },
       desktop: { _, profile, paths, _, _ in
-        try await SetupComponentExecution(
-          fixture.applyRunner.executeAggregate(
-            resourcesRoot: fixture.desktopResources,
-            keybindingsResourcesRoot: fixture.keybindingResources,
-            profileURL: fixture.profile,
-            profileRequired: true,
-            stateRoot: fixture.state,
-            homeDirectory: fixture.home,
-            consumerPaths: paths,
-            adopt: nil,
-            keybindingsAdopt: nil,
-            json: true,
-            deferFinalization: true,
-            profile: profile
-          )
+        try await fixture.applyRunner.aggregateReport(
+          resourcesRoot: fixture.desktopResources,
+          keybindingsResourcesRoot: fixture.keybindingResources,
+          profileURL: fixture.profile,
+          profileRequired: true,
+          stateRoot: fixture.state,
+          homeDirectory: fixture.home,
+          consumerPaths: paths,
+          adopt: nil,
+          keybindingsAdopt: nil,
+          deferFinalization: true,
+          profile: profile
         )
       },
       environment: { _, _, _, _, _ in

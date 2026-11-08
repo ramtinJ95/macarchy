@@ -30,6 +30,31 @@ struct DesktopDoctorCommandRunner: Sendable {
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil
   ) throws -> CommandExecution {
+    let doctor = try report(
+      resourcesRoot: resourcesRoot,
+      keybindingsResourcesRoot: keybindingsResourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths,
+      macarchyExecutableURL: macarchyExecutableURL,
+      profile: suppliedProfile
+    )
+    return (try doctor.render(json: json), doctor.succeeded)
+  }
+
+  func report(
+    resourcesRoot: URL,
+    keybindingsResourcesRoot: URL = RuntimeEnvironment.live.builtInKeybindingsURL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
+    profile suppliedProfile: PortableProfile? = nil
+  ) throws -> DoctorReport {
     let desired: DesktopDesiredState
     do {
       desired = try DesktopDesiredState.load(
@@ -41,7 +66,7 @@ struct DesktopDoctorCommandRunner: Sendable {
         profile: suppliedProfile
       )
     } catch {
-      let report = DoctorReport(
+      return DoctorReport(
         findings: [
           DoctorFinding(
             id: "desktop.profile",
@@ -52,7 +77,6 @@ struct DesktopDoctorCommandRunner: Sendable {
         operation: "desktop_doctor",
         title: "Macarchy desktop doctor"
       )
-      return (try report.render(json: json), false)
     }
 
     var findings = prerequisites.inspect(desired.profile, homeDirectory).map {
@@ -148,11 +172,10 @@ struct DesktopDoctorCommandRunner: Sendable {
       )
     )
 
-    let report = DoctorReport(
+    return DoctorReport(
       findings: findings.sorted { $0.id < $1.id },
       operation: "desktop_doctor",
       title: "Macarchy desktop doctor"
     )
-    return (try report.render(json: json), report.succeeded)
   }
 }

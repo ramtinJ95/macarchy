@@ -7,19 +7,19 @@ enum UnifiedSetupInspectionOperation: String, Sendable {
 }
 
 struct UnifiedSetupInspectionCommandRunner: Sendable {
-  typealias ComponentInspection =
+  typealias ComponentInspection<Report> =
     @Sendable (
       UnifiedSetupInspectionOperation,
       UnifiedSetupPlanContext,
       PortableProfile,
       ThemeConsumerPaths
     ) throws
-    -> SetupComponentExecution
+    -> Report
 
   let planner: UnifiedSetupPlanCommandRunner
   let themeInspection: UnifiedSetupThemeInspection
-  let desktopInspection: ComponentInspection
-  let environmentInspection: ComponentInspection
+  let desktopInspection: ComponentInspection<DesktopInspectionReport>
+  let environmentInspection: ComponentInspection<SetupComponentExecution>
 
   static let live = Self(
     planner: .live,
@@ -27,22 +27,21 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     desktopInspection: { operation, context, profile, consumerPaths in
       switch operation {
       case .status:
-        return try SetupComponentExecution(
-          DesktopStatusCommandRunner.live.execute(
+        return .status(
+          try DesktopStatusCommandRunner.live.report(
             resourcesRoot: context.desktopResourcesRoot,
             keybindingsResourcesRoot: context.keybindingsResourcesRoot,
             profileURL: context.profileURL,
             profileRequired: context.profileRequired,
             stateRoot: context.stateRoot,
             homeDirectory: context.homeDirectory,
-            json: true,
             consumerPaths: consumerPaths,
             profile: profile
           )
         )
       case .doctor:
-        return try SetupComponentExecution(
-          DesktopDoctorCommandRunner.live.execute(
+        return .doctor(
+          try DesktopDoctorCommandRunner.live.report(
             resourcesRoot: context.desktopResourcesRoot,
             keybindingsResourcesRoot: context.keybindingsResourcesRoot,
             profileURL: context.profileURL,
@@ -50,9 +49,8 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
             stateRoot: context.stateRoot,
             homeDirectory: context.homeDirectory,
             consumerPaths: consumerPaths,
-            json: true,
             profile: profile
-          )
+          ).jsonReport
         )
       }
     },
@@ -230,6 +228,11 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
     )
   }
 
+  private func stage(_ report: DesktopInspectionReport) -> UnifiedSetupInspectionStage {
+    UnifiedSetupInspectionStage(
+      succeeded: report.succeeded, outcome: report.outcome, details: .desktopInspection(report))
+  }
+
   private func stage(_ report: PreferencesReport) -> UnifiedSetupInspectionStage {
     UnifiedSetupInspectionStage(
       succeeded: report.succeeded, outcome: report.outcome, details: .preferences(report))
@@ -257,6 +260,34 @@ struct UnifiedSetupInspectionCommandRunner: Sendable {
       message: message
     )
     return (try report.render(json: json), report.succeeded)
+  }
+}
+
+/// Desktop status, or desktop doctor's findings, as setup status and doctor embed them.
+enum DesktopInspectionReport: Encodable, Sendable {
+  case status(DesktopStatusReport)
+  case doctor(DoctorJSONReport)
+
+  var succeeded: Bool {
+    switch self {
+    case .status(let report): report.succeeded
+    case .doctor(let report): report.succeeded
+    }
+  }
+
+  var outcome: String {
+    switch self {
+    case .status(let report): report.outcome
+    case .doctor(let report): report.outcome
+    }
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case .status(let report): try container.encode(report)
+    case .doctor(let report): try container.encode(report)
+    }
   }
 }
 

@@ -196,6 +196,39 @@ struct DesktopApplyCommandRunner: Sendable {
     deferFinalization: Bool = false,
     profile suppliedProfile: PortableProfile? = nil
   ) async throws -> CommandExecution {
+    let report = try await aggregateReport(
+      resourcesRoot: resourcesRoot,
+      keybindingsResourcesRoot: keybindingsResourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths,
+      adopt: adopt,
+      keybindingsAdopt: keybindingsAdopt,
+      sketchyBarAdopt: sketchyBarAdopt,
+      macarchyExecutableURL: macarchyExecutableURL,
+      deferFinalization: deferFinalization,
+      profile: suppliedProfile
+    )
+    return (try report.render(json: json), report.succeeded)
+  }
+
+  func aggregateReport(
+    resourcesRoot: URL,
+    keybindingsResourcesRoot: URL = RuntimeEnvironment.live.builtInKeybindingsURL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths,
+    adopt: String?,
+    keybindingsAdopt: String?,
+    sketchyBarAdopt: String? = nil,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
+    deferFinalization: Bool = false,
+    profile suppliedProfile: PortableProfile? = nil
+  ) async throws -> DesktopAggregateMutationReport {
     let desired: DesktopDesiredState
     do {
       desired = try DesktopDesiredState.load(
@@ -207,11 +240,10 @@ struct DesktopApplyCommandRunner: Sendable {
         profile: suppliedProfile
       )
     } catch {
-      let report = DesktopAggregateMutationReport.failure(
+      return DesktopAggregateMutationReport.failure(
         outcome: "blocked",
         message: String(describing: error)
       )
-      return (try report.render(json: json), false)
     }
 
     let adapterIDs = desired.profile.desktopThemeAdapterIDs
@@ -229,11 +261,10 @@ struct DesktopApplyCommandRunner: Sendable {
         themeNeedsReconciliation = false
       }
     } catch {
-      let report = DesktopAggregateMutationReport.failure(
+      return DesktopAggregateMutationReport.failure(
         outcome: "blocked",
         message: "desktop theme preflight failed: \(error)"
       )
-      return (try report.render(json: json), false)
     }
 
     let mutations: DesktopAggregateMutations
@@ -344,12 +375,11 @@ struct DesktopApplyCommandRunner: Sendable {
       } else {
         outcome = "failed"
       }
-      let report = DesktopAggregateMutationReport.failure(
+      return DesktopAggregateMutationReport.failure(
         outcome: outcome,
         mutated: mutationStarted.withLock { $0 },
         message: String(describing: error)
       )
-      return (try report.render(json: json), false)
     }
 
     var themeResult: DesktopThemeReconciliation?
@@ -377,14 +407,13 @@ struct DesktopApplyCommandRunner: Sendable {
             try DesktopAggregateTransactionStore(stateRoot: stateRoot).remove()
           }
         } catch {
-          let report = DesktopAggregateMutationReport.failure(
+          return DesktopAggregateMutationReport.failure(
             outcome: "recovery_required",
             message:
               "theme reconciliation failed: \(reconcileError); provider rollback requires recovery: \(error)"
           )
-          return (try report.render(json: json), false)
         }
-        let report = DesktopAggregateMutationReport(
+        return DesktopAggregateMutationReport(
           outcome: "failed",
           mutated: true,
           yabai: mutations.yabai,
@@ -394,7 +423,6 @@ struct DesktopApplyCommandRunner: Sendable {
           message:
             "theme reconciliation failed; provider changes were rolled back: \(reconcileError)"
         )
-        return (try report.render(json: json), false)
       }
     }
 
@@ -412,7 +440,7 @@ struct DesktopApplyCommandRunner: Sendable {
           try store.remove()
         }
       } catch {
-        let report = DesktopAggregateMutationReport(
+        return DesktopAggregateMutationReport(
           outcome: "recovery_required",
           mutated: true,
           yabai: mutations.yabai,
@@ -421,12 +449,11 @@ struct DesktopApplyCommandRunner: Sendable {
           theme: themeResult,
           message: "desktop changes reached the forward commit boundary: \(error)"
         )
-        return (try report.render(json: json), false)
       }
     }
 
     let changed = mutations.changed || themeResult != nil
-    let report = DesktopAggregateMutationReport(
+    return DesktopAggregateMutationReport(
       outcome: changed ? "applied" : "no_change",
       mutated: changed,
       yabai: mutations.yabai,
@@ -437,7 +464,6 @@ struct DesktopApplyCommandRunner: Sendable {
         ? "desktop providers and selected theme adapters converged"
         : "desktop providers and selected theme adapters are already converged"
     )
-    return (try report.render(json: json), true)
   }
 
   func finishDeferredAggregateApply(
@@ -652,6 +678,16 @@ struct DesktopTeardownCommandRunner: Sendable {
     dryRun: Bool,
     json: Bool
   ) throws -> CommandExecution {
+    let report = try aggregateReport(
+      stateRoot: stateRoot, homeDirectory: homeDirectory, dryRun: dryRun)
+    return (try report.render(json: json), report.succeeded)
+  }
+
+  func aggregateReport(
+    stateRoot: URL,
+    homeDirectory: URL,
+    dryRun: Bool
+  ) throws -> DesktopAggregateTeardownReport {
     if dryRun {
       do {
         let sketchyBar = try coordinator.sketchyBarTransaction(
@@ -668,7 +704,7 @@ struct DesktopTeardownCommandRunner: Sendable {
           homeDirectory: homeDirectory,
           dryRun: true
         )
-        let report = DesktopAggregateTeardownReport(
+        return DesktopAggregateTeardownReport(
           outcome: sketchyBar.changed || keybinding?.status == .planned || yabai.changed
             ? "planned" : "no_change",
           mutated: false,
@@ -678,13 +714,11 @@ struct DesktopTeardownCommandRunner: Sendable {
             sketchyBar, restoredMessage: "would restore the prior SketchyBar provider"),
           message: "aggregate teardown preview completed without mutation"
         )
-        return (try report.render(json: json), true)
       } catch {
-        let report = DesktopAggregateTeardownReport.failure(
+        return DesktopAggregateTeardownReport.failure(
           outcome: "blocked",
           message: String(describing: error)
         )
-        return (try report.render(json: json), false)
       }
     }
 
@@ -752,12 +786,11 @@ struct DesktopTeardownCommandRunner: Sendable {
       } else {
         outcome = "failed"
       }
-      let report = DesktopAggregateTeardownReport.failure(
+      return DesktopAggregateTeardownReport.failure(
         outcome: outcome,
         mutated: mutationStarted.withLock { $0 },
         message: String(describing: error)
       )
-      return (try report.render(json: json), false)
     }
 
     do {
@@ -773,7 +806,7 @@ struct DesktopTeardownCommandRunner: Sendable {
         try store.remove()
       }
     } catch {
-      let report = DesktopAggregateTeardownReport(
+      return DesktopAggregateTeardownReport(
         outcome: "recovery_required",
         mutated: true,
         yabai: mutations.yabai,
@@ -781,10 +814,9 @@ struct DesktopTeardownCommandRunner: Sendable {
         sketchyBar: mutations.sketchyBar,
         message: "desktop teardown reached the forward commit boundary: \(error)"
       )
-      return (try report.render(json: json), false)
     }
 
-    let report = DesktopAggregateTeardownReport(
+    return DesktopAggregateTeardownReport(
       outcome: mutations.changed ? "removed" : "no_change",
       mutated: mutations.changed,
       yabai: mutations.yabai,
@@ -794,7 +826,6 @@ struct DesktopTeardownCommandRunner: Sendable {
         ? "desktop providers were restored in reverse dependency order"
         : "no Macarchy-owned desktop providers exist"
     )
-    return (try report.render(json: json), true)
   }
 
   func execute(
@@ -871,7 +902,7 @@ struct DesktopApplyBlockedError: Error {
   let reason: String
 }
 
-struct ApplyResult: Encodable {
+struct ApplyResult: Encodable, Sendable {
   let changed: Bool
   let generationID: String?
   let lifecycle: String
@@ -906,7 +937,7 @@ private struct DesktopAggregateMutations {
   }
 }
 
-private struct DesktopAggregateMutationReport: CommandReport {
+struct DesktopAggregateMutationReport: CommandReport, Sendable {
   let schemaVersion = 1
   let operation = "desktop_apply"
   let outcome: String
@@ -916,6 +947,8 @@ private struct DesktopAggregateMutationReport: CommandReport {
   let sketchyBar: ApplyResult?
   let theme: DesktopThemeReconciliation?
   let message: String
+
+  var succeeded: Bool { outcome == "applied" || outcome == "no_change" }
 
   static func failure(
     outcome: String,
@@ -968,7 +1001,7 @@ private struct DesktopAggregateMutationReport: CommandReport {
   }
 }
 
-private struct DesktopAggregateTeardownReport: CommandReport {
+struct DesktopAggregateTeardownReport: CommandReport, Sendable {
   let schemaVersion = 1
   let operation = "desktop_teardown"
   let outcome: String
@@ -977,6 +1010,8 @@ private struct DesktopAggregateTeardownReport: CommandReport {
   let keybindings: SetupIntegrationResult?
   let sketchyBar: ApplyResult?
   let message: String
+
+  var succeeded: Bool { ["planned", "no_change", "removed"].contains(outcome) }
 
   static func failure(
     outcome: String,
