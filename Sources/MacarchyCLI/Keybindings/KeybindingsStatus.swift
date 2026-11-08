@@ -43,7 +43,7 @@ private struct KeybindingsStatusReport: Encodable {
       "- \(message)",
       "- generation [\(generation.status), agreement=\(generation.agreement)]: "
         + "\(generation.message)",
-      "- provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
+      "- provider [\(provider.status.rawValue), \(provider.ownership.rawValue)]: \(provider.message)",
       "- transaction [\(transaction.status.rawValue)]: \(transaction.message)",
       "- process [\(process.status.rawValue)]: \(process.message)",
       "- lifecycle evidence [\(lifecycleEvidence.status.rawValue)]: "

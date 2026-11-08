@@ -127,7 +127,7 @@ private struct EffectiveKeybindingsListReport: Encodable {
       "Macarchy effective keybindings [\(status.rawValue)]:",
       "State: \(statusMessage)",
       "Generation agreement: \(generationAgreement)",
-      "Provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
+      "Provider [\(provider.status.rawValue), \(provider.ownership.rawValue)]: \(provider.message)",
       "Transaction [\(transaction.status.rawValue)]: \(transaction.message)",
       "Process [\(process.status.rawValue)]: \(process.message)",
       "Showing desired managed bindings with command and metadata attribution.",

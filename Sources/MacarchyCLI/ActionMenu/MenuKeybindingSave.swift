@@ -73,7 +73,7 @@ struct MenuKeybindingSaveSession: Codable {
       resourcesRoot: resourcesRoot, profileURL: portableURL, profileRequired: false,
       stateRoot: StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory),
       homeDirectory: homeDirectory, profile: profile)
-    guard preparation.outcome == "no_change", let generation = preparation.generation.generationID
+    guard preparation.outcome == .noChange, let generation = preparation.generation.generationID
     else {
       throw ValidationError(
         "Keybindings must already be converged before enabling save-to-apply. Review setup changes first. "
@@ -139,7 +139,7 @@ struct MenuKeybindingSaveSession: Codable {
       let preparation = try runner.planner.prepare(
         resourcesRoot: resourcesRoot, profileURL: portable.path, profileRequired: false,
         stateRoot: stateRoot, homeDirectory: homeDirectory, profile: profile)
-      guard preparation.outcome != "blocked",
+      guard preparation.outcome != .blocked,
         preparation.provider.status == .managed,
         preparation.effectiveBehavior.transaction.status == .clear,
         preparation.generation.generationID == generationID,

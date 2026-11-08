@@ -30,7 +30,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
     )
     return (
       try preparation.report.render(json: json),
-      preparation.outcome != "blocked"
+      preparation.outcome != .blocked
     )
   }
 
@@ -159,10 +159,10 @@ struct KeybindingsPlanCommandRunner: Sendable {
       lifecycleEvidence: effectiveState.lifecycleEvidence,
       renderedDigest: renderedDigest,
       inputDigest: proposedInputDigest,
-      isBlocked: diagnostics.contains { $0.severity == "error" }
+      isBlocked: diagnostics.contains { $0.severity == .error }
     )
     if let serviceChange, !serviceChange.previous.running,
-      !diagnostics.contains(where: { $0.severity == "error" })
+      !diagnostics.contains(where: { $0.severity == .error })
     {
       actions.append(
         KeybindingsPlanAction(
@@ -173,13 +173,13 @@ struct KeybindingsPlanCommandRunner: Sendable {
             : "Start the existing supported skhd user service without adopting its file; restore its stopped state on rollback/teardown."
         ))
     }
-    let outcome: String
-    if diagnostics.contains(where: { $0.severity == "error" }) {
-      outcome = "blocked"
+    let outcome: KeybindingsPlanOutcome
+    if diagnostics.contains(where: { $0.severity == .error }) {
+      outcome = .blocked
     } else if effectiveState.status == .converged, actions.isEmpty {
-      outcome = "no_change"
+      outcome = .noChange
     } else {
-      outcome = "ready"
+      outcome = .ready
     }
 
     let sources = effectiveConfiguration.sources
@@ -217,7 +217,7 @@ struct KeybindingsPlanCommandRunner: Sendable {
       composition: composition,
       generation: generation,
       provider: provider,
-      blockingMessages: diagnostics.filter { $0.severity == "error" }.map(\.message),
+      blockingMessages: diagnostics.filter { $0.severity == .error }.map(\.message),
       report: report
     )
   }
@@ -269,10 +269,10 @@ struct KeybindingsPlanCommandRunner: Sendable {
     case .adoptionRequired:
       actions.append(
         KeybindingsPlanAction(
-          id: provider.ownership == "directory_symlink"
+          id: provider.ownership == .directorySymlink
             ? "adopt_skhd_directory_symlink"
             : "adopt_provider_entry",
-          message: "Adopt the existing \(provider.ownership) after explicit approval."
+          message: "Adopt the existing \(provider.ownership.rawValue) after explicit approval."
         )
       )
     case .blocked:
@@ -340,8 +340,15 @@ struct KeybindingsPlanCommandRunner: Sendable {
   }
 }
 
+/// The keybinding plan's outcome; the raw values are the reported strings.
+enum KeybindingsPlanOutcome: String, Encodable, Sendable {
+  case blocked
+  case noChange = "no_change"
+  case ready
+}
+
 struct KeybindingsPlanPreparation {
-  let outcome: String
+  let outcome: KeybindingsPlanOutcome
   let effectiveBehavior: KeybindingEffectiveBehavior
   let composition: KeybindingComposition?
   let generation: KeybindingGenerationInspection
@@ -353,7 +360,7 @@ struct KeybindingsPlanPreparation {
 private struct KeybindingsPlanReport: Encodable {
   let schemaVersion = 2
   let operation = "keybindings_plan"
-  let outcome: String
+  let outcome: KeybindingsPlanOutcome
   let mutated = false
   let sources: KeybindingsPlanSources
   let summary: KeybindingsPlanSummary
@@ -378,7 +385,7 @@ private struct KeybindingsPlanReport: Encodable {
     if json { return try renderJSON(self) }
 
     var lines = [
-      "Macarchy keybindings plan [\(outcome)]:",
+      "Macarchy keybindings plan [\(outcome.rawValue)]:",
       "- profile [\(sources.profileStatus)]: \(sources.profile)",
       "- packaged defaults: \(sources.defaults)",
       "- packaged metadata: \(sources.defaultMetadata)",
@@ -395,7 +402,8 @@ private struct KeybindingsPlanReport: Encodable {
       "- generation agreement: \(generationAgreement)",
       "- current input digest: \(generation.currentInputDigest ?? "none")",
       "- current rendered digest: \(generation.currentRenderedDigest ?? "none")",
-      "- provider [\(provider.status.rawValue), \(provider.ownership)]: \(provider.message)",
+      "- provider [\(provider.status.rawValue), \(provider.ownership.rawValue)]: "
+        + provider.message,
       "- effective state [\(effectiveStatus.rawValue)]: \(effectiveStatusMessage)",
       "- transaction [\(transaction.status.rawValue)]: \(transaction.message)",
       "- process [\(process.status.rawValue)]: \(process.message)",
@@ -440,7 +448,8 @@ private struct KeybindingsPlanReport: Encodable {
           let location =
             diagnostic.line.map { "\(diagnostic.source):\($0)" }
             ?? diagnostic.source
-          return "- \(location): \(diagnostic.severity) [\(diagnostic.code)]: \(diagnostic.message)"
+          return "- \(location): \(diagnostic.severity.rawValue) [\(diagnostic.code)]: "
+            + diagnostic.message
         })
     }
     if let renderedSkhdrc {
@@ -546,7 +555,7 @@ private struct KeybindingsPlanAction: Encodable {
 
 private struct KeybindingsPlanDiagnostic: Encodable {
   let code: String
-  let severity: String
+  let severity: KeybindingCompositionSeverity
   let source: String
   let line: Int?
   let relatedLine: Int?
@@ -555,7 +564,7 @@ private struct KeybindingsPlanDiagnostic: Encodable {
 
   private init(
     code: String,
-    severity: String,
+    severity: KeybindingCompositionSeverity,
     source: String,
     line: Int?,
     relatedLine: Int?,
@@ -574,7 +583,7 @@ private struct KeybindingsPlanDiagnostic: Encodable {
   init(_ diagnostic: KeybindingCompositionDiagnostic) {
     self.init(
       code: diagnostic.code,
-      severity: diagnostic.severity.rawValue,
+      severity: diagnostic.severity,
       source: diagnostic.source,
       line: diagnostic.line,
       relatedLine: diagnostic.relatedLine,
@@ -586,7 +595,7 @@ private struct KeybindingsPlanDiagnostic: Encodable {
   init(_ diagnostic: SkhdDiagnostic, source: URL) {
     self.init(
       code: diagnostic.code.rawValue,
-      severity: "error",
+      severity: .error,
       source: source.path,
       line: diagnostic.line,
       relatedLine: diagnostic.relatedLine,
@@ -598,7 +607,7 @@ private struct KeybindingsPlanDiagnostic: Encodable {
   static func error(code: String, source: URL, message: String) -> Self {
     KeybindingsPlanDiagnostic(
       code: code,
-      severity: "error",
+      severity: .error,
       source: source.path,
       line: nil,
       relatedLine: nil,
@@ -608,7 +617,7 @@ private struct KeybindingsPlanDiagnostic: Encodable {
   }
 
   static func order(_ lhs: Self, _ rhs: Self) -> Bool {
-    (lhs.severity, lhs.source, lhs.line ?? 0, lhs.code, lhs.identity ?? "")
-      < (rhs.severity, rhs.source, rhs.line ?? 0, rhs.code, rhs.identity ?? "")
+    (lhs.severity.rawValue, lhs.source, lhs.line ?? 0, lhs.code, lhs.identity ?? "")
+      < (rhs.severity.rawValue, rhs.source, rhs.line ?? 0, rhs.code, rhs.identity ?? "")
   }
 }

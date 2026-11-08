@@ -132,12 +132,12 @@ struct KeybindingsDoctorCommandRunner: Sendable {
       case .adoptionRequired:
         .warning
       case .blocked:
-        effectiveState.provider.ownership == "ownership_drift" ? .warning : .failure
+        effectiveState.provider.ownership == .ownershipDrift ? .warning : .failure
       }
     findings.append(
       KeybindingsDoctorFinding(
         id: "provider.\(effectiveState.provider.status.rawValue)."
-          + effectiveState.provider.ownership,
+          + effectiveState.provider.ownership.rawValue,
         status: providerFindingStatus,
         message: effectiveState.provider.message,
         source: effectiveState.provider.entryPoint

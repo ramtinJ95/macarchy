@@ -102,7 +102,7 @@ struct MenuKeybindingSetup {
   private func reviewedDigest(_ plan: KeybindingsPlanPreparation, profile: PortableProfile) throws
     -> String
   {
-    guard profile.desktop.provider == .yabaiSkhd, plan.outcome != "blocked",
+    guard profile.desktop.provider == .yabaiSkhd, plan.outcome != .blocked,
       plan.provider.status == .managed, plan.effectiveBehavior.transaction.status == .clear,
       plan.generation.generationID != nil, let digest = plan.composition?.inputDigest
     else {

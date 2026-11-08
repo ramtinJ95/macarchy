@@ -406,10 +406,10 @@ struct KeybindingEffectiveBehaviorInspector: Sendable {
       )
     }
     if provider.status == .blocked {
-      if provider.ownership == "recovery_required" {
+      if provider.ownership == .recoveryRequired {
         return (.recoveryRequired, provider.message)
       }
-      if provider.ownership == "ownership_drift" {
+      if provider.ownership == .ownershipDrift {
         return (.drifted, provider.message)
       }
       return (.blocked, provider.message)
@@ -470,7 +470,7 @@ private struct InspectionIdentity: Equatable {
   let generationInputDigest: String?
   let generationRenderedDigest: String?
   let providerStatus: KeybindingProviderStatus
-  let providerOwnership: String
+  let providerOwnership: KeybindingProviderOwnership
   let providerEvidenceDigest: String?
   let transactionStatus: KeybindingTransactionStatus
   let transactionOperation: String?
