@@ -246,19 +246,7 @@ struct EnvironmentStateStore: Sendable {
   }
 
   private static func herdrRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
-    let expected =
-      transaction.direction == .rollback && transaction.herdrLegacyMigration == true
-      ? .managed
-      : transaction.direction == .forward
-        ? EnvironmentHerdrRuntimeTarget.required(
-          from: transaction.previousOwnership,
-          to: transaction.proposedOwnership
-        )
-        : EnvironmentHerdrRuntimeTarget.required(
-          from: transaction.proposedOwnership,
-          to: transaction.previousOwnership
-        )
-    return transaction.herdrRuntimeTarget == expected
+    return transaction.herdrRuntimeTarget == transaction.expectedHerdrRuntimeTarget
       && (transaction.herdrRuntimeVerified == nil || transaction.herdrRuntimeVerified == true)
       && herdrLegacyMigrationIsValid(transaction)
   }
@@ -268,10 +256,7 @@ struct EnvironmentStateStore: Sendable {
   ) -> Bool {
     guard transaction.herdrLegacyMigration != false else { return false }
     guard transaction.herdrLegacyMigration == true else { return true }
-    return transaction.operation == .apply
-      && transaction.previousOwnership?.herdr == nil
-      && transaction.proposedOwnership?.herdrEnabled == true
-      && transaction.proposedOwnership?.herdr?.migratedLegacy == true
+    return transaction.isEnabledHerdrLegacyMigration
   }
 
   private static func spicetifyRuntimeIsValid(_ transaction: EnvironmentTransaction) -> Bool {
@@ -280,16 +265,7 @@ struct EnvironmentStateStore: Sendable {
         && transaction.spicetifyRuntimeVerified == nil
         && transaction.spicetifyRuntimeDeferred == nil
     }
-    let expected =
-      transaction.direction == .forward
-      ? EnvironmentSpicetifyRuntimeTarget.required(
-        from: transaction.previousOwnership,
-        to: transaction.proposedOwnership
-      )
-      : EnvironmentSpicetifyRuntimeTarget.required(
-        from: transaction.proposedOwnership,
-        to: transaction.previousOwnership
-      )
+    let expected = transaction.expectedSpicetifyRuntimeTarget
     return transaction.spicetifyRuntimeTarget == expected
       && (transaction.spicetifyRuntimeVerified == nil
         || transaction.spicetifyRuntimeVerified == true)
