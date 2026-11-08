@@ -553,12 +553,7 @@ package struct SpicetifyAdapter: Sendable {
   }
 
   private static func parseSpotifyVersion(_ value: String) -> [Int]? {
-    let components = value.split(separator: ".", omittingEmptySubsequences: false)
-    let parsed = components.compactMap { Int($0) }
-    guard components.count >= 3,
-      components.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }),
-      parsed.count == components.count
-    else { return nil }
+    guard let parsed = parseDottedVersion(value), parsed.count >= 3 else { return nil }
     return parsed
   }
 
