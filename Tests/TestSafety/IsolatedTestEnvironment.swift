@@ -106,15 +106,13 @@ public enum IsolatedTestEnvironment {
     static func main() {
       do {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if arguments == ["--check"] {
-          try IsolatedTestEnvironment.requireGuest()
-        } else if arguments.count == 2, arguments[0] == "--check-directory" {
+        if arguments.count == 2, arguments[0] == "--check-directory" {
           try IsolatedTestEnvironment.requireLocalDirectory(URL(filePath: arguments[1]))
         } else if arguments.count == 2, arguments[0] == "--create-fifo" {
           try IsolatedTestEnvironment.makeFIFO(at: URL(filePath: arguments[1]))
         } else {
           throw IsolatedTestEnvironment.Refusal(
-            "usage: test-safety --check | --check-directory PATH | --create-fifo PATH")
+            "usage: test-safety --check-directory PATH | --create-fifo PATH")
         }
       } catch {
         FileHandle.standardError.write(Data("\(error)\n".utf8))
