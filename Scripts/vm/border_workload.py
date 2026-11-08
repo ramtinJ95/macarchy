@@ -172,14 +172,21 @@ class Session:
 
     def wait(self, label, done, timeout, what, missing):
         '''Poll the fixture's status until done(status); fail on its error, exit or the deadline.'''
-        proc, deadline = self.fixtures[label]['proc'], time.monotonic() + timeout
-        while not done(st := self.status(label) or {}):
+        proc, failure = self.fixtures[label]['proc'], f'{what}: {missing} within {timeout}s'
+
+        def attempt():
+            if done(st := self.status(label) or {}):
+                return st
             if st.get('error'):
                 raise v.Failed(f'{what}: {st["error"]}: {st.get("reason")}')
-            if proc.poll() is not None or time.monotonic() > deadline:
-                raise v.Failed(f'{what}: {missing} within {timeout}s')
-            time.sleep(0.25)
-        return st
+            if proc.poll() is not None:
+                raise v.Failed(failure)
+            return None
+
+        def expired():
+            raise v.Failed(failure)
+
+        return lab.poll(attempt, timeout, 0.25, expired)
 
     def status(self, label):
         p = q(self.fixtures[label]['dir'] + '/status.json')
@@ -222,23 +229,28 @@ class Session:
         # Same env as v.step_command, exec'd directly so the recorded pid is the CLI itself.
         p = self.spawn(name, f'cd {v.GUEST_HOME} && set -C && echo $$ > {pf} && '
                              f'exec /usr/bin/env -i {shlex.join(v.STEP_ENV)} {argv}', until=seconds + 15)
-        end, deadline = time.monotonic() + seconds, time.monotonic() + 8
+        end, failure = time.monotonic() + seconds, f'{name}: no {helper_path} child within 8s'
         # pgrep exit 1 means no children yet; transient preflight children are ignored.
         poll = (f'test -s {pf} || exit 0; p=$(cat {pf}); c=$(pgrep -P "$p" .); r=$?; echo "$p"; '
                 f'test $r -le 1 || exit $r; test $r = 1 && exit 0; '
                 f'ps -ww -o pid=,ppid=,comm= -p "$(echo "$c" | paste -sd , -)"; test $? -le 1')
-        while True:
+
+        def attempt():
             out = self.read(poll).splitlines()
             rows = [x.split(None, 2) for x in out[1:]]
             kids = [int(x[0]) for x in rows if len(x) == 3 and x[1] == out[0] and x[2].rstrip() == helper_path]
             if len(kids) > 1:
                 raise v.Failed(f'{name}: expected one renderer child, got {kids}')
             if kids:
-                break
-            if p.poll() is not None or time.monotonic() > deadline:
-                raise v.Failed(f'{name}: no {helper_path} child within 8s')
-            time.sleep(0.25)
-        cli_pid, helper = int(out[0]), kids[0]
+                return int(out[0]), kids[0]
+            if p.poll() is not None:
+                raise v.Failed(failure)
+            return None
+
+        def expired():
+            raise v.Failed(failure)
+
+        cli_pid, helper = lab.poll(attempt, 8, 0.25, expired)
         ps = self.sh(f'{name}-ps', f'ps -ww -o comm= -p {cli_pid} && '
                                    f'ps -ww -o pid=,ppid=,command= -p {cli_pid},{helper}')
         if ps.splitlines()[0].strip() != cli:

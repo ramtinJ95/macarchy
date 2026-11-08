@@ -31,7 +31,7 @@ import lab
 from verify_common import (
     DEVELOPER_DIR, GUEST_HOME, GUEST_USER, Blocked, Failed, guest_directory, guest_identity,
     load_session, owned_tart, parse_json, process_identity, read_pins, recorded_binary,
-    require_session_directory, session_name, session_ready, step_command)
+    require_session_directory, session_name, session_ready, step_command, verdict)
 
 _spec = importlib.util.spec_from_file_location("run_tests", lab.HERE / "run-tests.py")
 run_tests = importlib.util.module_from_spec(_spec)
@@ -123,16 +123,18 @@ def connect(inputs, run, askpass, strict=False):
 
 
 def wait_for_guest(inputs, run, askpass, seconds):
-    deadline = time.monotonic() + seconds
-    while True:
+    def attempt():
         try:
             return connect(inputs, run, askpass)
         except Blocked:
             raise
         except (lab.LabError, subprocess.SubprocessError, ValueError, KeyError):
-            if time.monotonic() >= deadline:
-                raise Blocked(f"Guest SSH not ready within {seconds}s; is the clone running?") from None
-            time.sleep(5)
+            return None
+
+    def expired():
+        raise Blocked(f"Guest SSH not ready within {seconds}s; is the clone running?")
+
+    return lab.poll(attempt, seconds, 5, expired)
 
 
 def host_source():
@@ -414,14 +416,19 @@ def start(inputs, run, restart=False):
             lab.write_json(path, record)
             if not record["identity"] or not record["identity"].endswith(" ".join(argv)):
                 raise Blocked("Could not record the started Tart process identity.")
-            deadline = time.monotonic() + 90
-            while vm_state(inputs, run) != "running":
+
+            def running():
+                if vm_state(inputs, run) == "running":
+                    return True
                 if process.poll() is not None:
                     record["exit_code"] = process.returncode
                     raise Blocked(f"Tart exited during startup; inspect {log_name}.")
-                if time.monotonic() >= deadline:
-                    raise Blocked("Tart did not report running within 90s.")
-                time.sleep(2)
+                return None
+
+            def expired():
+                raise Blocked("Tart did not report running within 90s.")
+
+            lab.poll(running, 90, 2, expired)
             lab.audit_no_listener(process.pid)  # Same audit as the lab before guest interaction.
             record.update(tcp_listeners="none", status="running")
             lab.write_json(path, record)
@@ -496,8 +503,8 @@ def launch(inputs, run, wait):
         evidence.mkdir(mode=0o700)
         record = {"tool": "verify.py", "session": session, "run": run, "status": "in_progress",
                   "created": now(), "not_covered": NOT_COVERED}
-        lab.write_json(evidence / "session.json", record)
-        try:
+        with lab.recorded_report(evidence / "session.json", record, verdict=verdict,
+                                 echo={"evidence": str(evidence)}):
             with tempfile.TemporaryDirectory(prefix="verify-", dir=lab.STATE) as temporary:
                 client = wait_for_guest(inputs, run, write_askpass(temporary), wait)
                 record["guest_baseline"] = guest_baseline(client, inputs)
@@ -507,13 +514,6 @@ def launch(inputs, run, wait):
                 record["host_source"]["snapshot_roots"] = list(run_tests.SOURCE_ROOTS)
                 record["guest"] = build_in_guest(client, session, archive, evidence)
             record["status"] = "ready"
-        except Exception as error:
-            record["status"] = "failed" if isinstance(error, Failed) else "blocked"
-            record["reason"] = describe(error)
-            raise
-        finally:
-            lab.write_json(evidence / "session.json", record)
-            print(json.dumps({"evidence": str(evidence), **record}, indent=2))
         return record
 
 
@@ -527,20 +527,13 @@ def drive(inputs, run, session, journey, border_count=None, candidate_session=No
                   "not_covered": NOT_COVERED, "binary_sha256": record["guest"]["binary_sha256"],
                   "snapshot_sha256": record["host_source"]["snapshot_sha256"], "steps": [], "border_count": border_count,
                   "candidate_session": candidate_session, "border_motion": border_motion}
-        lab.write_json(evidence / "report.json", report)
-        try:
+        with lab.recorded_report(evidence / "report.json", report, verdict=verdict, reraise=False,
+                                 finished=now, echo={"evidence": str(evidence)}):
             with tempfile.TemporaryDirectory(prefix="verify-", dir=lab.STATE) as temporary:
                 client = connect(inputs, run, write_askpass(temporary))
                 report["guest_baseline"] = guest_baseline(client, inputs)
                 report["status"] = run_journey(client, record, journey, directory / session,
                                                evidence, report)
-        except Exception as error:
-            report["status"] = "failed" if isinstance(error, Failed) else "blocked"
-            report["reason"] = describe(error)
-        finally:
-            report["finished"] = now()
-            lab.write_json(evidence / "report.json", report)
-            print(json.dumps({"evidence": str(evidence), **report}, indent=2))
         return report
 
 
@@ -559,13 +552,15 @@ class OwnedTart:
 
 def wait_for_console(client, seconds):
     """The console owner, or None when the last observation itself failed."""
-    deadline = time.monotonic() + seconds
-    while True:
+    owner = None
+
+    def attempt():
+        nonlocal owner
         result = client.command(CONSOLE_OWNER, check=False, timeout=10)
         owner = result.stdout.strip() if result.returncode == 0 else None
-        if owner == GUEST_USER or time.monotonic() >= deadline:
-            return owner
-        time.sleep(2)
+        return owner if owner == GUEST_USER else None
+
+    return lab.poll(attempt, seconds, 2, lambda: owner)
 
 
 def login(inputs, run, session):
@@ -584,8 +579,8 @@ def login(inputs, run, session):
         # credential: not_sent until input starts; uncertain until Return is confirmed.
         report = {"tool": "verify.py", "operation": "login", "run": run, "session": session,
                   "status": "in_progress", "started": now(), "credential": "not_sent"}
-        lab.write_json(evidence / "report.json", report)
-        try:
+        with lab.recorded_report(evidence / "report.json", report, reraise=False, finished=now,
+                                 echo={"evidence": str(evidence)}):
             with tempfile.TemporaryDirectory(prefix="verify-", dir=lab.STATE) as temporary:
                 client = connect(inputs, run, write_askpass(temporary), strict=True)
                 guest_baseline(client, inputs)
@@ -619,13 +614,6 @@ def login(inputs, run, session):
                     raise Blocked(f"Console owner is {report['console_after']!r} after one "
                                   f"submission; not retrying.")
                 report["status"] = "ready"
-        except Exception as error:
-            report["status"] = "blocked"
-            report["reason"] = describe(error)
-        finally:
-            report["finished"] = now()
-            lab.write_json(evidence / "report.json", report)
-            print(json.dumps({"evidence": str(evidence), **report}, indent=2))
         return report
 
 
