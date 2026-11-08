@@ -57,7 +57,7 @@ struct MenuDesktopConfiguration {
       guard try io.confirm("Create this absent file? It remains if connection is cancelled.") else {
         return nil
       }
-      try ActivationLock(root: context.stateRoot).withLock {
+      try MenuMutationLock.activation.withLock(stateRoot: context.stateRoot) {
         try edit.validateBefore()
         guard
           try provider.managedGeneration(profile: layered.profile, context: context) == generation,
@@ -165,7 +165,7 @@ struct MenuDesktopEditSession {
   }
 
   func finish(runner: DesktopApplyCommandRunner = .live) throws -> ApplyResult? {
-    try ActivationLock(root: context.stateRoot).withLock {
+    try MenuMutationLock.activation.withLock(stateRoot: context.stateRoot) {
       let current = try BoundedRegularFile.readUTF8(at: target)
       guard newConnection || current != before else { return nil }
       try validateFrozenInputs()
