@@ -12,6 +12,7 @@ import guest  # noqa: E402
 import lab  # noqa: E402
 import verify  # noqa: E402
 import verify_borders  # noqa: E402
+import verify_common  # noqa: E402
 
 RUN = "setup-0123456789ab"
 SESSION = "verify-0123456789ab"
@@ -100,13 +101,12 @@ class BuildCandidateTests(unittest.TestCase):
             return self.bin_dir + "\n" if name == "candidate-bin-path" else ""
 
         self.m = patch_all(self, [
-            (verify_borders, "_v", {"return_value": verify}),
-            (verify_borders, "run", {"side_effect": fake_run}),
-            (verify_borders, "_sha256", {"return_value": self.hashes}),
+            (verify_common, "run", {"side_effect": fake_run}),
+            (verify_common, "guest_sha256", {"return_value": self.hashes}),
             (verify_borders, "set_theme", {}),
             (guest, "run_directory", {"return_value": Path("/runs") / RUN}),
-            (verify, "session_ready", {"return_value": self.candidate}),
-            (verify, "guest_identity", {})])
+            (verify_common, "session_ready", {"return_value": self.candidate}),
+            (verify_common, "guest_identity", {})])
 
     def build(self):
         verify_borders.build_candidate(client="client", ctx=self.ctx, evidence=[],
@@ -156,7 +156,7 @@ class BuildCandidateTests(unittest.TestCase):
                                        "helper": "/p/bin/macarchy-focus-ring"}})
         self.assertEqual(build["products"], {
             p: {"path": path, "sha256": self.hashes[path]} for p, path in self.paths.items()})
-        self.assertEqual(tuple(self.m["_sha256"].call_args.args[2]),
+        self.assertEqual(tuple(self.m["guest_sha256"].call_args.args[2]),
                          tuple(self.paths.values()))
 
 

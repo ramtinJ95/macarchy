@@ -1,19 +1,20 @@
 # Borders journey preparation (first chunk): guest release builds, the canonical
 # theme via the supported environment/theme CLI, and the pinned incumbent build.
-# Called by verify.py's closed 'borders' journey; verify is imported lazily.
+# Called by verify.py's closed 'borders' journey.
 import base64
-import functools
 import hashlib
 import json
-import os
 import pathlib
 import re
 import shlex
 import time
 
+import border_workload as w
+import guest
+import lab
+import verify_common as v
+
 q = shlex.quote
-DEV = 'DEVELOPER_DIR=/Library/Developer/CommandLineTools'
-GUEST_USER = 'omarchy'
 ZSHRC = '/Users/omarchy/.zshrc'
 THEME = 'catppuccin-mocha'
 BUILD_TIMEOUT = 2400
@@ -31,77 +32,26 @@ PROFILE = '\n'.join(
 )
 
 
-def _v():
-    import verify
-    return verify
-
-
-def _text(value):
-    if isinstance(value, bytes):
-        return value.decode('utf-8', 'replace')
-    return '' if value is None else str(value)
-
-
 def _section(report):
     return report.setdefault('borders', {})
 
 
-def run(client, evidence, report, name, command, timeout=30, data=None, blocked=False):
-    '''Run one guest command, preserve its log, raise Failed (or Blocked) on error.'''
-    v = _v()
-    evidence = pathlib.Path(evidence)
-    log = evidence / ('%02d-%s.log' % (len(list(evidence.glob('*.log'))) + 1, name))
-    started = time.monotonic()
-    result, error = None, None
-    try:
-        result = client.command(command, check=False, data=data, timeout=timeout)
-    except Exception as exc:  # timeout/transport: keep the log, then fail
-        error = '%s: %s' % (type(exc).__name__, exc)
-    seconds = round(time.monotonic() - started, 3)
-    code = None if result is None else result.returncode
-    out = '' if result is None else _text(result.stdout)
-    err = '' if result is None else _text(result.stderr)
-    lines = ['$ ' + command, 'exit: %s' % code, 'seconds: %s' % seconds,
-             'error: %s' % error, '--- stdout', out, '--- stderr', err, '']
-    fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'w') as handle:
-        handle.write('\n'.join(lines))
-    _section(report).setdefault('commands', []).append(
-        {'name': name, 'exit': code, 'seconds': seconds, 'log': log.name})
-    if error is not None or code != 0:
-        kind = v.Blocked if blocked or error is not None else v.Failed
-        raise kind('%s failed (exit %s%s); see %s' % (name, code, ', ' + error if error else '', log))
-    return out
-
-
-def _runner(client, evidence, report):
-    return functools.partial(run, client, evidence, report)
-
-
-def _absent(path):
-    return 'test ! -e %s && test ! -L %s' % (q(path), q(path))
-
-
-def _regular(paths):
-    return ' && '.join('test -f %s && test ! -L %s' % (q(p), q(p)) for p in paths)
-
-
 def _build_products(sh, source, label):
     '''Release-build PRODUCTS in the guest source; returns its bin dir, pinned under source/.build.'''
-    swift = 'cd %s && env %s swift build -c release' % (q(source), DEV)
+    swift = 'cd %s && env %s swift build -c release' % (q(source), v.DEVELOPER_DIR)
     for product in PRODUCTS:
         sh(label + 'build-' + product, swift + ' --product ' + q(product), timeout=BUILD_TIMEOUT)
     lines = sh(label + 'bin-path', swift + ' --show-bin-path', timeout=BUILD_TIMEOUT,
                blocked=True).strip().splitlines()
     bin_dir = lines[-1].strip() if lines else ''
     if not bin_dir.startswith(source + '/.build/') or '..' in bin_dir.split('/'):
-        raise _v().Blocked('%sbin-path: %r is outside %s/.build' % (label, bin_dir, source))
+        raise v.Blocked('%sbin-path: %r is outside %s/.build' % (label, bin_dir, source))
     return bin_dir
 
 
 def cli(binary, *args):
     # Clean-environment invocation of the real CLI through verify's helper.
-    return _v().step_command(binary, [str(arg) for arg in args])
+    return v.step_command(binary, [str(arg) for arg in args])
 
 
 def consumer_flags(scratch):
@@ -127,36 +77,16 @@ def consumer_flags(scratch):
     ]
 
 
-def _blockers(payload, path='$'):
-    found = []
-    if isinstance(payload, dict):
-        for key, value in payload.items():
-            where, lowered = path + '.' + str(key), str(key).lower()
-            # Inspection always carries this review digest, even for absent entries.
-            # It is evidence identity, not a request/permission to adopt anything.
-            if (lowered == 'blocked' or ('adopt' in lowered
-                    and lowered != 'adoption_evidence_digest')) and value:
-                found.append(where)
-            elif lowered in ('status', 'outcome') and isinstance(value, str) \
-                    and ('block' in value.lower() or 'adopt' in value.lower()):
-                found.append(where + '=' + value)
-            found += _blockers(value, where)
-    elif isinstance(payload, list):
-        for index, value in enumerate(payload):
-            found += _blockers(value, '%s[%d]' % (path, index))
-    return found
-
-
 def _checked_json(client, evidence, report, name, command):
-    text = run(client, evidence, report, name, command, timeout=600)
+    text = v.run(client, evidence, report, name, command, timeout=600)
     try:
         payload = json.loads(text)
     except ValueError as exc:
-        raise _v().Failed('%s: output is not JSON: %s' % (name, exc))
-    blockers = _blockers(payload)
+        raise v.Failed('%s: output is not JSON: %s' % (name, exc))
+    blockers = v.blockers(payload)
     if blockers:
-        raise _v().Failed('%s reports blocked/adoption state; no auto-approval: %s'
-                          % (name, ', '.join(blockers)))
+        raise v.Failed('%s reports blocked/adoption state; no auto-approval: %s'
+                       % (name, ', '.join(blockers)))
     return payload
 
 
@@ -165,27 +95,8 @@ def set_theme(client, evidence, report, context, theme=THEME):
         context['binary'], 'theme', 'set', theme, '--themes-root', context['themes_root'],
         '--json', *context['flags']))
     current = context['state'] + '/current'
-    run(client, evidence, report, 'theme-current-' + theme, 'test -L ' + q(current))
+    v.run(client, evidence, report, 'theme-current-' + theme, 'test -L ' + q(current))
     _section(report)['theme'] = {'name': theme, 'current': current}
-
-
-def require_console_user(client, evidence, report):
-    # Call before launching any GUI process; prepare itself may run pre-login.
-    owner = run(client, evidence, report, 'console-user',
-                '/usr/bin/stat -f %Su /dev/console', blocked=True).strip()
-    if owner != GUEST_USER:
-        raise _v().Blocked('console owner is %r, expected %r' % (owner, GUEST_USER))
-
-
-def _sha256(sh, name, paths):
-    digests = {}
-    for line in sh(name, 'shasum -a 256 ' + ' '.join(q(p) for p in paths)).splitlines():
-        digest, _, path = line.partition('  ')
-        digests[path] = digest
-    missing = [p for p in paths if p not in digests]
-    if missing:
-        raise _v().Failed('%s: no digest for %s' % (name, ', '.join(missing)))
-    return digests
 
 
 def _context(source, scratch, bin_dir):
@@ -200,22 +111,21 @@ def _context(source, scratch, bin_dir):
 
 
 def prepare(client, record, evidence, report):
-    v = _v()
     source = str(record['guest']['source'])
     scratch = source + '/' + pathlib.Path(evidence).name
     section = _section(report)
-    sh = _runner(client, evidence, report)
+    sh = v.runner(client, evidence, report)
 
-    sh('scratch-absent', _absent(scratch), blocked=True)
-    sh('zshrc-absent', _absent(ZSHRC), blocked=True)
+    sh('scratch-absent', v.absent(scratch), blocked=True)
+    sh('zshrc-absent', v.absent(ZSHRC), blocked=True)
     sh('scratch-create', 'mkdir -m 0700 %s && mkdir -m 0700 %s %s'
        % (q(scratch), q(scratch + '/consumers'), q(scratch + '/home')))
 
     context = _context(source, scratch, _build_products(sh, source, ''))
     binary, helper, fixture = context['binary'], context['helper'], context['fixture']
     sh('build-border-fixture', '%s swiftc -O -parse-as-library %s -o %s' % (
-        DEV, q(source + '/Scripts/vm/border-fixture.swift'), q(fixture)), timeout=BUILD_TIMEOUT)
-    digests = _sha256(sh, 'artifact-sha256', (binary, helper, fixture))
+        v.DEVELOPER_DIR, q(source + '/Scripts/vm/border-fixture.swift'), q(fixture)), timeout=BUILD_TIMEOUT)
+    digests = v.guest_sha256(sh, 'artifact-sha256', (binary, helper, fixture))
     section['builds'] = {
         'macarchy': {'path': binary, 'configuration': 'release', 'sha256': digests[binary],
                      'version': sh('macarchy-version', cli(binary, 'version', '--json')).strip()},
@@ -240,18 +150,18 @@ def prepare(client, record, evidence, report):
     set_theme(client, evidence, report, context)
 
     incumbent = scratch + '/incumbent'
-    git = '%s git -C %s ' % (DEV, q(incumbent))
+    git = '%s git -C %s ' % (v.DEVELOPER_DIR, q(incumbent))
     sh('incumbent-clone', '%s git clone --no-checkout %s %s'
-       % (DEV, q(INCUMBENT_URL), q(incumbent)), timeout=600)
+       % (v.DEVELOPER_DIR, q(INCUMBENT_URL), q(incumbent)), timeout=600)
     sh('incumbent-checkout', git + 'checkout --detach ' + INCUMBENT_COMMIT, timeout=120)
     head = sh('incumbent-head', git + 'rev-parse HEAD').strip()
     if head != INCUMBENT_COMMIT:
         raise v.Failed('incumbent HEAD %s != %s' % (head, INCUMBENT_COMMIT))
-    sh('incumbent-make', '%s make -C %s' % (DEV, q(incumbent)), timeout=BUILD_TIMEOUT)
+    sh('incumbent-make', '%s make -C %s' % (v.DEVELOPER_DIR, q(incumbent)), timeout=BUILD_TIMEOUT)
     borders = incumbent + '/bin/borders'
     section['incumbent'] = {
         'commit': head, 'path': borders,
-        'sha256': _sha256(sh, 'incumbent-sha256', (borders,))[borders],
+        'sha256': v.guest_sha256(sh, 'incumbent-sha256', (borders,))[borders],
         'version': sh('incumbent-version', q(borders) + ' --version').strip(),
     }
     context['incumbent'] = dict(section['incumbent'], dir=incumbent)
@@ -300,7 +210,7 @@ def _prior(record, evidence, source):
 
 def preparation(client, record, evidence, report):
     '''Reuse the newest fully prepared earlier report after live guest checks; else prepare fresh.'''
-    v, section = _v(), _section(report)
+    section = _section(report)
     source = str(record['guest']['source'])
     name, old, ctx, report_sha, rejected = _prior(record, evidence, source)
     section['preparation_rejected'] = rejected
@@ -310,13 +220,13 @@ def preparation(client, record, evidence, report):
     for key in ('builds', 'incumbent', 'mutation_scope'):
         section[key] = old['borders'][key]
     inc = section['incumbent']
-    sh = _runner(client, evidence, report)
+    sh = v.runner(client, evidence, report)
 
     v.require_session_directory(client, record['session'])
     paths = {'macarchy': ctx['binary'], 'macarchy-focus-ring': ctx['helper'],
              'border-fixture': ctx['fixture'], 'incumbent': inc['path']}
-    sh('reuse-regular-files', _regular(paths.values()), blocked=True)
-    digests = _sha256(sh, 'reuse-sha256', tuple(paths.values()))
+    sh('reuse-regular-files', v.regular(paths.values()), blocked=True)
+    digests = v.guest_sha256(sh, 'reuse-sha256', tuple(paths.values()))
     actual = {k: digests[p] for k, p in paths.items()}
     expected = dict({k: section['builds'][k]['sha256'] for k in paths if k != 'incumbent'},
                     incumbent=inc['sha256'])
@@ -325,7 +235,7 @@ def preparation(client, record, evidence, report):
         raise v.Failed('%s binaries changed since preparation: %s'
                        % (name, sorted(k for k in paths if actual[k] != expected[k])))
     # Exec only after digests match. Exit 0 is the gate; the JSON stays in its log for review.
-    status = run(client, evidence, report, 'environment-status', cli(
+    status = v.run(client, evidence, report, 'environment-status', cli(
         ctx['binary'], 'environment', 'status', '--profile', ctx['profile'],
         '--state-root', ctx['state'], '--json'), timeout=600)
     try:
@@ -333,7 +243,7 @@ def preparation(client, record, evidence, report):
     except ValueError as exc:
         raise v.Failed('environment-status: output is not JSON: %s' % exc)
     ctx['work'] = ctx['scratch'] + '/' + pathlib.Path(evidence).name
-    sh('reuse-work-absent', _absent(ctx['work']), blocked=True)
+    sh('reuse-work-absent', v.absent(ctx['work']), blocked=True)
     set_theme(client, evidence, report, ctx)
     ctx['incumbent'] = dict(inc, dir=ctx['scratch'] + '/incumbent')
     return ctx
@@ -344,9 +254,7 @@ def build_candidate(client, ctx, evidence, report, run_id, name):
 
     Preparation keeps source, state, profile, flags, and incumbent; only the product
     binaries and theme sources move to the candidate snapshot.'''
-    import guest
-    v = _v()
-    sh = _runner(client, evidence, report)
+    sh = v.runner(client, evidence, report)
 
     candidate = v.session_ready(guest.run_directory(run_id), name)
     source = candidate['guest']['source']
@@ -357,8 +265,8 @@ def build_candidate(client, ctx, evidence, report, run_id, name):
     v.guest_identity(client, candidate)
     bin_dir = _build_products(sh, source, 'candidate-')
     paths = {p: bin_dir + '/' + p for p in PRODUCTS}
-    sh('candidate-regular-files', _regular(paths.values()), blocked=True)
-    digests = _sha256(sh, 'candidate-sha256', tuple(paths.values()))
+    sh('candidate-regular-files', v.regular(paths.values()), blocked=True)
+    digests = v.guest_sha256(sh, 'candidate-sha256', tuple(paths.values()))
     report['candidate_build'] = {
         'session': name, 'snapshot_sha256': candidate['host_source']['snapshot_sha256'],
         'source': source, 'configuration': 'swift build -c release', 'bin_dir': bin_dir,
@@ -377,24 +285,23 @@ def build_current_fixture(client, ctx, evidence, report):
 
     Product binaries come from candidate_build when present, otherwise the prepared snapshot;
     only the fixture is this harness version.'''
-    import lab
-    sh = _runner(client, evidence, report)
+    sh = v.runner(client, evidence, report)
 
     raw = (lab.HERE / 'border-fixture.swift').read_bytes()
     work = ctx['work']
     harness = work + '/harness'
     src, out = harness + '/source.swift', harness + '/border-fixture'
     if work != ctx['scratch']:  # reused preparation: work was only asserted absent
-        sh('harness-work-mkdir', _absent(work) + ' && mkdir -m 700 ' + q(work), blocked=True)
-    sh('harness-mkdir', _absent(harness) + ' && mkdir -m 700 ' + q(harness), blocked=True)
+        sh('harness-work-mkdir', v.absent(work) + ' && mkdir -m 700 ' + q(work), blocked=True)
+    sh('harness-mkdir', v.absent(harness) + ' && mkdir -m 700 ' + q(harness), blocked=True)
     sh('harness-upload', 'umask 077 && base64 -D > %s' % q(src),
        data=base64.b64encode(raw).decode('ascii'))
     sh('harness-build', 'umask 077 && env %s swiftc -O -parse-as-library -o %s %s'
-       % (DEV, q(out), q(src)), timeout=600)
-    digests = _sha256(sh, 'harness-sha256', (src, out))
+       % (v.DEVELOPER_DIR, q(out), q(src)), timeout=600)
+    digests = v.guest_sha256(sh, 'harness-sha256', (src, out))
     source = hashlib.sha256(raw).hexdigest()
     if digests[src] != source:
-        raise _v().Failed('harness-upload: guest source differs from host border-fixture.swift')
+        raise v.Failed('harness-upload: guest source differs from host border-fixture.swift')
     report['fixture'] = {
         'source_sha256': source, 'binary_sha256': digests[out], 'configuration': 'swiftc -O',
         'path': out, 'source_path': src,
@@ -408,7 +315,7 @@ def _rect(f):
     return [f[k] for k in ('x', 'y', 'width', 'height')] if isinstance(f, dict) else list(f)
 
 
-def _borders_case(v, w, s, n, renderer, key):
+def _borders_case(s, n, renderer, key):
     checks, out, pv, h, last = [], {}, None, None, n - 1
     scratch = s.ctx['work'] + '/' + key
     motion = n == 1 and bool(s.ctx.get('border_motion'))
@@ -476,7 +383,8 @@ def _borders_case(v, w, s, n, renderer, key):
             time.sleep(2)
             s.capture(shot)
         for theme, shot in (('tokyo-night', 'theme'), ('catppuccin-mocha', 'restored')):
-            s.theme(theme)
+            set_theme(s.c, s.ev, s.report, s.ctx, theme=theme)
+            s.mark('theme', theme=theme)
             time.sleep(1)
             s.capture(shot)
         if h and s.read(f'ps -o pid= -p {h}; test $? -le 1').split() != [str(h)]:
@@ -528,9 +436,7 @@ def _update_driver(rep, motion):
 
 
 def run_journey(client, record, evidence, report):
-    import border_workload as w
-    import lab
-    v, ev, here = _v(), pathlib.Path(evidence), pathlib.Path(__file__).resolve().parent
+    ev, here = pathlib.Path(evidence), pathlib.Path(__file__).resolve().parent
     report['not_covered'] = ['physical Mac hardware/GPU (Tart guest only)', 'multiple displays',
                              'manual Spaces/other desktops (native fullscreen is asserted only in a completed journey)',
                              'real third-party apps (fixture windows only)']
@@ -539,8 +445,8 @@ def run_journey(client, record, evidence, report):
                                'visual parity needs coordinator review of the PNG/MP4 evidence')
     # The guest source snapshot predates this host harness; it binds product/fixture binaries only.
     report['harness_sha256'] = {f: hashlib.sha256((here / f).read_bytes()).hexdigest() for f in (
-        'verify.py', 'verify_borders.py', 'border_workload.py', 'window-control.swift',
-        'border-fixture.swift', 'border_motion_pixels.py')}
+        'verify.py', 'verify_common.py', 'verify_borders.py', 'border_workload.py',
+        'window-control.swift', 'border-fixture.swift', 'border_motion_pixels.py')}
     border_count, run_id = report.get('border_count'), record['run']
     if report.get('border_motion'):
         report['claim'] = 'Fixed 14 s 60 Hz fixture motion; 60 fps is requested capture, not measured. ' + report['claim']
@@ -549,7 +455,7 @@ def run_journey(client, record, evidence, report):
     if report.get('candidate_session'):
         build_candidate(client, ctx, evidence, report, record['run'], report['candidate_session'])
     build_current_fixture(client, ctx, evidence, report)
-    require_console_user(client, evidence, report)
+    v.require_console_user(client, evidence, report)
     controller = lab.build_controller()
     counts = (border_count,) if border_count is not None else (1, 8, 24)
     report['counts'] = list(counts)
@@ -562,7 +468,7 @@ def run_journey(client, record, evidence, report):
             (ev / key).mkdir()
             with w.Session(client, ev / key, report, ctx, run_id, controller) as s:
                 s.host_setup()
-                cases[key] = _borders_case(v, w, s, n, r, key)
+                cases[key] = _borders_case(s, n, r, key)
     displays = [c['display'] for c in cases.values()]
     if any(d != displays[0] for d in displays):
         raise v.Failed('Display geometry/scale changed between comparison cases')
