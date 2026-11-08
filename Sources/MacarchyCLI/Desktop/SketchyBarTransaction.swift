@@ -372,6 +372,42 @@ struct SketchyBarProviderTransaction: Sendable {
     }
   }
 
+  /// Settles a pending transaction first and reports it instead of converging; a nil
+  /// composition restores the prior provider.
+  func applyLocked(
+    composition: SketchyBarComposition?,
+    adoptionEvidenceDigest: String?,
+    deferFinalization: Bool = false
+  ) throws -> ApplyResult {
+    if let recovered = try recoverPendingLocked() {
+      return ApplyResult(
+        changed: true,
+        generationID: recovered.generationID,
+        lifecycle: "recovery",
+        message:
+          "recovered interrupted SketchyBar \(recovered.operation.rawValue); run desktop apply again to converge the requested state"
+      )
+    }
+    guard let composition else {
+      return try .sketchyBarRestore(
+        teardownLocked(dryRun: false, deferFinalization: deferFinalization),
+        restoredMessage: "restored the prior SketchyBar provider and service state")
+    }
+    let outcome = try convergeLocked(
+      composition: composition,
+      adoptionEvidenceDigest: adoptionEvidenceDigest,
+      deferFinalization: deferFinalization
+    )
+    return ApplyResult(
+      changed: outcome.changed,
+      generationID: outcome.generationID,
+      lifecycle: outcome.changed ? "reload_or_start" : "none",
+      message: outcome.changed
+        ? "managed SketchyBar provider and runtime converged"
+        : "managed SketchyBar provider and runtime are already converged"
+    )
+  }
+
   private static func isSuccessfulCoreRuntime(
     _ inspection: SketchyBarCoreRuntimeInspection,
     composition: SketchyBarComposition
@@ -876,10 +912,5 @@ struct SketchyBarProviderTransaction: Sendable {
         errno
       )
     }
-  }
-
-  private func pathExistsNoFollow(_ path: String) -> Bool {
-    var metadata = stat()
-    return lstat(path, &metadata) == 0
   }
 }
