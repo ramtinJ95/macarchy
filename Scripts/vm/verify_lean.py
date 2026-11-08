@@ -19,11 +19,7 @@ q = shlex.quote
 def profile(provider):
     if provider not in ("lean", "disabled"):
         raise ValueError("This journey does not install or adopt Borders.")
-    return "\n".join(
-        ["schema_version = 1", "", "[focus_ring]", 'provider = "' + provider + '"', ""]
-        + [line for name in DISABLED for line in ("[" + name + "]", 'provider = "disabled"', "")]
-        + ["[tools]", "bat = false", "eza = false", "btop = false", "yazi = false", ""]
-    )
+    return v.profile_toml([("focus_ring", provider)] + [(name, "disabled") for name in DISABLED])
 
 
 def assess_runtime(before, after, *, changed_theme=False):
