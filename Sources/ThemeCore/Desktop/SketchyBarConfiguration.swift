@@ -167,9 +167,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
       profile.sketchyBar.left, profile.sketchyBar.center, profile.sketchyBar.right,
     ].compactMap { $0 }.joined().contains(.clock)
     let automaticClock = profile.sketchyBar.automaticClock ?? inheritedClock
-    guard profile.sketchyBar.automaticClock != true || layout.position(of: .clock) != nil else {
-      throw SketchyBarConfigurationError.invalid(
-        profile.sourceURL ?? defaultsURL, "automatic_clock requires an enabled clock module")
+    if let conflict = profile.sketchyBar.automaticClockConflict(
+      clockEnabled: layout.position(of: .clock) != nil)
+    {
+      throw SketchyBarConfigurationError.invalid(profile.sourceURL ?? defaultsURL, conflict)
     }
     let spaceModule: SketchyBarSpaceModule =
       if layout.position(of: .spaces) == nil {
@@ -186,9 +187,10 @@ package struct SketchyBarConfigurationComposer: Sendable {
         path: "\(StateLayout.sketchyBarDirectory)/current/plugins", directoryHint: .isDirectory
       )
       .standardizedFileURL.path
-    guard profile.sketchyBar.configurationURL == nil || profile.sketchyBar.hookURL == nil else {
-      throw SketchyBarConfigurationError.invalid(
-        profile.sketchyBar.configurationURL!, "select configuration or legacy hook, not both")
+    if let source = profile.sketchyBar.configurationURL,
+      let conflict = profile.sketchyBar.sourceConflict
+    {
+      throw SketchyBarConfigurationError.invalid(source, conflict)
     }
     let configurationURL = includePersonalConfiguration ? profile.sketchyBar.configurationURL : nil
     let native = configurationURL != nil

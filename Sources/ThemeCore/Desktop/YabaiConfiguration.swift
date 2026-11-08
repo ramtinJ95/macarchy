@@ -113,9 +113,8 @@ package struct YabaiConfigurationComposer: Sendable {
       externalBarHeight: defaults.externalBarHeight,
       rules: defaults.rules
     )
-    guard options.configurationURL == nil || options.hookURL == nil else {
-      throw YabaiConfigurationError.invalid(
-        options.configurationURL!, "select configuration or legacy hook, not both")
+    if let source = options.configurationURL, let conflict = options.sourceConflict {
+      throw YabaiConfigurationError.invalid(source, conflict)
     }
     let configurationURL = includePersonalConfiguration ? options.configurationURL : nil
     let hook = try (configurationURL ?? options.hookURL).map(readHook)
@@ -196,7 +195,7 @@ package struct YabaiConfigurationComposer: Sendable {
   }
 
   private func validate(_ settings: YabaiSettings, source: URL) throws {
-    guard ["bsp", "stack", "float"].contains(settings.layout) else {
+    guard YabaiProfileOptions.supportedLayouts.contains(settings.layout) else {
       throw YabaiConfigurationError.invalid(source, "layout is unsupported")
     }
     guard ["first_child", "second_child"].contains(settings.windowPlacement) else {
@@ -205,7 +204,7 @@ package struct YabaiConfigurationComposer: Sendable {
     guard ["first", "last"].contains(settings.windowInsertionPoint) else {
       throw YabaiConfigurationError.invalid(source, "window_insertion_point is unsupported")
     }
-    guard (0.1...0.9).contains(settings.splitRatio) else {
+    guard YabaiProfileOptions.splitRatioRange.contains(settings.splitRatio) else {
       throw YabaiConfigurationError.invalid(source, "split_ratio must be between 0.1 and 0.9")
     }
     for (field, value) in [
@@ -216,7 +215,7 @@ package struct YabaiConfigurationComposer: Sendable {
       ("window_gap", settings.windowGap),
       ("external_bar_height", settings.externalBarHeight),
     ] {
-      guard (0...256).contains(value) else {
+      guard YabaiProfileOptions.spacingRange.contains(value) else {
         throw YabaiConfigurationError.invalid(source, "\(field) must be between 0 and 256")
       }
     }

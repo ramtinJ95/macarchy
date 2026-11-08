@@ -197,9 +197,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
       var configuration = try readText(at: source)
       configuration = appendKittyOptions(options.kitty, to: configuration)
       if let nativeSource = options.kitty.configurationURL {
-        guard options.kitty.overrideDirectoryURL == nil else {
-          throw EnvironmentConfigurationError.invalid(
-            nativeSource, "kitty.configuration and kitty.override are mutually exclusive")
+        if let conflict = options.kitty.sourceConflict {
+          throw EnvironmentConfigurationError.invalid(nativeSource, conflict)
         }
         _ = try nativeText(nativeSource)
         guard !nativeSource.path.contains("$"),
@@ -230,10 +229,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
 
     let zshHookDigest: String?
     if scope == nil || scope == "zsh", options.shell == .zsh {
-      if let source = options.zsh.configurationURL, options.zsh.hookURL != nil {
-        throw EnvironmentConfigurationError.invalid(
-          source, "zsh.configuration and zsh.hook are mutually exclusive"
-        )
+      if let source = options.zsh.configurationURL, let conflict = options.zsh.sourceConflict {
+        throw EnvironmentConfigurationError.invalid(source, conflict)
       }
       let defaults = resourcesRoot.appending(path: "zsh/defaults.zsh")
       var configuration = try readText(at: defaults)
@@ -310,9 +307,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
     var starshipBehaviorURL: URL?
     if scope == nil || scope == "starship", options.prompt == .starship {
       if let source = options.starship.nativeConfigurationURL {
-        guard options.starship.behaviorURL == nil else {
-          throw EnvironmentConfigurationError.invalid(
-            source, "starship.native_configuration cannot be combined with starship.behavior")
+        if let conflict = options.starship.sourceConflict {
+          throw EnvironmentConfigurationError.invalid(source, conflict)
         }
         let native = StarshipNativeConfiguration(url: source.resolvingSymlinksInPath())
         let data = try proposedNativeFiles[source] ?? native.read()
@@ -342,13 +338,8 @@ package struct EnvironmentConfigurationComposer: Sendable {
     var atuinConfigurationURL: URL?
     if scope == nil || scope == "atuin", options.history == .atuin {
       if let source = options.atuin.nativeConfigurationURL {
-        guard options.atuin.configurationURL == nil,
-          options.atuin.searchMode == nil, options.atuin.keymapMode == nil,
-          options.atuin.enterAccept == nil, options.atuin.daemon == nil
-        else {
-          throw EnvironmentConfigurationError.invalid(
-            source,
-            "atuin.native_configuration cannot be combined with copied Atuin behavior options")
+        if let conflict = options.atuin.sourceConflict {
+          throw EnvironmentConfigurationError.invalid(source, conflict)
         }
         let text = try nativeText(source)
         guard AtuinAdapter.selectsTheme(in: text) else {
