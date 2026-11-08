@@ -3,42 +3,7 @@ import CoreGraphics
 import Foundation
 import ThemeCore
 
-/// An optional item the generated clock module keeps beside the clock (ADR-0256). Older
-/// generations lack some companions, so their clock scripts request only what they generated.
-struct ClockCompanion: Sendable {
-  enum Side: Sendable { case left, right }
-
-  let item: String
-  let detailItem: String
-  /// Visual side of the clock.
-  let side: Side
-  let plugin: String
-  let updateFrequency: Int
-  let events: [String]
-
-  private static let hoverEvents = [
-    "mouse.clicked", "mouse.entered", "mouse.exited", "mouse.exited.global", "system_woke",
-  ]
-  static let update = Self(
-    item: SketchyBarUpdateIndicator.item, detailItem: SketchyBarUpdateIndicator.detailItem,
-    side: .right, plugin: "update", updateFrequency: 60, events: hoverEvents)
-  static let keepAwake = Self(
-    item: SketchyBarKeepAwakeIndicator.item, detailItem: SketchyBarKeepAwakeIndicator.detailItem,
-    side: .left, plugin: "keep-awake", updateFrequency: 30,
-    events: hoverEvents + [KeepAwake.barEvent])
-  static let microphone = Self(
-    item: SketchyBarMicrophoneIndicator.item,
-    detailItem: SketchyBarMicrophoneIndicator.detailItem, side: .left, plugin: "microphone",
-    updateFrequency: 30, events: hoverEvents + [Microphone.barEvent])
-  static let saverPaused = Self(
-    item: SketchyBarSaverPausedIndicator.item,
-    detailItem: SketchyBarSaverPausedIndicator.detailItem, side: .left, plugin: "saver-paused",
-    updateFrequency: 30, events: hoverEvents + [SaverIdle.barEvent])
-  static let all = [update, keepAwake, microphone, saverPaused]
-}
-
 struct SketchyBarCalendar {
-  static let previewItem = "macarchy.clock.preview"
   let processRunner: ProcessRunner
   let hasExternalDisplay: () throws -> Bool
   let uptime: () -> TimeInterval
@@ -58,7 +23,7 @@ struct SketchyBarCalendar {
   }
 
   func execute(
-    sender: String, position: String, format: String, companions: [ClockCompanion] = []
+    sender: String, position: String, format: String, companions: [SketchyBarClockCompanion] = []
   ) throws {
     guard ["auto", "left", "center", "right"].contains(position), format.hasPrefix("+") else {
       throw CalendarError.invalidInvocation
@@ -66,8 +31,8 @@ struct SketchyBarCalendar {
     if sender == "mouse.clicked" {
       let deadline = UInt64((uptime() + 4) * 1000)
       try bar([
-        "--set", Self.previewItem, "label=\(deadline)",
-        "--set", "macarchy.clock", "label=Week \(try date("+%V"))",
+        "--set", SketchyBarContract.clockPreviewItem, "label=\(deadline)",
+        "--set", SketchyBarContract.clockItem, "label=Week \(try date("+%V"))",
       ])
       sleep(4)
       // A later click owns its own four-second interval. The older process must
@@ -82,7 +47,7 @@ struct SketchyBarCalendar {
       ? "Week \(date("+%V"))"
       : date(compact ? format.replacingOccurrences(of: "  %H", with: " %H") : format)
     var arguments = [
-      "--set", "macarchy.clock", "position=\(actualPosition)",
+      "--set", SketchyBarContract.clockItem, "position=\(actualPosition)",
       "padding_left=\(compact ? 6 : 8)", "padding_right=\(compact ? 2 : 8)",
       "label.padding_left=\(compact ? 1 : 3)", "label.padding_right=\(compact ? 1 : 3)",
       "label=\(label)",
@@ -92,14 +57,15 @@ struct SketchyBarCalendar {
       let before = (companion.side == .right) == compact
       arguments += [
         "--set", companion.item, "position=\(actualPosition)",
-        "--move", companion.item, before ? "before" : "after", "macarchy.clock",
+        "--move", companion.item, before ? "before" : "after", SketchyBarContract.clockItem,
       ]
     }
     try bar(arguments)
   }
 
   private func previewDeadline() throws -> UInt64 {
-    let label = try SketchyBarLabelQuery.value(from: bar(["--query", Self.previewItem]))
+    let label = try SketchyBarLabelQuery.value(
+      from: bar(["--query", SketchyBarContract.clockPreviewItem]))
     guard let value = UInt64(label), String(value) == label else {
       throw CalendarError.invalidPreview
     }
@@ -126,17 +92,22 @@ enum CalendarError: Error { case displayQuery, invalidInvocation, invalidPreview
 
 extension Desktop {
   struct Calendar: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "_calendar", shouldDisplay: false)
+    static let configuration = CommandConfiguration(
+      commandName: SketchyBarContract.calendarCommand, shouldDisplay: false)
     @Option var sender = "forced"
     @Option var position: String
     @Option var format: String
-    @Flag var updateIndicator = false
-    @Flag var keepAwakeIndicator = false
-    @Flag var microphoneIndicator = false
-    @Flag var saverPausedIndicator = false
+    @Flag(name: .customLong(SketchyBarClockCompanion.update.calendarFlag))
+    var updateIndicator = false
+    @Flag(name: .customLong(SketchyBarClockCompanion.keepAwake.calendarFlag))
+    var keepAwakeIndicator = false
+    @Flag(name: .customLong(SketchyBarClockCompanion.microphone.calendarFlag))
+    var microphoneIndicator = false
+    @Flag(name: .customLong(SketchyBarClockCompanion.saverPaused.calendarFlag))
+    var saverPausedIndicator = false
 
-    var companions: [ClockCompanion] {
-      let requested: [(Bool, ClockCompanion)] = [
+    var companions: [SketchyBarClockCompanion] {
+      let requested: [(Bool, SketchyBarClockCompanion)] = [
         (updateIndicator, .update), (keepAwakeIndicator, .keepAwake),
         (microphoneIndicator, .microphone), (saverPausedIndicator, .saverPaused),
       ]

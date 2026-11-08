@@ -8,7 +8,7 @@ enum SketchyBarMetricScript {
     let cpu = module == .cpu
     let query =
       cpu
-      ? "\(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop _cpu-load"
+      ? "\(DesktopShellSyntax.literal(macarchyExecutablePath)) desktop \(SketchyBarContract.cpuLoadCommand)"
       : "/usr/bin/memory_pressure"
     let parser =
       cpu

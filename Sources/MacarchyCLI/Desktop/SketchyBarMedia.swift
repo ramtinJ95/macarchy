@@ -69,11 +69,6 @@ struct NowPlayingMedia: Equatable {
 }
 
 struct SketchyBarMedia {
-  static let items = [
-    "macarchy.media", "macarchy.media.artist", "macarchy.media.title",
-    "macarchy.media.previous", "macarchy.media.playpause", "macarchy.media.next",
-    "macarchy.media.preview",
-  ]
   let processRunner: ProcessRunner
   let uptime: () -> TimeInterval
   let sleep: (TimeInterval) -> Void
@@ -82,7 +77,7 @@ struct SketchyBarMedia {
   let launch: ([String]) throws -> Void
 
   func execute(name: String, sender: String) throws {
-    guard Self.items.contains(name) else { throw MediaError.invalidInvocation }
+    guard SketchyBarContract.mediaItems.contains(name) else { throw MediaError.invalidInvocation }
     if sender == "mouse.exited.global" {
       try bar(["--set", "macarchy.media", "popup.drawing=off"])
       return
@@ -231,7 +226,8 @@ enum MediaError: Error {
 
 extension Desktop {
   struct Media: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "_media", shouldDisplay: false)
+    static let configuration = CommandConfiguration(
+      commandName: SketchyBarContract.mediaCommand, shouldDisplay: false)
     @Option var name: String
     @Option var sender = "forced"
     mutating func run() throws {

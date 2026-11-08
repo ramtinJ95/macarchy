@@ -52,7 +52,9 @@ struct SketchyBarRuntimeTests {
     defer { try? FileManager.default.removeItem(at: fixture.root) }
     let verifier = fixture.verifier { request in
       let result = Self.dynamicResult(request, fixture: fixture, indices: [1])
-      guard request.arguments == ["--query", SketchyBarUpdateIndicator.item] else { return result }
+      guard request.arguments == ["--query", SketchyBarClockCompanion.update.item] else {
+        return result
+      }
       var output = result.output
       switch condition {
       case "warning":
@@ -75,13 +77,13 @@ struct SketchyBarRuntimeTests {
   }
 
   @Test(
-    arguments: [ClockCompanion.keepAwake, .microphone, .saverPaused],
+    arguments: [SketchyBarClockCompanion.keepAwake, .microphone, .saverPaused],
     [
       "hidden", "visible", "position", "script", "frequency", "events", "undeclared-event",
       "popup", "hostile-detail",
     ])
   func eventDrivenCompanionRequiresWiringIncludingItsChangeEvent(
-    companion: ClockCompanion, condition: String
+    companion: SketchyBarClockCompanion, condition: String
   ) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -124,10 +126,10 @@ struct SketchyBarRuntimeTests {
   }
 
   @Test(
-    arguments: [ClockCompanion.keepAwake, .microphone, .saverPaused],
+    arguments: [SketchyBarClockCompanion.keepAwake, .microphone, .saverPaused],
     ["complete", "without-companion", "detail-missing", "without-clock"])
   func eventDrivenCompanionEvidenceIsOptionalButCompleteBesideAClock(
-    companion: ClockCompanion, inventory: String
+    companion: SketchyBarClockCompanion, inventory: String
   ) throws {
     let fixture = try SketchyBarRuntimeFixture()
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -298,8 +300,8 @@ struct SketchyBarRuntimeTests {
       let name = request.arguments.last ?? ""
       let output: String
       if name == "bar" {
-        let items = (SketchyBarMedia.items + ["macarchy.theme.ready"]).map { "\"\($0)\"" }.joined(
-          separator: ",")
+        let items = (SketchyBarContract.mediaItems + ["macarchy.theme.ready"])
+          .map { "\"\($0)\"" }.joined(separator: ",")
         output = """
           {"position":"top","drawing":"on","color":"0xf01e1e2e","height":30,"margin":0,"corner_radius":0,"hidden":"off","y_offset":0,"topmost":"on","items":[\(items)]}
           """
@@ -386,11 +388,14 @@ struct SketchyBarRuntimeTests {
               of: "\"updates\":\"on\"", with: "\"updates\":\"when_shown\"")
           }
         }
-        if request.arguments == ["--query", SketchyBarCalendar.previewItem], condition == "preview"
+        if request.arguments == ["--query", SketchyBarContract.clockPreviewItem],
+          condition == "preview"
         {
           output = output.replacingOccurrences(of: "\"value\":\"0\"", with: "\"value\":\"bad\"")
         }
-        if ClockCompanion.all.contains(where: { request.arguments == ["--query", $0.item] }) {
+        if SketchyBarClockCompanion.all.contains(where: {
+          request.arguments == ["--query", $0.item]
+        }) {
           output = output.replacingOccurrences(
             of: "\"position\":\"right\"", with: "\"position\":\"center\"")
         }
@@ -803,7 +808,7 @@ struct SketchyBarRuntimeTests {
       let name = request.arguments.last ?? ""
       if name == "bar" {
         let items =
-          (SketchyBarCoreRuntimeInspection.wifiItems + [
+          (SketchyBarContract.wifiItems + [
             "macarchy.theme.ready", "macarchy.wifi.bracket",
           ])
           .map { "\"\($0)\"" }.joined(separator: ",")
@@ -834,7 +839,7 @@ struct SketchyBarRuntimeTests {
           ],
         ]
         output = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
-      } else if SketchyBarCoreRuntimeInspection.wifiItems.contains(name) {
+      } else if SketchyBarContract.wifiItems.contains(name) {
         let main = name == "macarchy.wifi"
         let rate = name.hasSuffix(".up") || name.hasSuffix(".down")
         let ssid = name.hasSuffix(".ssid")

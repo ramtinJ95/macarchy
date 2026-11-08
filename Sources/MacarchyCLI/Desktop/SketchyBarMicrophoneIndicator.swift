@@ -4,9 +4,6 @@ import ThemeCore
 
 /// The microphone's clock companion: lit and slashed while the default input is muted.
 enum SketchyBarMicrophoneIndicator {
-  static let item = "macarchy.microphone"
-  static let detailItem = "macarchy.microphone.detail"
-
   /// A click runs the menu's mute toggle on the default input. Without an input that can be
   /// muted, the toggle's error alert says so and nothing changes.
   static func toggle(_ status: MicrophoneStatus) -> CompanionToggle {
@@ -14,8 +11,8 @@ enum SketchyBarMicrophoneIndicator {
       CompanionToggle(
         lit: muted, olderBarClick: muted ? ["mic", "unmute"] : nil,
         icon: muted
-          ? SketchyBarConfigurationComposer.microphoneMutedIcon
-          : SketchyBarConfigurationComposer.microphoneLiveIcon,
+          ? SketchyBarClockCompanion.microphoneMutedIcon
+          : SketchyBarClockCompanion.microphoneLiveIcon,
         detail: detail, click: ["mic", "toggle"])
     }
     switch status {
@@ -40,22 +37,14 @@ enum SketchyBarMicrophoneIndicator {
 extension Desktop {
   struct MicrophoneIndicator: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_microphone-indicator", shouldDisplay: false)
-    @Option var sender = "forced"
-    @Option var stateRoot: String
-    @Option var accent: String
-    /// The dimmed color. Bars generated before the toggles omit it.
-    @Option var muted: String?
+      commandName: SketchyBarClockCompanion.microphone.helperCommand, shouldDisplay: false)
+    @OptionGroup var options: CompanionToggleOptions
 
     mutating func run() throws {
-      let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
-      let engine = Microphone.live(stateRoot: root)
-      try SketchyBarCompanionToggle(
-        companion: .microphone, stateRoot: root, processRunner: .live,
-        read: { try SketchyBarMicrophoneIndicator.toggle(engine.status()) },
-        launch: SketchyBarCompanionToggle.launchMacarchy
-      )
-      .execute(sender: sender, accent: accent, muted: muted)
+      try options.execute(.microphone) { root in
+        let engine = Microphone.live(stateRoot: root)
+        return { try SketchyBarMicrophoneIndicator.toggle(engine.status()) }
+      }
     }
   }
 }

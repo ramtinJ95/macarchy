@@ -4,13 +4,10 @@ import ThemeCore
 
 /// Keep-awake's clock companion: a cup, lit while Macarchy's session runs.
 enum SketchyBarKeepAwakeIndicator {
-  static let item = "macarchy.keep-awake"
-  static let detailItem = "macarchy.keep-awake.detail"
-
   /// A click runs the menu's toggle: off starts a session until turned off, on stops it.
   static func toggle(_ status: KeepAwakeStatus) -> CompanionToggle {
     let click = ["keep-awake", "toggle"]
-    let icon = SketchyBarConfigurationComposer.keepAwakeIcon
+    let icon = SketchyBarClockCompanion.keepAwakeIcon
     switch status {
     case .off:
       return CompanionToggle(
@@ -29,22 +26,14 @@ enum SketchyBarKeepAwakeIndicator {
 extension Desktop {
   struct KeepAwakeIndicator: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_keep-awake-indicator", shouldDisplay: false)
-    @Option var sender = "forced"
-    @Option var stateRoot: String
-    @Option var accent: String
-    /// The dimmed color. Bars generated before the toggles omit it.
-    @Option var muted: String?
+      commandName: SketchyBarClockCompanion.keepAwake.helperCommand, shouldDisplay: false)
+    @OptionGroup var options: CompanionToggleOptions
 
     mutating func run() throws {
-      let root = URL(filePath: stateRoot, directoryHint: .isDirectory).standardizedFileURL
-      let engine = KeepAwake.live(stateRoot: root)
-      try SketchyBarCompanionToggle(
-        companion: .keepAwake, stateRoot: root, processRunner: .live,
-        read: { try SketchyBarKeepAwakeIndicator.toggle(engine.status()) },
-        launch: SketchyBarCompanionToggle.launchMacarchy
-      )
-      .execute(sender: sender, accent: accent, muted: muted)
+      try options.execute(.keepAwake) { root in
+        let engine = KeepAwake.live(stateRoot: root)
+        return { try SketchyBarKeepAwakeIndicator.toggle(engine.status()) }
+      }
     }
   }
 }

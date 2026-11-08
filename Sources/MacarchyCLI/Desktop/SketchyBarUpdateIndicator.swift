@@ -3,8 +3,7 @@ import Foundation
 import ThemeCore
 
 struct SketchyBarUpdateIndicator: Sendable {
-  static let item = "macarchy.update"
-  static let detailItem = "macarchy.update.detail"
+  private static let companion = SketchyBarClockCompanion.update
   static let checkInterval: TimeInterval = 6 * 60 * 60
   /// Failures are usually transient, such as being offline right after wake.
   static let failedRetryInterval: TimeInterval = 15 * 60
@@ -41,7 +40,7 @@ struct SketchyBarUpdateIndicator: Sendable {
   ) throws {
     switch sender {
     case "mouse.clicked":
-      try bar(["--set", Self.item, "popup.drawing=off"])
+      try bar(["--set", Self.companion.item, "popup.drawing=off"])
       if let installed = try installedVersion(),
         Self.newerRelease(in: readCache(stateRoot), than: installed) == nil
       {
@@ -54,10 +53,10 @@ struct SketchyBarUpdateIndicator: Sendable {
       }
       return
     case "mouse.entered":
-      try bar(["--set", Self.item, "popup.drawing=on"])
+      try bar(["--set", Self.companion.item, "popup.drawing=on"])
       return
     case "mouse.exited", "mouse.exited.global":
-      try bar(["--set", Self.item, "popup.drawing=off"])
+      try bar(["--set", Self.companion.item, "popup.drawing=off"])
       return
     default:
       break
@@ -117,10 +116,10 @@ struct SketchyBarUpdateIndicator: Sendable {
       .components(separatedBy: .controlCharacters).joined(separator: " ")
     try bar(
       [
-        "--set", Self.item, "drawing=\(visible ? "on" : "off")", "icon=\(icon)",
+        "--set", Self.companion.item, "drawing=\(visible ? "on" : "off")", "icon=\(icon)",
         "icon.color=\(error == nil ? accent : warning)",
-        "--set", Self.detailItem, "label=\(String(detail.prefix(240)))",
-      ] + (visible ? [] : ["--set", Self.item, "popup.drawing=off"]))
+        "--set", Self.companion.detailItem, "label=\(String(detail.prefix(240)))",
+      ] + (visible ? [] : ["--set", Self.companion.item, "popup.drawing=off"]))
   }
 
   private var bar: SketchyBarControl {
@@ -137,7 +136,7 @@ private struct UpdateIndicatorError: Error, CustomStringConvertible {
 extension Desktop {
   struct UpdateIndicator: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_update-indicator", shouldDisplay: false)
+      commandName: SketchyBarClockCompanion.update.helperCommand, shouldDisplay: false)
     @Option var sender = "forced"
     @Option var stateRoot: String
     @Option var accent: String

@@ -66,7 +66,7 @@ struct SketchyBarCalendarTests {
         "--update-indicator", "--keep-awake-indicator", "--microphone-indicator",
         "--saver-paused-indicator",
       ])
-    #expect(all.companions.map(\.item) == ClockCompanion.all.map(\.item))
+    #expect(all.companions.map(\.item) == SketchyBarClockCompanion.all.map(\.item))
     #expect(all.companions.last?.item == "macarchy.saver-paused")
   }
 
@@ -146,11 +146,11 @@ struct SketchyBarCalendarTests {
       #expect(request.executableURL.path == "/opt/homebrew/bin/sketchybar")
       return state.value.withLock {
         $0.calls.append(request.arguments)
-        if request.arguments == ["--query", SketchyBarCalendar.previewItem] {
+        if request.arguments == ["--query", SketchyBarContract.clockPreviewItem] {
           return ProcessResult(
             terminationStatus: 0, output: "{\"label\":{\"value\":\"\($0.deadline)\"}}")
         }
-        if request.arguments.prefix(2) == ["--set", SketchyBarCalendar.previewItem] {
+        if request.arguments.prefix(2) == ["--set", SketchyBarContract.clockPreviewItem] {
           $0.deadline = String(request.arguments[2].dropFirst("label=".count))
         }
         return ProcessResult(terminationStatus: 0, output: "")

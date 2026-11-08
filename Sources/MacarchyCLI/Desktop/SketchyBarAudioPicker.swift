@@ -143,7 +143,7 @@ struct SketchyBarAudioPicker {
 extension Desktop {
   struct AudioPicker: ParsableCommand {
     static let configuration = CommandConfiguration(
-      commandName: "_audio-picker", shouldDisplay: false)
+      commandName: SketchyBarContract.audioPickerCommand, shouldDisplay: false)
     @Option var action: String
     @Option var name = "macarchy.volume"
     @Option var pluginPath: String

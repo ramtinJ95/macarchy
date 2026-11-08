@@ -72,9 +72,9 @@ struct SketchyBarMicrophoneIndicatorTests {
 
   @Test func theHelperAcceptsOlderAndCurrentBarArguments() throws {
     let base = ["--state-root", "/Users/me/.config/macarchy", "--accent", "0xffaabbcc"]
-    #expect(try Desktop.MicrophoneIndicator.parse(base).muted == nil)
+    #expect(try Desktop.MicrophoneIndicator.parse(base).options.muted == nil)
     #expect(
-      try Desktop.MicrophoneIndicator.parse(base + ["--muted", "0xff585b70"]).muted
+      try Desktop.MicrophoneIndicator.parse(base + ["--muted", "0xff585b70"]).options.muted
         == "0xff585b70")
   }
 
