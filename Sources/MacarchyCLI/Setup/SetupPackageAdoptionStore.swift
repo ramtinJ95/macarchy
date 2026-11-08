@@ -17,17 +17,17 @@ struct SetupPackageAdoptionLedger: Codable, Equatable, Sendable {
     let declarations: [Declaration]
     let approvalDigest: String
 
-    func status(in observation: HomebrewPackageObservation) -> String {
-      guard observation.issues.isEmpty else { return "unknown" }
+    func status(in observation: HomebrewPackageObservation) -> SetupPackageAdoptionStatus {
+      guard observation.issues.isEmpty else { return .unknown }
       let sameToken = observation.packages.filter {
         $0.kind == identity.kind && $0.token == identity.token
       }
-      guard !sameToken.isEmpty else { return "missing" }
+      guard !sameToken.isEmpty else { return .missing }
       guard sameToken.count == 1, let installed = sameToken.first,
         installed.issue == nil, installed.identity != nil, !installed.receipts.isEmpty
-      else { return "unknown" }
+      else { return .unknown }
       return installed.identity == identity && installed.versions == versions
-        && installed.receipts == receipts ? "adopted" : "changed"
+        && installed.receipts == receipts ? .adopted : .changed
     }
   }
 
@@ -40,6 +40,15 @@ struct SetupPackageAdoptionLedger: Codable, Equatable, Sendable {
     self.contextDigest = contextDigest
     self.entries = entries.sorted { $0.identity.key < $1.identity.key }
   }
+}
+
+/// How a declared identity relates to recorded adoption evidence.
+enum SetupPackageAdoptionStatus: String, Encodable, Sendable {
+  case adopted
+  case changed
+  case missing
+  case unadopted
+  case unknown
 }
 
 enum SetupPackageAdoptionState: Sendable {
@@ -120,8 +129,7 @@ struct SetupPackageAdoptionStore: Sendable {
   }
 
   private func validEntry(_ entry: SetupPackageAdoptionLedger.Entry) -> Bool {
-    let parts = entry.identity.name.components(separatedBy: "/")
-    return [1, 3].contains(parts.count) && parts.allSatisfy(HomebrewPackageIdentity.validToken)
+    return HomebrewPackageIdentity.validName(entry.identity.name)
       && HomebrewPackageIdentity(kind: entry.identity.kind, name: entry.identity.name)
         == entry.identity
       && !entry.versions.isEmpty && entry.versions.count <= 64

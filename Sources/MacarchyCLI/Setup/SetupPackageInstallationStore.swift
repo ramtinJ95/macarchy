@@ -107,7 +107,8 @@ struct SetupPackageInstallationStore: Sendable {
     guard attempt.schemaVersion == 3, attempt.contextDigest == contextDigest,
       isSHA256Digest(attempt.approvalDigest), isSHA256Digest(attempt.priorLedgerDigest),
       attempt.processSession == nil || attempt.processSession! > 1,
-      try SetupPackageAdoptionCommandRunner.parseTargets(names) == attempt.targets.map(\.identity),
+      try HomebrewPackageIdentity.validated(attempt.targets.map(\.identity))
+        == attempt.targets.map(\.identity),
       attempt.targets.allSatisfy({
         !$0.declarations.isEmpty && $0.declarations.count <= 64
           && $0.declarations.allSatisfy { !$0.source.isEmpty && !$0.layer.isEmpty }

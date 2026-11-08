@@ -33,6 +33,9 @@ struct SetupPackageInstallationCommandRunner: Sendable {
       case selectedInstallations, selectedPackages, ledger, brewfile, command, environment
       case nativeEffects
     }
+
+    /// The `--approve` digest that authorizes installing exactly these inputs.
+    var approvalDigest: String { get throws { try SetupPackageInstallationStore.digest(self) } }
   }
 
   func execute(
@@ -76,7 +79,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
           json: json)
       }
       try provider.preflight()
-      let digest = try SetupPackageInstallationStore.digest(inputs)
+      let digest = try inputs.approvalDigest
       guard let approval else {
         return try result(
           "preview", brewfile: inputs.brewfile, command: inputs.command,
@@ -95,7 +98,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
         try checkpoint(.beforeRevalidation)
         let revalidate: @Sendable () throws -> Void = {
           let current = try self.inputs(context: context, identities: identities)
-          guard try SetupPackageInstallationStore.digest(current) == digest else {
+          guard try current.approvalDigest == digest else {
             throw SetupPackageAdoptionError(
               "Profile, receipts or ownership changed before native execution.")
           }
@@ -166,7 +169,7 @@ struct SetupPackageInstallationCommandRunner: Sendable {
     }
     guard
       (ledger?.entries ?? []).filter({ identities.contains($0.identity) })
-        .allSatisfy({ $0.status(in: inventory.observation) == "adopted" })
+        .allSatisfy({ $0.status(in: inventory.observation) == .adopted })
     else {
       throw SetupPackageAdoptionError(
         "A named target has drifted adoption evidence; installation cannot replace it.")
@@ -175,8 +178,8 @@ struct SetupPackageInstallationCommandRunner: Sendable {
       guard let package = inventory.proposed.first(where: { $0.identity == identity }) else {
         throw SetupPackageAdoptionError("\(identity.key) is not declared by the effective profile.")
       }
-      if package.adoption == "adopted" { return nil }
-      guard package.homebrewStatus == "missing", package.externallySatisfiedCapabilities.isEmpty
+      if package.adoption == .adopted { return nil }
+      guard package.homebrewStatus == .missing, package.externallySatisfiedCapabilities.isEmpty
       else {
         throw SetupPackageAdoptionError(
           "\(identity.key) is installed/unadopted, uncertain or externally satisfied; installation cannot replace it."

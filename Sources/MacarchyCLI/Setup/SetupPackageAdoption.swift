@@ -142,11 +142,11 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
         !installed.receipts.isEmpty, installed.receiptPaths == installed.receipts.map(\.path)
       else {
         throw SetupPackageAdoptionError(
-          "\(identity.key) has no single, complete matching installation record (\(declaration.homebrewStatus))."
+          "\(identity.key) has no single, complete matching installation record (\(declaration.homebrewStatus.rawValue))."
         )
       }
       if let prior = ledger?.entries.first(where: { $0.identity == identity }),
-        prior.status(in: inventory.observation) != "adopted"
+        prior.status(in: inventory.observation) != .adopted
       {
         throw SetupPackageAdoptionError(
           "\(identity.key) changed after adoption. This slice does not overwrite prior installation evidence."
@@ -173,11 +173,9 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
     return Prepared(candidates: candidates, ledger: ledger, digest: digest)
   }
 
+  /// Parses `formula:<name>` and `cask:<name>` command-line targets into a validated package set.
   static func parseTargets(_ targets: [String]) throws -> [HomebrewPackageIdentity] {
-    guard !targets.isEmpty, targets.count <= 1024 else {
-      throw SetupPackageAdoptionError(
-        "Name at least one exact formula:<name> or cask:<name> target.")
-    }
+    try HomebrewPackageIdentity.requireTargetCount(targets.count)
     let identities = try targets.map { target in
       let parts = target.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
       guard parts.count == 2, let kind = HomebrewPackageIdentity.Kind(rawValue: String(parts[0]))
@@ -186,23 +184,12 @@ struct SetupPackageAdoptionCommandRunner: Sendable {
           "Invalid package target '\(target)'; use formula:<name> or cask:<name>.")
       }
       let name = String(parts[1])
-      let components = name.components(separatedBy: "/")
-      guard [1, 3].contains(components.count),
-        components.allSatisfy(HomebrewPackageIdentity.validToken)
-      else {
+      guard HomebrewPackageIdentity.validName(name) else {
         throw SetupPackageAdoptionError("Invalid package name '\(name)'.")
       }
       return HomebrewPackageIdentity(kind: kind, name: name)
     }
-    guard Set(identities).count == identities.count else {
-      throw SetupPackageAdoptionError("Duplicate package targets.")
-    }
-    guard Set(identities.map { "\($0.kind.rawValue):\($0.token)" }).count == identities.count else {
-      throw SetupPackageAdoptionError(
-        "Conflicting package targets share a kind and token across taps; Homebrew cannot record both identities."
-      )
-    }
-    return identities.sorted { $0.key < $1.key }
+    return try HomebrewPackageIdentity.validated(identities)
   }
 
   private func result(

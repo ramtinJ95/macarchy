@@ -37,7 +37,7 @@ struct GuidedHomebrewTrust: Sendable {
         guard package.kind == .formula, package.tap != nil else {
           throw SetupPackageAdoptionError("Guided trust requires an exact third-party formula.")
         }
-        _ = try SetupPackageAdoptionCommandRunner.parseTargets([package.key])
+        _ = try HomebrewPackageIdentity.validated([package])
         _ = try run(["trust", "--formula", package.name])
       })
   }

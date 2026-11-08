@@ -38,6 +38,47 @@ struct HomebrewPackageIdentity: Hashable, Codable, Sendable {
         (97...122).contains($0) || (48...57).contains($0) || "-+_.@".utf8.contains($0)
       }
   }
+
+  /// A bare token or a tap-qualified `user/repository/token` package name.
+  static func validName(_ name: String) -> Bool {
+    let parts = name.components(separatedBy: "/")
+    return [1, 3].contains(parts.count) && parts.allSatisfy(validToken)
+  }
+
+  /// A `user/repository` tap name.
+  static func validTap(_ tap: String) -> Bool {
+    let parts = tap.components(separatedBy: "/")
+    return parts.count == 2 && parts.allSatisfy(validToken)
+  }
+
+  /// Validates a named package set: 1 to 1024 valid names, distinct after normalization, and no
+  /// two sharing a kind and token across taps. Returns the normalized identities sorted by key.
+  static func validated(_ identities: [Self]) throws -> [Self] {
+    try requireTargetCount(identities.count)
+    let normalized = try identities.map { identity -> Self in
+      guard validName(identity.name) else {
+        throw SetupPackageAdoptionError("Invalid package name '\(identity.name)'.")
+      }
+      return Self(kind: identity.kind, name: identity.name)
+    }
+    guard Set(normalized).count == normalized.count else {
+      throw SetupPackageAdoptionError("Duplicate package targets.")
+    }
+    guard Set(normalized.map { "\($0.kind.rawValue):\($0.token)" }).count == normalized.count
+    else {
+      throw SetupPackageAdoptionError(
+        "Conflicting package targets share a kind and token across taps; Homebrew cannot record both identities."
+      )
+    }
+    return normalized.sorted { $0.key < $1.key }
+  }
+
+  static func requireTargetCount(_ count: Int) throws {
+    guard count > 0, count <= 1024 else {
+      throw SetupPackageAdoptionError(
+        "Name at least one exact formula:<name> or cask:<name> target.")
+    }
+  }
 }
 
 struct HomebrewInstalledPackage: Codable, Equatable, Sendable {
@@ -223,9 +264,7 @@ struct HomebrewPackageInventoryReader: Sendable {
       Receipt.self, from: data
     )
     let tap = receipt.source.tap
-    let parts = tap.components(separatedBy: "/")
-    guard !receipt.homebrewVersion.isEmpty, parts.count == 2,
-      parts.allSatisfy(HomebrewPackageIdentity.validToken),
+    guard !receipt.homebrewVersion.isEmpty, HomebrewPackageIdentity.validTap(tap),
       !(kind == .formula && tap == "homebrew/cask"),
       !(kind == .cask && tap == "homebrew/core")
     else { throw InventoryError("Missing or unsupported Homebrew receipt provenance.") }
