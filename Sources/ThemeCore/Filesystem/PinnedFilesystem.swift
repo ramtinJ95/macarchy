@@ -17,11 +17,6 @@ package struct PinnedFilesystemError: Error, CustomStringConvertible, Sendable {
   }
 }
 
-/// `"<strerror text> (errno N)"`.
-func errnoDescription(_ code: Int32) -> String {
-  "\(String(cString: strerror(code))) (errno \(code))"
-}
-
 package enum PinnedFilesystem {
   package static func openDirectory(at url: URL) throws -> Int32 {
     let url = url.standardizedFileURL

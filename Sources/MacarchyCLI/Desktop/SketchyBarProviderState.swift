@@ -485,7 +485,7 @@ enum SketchyBarDesktopError: Error, CustomStringConvertible, Sendable {
     case .invalidState(let reason): reason
     case .lifecycle(let reason): reason
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(String(cString: strerror(code))) (errno \(code))"
+      "cannot \(operation) \(url.path): \(errnoDescription(code))"
     }
   }
 }
