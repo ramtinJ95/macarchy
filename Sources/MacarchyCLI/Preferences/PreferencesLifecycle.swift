@@ -70,12 +70,10 @@ struct PreferencesLifecycle: Sendable {
       changes.isEmpty
       ? nil
       : try sha256Digest(
-        Data(
-          renderJSON(
-            Approval(
-              target: context.targetIdentity, stateRoot: context.stateRoot.standardizedFileURL.path,
-              before: state.owned, after: after, changes: changes)
-          ).utf8))
+        encodeBoundedEvidenceJSON(
+          Approval(
+            target: context.targetIdentity, stateRoot: context.stateRoot.standardizedFileURL.path,
+            before: state.owned, after: after, changes: changes)))
     return PreferencesPlan(
       state: state, after: after, changes: changes,
       report: PreferencesReport(
