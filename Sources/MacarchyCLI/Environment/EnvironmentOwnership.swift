@@ -337,3 +337,11 @@ struct EnvironmentOwnership: Codable, Equatable, Sendable {
       standardNativeEntries: standardNativeEntries ?? [])
   }
 }
+
+extension EnvironmentGenerationStore {
+  /// Whether `current` selects the generation `ownership` records, or nothing when there is no
+  /// ownership. Callers keep their own drift error.
+  func currentMatches(_ ownership: EnvironmentOwnership?) throws -> Bool {
+    try currentDestination() == ownership.map { StateLayout.generationPath($0.generationID) }
+  }
+}

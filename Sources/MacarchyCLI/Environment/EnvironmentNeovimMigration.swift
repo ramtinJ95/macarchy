@@ -144,8 +144,7 @@ struct EnvironmentNeovimMigration: Sendable {
       throw EnvironmentLifecycleError.drift(publicURL.path)
     }
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-    guard try generations.currentDestination() == StateLayout.generationPath(ownership.generationID)
-    else {
+    guard try generations.currentMatches(ownership) else {
       throw EnvironmentLifecycleError.drift("environment pointer and ownership disagree")
     }
     if let sourceURL {
@@ -290,10 +289,7 @@ struct EnvironmentNeovimMigration: Sendable {
       }),
       before.publicPath == publicURL.path, before.managedKind == "symbolic_link"
     else { throw EnvironmentLifecycleError.blocked("Neovim migration changes unrelated ownership") }
-    guard
-      try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
-        == StateLayout.generationPath(old.generationID)
-    else {
+    guard try EnvironmentGenerationStore(stateRoot: stateRoot).currentMatches(old) else {
       throw EnvironmentLifecycleError.drift("environment pointer changed during Neovim migration")
     }
     if after.managedTarget != legacyTarget {

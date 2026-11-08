@@ -307,8 +307,7 @@ extension EnvironmentTransactionCoordinator {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
     guard let ownership = try store.readOwnership(), let borders = ownership.borders,
       borders.retainsBorders,
-      try EnvironmentGenerationStore(stateRoot: stateRoot).currentDestination()
-        == StateLayout.generationPath(ownership.generationID)
+      try EnvironmentGenerationStore(stateRoot: stateRoot).currentMatches(ownership)
     else { throw EnvironmentLifecycleError.blocked("Borders has no applied environment ownership") }
     let inspector = EnvironmentProviderInspector()
     let entries = ownership.records.filter {

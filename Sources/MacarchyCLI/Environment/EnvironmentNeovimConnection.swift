@@ -45,10 +45,7 @@ struct EnvironmentNeovimConnection {
         "legacy environment adapter inventory requires reviewed migration first")
     }
     let generations = EnvironmentGenerationStore(stateRoot: stateRoot)
-    guard
-      try generations.currentDestination()
-        == previous.map({ StateLayout.generationPath($0.generationID) })
-    else {
+    guard try generations.currentMatches(previous) else {
       throw EnvironmentLifecycleError.drift("environment pointer and ownership disagree")
     }
     let preparation = EnvironmentNeovimThemePreparation(
