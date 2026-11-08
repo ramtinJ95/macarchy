@@ -51,12 +51,10 @@ private struct BackgroundPreferenceDocument: Codable {
 }
 
 package struct BackgroundPreferenceStore: Sendable {
-  private let root: URL
   private let preferencesURL: URL
 
   package init(root: URL) {
-    self.root = root.standardizedFileURL
-    preferencesURL = self.root.appending(path: "state/background-preferences.json")
+    preferencesURL = root.standardizedFileURL.appending(path: "state/background-preferences.json")
   }
 
   package func load() throws -> [String: String] {
@@ -93,34 +91,14 @@ package struct BackgroundPreferenceStore: Sendable {
 
   func persist(_ selections: [String: String]) throws {
     try validate(selections)
-    let stateDirectory = root.appending(path: "state", directoryHint: .isDirectory)
-    try FileManager.default.createDirectory(
-      at: stateDirectory,
-      withIntermediateDirectories: true
+    try StateFile.replaceByRename(
+      at: preferencesURL,
+      temporaryName: ".background-preferences-\(UUID().uuidString.lowercased()).json",
+      temporaryWriteOptions: [],
+      encode: { try prettyJSONDocument(BackgroundPreferenceDocument(selections: selections)) },
+      tooLargeError: BackgroundPreferenceStoreError.invalid("exceeds the 1 MiB file limit"),
+      renameError: BackgroundPreferenceStoreError.cannotReplace
     )
-    let temporaryURL = stateDirectory.appending(
-      path: ".background-preferences-\(UUID().uuidString.lowercased()).json"
-    )
-    defer { try? FileManager.default.removeItem(at: temporaryURL) }
-
-    let data = try prettyJSONDocument(BackgroundPreferenceDocument(selections: selections))
-    guard data.count <= BoundedRegularFile.maximumSize else {
-      throw BackgroundPreferenceStoreError.invalid("exceeds the 1 MiB file limit")
-    }
-    try data.write(to: temporaryURL)
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o600],
-      ofItemAtPath: temporaryURL.path
-    )
-
-    let result = temporaryURL.path.withCString { source in
-      preferencesURL.path.withCString { destination in
-        Darwin.rename(source, destination)
-      }
-    }
-    guard result == 0 else {
-      throw BackgroundPreferenceStoreError.cannotReplace(errno)
-    }
   }
 
   private func validate(_ selections: [String: String]) throws {
