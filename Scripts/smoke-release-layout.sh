@@ -24,10 +24,9 @@ snapshot_source="$script_directory/keybindings-portability-snapshot.swift"
 snapshot_helper="$temporary_directory/keybindings-portability-snapshot"
 mkdir -p "$work" "$runtime_tmp"
 
-[[ -x "$binary" ]]
-[[ -x "$layout/bin/macarchy-menu" ]]
-[[ -x "$layout/bin/macarchy-focus-ring" ]]
-[[ -x "$layout/libexec/ttfx" ]]
+for executable in $release_executables; do
+  [[ -x "$layout/$executable" ]]
+done
 [[ -f "$ttfx_documents/LICENSE" ]]
 [[ -f "$ttfx_documents/NOTICE" ]]
 [[ -n "$(find -P "$ttfx_documents/third-party" -type f -print -quit)" ]]
@@ -55,7 +54,7 @@ mkdir -p "$work" "$runtime_tmp"
 [[ -f "$layout/share/doc/macarchy/LICENSE" ]]
 [[ -f "$snapshot_source" ]]
 [[ -z "$(find -P "$layout" ! -type f ! -type d -print)" ]]
-for executable in bin/macarchy bin/macarchy-menu bin/macarchy-focus-ring libexec/ttfx; do
+for executable in $release_executables; do
   [[ "$(/usr/bin/stat -f '%Lp' "$layout/$executable")" == "755" ]]
   [[ "$(/usr/bin/lipo -archs "$layout/$executable")" == "arm64" ]]
   /usr/bin/codesign --verify --strict "$layout/$executable"
@@ -66,27 +65,20 @@ done
 [[ "$("$layout/libexec/ttfx" --version)" == "ttfx $ttfx_version" ]]
 
 {
-  print "bin/macarchy"
-  print "bin/macarchy-menu"
-  print "bin/macarchy-focus-ring"
-  print "libexec/ttfx"
+  print -l -- $release_executables
   print "share/macarchy/build-info.json"
-  print "share/doc/macarchy/CHANGELOG.md"
-  print "share/doc/macarchy/theme-json.md"
-  print "share/doc/macarchy/LICENSE"
+  for document in $release_documents; do
+    print -r -- "share/doc/macarchy/${document:t}"
+  done
   print "share/doc/macarchy/ttfx/LICENSE"
   print "share/doc/macarchy/ttfx/NOTICE"
   # The crate set follows ttfx's lockfile; Scripts/build-ttfx.sh already refused
   # any compiled crate without a licence file.
   (cd "$layout" && find -P share/doc/macarchy/ttfx/third-party -type f -print)
-  git -C "$repository_root" ls-files -- Themes \
-    | sed 's#^Themes/#share/macarchy/themes/#'
-  git -C "$repository_root" ls-files -- Keybindings \
-    | sed 's#^Keybindings/#share/macarchy/keybindings/#'
-  git -C "$repository_root" ls-files -- Desktop \
-    | sed 's#^Desktop/#share/macarchy/desktop/#'
-  git -C "$repository_root" ls-files -- Environment \
-    | sed 's#^Environment/#share/macarchy/environment/#'
+  for resource in $release_resources; do
+    git -C "$repository_root" ls-files -- "$resource" \
+      | sed "s#^$resource/#share/macarchy/${resource:l}/#"
+  done
 } | LC_ALL=C sort > "$temporary_directory/expected-inventory.txt"
 (
   cd "$layout"

@@ -6,6 +6,22 @@ ttfx_repository=https://github.com/omacom/ttfx.git
 ttfx_revision=112ebb310b848d8f1251a5c2919a9cd5a5c78e18
 ttfx_version=0.5.0
 
+# Release layout, relative to the package root. HomebrewLifecycle.swift verifies an
+# installed subset of it; test-release-archive-validation.sh removes members by name.
+release_executables=(bin/macarchy bin/macarchy-menu bin/macarchy-focus-ring libexec/ttfx)
+# Repository directories shipped as share/macarchy/<lowercased name>.
+release_resources=(Themes Keybindings Desktop Environment)
+# Repository files shipped as share/doc/macarchy/<file name>.
+release_documents=(Documentation/theme-json.md CHANGELOG.md LICENSE)
+
+# Sets $package_name, $archive_name and $checksum_name for <version>. release.py's
+# archive_name and Scripts/vm/verify_packaged_lean.py spell the same pattern.
+set_release_names() {
+  package_name="macarchy-$1-arm64-apple-darwin"
+  archive_name="$package_name.tar.gz"
+  checksum_name="$archive_name.sha256"
+}
+
 # Reads the stable semantic version from VERSION.txt into $version.
 read_release_version() {
   local version_file=$1

@@ -68,13 +68,13 @@ install -m 0755 "$menu_binary" "$destination/bin/macarchy-menu"
 install -m 0755 "$focus_binary" "$destination/bin/macarchy-focus-ring"
 # Homebrew links bin/ onto PATH but not libexec/, so the engine stays private to macarchy.
 install -m 0755 "$ttfx_binary" "$destination/libexec/ttfx"
-for executable in bin/macarchy bin/macarchy-menu bin/macarchy-focus-ring libexec/ttfx; do
+for executable in $release_executables; do
   /usr/bin/codesign --force --sign - --timestamp=none "$destination/$executable"
 done
-for resource in Themes Keybindings Desktop Environment; do
+for resource in $release_resources; do
   /usr/bin/ditto "$repository_root/$resource" "$destination/share/macarchy/${resource:l}"
 done
-for document in Documentation/theme-json.md CHANGELOG.md LICENSE; do
+for document in $release_documents; do
   install -m 0644 "$repository_root/$document" "$destination/share/doc/macarchy/${document:t}"
 done
 install -m 0644 "$ttfx_directory/LICENSE" "$ttfx_directory/NOTICE" \

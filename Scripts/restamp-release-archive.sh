@@ -19,8 +19,8 @@ repository_root=${script_directory:h}
 source "$script_directory/release-common.zsh"
 read_release_version "$repository_root/VERSION.txt"
 require_release_revision "$revision"
-package_name="macarchy-${version}-arm64-apple-darwin"
-if [[ ${archive:t} != "$package_name.tar.gz" || ${checksum:t} != "$package_name.tar.gz.sha256" ]]; then
+set_release_names "$version"
+if [[ ${archive:t} != "$archive_name" || ${checksum:t} != "$checksum_name" ]]; then
   print -u2 "release artifacts do not use the expected versioned names"
   exit 65
 fi
@@ -42,11 +42,11 @@ install -m 0644 "$tested/share/doc/macarchy/ttfx/LICENSE" "$tested/share/doc/mac
 
 "$script_directory/build-release-archive.sh" "$tested/bin/macarchy" "$ttfx" "$destination" "$revision" > /dev/null
 
-/usr/bin/tar -xzf "$destination/$package_name.tar.gz" -C "$temporary_directory/rebuilt"
+/usr/bin/tar -xzf "$destination/$archive_name" -C "$temporary_directory/rebuilt"
 if ! /usr/bin/diff -r -x build-info.json "$tested" "$temporary_directory/rebuilt/$package_name"; then
   print -u2 "the rebuilt archive differs from the tested one beyond build-info.json"
   exit 65
 fi
 trap 'rm -rf "$temporary_directory"' EXIT HUP INT TERM
-print -r -- "$destination/$package_name.tar.gz"
-print -r -- "$destination/$package_name.tar.gz.sha256"
+print -r -- "$destination/$archive_name"
+print -r -- "$destination/$checksum_name"
