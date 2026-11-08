@@ -120,10 +120,10 @@ struct SketchyBarCompanionToggleTests {
         .init(terminationStatus: failing == "bar" ? 1 : 0, output: "bar refused")
       },
       read: {
-        if failing == "read" { throw KeepAwakeError("unreadable record") }
+        if failing == "read" { throw MessageError("unreadable record") }
         return Self.off
       },
-      launch: { _ in if failing == "launch" { throw KeepAwakeError("cannot launch") } })
+      launch: { _ in if failing == "launch" { throw MessageError("cannot launch") } })
     let error = #expect(throws: (any Error).self) {
       try toggle.execute(sender: "mouse.clicked", accent: "accent", muted: "muted")
     }
@@ -132,8 +132,8 @@ struct SketchyBarCompanionToggleTests {
       #expect(
         (error as? CompanionToggleError)?.description
           == "SketchyBar macarchy.keep-awake failed: bar refused")
-    case "read": #expect((error as? KeepAwakeError)?.description == "unreadable record")
-    default: #expect((error as? KeepAwakeError)?.description == "cannot launch")
+    case "read": #expect((error as? MessageError)?.description == "unreadable record")
+    default: #expect((error as? MessageError)?.description == "cannot launch")
     }
   }
 }

@@ -128,7 +128,7 @@ struct KeepAwakeTests {
       } else {
         machine.signalFails = true
       }
-      #expect(throws: KeepAwakeError.self) { try engine.apply(.off) }
+      #expect(throws: MessageError.self) { try engine.apply(.off) }
       #expect(try record.read() == session)
       #expect(try engine.status() == .on(session))
       #expect(machine.notifications == 1)
@@ -138,7 +138,7 @@ struct KeepAwakeTests {
   @Test func childWithoutEstablishedIdentityIsStoppedAndNotRecorded() throws {
     try withEngine { engine, machine, record throws in
       machine.spawnedIdentityVisible = false
-      #expect(throws: KeepAwakeError.self) { try engine.apply(.on(nil)) }
+      #expect(throws: MessageError.self) { try engine.apply(.on(nil)) }
       #expect(machine.terminated == [machine.lastPID])
       #expect(try record.read() == nil)
       #expect(try engine.status() == .off)
@@ -242,7 +242,7 @@ struct KeepAwakeTests {
       },
       process: { machine.processes[$0] },
       terminate: { pid in
-        if machine.signalFails { throw KeepAwakeError("signal refused") }
+        if machine.signalFails { throw MessageError("signal refused") }
         machine.terminated.append(pid)
         if machine.exitsOnSIGTERM { machine.processes[pid] = nil }
       },

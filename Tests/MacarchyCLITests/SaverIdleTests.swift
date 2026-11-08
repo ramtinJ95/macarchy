@@ -148,14 +148,14 @@ struct SaverIdleTests {
   @Test func aFailedLoadLeavesOnRetryable() throws {
     try withIdle { idle, machine throws in
       machine.launchd.state.withLock { $0.bootstrapStatus = 5 }
-      let error = #expect(throws: OwnedLaunchAgentError.self) { try idle.turnOn(after: nil) }
+      let error = #expect(throws: MessageError.self) { try idle.turnOn(after: nil) }
       #expect(error?.description.contains("Bootstrap failed: 5") == true)
       #expect(try idle.agent.file() == .owned)
       #expect(try machine.record.read() != nil)
       #expect(
         try idle.status().message.hasPrefix(
           "Idle activation: incomplete, because its launch agent is not loaded."))
-      #expect(throws: SaverError.self) { try idle.apply(.pause) }
+      #expect(throws: MessageError.self) { try idle.apply(.pause) }
 
       machine.launchd.state.withLock { $0.bootstrapStatus = 0 }
       #expect(
@@ -178,7 +178,7 @@ struct SaverIdleTests {
         { _ = try idle.toggle() },
       ]
       for change in changes {
-        let error = #expect(throws: OwnedLaunchAgentError.self) { try change() }
+        let error = #expect(throws: MessageError.self) { try change() }
         #expect(error?.description.contains("is not the launch agent this Macarchy writes") == true)
       }
       #expect(try String(contentsOf: plist, encoding: .utf8) == "custom")
@@ -195,12 +195,12 @@ struct SaverIdleTests {
   @Test(arguments: [SaverPauseRequest.pause, .resume, .toggle])
   func pauseAndResumeNeedIdleActivationOn(request: SaverPauseRequest) throws {
     try withIdle { idle, machine throws in
-      let off = #expect(throws: SaverError.self) { try idle.apply(request) }
+      let off = #expect(throws: MessageError.self) { try idle.apply(request) }
       #expect(off?.description.contains("`macarchy saver idle on`") == true)
 
       _ = try idle.turnOn(after: nil)
       machine.launchd.state.withLock { $0.loaded = false }
-      let unloaded = #expect(throws: SaverError.self) { try idle.apply(request) }
+      let unloaded = #expect(throws: MessageError.self) { try idle.apply(request) }
       #expect(unloaded?.description.contains("`macarchy saver idle on`") == true)
       #expect(try machine.record.read()?.paused == false)
       #expect(machine.hints == 1)

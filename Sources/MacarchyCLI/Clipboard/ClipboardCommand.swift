@@ -171,7 +171,7 @@ struct ClipboardCommand: ParsableCommand {
       if let message = outcome.message { print(message) }
       guard case .failed(let message, let needsAlert) = outcome else { return }
       if needsAlert { showSeparately(message) }
-      throw ClipboardHistoryError(message)
+      throw MessageError(message)
     }
 
     /// The next hourly run may succeed, and launchd skips it while this run waits on an alert,

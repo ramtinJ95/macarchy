@@ -507,7 +507,7 @@ struct SaverHostTests {
       switch outcome {
       case "listed": return ProcessResult(terminationStatus: 0, output: #"["DP-1"]"#)
       case "failed-status": return ProcessResult(terminationStatus: 2, output: "error")
-      default: throw SaverError("timed out")
+      default: throw MessageError("timed out")
       }
     }
     let expected =
@@ -616,7 +616,7 @@ struct SaverSessionTests {
       }
       let saver = machine.saver()
 
-      let error = #expect(throws: SaverError.self) { try saver.start() }
+      let error = #expect(throws: MessageError.self) { try saver.start() }
 
       let remedy = missing == "kitty" ? SaverKitty.remedy : SaverEngine.remedy
       #expect(error?.description.hasSuffix(remedy) == true)
@@ -635,7 +635,7 @@ struct SaverSessionTests {
       }
       let saver = machine.saver()
 
-      let error = #expect(throws: SaverError.self) { try saver.start() }
+      let error = #expect(throws: MessageError.self) { try saver.start() }
 
       let reason =
         failure == "open-fails" ? "open failed" : "its panel did not start within 5 seconds"
@@ -657,7 +657,7 @@ struct SaverSessionTests {
       machine.lateFailingDisplays = ["HDMI-1"]
       let saver = machine.saver()
 
-      let error = #expect(throws: SaverError.self) { try saver.start() }
+      let error = #expect(throws: MessageError.self) { try saver.start() }
 
       #expect(
         error?.description
@@ -728,7 +728,7 @@ struct SaverSessionTests {
       let machine = try SaverMachine(root)
       machine.silentDisplays = ["HDMI-1"]
       let saver = machine.saver()
-      #expect(throws: SaverError.self) { try saver.start() }
+      #expect(throws: MessageError.self) { try saver.start() }
       let token = try SaverMachine.token(machine.launched[1])
       let late = try RunnerMachine(
         root, output: "HDMI-1", pid: 850,
@@ -766,7 +766,7 @@ struct SaverSessionTests {
       let machine = try SaverMachine(root)
       let saver = machine.saver()
       machine.silentDisplays = ["HDMI-1"]
-      #expect(throws: SaverError.self) { try saver.start() }
+      #expect(throws: MessageError.self) { try saver.start() }
       machine.silentDisplays = []
       let retried = try saver.start()
       let records = SaverRecords(stateRoot: root)
@@ -920,7 +920,7 @@ struct SaverSessionTests {
       _ = try saver.start()
       machine.exitsOnSIGTERM = false
 
-      let error = #expect(throws: SaverError.self) { try saver.stop() }
+      let error = #expect(throws: MessageError.self) { try saver.stop() }
 
       #expect(error?.description.contains("did not exit after SIGTERM") == true)
       #expect(try saver.status().sessions.count == 2)
@@ -1024,7 +1024,7 @@ private final class SaverMachine {
       launch: { arguments in
         self.launched.append(arguments)
         let output = arguments.firstIndex(of: "--display").map { arguments[$0 + 1] }
-        if let output, self.failingDisplays.contains(output) { throw SaverError("open failed") }
+        if let output, self.failingDisplays.contains(output) { throw MessageError("open failed") }
         if let output, self.silentDisplays.contains(output) { return }
         let token = try SaverMachine.token(arguments)
         let runner = self.spawn(self.macarchy)
@@ -1033,7 +1033,7 @@ private final class SaverMachine {
         self.opened.append(
           SaverRunnerRecord(output: output, launch: token, runner: runner, panel: panel))
         if let output, self.lateFailingDisplays.contains(output) {
-          throw SaverError("open timed out")
+          throw MessageError("open timed out")
         }
       },
       observe: { self.processes[$0] },
@@ -1146,7 +1146,7 @@ private final class RunnerMachine {
         show: { self.screen.append($0) }),
       processes: SaverEngineProcesses(
         start: { arguments, input in
-          if self.startFails { throw SaverError("exec format error") }
+          if self.startFails { throw MessageError("exec format error") }
           try self.duringPlay()
           self.startedArguments.append(arguments)
           self.inputs.append(input)

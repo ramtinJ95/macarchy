@@ -97,7 +97,7 @@ struct MicrophoneTests {
     let audio = Self.audio(selected: path == "hardware" ? Self.usb : Self.builtIn)
     audio.ignores = { _ in true }
     try withEngine(audio) { engine, record throws in
-      let error = #expect(throws: MicrophoneError.self) { try engine.apply(.mute) }
+      let error = #expect(throws: MessageError.self) { try engine.apply(.mute) }
       #expect(error?.description.contains("accepted but not applied") == true)
       #expect(!audio.writes.isEmpty)
       #expect(try record.read() == nil)
@@ -170,7 +170,7 @@ struct MicrophoneTests {
     let audio = Self.audio(selected: Self.builtIn)
     audio.refuses = { ($0.element == 2 && $0.value == 0) || ($0.element == 1 && $0.value > 0) }
     try withEngine(audio) { engine, record throws in
-      let error = #expect(throws: MicrophoneError.self) { try engine.apply(.mute) }
+      let error = #expect(throws: MessageError.self) { try engine.apply(.mute) }
       #expect(error?.description.contains("restoring the input level also failed") == true)
       #expect(audio.value(Self.builtIn.id, .level, 1) == 0)
       #expect(audio.value(Self.builtIn.id, .level, 2) == 0.5)
@@ -223,7 +223,7 @@ struct MicrophoneTests {
         try engine.status().message
           == "Microphone \"Line In\" is live; this microphone has no mute or input-level control.")
       for request in [MicrophoneRequest.mute, .toggle] {
-        let error = #expect(throws: MicrophoneError.self) { try engine.apply(request) }
+        let error = #expect(throws: MessageError.self) { try engine.apply(request) }
         #expect(
           error?.description
             == "Microphone \"Line In\" not muted: this microphone has no mute or input-level control"
@@ -365,7 +365,7 @@ struct MicrophoneTests {
       if failure == "not-applied" {
         #expect(throws: AudioDeviceError.selectionNotApplied) { try engine.select(query) }
       } else {
-        #expect(throws: MicrophoneError.self) { try engine.select(query) }
+        #expect(throws: MessageError.self) { try engine.select(query) }
       }
       #expect(audio.selected == Self.builtIn.id)
       #expect(audio.notifications == 0)
@@ -404,7 +404,7 @@ struct MicrophoneTests {
     }
     try withEngine(audio) { engine, _ throws in
       if condition == "empty" {
-        #expect(throws: MicrophoneError.self) { try engine.choose { _, _ in 0 } }
+        #expect(throws: MessageError.self) { try engine.choose { _, _ in 0 } }
       } else {
         #expect(throws: AudioDeviceError.invalidSelection) {
           try engine.choose { _, _ in
@@ -465,7 +465,7 @@ struct MicrophoneTests {
     try withEngine(audio) { engine, _ throws in
       #expect(try engine.status() == .noInput)
       for request in [MicrophoneRequest.mute, .toggle] {
-        let error = #expect(throws: MicrophoneError.self) { try engine.apply(request) }
+        let error = #expect(throws: MessageError.self) { try engine.apply(request) }
         #expect(error?.description == "there is no default microphone; nothing changed")
       }
       #expect(audio.writes.isEmpty)

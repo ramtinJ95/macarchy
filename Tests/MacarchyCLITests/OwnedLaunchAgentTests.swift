@@ -190,7 +190,7 @@ struct OwnedLaunchAgentTests {
         { _ = try agent.install() }, { _ = try agent.remove() },
       ]
       for operation in operations {
-        let error = #expect(throws: OwnedLaunchAgentError.self) { try operation() }
+        let error = #expect(throws: MessageError.self) { try operation() }
         #expect(error?.description.contains("is not the launch agent this Macarchy") == true)
       }
       #expect((try? Data(contentsOf: agent.plistURL)) == before)
@@ -241,25 +241,25 @@ struct OwnedLaunchAgentTests {
   func launchctlFailuresAreReported(kind: OwnedAgentKind) throws {
     try withAgent(kind) { agent, launchd, _ throws in
       launchd.state.withLock { $0.bootstrapStatus = 5 }
-      let load = #expect(throws: OwnedLaunchAgentError.self) { try agent.load() }
+      let load = #expect(throws: MessageError.self) { try agent.load() }
       #expect(load?.description.contains("Bootstrap failed: 5") == true)
 
       launchd.state.withLock {
         $0.loaded = true
         $0.bootoutStatus = 5
       }
-      let unload = #expect(throws: OwnedLaunchAgentError.self) { try agent.unload() }
+      let unload = #expect(throws: MessageError.self) { try agent.unload() }
       #expect(unload?.description.contains("Boot-out failed: 5") == true)
 
       launchd.state.withLock { $0.printStatus = 64 }
-      #expect(throws: OwnedLaunchAgentError.self) { try agent.isLoaded() }
+      #expect(throws: MessageError.self) { try agent.isLoaded() }
     }
   }
 
   @Test(arguments: OwnedAgentKind.allCases)
   func kickstartRunsAStoppedLoadedJobWithoutRestartingARunningOne(kind: OwnedAgentKind) throws {
     try withAgent(kind) { agent, launchd, _ throws in
-      let unloaded = #expect(throws: OwnedLaunchAgentError.self) { try agent.kickstart() }
+      let unloaded = #expect(throws: MessageError.self) { try agent.kickstart() }
       #expect(unloaded?.description.contains("Could not find service") == true)
 
       launchd.state.withLock { $0.loaded = true }

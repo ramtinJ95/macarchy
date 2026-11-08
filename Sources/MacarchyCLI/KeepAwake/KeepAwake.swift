@@ -36,14 +36,6 @@ struct KeepAwakeProcess: Equatable, Sendable {
   let executablePath: String
 }
 
-struct KeepAwakeError: Error, CustomStringConvertible {
-  let description: String
-
-  init(_ description: String) {
-    self.description = description
-  }
-}
-
 /// Owns at most one `caffeinate -d -i` process per state root. A record is Macarchy's only while
 /// its PID still has the recorded start time and the caffeinate executable. Any other record is
 /// stale: it is removed and that PID is never signalled.
@@ -54,14 +46,8 @@ struct KeepAwake {
   static let exitPolls = 40
   static let effect = "The display stays on; the idle screensaver and idle lock will not start."
   static let duration = DurationOption(flag: "--for", maximumMinutes: 24 * 60)
-  private static let lock = ProcessScopedFileLock<KeepAwakeError>(
-    filename: "keep-awake.lock",
-    cannotCreateRunDirectory: { url, error in
-      KeepAwakeError("cannot create \(url.path): \(error)")
-    },
-    operationError: { operation, code in
-      KeepAwakeError("cannot \(operation) the keep-awake lock (errno \(code))")
-    })
+  private static let lock = ProcessScopedFileLock<MessageError>(
+    filename: "keep-awake.lock", lockName: "keep-awake")
 
   let stateRoot: URL
   let spawn: ([String]) throws -> Int32
@@ -125,7 +111,7 @@ struct KeepAwake {
     let pid = try spawn(["-d", "-i"] + (seconds.map { ["-t", String($0)] } ?? []))
     let expires = seconds.map { now().addingTimeInterval(TimeInterval($0)) }
     guard let identity = process(pid), identity.executablePath == Self.caffeinatePath else {
-      throw abandon(pid, KeepAwakeError("cannot establish the identity of caffeinate \(pid)"))
+      throw abandon(pid, MessageError("cannot establish the identity of caffeinate \(pid)"))
     }
     let session = KeepAwakeSession(pid: pid, started: identity.started, expires: expires)
     do {
@@ -142,7 +128,7 @@ struct KeepAwake {
       try terminate(pid)
       return error
     } catch let cleanup {
-      return KeepAwakeError("\(error); stopping caffeinate \(pid) also failed: \(cleanup)")
+      return MessageError("\(error); stopping caffeinate \(pid) also failed: \(cleanup)")
     }
   }
 
@@ -151,7 +137,7 @@ struct KeepAwake {
     var polls = 0
     while owns(session) {
       guard polls < Self.exitPolls else {
-        throw KeepAwakeError(
+        throw MessageError(
           "caffeinate \(session.pid) did not exit after SIGTERM; keep-awake stays on")
       }
       pause()
@@ -175,7 +161,7 @@ extension KeepAwake {
         guard kill(pid, SIGTERM) != 0 else { return }
         let code = errno
         guard code == ESRCH else {
-          throw KeepAwakeError("cannot signal caffeinate \(pid) (errno \(code))")
+          throw MessageError("cannot signal caffeinate \(pid) (errno \(code))")
         }
       },
       pause: { Thread.sleep(forTimeInterval: 0.05) },
@@ -199,11 +185,11 @@ extension KeepAwake {
     case .success(let pid):
       return pid
     case .failure(.prepare(let code)):
-      throw KeepAwakeError("cannot prepare caffeinate (errno \(code))")
+      throw MessageError("cannot prepare caffeinate (errno \(code))")
     case .failure(.allocateArguments):
-      throw KeepAwakeError("cannot allocate caffeinate arguments")
+      throw MessageError("cannot allocate caffeinate arguments")
     case .failure(.spawn(let code)):
-      throw KeepAwakeError("cannot launch caffeinate (errno \(code))")
+      throw MessageError("cannot launch caffeinate (errno \(code))")
     }
   }
 }

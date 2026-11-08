@@ -174,16 +174,16 @@ extension SaverRunner {
   static func live(stateRoot: URL, display: SaverDisplay, launch: String) throws -> Self {
     guard let runner = SaverProcess.observe(getpid()),
       let panel = SaverProcess.observe(getppid())
-    else { throw SaverError("cannot establish the identity of this runner and its panel") }
+    else { throw MessageError("cannot establish the identity of this runner and its panel") }
     guard panel.executablePath == SaverKitty.executable else {
-      throw SaverError(
+      throw MessageError(
         "it runs only inside a panel that `macarchy saver start` opens, not under "
           + panel.executablePath)
     }
     let runtime = RuntimeEnvironment.live
     let engine = SaverEngine.locate(executable: runtime.executableURL)
     if let defect = engine.defect {
-      throw SaverError("the ttfx engine at \(engine.url.path) is \(defect.summary)")
+      throw MessageError("the ttfx engine at \(engine.url.path) is \(defect.summary)")
     }
     let theme = try loadPopupTheme(
       stateRoot: stateRoot, bundledThemesRoot: runtime.builtInThemesURL)
@@ -215,14 +215,14 @@ final class SaverPanelTerminal {
   func prepare() throws {
     var original = termios()
     guard tcgetattr(STDIN_FILENO, &original) == 0 else {
-      throw SaverError("cannot read the terminal mode (errno \(errno))")
+      throw MessageError("cannot read the terminal mode (errno \(errno))")
     }
     var raw = original
     cfmakeraw(&raw)
     // ttfx draws its frames through the terminal's normal output processing.
     raw.c_oflag = original.c_oflag
     guard tcsetattr(STDIN_FILENO, TCSANOW, &raw) == 0 else {
-      throw SaverError("cannot set the terminal mode (errno \(errno))")
+      throw MessageError("cannot set the terminal mode (errno \(errno))")
     }
     saved = original
     Self.write("\u{1B}[?25l\u{1B}[2J\u{1B}[H\u{1B}[?1003h\u{1B}[?1006h")
@@ -312,7 +312,7 @@ enum SaverEngineProcess {
   static func start(_ engine: URL, arguments: [String], input: String) throws -> Int32 {
     var descriptors: [Int32] = [-1, -1]
     guard pipe(&descriptors) == 0 else {
-      throw SaverError("cannot create a pipe for ttfx (errno \(errno))")
+      throw MessageError("cannot create a pipe for ttfx (errno \(errno))")
     }
     let (readEnd, writeEnd) = (descriptors[0], descriptors[1])
     defer { Darwin.close(writeEnd) }
@@ -357,9 +357,9 @@ enum SaverEngineProcess {
       ])
     switch spawned {
     case .success(let pid): return pid
-    case .failure(.prepare(let code)): throw SaverError("cannot prepare ttfx (errno \(code))")
-    case .failure(.allocateArguments): throw SaverError("cannot allocate ttfx arguments")
-    case .failure(.spawn(let code)): throw SaverError("cannot start ttfx (errno \(code))")
+    case .failure(.prepare(let code)): throw MessageError("cannot prepare ttfx (errno \(code))")
+    case .failure(.allocateArguments): throw MessageError("cannot allocate ttfx arguments")
+    case .failure(.spawn(let code)): throw MessageError("cannot start ttfx (errno \(code))")
     }
   }
 

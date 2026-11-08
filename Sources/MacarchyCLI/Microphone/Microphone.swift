@@ -38,28 +38,14 @@ struct MicrophoneInput: Equatable {
   let control: MicrophoneMuteControl
 }
 
-struct MicrophoneError: Error, CustomStringConvertible {
-  let description: String
-
-  init(_ description: String) {
-    self.description = description
-  }
-}
-
 /// Selects the default input and mutes it with the device's own mute, otherwise by setting its
 /// input level to zero. The silence record is the only state Macarchy owns, and it holds only
 /// while its device is present with every recorded element still at zero.
 struct Microphone {
   static let barEvent = SketchyBarConfigurationComposer.microphoneEvent
   static let appsNote = "Apps that choose their own input are not affected."
-  private static let lock = ProcessScopedFileLock<MicrophoneError>(
-    filename: "microphone.lock",
-    cannotCreateRunDirectory: { url, error in
-      MicrophoneError("cannot create \(url.path): \(error)")
-    },
-    operationError: { operation, code in
-      MicrophoneError("cannot \(operation) the microphone lock (errno \(code))")
-    })
+  private static let lock = ProcessScopedFileLock<MessageError>(
+    filename: "microphone.lock", lockName: "microphone")
 
   let stateRoot: URL
   let hardware: MicrophoneHardware
@@ -98,7 +84,7 @@ struct Microphone {
     let change = try Self.lock.withLock(root: stateRoot) { () throws -> MicrophoneChange in
       let inputs = try hardware.inputs()
       guard let device = Self.defaultInput(inputs) else {
-        throw MicrophoneError("there is no default microphone; nothing changed")
+        throw MessageError("there is no default microphone; nothing changed")
       }
       let silenced = try silence(in: inputs)
       let observed = try observe(device, silenced: silenced)
@@ -126,12 +112,12 @@ struct Microphone {
     let inputs = try hardware.inputs()
     let named = inputs.devices.filter { $0.name == query }
     guard named.count <= 1 else {
-      throw MicrophoneError(
+      throw MessageError(
         "\(named.count) microphones are named \"\(query)\"; select one by the identity that "
           + "`macarchy mic list --json` shows")
     }
     guard let device = named.first ?? inputs.devices.first(where: { $0.identity == query }) else {
-      throw MicrophoneError(
+      throw MessageError(
         "no microphone is named \"\(query)\" or has that identity; see `macarchy mic list`")
     }
     try select(device)
@@ -142,7 +128,7 @@ struct Microphone {
   /// to cancel without changing anything.
   func choose(_ pick: (_ names: [String], _ selected: Int?) -> Int?) throws -> AudioDevice? {
     let inputs = try hardware.inputs()
-    guard !inputs.devices.isEmpty else { throw MicrophoneError("no microphones are available") }
+    guard !inputs.devices.isEmpty else { throw MessageError("no microphones are available") }
     let current = inputs.devices.firstIndex { $0.id == inputs.selected }
     guard let index = pick(inputs.devices.map(\.name), current) else { return nil }
     guard inputs.devices.indices.contains(index) else { throw AudioDeviceError.invalidSelection }
@@ -227,7 +213,7 @@ struct Microphone {
   ) throws -> MicrophoneMuteState {
     switch control {
     case .unsupported:
-      throw MicrophoneError(
+      throw MessageError(
         "\(device.subject) not muted: this microphone has no mute or input-level control")
     case .hardware(let elements):
       if let silenced { try restore(silenced.silence, on: silenced.device) }
@@ -256,7 +242,7 @@ struct Microphone {
       try restore(silence, on: device)
       return error
     } catch let cleanup {
-      return MicrophoneError("\(error); restoring the input level also failed: \(cleanup)")
+      return MessageError("\(error); restoring the input level also failed: \(cleanup)")
     }
   }
 
@@ -288,7 +274,7 @@ struct Microphone {
       }
       return error
     } catch let cleanup {
-      return MicrophoneError(
+      return MessageError(
         "\(error); recording the levels still to restore also failed: \(cleanup)")
     }
   }
@@ -306,7 +292,7 @@ struct Microphone {
     for (element, target) in ordered {
       let actual = try hardware.value(device.id, property, element)
       guard target == 0 ? actual == 0 : actual > 0 else {
-        throw MicrophoneError(
+        throw MessageError(
           "\(device.subject): the \(property.noun) change was accepted but not applied")
       }
     }

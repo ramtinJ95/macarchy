@@ -109,7 +109,7 @@ struct MaccyStorage {
         let url = directoryURL.appending(path: name)
         guard let type = try fileType(parent, name, url) else { continue }
         guard type == S_IFREG else {
-          throw ClipboardHistoryError(
+          throw MessageError(
             "\(url.path) is \(Self.describe(type)), not a regular file, so Macarchy deleted none "
               + "of Maccy's history files")
         }
@@ -157,7 +157,7 @@ extension MaccyApp {
             }
             // A live Maccy that cannot be identified must not have its store deleted beneath it.
             guard kill(pid, 0) != 0, errno == ESRCH else {
-              throw ClipboardHistoryError("cannot identify the running Maccy (pid \(pid))")
+              throw MessageError("cannot identify the running Maccy (pid \(pid))")
             }
             return nil
           }
@@ -175,7 +175,7 @@ extension MaccyApp {
         let result = try ProcessRunner.live.run(
           .init(executableURL: URL(filePath: "/usr/bin/open"), arguments: arguments, timeout: 10))
         guard result.terminationStatus == 0 else {
-          throw ClipboardHistoryError("cannot open Maccy: \(result.output)")
+          throw MessageError("cannot open Maccy: \(result.output)")
         }
       })
   }
@@ -193,7 +193,7 @@ extension MaccyDefaults {
             executableURL: URL(filePath: "/usr/bin/defaults"),
             arguments: [verb, MaccyApp.bundleIdentifier, setting.rawValue] + value, timeout: 120))
       } catch is ProcessRunnerError {
-        throw ClipboardHistoryError.appDataPermission(
+        throw MessageError.appDataPermission(
           "Maccy's \(setting.rawValue) setting did not answer within two minutes")
       }
     }
@@ -207,7 +207,7 @@ extension MaccyDefaults {
         let flag = value.map { ["-bool", $0 ? "true" : "false"] }
         let result = try run(flag == nil ? "delete" : "write", setting, flag ?? [])
         guard result.terminationStatus == 0 || (value == nil && isAbsent(result)) else {
-          throw ClipboardHistoryError(
+          throw MessageError(
             "cannot change Maccy's \(setting.rawValue) setting: \(result.output)")
         }
       })
@@ -219,11 +219,11 @@ extension MaccyDefaults {
   {
     if type.terminationStatus != 0, isAbsent(type) { return nil }
     guard type.terminationStatus == 0, let value, value.terminationStatus == 0 else {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "cannot read Maccy's \(setting.rawValue) setting: \(value?.output ?? type.output)")
     }
     guard type.output == "Type is boolean", ["0", "1"].contains(value.output) else {
-      throw ClipboardHistoryError(
+      throw MessageError(
         "Maccy's \(setting.rawValue) setting is not a Boolean (\(type.output)), so Macarchy will "
           + "not change it. Reset it in Maccy's settings first.")
     }
