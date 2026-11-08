@@ -1,14 +1,6 @@
 import Foundation
 import ThemeCore
 
-enum SkhdConfigurationReadError: Error, CustomStringConvertible, Sendable {
-  case invalidUTF8
-
-  var description: String {
-    "configuration is not valid UTF-8"
-  }
-}
-
 struct KeybindingsListCommandRunner: Sendable {
   let read: @Sendable (URL) throws -> String
   let loadCatalog: @Sendable (URL) throws -> SkhdKeybindingCatalog
@@ -209,14 +201,6 @@ extension KeybindingCompositionDiagnostic {
     let location = line.map { "\(source):\($0)" } ?? source
     return "\(location): \(severity.rawValue) [\(code)]: \(message)"
   }
-}
-
-func readSkhdConfiguration(_ source: URL) throws -> String {
-  let file = try BoundedRegularFile.read(at: source.resolvingSymlinksInPath())
-  guard let text = String(data: file.data, encoding: .utf8) else {
-    throw SkhdConfigurationReadError.invalidUTF8
-  }
-  return text
 }
 
 private struct KeybindingsListReport: CommandReport {

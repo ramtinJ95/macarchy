@@ -221,11 +221,7 @@ package struct KeybindingEffectiveStateInspector: Sendable {
     diagnostics: inout [KeybindingCompositionDiagnostic]
   ) -> String? {
     do {
-      let file = try BoundedRegularFile.read(at: source.resolvingSymlinksInPath())
-      guard let text = String(data: file.data, encoding: .utf8) else {
-        throw KeybindingEffectiveStateError("configuration is not valid UTF-8")
-      }
-      return text
+      return try readSkhdConfiguration(source)
     } catch {
       diagnostics.append(diagnostic(code: code, source: source, message: String(describing: error)))
       return nil
@@ -268,10 +264,19 @@ package struct KeybindingEffectiveStateInspector: Sendable {
   }
 }
 
-private struct KeybindingEffectiveStateError: Error, CustomStringConvertible {
-  let description: String
+package enum SkhdConfigurationReadError: Error, CustomStringConvertible, Sendable {
+  case invalidUTF8
 
-  init(_ description: String) {
-    self.description = description
+  package var description: String {
+    "configuration is not valid UTF-8"
   }
+}
+
+/// Reads an skhd configuration, through its symlinks, as bounded UTF-8 text.
+package func readSkhdConfiguration(_ source: URL) throws -> String {
+  let file = try BoundedRegularFile.read(at: source.resolvingSymlinksInPath())
+  guard let text = String(data: file.data, encoding: .utf8) else {
+    throw SkhdConfigurationReadError.invalidUTF8
+  }
+  return text
 }
