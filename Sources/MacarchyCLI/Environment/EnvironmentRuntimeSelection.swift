@@ -27,13 +27,9 @@ enum ThemeRuntimeSelection {
     } else {
       enabled = ConsumerCatalog.shared.defaultEnabledAdapterIDs
       enabled.subtract(EnvironmentPreset.allCases.compactMap(\.adapterID))
-      let herdr = HerdrAdapter(
-        root: stateRoot,
-        configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
-        executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
-        controlIsAvailable: { true }
-      )
-      if try herdr.legacyOwnershipEvidence() != nil {
+      if try HerdrAdapter.environment(stateRoot: stateRoot, homeDirectory: homeDirectory)
+        .legacyOwnershipEvidence() != nil
+      {
         enabled.insert(HerdrAdapter.id)
       }
     }

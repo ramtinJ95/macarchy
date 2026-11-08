@@ -26,6 +26,22 @@ enum EnvironmentTransactionCheckpoint: Equatable, Sendable {
   case authorityPublished
 }
 
+/// Whether recovery moved journaled files, and which provider runtimes must still be restored
+/// before the journal can be removed.
+struct EnvironmentRecoveryPreparation: Sendable {
+  var recovered: Bool
+  var herdrRuntimeTarget: EnvironmentHerdrRuntimeTarget? = nil
+  var spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget? = nil
+  var bordersRuntimeTarget: EnvironmentBordersRuntimeTarget? = nil
+
+  static let noTransaction = Self(recovered: false)
+  static let finished = Self(recovered: true)
+
+  var awaitsProviderRuntime: Bool {
+    herdrRuntimeTarget != nil || spicetifyRuntimeTarget != nil || bordersRuntimeTarget != nil
+  }
+}
+
 struct EnvironmentTransactionCoordinator: Sendable {
   let homeDirectory: URL
   let stateRoot: URL
@@ -50,9 +66,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
 
   func recoverLocked() throws -> Bool {
     let result = try prepareRecoveryLocked()
-    guard result.runtimeTarget == nil, result.spicetifyRuntimeTarget == nil,
-      result.bordersRuntimeTarget == nil
-    else {
+    guard !result.awaitsProviderRuntime else {
       throw EnvironmentLifecycleError.blocked(
         "interrupted provider runtime restoration must finish before recovery can finish"
       )
@@ -60,25 +74,20 @@ struct EnvironmentTransactionCoordinator: Sendable {
     return result.recovered
   }
 
-  func prepareRecoveryLocked() throws -> (
-    recovered: Bool,
-    runtimeTarget: EnvironmentHerdrRuntimeTarget?,
-    spicetifyRuntimeTarget: EnvironmentSpicetifyRuntimeTarget?,
-    bordersRuntimeTarget: EnvironmentBordersRuntimeTarget?
-  ) {
+  func prepareRecoveryLocked() throws -> EnvironmentRecoveryPreparation {
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    guard let transaction = try store.readTransaction() else { return (false, nil, nil, nil) }
+    guard let transaction = try store.readTransaction() else { return .noTransaction }
     if transaction.operation.nativeConnectionProvider != nil {
       try finishNativeFileConnectionLocked(transaction)
-      return (true, nil, nil, nil)
+      return .finished
     }
     if transaction.operation == .neovimConnection {
       try finishNeovimConnectionLocked(transaction)
-      return (true, nil, nil, nil)
+      return .finished
     }
     if transaction.operation == .standardMigration {
       try finishStandardMigrationLocked(transaction)
-      return (true, nil, nil, nil)
+      return .finished
     }
     try validate(transaction.previousOwnership)
     try validate(transaction.proposedOwnership)
@@ -140,16 +149,18 @@ struct EnvironmentTransactionCoordinator: Sendable {
     if let target = transaction.herdrRuntimeTarget,
       transaction.herdrRuntimeVerified != true
     {
-      return (
-        true, target, pendingSpicetifyRuntimeTarget(transaction),
-        transaction.pendingBordersRuntimeTarget
-      )
+      return EnvironmentRecoveryPreparation(
+        recovered: true, herdrRuntimeTarget: target,
+        spicetifyRuntimeTarget: pendingSpicetifyRuntimeTarget(transaction),
+        bordersRuntimeTarget: transaction.pendingBordersRuntimeTarget)
     }
     if let target = pendingSpicetifyRuntimeTarget(transaction) {
-      return (true, nil, target, transaction.pendingBordersRuntimeTarget)
+      return EnvironmentRecoveryPreparation(
+        recovered: true, spicetifyRuntimeTarget: target,
+        bordersRuntimeTarget: transaction.pendingBordersRuntimeTarget)
     }
     if let target = transaction.pendingBordersRuntimeTarget {
-      return (true, nil, nil, target)
+      return EnvironmentRecoveryPreparation(recovered: true, bordersRuntimeTarget: target)
     }
 
     switch (transaction.direction, transaction.operation) {
@@ -181,7 +192,7 @@ struct EnvironmentTransactionCoordinator: Sendable {
       try store.recordUnverifiedSpicetifyRecovery()
     }
     try store.removeTransaction()
-    return (true, nil, nil, nil)
+    return .finished
   }
 
   private func pendingSpicetifyRuntimeTarget(
@@ -850,21 +861,13 @@ struct EnvironmentTransactionCoordinator: Sendable {
       transaction.proposedOwnership?.herdrEnabled == true,
       transaction.proposedOwnership?.herdr?.migratedLegacy == true
     else { return false }
-    return try HerdrAdapter(
-      root: stateRoot,
-      configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
-      executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
-      controlIsAvailable: { true }
-    ).authenticatedLegacyOwnershipMatchesCurrentGeneration()
+    return try HerdrAdapter.environment(stateRoot: stateRoot, homeDirectory: homeDirectory)
+      .authenticatedLegacyOwnershipMatchesCurrentGeneration()
   }
 
   private func discardHerdrLegacyEvidence() throws {
-    try HerdrAdapter(
-      root: stateRoot,
-      configurationURL: homeDirectory.appending(path: ConsumerHomePath.herdrConfiguration),
-      executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
-      controlIsAvailable: { true }
-    ).discardLegacyOwnershipEvidence()
+    try HerdrAdapter.environment(stateRoot: stateRoot, homeDirectory: homeDirectory)
+      .discardLegacyOwnershipEvidence()
   }
 
   private func restoreReleasedThemeBridges(
