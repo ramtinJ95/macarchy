@@ -68,7 +68,7 @@ package enum YabaiGenerationError: Error, CustomStringConvertible, Sendable {
     case .invalid(let reason):
       "invalid yabai generation: \(reason)"
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(errnoDescription(code))"
+      PinnedFilesystemError.message(operation: operation, url: url, code: code)
     }
   }
 }

@@ -484,7 +484,7 @@ enum SketchyBarDesktopError: Error, CustomStringConvertible, Sendable {
     case .invalidState(let reason): reason
     case .lifecycle(let reason): reason
     case .system(let operation, let url, let code):
-      "cannot \(operation) \(url.path): \(errnoDescription(code))"
+      PinnedFilesystemError.message(operation: operation, url: url, code: code)
     }
   }
 }
