@@ -431,7 +431,7 @@ extension Fixture {
     residue: String? = nil
   ) throws -> SetupOwnershipRecord {
     try legacyFileRecord(
-      SetupOwnershipManager.integrationID,
+      SetupOwnershipManager.kittyIncludeID,
       original: original,
       installed: original + "\(includeDirective)\n",
       onDisk: onDisk,
@@ -447,11 +447,11 @@ extension Fixture {
       try legacyFileRecord(
         SetupOwnershipManager.batSelectorID,
         original: bat, installed: bat + "\(batDirective)\n"),
-      try legacyThemeLink(SetupOwnershipManager.batThemeLinkID),
+      try legacyThemeLink(ConsumerSetupPlan.Step.Operation.batThemeLink.rawValue),
       try legacyFileRecord(
         SetupOwnershipManager.ezaEnvironmentID,
         original: shell, installed: shell + "\(ezaDirective)\n"),
-      try legacyThemeLink(SetupOwnershipManager.ezaThemeLinkID),
+      try legacyThemeLink(ConsumerSetupPlan.Step.Operation.ezaThemeLink.rawValue),
     ]
   }
 }

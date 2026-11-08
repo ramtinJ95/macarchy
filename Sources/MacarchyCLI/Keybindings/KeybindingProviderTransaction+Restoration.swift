@@ -21,7 +21,7 @@ extension KeybindingProviderTransaction {
       parentDescriptor: directoryDescriptor,
       name: SkhdLayout.configurationName,
       url: entry,
-      maximumSize: SetupOwnershipManager.maximumConfigurationSize
+      maximumSize: BoundedRegularFile.maximumSize
     ).data
     try writeOriginalBackup(data, record: record, manager: manager)
   }

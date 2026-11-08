@@ -21,8 +21,9 @@ struct NeovimStarshipSetupTests {
     let behavior = try Data(contentsOf: fixture.starshipBehavior)
     try fixture.tearDownLegacyOwnership(
       [
-        fixture.legacyThemeLink(SetupOwnershipManager.neovimThemeLinkID),
-        fixture.legacyThemeLink(SetupOwnershipManager.starshipConfigurationLinkID),
+        fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.neovimThemeLink.rawValue),
+        fixture.legacyThemeLink(
+          ConsumerSetupPlan.Step.Operation.starshipConfigurationLink.rawValue),
       ],
       expectingRemoved: ["neovim.theme-link", "starship.configuration-link"])
     #expect(!FileManager.default.fileExists(atPath: fixture.neovimThemeLink.path))

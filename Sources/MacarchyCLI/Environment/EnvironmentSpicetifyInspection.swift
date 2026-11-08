@@ -105,7 +105,7 @@ extension EnvironmentProviderInspector {
     let target = url.resolvingSymlinksInPath().standardizedFileURL
     let data = try BoundedRegularFile.read(
       at: target,
-      maximumSize: SetupOwnershipManager.maximumConfigurationSize
+      maximumSize: BoundedRegularFile.maximumSize
     ).data
     if evidence.kind == .regularFile,
       evidence.contentDigest != nil,
