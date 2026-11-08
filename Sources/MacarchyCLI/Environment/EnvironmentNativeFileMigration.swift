@@ -165,9 +165,7 @@ struct EnvironmentNativeFileMigration: Sendable {
         throw EnvironmentLifecycleError.system("inspect native destination", nativeURL, errno)
       }
     }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    let digest = sha256Digest(try encoder.encode(ownership) + Data(nativeURL.path.utf8) + data)
+    let digest = sha256Digest(try sortedKeysJSON(ownership) + Data(nativeURL.path.utf8) + data)
     return (
       Plan(
         source: sourceURL?.path

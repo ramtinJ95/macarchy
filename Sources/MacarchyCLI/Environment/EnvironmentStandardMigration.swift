@@ -49,9 +49,7 @@ struct EnvironmentStandardMigration: Sendable {
     else { throw EnvironmentLifecycleError.blocked("prepare a source outside managed entries") }
     try EnvironmentStandardNativeConfiguration.validate(
       provider, homeDirectory: homeDirectory, stateRoot: stateRoot, sourceURL: sourceURL)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    var evidence = try encoder.encode(previous) + Data(sourceURL.path.utf8)
+    var evidence = try sortedKeysJSON(previous) + Data(sourceURL.path.utf8)
     var device: UInt64?
     var inode: UInt64?
     var linkTarget: String?

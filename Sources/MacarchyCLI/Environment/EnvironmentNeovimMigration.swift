@@ -161,13 +161,11 @@ struct EnvironmentNeovimMigration: Sendable {
       guard fstat(descriptor, &identity) == 0 else {
         throw EnvironmentLifecycleError.system("inspect Neovim source", resolved, errno)
       }
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.sortedKeys]
       let initData = try BoundedRegularFile.read(
         at: resolved.appending(path: "init.lua").resolvingSymlinksInPath()
       ).data
       let digest = sha256Digest(
-        try encoder.encode(ownership)
+        try sortedKeysJSON(ownership)
           + Data(
             "\(sourceURL.path)\n\(resolved.path)\n\(identity.st_dev):\(identity.st_ino)\n".utf8)
           + initData)
@@ -196,10 +194,8 @@ struct EnvironmentNeovimMigration: Sendable {
     guard errno == ENOENT else {
       throw EnvironmentLifecycleError.system("inspect native destination", nativeRoot, errno)
     }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
     let digest = sha256Digest(
-      try encoder.encode(ownership) + Data(nativeRoot.path.utf8)
+      try sortedKeysJSON(ownership) + Data(nativeRoot.path.utf8)
         + Data(manifest.renderedDigest.utf8))
     return (
       Plan(

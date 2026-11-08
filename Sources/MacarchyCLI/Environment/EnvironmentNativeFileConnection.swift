@@ -72,9 +72,7 @@ struct EnvironmentNativeFileConnection {
         == previous.map({ StateLayout.generationPath($0.generationID) })
     else { throw EnvironmentLifecycleError.drift("Environment pointer and ownership disagree") }
     let theme = try ThemeGenerationReader(root: stateRoot).activeManifest()
-    let themeEncoder = JSONEncoder()
-    themeEncoder.outputFormatting = [.sortedKeys]
-    let themeData = try themeEncoder.encode(theme)
+    let themeData = try sortedKeysJSON(theme)
     if provider == .kitty { try KittyAdapter.validatePreparedBridge(root: stateRoot) }
     try validateSource()
     let standard = source.path == provider.standardURL(homeDirectory: homeDirectory).path
@@ -98,11 +96,9 @@ struct EnvironmentNativeFileConnection {
       provider: provider.rawValue, resourcesRoot: resourcesRoot, profile: profile,
       source: source, stateRoot: stateRoot, retaining: artifacts,
       previousInputDigest: manifest?.inputDigest)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
     let approval = sha256Digest(
-      try encoder.encode(previous)
-        + encoder.encode([
+      try sortedKeysJSON(previous)
+        + sortedKeysJSON([
           composition.inputDigest, source.path, source.resolvingSymlinksInPath().path,
           sha256Digest(try BoundedRegularFile.read(at: source.resolvingSymlinksInPath()).data),
           theme.generationID, sha256Digest(themeData), standard ? "standard" : "absent",

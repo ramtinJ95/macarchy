@@ -77,11 +77,9 @@ struct EnvironmentNeovimConnection {
     let composition = try EnvironmentConfigurationComposer().composeNeovimConnection(
       resourcesRoot: resourcesRoot, source: source, stateRoot: stateRoot,
       retaining: artifacts, previousInputDigest: manifest?.inputDigest)
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
     let approval = sha256Digest(
-      try encoder.encode(previous)
-        + encoder.encode([
+      try sortedKeysJSON(previous)
+        + sortedKeysJSON([
           prepared.approval, composition.inputDigest, publicURL.path,
           standard ? "standard" : "absent",
         ]))

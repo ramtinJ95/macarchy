@@ -112,11 +112,9 @@ struct EnvironmentHerdrOwnershipMigration {
         ? "Already UUID-bound; no ownership rewrite required."
         : "Legacy evidence did not record a volume UUID. Historical volume identity cannot be proven. Approval binds the matching surviving Herdr link to this observed volume; it does not change configuration, activate a theme or restart applications.",
       evidenceDigest: "")
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    var evidence = try encoder.encode(report)
-    evidence.append(try encoder.encode(ownership))
-    evidence.append(try encoder.encode(observed))
+    var evidence = try sortedKeysJSON(report)
+    evidence.append(try sortedKeysJSON(ownership))
+    evidence.append(try sortedKeysJSON(observed))
     // Bind review to current configuration too, without copying any of it into the report.
     evidence.append(try BoundedRegularFile.read(at: URL(filePath: herdr.resolvedPath)).data)
     report.evidenceDigest = sha256Digest(evidence)
