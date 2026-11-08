@@ -167,17 +167,16 @@ struct SketchyBarAdapter: Sendable {
     }
   }
 
-  func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(.sketchyBar) {
-      do {
-        try preflight()
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      .sketchyBar,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
 
+  func reconciliation() -> AdapterReconciliation {
+    runtime.reconciliation {
       let reload = try processRunner.run(
         ProcessRequest(
           executableURL: executableURL,
