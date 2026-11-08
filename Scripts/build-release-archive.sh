@@ -13,10 +13,9 @@ destination=${3:A}
 revision=$4
 script_directory=${0:A:h}
 repository_root=${script_directory:h}
+source "$script_directory/release-common.zsh"
 version=$(<"$repository_root/VERSION.txt")
-package_name="macarchy-${version}-arm64-apple-darwin"
-archive_name="${package_name}.tar.gz"
-checksum_name="${archive_name}.sha256"
+set_release_names "$version"
 
 if [[ ! -d ${destination:h} ]]; then
   print -u2 "destination parent does not exist: ${destination:h}"

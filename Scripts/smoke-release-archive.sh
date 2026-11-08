@@ -20,9 +20,7 @@ source "$script_directory/release-common.zsh"
 read_release_version "$version_file"
 require_release_revision "$revision"
 
-package_name="macarchy-${version}-arm64-apple-darwin"
-archive_name="${package_name}.tar.gz"
-checksum_name="${archive_name}.sha256"
+set_release_names "$version"
 if [[ ${archive:t} != "$archive_name" || ${checksum:t} != "$checksum_name" ]]; then
   print -u2 "release artifacts do not use the expected versioned names"
   exit 65
