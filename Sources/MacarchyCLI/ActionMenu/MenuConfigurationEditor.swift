@@ -60,11 +60,8 @@ struct MenuConfigurationEditor: ParsableCommand {
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
 
   mutating func run() throws {
-    do {
-      let neovim = NeovimAdapter.liveExecutableURL
-      guard FileManager.default.isExecutableFile(atPath: neovim.path) else {
-        throw ValidationError("Neovim editor is not executable: \(neovim.path)")
-      }
+    try MenuEditorSession.run(failure: "Could not edit \(action.title)") {
+      let neovim = try MenuEditorSession.neovim(named: "Neovim editor")
       let home = FileManager.default.homeDirectoryForCurrentUser
       let context = profiles.context(stateRoot: StateLayout.defaultRoot(in: home))
       let selected: URL?
@@ -83,34 +80,22 @@ struct MenuConfigurationEditor: ParsableCommand {
       guard let target = selected else { return }
       let notice = try Self.notice(action, context: context)
       print("\(action.title): \(target.path)\n\(notice)")
-      let temporary = FileManager.default.temporaryDirectory.appending(
-        path: "macarchy-config-edit-\(UUID().uuidString)")
-      try FileManager.default.createDirectory(
-        at: temporary, withIntermediateDirectories: false,
-        attributes: [.posixPermissions: 0o700])
-      defer { try? FileManager.default.removeItem(at: temporary) }
-      let script = temporary.appending(path: "editor.lua")
-      try MenuProfileEditor.script(
-        target: target,
-        section: try Self.usesManagedProfile(action, context: context) ? action.rawValue : nil,
-        executableURL: RuntimeEnvironment.live.executableURL,
-        notice: notice,
-        saveArguments: [MenuConfigurationValidate.commandName, action.rawValue, target.path]
-          + profiles.menuArguments
-      ).write(to: script, atomically: true, encoding: .utf8)
-      let editor = Process()
-      editor.executableURL = neovim
-      editor.currentDirectoryURL = target.deletingLastPathComponent()
-      editor.arguments = ["-S", script.path, "--", target.path]
-      try MenuTerminal.runForeground(editor)
-      guard editor.terminationReason == .exit, editor.terminationStatus == 0 else {
-        throw ValidationError("Neovim exited with status \(editor.terminationStatus)")
+      try MenuEditorSession.withPrivateDirectory(prefix: "macarchy-config-edit") { temporary in
+        let script = temporary.appending(path: "editor.lua")
+        try MenuProfileEditor.script(
+          target: target,
+          section: try Self.usesManagedProfile(action, context: context) ? action.rawValue : nil,
+          executableURL: RuntimeEnvironment.live.executableURL,
+          notice: notice,
+          saveArguments: [MenuConfigurationValidate.commandName, action.rawValue, target.path]
+            + profiles.menuArguments
+        ).write(to: script, atomically: true, encoding: .utf8)
+        try MenuEditorSession.edit(
+          neovim, arguments: ["-S", script.path, "--", target.path],
+          directory: target.deletingLastPathComponent(),
+          exitFailure: { "Neovim exited with status \($0.terminationStatus)" })
+        if let result = try desktopSession?.finish() { print(result.message) }
       }
-      if let result = try desktopSession?.finish() { print(result.message) }
-    } catch {
-      print("Could not edit \(action.title): \(error)\nPress Enter to close.")
-      _ = readLine()
-      throw ExitCode.failure
     }
   }
 
