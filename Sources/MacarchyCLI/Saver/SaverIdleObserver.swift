@@ -17,15 +17,6 @@ enum SaverIdleSuppression: CaseIterable, Sendable {
   case displaysAsleep
   case saverRunning
 
-  /// The animation yields to these, so a showing saver is stopped.
-  var stopsSaver: Bool {
-    switch self {
-    case .paused, .keepAwake, .saverRunning: false
-    case .sessionUnknown, .offConsole, .locked, .sessionInactive, .nativeSaver, .displaysAsleep:
-      true
-    }
-  }
-
   var summary: String {
     switch self {
     case .paused: "idle activation is paused"
