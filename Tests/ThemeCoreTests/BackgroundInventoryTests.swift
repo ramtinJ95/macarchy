@@ -21,7 +21,7 @@ struct BackgroundInventoryTests {
         )
       }
       let rendered = try ThemeRenderer().render(package: package, generationID: "zero-background")
-      #expect(rendered.wallpaper == nil)
+      #expect(rendered.artifact(atPath: WallpaperAdapter.outputPath) == nil)
 
       let stateRoot = root.appending(path: "state", directoryHint: .isDirectory)
       let manifest = try ThemeActivator(root: stateRoot).activate(package: package)

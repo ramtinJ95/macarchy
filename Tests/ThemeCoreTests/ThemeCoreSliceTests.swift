@@ -208,30 +208,24 @@ struct ThemeCoreSliceTests {
     for artifact in rendered.artifacts {
       #expect(try Data(contentsOf: outputRoot.appending(path: artifact.path)) == artifact.data)
     }
-    let compatibilityOutputs = [
-      AtuinAdapter.outputPath: Data(rendered.atuinTheme.utf8),
-      TextMateThemeArtifact.outputPath: Data(rendered.batTheme.utf8),
-      BtopAdapter.outputPath: Data(rendered.btopTheme.utf8),
-      EzaAdapter.outputPath: Data(rendered.ezaTheme.utf8),
-      HerdrAdapter.outputPath: Data(rendered.herdrTheme.utf8),
-      ThemeRenderer.themeOutputPath: rendered.themeJSON,
-      KittyAdapter.outputPath: Data(rendered.kittyConfiguration.utf8),
-      NeovimAdapter.outputPath: Data(rendered.neovimTheme.utf8),
-      PiAdapter.outputPath: Data(rendered.piTheme.utf8),
-      SketchyBarAdapter.outputPath: Data(rendered.sketchyBarPalette.utf8),
-      SketchyBarAdapter.shellOutputPath: Data(
-        SketchyBarAdapter.renderShellPalette(package: package).utf8
-      ),
-      SlackAdapter.outputPath: Data(rendered.slackTheme.utf8),
-      SpicetifyAdapter.outputPath: Data(rendered.spicetifyTheme.utf8),
-      StarshipAdapter.outputPath: Data(rendered.starshipPalette.utf8),
-      TuicrAdapter.outputPath: Data(rendered.tuicrTheme.utf8),
-      WallpaperAdapter.outputPath: try #require(rendered.wallpaper),
-      YaziAdapter.flavorOutputPath: Data(rendered.yaziFlavor.utf8),
+    // Text outputs survive a UTF-8 round trip unchanged.
+    let textOutputs = [
+      AtuinAdapter.outputPath, TextMateThemeArtifact.outputPath, BtopAdapter.outputPath,
+      EzaAdapter.outputPath, HerdrAdapter.outputPath, KittyAdapter.outputPath,
+      NeovimAdapter.outputPath, PiAdapter.outputPath, SketchyBarAdapter.outputPath,
+      SlackAdapter.outputPath, SpicetifyAdapter.outputPath, StarshipAdapter.outputPath,
+      TuicrAdapter.outputPath, YaziAdapter.flavorOutputPath,
     ]
-    for (path, data) in compatibilityOutputs {
-      #expect(rendered.artifact(atPath: path)?.data == data)
+    for path in textOutputs {
+      let data = try #require(rendered.artifact(atPath: path)?.data)
+      #expect(Data(String(decoding: data, as: UTF8.self).utf8) == data)
     }
+    #expect(rendered.artifact(atPath: ThemeRenderer.themeOutputPath) != nil)
+    #expect(rendered.artifact(atPath: WallpaperAdapter.outputPath) != nil)
+    #expect(
+      rendered.artifact(atPath: SketchyBarAdapter.shellOutputPath)?.data
+        == Data(SketchyBarAdapter.renderShellPalette(package: package).utf8)
+    )
     let writtenJSON = try Data(contentsOf: outputRoot.appending(path: "theme.json"))
     let writtenWallpaper = try Data(
       contentsOf: outputRoot.appending(path: WallpaperAdapter.outputPath)
