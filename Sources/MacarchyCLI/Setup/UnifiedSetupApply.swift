@@ -12,14 +12,14 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     ) async throws
     -> SetupComponentExecution
   typealias ThemeApply =
-    @Sendable (ThemePackage, URL) async throws -> SetupComponentExecution
+    @Sendable (ThemePackage, URL) async throws -> ThemeSetJSONReport
   /// Reactivates the active theme, reconciling only the given adapters. The final
   /// closure runs under the activation lock right after the pointer swap.
   typealias ThemeRefresh =
     @Sendable (
       UnifiedSetupPlanContext, UnifiedSetupThemePlan, Set<String>, ThemeConsumerPaths,
       @escaping @Sendable (GenerationManifest) throws -> Void
-    ) async throws -> SetupComponentExecution
+    ) async throws -> ThemeSetJSONReport
 
   let planner: UnifiedSetupPlanCommandRunner
   let themeInspection: UnifiedSetupThemeInspection
@@ -71,18 +71,15 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       builtInRoot: context.themesRoot,
       userRoot: StateLayout(root: context.stateRoot).userThemes
     )
-    return try await SetupComponentExecution(
-      withThemePackageLock(stateRoot: context.stateRoot, unlessDryRun: false) {
-        try await activation.executeLocked(
-          package: repository.package(id: theme.id),
-          stateRoot: context.stateRoot,
-          consumerPaths: consumerPaths,
-          dryRun: false,
-          expectedActiveGenerationID: theme.currentGenerationID,
-          json: true
-        )
-      }
-    )
+    return try await withThemePackageLock(stateRoot: context.stateRoot, unlessDryRun: false) {
+      try await activation.reportLocked(
+        package: repository.package(id: theme.id),
+        stateRoot: context.stateRoot,
+        consumerPaths: consumerPaths,
+        dryRun: false,
+        expectedActiveGenerationID: theme.currentGenerationID
+      ).jsonReport
+    }
   }
 
   static var guided: Self {
@@ -138,9 +135,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           )
         }
       }
-      return try SetupComponentExecution(
-        ThemeSetReport(outcome, themeID: package.id, slackTheme: nil).execution(json: true)
-      )
+      return ThemeSetReport(outcome, themeID: package.id, slackTheme: nil).jsonReport
     },
     desktopApply: { context, profile, consumerPaths, adoptions, enabledThemeAdapterIDs in
       try await SetupComponentExecution(
@@ -396,7 +391,6 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
           do {
             theme = try stage(
               await themeApply(currentModel.themePackage, context.stateRoot),
-              mutationField: "committed",
               successMessage: "The curated default theme is active."
             )
           } catch {
@@ -452,7 +446,6 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
             theme = try stage(
               await themeRefresh(
                 context, currentModel.theme, adapterIDs, consumerPaths, followSetupOwnedTheme),
-              mutationField: "committed",
               successMessage:
                 "Reactivated '\(currentModel.theme.id)' to publish the current SketchyBar palette; it stays active if a later stage rolls back."
             )
@@ -827,6 +820,15 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
   }
 
   private func stage(
+    _ report: ThemeSetJSONReport,
+    successMessage: String
+  ) -> UnifiedSetupApplyStage {
+    stage(
+      .theme(report), succeeded: report.succeeded, mutated: report.committed,
+      failureMessage: report.error, successMessage: successMessage)
+  }
+
+  private func stage(
     _ report: PreferencesReport,
     successMessage: String
   ) throws -> UnifiedSetupApplyStage {
@@ -834,12 +836,23 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
       throw SetupComponentReportError(
         description: "Delegated result is missing boolean field 'mutated'.")
     }
-    return UnifiedSetupApplyStage(
-      succeeded: report.succeeded,
+    return stage(
+      .preferences(report), succeeded: report.succeeded, mutated: mutated,
+      failureMessage: report.message, successMessage: successMessage)
+  }
+
+  private func stage(
+    _ details: SetupStageDetails,
+    succeeded: Bool,
+    mutated: Bool,
+    failureMessage: String?,
+    successMessage: String
+  ) -> UnifiedSetupApplyStage {
+    UnifiedSetupApplyStage(
+      succeeded: succeeded,
       mutated: mutated,
-      message: report.succeeded
-        ? successMessage : report.message ?? "The delegated operation failed.",
-      details: .preferences(report)
+      message: succeeded ? successMessage : failureMessage ?? "The delegated operation failed.",
+      details: details
     )
   }
 

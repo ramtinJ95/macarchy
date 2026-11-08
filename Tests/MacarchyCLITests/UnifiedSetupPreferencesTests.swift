@@ -20,15 +20,15 @@ struct UnifiedSetupPreferencesTests {
       packages: .init(packages: [.init(kind: .formula, name: "jq")]),
       theme: { _, _ in
         Issue.record("Unapproved preferences must block before theme apply")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         Issue.record("Unapproved preferences must block before desktop apply")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         Issue.record("Unapproved preferences must block before environment apply")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       })
     let plan = try runner.planner.prepare(context: fixture.context).report
     #expect(plan.preferencesApprovalDigest != nil)
@@ -66,7 +66,7 @@ struct UnifiedSetupPreferencesTests {
       available: { _ in true }, plannedStages: [.desktop, .environment], preferences: lifecycle,
       theme: { _, _ in
         Issue.record("Existing theme must be preserved")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         calls.withLock { $0.append("desktop") }
@@ -310,15 +310,15 @@ struct UnifiedSetupPreferencesTests {
       available: { _ in true }, preferences: lifecycle,
       theme: { _, _ in
         Issue.record("No theme mutation expected")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, _, _, _, _ in
         Issue.record("No desktop mutation expected")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environment: { _, _, _, _, _ in
         Issue.record("No environment mutation expected")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       faultInjector: checkpoint)
   }

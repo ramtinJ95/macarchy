@@ -366,8 +366,8 @@ struct PackageInventoryTests {
     #expect(proposed.allSatisfy { $0["homebrew_status"]?.string == "unknown" })
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: planner, themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
-      desktopInspection: { _, _, _, _ in try applyComponent("{}") },
-      environmentInspection: { _, _, _, _ in try applyComponent("{}") }
+      desktopInspection: { _, _, _, _ in throw UnexpectedComponentCall() },
+      environmentInspection: { _, _, _, _ in throw UnexpectedComponentCall() }
     )
     let status = try inspection.execute(
       operation: .status, context: fixture.context, consumerPaths: testConsumerPaths(), json: false

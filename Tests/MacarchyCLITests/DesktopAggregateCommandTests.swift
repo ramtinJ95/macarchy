@@ -323,7 +323,7 @@ struct DesktopAggregateCommandTests {
       planner: planner,
       environmentTeardown: { _, _, _ in
         Issue.record("Environment must not run")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktopTeardown: { _, _, dryRun in
         try SetupComponentExecution(
@@ -360,7 +360,7 @@ struct DesktopAggregateCommandTests {
       plannedStages: [.desktop, .environment],
       theme: { _, _ in
         Issue.record("The active theme must be preserved")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktop: { _, profile, paths, _, _ in
         try await SetupComponentExecution(

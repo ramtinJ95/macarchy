@@ -14,7 +14,7 @@ struct UnifiedSetupLifecycleTests {
     let calls = Mutex(0)
     let unexpected: UnifiedSetupInspectionCommandRunner.ComponentInspection = { _, _, _, _ in
       calls.withLock { $0 += 1 }
-      return try applyComponent("{}")
+      throw UnexpectedComponentCall()
     }
     let runner = UnifiedSetupInspectionCommandRunner(
       planner: fixture.planner(),
@@ -242,7 +242,7 @@ struct UnifiedSetupLifecycleTests {
     try store.write(transaction)
     let unexpectedComponent: UnifiedSetupTeardownCommandRunner.ComponentTeardown = { _, _, _ in
       Issue.record("Blocked recovery must not invoke component recovery")
-      return try applyComponent("{}")
+      throw UnexpectedComponentCall()
     }
     let teardown = UnifiedSetupTeardownCommandRunner(
       planner: fixture.planner(),
@@ -256,7 +256,7 @@ struct UnifiedSetupLifecycleTests {
     let unexpectedInspection: UnifiedSetupInspectionCommandRunner.ComponentInspection = {
       _, _, _, _ in
       Issue.record("Pending recovery must block delegated inspection")
-      return try applyComponent("{}")
+      throw UnexpectedComponentCall()
     }
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: fixture.planner(),

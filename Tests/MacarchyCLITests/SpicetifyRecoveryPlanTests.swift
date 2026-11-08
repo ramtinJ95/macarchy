@@ -62,15 +62,15 @@ struct SpicetifyRecoveryPlanTests {
       capabilityIsAvailable: { _ in true }, writePreMutationPlan: { _ in },
       themeApply: { _, _ in
         Issue.record("Blocked preflight must not activate theme")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       desktopApply: { _, _, _, _, _ in
         Issue.record("Blocked preflight must not mutate desktop")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environmentApply: { _, _, _, _, _ in
         Issue.record("Blocked preflight must not mutate environment")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       })
     let execution = try await runner.execute(
       context: context, consumerPaths: testConsumerPaths(), json: true)
@@ -95,11 +95,11 @@ struct SpicetifyRecoveryPlanTests {
       planner: planner, themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
       desktopInspection: { _, _, _, _ in
         Issue.record("An absent setup must not inspect desktop runtime")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       },
       environmentInspection: { _, _, _, _ in
         Issue.record("An absent setup must not inspect environment runtime")
-        return try applyComponent("{}")
+        throw UnexpectedComponentCall()
       })
     for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
       let status = try inspector.execute(
