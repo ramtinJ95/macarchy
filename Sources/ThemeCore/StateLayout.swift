@@ -36,6 +36,18 @@ package struct StateLayout: Sendable {
     "generations/\(generationID)"
   }
 
+  /// The inverse of `generationPath`: the identity a `current` destination selects, or nil
+  /// unless the destination is exactly `generations/<id>` with an identity the store accepts.
+  package static func generationID(
+    fromPath destination: String, isGenerationID: (String) -> Bool
+  ) -> String? {
+    let prefix = generationPath("")
+    guard destination.hasPrefix(prefix) else { return nil }
+    let generationID = String(destination.dropFirst(prefix.count))
+    guard !generationID.contains("/"), isGenerationID(generationID) else { return nil }
+    return generationID
+  }
+
   // Provider generation stores, relative to the state root.
   package static let environmentDirectory = "environment"
   package static let keybindingsDirectory = "keybindings"

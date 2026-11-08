@@ -171,11 +171,8 @@ struct EnvironmentStateStore: Sendable {
 
   private static func currentDestinationIsValid(_ destination: String?) -> Bool {
     guard let destination else { return true }
-    let prefix = "generations/"
-    guard destination.hasPrefix(prefix), !destination.dropFirst(prefix.count).contains("/") else {
-      return false
-    }
-    return EnvironmentGenerationStore.isGenerationID(String(destination.dropFirst(prefix.count)))
+    return StateLayout.generationID(
+      fromPath: destination, isGenerationID: EnvironmentGenerationStore.isGenerationID) != nil
   }
 
   private static func providerReplacementsAreValid(

@@ -442,12 +442,10 @@ package struct EnvironmentGenerationStore: Sendable {
   }
 
   private func validatedGenerationID(from destination: String) throws -> String {
-    let prefix = "generations/e-"
-    guard destination.hasPrefix(prefix), !destination.dropFirst(prefix.count).contains("/") else {
-      throw EnvironmentGenerationError.invalid("current has an unexpected destination")
-    }
-    let generationID = String(destination.dropFirst("generations/".count))
-    guard Self.isGenerationID(generationID) else {
+    guard
+      let generationID = StateLayout.generationID(
+        fromPath: destination, isGenerationID: Self.isGenerationID)
+    else {
       throw EnvironmentGenerationError.invalid("current has an unexpected destination")
     }
     return generationID
