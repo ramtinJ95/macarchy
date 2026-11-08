@@ -226,27 +226,25 @@ extension EnvironmentProfile {
     terminal == .disabled && shell == .disabled && prompt == .disabled && history == .disabled
       && focusRing == .disabled
       && editor == .disabled
-      && !tools.bat && !tools.eza && !tools.btop && !tools.yazi
-      && !presets.codex && !presets.pi && !presets.tuicr
-      && !presets.herdr && !presets.slack && !presets.spicetify
+      && !EnvironmentDailyTool.allCases.contains { $0.isEnabled(in: tools) }
+      && !EnvironmentPreset.allCases.contains { $0.isEnabled(in: presets) }
   }
 
   var selectedThemeAdapterIDs: [String] {
-    (terminal == .kitty ? ["kitty"] : [])
-      + (focusRing == .borders ? [BordersAdapter.id] : [])
-      + (focusRing == .lean ? [BordersAdapter.leanID] : [])
-      + (prompt == .starship ? ["starship"] : [])
-      + (history == .atuin ? ["atuin"] : [])
-      + (editor == .neovim ? ["neovim"] : [])
-      + (tools.bat ? ["bat"] : [])
-      + (tools.btop ? ["btop"] : [])
-      + (tools.eza ? ["eza"] : [])
-      + (tools.yazi ? ["yazi"] : [])
-      + (presets.codex ? ["codex"] : [])
-      + (presets.herdr ? ["herdr"] : [])
-      + (presets.pi ? ["pi"] : [])
-      + (presets.spicetify ? ["spicetify"] : [])
-      + (presets.tuicr ? ["tuicr"] : [])
+    var ids: [String] = []
+    if terminal == .kitty { ids.append("kitty") }
+    if focusRing == .borders { ids.append(BordersAdapter.id) }
+    if focusRing == .lean { ids.append(BordersAdapter.leanID) }
+    if prompt == .starship { ids.append("starship") }
+    if history == .atuin { ids.append("atuin") }
+    if editor == .neovim { ids.append("neovim") }
+    // Tool adapters stay alphabetical, ahead of the presets' adapters.
+    let toolIDs: [String] = EnvironmentDailyTool.allCases
+      .filter { $0.isEnabled(in: tools) }
+      .map(\.adapterID)
+    ids += toolIDs.sorted()
+    ids += EnvironmentPreset.allCases.compactMap { $0.isEnabled(in: presets) ? $0.adapterID : nil }
+    return ids
   }
 }
 

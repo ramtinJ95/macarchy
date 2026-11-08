@@ -1,25 +1,8 @@
 import ThemeCore
 
 // Validation is pure; callers retain their own inspection and filesystem-read order.
+// Each preset declares its legacy setup records in `EnvironmentPreset.legacyIntegration`.
 enum EnvironmentLegacyIntegration {
-  static let codexIDs = Set([
-    SetupOwnershipManager.codexSelectorID,
-    SetupOwnershipManager.codexThemeLinkID,
-  ])
-  static let piIDs = Set([
-    SetupOwnershipManager.piSelectorID,
-    SetupOwnershipManager.piThemeLinkID,
-  ])
-  static let spicetifyIDs = Set([
-    SetupOwnershipManager.spicetifySelectorsID,
-    SetupOwnershipManager.spicetifyColorLinkID,
-  ])
-  static let tuicrIDs = Set([
-    SetupOwnershipManager.tuicrSelectorID,
-    SetupOwnershipManager.tuicrThemeLinkID,
-    SetupOwnershipManager.tuicrSyntaxLinkID,
-  ])
-
   static func hasCompleteLegacyIntegration(
     named name: String,
     requiredIDs: Set<String>,

@@ -44,14 +44,7 @@ struct EnvironmentInspectionContractTests {
     for message in [nil, "Blocked independently of entry status."] as [String?] {
       let inspection = EnvironmentProviderInspection(
         entries: [entry], ownership: nil, adoptionEvidenceDigest: nil,
-        blockedMessage: message, desiredEntries: [], externalEvidence: [:], createdDirectories: [],
-        proposedBtopOwnership: nil, btopExternalEvidence: nil,
-        proposedCodexOwnership: nil, codexExternalEvidence: nil,
-        proposedHerdrOwnership: nil, herdrExternalEvidence: nil,
-        proposedPiOwnership: nil, piExternalEvidence: nil,
-        proposedSpicetifyOwnership: nil, spicetifyExternalEvidence: nil,
-        proposedTuicrOwnership: nil, tuicrExternalEvidence: nil,
-        proposedBordersOwnership: nil, bordersServiceInspection: nil)
+        blockedMessage: message, desiredEntries: [], externalEvidence: [:], createdDirectories: [])
       #expect(
         inspection.isBlocked == (message != nil || status == "drifted" || status == "unsupported"))
     }
@@ -107,10 +100,10 @@ struct EnvironmentInspectionContractTests {
   }
 
   @Test(arguments: [
-    ("Codex", EnvironmentLegacyIntegration.codexIDs),
-    ("Pi", EnvironmentLegacyIntegration.piIDs),
-    ("Spicetify", EnvironmentLegacyIntegration.spicetifyIDs),
-    ("tuicr", EnvironmentLegacyIntegration.tuicrIDs),
+    ("Codex", EnvironmentLinkedPreset.codex.legacyIntegration.setupIDs),
+    ("Pi", EnvironmentLinkedPreset.pi.legacyIntegration.setupIDs),
+    ("Spicetify", EnvironmentLinkedPreset.spicetify.legacyIntegration.setupIDs),
+    ("tuicr", EnvironmentLinkedPreset.tuicr.legacyIntegration.setupIDs),
   ])
   func legacyValidatorPreservesAbsentCompleteAndEveryPartialTuple(
     name: String, requiredIDs: Set<String>

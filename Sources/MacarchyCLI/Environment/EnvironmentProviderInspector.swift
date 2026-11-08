@@ -20,20 +20,16 @@ struct EnvironmentProviderInspection: Sendable {
   let desiredEntries: [EnvironmentManagedEntry]
   let externalEvidence: [EnvironmentEntryID: EnvironmentEntryEvidence]
   let createdDirectories: [String]
-  let proposedBtopOwnership: EnvironmentBtopOwnership?
-  let btopExternalEvidence: EnvironmentEntryEvidence?
-  let proposedCodexOwnership: EnvironmentCodexOwnership?
-  let codexExternalEvidence: EnvironmentEntryEvidence?
-  let proposedHerdrOwnership: EnvironmentHerdrOwnership?
-  let herdrExternalEvidence: EnvironmentEntryEvidence?
-  let proposedPiOwnership: EnvironmentPiOwnership?
-  let piExternalEvidence: EnvironmentEntryEvidence?
-  let proposedSpicetifyOwnership: EnvironmentSpicetifyOwnership?
-  let spicetifyExternalEvidence: EnvironmentEntryEvidence?
-  let proposedTuicrOwnership: EnvironmentTuicrOwnership?
-  let tuicrExternalEvidence: EnvironmentEntryEvidence?
-  let proposedBordersOwnership: EnvironmentBordersOwnership?
-  let bordersServiceInspection: BordersServiceInspection?
+  var proposedBtopOwnership: EnvironmentBtopOwnership? = nil
+  var proposedCodexOwnership: EnvironmentCodexOwnership? = nil
+  var proposedHerdrOwnership: EnvironmentHerdrOwnership? = nil
+  var proposedPiOwnership: EnvironmentPiOwnership? = nil
+  var proposedSpicetifyOwnership: EnvironmentSpicetifyOwnership? = nil
+  var proposedTuicrOwnership: EnvironmentTuicrOwnership? = nil
+  /// Planned evidence of each key-owned file apply must find unchanged.
+  var keyOwnedExternalEvidence: [EnvironmentKeyOwnedFile: EnvironmentEntryEvidence] = [:]
+  var proposedBordersOwnership: EnvironmentBordersOwnership? = nil
+  var bordersServiceInspection: BordersServiceInspection? = nil
   var leanServiceInspection: EnvironmentLeanObservation? = nil
   var standardNativeEntries: [EnvironmentEntryID] = []
 
@@ -41,13 +37,19 @@ struct EnvironmentProviderInspection: Sendable {
     Self(
       entries: [], ownership: nil, adoptionEvidenceDigest: nil,
       blockedMessage: String(describing: error), desiredEntries: [], externalEvidence: [:],
-      createdDirectories: [], proposedBtopOwnership: nil, btopExternalEvidence: nil,
-      proposedCodexOwnership: nil, codexExternalEvidence: nil,
-      proposedHerdrOwnership: nil, herdrExternalEvidence: nil,
-      proposedPiOwnership: nil, piExternalEvidence: nil,
-      proposedSpicetifyOwnership: nil, spicetifyExternalEvidence: nil,
-      proposedTuicrOwnership: nil, tuicrExternalEvidence: nil,
-      proposedBordersOwnership: nil, bordersServiceInspection: nil)
+      createdDirectories: [])
+  }
+
+  /// Whether apply adopts or installs the key-owned file rather than leaving it external.
+  func proposesOwnership(of file: EnvironmentKeyOwnedFile) -> Bool {
+    switch file {
+    case .btop: proposedBtopOwnership != nil
+    case .codex: proposedCodexOwnership != nil
+    case .herdr: proposedHerdrOwnership != nil
+    case .pi: proposedPiOwnership != nil
+    case .spicetify: proposedSpicetifyOwnership != nil
+    case .tuicr: proposedTuicrOwnership != nil
+    }
   }
 
   var isBlocked: Bool {
@@ -210,50 +212,28 @@ struct EnvironmentProviderInspector: Sendable {
         .neovim: ["neovim.theme-link"],
       ]
       var legacyIDs = Set(entries.flatMap { legacyEntryIDs[$0.id] ?? [] })
-      if composition.profile.tools.bat {
-        legacyIDs.formUnion(["bat.selector", "bat.theme-link"])
-      }
-      if composition.profile.tools.eza {
-        legacyIDs.formUnion(["eza.environment", "eza.theme-link"])
-      }
-      if composition.profile.tools.btop {
-        legacyIDs.formUnion(["btop.selector", "btop.theme-link"])
-      }
-      if composition.profile.tools.yazi {
-        legacyIDs.formUnion(["yazi.selector", "yazi.flavor-link", "yazi.syntax-link"])
+      for tool in EnvironmentDailyTool.allCases
+      where tool.isEnabled(in: composition.profile.tools) {
+        legacyIDs.formUnion(tool.legacySetupIDs)
       }
       let setupRecords = try SetupOwnershipManager().readRecords(context: setupContext)
       let setupIDs = Set(setupRecords.map(\.id))
-      let legacyTuicrOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-        named: "tuicr", requiredIDs: EnvironmentLegacyIntegration.tuicrIDs, setupIDs: setupIDs)
-      let legacyPiOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-        named: "Pi", requiredIDs: EnvironmentLegacyIntegration.piIDs, setupIDs: setupIDs)
-      let legacySpicetifyOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-        named: "Spicetify", requiredIDs: EnvironmentLegacyIntegration.spicetifyIDs,
-        setupIDs: setupIDs)
-      let legacyCodexOwned = try EnvironmentLegacyIntegration.hasCompleteLegacyIntegration(
-        named: "Codex", requiredIDs: EnvironmentLegacyIntegration.codexIDs, setupIDs: setupIDs)
-      /// An enabled preset with neither key ownership, owned theme links nor legacy setup
-      /// ownership left its exact external tuple authoritative.
-      func externallyAuthoritative(
-        _ enabled: Bool?, hasOwnership: Bool, links: Set<EnvironmentEntryID>, legacyOwned: Bool
-      ) -> Bool {
-        enabled == true && !hasOwnership
-          && ownership?.records.contains(where: { links.contains($0.id) }) != true
-          && !legacyOwned
+      var legacyOwned = [EnvironmentLinkedPreset: Bool]()
+      // An incomplete legacy integration is reported in this order.
+      for linked in [EnvironmentLinkedPreset.tuicr, .pi, .spicetify, .codex] {
+        legacyOwned[linked] = try linked.hasCompleteLegacyIntegration(setupIDs: setupIDs)
       }
-      let externallyAuthoritativeCodex = externallyAuthoritative(
-        ownership?.codexEnabled, hasOwnership: ownership?.codex != nil, links: [.codexTheme],
-        legacyOwned: legacyCodexOwned)
-      let externallyAuthoritativePi = externallyAuthoritative(
-        ownership?.piEnabled, hasOwnership: ownership?.pi != nil, links: [.piTheme],
-        legacyOwned: legacyPiOwned)
-      let externallyAuthoritativeSpicetify = externallyAuthoritative(
-        ownership?.spicetifyEnabled, hasOwnership: ownership?.spicetify != nil,
-        links: [.spicetifyColor], legacyOwned: legacySpicetifyOwned)
-      let externallyAuthoritativeTuicr = externallyAuthoritative(
-        ownership?.tuicrEnabled, hasOwnership: ownership?.tuicr != nil,
-        links: [.tuicrTheme, .tuicrSyntax], legacyOwned: legacyTuicrOwned)
+      // An enabled preset with neither key ownership, owned theme links nor legacy setup
+      // ownership left its exact external tuple authoritative.
+      var externallyAuthoritative = [EnvironmentLinkedPreset: Bool]()
+      for linked in EnvironmentLinkedPreset.allCases {
+        let enabled = ownership.map { linked.preset.isEnabled(in: $0) } == true
+        let ownsLinks =
+          ownership?.records.contains(where: { linked.themeLinks.contains($0.id) }) == true
+        externallyAuthoritative[linked] =
+          enabled && !linked.file.isOwned(by: ownership) && !ownsLinks
+          && legacyOwned[linked] != true
+      }
       let conflicts =
         setupRecords
         .map(\.id).filter { legacyIDs.contains($0) }
@@ -472,14 +452,15 @@ struct EnvironmentProviderInspector: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
         ownership: ownership?.codex,
-        legacyOwned: legacyCodexOwned,
-        externallyAuthoritative: externallyAuthoritativeCodex
+        legacyOwned: legacyOwned[.codex, default: false],
+        externallyAuthoritative: externallyAuthoritative[.codex, default: false]
       )
       if let entry = codex.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
         [.codexTheme], in: allowed, label: "Codex", legacyLink: "Codex theme link",
-        legacyOwned: legacyCodexOwned,
-        externallyAuthoritative: externallyAuthoritativeCodex && !composition.profile.presets.codex,
+        legacyOwned: legacyOwned[.codex, default: false],
+        externallyAuthoritative: externallyAuthoritative[.codex, default: false]
+          && !composition.profile.presets.codex,
         composition: composition)
       if codex.proposedOwnership != nil {
         try recordMissingParents(
@@ -504,13 +485,15 @@ struct EnvironmentProviderInspector: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
         ownership: ownership?.pi,
-        legacyOwned: legacyPiOwned,
-        externallyAuthoritative: externallyAuthoritativePi
+        legacyOwned: legacyOwned[.pi, default: false],
+        externallyAuthoritative: externallyAuthoritative[.pi, default: false]
       )
       if let entry = pi.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
-        [.piTheme], in: allowed, label: "Pi", legacyLink: "Pi link", legacyOwned: legacyPiOwned,
-        externallyAuthoritative: externallyAuthoritativePi && !composition.profile.presets.pi,
+        [.piTheme], in: allowed, label: "Pi", legacyLink: "Pi link",
+        legacyOwned: legacyOwned[.pi, default: false],
+        externallyAuthoritative: externallyAuthoritative[.pi, default: false]
+          && !composition.profile.presets.pi,
         composition: composition)
       if pi.proposedOwnership != nil {
         try recordMissingParents(of: homeDirectory.appending(path: ConsumerHomePath.piSettings))
@@ -521,14 +504,14 @@ struct EnvironmentProviderInspector: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
         ownership: ownership?.spicetify,
-        legacyOwned: legacySpicetifyOwned,
-        externallyAuthoritative: externallyAuthoritativeSpicetify
+        legacyOwned: legacyOwned[.spicetify, default: false],
+        externallyAuthoritative: externallyAuthoritative[.spicetify, default: false]
       )
       if let entry = spicetify.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
         [.spicetifyColor], in: allowed, label: "Spicetify",
-        legacyLink: "Spicetify color link", legacyOwned: legacySpicetifyOwned,
-        externallyAuthoritative: externallyAuthoritativeSpicetify
+        legacyLink: "Spicetify color link", legacyOwned: legacyOwned[.spicetify, default: false],
+        externallyAuthoritative: externallyAuthoritative[.spicetify, default: false]
           && !composition.profile.presets.spicetify,
         composition: composition)
 
@@ -558,14 +541,15 @@ struct EnvironmentProviderInspector: Sendable {
         homeDirectory: homeDirectory,
         stateRoot: stateRoot,
         ownership: ownership?.tuicr,
-        legacyOwned: legacyTuicrOwned,
-        externallyAuthoritative: externallyAuthoritativeTuicr
+        legacyOwned: legacyOwned[.tuicr, default: false],
+        externallyAuthoritative: externallyAuthoritative[.tuicr, default: false]
       )
       if let entry = tuicr.entry { inspections.append(entry) }
       inspections += try preservedPresetLinks(
         [.tuicrTheme, .tuicrSyntax], in: allowed, label: "tuicr", legacyLink: "tuicr link",
-        legacyOwned: legacyTuicrOwned,
-        externallyAuthoritative: externallyAuthoritativeTuicr && !composition.profile.presets.tuicr,
+        legacyOwned: legacyOwned[.tuicr, default: false],
+        externallyAuthoritative: externallyAuthoritative[.tuicr, default: false]
+          && !composition.profile.presets.tuicr,
         composition: composition)
       if tuicr.proposedOwnership != nil {
         try recordMissingParents(
@@ -614,12 +598,14 @@ struct EnvironmentProviderInspector: Sendable {
             composition: composition,
             entries: inspections,
             selected: entries,
-            btop: btop.proposedOwnership,
-            codex: codex.proposedOwnership,
-            herdr: herdr.proposedOwnership,
-            pi: pi.proposedOwnership,
-            spicetify: spicetify.proposedOwnership,
-            tuicr: tuicr.proposedOwnership,
+            keyOwnedPaths: [
+              EnvironmentKeyOwnedFile.btop: btop.proposedOwnership?.path,
+              .codex: codex.proposedOwnership?.path,
+              .herdr: herdr.proposedOwnership?.path,
+              .pi: pi.proposedOwnership?.path,
+              .spicetify: spicetify.proposedOwnership?.path,
+              .tuicr: tuicr.proposedOwnership?.path,
+            ].compactMapValues { $0 },
             borders: borders.ownership,
             bordersService: bordersService
           ) : nil,
@@ -628,17 +614,19 @@ struct EnvironmentProviderInspector: Sendable {
         externalEvidence: evidence,
         createdDirectories: createdDirectories.sorted(),
         proposedBtopOwnership: btop.proposedOwnership,
-        btopExternalEvidence: btop.externalEvidence,
         proposedCodexOwnership: codex.proposedOwnership,
-        codexExternalEvidence: codex.externalEvidence,
         proposedHerdrOwnership: herdr.proposedOwnership,
-        herdrExternalEvidence: herdr.externalEvidence,
         proposedPiOwnership: pi.proposedOwnership,
-        piExternalEvidence: pi.externalEvidence,
         proposedSpicetifyOwnership: spicetify.proposedOwnership,
-        spicetifyExternalEvidence: spicetify.externalEvidence,
         proposedTuicrOwnership: tuicr.proposedOwnership,
-        tuicrExternalEvidence: tuicr.externalEvidence,
+        keyOwnedExternalEvidence: [
+          EnvironmentKeyOwnedFile.btop: btop.externalEvidence,
+          .codex: codex.externalEvidence,
+          .herdr: herdr.externalEvidence,
+          .pi: pi.externalEvidence,
+          .spicetify: spicetify.externalEvidence,
+          .tuicr: tuicr.externalEvidence,
+        ].compactMapValues { $0 },
         proposedBordersOwnership: borders.ownership,
         bordersServiceInspection: bordersService,
         leanServiceInspection: leanService,
@@ -670,16 +658,13 @@ struct EnvironmentProviderInspector: Sendable {
       enabled.formUnion([.atuinConfiguration, .atuinTheme])
     }
     if profile.editor == .neovim { enabled.insert(.neovim) }
-    if profile.tools.bat { enabled.formUnion([.batConfiguration, .batTheme]) }
-    if profile.tools.eza { enabled.insert(.ezaTheme) }
-    if profile.tools.btop { enabled.insert(.btopTheme) }
-    if profile.tools.yazi {
-      enabled.formUnion([.yaziConfiguration, .yaziThemeSelection, .yaziFlavor, .yaziSyntax])
+    for tool in EnvironmentDailyTool.allCases where tool.isEnabled(in: profile.tools) {
+      enabled.formUnion(tool.entryIDs)
     }
-    if profile.presets.codex { enabled.insert(.codexTheme) }
-    if profile.presets.pi { enabled.insert(.piTheme) }
-    if profile.presets.spicetify { enabled.insert(.spicetifyColor) }
-    if profile.presets.tuicr { enabled.formUnion([.tuicrTheme, .tuicrSyntax]) }
+    for linked in EnvironmentLinkedPreset.allCases
+    where linked.preset.isEnabled(in: profile.presets) {
+      enabled.formUnion(linked.themeLinks)
+    }
     return allManagedEntries(homeDirectory: homeDirectory, stateRoot: stateRoot)
       .filter { enabled.contains($0.id) }
   }
@@ -1014,12 +999,7 @@ struct EnvironmentProviderInspector: Sendable {
     composition: EnvironmentComposition,
     entries: [EnvironmentEntryInspection],
     selected: [EnvironmentManagedEntry],
-    btop: EnvironmentBtopOwnership?,
-    codex: EnvironmentCodexOwnership?,
-    herdr: EnvironmentHerdrOwnership?,
-    pi: EnvironmentPiOwnership?,
-    spicetify: EnvironmentSpicetifyOwnership?,
-    tuicr: EnvironmentTuicrOwnership?,
+    keyOwnedPaths: [EnvironmentKeyOwnedFile: String],
     borders: EnvironmentBordersOwnership?,
     bordersService: BordersServiceInspection?
   ) throws -> String {
@@ -1040,23 +1020,8 @@ struct EnvironmentProviderInspector: Sendable {
       }
     }
     var targets = Dictionary(uniqueKeysWithValues: selected.map { ($0.id.rawValue, $0.target) })
-    if let btop {
-      targets[EnvironmentEntryID.btopConfiguration.rawValue] = "provider-writable:\(btop.path)"
-    }
-    if let codex {
-      targets[EnvironmentEntryID.codexConfiguration.rawValue] = "key-owned:\(codex.path)"
-    }
-    if let herdr {
-      targets["herdr_configuration"] = "key-owned:\(herdr.path)"
-    }
-    if let pi {
-      targets[EnvironmentEntryID.piConfiguration.rawValue] = "key-owned:\(pi.path)"
-    }
-    if let spicetify {
-      targets["spicetify_configuration"] = "key-owned:\(spicetify.path)"
-    }
-    if let tuicr {
-      targets[EnvironmentEntryID.tuicrConfiguration.rawValue] = "key-owned:\(tuicr.path)"
+    for (file, path) in keyOwnedPaths {
+      targets[file.entryID] = "\(file.adoptionTargetPrefix)\(path)"
     }
     let payload = Payload(
       schemaVersion: 1,
@@ -1069,17 +1034,13 @@ struct EnvironmentProviderInspector: Sendable {
         composition.profile.prompt.rawValue,
         composition.profile.history.rawValue,
         composition.profile.editor.rawValue,
-        composition.profile.tools.bat ? "bat" : "bat-disabled",
-        composition.profile.tools.eza ? "eza" : "eza-disabled",
-        composition.profile.tools.btop ? "btop" : "btop-disabled",
-        composition.profile.tools.yazi ? "yazi" : "yazi-disabled",
-        composition.profile.presets.codex ? "codex" : "codex-disabled",
-        composition.profile.presets.herdr ? "herdr" : "herdr-disabled",
-        composition.profile.presets.pi ? "pi" : "pi-disabled",
-        composition.profile.presets.slack ? "slack" : "slack-disabled",
-        composition.profile.presets.spicetify ? "spicetify" : "spicetify-disabled",
-        composition.profile.presets.tuicr ? "tuicr" : "tuicr-disabled",
-      ],
+      ]
+        + EnvironmentDailyTool.allCases.map {
+          $0.isEnabled(in: composition.profile.tools) ? $0.rawValue : "\($0.rawValue)-disabled"
+        }
+        + EnvironmentPreset.allCases.map {
+          $0.isEnabled(in: composition.profile.presets) ? $0.rawValue : "\($0.rawValue)-disabled"
+        },
       entries: entries.filter { targets[$0.id] != nil }.map {
         Payload.Entry(
           id: $0.id,
@@ -1456,6 +1417,34 @@ struct EnvironmentProviderInspector: Sendable {
         )
         : try configurationText(at: configuration, evidence: evidence)
       return try EnvironmentCodexDocument.matchesManaged(text, source: configuration)
+    }
+  }
+
+  /// Whether the linked preset's configuration and theme links still form its exact external
+  /// tuple.
+  func externalTupleIsExact(
+    _ linked: EnvironmentLinkedPreset,
+    homeDirectory: URL,
+    stateRoot: URL,
+    configurationEvidence: EnvironmentEntryEvidence? = nil
+  ) throws -> Bool {
+    switch linked {
+    case .codex:
+      try codexExternalTupleIsExact(
+        homeDirectory: homeDirectory, stateRoot: stateRoot,
+        configurationEvidence: configurationEvidence)
+    case .pi:
+      try piExternalTupleIsExact(
+        homeDirectory: homeDirectory, stateRoot: stateRoot,
+        configurationEvidence: configurationEvidence)
+    case .spicetify:
+      try spicetifyExternalTupleIsExact(
+        homeDirectory: homeDirectory, stateRoot: stateRoot,
+        configurationEvidence: configurationEvidence)
+    case .tuicr:
+      try tuicrExternalTupleIsExact(
+        homeDirectory: homeDirectory, stateRoot: stateRoot,
+        configurationEvidence: configurationEvidence)
     }
   }
 

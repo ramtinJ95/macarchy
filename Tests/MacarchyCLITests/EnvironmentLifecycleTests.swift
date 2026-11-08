@@ -933,7 +933,9 @@ struct EnvironmentLifecycleTests {
         proposedOwnership: nil,
         previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
           .currentDestination(),
-        btopReplacementName: ".macarchy-environment-btop-test.replacement"
+        replacementNames: EnvironmentReplacementNames([
+          .btop: ".macarchy-environment-btop-test.replacement"
+        ])
       )
     )
 
@@ -991,7 +993,9 @@ struct EnvironmentLifecycleTests {
         proposedOwnership: nil,
         previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
           .currentDestination(),
-        btopReplacementName: ".macarchy-environment-btop-test.replacement"
+        replacementNames: EnvironmentReplacementNames([
+          .btop: ".macarchy-environment-btop-test.replacement"
+        ])
       )
     )
     let unified = try fixture.writePendingUnifiedSetup(.teardown)
@@ -1031,7 +1035,9 @@ struct EnvironmentLifecycleTests {
         proposedOwnership: nil,
         previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
           .currentDestination(),
-        btopReplacementName: ".macarchy-environment-btop-test.replacement"
+        replacementNames: EnvironmentReplacementNames([
+          .btop: ".macarchy-environment-btop-test.replacement"
+        ])
       )
     )
     try FileManager.default.removeItem(at: fixture.kittyEntry.appending(path: "kitty.conf"))
@@ -1061,7 +1067,9 @@ struct EnvironmentLifecycleTests {
         proposedOwnership: nil,
         previousCurrentDestination: try EnvironmentGenerationStore(stateRoot: fixture.state)
           .currentDestination(),
-        btopReplacementName: ".macarchy-environment-btop-test.replacement"
+        replacementNames: EnvironmentReplacementNames([
+          .btop: ".macarchy-environment-btop-test.replacement"
+        ])
       )
     )
     // As if teardown stopped after removing the managed link but before restoring the original.
