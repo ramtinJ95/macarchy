@@ -878,7 +878,7 @@ struct SketchyBarCoreRuntimeVerifier: Sendable {
   }
 
   private static func validMediaIdentity(_ value: String) -> Bool {
-    value == "inactive" || value.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+    value == "inactive" || isSHA256Hex(value)
   }
 
   private func validCompanion(_ companion: SketchyBarClockCompanion, position: String) throws

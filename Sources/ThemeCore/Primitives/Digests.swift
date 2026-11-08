@@ -1,8 +1,13 @@
 import CryptoKit
 import Foundation
 
+/// The SHA-256 of `data` as 64 lowercase hex digits, without a prefix.
+package func sha256Hex(_ data: Data) -> String {
+  SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
 package func sha256Digest(_ data: Data) -> String {
-  "sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  "sha256:" + sha256Hex(data)
 }
 
 /// Digest of each value's UTF-8 bytes framed as `<byte count>:<bytes>`, in order.
@@ -29,6 +34,12 @@ package func sortedKeysJSON<Value: Encodable>(_ value: Value) throws -> Data {
   let encoder = JSONEncoder()
   encoder.outputFormatting = [.sortedKeys]
   return try encoder.encode(value)
+}
+
+/// Whether `value` matches `^[0-9a-f]{64}$` as Foundation's regular-expression search reads it,
+/// where `$` also matches before one final line terminator.
+package func isSHA256Hex(_ value: String) -> Bool {
+  value.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
 }
 
 package func isSHA256Digest(_ value: String) -> Bool {

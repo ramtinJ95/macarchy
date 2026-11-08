@@ -15,7 +15,7 @@ struct SketchyBarAudioPicker {
     let parts = name.dropFirst(prefix.count).split(separator: ".", omittingEmptySubsequences: false)
     guard parts.count == 2, let id = UInt32(parts[0]), id > 0,
       String(id) == parts[0],
-      parts[1].range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil
+      isSHA256Hex(String(parts[1]))
     else { return nil }
     return (id, String(parts[1]))
   }

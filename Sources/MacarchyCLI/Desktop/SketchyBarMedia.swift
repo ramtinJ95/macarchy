@@ -1,5 +1,4 @@
 import ArgumentParser
-import CryptoKit
 import Foundation
 import ImageIO
 import ThemeCore
@@ -64,7 +63,7 @@ struct NowPlayingMedia: Equatable {
     data.append(contentsOf: artist.utf8)
     data.append(0)
     if let artwork { data.append(artwork) }
-    return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    return sha256Hex(data)
   }
 }
 

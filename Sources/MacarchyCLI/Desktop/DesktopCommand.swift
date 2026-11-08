@@ -244,7 +244,7 @@ struct Desktop: ParsableCommand {
         throw ValidationError("Audio output selection requires both --id and --identity.")
       }
       if let identity {
-        guard identity.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
+        guard isSHA256Hex(identity) else {
           throw ValidationError("Audio output identity must be a SHA-256 digest.")
         }
       }

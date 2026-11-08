@@ -1,4 +1,3 @@
-import CryptoKit
 import Darwin
 import Foundation
 import ThemeCore
@@ -21,8 +20,7 @@ enum SaverDisplay: Hashable, Sendable {
   /// A file name that cannot collide or escape the records directory, whatever the output name.
   var recordName: String {
     guard case .output(let name) = self else { return "main.json" }
-    let digest = SHA256.hash(data: Data(name.utf8)).prefix(8)
-    return "output-\(digest.map { String(format: "%02x", $0) }.joined()).json"
+    return "output-\(sha256Hex(Data(name.utf8)).prefix(16)).json"
   }
 
   var label: String {

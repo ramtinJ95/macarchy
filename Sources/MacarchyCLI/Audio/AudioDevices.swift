@@ -1,6 +1,6 @@
 import CoreAudio
-import CryptoKit
 import Foundation
+import ThemeCore
 
 /// Which side of the HAL a device list, its streams and its default device belong to.
 enum AudioDirection: Sendable {
@@ -114,7 +114,7 @@ struct AudioDevices: Codable, Equatable {
   }
 
   static func digest(_ uid: String) -> String {
-    SHA256.hash(data: Data(uid.utf8)).map { String(format: "%02x", $0) }.joined()
+    sha256Hex(Data(uid.utf8))
   }
 
   private static let system = AudioObjectID(kAudioObjectSystemObject)
