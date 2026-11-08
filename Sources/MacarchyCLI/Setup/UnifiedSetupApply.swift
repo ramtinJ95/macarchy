@@ -63,21 +63,9 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
 
   static let liveThemeRefresh: ThemeRefresh = {
     context, theme, adapterIDs, consumerPaths, onCommittedLocked in
-    let runner = ThemeSetCommandRunner(
-      preflight: { _, _, _, _ in },
-      activate: { package, backgroundID, stateRoot, consumerPaths, expectedGenerationID in
-        try await ThemeRuntimeSelection.activationCoordinator(
-          stateRoot: stateRoot,
-          consumerPaths: consumerPaths,
-          enabledAdapterIDs: adapterIDs
-        ).activate(
-          package: package,
-          expectedActiveGenerationID: expectedGenerationID,
-          requestedBackgroundID: backgroundID,
-          onCommittedLocked: onCommittedLocked
-        )
-      },
-      slackIsEnabled: { _ in false }
+    let activation = ThemeActivationService.reconciling(
+      adapterIDs,
+      onCommittedLocked: onCommittedLocked
     )
     let repository = ThemeRepository(
       builtInRoot: context.themesRoot,
@@ -85,7 +73,7 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
     )
     return try await SetupComponentExecution(
       withThemePackageLock(stateRoot: context.stateRoot, unlessDryRun: false) {
-        try await runner.execute(
+        try await activation.executeLocked(
           package: repository.package(id: theme.id),
           stateRoot: context.stateRoot,
           consumerPaths: consumerPaths,

@@ -124,7 +124,7 @@ extension Theme {
     var json = false
 
     mutating func run() async throws {
-      let execution = try await ThemeSetCommandRunner.live.execute(
+      let execution = try await ThemeActivationService.live.execute(
         repository: options.repository,
         themeID: themeID,
         stateRoot: options.stateRootURL,

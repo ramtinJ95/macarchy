@@ -108,8 +108,8 @@ struct SlackPresetLifecycleTests {
     let package = try ThemePackageLoader().load(
       packageURL: repositoryRoot.appending(path: "Themes/catppuccin-mocha"))
 
-    func runner(enabled: Bool) -> ThemeSetCommandRunner {
-      ThemeSetCommandRunner(
+    func runner(enabled: Bool) -> ThemeActivationService {
+      ThemeActivationService(
         preflight: { _, _, _, _ in },
         activate: { package, _, stateRoot, _, _ in
           let manifest = try ThemeActivator(root: stateRoot).activate(package: package)
@@ -121,7 +121,7 @@ struct SlackPresetLifecycleTests {
         slackIsEnabled: { _ in enabled }
       )
     }
-    let disabled = try await runner(enabled: false).execute(
+    let disabled = try await runner(enabled: false).executeLocked(
       package: package, stateRoot: fixture.state, consumerPaths: testConsumerPaths(),
       dryRun: false, expectedActiveGenerationID: nil, json: true)
     #expect(disabled.succeeded)
@@ -131,7 +131,7 @@ struct SlackPresetLifecycleTests {
       targetID: SlackAdapter.id)
     #expect(explicit == "#1e1e2e,#cba6f7,#a6e3a1,#f38ba8\n")
 
-    let enabled = try await runner(enabled: true).execute(
+    let enabled = try await runner(enabled: true).executeLocked(
       package: package, stateRoot: fixture.state, consumerPaths: testConsumerPaths(),
       dryRun: false, expectedActiveGenerationID: nil, json: true)
     #expect(enabled.succeeded)

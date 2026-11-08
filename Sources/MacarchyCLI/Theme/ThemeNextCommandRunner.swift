@@ -17,7 +17,7 @@ enum ThemeNextError: Error, CustomStringConvertible, Equatable {
 
 struct ThemeNextCommandRunner: Sendable {
   let activeManifest: @Sendable (URL) throws -> GenerationManifest
-  let activation: ThemeSetCommandRunner
+  let activation: ThemeActivationService
 
   static let live = ThemeNextCommandRunner(
     activeManifest: { root in
@@ -44,7 +44,7 @@ struct ThemeNextCommandRunner: Sendable {
         guard let activeIndex = packages.firstIndex(where: { $0.id == active.themeID }) else {
           throw ThemeNextError.activeThemeUnavailable(active.themeID)
         }
-        return try await activation.execute(
+        return try await activation.executeLocked(
           package: packages[(activeIndex + 1) % packages.count],
           stateRoot: stateRoot,
           consumerPaths: consumerPaths,

@@ -136,7 +136,7 @@ struct ThemeSetCommandTests {
   }
 
   private func expectGoldens(
-    runner: ThemeSetCommandRunner,
+    runner: ThemeActivationService,
     basename: String,
     dryRun: Bool = false,
     succeeded: Bool,
@@ -201,7 +201,7 @@ struct ThemeSetCommandTests {
     return signal
   }
 
-  private func integratedRunner(wallpaperSignal: YabaiWallpaperSignal) -> ThemeSetCommandRunner {
+  private func integratedRunner(wallpaperSignal: YabaiWallpaperSignal) -> ThemeActivationService {
     let control = WallpaperControl(
       inspect: {
         [
@@ -236,7 +236,7 @@ struct ThemeSetCommandTests {
         output: output
       )
     }
-    return ThemeSetCommandRunner(
+    return ThemeActivationService(
       preflight: { package, backgroundID, stateRoot, consumerPaths in
         try ThemeActivationCoordinator(
           root: stateRoot,
@@ -264,8 +264,8 @@ struct ThemeSetCommandTests {
 
   private func runner(
     activate: @escaping @Sendable () async throws -> ThemeActivationResult
-  ) -> ThemeSetCommandRunner {
-    ThemeSetCommandRunner(
+  ) -> ThemeActivationService {
+    ThemeActivationService(
       preflight: { _, _, _, _ in },
       activate: { _, _, _, _, _ in try await activate() }
     )
