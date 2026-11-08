@@ -2,18 +2,26 @@ import ArgumentParser
 import ThemeCore
 
 struct FocusRingOptions: ParsableArguments {
-  @Option(help: "Canonical Macarchy state directory.")
+  @Option(
+    name: .customLong(FocusRingHelperCommand.stateRootOption),
+    help: "Canonical Macarchy state directory.")
   var stateRoot: String
 
-  @Option(help: "Preview duration in seconds (1–300; default 30). Not used by managed services.")
+  @Option(
+    name: .customLong(FocusRingHelperCommand.secondsOption),
+    help: "Preview duration in seconds (1–300; default 30). Not used by managed services.")
   var seconds: Double?
 
-  @Flag(help: "Run persistently as the exact Macarchy-owned launchd job; not a standalone preview.")
+  @Flag(
+    name: .customLong(FocusRingHelperCommand.managedFlag),
+    help: "Run persistently as the exact Macarchy-owned launchd job; not a standalone preview.")
   var managed = false
 
   var previewDuration: Double { seconds ?? 30 }
 
-  @Flag(help: "Emit bounded JSON diagnostics after the outline is removed.")
+  @Flag(
+    name: .customLong(FocusRingHelperCommand.jsonFlag),
+    help: "Emit bounded JSON diagnostics after the outline is removed.")
   var json = false
 
   func validate() throws {

@@ -11,16 +11,11 @@ enum BordersPreviewRenderer: String, CaseIterable, ExpressibleByArgument {
 /// owns native preflight, its duration and its report; this parent only checks
 /// the palette and helper file, then supervises the owned child.
 enum LeanBordersPreview {
-  static let helperName = "macarchy-focus-ring"
   /// Time for the helper to hide, close and report after its own duration.
   static let exitGrace: TimeInterval = 5
 
   static func helperURL(beside executable: URL) -> URL {
-    executable.deletingLastPathComponent().appending(path: helperName)
-  }
-
-  static func helperArguments(stateRoot: String, seconds: Double, json: Bool) -> [String] {
-    ["--state-root", stateRoot, "--seconds", String(seconds)] + (json ? ["--json"] : [])
+    executable.deletingLastPathComponent().appending(path: FocusRingHelperCommand.executableName)
   }
 
   /// Returns the handled signal that ended supervision, or nil after a clean exit.
@@ -88,12 +83,12 @@ extension Borders.Preview {
     guard FileManager.default.isExecutableFile(atPath: helper.path) else {
       throw LeanBordersPreviewError.helperUnavailable(helper.path)
     }
-    let arguments = LeanBordersPreview.helperArguments(
+    let arguments = FocusRingHelperCommand.previewArguments(
       stateRoot: stateRoot, seconds: seconds, json: json)
     let message =
       dryRun
       ? "Dry run: only the canonical palette and the helper file were checked. No renderer or native capability check, no pixel proof; the helper was not launched."
-      : "Launch the owned \(LeanBordersPreview.helperName) for \(seconds)s from '\(palette.themeID)'. The helper preflights native capability, the GUI session and incumbent renderers on every run; its report follows cleanup. No service, configuration, permission or canonical-state changes."
+      : "Launch the owned \(FocusRingHelperCommand.executableName) for \(seconds)s from '\(palette.themeID)'. The helper preflights native capability, the GUI session and incumbent renderers on every run; its report follows cleanup. No service, configuration, permission or canonical-state changes."
     let plan = LeanBordersPreviewPlan(
       event: "planned", renderer: "lean", message: message, dryRun: dryRun,
       generationID: palette.generationID, themeID: palette.themeID,
