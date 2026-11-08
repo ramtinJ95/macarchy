@@ -1,7 +1,6 @@
 import ArgumentParser
 import Foundation
 
-/// A command's rendered output and whether it exits successfully.
 typealias CommandExecution = (output: String, succeeded: Bool)
 
 /// A report whose `--json` form is the report itself.

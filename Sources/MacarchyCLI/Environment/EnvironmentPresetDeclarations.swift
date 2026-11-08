@@ -92,7 +92,6 @@ enum EnvironmentPreset: String, CaseIterable, Sendable {
     }
   }
 
-  /// Whether the applied ownership recorded the preset as enabled.
   func isEnabled(in ownership: EnvironmentOwnership) -> Bool {
     switch self {
     case .codex: ownership.codexEnabled
