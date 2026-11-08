@@ -16,8 +16,7 @@ struct Keybindings: ParsableCommand {
     @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
@@ -48,8 +47,7 @@ struct Keybindings: ParsableCommand {
     @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Inspect without publishing or activating keybindings.")
     var dryRun = false
@@ -148,7 +146,7 @@ struct Keybindings: ParsableCommand {
 
     func stateRootURL(homeDirectory: URL) -> URL {
       stateRoot.map { URL(filePath: $0, directoryHint: .isDirectory).standardizedFileURL }
-        ?? homeDirectory.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+        ?? StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)
         .standardizedFileURL
     }
 
@@ -181,8 +179,7 @@ struct Keybindings: ParsableCommand {
     @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false

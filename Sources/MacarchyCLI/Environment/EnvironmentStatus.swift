@@ -44,7 +44,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
           },
           version: {
             try PiAdapter(
-              root: homeDirectory.appending(path: ".config/macarchy"),
+              root: StateLayout.defaultRoot(in: homeDirectory),
               configurationDirectoryURL: homeDirectory.appending(path: ".pi/agent"),
               executableURL: PiAdapter.liveExecutableURL,
               controlIsAvailable: { true },
@@ -64,7 +64,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
           },
           version: {
             try CodexAdapter(
-              root: homeDirectory.appending(path: ".config/macarchy"),
+              root: StateLayout.defaultRoot(in: homeDirectory),
               configurationDirectoryURL: homeDirectory.appending(path: ".codex"),
               executableURL: CodexAdapter.liveExecutableURL,
               controlIsAvailable: { true },
@@ -97,7 +97,7 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             },
             version: {
               try HerdrAdapter(
-                root: homeDirectory.appending(path: ".config/macarchy"),
+                root: StateLayout.defaultRoot(in: homeDirectory),
                 configurationURL: homeDirectory.appending(path: ".config/herdr/config.toml"),
                 executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
                 controlIsAvailable: { true },

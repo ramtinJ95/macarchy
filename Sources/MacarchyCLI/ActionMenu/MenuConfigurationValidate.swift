@@ -14,7 +14,7 @@ struct MenuConfigurationValidate: ParsableCommand {
 
   mutating func run() throws {
     let home = FileManager.default.homeDirectoryForCurrentUser
-    let context = profiles.context(stateRoot: home.appending(path: ".config/macarchy"))
+    let context = profiles.context(stateRoot: StateLayout.defaultRoot(in: home))
     print(try Self.validate(action, target: URL(filePath: target), context: context))
   }
 

@@ -57,7 +57,7 @@ struct EnvironmentHerdrOwnershipMigration {
   }
 
   let homeDirectory: URL
-  var stateRoot: URL { homeDirectory.appending(path: ".config/macarchy") }
+  var stateRoot: URL { StateLayout.defaultRoot(in: homeDirectory) }
 
   func execute(approval: String? = nil) throws -> Report {
     guard let approval else { return try candidate().report }

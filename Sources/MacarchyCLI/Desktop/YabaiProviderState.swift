@@ -214,7 +214,7 @@ struct YabaiProviderPlanInspector: Sendable {
   }
 
   static func managedTarget(homeDirectory: URL, stateRoot: URL) -> String {
-    let canonical = homeDirectory.appending(path: ".config/macarchy").standardizedFileURL
+    let canonical = StateLayout.defaultRoot(in: homeDirectory).standardizedFileURL
     if canonical == stateRoot.standardizedFileURL {
       return "../macarchy/desktop/yabai/current/yabairc"
     }

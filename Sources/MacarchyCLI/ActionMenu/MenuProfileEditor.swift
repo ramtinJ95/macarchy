@@ -48,7 +48,7 @@ struct MenuProfileEditor: ParsableCommand {
       throw ValidationError("Profile editor is not executable: \(neovim.path)")
     }
     let home = FileManager.default.homeDirectoryForCurrentUser
-    let context = profiles.context(stateRoot: home.appending(path: ".config/macarchy"))
+    let context = profiles.context(stateRoot: StateLayout.defaultRoot(in: home))
     let target: URL
     let resolved: URL
     if action == .keybindings {

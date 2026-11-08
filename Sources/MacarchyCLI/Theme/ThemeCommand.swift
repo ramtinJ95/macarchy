@@ -20,8 +20,7 @@ extension Theme {
     )
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @OptionGroup var roots: ThemeRootOptions
 
@@ -83,8 +82,8 @@ extension Theme {
         print("\(package.id)\t\(package.appearance.rawValue)\t\(package.displayName)")
       }
       UpdateNoticeRunner.live.run(
-        stateRoot: FileManager.default.homeDirectoryForCurrentUser
-          .appending(path: ".config/macarchy", directoryHint: .isDirectory)
+        stateRoot: StateLayout.defaultRoot(
+          in: FileManager.default.homeDirectoryForCurrentUser, directoryHint: .isDirectory)
       )
     }
   }
@@ -161,8 +160,7 @@ extension Theme {
     )
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
@@ -182,8 +180,7 @@ extension Theme {
     )
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Argument(help: "Manual-import target identifier, such as 'slack'.")
     var target: String
@@ -267,8 +264,7 @@ extension Theme {
       @OptionGroup var roots: ThemeRootOptions
 
       @Option(help: "Canonical Macarchy state directory.")
-      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+      var stateRoot = StateLayout.defaultRootPath
 
       @Argument(help: "Theme package identifier.")
       var themeID: String
@@ -292,8 +288,7 @@ extension Theme {
       )
 
       @Option(help: "Canonical Macarchy state directory.")
-      var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+      var stateRoot = StateLayout.defaultRootPath
 
       mutating func run() throws {
         print(

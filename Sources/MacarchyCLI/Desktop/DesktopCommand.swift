@@ -1,6 +1,7 @@
 import AppKit
 import ArgumentParser
 import Foundation
+import ThemeCore
 
 struct Desktop: ParsableCommand {
   static let configuration = CommandConfiguration(
@@ -22,8 +23,7 @@ struct Desktop: ParsableCommand {
     @OptionGroup var profileOptions: PortableProfileOptions
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
@@ -159,8 +159,7 @@ struct Desktop: ParsableCommand {
     )
 
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser
-      .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Preview restoration without mutation.")
     var dryRun = false

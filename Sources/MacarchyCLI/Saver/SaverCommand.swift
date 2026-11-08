@@ -19,12 +19,9 @@ struct SaverCommand: ParsableCommand {
       Run.self, Observe.self,
     ])
 
-  static let defaultStateRoot = FileManager.default.homeDirectoryForCurrentUser
-    .appending(path: ".config/macarchy", directoryHint: .isDirectory).path
-
   struct Options: ParsableArguments {
     @Option(help: "Canonical Macarchy state directory.")
-    var stateRoot = SaverCommand.defaultStateRoot
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: .hidden)
     var alertOnError = false

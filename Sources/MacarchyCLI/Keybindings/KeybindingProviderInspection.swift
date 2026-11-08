@@ -1097,7 +1097,7 @@ private struct KeybindingEntryPaths {
     configurationDirectory = home.appending(path: ".config", directoryHint: .isDirectory)
     directory = configurationDirectory.appending(path: "skhd", directoryHint: .isDirectory)
     entry = directory.appending(path: "skhdrc")
-    let canonical = home.appending(path: ".config/macarchy", directoryHint: .isDirectory)
+    let canonical = StateLayout.defaultRoot(in: home, directoryHint: .isDirectory)
       .standardizedFileURL
     expectedTarget =
       self.stateRoot == canonical

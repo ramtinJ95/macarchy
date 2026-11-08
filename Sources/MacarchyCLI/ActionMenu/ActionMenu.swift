@@ -145,7 +145,7 @@ struct ActionMenu: AsyncParsableCommand {
   @MainActor
   mutating func run() async throws {
     let runtime = RuntimeEnvironment.live
-    let root = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".config/macarchy")
+    let root = StateLayout.defaultRoot(in: FileManager.default.homeDirectoryForCurrentUser)
     let theme = try loadPopupTheme(stateRoot: root, bundledThemesRoot: runtime.builtInThemesURL)
     let controller = try ActionMenuWindowController(theme: theme)
     let profileArguments = profiles.menuArguments
@@ -215,7 +215,8 @@ struct ActionMenu: AsyncParsableCommand {
     case .ocr: arguments = ["capture", "ocr", "--alert-on-error"]
     case .prepareImage: arguments = ["image", "choose", "--alert-on-error"]
     case .clipboardHistory: arguments = ["clipboard", "open", "--alert-on-error"]
-    case .clearClipboardHistory: arguments = ["clipboard", "clear", "--confirm", "--alert-on-error"]
+    case .clearClipboardHistory:
+      arguments = ["clipboard", "clear", "--confirm", "--alert-on-error"]
     case .keepAwake: arguments = ["keep-awake", "toggle", "--alert-on-error"]
     case .startScreensaver: arguments = ["saver", "start", "--alert-on-error"]
     case .toggleIdleScreensaver: arguments = ["saver", "idle", "toggle", "--alert-on-error"]

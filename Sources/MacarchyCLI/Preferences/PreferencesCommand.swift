@@ -17,9 +17,7 @@ struct PreferencesCommand: AsyncParsableCommand {
       help:
         "Receipt directory, NOT a sandbox for native preferences. Targets the current user on this Mac."
     )
-    var stateRoot = FileManager.default.homeDirectoryForCurrentUser.appending(
-      path: ".config/macarchy"
-    ).path
+    var stateRoot = StateLayout.defaultRootPath
 
     @Flag(help: "Emit machine-readable output.")
     var json = false
