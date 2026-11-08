@@ -240,17 +240,13 @@ struct ImagePreparation {
     try checkNewFile(output)
   }
 
-  /// A path the user chose must name nothing yet, not even a dangling link, inside an existing
-  /// folder. `writeNewFile` rechecks existence.
+  /// Refuses a path `NewFile.refusal` refuses. `writeNewFile` rechecks existence.
   static func checkNewFile(_ url: URL) throws {
-    if (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil {
-      throw ImagePreparationError.outputExists(url.path)
+    switch NewFile.refusal(at: url) {
+    case .exists: throw ImagePreparationError.outputExists(url.path)
+    case .missingParent(let parent): throw ImagePreparationError.outputParent(parent.path)
+    case nil: break
     }
-    let parent = url.deletingLastPathComponent()
-    var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory),
-      isDirectory.boolValue
-    else { throw ImagePreparationError.outputParent(parent.path) }
   }
 
   /// Writes exclusively, so a file that appeared after `checkNewFile` is never replaced.
