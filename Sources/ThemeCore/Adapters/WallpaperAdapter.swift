@@ -227,3 +227,115 @@ struct WallpaperAdapter: Sendable {
     first.standardizedFileURL.path == second.standardizedFileURL.path
   }
 }
+
+// The wallpaper consumer is the desktop wallpaper, its Photos-source projection and the yabai
+// signal that converges inactive Spaces; these merge the three into its one status.
+extension WallpaperAdapter {
+  func consumerInspection(
+    photos: ScreenSaverImageStore,
+    signal wallpaperSignal: YabaiWallpaperSignal,
+    processRunner: ProcessRunner,
+    desiredWallpaperURL: URL?,
+    intentionallyUnmanaged: Bool,
+    includeRuntimeChecks: Bool
+  ) -> AdapterInspection {
+    guard !intentionallyUnmanaged else {
+      return AdapterInspection(
+        .wallpaper,
+        message:
+          "The active theme has no backgrounds; desktop wallpaper and the Photos source retain their previous images"
+      )
+    }
+    let desktopInspection = inspection(
+      desiredWallpaperURL: desiredWallpaperURL
+    )
+    let photosInspection = photos.inspection()
+    let wallpaperInspection = AdapterInspection(
+      .wallpaper,
+      status: Self.mostSevere(desktopInspection.status, photosInspection.status),
+      message: [desktopInspection.message, photosInspection.message].compactMap { $0 }.joined(
+        separator: "; ")
+    )
+    do {
+      try wallpaperSignal.preflight()
+      if includeRuntimeChecks {
+        try wallpaperSignal.runtimePreflight(processRunner: processRunner)
+      }
+      var messages = [wallpaperInspection.message, wallpaperSignal.readyMessage].compactMap { $0 }
+      if includeRuntimeChecks {
+        messages.append("the yabai signal is loaded")
+      }
+      return AdapterInspection(
+        .wallpaper,
+        status: wallpaperInspection.status,
+        message: messages.joined(separator: "; ")
+      )
+    } catch {
+      return AdapterInspection(
+        .wallpaper,
+        status: Self.mostSevere(
+          wallpaperInspection.status, Self.isSignalDrift(error) ? .drifted : .failed),
+        message: [wallpaperInspection.message, String(describing: error)]
+          .compactMap { $0 }
+          .joined(separator: "; ")
+      )
+    }
+  }
+
+  func consumerReconciliation(
+    photos: ScreenSaverImageStore,
+    signal wallpaperSignal: YabaiWallpaperSignal,
+    desiredWallpaperURL: @escaping @Sendable () throws -> URL?
+  ) -> AdapterReconciliation {
+    AdapterReconciliation(.wallpaper) {
+      let wallpaperOutcome = try await reconciliation(
+        desiredWallpaperURL: desiredWallpaperURL
+      ).run()
+      // The Photos folder is a projection of this same wallpaper consumer,
+      // not another environment role or a native screensaver settings owner.
+      // Prepare it only after the native desktop repaint path has finished.
+      var messages = [wallpaperOutcome.message].compactMap { $0 }
+      do {
+        messages.append(try photos.reconcile())
+      } catch {
+        messages.append("Photos source failed: \(error)")
+        return AdapterOutcome(
+          status: .failed,
+          message: "Desktop wallpaper: \(wallpaperOutcome.status.rawValue); "
+            + messages.joined(separator: "; ")
+        )
+      }
+      guard wallpaperOutcome.status == .applied else {
+        return AdapterOutcome(
+          status: wallpaperOutcome.status, message: messages.joined(separator: "; "))
+      }
+      do {
+        try wallpaperSignal.preflight()
+        return AdapterOutcome(status: .applied, message: messages.joined(separator: "; "))
+      } catch {
+        let status: AdapterStatus = Self.isSignalDrift(error) ? .drifted : .failed
+        messages.append(String(describing: error))
+        return AdapterOutcome(status: status, message: messages.joined(separator: "; "))
+      }
+    }
+  }
+
+  /// A missing directive or unloaded signal is repairable drift, not a failure.
+  private static func isSignalDrift(_ error: any Error) -> Bool {
+    switch error {
+    case YabaiWallpaperSignalError.missingDirective, YabaiWallpaperSignalError.runtimeSignalMissing:
+      true
+    default:
+      false
+    }
+  }
+
+  private static func mostSevere(
+    _ first: AdapterInspectionStatus,
+    _ second: AdapterInspectionStatus
+  ) -> AdapterInspectionStatus {
+    if first == .failed || second == .failed { return .failed }
+    if first == .drifted || second == .drifted { return .drifted }
+    return .ready
+  }
+}
