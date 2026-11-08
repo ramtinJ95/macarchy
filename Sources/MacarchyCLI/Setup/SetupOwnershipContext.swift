@@ -47,6 +47,8 @@ extension SetupOwnershipManager {
     let spicetifyColorDestination: URL
     let manifestURL: URL
 
+    /// Setup ownership links the user's home into the canonical per-user state root only.
+    /// Commands that accept `--state-root` refuse any other root before reaching it.
     init(homeDirectory: URL) {
       let homeDirectory = homeDirectory.standardizedFileURL
       let stateRoot = StateLayout.defaultRoot(in: homeDirectory, directoryHint: .isDirectory)

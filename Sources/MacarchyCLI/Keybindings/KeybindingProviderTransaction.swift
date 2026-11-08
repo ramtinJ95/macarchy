@@ -32,6 +32,8 @@ enum KeybindingProviderCheckpoint: Equatable, Sendable {
   case originalRestored
 }
 
+/// Works on the canonical per-user state root under `homeDirectory`. Keybinding apply refuses any
+/// other `--state-root` before it gets here (`KeybindingsApplyCommandRunner.isCanonicalStateRoot`).
 struct KeybindingProviderTransaction: Sendable {
   static let claimMarkerAttribute = KeybindingProviderPrimitives.claimMarkerAttribute
   static let unsupportedRestorationFlags =
