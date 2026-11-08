@@ -4,12 +4,15 @@ import ThemeCore
 enum DesktopPersonalProvider: String, Sendable {
   case yabai, sketchybar
 
-  func source(in profile: PortableProfile) -> URL? {
-    self == .yabai ? profile.desktop.yabai.configurationURL : profile.sketchyBar.configurationURL
-  }
+  func source(in profile: PortableProfile) -> URL? { options(in: profile).configurationURL }
 
-  func legacyHook(in profile: PortableProfile) -> URL? {
-    self == .yabai ? profile.desktop.yabai.hookURL : profile.sketchyBar.hookURL
+  func legacyHook(in profile: PortableProfile) -> URL? { options(in: profile).hookURL }
+
+  private func options(in profile: PortableProfile) -> any DesktopPersonalSourceOptions {
+    switch self {
+    case .yabai: return profile.desktop.yabai
+    case .sketchybar: return profile.sketchyBar
+    }
   }
 
   func compose(
@@ -42,31 +45,16 @@ enum DesktopPersonalProvider: String, Sendable {
     profile: PortableProfile, context: UnifiedSetupPlanContext,
     excludingPersonalConfiguration: Bool = false
   ) throws -> Bool {
-    switch try compose(
+    let composition = try compose(
       profile: profile, context: context,
       includePersonalConfiguration: !excludingPersonalConfiguration)
-    {
-    case .yabai(let composition):
-      guard let manifest = YabaiGenerationInspector(stateRoot: context.stateRoot).inspect().manifest
-      else { return false }
-      if excludingPersonalConfiguration {
-        return composition.baselineInputDigest
-          == (manifest.baselineInputDigest ?? manifest.inputDigest)
-      }
-      return manifest.inputDigest == composition.inputDigest
-        && manifest.renderedDigest == composition.renderedDigest
-    case .sketchybar(let composition):
-      guard
-        let manifest = SketchyBarGenerationInspector(stateRoot: context.stateRoot).inspect()
-          .manifest
-      else { return false }
-      if excludingPersonalConfiguration {
-        return composition.baselineInputDigest
-          == (manifest.baselineInputDigest ?? manifest.inputDigest)
-      }
-      return manifest.inputDigest == composition.inputDigest
-        && manifest.renderedDigest == composition.renderedDigest
+    guard let manifest = composition.selectedGenerationDigests(stateRoot: context.stateRoot)
+    else { return false }
+    let composed = composition.digests
+    if excludingPersonalConfiguration {
+      return composed.baseline == (manifest.baseline ?? manifest.input)
     }
+    return manifest.input == composed.input && manifest.rendered == composed.rendered
   }
 
   /// Menu editing cannot install, adopt, switch, tear down, or recover providers.
@@ -115,4 +103,35 @@ enum DesktopPersonalProvider: String, Sendable {
 enum DesktopPersonalComposition {
   case yabai(YabaiComposition)
   case sketchybar(SketchyBarComposition)
+
+  fileprivate var digests: (input: String, rendered: String, baseline: String) {
+    switch self {
+    case .yabai(let value):
+      (
+        input: value.inputDigest, rendered: value.renderedDigest,
+        baseline: value.baselineInputDigest
+      )
+    case .sketchybar(let value):
+      (
+        input: value.inputDigest, rendered: value.renderedDigest,
+        baseline: value.baselineInputDigest
+      )
+    }
+  }
+
+  /// The digests recorded by this provider's selected generation, if one is readable.
+  fileprivate func selectedGenerationDigests(stateRoot: URL)
+    -> (input: String, rendered: String, baseline: String?)?
+  {
+    switch self {
+    case .yabai:
+      YabaiGenerationInspector(stateRoot: stateRoot).inspect().manifest.map {
+        (input: $0.inputDigest, rendered: $0.renderedDigest, baseline: $0.baselineInputDigest)
+      }
+    case .sketchybar:
+      SketchyBarGenerationInspector(stateRoot: stateRoot).inspect().manifest.map {
+        (input: $0.inputDigest, rendered: $0.renderedDigest, baseline: $0.baselineInputDigest)
+      }
+    }
+  }
 }

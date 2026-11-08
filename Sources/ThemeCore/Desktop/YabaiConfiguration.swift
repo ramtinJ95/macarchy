@@ -116,9 +116,10 @@ package struct YabaiConfigurationComposer: Sendable {
     if let source = options.configurationURL, let conflict = options.sourceConflict {
       throw YabaiConfigurationError.invalid(source, conflict)
     }
-    let configurationURL = includePersonalConfiguration ? options.configurationURL : nil
-    let hook = try (configurationURL ?? options.hookURL).map(readHook)
-    let nativeDigest = configurationURL == nil ? nil : hook?.digest
+    let personal = options.personalSource(
+      includingPersonalConfiguration: includePersonalConfiguration)
+    let hook = try personal.url.map(readHook)
+    let nativeDigest = personal.native ? hook?.digest : nil
     if let source = options.configurationURL, let hook {
       try DesktopShellSyntax.validate(hook.text, source: source)
     }
@@ -135,7 +136,7 @@ package struct YabaiConfigurationComposer: Sendable {
       desktopProvider: profile.desktop.provider.rawValue,
       topBarProvider: profile.topBar.rawValue,
       settings: settings,
-      hookDigest: nativeDigest.map { "native:" + $0 } ?? hook?.digest,
+      hookDigest: personal.identityDigest(hook?.digest),
       macarchyExecutablePath: macarchyExecutableURL.standardizedFileURL.path
     )
     let inputDigest = try canonicalJSONDigest(input)
@@ -143,7 +144,7 @@ package struct YabaiConfigurationComposer: Sendable {
     return YabaiComposition(
       settings: settings,
       externalBarEnabled: profile.topBar == .sketchybar,
-      hookURL: configurationURL ?? options.hookURL,
+      hookURL: personal.url,
       hookDigest: hook?.digest,
       renderedConfiguration: rendered,
       renderedDigest: renderedDigest,

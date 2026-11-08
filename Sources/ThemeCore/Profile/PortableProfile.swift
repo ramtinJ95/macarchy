@@ -105,12 +105,6 @@ extension SketchyBarProfileOptions: PortableProfileSection {
     ]
   }
 
-  /// A native configuration replaces the legacy hook, so only one may be selected.
-  package var sourceConflict: String? {
-    configurationURL != nil && hookURL != nil
-      ? "select configuration or legacy hook, not both" : nil
-  }
-
   /// An explicit automatic clock needs a clock module in the resolved layout.
   package func automaticClockConflict(clockEnabled: Bool) -> String? {
     automaticClock == true && !clockEnabled
@@ -153,12 +147,6 @@ extension YabaiProfileOptions: PortableProfileSection {
   package static let supportedLayouts = ["bsp", "stack", "float"]
   package static let splitRatioRange = 0.1...0.9
   package static let spacingRange = 0...256
-
-  /// A native configuration replaces the legacy hook, so only one may be selected.
-  package var sourceConflict: String? {
-    configurationURL != nil && hookURL != nil
-      ? "select configuration or legacy hook, not both" : nil
-  }
 }
 
 package struct DesktopProfile: Equatable, Sendable {
