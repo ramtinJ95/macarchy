@@ -106,8 +106,8 @@ struct DesktopPersonalConfigurationTests {
       to: stub, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stub.path)
     let entry = root.appending(path: "yabairc")
-    try composition.renderedConfiguration.replacingOccurrences(
-      of: "YABAI=/opt/homebrew/bin/yabai", with: "YABAI='\(stub.path)'"
+    try composition.renderedConfiguration.replacingRequired(
+      "YABAI=/opt/homebrew/bin/yabai", with: "YABAI='\(stub.path)'"
     )
     .write(to: entry, atomically: true, encoding: .utf8)
     let process = Process()

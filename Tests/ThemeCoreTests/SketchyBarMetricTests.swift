@@ -54,13 +54,14 @@ struct SketchyBarMetricTests {
     try "#!/bin/sh\nprintf '%s\\n' \"$@\"\n".write(to: bar, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bar.path)
     let entry = root.appending(path: "metric.sh")
-    let script = SketchyBarMetricScript.render(
+    let query =
+      module == .cpu ? "'/mock/macarchy' desktop _cpu-load" : "/usr/bin/memory_pressure"
+    let script = try SketchyBarMetricScript.render(
       module: module, palettePath: palette.path,
       macarchyExecutablePath: "/mock/macarchy"
     )
-    .replacingOccurrences(of: "'/mock/macarchy' desktop _cpu-load", with: "/bin/cat \(input.path)")
-    .replacingOccurrences(of: "/usr/bin/memory_pressure", with: "/bin/cat \(input.path)")
-    .replacingOccurrences(of: "/opt/homebrew/bin/sketchybar", with: bar.path)
+    .replacingRequired(query, with: "/bin/cat \(input.path)")
+    .replacingRequired("/opt/homebrew/bin/sketchybar", with: bar.path)
     try script.write(to: entry, atomically: true, encoding: .utf8)
     let process = Process()
     let output = Pipe()

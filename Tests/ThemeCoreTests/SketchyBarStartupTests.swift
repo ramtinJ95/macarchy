@@ -133,6 +133,12 @@ struct SketchyBarStartupTests {
     let composition = try SketchyBarConfigurationComposer().compose(
       defaultsURL: defaults, profile: profile, stateRoot: root)
     let provider = root.appending(path: "desktop/sketchybar/current")
+    // Each tool appears in only some artifacts, so require it across all of them; a renamed
+    // literal would otherwise leave the real tool in the executed scripts.
+    let generated = composition.artifacts.map(\.contents).joined(separator: "\n")
+    for tool in ["/opt/homebrew/bin/sketchybar", "/opt/homebrew/bin/yabai", "/bin/sleep"] {
+      try generated.requireContaining(tool)
+    }
     for artifact in composition.artifacts {
       let contents = artifact.contents
         .replacingOccurrences(

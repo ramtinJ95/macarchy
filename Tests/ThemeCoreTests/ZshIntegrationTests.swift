@@ -51,8 +51,8 @@ struct ZshIntegrationTests {
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: zoxide.path)
     let entry = root.appending(path: "managed.zsh")
     try write(
-      try #require(configuration.textContents).replacingOccurrences(
-        of: "/opt/homebrew", with: prefix.path), at: entry)
+      try #require(configuration.textContents).replacingRequired(
+        "/opt/homebrew", with: prefix.path), at: entry)
     let process = Process()
     let output = Pipe()
     process.executableURL = URL(filePath: "/bin/zsh")

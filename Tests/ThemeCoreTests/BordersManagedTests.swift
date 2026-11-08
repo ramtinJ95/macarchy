@@ -72,9 +72,9 @@ struct BordersManagedTests {
     let script = root.appending(path: "startup.sh")
     // Keep the generated shell parser and quote handling real; replace only the
     // final provider executable so this fixture cannot touch the host singleton.
-    let contents = BordersConfiguration.contents(stateRoot: root)
-      .replacingOccurrences(
-        of: "exec \(BordersService.executableURL.path)", with: "exec /usr/bin/printf '%s\\n'")
+    let contents = try BordersConfiguration.contents(stateRoot: root)
+      .replacingRequired(
+        "exec \(BordersService.executableURL.path)", with: "exec /usr/bin/printf '%s\\n'")
     try Data(contents.utf8).write(to: script)
     let result = try ProcessRunner.live.run(
       ProcessRequest(

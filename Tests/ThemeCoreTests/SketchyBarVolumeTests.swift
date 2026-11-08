@@ -83,14 +83,12 @@ struct SketchyBarVolumeTests {
       try ("#!/bin/sh\n" + body + "\n").write(to: path, atomically: true, encoding: .utf8)
       try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path.path)
     }
-    let script = SketchyBarVolumeScript.render(
+    let script = try SketchyBarVolumeScript.render(
       palettePath: palette.path, macarchyExecutablePath: root.appending(path: "macarchy").path
     )
-    .replacingOccurrences(
-      of: "/opt/homebrew/bin/sketchybar", with: root.appending(path: "bar").path
-    )
-    .replacingOccurrences(of: "/usr/bin/osascript", with: root.appending(path: "osascript").path)
-    .replacingOccurrences(of: "/usr/bin/open", with: root.appending(path: "open").path)
+    .replacingRequired("/opt/homebrew/bin/sketchybar", with: root.appending(path: "bar").path)
+    .replacingRequired("/usr/bin/osascript", with: root.appending(path: "osascript").path)
+    .replacingRequired("/usr/bin/open", with: root.appending(path: "open").path)
     let entry = root.appending(path: "volume.sh")
     try script.write(to: entry, atomically: true, encoding: .utf8)
     let process = Process()
