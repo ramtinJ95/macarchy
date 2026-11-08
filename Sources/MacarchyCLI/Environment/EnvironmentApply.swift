@@ -565,19 +565,17 @@ struct EnvironmentApplyCommandRunner: Sendable {
             theme: theme,
             verifier: verifier,
             bordersRuntime: runtimes.borders
-          ).execute(
-            operation: "environment_apply",
+          ).executeAfterApply(
+            EnvironmentApplyObservation(
+              outcome: "no_change",
+              mutated: false,
+              message: "Every daily tool role is disabled; no managed state was changed."),
             resourcesRoot: resourcesRoot,
             profileURL: profileURL,
             profileRequired: profileRequired,
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
             consumerPaths: consumerPaths,
-            includeVerification: true,
-            successfulOutcome: "no_change",
-            mutated: false,
-            successMessage:
-              "Every daily tool role is disabled; no managed state was changed.",
             json: json,
             profile: profile
           )
@@ -630,19 +628,18 @@ struct EnvironmentApplyCommandRunner: Sendable {
             prerequisites: prerequisites,
             theme: theme,
             verifier: verifier
-          ).execute(
-            operation: "environment_apply",
+          ).executeAfterApply(
+            EnvironmentApplyObservation(
+              theme: restored.theme,
+              outcome: result.changed ? "applied" : "no_change",
+              mutated: result.changed,
+              message: restored.message),
             resourcesRoot: resourcesRoot,
             profileURL: profileURL,
             profileRequired: profileRequired,
             stateRoot: stateRoot,
             homeDirectory: homeDirectory,
             consumerPaths: consumerPaths,
-            includeVerification: true,
-            observedTheme: restored.theme,
-            successfulOutcome: result.changed ? "applied" : "no_change",
-            mutated: result.changed,
-            successMessage: restored.message,
             json: json,
             profile: profile
           )
@@ -959,23 +956,23 @@ struct EnvironmentApplyCommandRunner: Sendable {
         theme: theme,
         verifier: verifier,
         bordersRuntime: runtimes.borders
-      ).execute(
-        operation: "environment_apply",
+      ).executeAfterApply(
+        EnvironmentApplyObservation(
+          theme: appliedTheme,
+          verification: verification,
+          outcome: applyResult.changed ? "applied" : "no_change",
+          mutated: applyResult.changed,
+          message: applyResult.changed
+            ? "The daily tool environment was published and verified."
+            : "The daily tool environment was already converged.",
+          pendingCommit: deferFinalization),
         resourcesRoot: resourcesRoot,
         profileURL: profileURL,
         profileRequired: profileRequired,
         stateRoot: stateRoot,
         homeDirectory: homeDirectory,
         consumerPaths: consumerPaths,
-        observedTheme: appliedTheme,
-        observedVerification: verification,
-        successfulOutcome: applyResult.changed ? "applied" : "no_change",
-        mutated: applyResult.changed,
-        successMessage: applyResult.changed
-          ? "The daily tool environment was published and verified."
-          : "The daily tool environment was already converged.",
         json: json,
-        deferredApplyTransaction: deferFinalization,
         profile: profile
       )
     }
