@@ -26,7 +26,6 @@ struct SketchyBarCompanionToggle {
   let stateRoot: URL
   let processRunner: ProcessRunner
   let read: () throws -> CompanionToggle
-  /// Starts `macarchy` with these arguments without waiting for it.
   let launch: ([String]) throws -> Void
 
   /// `muted` is the dimmed color. Bars generated before the toggles omit it; they keep the item

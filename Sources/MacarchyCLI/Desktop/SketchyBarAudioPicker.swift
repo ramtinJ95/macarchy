@@ -8,7 +8,6 @@ struct SketchyBarAudioPicker {
   let processRunner: ProcessRunner
   let read: () throws -> AudioDevices
   let select: (UInt32, String) throws -> Void
-  /// Starts `macarchy` with these arguments without waiting for it.
   let launch: ([String]) throws -> Void
 
   static func selector(_ name: String) -> (id: UInt32, identity: String)? {

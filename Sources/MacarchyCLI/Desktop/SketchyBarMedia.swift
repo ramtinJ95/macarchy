@@ -73,7 +73,6 @@ struct SketchyBarMedia {
   let uptime: () -> TimeInterval
   let sleep: (TimeInterval) -> Void
   let withArtwork: (Data, (String) throws -> Void) throws -> Void
-  /// Starts `macarchy` with these arguments without waiting for it.
   let launch: ([String]) throws -> Void
 
   func execute(name: String, sender: String) throws {
