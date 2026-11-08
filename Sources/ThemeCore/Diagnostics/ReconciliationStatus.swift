@@ -187,7 +187,7 @@ public struct ReconciliationStatusStore: Sendable {
   package func reconciliationState(
     for active: GenerationManifest
   ) throws -> ReconciliationState {
-    let statusURL = root.appending(path: "state/reconciliation.json")
+    let statusURL = StateLayout(root: root).reconciliationStatus
     let file: BoundedRegularFile?
     do {
       file = try BoundedRegularFile.readIfPresent(at: statusURL)
@@ -236,7 +236,7 @@ public struct ReconciliationStatusStore: Sendable {
     for _ in 0..<3 {
       let generationID = try activeGenerationID()
       let generationURL = root.appending(
-        path: "generations/\(generationID)",
+        path: StateLayout.generationPath(generationID),
         directoryHint: .isDirectory
       )
       do {
@@ -264,7 +264,7 @@ public struct ReconciliationStatusStore: Sendable {
   }
 
   private func activeGenerationID() throws -> String {
-    let currentURL = root.appending(path: "current")
+    let currentURL = StateLayout(root: root).currentTheme
     var metadata = stat()
     guard lstat(currentURL.path, &metadata) == 0 else {
       let code = errno

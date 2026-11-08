@@ -34,7 +34,8 @@ package struct YaziAdapter: Sendable {
   /// The only symbolic-link destination accepted for the Yazi theme selection
   /// leaf, relative to the Macarchy state root. Environment apply installs
   /// `~/.config/yazi/theme.toml` as a link to exactly this path.
-  package static let managedThemeConfigurationPath = "environment/current/yazi/theme.toml"
+  package static let managedThemeConfigurationPath = StateLayout.environmentCurrentPath(
+    "yazi/theme.toml")
   static let liveExecutableURL = ExternalTool.yazi
   static let liveControlURL = ExternalTool.ya
 
@@ -59,14 +60,15 @@ package struct YaziAdapter: Sendable {
   private var flavorLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: flavorDirectoryURL.appending(path: "flavor.toml"),
-      destination: root.appending(path: "current/\(Self.flavorOutputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(Self.flavorOutputPath)
     )
   }
 
   private var syntaxLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: flavorDirectoryURL.appending(path: "tmtheme.xml"),
-      destination: root.appending(path: "current/\(TextMateThemeArtifact.yaziOutputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(
+        TextMateThemeArtifact.yaziOutputPath)
     )
   }
 

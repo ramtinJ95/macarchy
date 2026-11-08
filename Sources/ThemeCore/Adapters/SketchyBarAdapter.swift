@@ -284,7 +284,7 @@ struct SketchyBarAdapter: Sendable {
   }
 
   static func paletteImport(root: URL) -> String {
-    let path = root.appending(path: "current/\(outputPath)").path
+    let path = StateLayout(root: root).currentThemeArtifact(outputPath).path
     return "local colors = dofile(\(luaStringLiteral(path)))"
   }
 

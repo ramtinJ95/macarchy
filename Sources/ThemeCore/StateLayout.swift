@@ -1,8 +1,10 @@
 import Foundation
 
 /// Where Macarchy keeps its state. `--state-root` overrides the root; everything else is relative
-/// to whichever root is in use.
-package enum StateLayout {
+/// to whichever root is in use. The static members name the defaults; an instance names the paths
+/// that more than one module spells under a given root. Each path keeps the exact spelling and
+/// directory hint its callers compare URLs with.
+package struct StateLayout: Sendable {
   /// The default state root, relative to the user's home directory.
   package static let defaultRootRelativePath = ".config/macarchy"
 
@@ -27,5 +29,83 @@ package enum StateLayout {
   package static var defaultRootPath: String {
     defaultRoot(in: FileManager.default.homeDirectoryForCurrentUser, directoryHint: .isDirectory)
       .path
+  }
+
+  /// The relative `current` destination of a generation, the same in every generation store.
+  package static func generationPath(_ generationID: String) -> String {
+    "generations/\(generationID)"
+  }
+
+  // Provider generation stores, relative to the state root.
+  package static let environmentDirectory = "environment"
+  package static let keybindingsDirectory = "keybindings"
+  package static let yabaiDirectory = "desktop/yabai"
+  package static let sketchyBarDirectory = "desktop/sketchybar"
+
+  /// A path inside the active environment generation, relative to the state root.
+  package static func environmentCurrentPath(_ path: String) -> String {
+    "\(environmentDirectory)/current/\(path)"
+  }
+
+  package let root: URL
+
+  package init(root: URL) {
+    self.root = root
+  }
+
+  /// The theme `current` pointer, a relative symlink to `generations/<id>`.
+  package var currentTheme: URL {
+    root.appending(path: "current")
+  }
+
+  /// A rendered artifact of the active theme generation, reached through `current`.
+  package func currentThemeArtifact(_ path: String) -> URL {
+    root.appending(path: "current/\(path)")
+  }
+
+  /// The theme reconciliation status written after each activation.
+  package var reconciliationStatus: URL {
+    root.appending(path: "state/reconciliation.json")
+  }
+
+  /// The environment generation store.
+  package var environment: URL {
+    root.appending(path: Self.environmentDirectory, directoryHint: .isDirectory)
+  }
+
+  /// A path inside the active environment generation, reached through `environment/current`.
+  package func environmentArtifact(_ path: String) -> URL {
+    root.appending(path: Self.environmentCurrentPath(path))
+  }
+
+  /// A path inside one environment generation.
+  package func environmentGenerationArtifact(_ generationID: String, _ path: String) -> URL {
+    root.appending(
+      path: "\(Self.environmentDirectory)/\(Self.generationPath(generationID))/\(path)")
+  }
+
+  /// The keybinding generation store.
+  package var keybindings: URL {
+    root.appending(path: Self.keybindingsDirectory, directoryHint: .isDirectory)
+  }
+
+  /// The keybinding apply transaction record.
+  package var keybindingTransaction: URL {
+    root.appending(path: "\(Self.keybindingsDirectory)/transaction.json")
+  }
+
+  /// The active keybinding generation's `skhdrc`.
+  package var currentSkhdrc: URL {
+    root.appending(path: "\(Self.keybindingsDirectory)/current/skhdrc")
+  }
+
+  /// The yabai generation store.
+  package var yabai: URL {
+    root.appending(path: Self.yabaiDirectory, directoryHint: .isDirectory)
+  }
+
+  /// The SketchyBar generation store.
+  package var sketchyBar: URL {
+    root.appending(path: Self.sketchyBarDirectory, directoryHint: .isDirectory)
   }
 }

@@ -103,7 +103,7 @@ package struct SpicetifyAdapter: Sendable {
   private var colorSchemeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "Themes/\(Self.themeName)/color.ini"),
-      destination: root.appending(path: "current/\(Self.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(Self.outputPath)
     )
   }
 

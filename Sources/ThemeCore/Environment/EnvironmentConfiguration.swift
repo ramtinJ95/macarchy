@@ -67,7 +67,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
   package init() {}
 
   package static func nativeZshDefaultsSource(stateRoot: URL) -> String {
-    let path = stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path
+    let path = StateLayout(root: stateRoot).environmentArtifact("zsh/defaults.zsh").path
     return "source '" + path.replacingOccurrences(of: "'", with: "'\\''") + "' || return 1"
   }
 
@@ -80,7 +80,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
     ).artifacts.filter { $0.path.hasPrefix("neovim/") }
     let links = Dictionary(
       uniqueKeysWithValues: NeovimAdapter.managedThemePaths.map {
-        ($0, stateRoot.appending(path: "environment/current/neovim/\($0)").path)
+        ($0, StateLayout(root: stateRoot).environmentArtifact("neovim/\($0)").path)
       })
     // A different/unsupported personal tree is deliberately not bootstrap authority.
     // Its normal native connection remains responsible for its own validation.
@@ -107,9 +107,10 @@ package struct EnvironmentConfigurationComposer: Sendable {
     let quote: (String) -> String = {
       "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
+    let defaults = StateLayout(root: stateRoot).environmentArtifact("zsh/defaults.zsh").path
     return """
       # User-owned live configuration; Macarchy never rewrites this source.
-      export MACARCHY_ZSH_DEFAULTS=\(quote(stateRoot.appending(path: "environment/current/zsh/defaults.zsh").path))
+      export MACARCHY_ZSH_DEFAULTS=\(quote(defaults))
       source \(quote(source.path)) || return 1
       export MACARCHY_MANAGED_SESSION=1
       """ + "\n"
@@ -289,7 +290,7 @@ package struct EnvironmentConfigurationComposer: Sendable {
         // Validate availability without making writable behavior part of generation identity.
         // The source decides whether and where curated initialization runs.
         _ = try nativeText(source)
-        let entry = stateRoot.appending(path: "environment/current/zsh/.zshrc")
+        let entry = StateLayout(root: stateRoot).environmentArtifact("zsh/.zshrc")
         guard source.resolvingSymlinksInPath() != entry.resolvingSymlinksInPath() else {
           throw EnvironmentConfigurationError.invalid(
             source, "zsh.configuration resolves to the managed entry point")

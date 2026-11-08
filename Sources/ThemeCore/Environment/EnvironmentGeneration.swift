@@ -68,7 +68,7 @@ package struct EnvironmentGenerationStore: Sendable {
   package let stateRoot: URL
 
   private var environmentRoot: URL {
-    stateRoot.appending(path: "environment", directoryHint: .isDirectory)
+    StateLayout(root: stateRoot).environment
   }
 
   private var generationsRoot: URL {
@@ -296,7 +296,7 @@ package struct EnvironmentGenerationStore: Sendable {
       Darwin.close(environmentDescriptor)
       Darwin.close(stateDescriptor)
     }
-    let created = "generations/\(generationID)".withCString { target in
+    let created = StateLayout.generationPath(generationID).withCString { target in
       temporaryName.withCString { name in
         Darwin.symlinkat(target, environmentDescriptor, name)
       }

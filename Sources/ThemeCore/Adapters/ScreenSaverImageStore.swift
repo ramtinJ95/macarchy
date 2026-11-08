@@ -204,8 +204,8 @@ package struct ScreenSaverImageStore: Sendable {
   // the canonical source or the stable folder was replaced during that read.
   private func validateSource(_ source: Source, directory: Int32) throws {
     let current = try FileManager.default.destinationOfSymbolicLink(
-      atPath: root.appending(path: "current").path)
-    guard current == "generations/\(source.generationID)",
+      atPath: StateLayout(root: root).currentTheme.path)
+    guard current == StateLayout.generationPath(source.generationID),
       try ScreenSaverPreferenceStore(root: root).load()[source.themeID] == source.preference
     else {
       throw ScreenSaverImageError.activeThemeChanged

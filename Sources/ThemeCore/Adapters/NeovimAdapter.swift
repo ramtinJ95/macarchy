@@ -71,7 +71,7 @@ package struct NeovimAdapter: Sendable {
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "lua/macarchy/current.lua"),
-      destination: root.appending(path: "current/\(Self.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(Self.outputPath)
     )
   }
 
@@ -112,8 +112,8 @@ package struct NeovimAdapter: Sendable {
     if lstat(themeLink.url.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFLNK {
       let destination = try FileManager.default.destinationOfSymbolicLink(
         atPath: themeLink.url.path)
-      let managedLoader = root.appending(
-        path: "environment/current/neovim/lua/macarchy/current.lua")
+      let managedLoader = StateLayout(root: root).environmentArtifact(
+        "neovim/lua/macarchy/current.lua")
       if destination != managedLoader.path {
         try themeLink.validate()
         return false
@@ -298,7 +298,7 @@ package struct NeovimAdapter: Sendable {
     if let path = Self.managedThemePaths.first(where: {
       configurationDirectoryURL.appending(path: $0) == url
     }) {
-      let managed = root.appending(path: "environment/current/neovim/\(path)")
+      let managed = StateLayout(root: root).environmentArtifact("neovim/\(path)")
       return try AdapterConfigurationFile.readUTF8(
         at: url, managedDestination: managed,
         tooLarge: NeovimAdapterError.configurationTooLarge(url),

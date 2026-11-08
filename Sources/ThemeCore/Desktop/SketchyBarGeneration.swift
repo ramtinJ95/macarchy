@@ -92,10 +92,7 @@ package struct SketchyBarGenerationInspector: Sendable {
   }
 
   package func inspect() -> SketchyBarGenerationInspection {
-    let providerRoot = stateRoot.appending(
-      path: "desktop/sketchybar",
-      directoryHint: .isDirectory
-    )
+    let providerRoot = StateLayout(root: stateRoot).sketchyBar
     let generationID: String
     switch DesktopCurrentPointer.read(
       providerRoot: providerRoot, label: "SketchyBar", isGenerationID: Self.isGenerationID)
@@ -135,7 +132,7 @@ package struct SketchyBarGenerationInspector: Sendable {
     _ generationID: String
   ) throws -> SketchyBarGenerationManifest {
     let generation = stateRoot.appending(
-      path: "desktop/sketchybar/generations/\(generationID)",
+      path: "\(StateLayout.sketchyBarDirectory)/generations/\(generationID)",
       directoryHint: .isDirectory
     )
     let generationDescriptor = try PinnedFilesystem.openDirectory(at: generation)
@@ -277,10 +274,7 @@ package struct SketchyBarGenerationActivator: Sendable {
       generationID: generationID,
       composition: composition
     )
-    let providerRoot = stateRoot.appending(
-      path: "desktop/sketchybar",
-      directoryHint: .isDirectory
-    )
+    let providerRoot = StateLayout(root: stateRoot).sketchyBar
     let generations = providerRoot.appending(path: "generations", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: providerRoot, withIntermediateDirectories: true)
     let providerDescriptor = try PinnedFilesystem.openDirectory(at: providerRoot)
@@ -506,7 +500,7 @@ package struct SketchyBarGenerationActivator: Sendable {
   }
 
   private var providerRoot: URL {
-    stateRoot.appending(path: "desktop/sketchybar", directoryHint: .isDirectory)
+    StateLayout(root: stateRoot).sketchyBar
   }
 
   private func generationURL(_ generationID: String) -> URL {

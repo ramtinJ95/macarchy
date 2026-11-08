@@ -182,7 +182,9 @@ package struct SketchyBarConfigurationComposer: Sendable {
     let palettePath = Self.palettePath(stateRoot: stateRoot)
     let pluginPath =
       stateRoot
-      .appending(path: "desktop/sketchybar/current/plugins", directoryHint: .isDirectory)
+      .appending(
+        path: "\(StateLayout.sketchyBarDirectory)/current/plugins", directoryHint: .isDirectory
+      )
       .standardizedFileURL.path
     guard profile.sketchyBar.configurationURL == nil || profile.sketchyBar.hookURL == nil else {
       throw SketchyBarConfigurationError.invalid(
@@ -749,8 +751,7 @@ package struct SketchyBarConfigurationComposer: Sendable {
   }
 
   static func palettePath(stateRoot: URL) -> String {
-    stateRoot
-      .appending(path: "current/\(paletteArtifactPath)")
+    StateLayout(root: stateRoot).currentThemeArtifact(paletteArtifactPath)
       .standardizedFileURL.path
   }
 

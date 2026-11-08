@@ -74,7 +74,7 @@ package struct PiAdapter: Sendable {
   private var themeLink: CanonicalThemeLink {
     CanonicalThemeLink(
       url: configurationDirectoryURL.appending(path: "themes/\(Self.themeName).json"),
-      destination: root.appending(path: "current/\(Self.outputPath)")
+      destination: StateLayout(root: root).currentThemeArtifact(Self.outputPath)
     )
   }
 

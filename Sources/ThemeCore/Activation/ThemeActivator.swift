@@ -184,12 +184,12 @@ public struct ThemeActivator: Sendable {
       }
       if dryRun { return nil }
 
-      let currentURL = root.appending(path: "current")
+      let currentURL = StateLayout(root: root).currentTheme
       let generationURL = root.appending(
-        path: "generations/\(expectedGenerationID)",
+        path: StateLayout.generationPath(expectedGenerationID),
         directoryHint: .isDirectory
       )
-      let statusURL = root.appending(path: "state/reconciliation.json")
+      let statusURL = StateLayout(root: root).reconciliationStatus
       let nonce = UUID().uuidString.lowercased()
       let currentClaim = root.appending(path: ".setup-teardown-current-\(nonce)")
       let generationClaim = generationURL.deletingLastPathComponent().appending(
@@ -756,7 +756,7 @@ public struct ThemeActivator: Sendable {
   }
 
   private func currentGenerationID() -> String? {
-    let currentURL = root.appending(path: "current")
+    let currentURL = StateLayout(root: root).currentTheme
     guard
       let destination = try? FileManager.default.destinationOfSymbolicLink(
         atPath: currentURL.path
@@ -909,7 +909,7 @@ public struct ThemeActivator: Sendable {
     defer { try? FileManager.default.removeItem(at: temporaryPointer) }
     try FileManager.default.createSymbolicLink(
       atPath: temporaryPointer.path,
-      withDestinationPath: "generations/\(generationID)"
+      withDestinationPath: StateLayout.generationPath(generationID)
     )
     try faultInjector(.currentPointerReady)
     try atomicallyReplaceCurrent(with: temporaryPointer)
@@ -1010,7 +1010,7 @@ public struct ThemeActivator: Sendable {
   }
 
   private func atomicallyReplaceCurrent(with temporaryPointer: URL) throws {
-    let current = root.appending(path: "current")
+    let current = StateLayout(root: root).currentTheme
     let result = temporaryPointer.path.withCString { source in
       current.path.withCString { destination in
         Darwin.rename(source, destination)

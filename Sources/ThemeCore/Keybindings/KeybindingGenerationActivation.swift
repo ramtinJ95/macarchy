@@ -54,7 +54,7 @@ package struct KeybindingGenerationActivator: Sendable {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let manifestData = try encoder.encode(manifest)
-    let keybindingsRoot = stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+    let keybindingsRoot = StateLayout(root: stateRoot).keybindings
     let generationsRoot = keybindingsRoot.appending(
       path: "generations",
       directoryHint: .isDirectory
@@ -132,7 +132,7 @@ package struct KeybindingGenerationActivator: Sendable {
   }
 
   package func select(_ generation: StagedKeybindingGeneration) throws {
-    let keybindingsRoot = stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+    let keybindingsRoot = StateLayout(root: stateRoot).keybindings
     let descriptor = try PinnedFilesystem.openDirectory(at: keybindingsRoot)
     defer { Darwin.close(descriptor) }
     let temporaryName =
@@ -169,7 +169,7 @@ package struct KeybindingGenerationActivator: Sendable {
   }
 
   package func restoreCurrent(generationID: String?) throws {
-    let keybindingsRoot = stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+    let keybindingsRoot = StateLayout(root: stateRoot).keybindings
     let descriptor = try PinnedFilesystem.openDirectory(at: keybindingsRoot)
     defer { Darwin.close(descriptor) }
     if let generationID {
@@ -221,7 +221,7 @@ package struct KeybindingGenerationActivator: Sendable {
 
   package func removeGeneration(_ generationID: String) throws {
     let generationsRoot = stateRoot.appending(
-      path: "keybindings/generations",
+      path: "\(StateLayout.keybindingsDirectory)/generations",
       directoryHint: .isDirectory
     )
     guard
@@ -247,7 +247,7 @@ package struct KeybindingGenerationActivator: Sendable {
   }
 
   package func recoverResidue() throws {
-    let keybindingsRoot = stateRoot.appending(path: "keybindings", directoryHint: .isDirectory)
+    let keybindingsRoot = StateLayout(root: stateRoot).keybindings
     guard
       let keybindingsDescriptor = try PinnedFilesystem.openDirectoryIfPresent(at: keybindingsRoot)
     else { return }
@@ -318,7 +318,7 @@ package struct KeybindingGenerationActivator: Sendable {
 
   package func retainGenerations(_ retained: Set<String>) throws {
     let generationsRoot = stateRoot.appending(
-      path: "keybindings/generations",
+      path: "\(StateLayout.keybindingsDirectory)/generations",
       directoryHint: .isDirectory
     )
     let descriptor = try PinnedFilesystem.openDirectory(at: generationsRoot)

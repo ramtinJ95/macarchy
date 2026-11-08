@@ -103,8 +103,8 @@ struct GenerationIntegrityError: Error, CustomStringConvertible, Sendable {
 
 extension GenerationManifest {
   /// Location of `path` inside this generation's directory under `root`.
-  func artifactURL(root: URL, path: String) -> URL {
-    root.appending(path: "generations/\(generationID)/\(path)")
+  package func artifactURL(root: URL, path: String) -> URL {
+    root.appending(path: "\(StateLayout.generationPath(generationID))/\(path)")
   }
 
   /// This generation's normalized `theme.json`, which must agree with the manifest.
