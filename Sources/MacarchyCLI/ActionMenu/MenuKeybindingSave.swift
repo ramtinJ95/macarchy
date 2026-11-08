@@ -88,7 +88,8 @@ struct MenuKeybindingSaveSession: Codable {
       dependencyDigests: try Dictionary(
         dependencies.map { ($0.path, try digest($0)) },
         uniquingKeysWith: { first, _ in first }), generationID: generation)
-    return (session, layered.fieldOrigins["keybindings.disabled"]?.rawValue ?? "built-in defaults")
+    let disabledField = KeybindingProfile.table + "." + KeybindingProfile.key(\.disabledIdentities)
+    return (session, layered.fieldOrigins[disabledField]?.rawValue ?? "built-in defaults")
   }
 
   func validatedProfile() throws -> PortableProfile {

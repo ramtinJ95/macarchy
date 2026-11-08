@@ -175,7 +175,8 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     profile: PortableProfile, homeDirectory: URL, desktopResourcesRoot: URL
   ) throws -> [SetupCapability] {
     try DependencyProfile.personal(homeDirectory: homeDirectory).selectedForSetup(
-      profile, defaultsURL: desktopResourcesRoot.appending(path: "sketchybar/defaults.toml")
+      profile,
+      defaultsURL: DesktopDesiredState.sketchyBarDefaultsURL(resourcesRoot: desktopResourcesRoot)
     ).map {
       SetupCapability(
         id: $0.id, category: $0.category,

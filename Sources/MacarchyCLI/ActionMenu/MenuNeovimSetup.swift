@@ -174,18 +174,18 @@ struct MenuNeovimSetup {
     for file in edit.files where file.changed {
       io.write("Profile: \(file.declared.path)\nPhysical file: \(file.physical.path)\n")
       if file.before == nil { io.write("  Create schema_version = 1 profile.\n") }
-      let before = CanonicalTOMLSelector(
-        configuration: file.before ?? "", table: "neovim", key: "native_configuration")
-      let after = CanonicalTOMLSelector(
-        configuration: file.after, table: "neovim", key: "native_configuration")
+      let table = NeovimProfileOptions.table
+      let key = NeovimProfileOptions.key(\.nativeConfigurationDirectoryURL)
+      let copiedKey = NeovimProfileOptions.key(\.configurationDirectoryURL)
+      let before = CanonicalTOMLSelector(configuration: file.before ?? "", table: table, key: key)
+      let after = CanonicalTOMLSelector(configuration: file.after, table: table, key: key)
       if before.values != after.values {
-        io.write("  Set neovim.native_configuration = \(after.values.joined())\n")
+        io.write("  Set \(table).\(key) = \(after.values.joined())\n")
       }
       if file.before.map({
-        !CanonicalTOMLSelector(configuration: $0, table: "neovim", key: "configuration").assignments
-          .isEmpty
+        !CanonicalTOMLSelector(configuration: $0, table: table, key: copiedKey).assignments.isEmpty
       }) == true {
-        io.write("  Remove the copied neovim.configuration declaration.\n")
+        io.write("  Remove the copied \(table).\(copiedKey) declaration.\n")
       }
     }
   }

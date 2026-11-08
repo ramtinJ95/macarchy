@@ -341,7 +341,8 @@ struct UnifiedSetupApplyCommandRunner: Sendable {
         let unresolved = try DependencyProfile.personal(homeDirectory: context.homeDirectory)
           .selectedForSetup(
             currentModel.profile,
-            defaultsURL: context.desktopResourcesRoot.appending(path: "sketchybar/defaults.toml")
+            defaultsURL: DesktopDesiredState.sketchyBarDefaultsURL(
+              resourcesRoot: context.desktopResourcesRoot)
           )
           .filter { !capabilityIsAvailable($0) }
           .map(\.id)
