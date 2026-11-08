@@ -88,7 +88,7 @@ package enum ActivationCheckpoint: Sendable {
 
 public struct ThemeActivator: Sendable {
   private static let rendererVersions: [String: Int] = {
-    let internalVersions = ["capabilities": 1, "normalized_theme": 1]
+    let internalVersions = ThemeRenderer.internalRendererVersions
     let consumerVersions = ConsumerCatalog.shared.rendererVersions
     precondition(
       Set(internalVersions.keys).isDisjoint(with: consumerVersions.keys),

@@ -1,10 +1,34 @@
 package enum TextMateThemeArtifact {
   // These values remain compatible with existing manifests and canonical links.
   static let rendererID = "bat"
-  static let rendererVersion = 1
   package static let outputPath = "generated/bat.tmTheme"
   package static let yaziOutputPath = "generated/yazi.tmTheme"
   package static let themeName = "Macarchy Current"
+
+  // bat publishes this artifact alone and Yazi publishes it beside its flavor. Both renderer
+  // versions are persisted in generation manifests and feed input digests, so a change to
+  // `render` must bump both versions here; a Yazi flavor change bumps only Yazi's.
+  static let batRenderer = ConsumerRendererRegistration.text(
+    id: rendererID, version: 1, path: outputPath
+  ) { package, _ in
+    TextMateThemeArtifact.render(package: package)
+  }
+
+  static let yaziRenderer = ConsumerRendererRegistration(
+    id: YaziAdapter.id,
+    version: 1,
+    artifacts: [
+      RenderedArtifactMetadata(path: YaziAdapter.flavorOutputPath),
+      RenderedArtifactMetadata(path: yaziOutputPath),
+    ]
+  ) { package, _, _ in
+    let textMate = TextMateThemeArtifact.render(package: package)
+    return [
+      ConsumerRenderedOutput(
+        path: YaziAdapter.flavorOutputPath, string: YaziAdapter.renderFlavor(package: package)),
+      ConsumerRenderedOutput(path: TextMateThemeArtifact.yaziOutputPath, string: textMate),
+    ]
+  }
 
   static func render(package: ThemePackage) -> String {
     let semantic = package.semantic
