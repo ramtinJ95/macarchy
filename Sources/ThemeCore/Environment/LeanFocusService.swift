@@ -25,11 +25,11 @@ package struct LeanFocusServiceConfiguration: Codable, Equatable, Sendable {
     [stateRoot, executablePath].allSatisfy {
       $0.hasPrefix("/") && !$0.contains("\0")
         && URL(filePath: $0).standardizedFileURL.path == $0
-    } && URL(filePath: executablePath).lastPathComponent == "macarchy-focus-ring"
+    } && URL(filePath: executablePath).lastPathComponent == FocusRingHelperCommand.executableName
   }
 
   package var arguments: [String] {
-    [executablePath, "--managed", "--state-root", stateRoot]
+    [executablePath] + FocusRingHelperCommand.managedArguments(stateRoot: stateRoot)
   }
 
   package var runtimeURL: URL {

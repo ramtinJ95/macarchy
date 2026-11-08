@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ThemeCore
 
 @testable import MacarchyCLI
 
@@ -34,10 +35,10 @@ struct LeanBordersPreviewTests {
 
   @Test func helperReceivesOnlyTheBoundedOptions() {
     #expect(
-      LeanBordersPreview.helperArguments(stateRoot: "/state", seconds: 12, json: true)
+      FocusRingHelperCommand.previewArguments(stateRoot: "/state", seconds: 12, json: true)
         == ["--state-root", "/state", "--seconds", "12.0", "--json"])
     #expect(
-      LeanBordersPreview.helperArguments(stateRoot: "/state", seconds: 12, json: false)
+      FocusRingHelperCommand.previewArguments(stateRoot: "/state", seconds: 12, json: false)
         == ["--state-root", "/state", "--seconds", "12.0"])
   }
 }
