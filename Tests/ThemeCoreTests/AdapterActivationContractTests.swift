@@ -311,6 +311,39 @@ extension AdapterContractTests {
     }
   }
 
+  /// ADR-0185: the live Spicetify adapter inspects xpui preparation before reconciliation.
+  @Test
+  func unpreparedSpicetifyRefreshRefusesActivationBeforeCommit() async throws {
+    struct NotPrepared: Error {}
+    try await withTemporaryRoot(named: "macarchy-adapter-tests") { root in
+      let previous = try testActivator(root: root).activate(package: tokyoNightPackage())
+      let preparationChecks = Mutex(0)
+      let coordinator = ThemeActivationCoordinator(
+        root: root,
+        consumerPaths: try Self.consumerPaths(root: root, adapterIDs: [SpicetifyAdapter.id]),
+        processRunner: ProcessRunner { _ in ProcessResult(terminationStatus: 0, output: "") },
+        wallpaperControl: Self.wallpaperControl(),
+        wallpaperSignal: try Self.wallpaperSignal(root: root),
+        enabledAdapterIDs: [SpicetifyAdapter.id],
+        spicetifyRefreshPreparation: {
+          preparationChecks.withLock { $0 += 1 }
+          throw NotPrepared()
+        }
+      )
+
+      await #expect(throws: NotPrepared.self) {
+        _ = try await coordinator.activate(package: catppuccinPackage())
+      }
+
+      #expect(preparationChecks.withLock { $0 } >= 1)
+      #expect(
+        try FileManager.default.destinationOfSymbolicLink(
+          atPath: root.appending(path: "current").path
+        ) == "generations/\(previous.generationID)"
+      )
+    }
+  }
+
   @Test
   func disabledConsumersWithMissingOrInvalidConfigurationDoNotBlockActivation() async throws {
     let root = try temporaryDirectory()

@@ -111,6 +111,10 @@ package struct ThemeActivationCoordinator: Sendable {
       },
       spotifyVersionProvider: {
         try SpicetifyAdapter.spotifyBundleVersion()
+      },
+      spicetifyRefreshPreparation: {
+        try SpicetifyAdapter.requireRefreshPreparation(
+          configurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL)
       }
     )
   }
@@ -137,7 +141,8 @@ package struct ThemeActivationCoordinator: Sendable {
     spicetifyVersionProvider: @escaping @Sendable () throws -> String = {
       SpicetifyAdapter.minimumVersion
     },
-    spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" }
+    spotifyVersionProvider: @escaping @Sendable () throws -> String = { "1.2.97" },
+    spicetifyRefreshPreparation: @escaping @Sendable () throws -> Void = {}
   ) {
     let root = root.standardizedFileURL
     let statusStore = ReconciliationStatusStore(root: root)
@@ -316,7 +321,8 @@ package struct ThemeActivationCoordinator: Sendable {
             controlIsAvailable: { controlIsAvailable(SpicetifyAdapter.liveExecutableURL) },
             processRunner: processRunner,
             spicetifyVersionProvider: spicetifyVersionProvider,
-            spotifyVersionProvider: spotifyVersionProvider
+            spotifyVersionProvider: spotifyVersionProvider,
+            refreshPreparation: spicetifyRefreshPreparation
           ))
       case .starship:
         return RuntimeConsumer(
