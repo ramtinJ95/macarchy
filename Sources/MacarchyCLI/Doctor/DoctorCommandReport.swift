@@ -1,8 +1,8 @@
 import Foundation
 import ThemeCore
 
-struct DoctorFinding: Encodable {
-  enum Status: String, Encodable {
+struct DoctorFinding: Encodable, Sendable {
+  enum Status: String, Encodable, Sendable {
     case ok
     case warning
     case failure
@@ -24,7 +24,7 @@ struct DoctorReport {
 
   func render(json: Bool) throws -> String {
     if json {
-      return try renderJSON(DoctorJSONReport(operation: operation, findings: findings))
+      return try renderJSON(jsonReport)
     }
     return
       (["\(title):"]
@@ -32,9 +32,11 @@ struct DoctorReport {
       + ["No changes made."])
       .joined(separator: "\n")
   }
+
+  var jsonReport: DoctorJSONReport { DoctorJSONReport(operation: operation, findings: findings) }
 }
 
-private struct DoctorJSONReport: Encodable {
+struct DoctorJSONReport: Encodable, Sendable {
   let schemaVersion = 1
   let operation: String
   let outcome: String
@@ -46,4 +48,6 @@ private struct DoctorJSONReport: Encodable {
     outcome = findings.contains { $0.status == .failure } ? "unhealthy" : "healthy"
     self.findings = findings
   }
+
+  var succeeded: Bool { outcome == "healthy" }
 }

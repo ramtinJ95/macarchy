@@ -258,7 +258,7 @@ struct NativeGuidedSetupTests {
       },
       desktopApply: { _, _, _, _, _ in
         Issue.record("Disabled desktop must not apply")
-        return try component(#"{"outcome":"no_change","mutated":false}"#)
+        return desktopApplyStub("no_change", mutated: false)
       },
       environmentApply: { context, profile, paths, approvals, adapters in
         try await SetupComponentExecution(

@@ -12,15 +12,17 @@ struct UnifiedSetupLifecycleTests {
     let fixture = try ApplyFixture()
     defer { fixture.cleanup() }
     let calls = Mutex(0)
-    let unexpected: UnifiedSetupInspectionCommandRunner.ComponentInspection = { _, _, _, _ in
-      calls.withLock { $0 += 1 }
-      throw UnexpectedComponentCall()
-    }
     let runner = UnifiedSetupInspectionCommandRunner(
       planner: fixture.planner(),
       themeInspection: UnifiedSetupThemeLifecycleStatus.inspect,
-      desktopInspection: unexpected,
-      environmentInspection: unexpected
+      desktopInspection: { _, _, _, _ in
+        calls.withLock { $0 += 1 }
+        throw UnexpectedComponentCall()
+      },
+      environmentInspection: { _, _, _, _ in
+        calls.withLock { $0 += 1 }
+        throw UnexpectedComponentCall()
+      }
     )
 
     for operation in [UnifiedSetupInspectionOperation.status, .doctor] {
@@ -58,9 +60,6 @@ struct UnifiedSetupLifecycleTests {
     #expect(!incomplete.succeeded)
     #expect(incomplete.status == "drifted")
 
-    let component: UnifiedSetupInspectionCommandRunner.ComponentInspection = { _, _, _, _ in
-      try applyComponent(#"{"outcome":"current"}"#)
-    }
     var planner = fixture.planner()
     planner.standardBrewfile = { _ in
       SetupBrewfile(packages: missingPackage ? [.init(kind: .formula, name: "jq")] : [])
@@ -75,8 +74,8 @@ struct UnifiedSetupLifecycleTests {
           message: "current"
         )
       },
-      desktopInspection: component,
-      environmentInspection: component
+      desktopInspection: { _, _, _, _ in desktopInspectionStub() },
+      environmentInspection: { _, _, _, _ in try applyComponent(#"{"outcome":"current"}"#) }
     )
 
     let execution = try runner.execute(
@@ -113,7 +112,7 @@ struct UnifiedSetupLifecycleTests {
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "apply")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+        return desktopTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       themeTeardown: { _, ownership, _, dryRun in
         #expect(ownership?.themeGenerationID == generationID)
@@ -170,7 +169,7 @@ struct UnifiedSetupLifecycleTests {
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun ? "preview" : "apply")") }
-        return try teardownComponent(dryRun: dryRun, mutated: !dryRun)
+        return desktopTeardownStub(dryRun: dryRun, mutated: !dryRun)
       },
       themeTeardown: { _, _, _, dryRun in
         calls.withLock { $0.append("theme:\(dryRun ? "preview" : "apply")") }
@@ -240,24 +239,21 @@ struct UnifiedSetupLifecycleTests {
       contextDigest: unifiedSetupContextDigest(context: fixture.context, consumerPaths: paths)
     )
     try store.write(transaction)
-    let unexpectedComponent: UnifiedSetupTeardownCommandRunner.ComponentTeardown = { _, _, _ in
-      Issue.record("Blocked recovery must not invoke component recovery")
-      throw UnexpectedComponentCall()
-    }
     let teardown = UnifiedSetupTeardownCommandRunner(
       planner: fixture.planner(),
-      environmentTeardown: unexpectedComponent,
-      desktopTeardown: unexpectedComponent,
+      environmentTeardown: { _, _, _ in
+        Issue.record("Blocked recovery must not invoke component recovery")
+        throw UnexpectedComponentCall()
+      },
+      desktopTeardown: { _, _, _ in
+        Issue.record("Blocked recovery must not invoke component recovery")
+        throw UnexpectedComponentCall()
+      },
       themeTeardown: { _, _, _, _ in
         Issue.record("Blocked recovery must not invoke theme recovery")
         return .noChange("unexpected")
       }
     )
-    let unexpectedInspection: UnifiedSetupInspectionCommandRunner.ComponentInspection = {
-      _, _, _, _ in
-      Issue.record("Pending recovery must block delegated inspection")
-      throw UnexpectedComponentCall()
-    }
     let inspection = UnifiedSetupInspectionCommandRunner(
       planner: fixture.planner(),
       themeInspection: { _, _, _ in
@@ -269,8 +265,14 @@ struct UnifiedSetupLifecycleTests {
           message: "unexpected"
         )
       },
-      desktopInspection: unexpectedInspection,
-      environmentInspection: unexpectedInspection
+      desktopInspection: { _, _, _, _ in
+        Issue.record("Pending recovery must block delegated inspection")
+        throw UnexpectedComponentCall()
+      },
+      environmentInspection: { _, _, _, _ in
+        Issue.record("Pending recovery must block delegated inspection")
+        throw UnexpectedComponentCall()
+      }
     )
 
     let plan = try fixture.planner().execute(context: fixture.context, json: true)
@@ -339,10 +341,7 @@ struct UnifiedSetupLifecycleTests {
       },
       desktopTeardown: { _, _, dryRun in
         calls.withLock { $0.append("desktop:\(dryRun)") }
-        return try applyComponent(
-          #"{"outcome":"blocked","message":"unsafe"}"#,
-          succeeded: false
-        )
+        return desktopTeardownStub("blocked", message: "unsafe")
       },
       themeTeardown: { _, _, _, _ in
         Issue.record("Theme preflight must not run after a blocked desktop preflight")

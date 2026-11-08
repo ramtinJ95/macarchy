@@ -40,6 +40,31 @@ struct DesktopStatusCommandRunner: Sendable {
     macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
     profile suppliedProfile: PortableProfile? = nil
   ) throws -> CommandExecution {
+    let status = try report(
+      resourcesRoot: resourcesRoot,
+      keybindingsResourcesRoot: keybindingsResourcesRoot,
+      profileURL: profileURL,
+      profileRequired: profileRequired,
+      stateRoot: stateRoot,
+      homeDirectory: homeDirectory,
+      consumerPaths: consumerPaths,
+      macarchyExecutableURL: macarchyExecutableURL,
+      profile: suppliedProfile
+    )
+    return (try status.render(json: json), status.succeeded)
+  }
+
+  func report(
+    resourcesRoot: URL,
+    keybindingsResourcesRoot: URL = RuntimeEnvironment.live.builtInKeybindingsURL,
+    profileURL: URL,
+    profileRequired: Bool,
+    stateRoot: URL,
+    homeDirectory: URL,
+    consumerPaths: ThemeConsumerPaths? = nil,
+    macarchyExecutableURL: URL = RuntimeEnvironment.live.persistentCommandURL,
+    profile suppliedProfile: PortableProfile? = nil
+  ) throws -> DesktopStatusReport {
     var diagnostics: [String] = []
     // Runs `body`, recording its error as a diagnostic and substituting `fallback`.
     func attempt<Value>(_ fallback: Value, _ body: () throws -> Value) -> Value {
@@ -236,7 +261,7 @@ struct DesktopStatusCommandRunner: Sendable {
         : runtime.status == .partial || sketchyBarCore?.status == .partial
           ? "partial" : "converged")
       : recoveryRequired ? "recovery_required" : "drifted"
-    let report = DesktopStatusReport(
+    return DesktopStatusReport(
       outcome: outcome,
       desktopProvider: desired?.profile.desktop.provider.rawValue,
       topBarProvider: desired?.profile.topBar.rawValue,
@@ -265,11 +290,10 @@ struct DesktopStatusCommandRunner: Sendable {
       aggregateTransactionPending: aggregatePending,
       diagnostics: diagnostics
     )
-    return (try report.render(json: json), succeeded)
   }
 }
 
-private struct DesktopStatusReport: CommandReport {
+struct DesktopStatusReport: CommandReport, Sendable {
   let schemaVersion = 2
   let operation = "desktop_status"
   let outcome: String
@@ -288,6 +312,9 @@ private struct DesktopStatusReport: CommandReport {
   let theme: [DesktopThemeAdapterStatus]
   let aggregateTransactionPending: Bool
   let diagnostics: [String]
+
+  /// Converged, partial and disabled are the only healthy outcomes.
+  var succeeded: Bool { ["converged", "partial", "disabled"].contains(outcome) }
 
   func renderText() throws -> String {
     var lines = [
@@ -344,7 +371,7 @@ private struct DesktopStatusReport: CommandReport {
   }
 }
 
-private struct DesktopSketchyBarStatusReport: Encodable {
+struct DesktopSketchyBarStatusReport: Encodable, Sendable {
   let generationStatus: String
   let generationID: String?
   let generationAgrees: Bool

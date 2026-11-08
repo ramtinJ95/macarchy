@@ -2,9 +2,8 @@ import Foundation
 import ThemeCore
 
 struct UnifiedSetupTeardownCommandRunner: Sendable {
-  typealias ComponentTeardown =
-    @Sendable (UnifiedSetupPlanContext, ThemeConsumerPaths, Bool) async throws
-    -> SetupComponentExecution
+  typealias ComponentTeardown<Report> =
+    @Sendable (UnifiedSetupPlanContext, ThemeConsumerPaths, Bool) async throws -> Report
   typealias ThemeTeardown =
     @Sendable (URL, SetupCoreOwnership?, ThemeAppearance, Bool) async throws
     -> UnifiedSetupTeardownStage
@@ -12,8 +11,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     @Sendable (UnifiedSetupPlanContext, Bool) async throws -> UnifiedSetupTeardownStage
 
   let planner: UnifiedSetupPlanCommandRunner
-  let environmentTeardown: ComponentTeardown
-  let desktopTeardown: ComponentTeardown
+  let environmentTeardown: ComponentTeardown<SetupComponentExecution>
+  let desktopTeardown: ComponentTeardown<DesktopAggregateTeardownReport>
   let themeTeardown: ThemeTeardown
   let environmentApplyFinalization: ApplyFinalization
   let desktopApplyFinalization: ApplyFinalization
@@ -21,8 +20,8 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
 
   init(
     planner: UnifiedSetupPlanCommandRunner,
-    environmentTeardown: @escaping ComponentTeardown,
-    desktopTeardown: @escaping ComponentTeardown,
+    environmentTeardown: @escaping ComponentTeardown<SetupComponentExecution>,
+    desktopTeardown: @escaping ComponentTeardown<DesktopAggregateTeardownReport>,
     themeTeardown: @escaping ThemeTeardown,
     environmentApplyFinalization: @escaping ApplyFinalization = { _, _ in
       .noChange("No deferred environment apply exists.")
@@ -58,13 +57,10 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
       )
     },
     desktopTeardown: { context, _, dryRun in
-      try SetupComponentExecution(
-        DesktopTeardownCommandRunner.live.executeAggregate(
-          stateRoot: context.stateRoot,
-          homeDirectory: context.homeDirectory,
-          dryRun: dryRun,
-          json: true
-        )
+      try DesktopTeardownCommandRunner.live.aggregateReport(
+        stateRoot: context.stateRoot,
+        homeDirectory: context.homeDirectory,
+        dryRun: dryRun
       )
     },
     themeTeardown: { stateRoot, ownership, desiredAppearance, dryRun in
@@ -624,6 +620,15 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
   }
 
   private func stage(
+    _ report: DesktopAggregateTeardownReport,
+    dryRun: Bool
+  ) -> UnifiedSetupTeardownStage {
+    stage(
+      .desktopTeardown(report), succeeded: report.succeeded, mutated: report.mutated,
+      outcome: report.outcome, message: report.message, dryRun: dryRun)
+  }
+
+  private func stage(
     _ report: PreferencesReport,
     dryRun: Bool
   ) throws -> UnifiedSetupTeardownStage {
@@ -635,12 +640,25 @@ struct UnifiedSetupTeardownCommandRunner: Sendable {
     } else {
       throw SetupComponentReportError(description: "Delegated teardown has no mutation field.")
     }
-    return UnifiedSetupTeardownStage(
-      succeeded: report.succeeded,
+    return stage(
+      .preferences(report), succeeded: report.succeeded, mutated: mutated,
+      outcome: report.outcome, message: report.message, dryRun: dryRun)
+  }
+
+  private func stage(
+    _ details: SetupStageDetails,
+    succeeded: Bool,
+    mutated: Bool,
+    outcome: String,
+    message: String?,
+    dryRun: Bool
+  ) -> UnifiedSetupTeardownStage {
+    UnifiedSetupTeardownStage(
+      succeeded: succeeded,
       mutated: mutated,
-      outcome: dryRun && report.outcome == "ready" ? "planned" : report.outcome,
-      message: report.message ?? "Delegated teardown completed.",
-      details: .preferences(report)
+      outcome: dryRun && outcome == "ready" ? "planned" : outcome,
+      message: message ?? "Delegated teardown completed.",
+      details: details
     )
   }
 

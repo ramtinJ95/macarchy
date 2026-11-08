@@ -85,8 +85,12 @@ final class ApplyFixture: @unchecked Sendable {
       Issue.record("No theme reactivation reviewed")
       throw UnexpectedComponentCall()
     },
-    desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
-    environment: @escaping UnifiedSetupApplyCommandRunner.ComponentApply,
+    desktop: @escaping UnifiedSetupApplyCommandRunner.ComponentApply<
+      DesktopAggregateMutationReport
+    >,
+    environment: @escaping UnifiedSetupApplyCommandRunner.ComponentApply<
+      SetupComponentExecution
+    >,
     transactionTeardown: UnifiedSetupTeardownCommandRunner? = nil,
     faultInjector: @escaping @Sendable (UnifiedSetupTransactionCheckpoint) throws -> Void = {
       _ in
@@ -120,9 +124,7 @@ final class ApplyFixture: @unchecked Sendable {
             )
           },
           desktopTeardown: { _, _, _ in
-            try applyComponent(
-              #"{"outcome":"no_change","mutated":false,"message":"desktop"}"#
-            )
+            desktopTeardownStub("no_change", message: "desktop")
           },
           themeTeardown: { _, _, _, _ in .noChange("theme") }
         ),
@@ -340,6 +342,36 @@ func themeReportStub(
 ) -> ThemeSetJSONReport {
   ThemeSetJSONReport(
     themeID: "catppuccin-mocha", outcome: outcome, committed: committed, error: error)
+}
+
+func desktopApplyStub(
+  _ outcome: String = "applied",
+  mutated: Bool = true,
+  message: String = "desktop"
+) -> DesktopAggregateMutationReport {
+  DesktopAggregateMutationReport(
+    outcome: outcome, mutated: mutated, yabai: nil, keybindings: nil, sketchyBar: nil,
+    theme: nil, message: message)
+}
+
+/// A desktop teardown preview plans; a teardown removes what it mutated.
+func desktopTeardownStub(dryRun: Bool, mutated: Bool) -> DesktopAggregateTeardownReport {
+  desktopTeardownStub(dryRun ? "planned" : mutated ? "removed" : "no_change", mutated: mutated)
+}
+
+func desktopTeardownStub(
+  _ outcome: String,
+  mutated: Bool = false,
+  message: String = "component"
+) -> DesktopAggregateTeardownReport {
+  DesktopAggregateTeardownReport(
+    outcome: outcome, mutated: mutated, yabai: nil, keybindings: nil, sketchyBar: nil,
+    message: message)
+}
+
+/// Healthy desktop doctor findings.
+func desktopInspectionStub() -> DesktopInspectionReport {
+  .doctor(DoctorJSONReport(operation: "desktop_doctor", findings: []))
 }
 
 func applyComponent(

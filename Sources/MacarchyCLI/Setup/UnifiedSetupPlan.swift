@@ -989,6 +989,9 @@ struct SetupComponentExecution: Encodable, Sendable {
 enum SetupStageDetails: Encodable, Sendable {
   case delegated(JSONValue)
   case theme(ThemeSetJSONReport)
+  case desktopApply(DesktopAggregateMutationReport)
+  case desktopTeardown(DesktopAggregateTeardownReport)
+  case desktopInspection(DesktopInspectionReport)
   case preferences(PreferencesReport)
 
   func encode(to encoder: Encoder) throws {
@@ -996,6 +999,9 @@ enum SetupStageDetails: Encodable, Sendable {
     switch self {
     case .delegated(let report): try container.encode(report)
     case .theme(let report): try container.encode(report)
+    case .desktopApply(let report): try container.encode(report)
+    case .desktopTeardown(let report): try container.encode(report)
+    case .desktopInspection(let report): try container.encode(report)
     case .preferences(let report): try container.encode(report)
     }
   }
