@@ -54,8 +54,7 @@ struct EnvironmentLeanRuntime: Sendable {
   static let live = Self(
     configuration: {
       LeanFocusServiceConfiguration(
-        stateRoot: $0,
-        executableURL: LeanBordersPreview.helperURL(beside: RuntimeEnvironment.live.executableURL))
+        stateRoot: $0, executableURL: RuntimeEnvironment.live.focusRingHelperURL)
     },
     inspect: { home, known in
       let service = LeanFocusService(homeDirectory: home)

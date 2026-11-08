@@ -14,10 +14,6 @@ enum LeanBordersPreview {
   /// Time for the helper to hide, close and report after its own duration.
   static let exitGrace: TimeInterval = 5
 
-  static func helperURL(beside executable: URL) -> URL {
-    executable.deletingLastPathComponent().appending(path: FocusRingHelperCommand.executableName)
-  }
-
   /// Returns the handled signal that ended supervision, or nil after a clean exit.
   static func supervise(helper: URL, arguments: [String], limit: TimeInterval) throws -> Int32? {
     try withPreviewStopSignals { received -> Int32? in
