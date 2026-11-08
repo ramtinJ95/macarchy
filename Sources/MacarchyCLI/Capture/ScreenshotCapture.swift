@@ -92,16 +92,13 @@ struct ScreenshotCapture {
     guard destination.isFileURL, destination.pathExtension.lowercased() == "png" else {
       throw ScreenshotError.destination("Use a PNG file path.")
     }
-    // Includes dangling links; the final exclusive write also rechecks existence.
-    if (try? FileManager.default.attributesOfItem(atPath: destination.path)) != nil {
-      throw ScreenshotError.destination("Already exists: \(destination.path)")
+    // The final exclusive write also rechecks existence.
+    switch NewFile.refusal(at: destination) {
+    case .exists: throw ScreenshotError.destination("Already exists: \(destination.path)")
+    case .missingParent:
+      throw ScreenshotError.destination("The destination's parent directory must exist.")
+    case nil: break
     }
-    var isDirectory: ObjCBool = false
-    guard
-      FileManager.default.fileExists(
-        atPath: destination.deletingLastPathComponent().path, isDirectory: &isDirectory),
-      isDirectory.boolValue
-    else { throw ScreenshotError.destination("The destination's parent directory must exist.") }
   }
 
   private func captureAndSave(arguments: [String], destination: URL) throws -> ScreenshotOutcome {
