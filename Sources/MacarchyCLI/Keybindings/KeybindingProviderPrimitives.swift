@@ -47,6 +47,34 @@ enum KeybindingProviderPrimitives {
     guard result == 0 else { throw POSIXFailure(code: errno) }
   }
 
+  /// What a claim-marker read establishes about a pinned item.
+  enum ClaimMarkerCheck {
+    /// Any marker is present. Only its size is probed.
+    case present
+    /// The marker is exactly this ownership nonce.
+    case matches(nonce: String)
+  }
+
+  /// Reads the claim marker of a pinned item. A POSIX failure is reported as `failure` on `url`;
+  /// each caller keeps the wording it has always reported.
+  static func readClaimMarker(
+    _ check: ClaimMarkerCheck,
+    descriptor: Int32,
+    failure: String,
+    url: URL
+  ) throws -> Bool {
+    do {
+      switch check {
+      case .present:
+        return try claimMarkerExists(descriptor: descriptor)
+      case .matches(let nonce):
+        return try claimMarkerMatches(descriptor: descriptor, nonce: nonce)
+      }
+    } catch let error as POSIXFailure {
+      throw SetupOwnershipError.posix(failure, url, code: error.code)
+    }
+  }
+
   static func removeClaimMarker(descriptor: Int32) throws {
     let result = claimMarkerAttribute.withCString {
       Darwin.fremovexattr(descriptor, $0, 0)

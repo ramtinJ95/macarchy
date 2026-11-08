@@ -160,17 +160,14 @@ extension KeybindingProviderTransaction {
     }
     let pinned = try openClaim(parentDescriptor: parentDescriptor, name: name, url: url)
     defer { Darwin.close(pinned) }
-    do {
-      guard try !KeybindingProviderPrimitives.claimMarkerExists(descriptor: pinned) else {
-        throw SetupOwnershipError.ownershipDrift(url)
-      }
-    } catch let failure as KeybindingProviderPrimitives.POSIXFailure {
-      throw SetupOwnershipError.posix(
-        "inspect legacy keybinding ownership marker",
-        url,
-        code: failure.code
+    guard
+      try !KeybindingProviderPrimitives.readClaimMarker(
+        .present,
+        descriptor: pinned,
+        failure: "inspect legacy keybinding ownership marker",
+        url: url
       )
-    }
+    else { throw SetupOwnershipError.ownershipDrift(url) }
   }
 
   func requireLegacyEntryAbsent() throws {
