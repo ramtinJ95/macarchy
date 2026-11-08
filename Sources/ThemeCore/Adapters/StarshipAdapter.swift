@@ -91,9 +91,16 @@ package struct StarshipAdapter: Sendable {
     }
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      .starship,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
+    runtime.inspection(readyMessage: "Starship reads the active palette on the next prompt") {
       do {
         try ActivationLock(root: root).withLock {
           if let native {
@@ -111,30 +118,13 @@ package struct StarshipAdapter: Sendable {
       } catch ReconciliationStatusError.noActiveGeneration {
         // The stable seam can be healthy before the first bridge exists.
       }
-      return AdapterInspection(
-        .starship,
-        message: "Starship reads the active palette on the next prompt"
-      )
-    } catch {
-      return AdapterInspection(
-        .starship,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
     }
   }
 
   func reconciliation() -> AdapterReconciliation {
     AdapterReconciliation(.starship) {
       let bridgeOutcome: AdapterOutcome? = try ActivationLock(root: root).withLock {
-        do {
-          try preflight()
-        } catch {
-          return AdapterOutcome(
-            status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-            message: String(describing: error)
-          )
-        }
+        if let failure = runtime.preflightFailure() { return failure }
         do {
           if let native {
             let current = try native.read()

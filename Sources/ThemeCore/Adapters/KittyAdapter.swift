@@ -82,9 +82,17 @@ package struct KittyAdapter: Sendable {
     }
   }
 
+  /// Inspection only: reconciliation reports every preflight failure as drift.
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      .kitty,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
+    runtime.inspection(readyMessage: nil) {
       do {
         try ActivationLock(root: root).withLock {
           try Self.validatePreparedBridge(root: root)
@@ -92,20 +100,6 @@ package struct KittyAdapter: Sendable {
       } catch ReconciliationStatusError.noActiveGeneration {
         // The include seam can be healthy before the first activation creates a bridge.
       }
-      return AdapterInspection(.kitty)
-    } catch {
-      let status: AdapterInspectionStatus
-      switch error {
-      case KittyAdapterError.missingInclude, KittyAdapterError.bridgeDoesNotMatch:
-        status = .drifted
-      default:
-        status = .failed
-      }
-      return AdapterInspection(
-        .kitty,
-        status: status,
-        message: String(describing: error)
-      )
     }
   }
 
@@ -159,6 +153,15 @@ package struct KittyAdapter: Sendable {
     return try BoundedRegularFile.read(
       at: manifest.artifactURL(root: root, path: Self.outputPath)
     ).data
+  }
+
+  private static func isIntegrationDrift(_ error: any Error) -> Bool {
+    switch error {
+    case KittyAdapterError.missingInclude, KittyAdapterError.bridgeDoesNotMatch:
+      true
+    default:
+      false
+    }
   }
 
   static func render(package: ThemePackage) -> String {

@@ -125,21 +125,19 @@ package struct SpicetifyAdapter: Sendable {
     }
   }
 
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      .spicetify,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
+
   func inspection() -> AdapterInspection {
-    do {
-      try preflight()
-      return AdapterInspection(
-        .spicetify,
-        message:
-          "Spicetify and Spotify are compatible and the generated palette seam is exact"
-      )
-    } catch {
-      return AdapterInspection(
-        .spicetify,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
-    }
+    runtime.inspection(
+      readyMessage:
+        "Spicetify and Spotify are compatible and the generated palette seam is exact"
+    )
   }
 
   func reconciliation() -> AdapterReconciliation {
@@ -151,14 +149,7 @@ package struct SpicetifyAdapter: Sendable {
   }
 
   private func reconcile() throws -> AdapterOutcome {
-    do {
-      try preflight()
-    } catch {
-      return AdapterOutcome(
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
-    }
+    if let failure = runtime.preflightFailure() { return failure }
 
     let spicetifyVersion = try supportedVersion()
     let spotifyVersion = try supportedSpotifyVersion()

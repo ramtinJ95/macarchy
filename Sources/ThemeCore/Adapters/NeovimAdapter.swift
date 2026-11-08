@@ -149,24 +149,15 @@ package struct NeovimAdapter: Sendable {
   }
 
   func inspection(includeRuntimeChecks: Bool = false) -> AdapterInspection {
-    do {
-      try preflight()
+    runtime.inspection(
+      readyMessage: includeRuntimeChecks
+        ? "Neovim validated the active colorscheme and canonical-pointer watcher"
+        : "Neovim watches the canonical theme pointer for live colorscheme changes"
+    ) {
       if includeRuntimeChecks {
         try preflightActiveSupport()
         try validateRuntime()
       }
-      return AdapterInspection(
-        .neovim,
-        message: includeRuntimeChecks
-          ? "Neovim validated the active colorscheme and canonical-pointer watcher"
-          : "Neovim watches the canonical theme pointer for live colorscheme changes"
-      )
-    } catch {
-      return AdapterInspection(
-        .neovim,
-        status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-        message: String(describing: error)
-      )
     }
   }
 

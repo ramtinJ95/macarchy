@@ -239,17 +239,16 @@ package struct HerdrAdapter: Sendable {
     }
   }
 
-  func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(.herdr) {
-      do {
-        try preflight()
-      } catch {
-        return AdapterOutcome(
-          status: Self.isIntegrationDrift(error) ? .drifted : .failed,
-          message: String(describing: error)
-        )
-      }
+  private var runtime: OrdinaryAdapterRuntime {
+    OrdinaryAdapterRuntime(
+      .herdr,
+      preflight: preflight,
+      isIntegrationDrift: Self.isIntegrationDrift
+    )
+  }
 
+  func reconciliation() -> AdapterReconciliation {
+    runtime.reconciliation {
       do {
         if let managedMode {
           guard let desired = try currentDesiredTheme() else {
