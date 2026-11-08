@@ -11,10 +11,6 @@ struct PreferencesReport: CommandReport, Sendable {
     let target: Bool
     let action: String
   }
-  struct Action: Encodable, Sendable {
-    let id: String
-    let message: String
-  }
   struct Diagnostic: Encodable, Sendable {
     let message: String
   }
@@ -31,7 +27,7 @@ struct PreferencesReport: CommandReport, Sendable {
   var approvalDigest: String?
   var automationPermission: MacOSPreference?
   var preferences: [Row] = []
-  var actions: [Action] = []
+  var actions: [PlanAction] = []
   var diagnostics: [Diagnostic] = []
   var message: String?
 
