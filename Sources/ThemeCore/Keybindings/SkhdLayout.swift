@@ -57,7 +57,6 @@ package struct SkhdLayout: Sendable {
     entry = directory.appending(path: Self.configurationName)
   }
 
-  /// The fallback `~/.skhdrc`.
   package var fallback: URL {
     home.appending(path: Self.fallbackName)
   }
@@ -102,7 +101,6 @@ package struct SkhdLayout: Sendable {
     }
   }
 
-  /// The live claimed item at `level`.
   package func live(_ level: Level) -> URL {
     switch level {
     case .leaf: entry

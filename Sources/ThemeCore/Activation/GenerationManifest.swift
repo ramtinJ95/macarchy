@@ -102,7 +102,6 @@ struct GenerationIntegrityError: Error, CustomStringConvertible, Sendable {
 }
 
 extension GenerationManifest {
-  /// Location of `path` inside this generation's directory under `root`.
   package func artifactURL(root: URL, path: String) -> URL {
     root.appending(path: "\(StateLayout.generationPath(generationID))/\(path)")
   }
