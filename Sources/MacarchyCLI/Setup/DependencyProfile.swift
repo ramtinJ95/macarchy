@@ -348,8 +348,7 @@ struct DependencyProfile: Sendable {
         ),
         consumerCapability(
           .leanFocus,
-          probes: executable(
-            LeanBordersPreview.helperURL(beside: RuntimeEnvironment.live.executableURL).path),
+          probes: executable(RuntimeEnvironment.live.focusRingHelperURL.path),
           remediation: .external(
             "Install a matching Macarchy release containing macarchy-focus-ring beside macarchy; source builds must build both products. No Homebrew Borders installation or permission grant is required for fresh lean."
           )

@@ -38,8 +38,7 @@ struct Borders: ParsableCommand {
 
     func run() throws {
       if renderer == .lean {
-        try runLean(
-          helper: LeanBordersPreview.helperURL(beside: RuntimeEnvironment.live.executableURL))
+        try runLean(helper: RuntimeEnvironment.live.focusRingHelperURL)
         return
       }
       try run(runner: .live(root: URL(filePath: stateRoot)))

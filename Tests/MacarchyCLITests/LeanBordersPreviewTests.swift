@@ -28,8 +28,9 @@ struct LeanBordersPreviewTests {
   }
 
   @Test func helperIsSiblingOfRunningExecutable() {
-    let helper = LeanBordersPreview.helperURL(
-      beside: URL(filePath: "/build/release/macarchy"))
+    let helper = RuntimeEnvironment(
+      executableURL: URL(filePath: "/build/release/macarchy")
+    ).focusRingHelperURL
     #expect(helper.path == "/build/release/macarchy-focus-ring")
   }
 

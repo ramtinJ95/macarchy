@@ -36,6 +36,11 @@ struct RuntimeEnvironment: Sendable {
     MacarchyCommandPath.persistentURL(for: executableURL)
   }
 
+  /// The focus-ring helper, installed beside this executable.
+  var focusRingHelperURL: URL {
+    executableURL.deletingLastPathComponent().appending(path: FocusRingHelperCommand.executableName)
+  }
+
   init(executableURL: URL) {
     self.executableURL = executableURL.resolvingSymlinksInPath().standardizedFileURL
   }
