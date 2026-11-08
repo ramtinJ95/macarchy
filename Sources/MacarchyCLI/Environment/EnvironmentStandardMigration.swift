@@ -349,18 +349,18 @@ extension EnvironmentTransactionCoordinator {
       throw EnvironmentLifecycleError.blocked("standard migration approval changed; review again")
     }
     let store = EnvironmentStateStore(stateRoot: stateRoot)
-    try store.writeTransaction(transaction)
-    do {
-      try migration.transition(transaction)
-      try store.writeOwnership(transaction.proposedOwnership)
-      try faultInjector(.authorityPublished)
-    } catch {
-      let failure = error
-      let rollback = transaction.rollingBack
-      try store.writeTransaction(rollback)
-      try finishStandardMigrationLocked(rollback)
-      throw EnvironmentLifecycleError.blocked("standard migration rolled back: \(failure)")
-    }
+    try store.runJournaled(
+      transaction,
+      commit: .deferred,
+      forward: {
+        try migration.transition(transaction)
+        try store.writeOwnership(transaction.proposedOwnership)
+        try faultInjector(.authorityPublished)
+      },
+      reverse: { try settleStandardMigrationLocked($0) },
+      rollbackFailure: .propagate,
+      rolledBack: { EnvironmentLifecycleError.blocked("standard migration rolled back: \($0)") }
+    )
     // Cleanup errors retain forward authority and its journal for explicit recovery.
     try migration.cleanup(transaction)
     try store.removeTransaction()
@@ -369,6 +369,12 @@ extension EnvironmentTransactionCoordinator {
   }
 
   func finishStandardMigrationLocked(_ transaction: EnvironmentTransaction) throws {
+    try settleStandardMigrationLocked(transaction)
+    try EnvironmentStateStore(stateRoot: stateRoot).removeTransaction()
+  }
+
+  /// Completes the journal's direction and its cleanup, leaving the journal in place.
+  private func settleStandardMigrationLocked(_ transaction: EnvironmentTransaction) throws {
     guard let intent = transaction.standardMigration else {
       throw EnvironmentLifecycleError.blocked("standard migration has no intent")
     }
@@ -381,6 +387,5 @@ extension EnvironmentTransactionCoordinator {
       transaction.direction == .forward
         ? transaction.proposedOwnership : transaction.previousOwnership)
     try migration.cleanup(transaction)
-    try store.removeTransaction()
   }
 }
