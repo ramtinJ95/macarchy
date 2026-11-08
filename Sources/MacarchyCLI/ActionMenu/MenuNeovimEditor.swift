@@ -13,34 +13,23 @@ struct MenuNeovimEditor: ParsableCommand {
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
 
   mutating func run() throws {
-    do {
+    try MenuEditorSession.run(
+      failure: "Could not complete Neovim editing",
+      note: "Earlier approved starter/profile changes are retained; review them before retrying."
+    ) {
       let home = FileManager.default.homeDirectoryForCurrentUser
       let context = profiles.context(stateRoot: StateLayout.defaultRoot(in: home))
-      let neovim = NeovimAdapter.liveExecutableURL
-      guard FileManager.default.isExecutableFile(atPath: neovim.path) else {
-        throw ValidationError("Neovim editor is not executable: \(neovim.path)")
-      }
+      let neovim = try MenuEditorSession.neovim(named: "Neovim editor")
       guard
         let target = try MenuNeovimSetup(context: context, homeDirectory: home).prepareForEditing()
       else { return }
       print("Neovim configuration: \(target.declaredRoot.path)")
       print("Configuration directory: \(target.physicalRoot.path)\n\(target.notice)")
-      let editor = Process()
-      editor.executableURL = neovim
-      editor.currentDirectoryURL = target.physicalRoot
       // A constant native message survives the initial screen clear. There is
       // deliberately no BufWritePost callback or executable Lua interpolation.
-      editor.arguments = target.editorArguments
-      try MenuTerminal.runForeground(editor)
-      guard editor.terminationReason == .exit, editor.terminationStatus == 0 else {
-        throw ValidationError("Neovim exited with status \(editor.terminationStatus)")
-      }
-    } catch {
-      print(
-        "Could not complete Neovim editing: \(error)\nEarlier approved starter/profile changes are retained; review them before retrying.\nPress Enter to close."
-      )
-      _ = readLine()
-      throw ExitCode.failure
+      try MenuEditorSession.edit(
+        neovim, arguments: target.editorArguments, directory: target.physicalRoot,
+        exitFailure: { "Neovim exited with status \($0.terminationStatus)" })
     }
   }
 

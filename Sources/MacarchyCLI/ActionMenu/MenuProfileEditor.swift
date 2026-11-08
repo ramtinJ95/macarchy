@@ -35,20 +35,13 @@ struct MenuProfileEditor: ParsableCommand {
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
 
   mutating func run() throws {
-    do {
+    try MenuEditorSession.run(failure: "Could not complete profile editing") {
       try edit()
-    } catch {
-      print("Could not complete profile editing: \(error)\nPress Enter to close.")
-      _ = readLine()
-      throw ExitCode.failure
     }
   }
 
   private func edit() throws {
-    let neovim = NeovimAdapter.liveExecutableURL
-    guard FileManager.default.isExecutableFile(atPath: neovim.path) else {
-      throw ValidationError("Profile editor is not executable: \(neovim.path)")
-    }
+    let neovim = try MenuEditorSession.neovim(named: "Profile editor")
     let home = FileManager.default.homeDirectoryForCurrentUser
     let context = profiles.context(stateRoot: StateLayout.defaultRoot(in: home))
     let target: URL
@@ -76,45 +69,40 @@ struct MenuProfileEditor: ParsableCommand {
       resolved = source
     }
     print("\(action.title): \(target.path)\nEditing source: \(resolved.path)")
-    let temporary = FileManager.default.temporaryDirectory.appending(
-      path: "macarchy-menu-edit-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(
-      at: temporary, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-    defer { try? FileManager.default.removeItem(at: temporary) }
-    let sessionURL = temporary.appending(path: "session.json")
-    let scriptURL = temporary.appending(path: "editor.lua")
-    let notice: String
-    var saveURL: URL?
-    do {
-      let (session, origin) = try MenuKeybindingSaveSession.begin(
-        portableURL: context.profileURL, machineURL: context.machineProfileURL, target: resolved,
-        resourcesRoot: context.keybindingsResourcesRoot, homeDirectory: home,
-        portableRequired: context.profileRequired, machineRequired: context.machineProfileRequired)
-      try JSONEncoder().encode(session).write(to: sessionURL, options: .atomic)
-      saveURL = sessionURL
-      notice =
-        session.nativeSource != nil
-        ? "Save-to-apply: this personal skhd override only. Packaged defaults load first. "
-          + "Supported binding syntax only; invalid edits stay saved and retain the last working generation. "
-          + "Profile connections, metadata and other providers are not applied."
-        : "Save-to-apply: [keybindings] disabled only (current winning layer: \(origin)). "
-          + "Other changes are saved but require reviewed apply. No native override/metadata files are edited."
-    } catch {
-      notice =
-        "Editing only; save-to-apply unavailable: \(error). Fix/review, then reopen from the menu."
-    }
-    let script = Self.script(
-      target: resolved, section: nil,
-      executableURL: RuntimeEnvironment.live.executableURL, notice: notice,
-      saveArguments: saveURL.map { [MenuProfileSave.commandName, $0.path] })
-    try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-    let editor = Process()
-    editor.executableURL = neovim
-    editor.arguments = ["-S", scriptURL.path, "--", resolved.path]
-    try MenuTerminal.runForeground(editor)
-    guard editor.terminationReason == .exit, editor.terminationStatus == 0 else {
-      throw ValidationError(
-        "Neovim ended with \(editor.terminationReason), status \(editor.terminationStatus)")
+    try MenuEditorSession.withPrivateDirectory(prefix: "macarchy-menu-edit") { temporary in
+      let sessionURL = temporary.appending(path: "session.json")
+      let scriptURL = temporary.appending(path: "editor.lua")
+      let notice: String
+      var saveURL: URL?
+      do {
+        let (session, origin) = try MenuKeybindingSaveSession.begin(
+          portableURL: context.profileURL, machineURL: context.machineProfileURL, target: resolved,
+          resourcesRoot: context.keybindingsResourcesRoot, homeDirectory: home,
+          portableRequired: context.profileRequired,
+          machineRequired: context.machineProfileRequired)
+        try JSONEncoder().encode(session).write(to: sessionURL, options: .atomic)
+        saveURL = sessionURL
+        notice =
+          session.nativeSource != nil
+          ? "Save-to-apply: this personal skhd override only. Packaged defaults load first. "
+            + "Supported binding syntax only; invalid edits stay saved and retain the last working generation. "
+            + "Profile connections, metadata and other providers are not applied."
+          : "Save-to-apply: [keybindings] disabled only (current winning layer: \(origin)). "
+            + "Other changes are saved but require reviewed apply. No native override/metadata files are edited."
+      } catch {
+        notice =
+          "Editing only; save-to-apply unavailable: \(error). Fix/review, then reopen from the menu."
+      }
+      let script = Self.script(
+        target: resolved, section: nil,
+        executableURL: RuntimeEnvironment.live.executableURL, notice: notice,
+        saveArguments: saveURL.map { [MenuProfileSave.commandName, $0.path] })
+      try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+      try MenuEditorSession.edit(
+        neovim, arguments: ["-S", scriptURL.path, "--", resolved.path], directory: nil,
+        exitFailure: {
+          "Neovim ended with \($0.terminationReason), status \($0.terminationStatus)"
+        })
     }
   }
 
