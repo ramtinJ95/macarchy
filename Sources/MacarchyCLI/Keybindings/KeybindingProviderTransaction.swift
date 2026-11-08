@@ -242,10 +242,6 @@ struct KeybindingProviderTransaction: Sendable {
     }
   }
 
-  func preflightManagedRestoration() throws {
-    try preflightOriginalRestoration()
-  }
-
   func preflightRetainedOriginalClaim(_ record: SetupOwnershipRecord) throws {
     guard retainsOriginalSymlink(record) else { return }
     let level = claimLevel(record)

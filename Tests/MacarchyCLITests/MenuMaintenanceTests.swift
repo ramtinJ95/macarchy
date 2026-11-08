@@ -183,8 +183,10 @@ struct MenuMaintenanceTests {
       try ActionMenu.runSession(
         showMenu: { .maintenance(.status) },
         openViewer: { _ in
-          _ = try MenuMaintenance.launch(
-            .status, theme: theme, executableURL: URL(filePath: "/unused/macarchy"),
+          _ = try MenuTerminal.launch(
+            .maintenance,
+            arguments: [MenuMaintenance.commandName, MaintenanceAction.status.rawValue],
+            theme: theme, executableURL: URL(filePath: "/unused/macarchy"),
             kittyApplicationURL: FileManager.default.temporaryDirectory.appending(
               path: UUID().uuidString),
             yabaiURL: URL(filePath: "/usr/bin/true"))
@@ -207,8 +209,9 @@ struct MenuMaintenanceTests {
       to: kitty, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: kitty.path)
     do {
-      _ = try MenuMaintenance.launch(
-        .status, theme: theme, executableURL: URL(filePath: "/unused/macarchy"),
+      _ = try MenuTerminal.launch(
+        .maintenance, arguments: [MenuMaintenance.commandName, MaintenanceAction.status.rawValue],
+        theme: theme, executableURL: URL(filePath: "/unused/macarchy"),
         kittyApplicationURL: root, yabaiURL: URL(filePath: "/usr/bin/false"), launcherURL: kitty)
       Issue.record("Floating-rule failure was swallowed")
     } catch {

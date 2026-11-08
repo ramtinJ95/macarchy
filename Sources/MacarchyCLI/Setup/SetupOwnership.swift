@@ -167,21 +167,17 @@ struct SetupOwnershipManager: Sendable {
   static let batThemeLinkID = ConsumerSetupPlan.Step.Operation.batThemeLink.rawValue
   static let ezaEnvironmentID = ConsumerSetupPlan.Step.Operation.ezaEnvironment.rawValue
   static let ezaThemeLinkID = ConsumerSetupPlan.Step.Operation.ezaThemeLink.rawValue
-  static let btopSelectorID = ConsumerSetupPlan.Step.Operation.btopSelector.rawValue
   static let btopThemeLinkID = ConsumerSetupPlan.Step.Operation.btopThemeLink.rawValue
   static let yaziSelectorID = ConsumerSetupPlan.Step.Operation.yaziSelector.rawValue
   static let yaziFlavorLinkID = ConsumerSetupPlan.Step.Operation.yaziFlavorLink.rawValue
   static let yaziSyntaxLinkID = ConsumerSetupPlan.Step.Operation.yaziSyntaxLink.rawValue
   static let atuinSelectorID = ConsumerSetupPlan.Step.Operation.atuinSelector.rawValue
   static let atuinThemeLinkID = ConsumerSetupPlan.Step.Operation.atuinThemeLink.rawValue
-  static let neovimWatcherID = ConsumerSetupPlan.Step.Operation.neovimWatcher.rawValue
   static let neovimThemeLinkID = ConsumerSetupPlan.Step.Operation.neovimThemeLink.rawValue
-  static let starshipBehaviorID = ConsumerSetupPlan.Step.Operation.starshipBehavior.rawValue
   static let starshipConfigurationLinkID =
     ConsumerSetupPlan.Step.Operation.starshipConfigurationLink.rawValue
   static let piSelectorID = ConsumerSetupPlan.Step.Operation.piSelector.rawValue
   static let piThemeLinkID = ConsumerSetupPlan.Step.Operation.piThemeLink.rawValue
-  static let herdrSelectorID = ConsumerSetupPlan.Step.Operation.herdrSelector.rawValue
   static let tuicrSelectorID = ConsumerSetupPlan.Step.Operation.tuicrSelector.rawValue
   static let tuicrThemeLinkID = ConsumerSetupPlan.Step.Operation.tuicrThemeLink.rawValue
   static let tuicrSyntaxLinkID = ConsumerSetupPlan.Step.Operation.tuicrSyntaxLink.rawValue

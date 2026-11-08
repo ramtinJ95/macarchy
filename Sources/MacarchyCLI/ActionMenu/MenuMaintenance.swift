@@ -49,20 +49,6 @@ struct MenuMaintenance: ParsableCommand {
     if status != 0 { throw ExitCode(status) }
   }
 
-  static func launch(
-    _ action: MaintenanceAction, theme: NormalizedTheme, executableURL: URL,
-    profileArguments: [String] = [],
-    kittyApplicationURL: URL = ExternalTool.kittyApplication,
-    yabaiURL: URL = ExternalTool.yabai,
-    launcherURL: URL = URL(filePath: "/usr/bin/open")
-  ) throws -> Process {
-    try MenuTerminal.launch(
-      .maintenance, arguments: [commandName, action.rawValue] + profileArguments,
-      theme: theme, executableURL: executableURL, kittyApplicationURL: kittyApplicationURL,
-      yabaiURL: yabaiURL,
-      launcherURL: launcherURL)
-  }
-
   static func runAndHold(
     _ action: MaintenanceAction, executableURL: URL,
     profileArguments: [String] = [],

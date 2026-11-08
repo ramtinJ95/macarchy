@@ -338,7 +338,7 @@ struct EnvironmentCommand: ParsableCommand {
 
     mutating func run() throws {
       let home = FileManager.default.homeDirectoryForCurrentUser
-      let execution = try EnvironmentDoctorCommandRunner.live.execute(
+      let execution = try EnvironmentStatusCommandRunner.live.executeDoctor(
         resourcesRoot: RuntimeEnvironment.live.builtInEnvironmentURL,
         profileURL: profileOptions.url(homeDirectory: home),
         profileRequired: profileOptions.isRequired,

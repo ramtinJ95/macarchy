@@ -428,13 +428,11 @@ private struct PiFixture: LegacySetupOwnershipFixture {
   }
 
   func doctor() throws -> (output: String, succeeded: Bool) {
-    try EnvironmentDoctorCommandRunner(
-      status: EnvironmentStatusCommandRunner(
-        prerequisites: .assumed,
-        theme: themeController,
-        verifier: .assumed
-      )
-    ).execute(
+    try EnvironmentStatusCommandRunner(
+      prerequisites: .assumed,
+      theme: themeController,
+      verifier: .assumed
+    ).executeDoctor(
       resourcesRoot: repositoryRoot.appending(path: "Environment"),
       profileURL: profile,
       profileRequired: true,

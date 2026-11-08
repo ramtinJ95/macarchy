@@ -1312,7 +1312,7 @@ struct KeybindingsApplyCommandRunner: Sendable {
       guard ownershipRecord != nil else {
         throw entryDrift(homeDirectory)
       }
-      try provider.preflightManagedRestoration()
+      try provider.preflightOriginalRestoration()
     case .updateGeneration:
       guard ownershipRecord != nil else {
         throw entryDrift(homeDirectory)
