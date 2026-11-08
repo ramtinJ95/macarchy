@@ -26,8 +26,10 @@ enum ProfileEditAction: String, CaseIterable, ExpressibleByArgument, Sendable {
 }
 
 struct MenuProfileEditor: ParsableCommand {
+  /// Hidden and stable: the menu, its editor callbacks and existing callers invoke this name.
+  static let commandName = "_menu-profile-edit"
   static let configuration = CommandConfiguration(
-    commandName: "_menu-profile-edit", shouldDisplay: false)
+    commandName: Self.commandName, shouldDisplay: false)
 
   @Argument var action: ProfileEditAction
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
@@ -104,7 +106,7 @@ struct MenuProfileEditor: ParsableCommand {
     let script = Self.script(
       target: resolved, section: nil,
       executableURL: RuntimeEnvironment.live.executableURL, notice: notice,
-      saveArguments: saveURL.map { ["_menu-profile-save", $0.path] })
+      saveArguments: saveURL.map { [MenuProfileSave.commandName, $0.path] })
     try script.write(to: scriptURL, atomically: true, encoding: .utf8)
     let editor = Process()
     editor.executableURL = neovim
@@ -159,8 +161,10 @@ struct MenuProfileEditor: ParsableCommand {
 }
 
 struct MenuProfileSave: ParsableCommand {
+  /// Hidden and stable: the menu, its editor callbacks and existing callers invoke this name.
+  static let commandName = "_menu-profile-save"
   static let configuration = CommandConfiguration(
-    commandName: "_menu-profile-save", shouldDisplay: false)
+    commandName: Self.commandName, shouldDisplay: false)
   @Argument var sessionPath: String
 
   mutating func run() throws {

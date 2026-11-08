@@ -5,8 +5,10 @@ import ThemeCore
 /// Native Lua is edited directly. No profile-save hook, apply or plugin restore
 /// is attached to this editor session.
 struct MenuNeovimEditor: ParsableCommand {
+  /// Hidden and stable: the menu, its editor callbacks and existing callers invoke this name.
+  static let commandName = "_menu-neovim-edit"
   static let configuration = CommandConfiguration(
-    commandName: "_menu-neovim-edit", shouldDisplay: false)
+    commandName: Self.commandName, shouldDisplay: false)
 
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
 

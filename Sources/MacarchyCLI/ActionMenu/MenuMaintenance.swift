@@ -32,8 +32,10 @@ enum MaintenanceAction: String, CaseIterable, ExpressibleByArgument, Sendable {
 }
 
 struct MenuMaintenance: ParsableCommand {
+  /// Hidden and stable: the menu, its editor callbacks and existing callers invoke this name.
+  static let commandName = "_menu-maintenance"
   static let configuration = CommandConfiguration(
-    commandName: "_menu-maintenance", shouldDisplay: false)
+    commandName: Self.commandName, shouldDisplay: false)
 
   @Argument var action: MaintenanceAction
   @OptionGroup var profiles: Macarchy.Setup.ProfileOptions
@@ -55,7 +57,7 @@ struct MenuMaintenance: ParsableCommand {
     launcherURL: URL = URL(filePath: "/usr/bin/open")
   ) throws -> Process {
     try MenuTerminal.launch(
-      .maintenance, arguments: ["_menu-maintenance", action.rawValue] + profileArguments,
+      .maintenance, arguments: [commandName, action.rawValue] + profileArguments,
       theme: theme, executableURL: executableURL, kittyApplicationURL: kittyApplicationURL,
       yabaiURL: yabaiURL,
       launcherURL: launcherURL)
