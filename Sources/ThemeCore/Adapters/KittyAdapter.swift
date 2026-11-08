@@ -92,10 +92,7 @@ package struct KittyAdapter: Sendable {
       } catch ReconciliationStatusError.noActiveGeneration {
         // The include seam can be healthy before the first activation creates a bridge.
       }
-      return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required
-      )
+      return AdapterInspection(.kitty)
     } catch {
       let status: AdapterInspectionStatus
       switch error {
@@ -105,8 +102,7 @@ package struct KittyAdapter: Sendable {
         status = .failed
       }
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .kitty,
         status: status,
         message: String(describing: error)
       )
@@ -114,7 +110,7 @@ package struct KittyAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(.kitty) {
       let bridgeOutcome: AdapterOutcome? = try ActivationLock(root: root).withLock {
         do {
           try preflight()

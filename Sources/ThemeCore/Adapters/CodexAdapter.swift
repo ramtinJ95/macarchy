@@ -93,8 +93,7 @@ package struct CodexAdapter: Sendable {
 
   private func runtime(includeRuntimeChecks: Bool = true) -> OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .codex,
       preflight: includeRuntimeChecks ? preflight : integrationPreflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )

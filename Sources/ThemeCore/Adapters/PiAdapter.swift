@@ -104,8 +104,7 @@ package struct PiAdapter: Sendable {
 
   private func runtime(includeRuntimeChecks: Bool = true) -> OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .pi,
       preflight: includeRuntimeChecks ? preflight : integrationPreflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )

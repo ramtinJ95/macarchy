@@ -38,3 +38,19 @@ struct OrdinaryAdapterRuntime: Sendable {
     }
   }
 }
+
+extension OrdinaryAdapterRuntime {
+  /// Stamps the consumer's catalog ID and requirement.
+  init(
+    _ consumer: RuntimeAdapterKind,
+    preflight: @escaping @Sendable () throws -> Void,
+    isIntegrationDrift: @escaping @Sendable (any Error) -> Bool
+  ) {
+    self.init(
+      adapterID: consumer.adapterID,
+      requirement: consumer.requirement,
+      preflight: preflight,
+      isIntegrationDrift: isIntegrationDrift
+    )
+  }
+}

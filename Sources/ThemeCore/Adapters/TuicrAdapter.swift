@@ -65,8 +65,7 @@ package struct TuicrAdapter: Sendable {
 
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .tuicr,
       preflight: preflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )

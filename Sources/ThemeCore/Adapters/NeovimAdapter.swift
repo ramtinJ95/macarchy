@@ -77,8 +77,7 @@ package struct NeovimAdapter: Sendable {
 
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .neovim,
       preflight: preflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )
@@ -157,16 +156,14 @@ package struct NeovimAdapter: Sendable {
         try validateRuntime()
       }
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .neovim,
         message: includeRuntimeChecks
           ? "Neovim validated the active colorscheme and canonical-pointer watcher"
           : "Neovim watches the canonical theme pointer for live colorscheme changes"
       )
     } catch {
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .neovim,
         status: Self.isIntegrationDrift(error) ? .drifted : .failed,
         message: String(describing: error)
       )

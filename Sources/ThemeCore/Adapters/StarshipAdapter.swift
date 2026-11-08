@@ -112,14 +112,12 @@ package struct StarshipAdapter: Sendable {
         // The stable seam can be healthy before the first bridge exists.
       }
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .starship,
         message: "Starship reads the active palette on the next prompt"
       )
     } catch {
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .starship,
         status: Self.isIntegrationDrift(error) ? .drifted : .failed,
         message: String(describing: error)
       )
@@ -127,7 +125,7 @@ package struct StarshipAdapter: Sendable {
   }
 
   func reconciliation() -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(.starship) {
       let bridgeOutcome: AdapterOutcome? = try ActivationLock(root: root).withLock {
         do {
           try preflight()

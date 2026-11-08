@@ -54,10 +54,11 @@ package struct MacOSAppearanceAdapter: Sendable {
   }
 
   package func apply(_ desiredAppearance: ThemeAppearance) async throws -> AdapterResult {
-    let outcome = try await reconciliation { desiredAppearance }.run()
+    let pending = reconciliation { desiredAppearance }
+    let outcome = try await pending.run()
     return AdapterResult(
-      adapterID: Self.id,
-      requirement: .required,
+      adapterID: pending.id,
+      requirement: pending.requirement,
       status: outcome.status,
       message: outcome.message
     )
@@ -68,23 +69,20 @@ package struct MacOSAppearanceAdapter: Sendable {
       let observed = try preflight()
       if let desiredAppearance, observed != desiredAppearance {
         return AdapterInspection(
-          adapterID: Self.id,
-          requirement: .required,
+          .macOSAppearance,
           status: .drifted,
           message:
             "macOS appearance differs from the active theme; reconciliation will request a live System Events update"
         )
       }
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .macOSAppearance,
         message:
           "Appearance state is readable and /usr/bin/osascript is executable; Apple Events authorization is untested until a change is required"
       )
     } catch {
       return AdapterInspection(
-        adapterID: Self.id,
-        requirement: .required,
+        .macOSAppearance,
         status: .failed,
         message: String(describing: error)
       )
@@ -94,7 +92,7 @@ package struct MacOSAppearanceAdapter: Sendable {
   func reconciliation(
     desiredAppearance: @escaping @Sendable () throws -> ThemeAppearance
   ) -> AdapterReconciliation {
-    AdapterReconciliation(id: Self.id, requirement: .required) {
+    AdapterReconciliation(.macOSAppearance) {
       try activationLock.withLock {
         let observed: ThemeAppearance
         do {

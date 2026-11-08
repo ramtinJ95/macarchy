@@ -67,8 +67,7 @@ package struct AtuinAdapter: Sendable {
 
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .atuin,
       preflight: preflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )

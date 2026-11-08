@@ -25,6 +25,20 @@ package struct AdapterInspection: Sendable {
     self.status = status
     self.message = message
   }
+
+  /// Stamps the consumer's catalog ID and requirement.
+  package init(
+    _ consumer: RuntimeAdapterKind,
+    status: AdapterInspectionStatus = .ready,
+    message: String? = nil
+  ) {
+    self.init(
+      adapterID: consumer.adapterID,
+      requirement: consumer.requirement,
+      status: status,
+      message: message
+    )
+  }
 }
 
 package struct ReconciliationPersistenceError: Error, CustomStringConvertible, Sendable {
@@ -64,6 +78,13 @@ struct AdapterReconciliation: Sendable {
   let id: String
   let requirement: AdapterRequirement
   let run: @Sendable () async throws -> AdapterOutcome
+}
+
+extension AdapterReconciliation {
+  /// Stamps the consumer's catalog ID and requirement.
+  init(_ consumer: RuntimeAdapterKind, run: @escaping @Sendable () async throws -> AdapterOutcome) {
+    self.init(id: consumer.adapterID, requirement: consumer.requirement, run: run)
+  }
 }
 
 enum ReconciliationCheckpoint: Sendable {

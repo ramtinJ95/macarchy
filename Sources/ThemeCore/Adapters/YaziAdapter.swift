@@ -90,8 +90,7 @@ package struct YaziAdapter: Sendable {
 
   private var runtime: OrdinaryAdapterRuntime {
     OrdinaryAdapterRuntime(
-      adapterID: Self.id,
-      requirement: .required,
+      .yazi,
       preflight: preflight,
       isIntegrationDrift: Self.isIntegrationDrift
     )
