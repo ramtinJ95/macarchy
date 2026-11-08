@@ -48,7 +48,7 @@ struct PackageProfileTests {
   func fragmentUsesExistingPortablePathRules(path: String) throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    #expect(throws: KeybindingProfileError.self) {
+    #expect(throws: PortableProfileError.self) {
       try PortableProfileLoader().decode(
         "schema_version = 1\n[packages]\nbrewfile = \"\(path)\"\n",
         source: root.appending(path: "profile.toml"))
@@ -65,14 +65,14 @@ struct PackageProfileTests {
     try FileManager.default.createSymbolicLink(
       at: root.appending(path: "profile/Brewfile"),
       withDestinationURL: root.appending(path: "outside.Brewfile"))
-    #expect(throws: KeybindingProfileError.self) {
+    #expect(throws: PortableProfileError.self) {
       try PortableProfileLoader().load(at: profile, required: true)
     }
   }
 
   @Test(arguments: ["baseline = \"everything\"", "exclude_formulae = \"jq\"", "unknown = true"])
   func unsupportedPackageFieldsFailStrictly(field: String) throws {
-    #expect(throws: KeybindingProfileError.self) {
+    #expect(throws: PortableProfileError.self) {
       try PortableProfileLoader().decode(
         "schema_version = 1\n[packages]\n\(field)\n", source: URL(filePath: "/tmp/profile.toml"))
     }

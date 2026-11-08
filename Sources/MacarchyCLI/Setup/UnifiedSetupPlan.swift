@@ -357,7 +357,7 @@ struct UnifiedSetupPlanCommandRunner: Sendable {
     error: Error
   ) -> [SetupProfileLayerReport] {
     let source: URL?
-    switch error as? KeybindingProfileError {
+    switch error as? PortableProfileError {
     case .cannotRead(let url, _), .invalid(let url, _): source = url.standardizedFileURL
     case nil: source = nil
     }

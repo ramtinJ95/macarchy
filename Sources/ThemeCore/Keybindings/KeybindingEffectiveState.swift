@@ -116,7 +116,8 @@ package struct KeybindingEffectiveStateInspector: Sendable {
       profile = suppliedProfile
     } else {
       do {
-        profile = try KeybindingProfileLoader().load(at: profileURL, required: profileRequired)
+        profile = try PortableProfileLoader().load(at: profileURL, required: profileRequired)
+          .keybindings
       } catch {
         profile = nil
         diagnostics.append(

@@ -4,7 +4,7 @@ import Testing
 @testable import ThemeCore
 
 struct KeybindingProfileTests {
-  private let loader = KeybindingProfileLoader()
+  private let loader = PortableProfileLoader()
 
   @Test
   func absentDefaultIsEmptyButAbsentExplicitProfileFails() throws {
@@ -12,8 +12,8 @@ struct KeybindingProfileTests {
       path: "macarchy-missing-profile-\(UUID().uuidString).toml"
     )
 
-    #expect(try loader.load(at: missing, required: false) == .empty)
-    #expect(throws: KeybindingProfileError.self) {
+    #expect(try loader.load(at: missing, required: false).keybindings == .empty)
+    #expect(throws: PortableProfileError.self) {
       _ = try loader.load(at: missing, required: true)
     }
   }
@@ -38,7 +38,7 @@ struct KeybindingProfileTests {
     let exposed = exposedDirectory.appending(path: "profile.toml")
     try FileManager.default.createSymbolicLink(at: exposed, withDestinationURL: source)
 
-    let profile = try loader.load(at: exposed, required: true)
+    let profile = try loader.load(at: exposed, required: true).keybindings
 
     #expect(profile.sourceURL == exposed.standardizedFileURL)
     #expect(profile.overrideURL == sourceDirectory.appending(path: "personal.skhdrc"))
@@ -67,7 +67,7 @@ struct KeybindingProfileTests {
       """
 
     let portable = try PortableProfileLoader().decode(text, source: source)
-    let keybindings = try loader.decode(text, source: source)
+    let keybindings = try loader.decode(text, source: source).keybindings
 
     #expect(portable.desktop.provider == .yabaiSkhd)
     #expect(portable.desktop.yabai.layout == "stack")
@@ -173,7 +173,7 @@ struct KeybindingProfileTests {
       withDestinationURL: outside
     )
 
-    #expect(throws: KeybindingProfileError.self) {
+    #expect(throws: PortableProfileError.self) {
       _ = try PortableProfileLoader().decode(
         "schema_version = 1\n[zsh]\nhook = \"linked/hook.zsh\"\n",
         source: profileDirectory.appending(path: "profile.toml")
@@ -218,7 +218,7 @@ struct KeybindingProfileTests {
       "schema_version = 1\n[tools]\nbtop = false\n[btop]\nvim_keys = true\n",
       "schema_version = 1\n[tools]\nyazi = false\n[yazi]\nshow_hidden = true\n",
     ] {
-      #expect(throws: KeybindingProfileError.self) {
+      #expect(throws: PortableProfileError.self) {
         _ = try PortableProfileLoader().decode(text, source: source)
       }
     }
@@ -448,7 +448,7 @@ struct KeybindingProfileTests {
       encoding: .utf8
     )
 
-    #expect(throws: KeybindingProfileError.self) {
+    #expect(throws: PortableProfileError.self) {
       _ = try PortableProfileLoader().load(
         portableAt: portable,
         portableRequired: true,
@@ -504,7 +504,7 @@ struct KeybindingProfileTests {
     #expect(layered.profile == .defaults)
     #expect(layered.layers.map(\.present) == [false, false])
     #expect(layered.fieldOrigins.isEmpty)
-    #expect(throws: KeybindingProfileError.self) {
+    #expect(throws: PortableProfileError.self) {
       _ = try PortableProfileLoader().load(
         portableAt: portable,
         portableRequired: false,
