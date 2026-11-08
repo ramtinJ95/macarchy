@@ -697,9 +697,10 @@ struct EnvironmentApplyCommandRunner: Sendable {
       if suppliedThemeAdapterIDs == nil {
         do {
           let previous = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
-          let otherDomains: Set<String> = ["macos-appearance", "wallpaper", "sketchybar"]
           enabledThemeAdapterIDs = Set(enabledThemeAdapterIDs)
-            .union(Set(previous?.enabledThemeAdapterIDs ?? []).intersection(otherDomains))
+            .union(
+              Set(previous?.enabledThemeAdapterIDs ?? [])
+                .intersection(PortableProfile.allNonEnvironmentThemeAdapterIDs))
             .sorted()
         } catch {
           return try failure(

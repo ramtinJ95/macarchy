@@ -208,10 +208,21 @@ extension PortableProfile {
   /// The theme adapters whose output the selected desktop roles consume, sorted.
   var desktopThemeAdapterIDs: [String] {
     var ids = [String]()
-    if desktop.provider == .yabaiSkhd { ids.append("wallpaper") }
-    if topBar == .sketchybar { ids.append("sketchybar") }
+    if desktop.provider == .yabaiSkhd { ids.append(ConsumerID.wallpaper.rawValue) }
+    if topBar == .sketchybar { ids.append(ConsumerID.sketchyBar.rawValue) }
     return ids.sorted()
   }
+
+  /// The applied theme adapters that the environment selection does not own: macOS
+  /// appearance and the selected desktop roles' adapters.
+  var nonEnvironmentThemeAdapterIDs: Set<String> {
+    Set(desktopThemeAdapterIDs).union([MacOSAppearanceAdapter.id])
+  }
+
+  /// Every adapter `nonEnvironmentThemeAdapterIDs` can hold under any profile.
+  static let allNonEnvironmentThemeAdapterIDs: Set<String> = [
+    MacOSAppearanceAdapter.id, ConsumerID.wallpaper.rawValue, ConsumerID.sketchyBar.rawValue,
+  ]
 
   /// The services the selected desktop roles register, start or reload, in setup plan order.
   var desktopSetupServices: [UnifiedSetupService] {
