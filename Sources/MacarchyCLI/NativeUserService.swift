@@ -396,7 +396,7 @@ struct NativeUserServiceOwnershipStore<Policy: NativeUserServicePolicy>: Sendabl
     if let ownership {
       let descriptor = try PinnedFilesystem.openDirectory(at: file.deletingLastPathComponent())
       defer { Darwin.close(descriptor) }
-      try PinnedStateFile.write(
+      try StateFile.write(
         ownership, parentDescriptor: descriptor, name: file.lastPathComponent, url: file)
     } else {
       guard unlink(file.path) == 0 || errno == ENOENT else {

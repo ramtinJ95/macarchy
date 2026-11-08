@@ -221,7 +221,7 @@ private struct KeybindingStateFiles {
       url: directory
     )
     defer { Darwin.close(descriptor) }
-    try PinnedStateFile.write(
+    try StateFile.write(
       value, parentDescriptor: descriptor, name: name, url: directory.appending(path: name))
   }
 
@@ -235,7 +235,7 @@ private struct KeybindingStateFiles {
       return
     }
     defer { Darwin.close(descriptor) }
-    switch PinnedStateFile.remove(name, parentDescriptor: descriptor, syncWhenAbsent: true) {
+    switch StateFile.remove(name, parentDescriptor: descriptor, syncWhenAbsent: true) {
     case nil: return
     case (.unlink, let code)?:
       throw KeybindingApplyTransactionError.system(

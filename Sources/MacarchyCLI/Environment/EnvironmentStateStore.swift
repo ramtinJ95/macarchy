@@ -122,7 +122,7 @@ struct EnvironmentStateStore: Sendable {
       Darwin.close(directoryDescriptor)
       Darwin.close(stateDescriptor)
     }
-    try PinnedStateFile.write(
+    try StateFile.write(
       value, parentDescriptor: directoryDescriptor, name: url.lastPathComponent, url: url)
   }
 
@@ -138,7 +138,7 @@ struct EnvironmentStateStore: Sendable {
       Darwin.close(directoryDescriptor)
       Darwin.close(stateDescriptor)
     }
-    if let failure = PinnedStateFile.remove(
+    if let failure = StateFile.remove(
       url.lastPathComponent, parentDescriptor: directoryDescriptor, syncWhenAbsent: false)
     {
       throw EnvironmentLifecycleError.system(
