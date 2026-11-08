@@ -234,9 +234,7 @@ enum ThemeRuntimeSelection {
     ownership: EnvironmentOwnership?
   ) throws -> ThemeConsumerPaths {
     guard let ownership else { return consumerPaths }
-    // Derives home from the Starship configuration path (`<home>/.config/starship.toml`).
-    let homeDirectory = consumerPaths.starshipConfigurationURL.deletingLastPathComponent()
-      .deletingLastPathComponent()
+    let homeDirectory = consumerPaths.starshipDerivedHomeDirectoryURL
     for provider in EnvironmentNativeSeed.Provider.allCases
     where provider != .zsh && ownership.standardNativeEntries?.contains(provider.entryID) == true {
       try EnvironmentStandardNativeConfiguration.validate(
@@ -351,5 +349,13 @@ struct DesktopThemeController: Sendable {
         }
       }
     )
+  }
+}
+
+extension ThemeConsumerPaths {
+  /// The home directory implied by the Starship configuration path
+  /// (`<home>/.config/starship.toml`), found by stripping its last two components.
+  fileprivate var starshipDerivedHomeDirectoryURL: URL {
+    starshipConfigurationURL.deletingLastPathComponent().deletingLastPathComponent()
   }
 }
