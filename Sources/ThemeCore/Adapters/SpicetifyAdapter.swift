@@ -379,7 +379,11 @@ package struct SpicetifyAdapter: Sendable {
   }
 
   package func supportedVersion() throws -> String {
-    let value = try spicetifyVersionProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+    try Self.supportedVersion(reported: spicetifyVersionProvider())
+  }
+
+  static func supportedVersion(reported: String) throws -> String {
+    let value = reported.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let parsed = Self.parseTriplet(value) else {
       throw SpicetifyAdapterError.invalidVersion(value)
     }

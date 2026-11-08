@@ -43,14 +43,8 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             "Pi must report a parseable version >= \(PiAdapter.minimumVersion): \($0)"
           },
           version: {
-            try PiAdapter(
-              root: StateLayout.defaultRoot(in: homeDirectory),
-              configurationDirectoryURL: homeDirectory.appending(
-                path: ConsumerHomePath.piDirectory),
-              executableURL: PiAdapter.liveExecutableURL,
-              controlIsAvailable: { true },
-              processRunner: .live
-            ).supportedVersion()
+            try PiAdapter.supportedVersion(
+              executableURL: PiAdapter.liveExecutableURL, processRunner: .live)
           }
         )
       }
@@ -64,14 +58,8 @@ struct EnvironmentPrerequisiteInspector: Sendable {
             "Codex must report 'codex-cli X.Y.Z' >= \(CodexAdapter.minimumVersion): \($0)"
           },
           version: {
-            try CodexAdapter(
-              root: StateLayout.defaultRoot(in: homeDirectory),
-              configurationDirectoryURL: homeDirectory.appending(
-                path: ConsumerHomePath.codexDirectory),
-              executableURL: CodexAdapter.liveExecutableURL,
-              controlIsAvailable: { true },
-              processRunner: .live
-            ).supportedVersion()
+            try CodexAdapter.supportedVersion(
+              executableURL: CodexAdapter.liveExecutableURL, processRunner: .live)
           }
         )
       }
@@ -98,14 +86,9 @@ struct EnvironmentPrerequisiteInspector: Sendable {
               "Herdr must report 'herdr X.Y.Z' >= \(HerdrAdapter.minimumVersion): \($0)"
             },
             version: {
-              try HerdrAdapter(
-                root: StateLayout.defaultRoot(in: homeDirectory),
-                configurationURL: homeDirectory.appending(
-                  path: ConsumerHomePath.herdrConfiguration),
+              try HerdrAdapter.supportedVersion(
                 executableURL: HerdrAdapter.executableURL(homeDirectory: homeDirectory),
-                controlIsAvailable: { true },
-                processRunner: .live
-              ).supportedVersion()
+                processRunner: .live)
             }
           )
         }

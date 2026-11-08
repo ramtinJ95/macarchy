@@ -62,15 +62,7 @@ extension SpicetifyAdapter {
     executableURL: URL = liveExecutableURL,
     processRunner: ProcessRunner = .live
   ) throws -> String {
-    try Self(
-      root: URL(filePath: "/"),
-      configurationDirectoryURL: URL(filePath: "/"),
-      executableURL: executableURL,
-      controlIsAvailable: { true },
-      processRunner: processRunner,
-      spicetifyVersionProvider: {
-        try commandVersion(executableURL: executableURL, processRunner: processRunner)
-      }
-    ).supportedVersion()
+    try supportedVersion(
+      reported: commandVersion(executableURL: executableURL, processRunner: processRunner))
   }
 }

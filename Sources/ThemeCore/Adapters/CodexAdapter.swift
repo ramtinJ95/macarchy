@@ -113,6 +113,13 @@ package struct CodexAdapter: Sendable {
   }
 
   package func supportedVersion() throws -> String {
+    try Self.supportedVersion(executableURL: executableURL, processRunner: processRunner)
+  }
+
+  package static func supportedVersion(
+    executableURL: URL,
+    processRunner: ProcessRunner
+  ) throws -> String {
     try AdapterVersionParser.supportedVersion(
       executableURL: executableURL,
       executableLabel: "codex-cli",
