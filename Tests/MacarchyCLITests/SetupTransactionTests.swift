@@ -62,7 +62,8 @@ extension SetupOwnershipTests {
     let fixture = try Fixture()
     defer { fixture.remove() }
     try fixture.writeLegacyOwnership([
-      fixture.legacyThemeLink(SetupOwnershipManager.batThemeLinkID, placement: .claimed)
+      fixture.legacyThemeLink(
+        ConsumerSetupPlan.Step.Operation.batThemeLink.rawValue, placement: .claimed)
     ])
 
     let teardown = try SetupOwnershipManager().teardown(homeDirectory: fixture.home, dryRun: false)
@@ -78,7 +79,7 @@ extension SetupOwnershipTests {
     let fixture = try Fixture()
     defer { fixture.remove() }
     try fixture.writeLegacyOwnership([
-      fixture.legacyThemeLink(SetupOwnershipManager.batThemeLinkID)
+      fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.batThemeLink.rawValue)
     ])
     let batThemeLink = fixture.batThemeLink
     let manager = SetupOwnershipManager { checkpoint in
@@ -197,8 +198,10 @@ extension SetupOwnershipTests {
     let pi = "{\n  \"provider\": \"openai\"\n}\n"
     try fixture.writeLegacyOwnership([
       fixture.legacyThemeLink(
-        SetupOwnershipManager.batThemeLinkID, phase: .prepared, placement: .absent),
-      fixture.legacyThemeLink(SetupOwnershipManager.ezaThemeLinkID, phase: .prepared),
+        ConsumerSetupPlan.Step.Operation.batThemeLink.rawValue, phase: .prepared,
+        placement: .absent),
+      fixture.legacyThemeLink(
+        ConsumerSetupPlan.Step.Operation.ezaThemeLink.rawValue, phase: .prepared),
       fixture.legacyPiSelector(contents: pi, phase: .prepared),
     ])
 
@@ -642,13 +645,13 @@ extension BtopYaziAtuinSetupTests {
     let fixture = try Fixture()
     defer { fixture.remove() }
     try fixture.writeLegacyOwnership([
-      fixture.legacyThemeLink(SetupOwnershipManager.btopThemeLinkID),
+      fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.btopThemeLink.rawValue),
       fixture.legacyFileRecord(
         SetupOwnershipManager.yaziSelectorID,
         original: "[flavor]\nlight = \"default\"\n",
         installed: "[flavor]\ndark = \"macarchy-current\"\nlight = \"default\"\n"
       ),
-      fixture.legacyThemeLink(SetupOwnershipManager.atuinThemeLinkID),
+      fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.atuinThemeLink.rawValue),
     ])
     try Data("user changed this file\n".utf8).write(
       to: fixture.yaziConfiguration,
@@ -671,8 +674,9 @@ extension NeovimStarshipSetupTests {
     let fixture = try Fixture()
     defer { fixture.remove() }
     try fixture.writeLegacyOwnership([
-      fixture.legacyThemeLink(SetupOwnershipManager.neovimThemeLinkID),
-      fixture.legacyThemeLink(SetupOwnershipManager.starshipConfigurationLinkID),
+      fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.neovimThemeLink.rawValue),
+      fixture.legacyThemeLink(
+        ConsumerSetupPlan.Step.Operation.starshipConfigurationLink.rawValue),
     ])
     try FileManager.default.removeItem(at: fixture.neovimThemeLink)
     try Data("user-owned configuration\n".utf8).write(

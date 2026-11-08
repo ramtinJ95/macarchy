@@ -20,21 +20,21 @@ struct BtopYaziAtuinSetupTests {
     try Data(btop.utf8).write(to: fixture.btopConfiguration)
     try fixture.tearDownLegacyOwnership(
       [
-        fixture.legacyThemeLink(SetupOwnershipManager.btopThemeLinkID),
+        fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.btopThemeLink.rawValue),
         fixture.legacyFileRecord(
           SetupOwnershipManager.yaziSelectorID,
           original: yazi,
           installed:
             "[mgr]\r\nratio = [1, 2, 3]\r\n\r\n[flavor]\r\ndark = \"macarchy-current\"\r\nlight = \"default\"\r\n"
         ),
-        fixture.legacyThemeLink(SetupOwnershipManager.yaziFlavorLinkID),
-        fixture.legacyThemeLink(SetupOwnershipManager.yaziSyntaxLinkID),
+        fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.yaziFlavorLink.rawValue),
+        fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.yaziSyntaxLink.rawValue),
         fixture.legacyFileRecord(
           SetupOwnershipManager.atuinSelectorID,
           original: atuin,
           installed: atuin + "[theme]\nname = \"macarchy-current\"\n"
         ),
-        fixture.legacyThemeLink(SetupOwnershipManager.atuinThemeLinkID),
+        fixture.legacyThemeLink(ConsumerSetupPlan.Step.Operation.atuinThemeLink.rawValue),
       ],
       expectingRemoved: [
         "btop.theme-link", "yazi.selector", "yazi.flavor-link", "yazi.syntax-link",

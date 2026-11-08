@@ -164,7 +164,7 @@ extension SetupOwnershipManager {
     do {
       backup = try BoundedRegularFile.read(
         at: backupURL,
-        maximumSize: Self.maximumConfigurationSize
+        maximumSize: BoundedRegularFile.maximumSize
       )
     } catch {
       throw SetupOwnershipError.corruptBackup(backupURL)
@@ -508,7 +508,7 @@ extension SetupOwnershipManager {
     do {
       return try BoundedRegularFile.read(
         descriptor: descriptor,
-        maximumSize: Self.maximumConfigurationSize
+        maximumSize: BoundedRegularFile.maximumSize
       )
     } catch {
       throw SetupOwnershipError.system("read pinned \(label)", url, String(describing: error))
@@ -675,11 +675,11 @@ extension SetupOwnershipManager {
     do {
       let handle = try FileHandle(forReadingFrom: url)
       defer { try? handle.close() }
-      data = try handle.read(upToCount: Self.maximumConfigurationSize + 1) ?? Data()
+      data = try handle.read(upToCount: BoundedRegularFile.maximumSize + 1) ?? Data()
     } catch {
       throw SetupOwnershipError.system("read", url, String(describing: error))
     }
-    guard data.count <= Self.maximumConfigurationSize else {
+    guard data.count <= BoundedRegularFile.maximumSize else {
       throw SetupOwnershipError.kittyConfigurationTooLarge(url)
     }
     guard String(data: data, encoding: .utf8) != nil else {
@@ -697,7 +697,7 @@ extension SetupOwnershipManager {
     do {
       data = try BoundedRegularFile.read(
         at: url.resolvingSymlinksInPath(),
-        maximumSize: Self.maximumConfigurationSize
+        maximumSize: BoundedRegularFile.maximumSize
       ).data
     } catch BoundedRegularFileError.tooLarge {
       throw SetupOwnershipError.configurationTooLarge(id, url)

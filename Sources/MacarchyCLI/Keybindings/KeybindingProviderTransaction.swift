@@ -410,7 +410,7 @@ struct KeybindingProviderTransaction: Sendable {
         parentDescriptor: targetDescriptor,
         name: SkhdLayout.configurationName,
         url: target.appending(path: SkhdLayout.configurationName),
-        maximumSize: SetupOwnershipManager.maximumConfigurationSize
+        maximumSize: BoundedRegularFile.maximumSize
       )
       let sourceMetadata = try PinnedFilesystem.metadata(
         parentDescriptor: targetDescriptor,
@@ -545,7 +545,7 @@ struct KeybindingProviderTransaction: Sendable {
       else { throw SetupOwnershipError.ownershipDrift(resolved) }
       let source = try PinnedFilesystem.readRegularFile(
         at: resolved,
-        maximumSize: SetupOwnershipManager.maximumConfigurationSize
+        maximumSize: BoundedRegularFile.maximumSize
       )
       _ = try manager.themeLinkState(
         id: KeybindingProviderInspector.ownershipID,
