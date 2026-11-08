@@ -25,6 +25,12 @@ package struct ProcessIdentity: Equatable, Sendable {
   package let started: UInt64
   package let executablePath: String
 
+  package init(pid: Int32, started: UInt64, executablePath: String) {
+    self.pid = pid
+    self.started = started
+    self.executablePath = executablePath
+  }
+
   /// The identity of `pid`, or nil when the kernel cannot resolve its start time or path.
   /// The path is not read when the start time cannot be.
   package static func observe(_ pid: Int32) -> Self? {
@@ -33,4 +39,17 @@ package struct ProcessIdentity: Equatable, Sendable {
     }
     return Self(pid: pid, started: started, executablePath: path)
   }
+}
+
+/// Whether `pid` no longer exists. A zombie, or another user's process, still exists.
+package func processHasExited(_ pid: Int32) -> Bool {
+  kill(pid, 0) != 0 && errno == ESRCH
+}
+
+/// SIGTERMs `pid`, whose identity the caller just verified. One that already exited is not an
+/// error; any other failure throws `failure` with its errno.
+package func terminateVerifiedProcess(_ pid: Int32, orThrow failure: (Int32) -> any Error) throws {
+  guard kill(pid, SIGTERM) != 0 else { return }
+  let code = errno
+  guard code == ESRCH else { throw failure(code) }
 }

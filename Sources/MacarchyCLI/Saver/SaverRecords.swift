@@ -185,12 +185,6 @@ struct SaverRecords {
   }
 }
 
-/// SIGTERM to a process whose identity was just verified; one that already exited is not an
-/// error.
 func terminateSaverProcess(_ pid: Int32) throws {
-  guard kill(pid, SIGTERM) != 0 else { return }
-  let code = errno
-  guard code == ESRCH else {
-    throw MessageError("cannot signal process \(pid) (errno \(code))")
-  }
+  try terminateVerifiedProcess(pid) { MessageError("cannot signal process \(pid) (errno \($0))") }
 }
