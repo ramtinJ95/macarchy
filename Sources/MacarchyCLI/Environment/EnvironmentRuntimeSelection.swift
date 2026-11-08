@@ -82,9 +82,7 @@ enum ThemeRuntimeSelection {
     bordersRuntime: EnvironmentBordersRuntime = .live,
     enabledAdapterIDs: Set<String>? = nil
   ) throws -> ThemeActivationCoordinator {
-    let homeDirectory = consumerPaths.piConfigurationDirectoryURL
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
+    let homeDirectory = consumerPaths.piDerivedHomeDirectoryURL
     let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
     let herdrManagedMode =
       ownership?.herdrEnabled == true
@@ -257,6 +255,7 @@ enum ThemeRuntimeSelection {
     ownership: EnvironmentOwnership?
   ) throws -> ThemeConsumerPaths {
     guard let ownership else { return consumerPaths }
+    // Derives home from the Starship configuration path (`<home>/.config/starship.toml`).
     let homeDirectory = consumerPaths.starshipConfigurationURL.deletingLastPathComponent()
       .deletingLastPathComponent()
     for provider in EnvironmentNativeSeed.Provider.allCases
@@ -264,35 +263,17 @@ enum ThemeRuntimeSelection {
       try EnvironmentStandardNativeConfiguration.validate(
         provider, homeDirectory: homeDirectory, stateRoot: stateRoot)
     }
-    return ThemeConsumerPaths(
-      kittyConfigurationURL: consumerPaths.kittyConfigurationURL,
-      sketchyBarConfigurationURL: consumerPaths.sketchyBarConfigurationURL,
-      shellConfigurationURL: consumerPaths.shellConfigurationURL,
-      ezaConfigurationDirectoryURL: consumerPaths.ezaConfigurationDirectoryURL,
-      batConfigurationDirectoryURL: consumerPaths.batConfigurationDirectoryURL,
-      batCacheDirectoryURL: consumerPaths.batCacheDirectoryURL,
-      btopConfigurationDirectoryURL: consumerPaths.btopConfigurationDirectoryURL,
-      yaziConfigurationDirectoryURL: consumerPaths.yaziConfigurationDirectoryURL,
-      atuinConfigurationDirectoryURL: consumerPaths.atuinConfigurationDirectoryURL,
-      neovimConfigurationDirectoryURL: consumerPaths.neovimConfigurationDirectoryURL,
-      starshipConfigurationURL: consumerPaths.starshipConfigurationURL,
-      starshipBehaviorURL: EnvironmentNativeFileMigration.starshipBehaviorURL(
-        homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership),
-      piConfigurationDirectoryURL: consumerPaths.piConfigurationDirectoryURL,
-      herdrConfigurationURL: consumerPaths.herdrConfigurationURL,
-      tuicrConfigurationDirectoryURL: consumerPaths.tuicrConfigurationDirectoryURL,
-      codexConfigurationDirectoryURL: consumerPaths.codexConfigurationDirectoryURL,
-      spicetifyConfigurationDirectoryURL: consumerPaths.spicetifyConfigurationDirectoryURL
-    )
+    var paths = consumerPaths
+    paths.starshipBehaviorURL = EnvironmentNativeFileMigration.starshipBehaviorURL(
+      homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership)
+    return paths
   }
 
   static func enabledAdapterIDs(
     stateRoot: URL,
     consumerPaths: ThemeConsumerPaths
   ) throws -> Set<String> {
-    let home = consumerPaths.piConfigurationDirectoryURL
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
+    let home = consumerPaths.piDerivedHomeDirectoryURL
     return try enabledAdapterIDs(stateRoot: stateRoot, homeDirectory: home)
   }
 
@@ -310,9 +291,7 @@ enum ThemeRuntimeSelection {
     consumerPaths: ThemeConsumerPaths
   ) throws -> Bool {
     let ownership = try EnvironmentStateStore(stateRoot: stateRoot).readOwnership()
-    let home = consumerPaths.piConfigurationDirectoryURL
-      .deletingLastPathComponent()
-      .deletingLastPathComponent()
+    let home = consumerPaths.piDerivedHomeDirectoryURL
     let setupIDs = Set(
       try SetupOwnershipManager()
         .readRecords(context: SetupOwnershipManager.Context(homeDirectory: home))

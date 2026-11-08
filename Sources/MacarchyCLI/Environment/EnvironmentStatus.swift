@@ -271,31 +271,26 @@ extension ThemeConsumerPaths {
   func managedEnvironmentPaths(
     stateRoot: URL, homeDirectory: URL, ownership: EnvironmentOwnership? = nil
   ) -> ThemeConsumerPaths {
-    ThemeConsumerPaths(
-      kittyConfigurationURL: homeDirectory.appending(path: ConsumerHomePath.kittyConfiguration),
-      sketchyBarConfigurationURL: sketchyBarConfigurationURL,
-      shellConfigurationURL: homeDirectory.appending(path: ConsumerHomePath.shellConfiguration),
-      ezaConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.ezaDirectory),
-      batConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.batDirectory),
-      batCacheDirectoryURL: batCacheDirectoryURL,
-      btopConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.btopDirectory),
-      yaziConfigurationDirectoryURL: homeDirectory.appending(path: ConsumerHomePath.yaziDirectory),
-      atuinConfigurationDirectoryURL: homeDirectory.appending(
-        path: ConsumerHomePath.atuinDirectory,
-        directoryHint: .isDirectory
-      ),
-      neovimConfigurationDirectoryURL: homeDirectory.appending(
-        path: ConsumerHomePath.neovimDirectory),
-      starshipConfigurationURL: homeDirectory.appending(
-        path: ConsumerHomePath.starshipConfiguration),
-      starshipBehaviorURL: EnvironmentNativeFileMigration.starshipBehaviorURL(
-        homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership),
-      piConfigurationDirectoryURL: piConfigurationDirectoryURL,
-      herdrConfigurationURL: herdrConfigurationURL,
-      tuicrConfigurationDirectoryURL: tuicrConfigurationDirectoryURL,
-      codexConfigurationDirectoryURL: codexConfigurationDirectoryURL,
-      spicetifyConfigurationDirectoryURL: spicetifyConfigurationDirectoryURL
-    )
+    var paths = self
+    paths.kittyConfigurationURL = homeDirectory.appending(path: ConsumerHomePath.kittyConfiguration)
+    paths.shellConfigurationURL = homeDirectory.appending(path: ConsumerHomePath.shellConfiguration)
+    paths.ezaConfigurationDirectoryURL = homeDirectory.appending(
+      path: ConsumerHomePath.ezaDirectory)
+    paths.batConfigurationDirectoryURL = homeDirectory.appending(
+      path: ConsumerHomePath.batDirectory)
+    paths.btopConfigurationDirectoryURL = homeDirectory.appending(
+      path: ConsumerHomePath.btopDirectory)
+    paths.yaziConfigurationDirectoryURL = homeDirectory.appending(
+      path: ConsumerHomePath.yaziDirectory)
+    paths.atuinConfigurationDirectoryURL = homeDirectory.appending(
+      path: ConsumerHomePath.atuinDirectory, directoryHint: .isDirectory)
+    paths.neovimConfigurationDirectoryURL = homeDirectory.appending(
+      path: ConsumerHomePath.neovimDirectory)
+    paths.starshipConfigurationURL = homeDirectory.appending(
+      path: ConsumerHomePath.starshipConfiguration)
+    paths.starshipBehaviorURL = EnvironmentNativeFileMigration.starshipBehaviorURL(
+      homeDirectory: homeDirectory, stateRoot: stateRoot, ownership: ownership)
+    return paths
   }
 }
 
